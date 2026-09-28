@@ -1,0 +1,41 @@
+# Normalise line endings so the same file does not show as modified on every
+# clone.  Git was warning "LF will be replaced by CRLF" on 24 files, which is
+# noise that trains you to ignore warnings - and the warnings people get
+# habituated to are the ones they stop reading, which is how a real one gets
+# missed.
+#
+# * text=auto          let git detect, and record what it decided
+# * the default is LF in the repository, checked out as CRLF on Windows,
+#   so the files on disk stay exactly as they are now
+# * the binaries below must never be line-ending translated, or they corrupt
+
+* text=auto eol=crlf
+
+# Source: keep LF in the repo, CRLF in the working copy on Windows.
+*.py    text eol=crlf
+*.js    text eol=crlf
+*.css   text eol=crlf
+*.html  text eol=crlf
+*.md    text eol=crlf
+*.txt   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.json  text eol=crlf
+*.yml   text eol=crlf
+*.yaml  text eol=crlf
+.gitignore    text eol=crlf
+.gitattributes text eol=crlf
+
+# Never touched - these are not text, and a translated newline in a SQLite
+# file or a .gdtf archive is a corrupt file rather than a diff.
+*.db      binary
+*.gdtf    binary
+*.gdTF    binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.zip     binary
+*.gz      binary

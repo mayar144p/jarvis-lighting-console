@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e14'/%3E%3Cpath d='M16 5 L23 24 L16 20 L9 24 Z' fill='%2337d0f5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+
+<div id="err-strip" class="hidden" role="status" aria-live="polite"><span id="err-text"></span><button class="ibtn" id="err-dismiss" type="button" title="dismiss" aria-label="Dismiss messages">✕</button></div>
+
+<header id="ctopbar">
+  <div class="brand">
+    <div class="brand-text">
+      <h1>JARVIS CONSOLE</h1>
+      <span id="ct-sub">patch · programmer · cues · output</span>
+    </div>
+  </div>
+
+  <div class="cbar-group">
+    <span class="pill warn" id="pill-dry" title="commands are simulated — nothing leaves the app">DRY RUN</span>
+    <span class="pill" id="pill-live" title="Art-Net output state" role="status" aria-live="polite">NOT SENDING ○</span>
+    <button class="cbtn" id="btn-dryrun" data-on="1"
+            title="DRY RUN: frames are built and counted, nothing leaves this machine.
+Click to allow real output. Changing this while the output is LIVE asks first.">DRY RUN</button>
+    <button class="cbtn go" id="btn-golive" title="start sending Art-Net frames">GO LIVE</button>
+  </div>
+
+  <div class="cbar-group cbar-right">
+    <!-- The design / operate lock.  Prominent, in the header, because the
+         one time you need it is the one time you are not looking for it. -->
+    <button class="cbtn lockbtn" id="btn-lock" data-state="design"
+            title="DESIGN: edit anything.
+OPERATE: the show runs, the show cannot be edited.
+LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
+    <input id="show-name" type="text" placeholder="show name" spellcheck="false" maxlength="40"
+           title="letters, digits, dash, underscore">
+    <button class="cbtn" id="btn-save" title="save the show to a file">💾 save</button>
+    <button class="cbtn" id="btn-undo" disabled
+            title="undo the last edit — Ctrl+Z">↶ undo</button>
+    <button class="cbtn" id="btn-redo" disabled
+            title="redo it again — Ctrl+Shift+Z">↷ redo</button>
+    <select id="load-show" class="cselect" title="load a show file">
+      <option value="">📂 load show…</option>
+    </select>
+    <button class="cbtn" id="btn-help" title="help — what this console can do, and the keys (? anywhere)">?</button>
+    <button class="cbtn" id="btn-ai" title="AI console compiler — type instructions in plain text">🤖 AI</button>
+    <button class="cbtn" id="btn-assistant" title="open the assistant window">💬 Assistant</button>
+    <details id="key-help-wrap">
+      <summary id="key-help-toggle" title="keyboard shortcuts">⌨</summary>
+      <div id="key-help" aria-label="Keyboard shortcuts"></div>
+    </details>
+  </div>
+</header>
+
+<div id="standalone-note" class="hidden">
+  opened directly — press 💬 Assistant to open the chat window (both windows share one server)
+</div>
+
+<main id="cmain">
+  <!-- ---------------------------------------------------------- PATCH -->
+  <section class="ccol" id="col-patch">
+    <div class="ccol-head">
+      <h2>PATCH</h2>
+      <span class="muted small" id="patch-count">…</span>
+      <button class="cbtn" id="btn-add">+ Add heads</button>
+    </div>
+
+    <p class="gesture-legend">
+      <b>click</b> one &middot; <b>ctrl</b>+click add or remove
+      &middot; <b>shift</b>+click a range
+    </p>
+
+    <div class="ccol-tools">
+      <button class="cbtn" id="btn-layout" title="replace the patch with the selected layout">load layout</button>
+      <button class="cbtn" id="btn-autopatch" title="re-pack all addresses, no overlaps">auto patch</button>
+      <button class="cbtn" id="btn-scan"
+              title="sniff the network for ArtPoll replies + ArtDmx, then auto-patch the universes it sees">scan rig</button>
+      <button class="cbtn" id="btn-selectall" title="select every head">select all</button>
+      <button class="cbtn" id="btn-clearsel" title="clear the selection">clear sel</button>
+      <button class="cbtn" id="btn-channels"
+              title="show the DMX channels of the selected heads: label, control, and the byte on the wire">channels</button>
+      <button class="cbtn" id="btn-patchcsv"
+              title="download the patch as a CSV sheet — the document you hand to a house tech">patch CSV</button>
+    </div>
+
+    <div class="ccol-filter">
+      <input id="head-filter" type="text" placeholder="filter — model, universe, position…"
+             spellcheck="false" autocomplete="off" aria-label="Filter the patch list">
+      <button class="cbtn tiny" id="btn-filtersel"
+              title="select every head the filter is showing (Shift to add to the selection)">select shown</button>
+    </div>
+    <div id="head-list" class="list"></div>
+
+    <div class="sub-head">GROUPS<button class="ibtn" id="btn-group" title="make a group from the selection">+</button></div>
+    <div id="group-form" class="inline-form hidden">
+      <input id="group-name" type="text" placeholder="group name" maxlength="32">
+      <button class="ibtn ok" id="group-ok" title="create">✓</button>
+      <button class="ibtn" id="group-cancel" title="cancel">✕</button>
+    </div>
+    <div id="group-chips" class="chips"></div>
+
+    <div class="sub-head">PALETTES</div>
+    <div id="palettes" class="pal-list"></div>
+
+    <div class="sub-head">PRESETS
+      <span class="muted small">complete looks</span>
+      <button class="ibtn" id="btn-preset" title="store the selection's whole programmer as a named look">+</button>
+    </div>
+    <div id="preset-form" class="inline-form hidden">
+      <input id="preset-name" type="text" placeholder="look name" maxlength="40">
+      <button class="ibtn ok" id="preset-ok" title="store">✓</button>
+      <button class="ibtn" id="preset-cancel" title="cancel">✕</button>
+    </div>
+    <div id="presets" class="pal-list"></div>
+  </section>
+
+  <!-- -------------------------------------------------- VISUALISER + PROGRAMMER -->
+  <section class="ccol" id="col-mid">
+    <div id="viz-wrap">
+      <div id="viz-pane"></div>
+      <!-- A sibling of #viz-pane, not a child: Viz.create() owns the
+           pane's contents and clears them on every build, so anything
+           placed inside it is destroyed the moment the view is rebuilt. -->
+      <div id="viz-empty" class="hidden" role="status">
+        <b>No heads patched</b>
+        <span>Add lights from the library on the left, run
+          <b>scan rig</b> to find the node automatically, or load a
+          layout.</span>
+      </div>
+      <!-- Camera navigation.  A 3D view you can only orbit is not usable on
+           a tablet, so the moves a lighting op expects are buttons as well
+           as gestures: the same set Unity uses. -->
+      <div id="viz-cam" role="toolbar" aria-label="Camera view">
+        <div class="camgrp" role="group" aria-label="Named views">
+          <button type="button" class="camb" data-view="front" title="Front of house (1)">FRONT</button>
+          <button type="button" class="camb" data-view="left" title="House left (2)">LEFT</button>
+          <button type="button" class="camb" data-view="right" title="House right (3)">RIGHT</button>
+          <button type="button" class="camb" data-view="back" title="From the back of house (4)">BACK</button>
+          <button type="button" class="camb" data-view="top" title="Overhead plot (5)">TOP</button>
+        </div>
+        <div class="camgrp" role="group" aria-label="Zoom and framing">
+          <button type="button" class="camb" data-zoom="0.8" title="Zoom in (+)">+</button>
+          <button type="button" class="camb" data-zoom="1.25" title="Zoom out (−)">&minus;</button>
+          <button type="button" class="camb" id="cam-frame" title="Frame the selected heads (F)">FRAME</button>
+          <button type="button" class="camb" data-view="home" title="Reset to the default view (0)">RESET</button>
+          <button type="button" class="camb" id="cam-full"
+                  title="Full screen — move lights with the whole view (Esc to leave)"
+                  aria-pressed="false">⛶ FULL</button>
+        </div>
+      </div>
+      <p id="viz-hint">drag <b>orbit</b> &middot;
+        <b>right-drag</b> or <b>middle-drag</b> <b>pan</b> &middot;
+        <b>wheel</b> <b>zoom</b> to cursor &middot;
+        <b>two fingers</b> pinch &middot; <b>⛶ FULL</b> for the whole screen<br>
+        <b>click the view</b> then <b>WASD</b>/<b>QE</b> fly
+        (<b>Shift</b> faster) &middot; <b>1&ndash;5</b> views &middot;
+        <b>F</b> frame &middot; <b>0</b> reset<br>
+        drag a <b>light</b> to move it &middot; <b>shift</b>+drag for height
+        &middot; click to select</p>
+    </div>
+
+    <div class="prog">
+      <div class="sub-head">PROGRAMMER<span id="sel-line" class="muted small"></span></div>
+      <div id="prog-sum" class="prog-sum muted small">no values</div>
+
+      <div class="attrgrid">
+        <div class="attrtabs" id="attr-tabs" role="tablist"
+             aria-label="Attribute pages"></div>
+        <div class="attrnote" id="attr-note"></div>
+        <div class="attrlist" id="attr-list"></div>
+      </div>
+
+      <!-- The command line.  Not a scripting gimmick: on grandMA, MagicQ
+           and Eos it is the FASTEST way to do ordinary work, because
+           "heads 1-4 to 90 degrees" is one gesture instead of a drag, and
+           it is the only practical way to do the same thing to a second
+           group.  The parser lives in the engine, so this is a text field
+           over one API - not a second implementation. -->
+      <div class="cmdbar">
+        <span class="cmdprompt" aria-hidden="true">&gt;</span>
+        <input type="text" id="cmd" spellcheck="false" autocomplete="off"
+               autocapitalize="off"
+               placeholder="1-4 pan 90   ·   go   ·   cue 3 at 50   ·   ? for help"
+               aria-label="Command line"
+               aria-describedby="cmd-out">
+        <div class="cmdsuggest" id="cmd-suggest" hidden></div>
+      </div>
+      <div class="cmdout" id="cmd-out" role="status" aria-live="polite"></div>
+      <div class="cmdhelp" id="cmd-help" hidden></div>
+
+      <!-- Help.  Built from the DOM and the live state, because a help
+           page that has drifted from the buttons is worse than none: an
+           operator who cannot find a feature concludes it does not exist. -->
+      <div class="modal" id="help-dialog" hidden>
+        <div class="modal-card helpcard" role="dialog"
+             aria-modal="true" aria-label="Help">
+          <div class="modal-head">
+            <h3>Help</h3>
+            <span class="muted small">press <kbd>?</kbd>, <kbd>Esc</kbd>,
+              or click outside to close</span>
+            <button class="ibtn" id="help-close" title="close (Esc)">✕</button>
+          </div>
+          <div class="modal-body" id="help-body"></div>
+        </div>
+      </div>
+
+      <div class="frow">
+        <label for="intensity">intensity</label>
+        <input type="range" id="intensity" min="0" max="100" step="1" value="0">
+        <input type="number" id="intensity-num" min="0" max="100" step="1" value="0">
+      </div>
+
+      <div class="frow">
+        <label for="hex-in">colour</label>
+        <input type="text" id="hex-in" spellcheck="false" maxlength="7" placeholder="#ff8800">
+        <div class="swatches" id="swatches"></div>
+        <button class="cbtn mini" id="btn-white" title="full white">white</button>
+      </div>
+
+      <div id="pick-wrap">
+        <div class="pick-lab">
+          <span>pick a colour</span>
+          <span class="muted small">drag the ring, or the square ·
+            arrows work too</span>
+        </div>
+        <canvas id="pick" width="196" height="196" tabindex="0"
+                role="application"
+                aria-label="Colour picker. Arrow keys change hue and
+                            brightness, shift-arrow changes saturation,
+                            Home is white."></canvas>
+        <div class="pick-info" id="pick-info"></div>
+      </div>
+
+      <div class="frow">
+        <label for="attr-name">raw attr</label>
+        <input type="text" id="attr-name" spellcheck="false" placeholder="e.g. shutter" maxlength="24">
+        <input type="number" id="attr-val" min="0" max="255" placeholder="0–255">
+        <button class="cbtn mini" id="btn-attr" title="set one attribute on the selection">set</button>
+      </div>
+
+      <details class="fanbox">
+        <summary title="spread one value across the selection, head by head">
+          fan <span class="muted small">spread a value across the selection</span>
+        </summary>
+        <div class="fanrow">
+          <input type="text" id="fan-attr" spellcheck="false" value="pan"
+                 placeholder="attribute" maxlength="16" aria-label="Fan attribute">
+          <input type="number" id="fan-lo" value="0" step="1" min="0"
+                 aria-label="Fan from">
+          <span class="muted small">→</span>
+          <input type="number" id="fan-hi" value="255" step="1" min="0"
+                 aria-label="Fan to">
+        </div>
+        <div class="fanrow">
+          <select id="fan-mode" class="cselect" aria-label="Fan mode">
+            <option value="normal">in order</option>
+            <option value="reverse">reversed</option>
+            <option value="into_centre">into centre</option>
+            <option value="centre_out">centre out</option>
+            <option value="random">random (fixed)</option>
+          </select>
+          <select id="fan-by" class="cselect" aria-label="Fan order">
+            <option value="order">selection order</option>
+            <option value="position">by position</option>
+          </select>
+          <button class="cbtn mini go" id="btn-fan">fan</button>
+        </div>
+        <p class="muted small fanhint" id="fan-hint"></p>
+      </details>
+
+      <div class="frow">
+        <label for="fx-attr" title="running effect (FX)">fx</label>
+        <select id="fx-attr" class="cselect" title="attribute the effect drives">
+          <option value="dimmer">dimmer</option>
+          <option value="red">red</option>
+          <option value="green">green</option>
+          <option value="blue">blue</option>
+          <option value="pan">pan</option>
+          <option value="tilt">tilt</option>
+          <option value="zoom">zoom</option>
+          <option value="gobo">gobo</option>
+          <option value="shutter">shutter</option>
+        </select>
+        <select id="fx-wave" class="cselect" title="wave form">
+          <option value="sine">sine</option>
+          <option value="saw">saw</option>
+          <option value="triangle">triangle</option>
+          <option value="square">square</option>
+          <option value="random">random</option>
+        </select>
+        <input type="number" id="fx-speed" min="0.01" max="20" step="0.1" value="1.5"
+               title="speed in Hz (0.01–20)">
+        <button class="cbtn mini go" id="btn-fx-run" title="start the effect on the selection">▶ run</button>
+        <button class="cbtn mini" id="btn-fx-stop" title="stop every running effect">■ stop</button>
+      </div>
+      <div id="fx-list" class="fx-list muted small">no effects running</div>
+
+      <div id="pad-wrap" class="hidden">
+        <div class="pad-lab">pan / tilt <span id="pad-read" class="muted">P128 T128</span></div>
+        <div id="ptpad" title="drag to aim — released pointer sends the position">
+          <span id="pad-cross"></span>
+          <span class="pad-hint">drag</span>
+        </div>
+      </div>
+
+      <div class="actionrow">
+        <button class="cbtn" id="btn-locate" title="locate: open the shutter, full dimmer on the selection">Locate</button>
+        <button class="cbtn" id="btn-clear" title="clear the programmer">Clear</button>
+      </div>
+
+      <!-- ARRANGE.  The three words every console has, and the
+           distinction between them is the whole point: ALIGN puts every
+           head on one line, DISTRIBUTE spaces them evenly between the two
+           outermost, MIRROR flips the shape.  Six movers on a bar are not
+           evenly spaced after you have moved them individually, and
+           making them even again is a drag on each one - or two keys.
+           They are disabled with fewer than two heads so a button cannot
+           be a no-op. -->
+      <div class="sub-head">ARRANGE</div>
+      <div class="arrangerow">
+        <label class="inline-lab" for="arr-axis">axis</label>
+        <select id="arr-axis" class="cselect" title="which way to arrange">
+          <option value="x">x (across)</option>
+          <option value="z">z (upstage/downstage)</option>
+          <option value="y">y (height)</option>
+          <option value="all">all three</option>
+        </select>
+      </div>
+      <div class="arrangerow">
+        <button class="cbtn mini" id="btn-align"
+                title="put every selected head on ONE line, at the mean">align</button>
+        <button class="cbtn mini" id="btn-distribute"
+                title="space the heads EVENLY between the two outermost">distribute</button>
+        <button class="cbtn mini" id="btn-mirror"
+                title="reflect the shape about its centre, keeping the spacing">mirror</button>
+      </div>
+      <div class="arrangerow">
+        <label class="inline-lab" for="arr-about">mirror about</label>
+        <input type="text" id="arr-about" class="cnum" size="6"
+               placeholder="mean" title="leave empty to mirror about the mean">
+        <button class="cbtn mini" id="btn-mirror-at"
+                title="mirror about this position instead of the mean">at</button>
+      </div>
+
+      <!-- AIM: a number, in degrees, per the fixture's own travel.  The
+           command line can do this, but it is the one thing an operator
+           does while watching a single fixture, and typing into a box
+           beats typing a line. -->
+      <div class="arrangerow">
+        <label class="inline-lab" for="aim-pan">aim</label>
+        <input type="text" id="aim-pan" class="cnum" size="6"
+               placeholder="pan °" title="pan in degrees, or 0-255">
+        <input type="text" id="aim-tilt" class="cnum" size="6"
+               placeholder="tilt °" title="tilt in degrees, or 0-255">
+        <button class="cbtn mini go" id="btn-aim"
+                title="aim the selected heads">aim</button>
+      </div>
+      <div class="arrhint muted small" id="arr-hint"></div>
+
+      <!-- LIMITS AND ORIENTATION: two facts about ONE fixture that were
+           impossible to record before, and both of which look like a
+           broken rig if you cannot.
+             a dimmer floor    the lamp does not really reach 0
+             invert / swap     the head is hung the other way round -->
+      <div class="sub-head">LIMITS<span id="lim-note" class="muted small"></span></div>
+      <div class="arrangerow">
+        <label class="inline-lab" for="lim-role">channel</label>
+        <select id="lim-role" class="cselect"></select>
+        <input type="text" id="lim-lo" class="cnum" size="5" placeholder="min"
+               title="the lowest value this lamp really takes — below this it is still lit">
+        <input type="text" id="lim-hi" class="cnum" size="5" placeholder="max"
+               title="the highest value — the channel never goes above this">
+        <button class="cbtn mini" id="btn-limits"
+                title="clamp this channel on every selected head, from every source">set</button>
+        <button class="cbtn mini" id="btn-unlimits" title="remove the limits">clear</button>
+      </div>
+      <div class="arrangerow">
+        <label class="inline-lab">hang</label>
+        <button class="cbtn mini" id="btn-invpan"
+                title="this head's pan runs backwards — reverse it on the wire">inv pan</button>
+        <button class="cbtn mini" id="btn-invtilt"
+                title="this head's tilt runs backwards">inv tilt</button>
+        <button class="cbtn mini" id="btn-swap"
+                title="pan and tilt are wired the wrong way round on this head">swap</button>
+        <button class="cbtn mini" id="btn-unorient" title="back to normal">normal</button>
+      </div>
+      <div class="limlist muted small" id="lim-list"></div>
+
+      <!-- Grand master and BLACKOUT are the two controls an operator must
+           be able to reach instantly, and they were the last two rows of a
+           scrolling column: below the fold on a 1366x768 laptop, under
+           eight rows and a 300 px viewport.  Pinned to the bottom of the
+           column instead, so they are always on screen. -->
+      <div id="progsafe">
+        <div class="masterwrap">
+          <label for="master">master</label>
+          <input type="range" id="master" min="0" max="100" step="1" value="100"
+                 aria-label="Grand master">
+          <input type="number" id="master-num" min="0" max="100" step="1" value="100"
+                 aria-label="Grand master percent">
+        </div>
+        <button class="cbtn danger" id="btn-blackout" title="mask every intensity channel"
+                aria-pressed="false">BLACKOUT</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------ PLAYBACKS -->
+  <section class="ccol" id="col-pb">
+    <div class="ccol-head">
+      <h2>PLAYBACKS</h2>
+      <span class="muted small" id="pb-count"></span>
+    </div>
+    <div id="now-playing" class="nowplaying empty" role="status"
+         aria-live="polite">no playback active</div>
+    <div id="pb-empty" class="empty hidden">no playbacks active — press GO</div>
+    <div id="pb-list" class="pb-list"></div>
+  </section>
+</main>
+
+<footer id="cstatus">
+  <span id="st-output">output: —</span>
+  <span id="st-action" class="muted">last: —</span>
+  <span id="st-sel" class="muted">0 selected</span>
+  <span id="st-save" class="muted" title="engine state is saved after every change">autosave —</span>
+</footer>
+
+<!-- A cue stack that points at heads the patch no longer has is the
+     "playback does nothing" case.  The engine computes it; this says it
+     out loud, because the alternative is the operator wondering why GO
+     does nothing.  Populated by renderPills(). -->
+<div id="stale-warn" class="hidden" role="status"></div>
+
+<!-- ----------------------------------------------------- add heads dialog -->
+<div id="add-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="dlg-title">Add heads</h3>
+      <button class="ibtn" id="dlg-close" title="close">✕</button>
+    </div>
+
+    <div class="dlg-split">
+      <!-- the whole library, always browsable: searching must FILTER this
+           list, not be the only way to reach a fixture -->
+      <div class="dlg-lib">
+        <div class="dlg-tabs" role="tablist" aria-label="Fixture source">
+          <button class="dlg-tab on" id="tab-installed" role="tab"
+                  aria-selected="true" aria-controls="dlg-lib-list">installed</button>
+          <button class="dlg-tab" id="tab-share" role="tab"
+                  aria-selected="false" aria-controls="dlg-share">GDTF Share</button>
+        </div>
+
+        <div id="dlg-pane-lib">
+          <div class="dlg-lib-head">
+            library <span class="muted small" id="dlg-lib-count"></span>
+          </div>
+          <div id="dlg-lib-list" class="dlg-lib-list"></div>
+        </div>
+
+        <div id="dlg-pane-share" class="hidden" role="tabpanel"
+             aria-labelledby="tab-share">
+          <div class="dlg-lib-head">
+            GDTF Share <span class="muted small" id="share-status"></span>
+          </div>
+
+          <div id="share-signedin" class="share-signin hidden">
+            <p class="muted small">Sign in with your free gdtf-share.com
+              account. 10,000+ fixture profiles.</p>
+            <input id="share-user" type="email" placeholder="email"
+                   spellcheck="false" autocomplete="username">
+            <input id="share-pass" type="password" placeholder="password"
+                   spellcheck="false" autocomplete="current-password">
+            <button class="cbtn go" id="share-login">sign in</button>
+            <p class="muted small">Or set GDTF_SHARE_USER and
+              GDTF_SHARE_PASSWORD in <code>.env</code> to sign in
+              automatically — the password never reaches the browser.</p>
+          </div>
+
+          <div id="share-browse">
+            <input id="share-q" type="text" placeholder="search 10,000+ fixtures — e.g. par, spot, wash"
+                   spellcheck="false" autocomplete="off">
+            <div class="share-filters">
+              <select id="share-fp" class="cselect" aria-label="DMX footprint">
+                <option value="">any footprint</option>
+              </select>
+              <button class="ibtn" id="share-refresh" title="re-fetch the catalogue from gdtf-share.com">↻</button>
+            </div>
+            <div id="share-list" class="dlg-lib-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-main">
+        <input id="dlg-search" type="text"
+               placeholder="filter the library — e.g. led par, chauvet, spot"
+               spellcheck="false" autocomplete="off">
+
+      <div id="dlg-pick" class="hidden">
+      <div class="dlg-chosen">
+        <b id="dlg-name">—</b>
+        <span class="muted small" id="dlg-meta"></span>
+      </div>
+
+      <div class="frow">
+        <label for="dlg-mode">dmx mode</label>
+        <select id="dlg-mode" class="cselect grow"></select>
+      </div>
+      <div class="frow">
+        <label for="dlg-qty">qty</label>
+        <input type="number" id="dlg-qty" min="1" max="64" value="1">
+        <label class="inline-lab" for="dlg-u">universe</label>
+        <input type="number" id="dlg-u" min="1" placeholder="auto">
+        <label class="inline-lab" for="dlg-a">address</label>
+        <input type="number" id="dlg-a" min="1" placeholder="auto">
+      </div>
+      <div class="frow">
+        <label for="dlg-pos-x">x m</label>
+        <input type="number" id="dlg-pos-x" step="0.1" placeholder="0">
+        <label class="inline-lab" for="dlg-pos-y">height</label>
+        <input type="number" id="dlg-pos-y" step="0.1" placeholder="0">
+        <label class="inline-lab" for="dlg-pos-z">depth</label>
+        <input type="number" id="dlg-pos-z" step="0.1" placeholder="0">
+      </div>
+      <div class="muted small">leave universe/address empty to auto-address after the last patched head ·
+        x is centred, depth runs upstage → downstage</div>
+    </div>
+
+    </div><!-- /dlg-main -->
+
+    <div id="dlg-err" class="dlg-err hidden"></div>
+
+    <div class="modal-foot">
+      <span class="muted small">heads are appended — head numbers stay stable</span>
+      <button class="cbtn" id="btn-newprofile"
+              title="add a fixture that is not in the library — a brand with no GDTF on the Share">new profile</button>
+      <button class="cbtn" id="btn-editprofile"
+              title="give a channel a control, or fix one that is wrong">edit channels</button>
+      <button class="cbtn go" id="dlg-add" disabled>add to patch</button>
+    </div>
+
+    <div id="fx-editor" class="hidden">
+      <div class="modal-head">
+        <h3>Channels</h3>
+        <span class="muted small" id="fx-head"></span>
+        <button class="ibtn" id="fx-close" title="close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="frow">
+          <label for="fx-mode">dmx mode</label>
+          <select id="fx-mode" class="cselect grow"></select>
+          <span class="muted small" id="fx-count"></span>
+        </div>
+        <p class="muted small">A channel reading <b>raw</b> carries DMX and the light
+          responds to it, but the desk has no control behind it. Give it one here.</p>
+        <div id="fx-channels" class="fx-channels"></div>
+      </div>
+    </div>
+
+    <div id="fx-new" class="hidden">
+      <div class="modal-head">
+        <h3>New fixture profile</h3>
+        <button class="ibtn" id="fxn-close" title="close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small">For a light the GDTF Share does not have. One
+          channel name per line, in DMX order — the names are what give the
+          channels their controls.</p>
+        <div class="frow">
+          <label for="fxn-man">brand</label>
+          <input type="text" id="fxn-man" placeholder="e.g. Chauvet" maxlength="40">
+          <label class="inline-lab" for="fxn-model">model</label>
+          <input type="text" id="fxn-model" placeholder="e.g. SlimPAR T12 USB" maxlength="60">
+        </div>
+        <div class="frow">
+          <label for="fxn-mode">mode</label>
+          <input type="text" id="fxn-mode" value="Default" maxlength="30">
+        </div>
+        <label for="fxn-chans">channels, one per line</label>
+        <textarea id="fxn-chans" rows="8" spellcheck="false"
+                  placeholder="Dimmer&#10;Red&#10;Green&#10;Blue&#10;Pan&#10;Tilt"></textarea>
+        <p class="muted small">A line may also give the channel's travel:
+          <code>Tilt = -117..117</code>.  That is what lets the desk offer
+          degrees instead of a bare number, and it is worth doing for pan
+          and tilt on any mover.</p>
+        <div class="frow">
+          <button class="cbtn" id="fxn-example" title="fill with a 4-channel RGBW par">4ch par</button>
+          <button class="cbtn" id="fxn-example2" title="fill with a moving head">moving head</button>
+          <span class="muted small" id="fxn-preview"></span>
+        </div>
+        <div class="frow">
+          <button class="cbtn go" id="fxn-create">create profile</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div><!-- /#add-dialog -->
+
+<!-- ---------------------------------------------- channel sheet (DMX) ---
+     The diagnostic that did not exist anywhere: when a light does not
+     respond, the first three questions are which bytes are being sent,
+     to which channel, at what address - and none of them had an answer
+     in the console.  Values come from the frames that will actually go
+     on the wire, not a re-derivation, so it cannot drift from reality. -->
+<div id="ch-dialog" class="modal hidden" role="dialog" aria-modal="true"
+     aria-labelledby="ch-title">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h3 id="ch-title">DMX channels</h3>
+      <span class="muted small" id="ch-summary"></span>
+      <button class="ibtn" id="ch-close" title="close">✕</button>
+    </div>
+    <div id="ch-body" class="ch-body"></div>
+    <div class="modal-foot">
+      <span class="muted small" id="ch-legend">
+        <b>ch</b> slot &middot; <b>U</b>.&#8203;addr absolute address
+        &middot; a grey row is a channel the console cannot control
+      </span>
+      <button class="cbtn" id="ch-refresh">refresh</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------- AI slide-over -->
+<aside id="ai-panel" class="ai-panel" aria-label="AI console compiler">
+  <div class="ai-head">
+    <h3>AI CONSOLE</h3>
+    <button class="ibtn" id="ai-close" title="close the AI panel">✕</button>
+  </div>
+
+  <div id="ai-log" class="ai-log">
+    <div class="ai-msg bot">Plain-text compiler: type an instruction and it runs as console steps.
+      Chips act instantly, no round trip.</div>
+  </div>
+
+  <div id="ai-chips" class="ai-chips"></div>
+
+  <div class="ai-input-row">
+    <input id="ai-text" type="text" maxlength="300" spellcheck="false"
+           placeholder="everything to 70% · rainbow across the rig · group 2 pulse">
+    <button class="cbtn go" id="ai-send" title="compile and run">run</button>
+  </div>
+  <label class="ai-offline small muted" title="skip the cloud model — use the built-in keyword compiler (works with no API key)">
+    <input type="checkbox" id="ai-offline"> offline compiler
+  </label>
+
+  <div class="ai-gen">
+    <div class="ai-gen-head">SHOW GENERATOR</div>
+    <textarea id="ai-prompt" rows="2" maxlength="400" spellcheck="false"
+              placeholder="a winter wedding, slow and elegant, warm whites, avoid red"></textarea>
+    <div class="ai-gen-row">
+      <select id="ai-concepts" class="cselect grow hidden" title="pick a concept to load"></select>
+      <button class="cbtn go" id="ai-design" title="turn the prompt into 2-3 show concepts">design</button>
+      <button class="cbtn hidden" id="ai-load" title="load the chosen concept as a cue stack on PB1">✓ load show</button>
+    </div>
+    <div id="ai-gen-note" class="muted small"></div>
+  </div>
+</aside>
+
+<script src="viz.js"></script>
+<script src="console.js"></script>
+</body>
+</html>

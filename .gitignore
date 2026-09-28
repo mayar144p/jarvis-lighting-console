@@ -1,0 +1,114 @@
+# Jarvis — secrets, generated data, and machine noise.
+#
+# The one rule this file exists to enforce: **`.env` never gets committed.**
+# It holds a live LLM_API_KEY and a GDTF Share account and password, in
+# plaintext, by design. `.env.example` is the committed template and carries
+# no real values.
+#
+# Verify after changing anything here:
+#     git status --porcelain --ignored | findstr /C:"!! .env"
+# and before every push:
+#     git ls-files | findstr /i "env$ session token"
+# A credential in git history stays there even if you delete it later, so the
+# check has to happen BEFORE the first commit, not after.
+
+# ---- secrets -------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+secrets/
+*.secret
+
+# ---- the fixture library and anything derived from an account -----------
+# data/ is regenerated at run time and is not source.  It holds the local
+# fixture database, the downloaded GDTF Share cache (which contains a live
+# session cookie and vendor files published under their own terms), the
+# autosaved show state, saved show files and 976 generated patch CSVs.
+#
+# The .gdtf rule is deliberate and separate: those files come from GDTF
+# Share under a free account for YOUR use.  Redistributing them in a public
+# repository is a licensing question, not a technical one, so they are
+# excluded by name wherever they land rather than relying on data/ alone.
+data/
+*.gdtf
+*.gdTF
+fixtures_inbox/
+*.mrd
+*.pgz
+fixtures.db*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# session cookies and anything a login produced
+*session*.txt
+*session*.json
+*.cookie
+cookies.txt
+
+# ---- the operator's own show -------------------------------------------
+# Your rig, your venues, your show files.  Not mine to publish.
+*.mrk
+*.shw
+*.sbk
+autosave.json
+showsettings.ini
+*.csv            # generated patch exports - data/patch/ alone is 976 files
+
+# ---- python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---- editors / OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+Desktop.ini
+
+# ---- logs and scratch -----------------------------------------------------
+*.log
+logs/
+*.tmp
+*.bak
+*.orig
+*.rej
+tmp/
+temp/
+scratch/
+
+# docs/backup holds my working copies of the docs, kept so an accidental
+# truncation is recoverable.  They are duplicates of files that are already
+# tracked, and a repository is the wrong place to keep a backup of itself.
+docs/backup/
+
+# ---- credentials that live in shell history or a venv -------------------
+.history
+.netrc
+.npmrc
+.pypirc
