@@ -1856,6 +1856,53 @@ function buildPlayback(p) {
     row.className = "cuerow";
     row.setAttribute("role", "option");
     row.title = "GO to cue " + c.n + " " + (c.name || "");
+
+    /* THE TIMELINE STRIP - one bar per cue, in proportion.
+     *
+     * A cue list as text says what each cue is; it does not say what the
+     * show FEELS like.  Two stacks with identical cue names and numbers can
+     * be a 30-second build or a 5-minute one, and the only way to see that
+     * is to look at the durations side by side - which is what this is.
+     *
+     * The three segments are the three things a cue does, in the order it
+     * does them: FADE in, HOLD, then WAIT (its follow) before the next one
+     * starts by itself.  The wait segment is the one that matters and the
+     * one that did not exist before per-cue follow: a bar with no tail
+     * waits for GO, a bar with a tail runs itself, and you can see where
+     * the automatic part of the show begins.
+     *
+     * Scaled against the LONGEST cue in the stack, not to a fixed number of
+     * seconds - a show of 2-second cues and a show of 40-second cues are
+     * both legible, and a fixed scale would flatten one of them to
+     * nothing.  A minimum width keeps a very short cue visible. */
+    const isAuto = typeof c.follow_s === "number" && c.follow_s > 0;
+    const inherited = c.follow_s === undefined;
+    const f = Math.max(0, +(c.fade_s || 0));
+    const h = Math.max(0, +(c.hold_s || 0));
+    const w = isAuto ? c.follow_s : 0;
+    const tl = document.createElement("span");
+    tl.className = "cuetimeline"
+      + (isAuto ? " auto" : " wait")
+      + (inherited ? " inherited" : "");
+    const mkSeg = (cls, secs, title) => {
+      if (!(secs > 0)) return;
+      const s = document.createElement("i");
+      s.className = cls;
+      s.style.flexGrow = String(secs);
+      s.title = title;
+      tl.appendChild(s);
+    };
+    mkSeg("seg-fade", f, "fade " + f + "s");
+    mkSeg("seg-hold", h, "hold " + h + "s");
+    mkSeg("seg-follow", w, isAuto
+      ? ("auto after " + w + "s")
+      : (inherited ? "inherits the stack delay" : "waits for GO"));
+    tl.title = isAuto
+      ? ("fade " + f + "s · hold " + h + "s · auto " + w + "s")
+      : ("fade " + f + "s · hold " + h + "s · "
+         + (inherited ? "inherits the stack delay" : "waits for GO"));
+    row.appendChild(tl);
+
     const cn = document.createElement("span");
     cn.className = "num";
     cn.textContent = c.n;
@@ -1865,7 +1912,9 @@ function buildPlayback(p) {
     const t = document.createElement("span");
     t.className = "t";
     t.textContent = "fade " + (c.fade_s !== undefined ? c.fade_s : 0) +
-      "s · hold " + (c.hold_s !== undefined ? c.hold_s : 0) + "s";
+      "s · hold " + (c.hold_s !== undefined ? c.hold_s : 0) + "s"
+      + (isAuto ? " · auto " + c.follow_s + "s"
+        : (inherited ? " · stack" : " · wait"));
     row.append(cn, nm, t);
     row.onclick = async () => {
       if (!card.active) {
@@ -1896,7 +1945,49 @@ function buildPlayback(p) {
     holdIn.type = "number"; holdIn.step = "0.1"; holdIn.min = "0";
     holdIn.value = c.hold_s !== undefined ? c.hold_s : 0;
     holdIn.title = "hold seconds";
-    panel.append(nameIn, fadeIn, holdIn);
+
+    /* THE FOLLOW CELL - the thing that makes a stack a show.
+     *
+     * Follow used to be one delay for the whole playback, so every cue in
+     * it behaved identically and a sequence could not be "wait here, wait
+     * here, then run by itself".  It is a property of the CUE now, and a
+     * cue either waits for GO or names its own seconds.
+     *
+     * The control is a checkbox plus a number, because "wait" is not zero
+     * seconds and one field cannot say both.  A single number box reading
+     * 0 for "wait" is how a show ends up with a cue that fires the instant
+     * you look at it.
+     *
+     * `c.follow_s === undefined` means the cue has no opinion and inherits
+     * the stack default, so the box starts empty rather than guessing - an
+     * inherited cue and a cue that explicitly waits are different states
+     * and the field has to be able to say which. */
+    const fu = document.createElement("div");
+    fu.className = "cuefollow";
+    const autoIn = document.createElement("input");
+    autoIn.type = "checkbox";
+    autoIn.id = "cue-auto-" + p.n + "-" + c.n;
+    autoIn.checked = typeof c.follow_s === "number" && c.follow_s > 0;
+    const folIn = document.createElement("input");
+    folIn.type = "number"; folIn.step = "0.1"; folIn.min = "0";
+    folIn.value = typeof c.follow_s === "number" && c.follow_s > 0
+      ? c.follow_s : (c.follow_s === undefined ? "" : 0);
+    folIn.title = "seconds before the next cue starts by itself";
+    folIn.placeholder = "stack default";
+    const folLab = document.createElement("label");
+    folLab.className = "cflab";
+    folLab.append(autoIn);
+    const folTxt = document.createElement("span");
+    folTxt.textContent = "auto";
+    folLab.append(folTxt);
+    fu.append(folLab, folIn);
+    // A cue with no opinion shows the stack's, so the operator can see what
+    // it is actually going to do without going round the loop.
+    fu.title = (c.follow_s === undefined
+      ? "no follow of its own — inherits the stack delay"
+      : (c.follow_s > 0 ? "auto-advances after " + c.follow_s + "s"
+                        : "waits for GO"));
+    panel.append(nameIn, fadeIn, holdIn, fu);
 
     const info = document.createElement("div");
     info.className = "cueinfo";
@@ -1912,11 +2003,28 @@ function buildPlayback(p) {
     };
     const P = p.n, N = c.n;
     const last = cueIndex === (p.stack || []).length - 1;
-    act("apply", "save the name, fade and hold",
-      () => doAction("edit_cue", {
-        playback: P, cue: N, name: nameIn.value,
-        fade: Number(fadeIn.value), hold: Number(holdIn.value),
-      }));
+    /* apply writes the follow as a TRISTATE, which is the part that is easy
+     * to get wrong:
+       auto ticked      -> the number in the box, so the cue runs itself
+       auto unticked    -> 0, which means WAIT, and is a decision
+       box left EMPTY   -> null, which CLEARS the cue's own value so it
+                           goes back to inheriting the stack default
+     Collapsing "empty" into 0 would silently convert every inherited cue
+     into a hard wait the first time anyone opened its editor and pressed
+     apply - a show that stops auto-advancing one cue at a time, for no
+     reason the operator did. */
+    act("apply", "save the name, fade, hold and follow",
+      () => {
+        const fv = folIn.value.trim() === "" ? null
+          : Math.max(0, Number(folIn.value) || 0);
+        doAction("edit_cue", {
+          playback: P, cue: N, name: nameIn.value,
+          fade: Number(fadeIn.value), hold: Number(holdIn.value),
+          follow: autoIn.checked ? (fv === null ? 1 : fv) : (fv === null ? 0 : fv),
+        });
+      });
+    act("reset follow", "go back to inheriting the stack default",
+      () => doAction("edit_cue", { playback: P, cue: N, follow: null }));
     act("what's in it", "what this cue actually lights",
       async () => {
         const r = await doAction("cue_info", { playback: P, cue: N });
@@ -2467,6 +2575,26 @@ const KEYMAP = [
     run: () => $("#btn-group") && $("#btn-group").click() },
   { keys: ["r"], label: "R", act: "record a cue on the active playback",
     run: () => recordCueQuick() },
+  /* THE BUILD LOOP: program a look, then R to append, O to overwrite the
+   * cue you are standing on, I to open a slot below it, D to take it out.
+   *
+   * There is deliberately NO new "selected cue" concept.  The cue you are
+   * editing is the cue the playback is ON - which is how a desk works, and
+   * it means the keyboard and the mouse cannot disagree about where you
+   * are: you GO to a cue, change the look, press O, and that cue is what
+   * changed.  A separate selection would need keeping in step with the
+   * playback pointer, and the first time it drifted an operator would
+   * overwrite the wrong cue in front of an audience.
+   *
+   * R appends, O overwrites.  They are different on purpose: appending is
+   * building, overwriting is correcting, and conflating them is how a show
+   * ends up with eleven cues when it should have ten. */
+  { keys: ["o"], label: "O", act: "OVERWRITE the cue the playback is on",
+    run: () => overwriteCurrentCue() },
+  { keys: ["i"], label: "I", act: "insert an empty cue below the current one",
+    run: () => insertAfterCurrentCue() },
+  { keys: ["d"], label: "D", act: "delete the cue the playback is on",
+    run: () => deleteCurrentCue() },
   // view
   { keys: ["f"], label: "F", act: "frame the selected heads in 3D",
     run: () => frameViz() },
@@ -2490,6 +2618,57 @@ function stepCue(dir) {
   const n = activePlaybackNo();
   if (!n) return;
   doAction(dir > 0 ? "cue_forward" : "cue_back", { playback: n });
+}
+
+/* The cue the playback is ON, as a cue NUMBER, or null.
+ *
+ * Every build binding resolves its target through here rather than reading
+ * `index` and adding 1: the index is an array position, the number is what
+ * the row shows and what every action takes, and the two are only the same
+ * while the stack is 1-based and un-renumbered.  Deriving it in one place
+ * is what keeps "delete the cue you can see" from deleting its neighbour. */
+function currentCueNo(pbNo) {
+  const n = pbNo || activePlaybackNo();
+  const pb = ((S && S.playbacks) || []).find((p) => p.n === n);
+  if (!pb || !pb.stack || pb.index < 0 || pb.index >= pb.stack.length) {
+    return null;
+  }
+  return pb.stack[pb.index].n;
+}
+
+async function overwriteCurrentCue() {
+  const pb = activePlaybackNo();
+  const cue = currentCueNo(pb);
+  if (cue == null) {
+    showErr("no cue to overwrite — press GO or R first", "info");
+    return;
+  }
+  // record_cue refuses an empty programmer, which is the right refusal: an
+  // overwrite with nothing programmed would blank the cue, and a blank cue
+  // that used to be a look is a worse accident than a key that did nothing.
+  const r = await doAction("record_cue",
+    { playback: pb, cue: cue, name: "" });
+  if (r && r.ok === false) showErr("overwrite: " + (r.error || "refused"));
+}
+
+async function insertAfterCurrentCue() {
+  const pb = activePlaybackNo();
+  const cue = currentCueNo(pb);
+  const at = cue == null ? 1 : cue + 1;
+  await doAction("insert_cue", { playback: pb, at: at });
+}
+
+async function deleteCurrentCue() {
+  const pb = activePlaybackNo();
+  const cue = currentCueNo(pb);
+  if (cue == null) {
+    showErr("no cue to delete — press GO first", "info");
+    return;
+  }
+  if (!window.confirm("Delete cue " + cue + " on PB" + pb + "?  Undo restores it.")) {
+    return;
+  }
+  await doAction("delete_cue", { playback: pb, cue: cue });
 }
 
 function nudgeIntensity(step) {

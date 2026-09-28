@@ -515,6 +515,65 @@ body.fs-lock { overflow: hidden; }
 /* Cue rows are buttons now: a cue could only be reached by pressing GO
    over and over before, which is not how anyone runs a show. */
 button.cuerow { cursor: pointer; font: inherit; text-align: left; }
+
+/* THE TIMELINE STRIP.
+   A cue list as text says what each cue IS; it does not say what the show
+   FEELS like.  Two stacks with identical names and numbers can be a
+   30-second build or a 5-minute one, and the only way to see that is to
+   look at the durations side by side.
+
+   Three segments in the order the cue does them: fade in, hold, then WAIT
+   before the next starts by itself.  The wait tail is the part that only
+   exists because follow is per-cue now: a bar with no tail waits for GO, a
+   bar with a tail runs itself, and you can see where the automatic part of
+   a show begins.
+
+   `flex-grow` carries the seconds, so the bar is in proportion to the
+   cue's own timing and needs no JavaScript to size it.  The min-width
+   stops a very short cue vanishing, and the three segments differ in
+   brightness as well as hue, because two of them read as "dark" to a
+   red-green colourblind operator. */
+.cuetimeline {
+  flex: 0 0 auto;
+  display: flex; align-items: stretch;
+  width: 62px; height: 9px;
+  border-radius: 3px; overflow: hidden;
+  background: rgba(255, 255, 255, .05);
+  margin-right: 2px;
+}
+.cuetimeline i { display: block; min-width: 2px; }
+.cuetimeline .seg-fade   { background: #4a7fd6; }
+.cuetimeline .seg-hold   { background: #6f7f9e; }
+.cuetimeline .seg-follow { background: var(--accent); }
+.cuetimeline.wait { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .10); }
+.cuetimeline.auto { box-shadow: inset 0 0 0 1px var(--accent); }
+/* An inherited cue's tail is not its own, and the distinction matters:
+   "waits" is a decision and "inherits" is an absence.  They look different
+   so the strip is not quietly lying about which one this is. */
+.cuetimeline.inherited { opacity: .55; }
+
+/* The follow control: a tick plus a box, because "wait" is not zero seconds
+   and one field cannot say both.  An EMPTY box means the cue has no
+   opinion of its own and inherits the stack default. */
+.cuefollow {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 3px;
+}
+.cflab {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 10.5px Consolas, "Cascadia Mono", monospace;
+  color: var(--muted); cursor: pointer; user-select: none;
+}
+.cflab input { accent-color: var(--accent); cursor: pointer; }
+.cuefollow input[type="number"] {
+  width: 5.4rem;
+  background: rgba(13, 17, 26, .8);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font: inherit;
+}
 button.cuerow:hover { border-color: var(--accent); color: var(--text); }
 button.cuerow:focus-visible { outline: 2px solid var(--accent); }
 .cuerow .num { font: 11px Consolas, monospace; width: 16px; }

@@ -497,7 +497,13 @@ def _normalize_playbacks(saved) -> list[dict]:
         base.update({"name": str(pb.get("name") or ""),
                      "stack": stack, "index": index,
                      "active": bool(pb.get("active")) and bool(stack),
-                     "level": _clamp(pb.get("level", 100), 0, 100)})
+                     "level": _clamp(pb.get("level", 100), 0, 100),
+                     # The crossfade TIME comes back; the running crossfade
+                     # does not.  Reloading a show mid-fade with a stale
+                     # start value would snap the fader on load, and the
+                     # operator would think the console had lost it.
+                     "xfade_s": (max(0.0, float(pb["xfade_s"]))
+                                 if pb.get("xfade_s") is not None else None)})
         Engine._apply_follow(base, pb)
     return playbacks
 
@@ -3548,7 +3554,7 @@ class Engine:
         return self.playbacks[num - 1]
 
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
-                      cue=None, **_):
+                      cue=None, follow=None, **_):
         pb = self._playback(playback if playback is not None else 1)
         if not self.programmer:
             raise ValueError("programmer is empty - set something first")
@@ -3562,10 +3568,30 @@ class Engine:
                  "fade_s": float(fade if fade is not None else 0.0),
                  "hold_s": float(hold if hold is not None else 0.0),
                  "values": values}
+        # follow_s is stored ONLY when the caller gave one, so a new cue
+        # INHERITS the stack's follow.
+        #
+        # Writing an explicit 0 here - "a new cue waits by default" - looked
+        # safer and was wrong, because `_cue_follow` gives the cue's own
+        # value precedence over the stack delay.  So every fresh cue became a
+        # hard wait, `follow_set(delay=2)` stopped having any effect at all,
+        # and fourteen existing follow tests failed at once.  That is the
+        # whole argument for the absent/0 distinction: absent is "no
+        # opinion, use the stack's", and 0 is "wait, whatever the stack
+        # says".  A cue created without being told otherwise has no opinion.
+        if follow is not None:
+            entry["follow_s"] = max(0.0, float(follow))
         while len(pb["stack"]) < cue_n - 1:
             pad = len(pb["stack"]) + 1
             pb["stack"].append({"n": pad, "name": f"Cue {pad}", "fade_s": 0.0,
-                                "hold_s": 0.0, "values": {}})
+                                "hold_s": 0.0, "values": {},
+                                # A padding cue has NO follow of its own, so
+                                # it inherits.  Giving it 0 would make every
+                                # gap in a show a hard stop; giving it the
+                                # stack delay would make it fire over a slot
+                                # nobody programmed.  Inheriting is the only
+                                # answer that is neither.
+                                })
         if cue_n <= len(pb["stack"]):
             pb["stack"][cue_n - 1] = entry
         else:
@@ -3597,7 +3623,7 @@ class Engine:
                 cue["name"] = f"Cue {i}"
 
     def _a_insert_cue(self, playback=None, at=None, cue=None, name="",
-                      fade=None, hold=None, **_):
+                      fade=None, hold=None, follow=None, **_):
         """Insert an EMPTY cue at a position, shifting the rest down.
 
         Empty on purpose: the point is to open a slot to record into, not
@@ -3613,6 +3639,10 @@ class Engine:
                  "fade_s": float(fade if fade is not None else 0.0),
                  "hold_s": float(hold if hold is not None else 0.0),
                  "values": {}}
+        # Inherits, like a recorded cue - see record_cue.  An inserted slot
+        # with no opinion of its own is the right answer: a "record me here"
+        # marker that then refuses to be stepped through would be worse than
+        # useless, and one that always auto-fires would be worse still.
         stack.insert(pos - 1, entry)
         self._renumber(stack)
         return {"playback": pb["n"], "cue": pos, "cues": len(stack),
@@ -3684,7 +3714,7 @@ class Engine:
                 "summary": f"renamed cue {num} to {label!r}"}
 
     def _a_edit_cue(self, playback=None, cue=None, fade=None, hold=None,
-                    name=None, **_):
+                    name=None, follow=None, **_):
         """Change a cue's timing or name in place, without re-recording it."""
         pb = self._playback(playback if playback is not None else 1)
         stack = pb["stack"]
@@ -3702,11 +3732,28 @@ class Engine:
         if name is not None and str(name).strip():
             entry["name"] = str(name).strip()
             changed.append("name")
+        # follow=null CLEARS the cue's own value, so it goes back to
+        # inheriting the stack default.  That has to be expressible, or a cue
+        # pinned to "wait" can never be released once the operator changes
+        # their mind.  `_` is the leftover kwargs bag, so "follow" in it
+        # means the caller MENTIONED follow even when the value is null -
+        # the only way to tell "set it to wait" from "never mentioned it".
+        if "follow" in _:
+            if follow is None:
+                entry.pop("follow_s", None)
+                changed.append("follow back to the stack default")
+            else:
+                entry["follow_s"] = max(0.0, float(follow))
+                changed.append("follow %s"
+                               % ("wait" if entry["follow_s"] <= 0
+                                  else f"{entry['follow_s']:g}s"))
         if not changed:
-            raise ValueError("give a fade, a hold or a name to change")
+            raise ValueError(
+                "give a fade, a hold, a name or a follow")
         return {"playback": pb["n"], "cue": num,
                 "fade_s": entry["fade_s"], "hold_s": entry["hold_s"],
                 "name": entry["name"],
+                "follow_s": entry.get("follow_s"),
                 "summary": f"cue {num}: " + ", ".join(changed)}
 
     def _a_cue_info(self, playback=None, cue=None, **_):
@@ -3876,12 +3923,45 @@ class Engine:
         start = pb["index"] if pb["index"] >= 0 else -1
         return self._goto(pb, start + 1, self._clock())
 
-    def _a_playback_level(self, playback=None, level=None, **_):
+    def _a_playback_level(self, playback=None, level=None, xfade=None,
+                          **_):
+        """Set a playback's fader level, optionally over a crossfade.
+
+        `xfade` in seconds is the time to travel to the new level.  Without
+        it the move is instant, which is the default because an operator
+        building a show wants the level they asked for NOW - a crossfade on
+        every level change would make programming a fader feel broken.
+
+        The fader is not the cue's fade, and confusing the two is a real
+        trap: `fade_s` moves the LOOK inside a cue, this moves the FADER
+        that scales the whole stack.  A cue fading in under a playback at
+        zero shows nothing at all, and a fader snapping to 100 under an
+        up-cue punches the entire stack to full.  Both are set here and
+        independently.
+        """
         pb = self._playback(playback if playback is not None else 1)
         if level is None:
             raise ValueError("level is required (0-100)")
-        pb["level"] = _clamp(level, 0, 100)
-        return {"playback": pb["n"], "level": pb["level"]}
+        now = self._clock()
+        want = _clamp(level, 0, 100)
+        dur = 0.0
+        if xfade not in (None, ""):
+            try:
+                dur = float(xfade)
+            except (TypeError, ValueError):
+                raise ValueError("not a number: %r" % (xfade,)) from None
+            dur = max(0.0, min(600.0, dur))
+        # Where the fader is NOW, not where it was left - otherwise a second
+        # level change during a crossfade jumps back to the old start and
+        # the fader visibly stutters.
+        frm = self._pb_level_now(pb, now) if dur > 0 else int(pb.get("level", 100))
+        pb["level"] = want
+        pb["xfade"] = ({"from": frm, "t0": now, "dur": dur} if dur > 0
+                       else None)
+        return {"playback": pb["n"], "level": want, "xfade_s": dur or None,
+                "summary": "PB%d level %g%%%s" % (
+                    pb["n"], want,
+                    " over %gs" % dur if dur > 0 else "")}
 
     def _a_playback_release(self, playback=None, **_):
         pb = self._playback(playback if playback is not None else 1)
@@ -4053,8 +4133,16 @@ class Engine:
         f = pb["follow"]
         now = self._clock() if now is None else now
         pending = f["at"] if (f["on"] and not f["paused"]) else None
+        # What the stack is ACTUALLY about to do, which is not the same
+        # thing as whether follow is armed.  A stack can be armed and still
+        # be sitting on a cue that waits, and a UI that only reads `on`
+        # would say "auto" over a cue that is going to hold until somebody
+        # presses GO.
+        cue_follow = self._cue_follow(pb)
         return {"on": f["on"], "delay": f["delay"], "paused": f["paused"],
                 "loop": f["loop"],
+                "cue_follow_s": cue_follow,
+                "waits": cue_follow is None,
                 "in": (round(max(0.0, pending - now), 1)
                        if pending is not None else None)}
 
@@ -4299,8 +4387,43 @@ class Engine:
         active = [pb for pb in self.playbacks
                   if pb["active"] and pb["stack"] and pb["index"] >= 0]
         active.sort(key=lambda p: p.get("order", 0), reverse=True)
-        return [(int(pb.get("level", 100)), self._pb_values(pb, now))
+        # The level is read HERE and nowhere else on the way to the wire, so
+        # this is the one place a crossfade has to be applied.  Doing it in
+        # `playback_level` instead - by writing an intermediate value and
+        # hoping something animates it - is the version that needs a second
+        # clock and a second source of truth, and this file already has one
+        # of each for cue fades.
+        return [(self._pb_level_now(pb, now), self._pb_values(pb, now))
                 for pb in active]
+
+    def _pb_level_now(self, pb: dict, now: float) -> int:
+        """A playback's fader level, mid-crossfade if one is running.
+
+        A cue's `fade_s` moves the LOOK.  A crossfade moves the FADER, and
+        they are different things: fading a cue in while its playback sits at
+        0 does nothing visible, and snapping a fader from 0 to 100 while a
+        cue is up punches the whole stack to full.  On a desk both exist and
+        they are set independently, so this is per playback.
+
+        With no crossfade set it is instant, which is what every stack did
+        before and what an operator wants when they are building: the level
+        they asked for, now.
+        """
+        target = _clamp(pb.get("level", 100), 0, 100)
+        xf = pb.get("xfade")
+        if not xf:
+            return target
+        dur = float(xf.get("dur") or 0.0)
+        if dur <= 0:
+            return target
+        t = (now - float(xf["t0"])) / dur
+        if t >= 1.0:
+            pb["xfade"] = None                    # finished; stop reporting
+            return target
+        if t <= 0:
+            return _clamp(xf.get("from", 0), 0, 100)
+        a = float(xf.get("from", 0))
+        return int(round(a + (target - a) * t))
 
     def _pb_values(self, pb: dict, now: float) -> dict:
         """Current (possibly fading) values of one playback."""
@@ -5941,6 +6064,13 @@ class Engine:
         return {"n": pb["n"], "name": pb["name"], "stack": pb["stack"],
                 "index": pb["index"], "active": pb["active"],
                 "level": pb["level"],
+                # The crossfade TIME, not the running fade.  Saving the
+                # running one would reload a show mid-fade with a stale
+                # start value, and saving nothing means the console forgets
+                # it and the operator sets it again wondering why it was
+                # there before.
+                "xfade_s": (float(pb["xfade"]["dur"])
+                            if pb.get("xfade") else None),
                 "follow": {"on": f["on"], "delay": f["delay"],
                            "paused": f["paused"], "loop": f["loop"]}}
 
@@ -6218,10 +6348,24 @@ class Engine:
         return {"n": cue["n"], "name": cue["name"], "fade_s": cue["fade_s"]}
 
     def _pb_public(self, pb: dict) -> dict:
+        # `follow_s` has to be in here or the cue's follow cannot be shown,
+        # let alone edited.  It was missing, so the whole per-cue follow
+        # feature was invisible in the browser while working perfectly on
+        # the wire - which is the most expensive kind of missing field: one
+        # that looks like a UI problem and is a serialisation one.
+        #
+        # `follow_s` is published as null rather than omitted when the cue has
+        # no opinion, because null and absent mean DIFFERENT things to the
+        # cue list: one inherits the stack default, the other waits.
         return {"n": pb["n"], "name": pb["name"], "active": pb["active"],
-                "level": pb["level"], "index": pb["index"],
+                "level": pb["level"],
+                "xfade_s": (float(pb["xfade"]["dur"])
+                            if pb.get("xfade") else None),
+                "index": pb["index"],
                 "stack": [{"n": c["n"], "name": c["name"],
-                           "fade_s": c["fade_s"], "hold_s": c["hold_s"]}
+                           "fade_s": c["fade_s"], "hold_s": c["hold_s"],
+                           "follow_s": c.get("follow_s"),
+                           "empty": not (c.get("values") or {})}
                           for c in pb["stack"]],
                 "cue": self._pb_cue(pb),
                 "follow": self._follow_public(pb)}
