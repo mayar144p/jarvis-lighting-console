@@ -8364,8 +8364,30 @@ def _standalone_suites():
     ("api auth", test_api_auth),
     ("gdtf geometry", test_gdtf_geometry),
     ("gdtf twin", test_gdtf_twin),
+    ("fx library", test_fx_library),
     )
 
+
+
+def test_fx_library() -> None:
+    """Named effects, and the claim that an effect is offered only to a
+    fixture that can actually do it.
+
+    The promise the whole feature rests on.  A picker that lists Circle for
+    a PAR is worse than one that omits it, because the operator finds out
+    at 4pm on a rig that nothing happened.  So the filter is a pure
+    function in `app/fxlib.py`, the engine and the UI both call it, and it
+    is checked here against the rig's four real capability sets.
+
+    The checks live in `tools/_fx_check.py` rather than inline because
+    pasting them in means re-indenting every line by string surgery, and
+    that is a reliable way to end up with a test that silently stopped
+    running.
+    """
+    print("fx library (capability filter, purity, movement)")
+    from tools import _fx_check
+
+    _fx_check.run(check)
 
 
 def check_js() -> None:
