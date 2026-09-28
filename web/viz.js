@@ -223,6 +223,60 @@
     "varying vec4 vCol;\n" +
     "void main() { gl_FragColor = vCol; }\n";
 
+  /* GDTF fixture models.
+   *
+   * A per-node model matrix rather than baking transforms into the vertices,
+   * because the vertices are uploaded ONCE per definition and shared by every
+   * instance of that type - which is the entire point of the definition
+   * cache.  Baking would mean re-uploading 856 triangles per head per frame.
+   *
+   * Normals come from the upper 3x3 of uModel.  That is only correct because
+   * the transform is a rotation plus a UNIFORM scale: uniform scale does not
+   * change a normal's direction, so normalising in the shader is enough.  A
+   * non-uniform scale would need the inverse transpose, and fitToProfile
+   * deliberately never produces one - see the note there about squashing a
+   * fixture to fit its declared box.
+   *
+   * Lighting is deliberately cheap: one key direction, a hemispheric fill,
+   * and a rim.  This is a visualiser, not a renderer - but a fixture drawn
+   * with flat colour reads as a cardboard cut-out, and the whole point of
+   * using the real model is that it looks like the real thing. */
+  const VS_MESH =
+    "attribute vec3 aPos;\n" +
+    "attribute vec3 aNrm;\n" +
+    "uniform mat4 uVP;\n" +
+    "uniform mat4 uModel;\n" +
+    "varying vec3 vN;\n" +
+    "varying vec3 vW;\n" +
+    "void main() {\n" +
+    "  vec4 w = uModel * vec4(aPos, 1.0);\n" +
+    "  vW = w.xyz;\n" +
+    "  vN = mat3(uModel) * aNrm;\n" +
+    "  gl_Position = uVP * w;\n" +
+    "}\n";
+  const FS_MESH = PREC +
+    "uniform vec3 uCam;\n" +
+    "uniform vec3 uColor;\n" +
+    "uniform vec3 uEmit;\n" +
+    "uniform float uSel;\n" +
+    "varying vec3 vN;\n" +
+    "varying vec3 vW;\n" +
+    "void main() {\n" +
+    "  vec3 n = normalize(vN);\n" +
+    "  vec3 v = normalize(uCam - vW);\n" +
+    "  if (dot(n, v) < 0.0) n = -n;          // two-sided: models are open\n" +
+    "  const vec3 key = vec3(0.35, 0.82, 0.45);\n" +
+    "  float lam = max(dot(n, key), 0.0);\n" +
+    "  float sky = 0.5 + 0.5 * n.y;\n" +
+    "  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);\n" +
+    "  vec3 c = uColor * (0.16 + 0.62 * lam + 0.30 * sky) + vec3(rim) * 0.16;\n" +
+    // A lit fixture throws its own colour back off the housing, which is
+    // most of what tells the operator that head 17 is the one in the cue.
+    "  c += uEmit * (0.22 + 0.55 * max(dot(n, normalize(uEmit + 1e-4)), 0.0));\n" +
+    "  c = mix(c, vec3(0.42, 0.86, 1.0), uSel * 0.55);\n" +
+    "  gl_FragColor = vec4(c, 1.0);\n" +
+    "}\n";
+
   const VS_BG =
     "attribute vec2 aP;\n" +
     "varying float vS;\n" +
@@ -374,6 +428,12 @@
     // GL objects (null when WebGL is unavailable)
     let gl = null, progs = true;
     let prSolid = null, prBg = null, prBeam = null, prPool = null;
+let prMesh = null, hasUint = false;
+// The GDTF twin's scene, handed over by the console.  Null until it is, and
+// the visualiser behaves exactly as it always did while it is null - see
+// setTwin for why that has to be true rather than merely convenient.
+let twin = null;
+let twinDrawn = 0;
     let bufMain = null, bufBg = null, bufBeam = null, bufPool = null;
     let glCap = 0, BEAM_VERTS = 0, POOL_VERTS = 0;
     const enLocs = [];
@@ -1321,6 +1381,34 @@
         ["aAng", "aT"]);
       prPool = pack(link(VS_POOL, FS_POOL),
         ["uVP", "uC", "uR", "uF", "uRad", "uColor", "uAlpha"], ["aP"]);
+      prMesh = pack(link(VS_MESH, FS_MESH),
+        ["uVP", "uModel", "uCam", "uColor", "uEmit", "uSel"],
+        ["aPos", "aNrm"]);
+      // 32-bit indices.  WebGL 1 needs this for any mesh over 65k vertices,
+      // and GDTF models are exported straight out of 3D Studio, so a
+      // detailed fixture will cross that line.  If it is missing we fall
+      // back to 16-bit indices rather than drawing a corrupted mesh.
+      hasUint = !!gl.getExtension("OES_element_index_uint");
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      // NO back-face culling, deliberately, and this is the bug that hid the
+      // whole feature the first time it ran.
+      //
+      // The GDTF -> visualiser axis swap is a TRANSPOSITION: exchanging the
+      // Y and Z axes.  A transposition is a reflection, determinant -1, and
+      // a reflection reverses triangle winding.  So a model whose faces were
+      // counter-clockwise when it was authored are clockwise by the time
+      // they reach the GPU, and `cullFace(BACK)` with the default
+      // `frontFace(CCW)` throws every visible face away.  The draw calls
+      // still happen - eight of them, all with valid matrices - so a
+      // "how many did we draw" counter cheerfully reported success while
+      // the screen showed nothing at all.  Counting draws is not counting
+      // pixels, and only looking at the screen finds this.
+      //
+      // The shader already flips the normal toward the viewer, so the models
+      // are lit correctly two-sided, and a fixture is a few hundred triangles
+      // where culling saves nothing worth having.
+      gl.disable(gl.CULL_FACE);
 
       // background quad (clip space)
       bufBg = gl.createBuffer();
@@ -1425,10 +1513,174 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, bufPool);
       setAttrs(prPool, [[prPool.a.aP, 2, 8, 0]]);
     }
+    function useMesh() {
+      if (curProg !== 4) {
+        gl.useProgram(prMesh.p);
+        gl.uniformMatrix4fv(prMesh.u.uVP, false, vpM);
+        gl.uniform3f(prMesh.u.uCam, eye[0], eye[1], eye[2]);
+        curProg = 4;
+      }
+      curBlend = 0;                 // meshes are opaque, never blended
+    }
+
+    /* ------------------------------------------------- the GDTF twin pass
+     *
+     * Does the GL pass draw this fixture's real model?  One predicate, used
+     * by the 2D body pass to decide to stand down.
+     *
+     * It asks the SCENE, not the manifest, because a definition can have
+     * geometry and still have failed to load its mesh - a 404, a truncated
+     * download, a format this browser's GL cannot index.  In that case the
+     * fixture must fall back to its 2D body, and asking the manifest would
+     * say "yes, it has geometry" and leave a hole where the fixture is. */
+    function twinHasModel(f) {
+      if (!twin || !twinDrawn) return false;
+      const hn = f && (f.head_no != null ? f.head_no : f.n);
+      if (hn == null) return false;
+      const inst = twin.get(hn);
+      return !!(inst && inst.hasGeometry && inst.hasGeometry());
+    }
+
+    /* Upload a definition's meshes into GPU buffers, ONCE.
+     *
+     * This is where "one definition, one load, many instances" becomes real
+     * rather than aspirational: the buffers hang off the Definition, so
+     * forty heads of one type cost one upload and one set of buffers, and
+     * every instance afterwards is just a different uModel.
+     *
+     * Positions and normals are interleaved into a single buffer so the
+     * whole mesh is one binding and one attrib setup.  Indices go into an
+     * ELEMENT_ARRAY_BUFFER, which is VAO-free state in WebGL 1 - so the
+     * binding has to be repeated after every ARRAY_BUFFER bind, which is
+     * why it lives in the draw loop rather than in useMesh(). */
+    function uploadTwin(def) {
+      if (!def || def.gl) return def && def.gl;
+      def.gl = {};
+      for (const stem of Object.keys(def.meshes || {})) {
+        const mesh = def.meshes[stem];
+        if (!mesh || !mesh.meshes || !mesh.meshes.length) continue;
+        let total = 0;
+        for (const m of mesh.meshes) total += m.positions.length / 3;
+        if (!total) continue;
+        const inter = new Float32Array(total * 6);
+        let k = 0;
+        for (const m of mesh.meshes) {
+          const n = m.positions.length;
+          for (let i = 0; i < n; i += 3) {
+            inter[k++] = m.positions[i];
+            inter[k++] = m.positions[i + 1];
+            inter[k++] = m.positions[i + 2];
+            inter[k++] = m.normals[i] || 0;
+            inter[k++] = m.normals[i + 1] || 0;
+            inter[k++] = m.normals[i + 2] || 1;
+          }
+        }
+        let idx = null, wide = false;
+        for (const m of mesh.meshes) {
+          const src = m.indices;
+          if (idx) {
+            const grow = new (wide ? Uint32Array : Uint16Array)(
+              idx.length + src.length);
+            grow.set(idx);
+            grow.set(src, idx.length);
+            idx = grow;
+          } else {
+            idx = src.slice();
+            wide = src instanceof Uint32Array;
+          }
+        }
+        if (!idx) continue;
+        // Without 32-bit indices a mesh over 65k vertices cannot be drawn
+        // as-is.  Truncating it silently would render half a fixture and
+        // look like a modelling error, so the mesh is skipped instead and
+        // the definition reports primitives.
+        if (wide && !hasUint) { def.failed[stem] = "needs 32-bit indices"; continue; }
+        const vb = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
+        const ib = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+        def.gl[stem] = { vb: vb, ib: ib, n: idx.length, wide: wide };
+      }
+      def.refreshState();
+      return def.gl;
+    }
+
+    function freeTwin(def) {
+      if (!def || !def.gl) return;
+      for (const stem of Object.keys(def.gl)) {
+        const g = def.gl[stem];
+        if (g.vb) gl.deleteBuffer(g.vb);
+        if (g.ib) gl.deleteBuffer(g.ib);
+      }
+      def.gl = null;
+    }
+
+    /* Draw every instance's real geometry.
+     *
+     * Depth-tested and opaque, so it runs BEFORE the additive beams, which
+     * must stay depth-test-free or every beam would be clipped by the
+     * fixture in front of it - including the beam that fixture is
+     * throwing, which is the one that matters most. */
+    function drawTwin() {
+      if (!twin || !prMesh) return;
+      let drew = 0;
+      // Solve here, on the frame that draws.  The console feeds DMX values
+      // in whenever the engine reports them; composing the world matrices
+      // here rather than there means a head's transform can never be one
+      // frame behind the beam it is throwing, which is the one thing this
+      // whole feature must not get wrong.
+      twin.update();
+      twin.instances.forEach((inst) => {
+        const def = inst.def;
+        if (!def || !def.nodes.length) return;
+        // Per PART, not per definition: three of four models loading draws
+        // those three.  The predicate is `hasGeometry`, which asks whether
+        // at least one node has a usable mesh, rather than `fallback`,
+        // which is a label about the definition as a whole.
+        if (!inst.hasGeometry || !inst.hasGeometry()) return;
+        if (!def.gl) uploadTwin(def);
+        if (!def.gl || !Object.keys(def.gl).length) return;
+        if (!inst.nodeWorld) return;
+        const look = inst.dmx || {};
+        const hex = look.hex || "#334155";
+        const rgb = hexRgb(hex);
+        const bright = Math.min(1, (look.a || 0) / 100);
+        useMesh();
+        const byPath = def.index();
+        const draw = (path) => {
+          const rec = byPath[path];
+          if (!rec) return;
+          const g = rec.model && def.gl[rec.model];
+          const w = inst.nodeWorld[path];
+          if (g && w) {
+            gl.uniformMatrix4fv(prMesh.u.uModel, false, w);
+            gl.uniform3f(prMesh.u.uColor,
+              0.30 + 0.42 * rgb[0], 0.32 + 0.42 * rgb[1], 0.36 + 0.42 * rgb[2]);
+            gl.uniform3f(prMesh.u.uEmit,
+              rgb[0] * bright, rgb[1] * bright, rgb[2] * bright);
+            gl.uniform1f(prMesh.u.uSel, inst.selected ? 1 : 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, g.vb);
+            setAttrs(prMesh, [[prMesh.a.aPos, 3, 24, 0],
+                              [prMesh.a.aNrm, 3, 24, 12]]);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ib);
+            gl.drawElements(gl.TRIANGLES, g.n,
+              g.wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+            drew++;
+          }
+          for (const c of rec.children) draw(c);
+        };
+        for (const r of def._roots) draw(r);
+      });
+      if (drew) { gl.depthMask(true); }
+      return drew;
+    }
 
     function render() {
       if (!gl || !progs) return;
       curProg = 0; curBlend = -1;
+      twinDrawn = 0;
       gl.viewport(0, 0, canvas.width, canvas.height);
       // sky gradient first (opaque)
       gl.disable(gl.BLEND);
@@ -1437,6 +1689,24 @@
       setAttrs(prBg, [[prBg.a.aP, 2, 8, 0]]);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.enable(gl.BLEND);
+      // --- GDTF fixture models, opaque and depth-tested, BEFORE the beams
+      //
+      // The order is the whole trick.  The beams are additive and must NOT
+      // be depth-tested, or a fixture's own beam gets clipped by that same
+      // fixture's housing.  So the models go down first, with a cleared
+      // depth buffer, and everything else carries on exactly as it did -
+      // no depth test, additive, on top.  Adding the models at the end, or
+      // leaving depth on for the beams, both look plausible and both are
+      // wrong.
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      const twinDrew = drawTwin();
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.enable(gl.BLEND);
+      if (twinDrew) twinDrawn = twinDrew;
       // upload this frame's geometry
       if (SB.n) {
         gl.bindBuffer(gl.ARRAY_BUFFER, bufMain);
@@ -1812,6 +2082,11 @@
         const look = bm ? bm.look : (f._look || cur[f.role]);
         const on = look && look.a > 0.02;
         const col = on ? look.hex : (ROLE_OFF[f.role] || ROLE_OFF.generic);
+        // If the twin drew this head's real model in the GL pass, drawing a
+        // 2D sprite on top of it as well would show two fixtures occupying
+        // one hang point - a box inside a moving head.  The 2D body is the
+        // FALLBACK, so this is the fallback decision, made in one place.
+        if (twinHasModel(f)) return;
         const spec = bodyFor(f);
         // hang point: on a bar, from the roof, or standing on the deck
         let ax, ay, az;
@@ -2516,6 +2791,14 @@
       // and touch handlers bound to a canvas nobody can reach any more
       canvas.removeEventListener("keydown", onKeyDown);
       canvas.removeEventListener("keyup", onKeyUp);
+      // The twin's per-definition GPU buffers die with the context, but
+      // deleting them explicitly means a destroyed view leaves nothing
+      // behind even if the context is kept, which is what WEBGL_lose_context
+      // being unavailable looks like.
+      if (twin && gl) {
+        try { twin.defs.forEach(freeTwin); } catch (e) { /* ignore */ }
+        twin = null;
+      }
       if (gl) {
         try {
           const ext = gl.getExtension("WEBGL_lose_context");
@@ -2624,6 +2907,41 @@
           look_tilt: (b.look && typeof b.look.tilt === "number")
                      ? b.look.tilt : null,
         };
+      },
+
+      /* Hand over the GDTF twin's scene.
+       *
+       * The visualiser does not fetch, parse, own or define any of it - it
+       * is handed a scene object and draws whatever geometry the definitions
+       * in it carry.  That is the whole integration: everything that decides
+       * WHAT a fixture looks like lives in gdtf3d.js and the GDTF, and
+       * everything that decides how to put pixels on the screen lives here.
+       *
+       * Passing null puts the visualiser back exactly as it was, which is
+       * what happens on a fixture with no geometry, on a failed fetch, and
+       * on a machine with no WebGL.  There is no state in which a bad or
+       * missing GDTF changes the existing rendering - that is the property
+       * that makes it safe to ship at all. */
+      setTwin: function (scene) {
+        if (twin && twin !== scene && gl) {
+          // Free the old definitions' GPU resources; keeping them is how a
+          // re-import turns into a slow leak.
+          twin.defs.forEach(freeTwin);
+        }
+        twin = scene || null;
+        return !!twin;
+      },
+      twinStats: function () {
+        if (!twin) return null;
+        const s = twin.stats();
+        s.drawn = twinDrawn;
+        s.uploaded = 0;
+        if (twin.defs) {
+          twin.defs.forEach((d) => {
+            if (d.gl) s.uploaded += Object.keys(d.gl).length;
+          });
+        }
+        return s;
       },
 
       /* Fixture geometry changed (re-patch, drag in the rig editor). */

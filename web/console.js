@@ -2970,9 +2970,166 @@ function rebuildViz(patch) {
     if (keepCam && viz.setCamera) viz.setCamera(keepCam, true);
     else frameViz();
     syncCamButtons();
+    // The twin is handed over AFTER the view exists, and a fresh view gets a
+    // null twin until this runs - so the visualiser is never in a state
+    // where it is holding a scene belonging to a destroyed GL context.
+    loadTwin();
   } catch (e) {
     viz = null;
   }
+}
+
+/* ==========================================================================
+ * THE GDTF TWIN
+ *
+ * The console owns this, not the visualiser, and that split is deliberate.
+ * The twin answers "what does this fixture physically look like and where
+ * is each of its parts right now"; the visualiser answers "how do I put
+ * that on screen".  The visualiser is handed a finished scene and draws
+ * whatever geometry the definitions in it carry, so the existing rendering
+ * is untouched whenever a definition has nothing - which is the case for
+ * every built-in profile, every fixture whose .gdtf has gone, and every
+ * model that fails to load.
+ *
+ * Every step here is optional and every failure is silent by design.  A
+ * console whose lights depend on a 3D file parsing is a console that stops
+ * working when a 3D file does not parse, and the DMX must go out either
+ * way.  The twin is a presentation layer; it is allowed to be absent.
+ * ========================================================================== */
+let twinScene = null;
+let twinDeg = {};        // head_no -> {pan:[lo,hi], tilt:[lo,hi]}, from the engine
+let twinTried = false;   // one attempt per patch revision, not one per frame
+
+function twinModelBytes(defId, entry) {
+  const url = "/api/console/model?id=" + encodeURIComponent(defId)
+    + "&name=" + encodeURIComponent(entry.name);
+  const headers = {};
+  if (apiToken()) headers["X-Jarvis-Token"] = apiToken();
+  return fetch(url, { headers: headers }).then((r) => {
+    if (!r.ok) throw new Error("model " + r.status);
+    return r.arrayBuffer();
+  });
+}
+
+async function loadTwin() {
+  if (!window.GDTF3D || !viz) return;
+  twinTried = true;
+  try {
+    const d = await api("/api/console/models");
+    if (!d || !d.definitions || !d.definitions.length) {
+      if (viz.setTwin) viz.setTwin(null);
+      return;
+    }
+    const scene = new window.GDTF3D.Scene();
+    d.definitions.forEach((m) => scene.addManifest(m));
+    // Hang position comes from the PATCH, not from the profile: where a
+    // fixture physically is, is the operator's decision and the engine's
+    // record, and duplicating it here would be a second source of truth.
+    if (S && Array.isArray(S.patch)) {
+      S.patch.forEach((h) => {
+        const inst = scene.get(h.head_no);
+        if (inst) inst.setPosition(h.x || 0, h.y || 0, h.z || 0);
+      });
+    }
+    twinScene = scene;
+    if (viz.setTwin) viz.setTwin(scene);
+    // Models load AFTER the scene is handed over, so a fixture appears the
+    // instant its geometry resolves rather than the instant the manifest
+    // arrives.  Each definition's load is deduped inside the scene, and the
+    // per-stem catch inside it means one bad model costs one part.
+    for (const m of d.definitions) {
+      if (!m.models || !Object.keys(m.models).length) continue;
+      await scene.loadModels(m.id, twinModelBytes);
+    }
+    if (viz.redraw) viz.redraw();
+    twinStatus();
+  } catch (err) {
+    // No error banner.  A missing or failing twin is not something the
+    // operator can act on, and shouting about it would suggest the console
+    // is broken when the only thing missing is decoration.
+    twinScene = null;
+    if (viz.setTwin) viz.setTwin(null);
+  }
+}
+
+/* Degrees, not 0..1.  The feed carries a normalised aim and the ENGINE
+ * carries the travel; the product is the physical angle, and that is what
+ * the geometry solver wants.  Deriving it here rather than in the solver
+ * keeps the travel a property of the engine's patch - it changes when the
+ * mode changes, and the twin has no business knowing that. */
+function feedTwin() {
+  if (!twinScene) return;
+  twinScene.instances.forEach((inst) => {
+    const lk = looks[inst.head] || {};
+    const dg = twinDeg[inst.head] || {};
+    const toDeg = (v, r) => (typeof v === "number" && r && r.length === 2)
+      ? r[0] + v * (r[1] - r[0]) : 0;
+    inst.setDmx({
+      hex: lk.hex || "#334155",
+      a: lk.a || 0,
+      panDeg: toDeg(lk.pan, dg.pan),
+      tiltDeg: toDeg(lk.tilt, dg.tilt),
+    });
+  });
+}
+
+/* A diagnostic surface, deliberately, not a test hook.
+ *
+ * "Why is this head still a box when its profile has a model?" is a real
+ * question, asked by real people, and the answer lives in a JavaScript
+ * object's `failed` map - invisible from the DOM, unrecoverable from the
+ * network tab once the request succeeded.  Without a way to read it, the
+ * only available response is to guess, and a wrong guess about a lighting
+ * rig is expensive.
+ *
+ * It is read-only, it exposes nothing that is not already either in the DOM
+ * or in a response this page already fetched and holds, and it is how the
+ * suite and the console agree on what "fallback" means. */
+window.jarvisTwin = function () {
+  if (!twinScene) return { present: false };
+  const defs = [];
+  twinScene.defs.forEach((d, id) => {
+    defs.push({
+      id: id, state: d.state, ok: d.ok, reason: d.reason || "",
+      refs: d.refs, scale: d.scale,
+      nodes: d.nodes.length,
+      modelsWanted: Object.keys(d.models || {}),
+      modelsLoaded: Object.keys(d.meshes || {}),
+      failed: d.failed || {},
+      onGpu: d.gl ? Object.keys(d.gl) : [],
+    });
+  });
+  return {
+    present: true, stats: twinScene.stats(), definitions: defs,
+    twins: viz && viz.twinStats ? viz.twinStats() : null,
+  };
+};
+
+function twinStatus() {
+  const el = document.getElementById("twin-status");
+  if (!el) return;
+  // The `.hidden` CLASS, matching the rest of the console.  The `hidden`
+  // attribute is reserved for the three elements that need it; a fourth
+  // would be the second convention for one idea, which is the mistake the
+  // permanently-open help dialog came from.
+  const show = !!(twinScene && viz && viz.twinStats && viz.twinStats().instances);
+  el.classList.toggle("hidden", !show);
+  if (!show) { el.textContent = ""; return; }
+  const s = viz.twinStats();
+  const bits = [];
+  if (s.fallback) {
+    bits.push(s.fallback + " generic");
+  }
+  if (s.models) {
+    bits.push(s.models + " model" + (s.models === 1 ? "" : "s")
+              + " / " + s.tris.toLocaleString() + " tris");
+  }
+  bits.push(s.definitions + " type" + (s.definitions === 1 ? "" : "s")
+            + " shared by " + s.instances + " heads");
+  el.textContent = "3D: " + bits.join(" · ");
+  el.title = s.fallback
+    ? "Fixtures with no usable GDTF model are drawn as generic bodies."
+    : "Real GDTF geometry, one shared model per fixture type.";
 }
 
 /* ------------------------------------------------------------ camera bar */
@@ -3273,6 +3430,7 @@ function applyHeads(heads) {
   heads.forEach((h) => {
     if (!h) return;
     live.add(h.n);
+    if (h.deg) twinDeg[h.n] = h.deg;
     const lk = h.look || {};
     const a = lk.on === false ? 0 : (typeof lk.a === "number" ? lk.a : 0);
     const hex = lk.hex || (looks[h.n] && looks[h.n].hex) || "#f4f7ff";
@@ -3288,6 +3446,7 @@ function applyHeads(heads) {
     }
   });
   if (changed) pushLooks();
+  else feedTwin();
 }
 
 /* Hand the current look map to the visualiser, which eases toward it. */
@@ -3295,6 +3454,10 @@ function pushLooks(holdMs) {
   vizFixtures.forEach((f) => {
     f._look = looks[f.head_no] || { hex: "#f4f7ff", a: 0 };
   });
+  // The twin is fed here, next to the visualiser, rather than from the
+  // feed's own tick: both draw on the same frame, so a head's beam and the
+  // head pointing it can never disagree by a frame.
+  feedTwin();
   if (!viz) return;
   if (viz.setLooks) viz.setLooks(looks, holdMs);
   else viz.redraw();
@@ -3328,8 +3491,13 @@ async function lookFeed() {
     const seen = new Set();
     d.heads.forEach((h) => {
       seen.add(h.n);
+      if (h.deg) twinDeg[h.n] = h.deg;
       if (mergeLook(h.n, h.hex || "#f4f7ff", h.a || 0, h)) changed = true;
     });
+    // The travel is recorded on every tick even when nothing visibly
+    // changed, because a pan that does not alter the colour still has to
+    // move the head, and the twin is fed from the same tick.
+    feedTwin();
     // A head that stops emitting must fade to dark, not linger.
     Object.keys(looks).forEach((k) => {
       if (!seen.has(Number(k)) && looks[k].a > 0) {

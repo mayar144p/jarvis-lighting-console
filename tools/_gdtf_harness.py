@@ -72,6 +72,38 @@ ok(def.node(TILT).parent === PAN,
 console.log('      pan=' + def.node(PAN).name + '  tilt=' + def.node(TILT).name
             + '  root=' + def.node(def._roots[0]).name);
 
+// The node says Model="Base"; the profile's <Models> block is the only
+// thing that connects that to `models/3ds/<long name> Base.3ds`.  A
+// manifest whose model keys did not match the node names would download and
+// parse every model and draw nothing, silently - so this is checked
+// explicitly rather than left to emerge from a triangle count.
+const named = Object.keys(m0.models || {});
+ok(named.indexOf('Base') >= 0 && named.indexOf('Body') >= 0,
+   'the manifest keys its models by the NAME a node refers to, not by the '
+   + 'file stem', named.join(', '));
+ok(named.indexOf('Lens') < 0,
+   'and a node that names a part with no model file is simply absent - the '
+   + 'Beam refers to Model="Lens" and there is no lens mesh, which is the '
+   + 'right answer rather than an error');
+let resolved = 0, unresolved = [];
+for (const p in def.index()) {
+  const rec = def.index()[p];
+  if (!rec.model) continue;
+  if (named.indexOf(rec.model) >= 0) resolved++;
+  else unresolved.push({ path: p, model: rec.model, kind: rec.kind });
+}
+ok(resolved >= 3,
+   'so every node that names a STRUCTURAL model resolves to a real mesh key',
+   resolved + ' resolved, unresolved: '
+   + (unresolved.map((u) => u.path + ':' + u.model).join(' ') || 'none'));
+// A BEAM node may legitimately name a part with no mesh: the Intimidator's
+// Lens is the lens, not a part, and the profile ships no file for it.  A
+// structural node doing the same would be a real mismatch.
+ok(unresolved.every((u) => u.kind === 'beam'),
+   'and the only node naming a model with no file is the BEAM, which is the '
+   + 'lens rather than a part - a structural node doing that would be a real '
+   + 'mismatch', JSON.stringify(unresolved));
+
 const pv = (p) => [def.node(p).localGL[12], def.node(p).localGL[13],
                    def.node(p).localGL[14]];
 ok(Math.abs(pv(PAN)[1] + 0.0934) < 1e-5 && Math.abs(pv(PAN)[2]) < 1e-5,
@@ -247,6 +279,91 @@ if (tds.meshes && tds.meshes.length) {
   ok(tds.bounds && isFinite(tds.bounds.radius) && tds.bounds.radius > 0,
      'and real bounds, for camera framing', tds.bounds && f4(tds.bounds.size));
 }
+// SIX faces over a 2x3 grid.  A face record is four uint16s - a flags word
+// and three indices - so the stride is 8 bytes.  With ONE face a 2-byte
+// stride still produces the right answer, because the single flags word is
+// the only thing it skips; with six it does not.  The first version of this
+// fixture had one face, so the suite was green against a parser that turned
+// every real fixture in the library into garbage.
+const grid = G.parse3DS(buf(models.grid), 'Grid');
+ok(!!grid.meshes && grid.meshes.length === 1, 'a six-face 3DS parses',
+   String(grid.failed));
+if (grid.meshes && grid.meshes.length) {
+  ok(grid.vertices === 6 && grid.faces === 6,
+     'with all six vertices and all six faces', grid.vertices + '/' + grid.faces);
+  const want = [0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4, 3, 4, 5, 4, 5, 2];
+  ok(grid.meshes[0].indices.length === 18
+     && Array.prototype.every.call(grid.meshes[0].indices,
+                                   (v, i) => v === want[i]),
+     'and every index read at the right STRIDE and in the right ORDER - a '
+     + '3DS face is (i, j, k, flags) with the flags word LAST, so a '
+     + 'flags-first reader sees 0xBEEF as a vertex index',
+     Array.prototype.join.call(grid.meshes[0].indices, ','));
+}
+// The real FACES chunk is LONGER than its faces (3472 bytes for 344 faces
+// occupying 2760), so a parser that insists length == 8 + count*8 rejects
+// the genuine chunk and every real fixture in the library.
+const padded = G.parse3DS(buf(models.padded), 'Padded');
+ok(!!padded.meshes && padded.meshes.length === 1,
+   'a faces chunk with trailing slack past its face data still parses - the '
+   + 'chunk length is a ceiling, not an equality', String(padded.failed));
+ok(padded.meshes && padded.faces === 6,
+   'and still reports the right face count',
+   padded.meshes ? String(padded.faces) : 'n/a');
+// A faces chunk whose indices point outside the vertex array must be
+// REJECTED, not drawn: that is the discriminator that stops the several
+// hundred other chunks in a 3DS being mistaken for faces.
+//
+// The chunk is located by its header, not by searching for the byte pattern
+// - the first version searched for the index triple and corrupted a
+// coincidental run of float bytes in the VERTEX data instead, leaving the
+// parse perfectly valid and the test asserting nothing.
+const over = (function () {
+  const b = buf(models.grid);
+  // Over the underlying BYTES, not the Buffer's elements.  `new
+  // Uint16Array(nodeBuffer)` copies 8-bit values into 16-bit slots - it does
+  // not reinterpret them - so the first version searched a completely
+  // different array, found nothing, and asserted nothing.
+  const bytes = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+  const word = (byteOff) => bytes[byteOff] | (bytes[byteOff + 1] << 8);
+  for (let bo = 0; bo + 8 < bytes.length; bo += 2) {
+    if (word(bo) !== 0x4120) continue;
+    if (word(bo + 6) !== 6) continue;            // the face count
+    // Face 4's first index: header 8, then 4 whole faces of 8 bytes.
+    const at = bo + 8 + 4 * 8;
+    bytes[at] = 60000 & 0xFF;
+    bytes[at + 1] = (60000 >> 8) & 0xFF;
+    return G.parse3DS(b, 'Over');
+  }
+  return { failed: 'could not locate the faces chunk to corrupt',
+           meshes: [] };
+})();
+ok(!!over.failed && !over.meshes.length,
+   'a faces chunk indexing past the vertex array is rejected outright',
+   String(over.failed));
+ok(typeof over.failed === 'string' && over.failed.indexOf('60000') >= 0,
+   'and SAYS WHICH INDEX - the reason it was silently generic before is '
+   + 'that JavaScript has no printf-style %: `"x %d" % n` is modulo, and '
+   + 'evaluates to the number NaN, which is falsy', String(over.failed));
+// An out-of-range index must be REPORTED, and the report must be a string.
+// It was NaN for a while, because JavaScript has no printf-style `%`:
+// `"x %d" % n` is the modulo operator, evaluates to the NUMBER NaN, and
+// NaN is falsy - so `mesh.failed || "no triangles"` silently replaced the
+// real reason with a generic one.
+const bad = G.parse3DS(buf(models.threeds), 'Bad');
+ok(bad.failed === undefined || typeof bad.failed === 'string',
+   'a parse failure is reported as a STRING',
+   typeof bad.failed + ': ' + String(bad.failed));
+const nan = (function () {
+  try {
+    const b = G.parse3DS(buf(models.grid), 'G');
+    for (const st of Object.keys(b)) {
+      if (typeof b[st] === 'number' && !isFinite(b[st])) return st;
+    }
+    return null;
+  } catch (e) { return 'threw ' + e; }
+})();
+ok(nan === null, 'and no field of a successful parse is NaN', String(nan));
 const tglb = G.parseGLB(buf(models.glb), 'Body');
 ok(!!tglb.meshes && tglb.meshes.length === 1,
    'a synthetic GLB yields its mesh', JSON.stringify(tglb.failed || {}));
@@ -277,9 +394,14 @@ ok(trunc && !trunc.threw, 'a TRUNCATED glb is reported, not thrown',
 const cache = new G.Scene();
 cache.addManifest(m0);
 let issued = 0;
+// Bytes matching the DECLARED extension, not a fixed format.  The manifest
+// says .3ds because that is what the real library ships; handing it a GLB
+// tests nothing except that a GLB is not a 3DS, and the first version of
+// this did exactly that and reported it as a loader failure.
 const fetchBytes = (id, entry) => {
   issued++;
-  return Promise.resolve(Buffer.from(models.glb, 'base64'));
+  const b64 = (entry.ext === '.glb') ? models.glb : models.grid;
+  return Promise.resolve(Buffer.from(b64, 'base64'));
 };
 const p1 = cache.loadModels(m0.id, fetchBytes);
 const p2 = cache.loadModels(m0.id, fetchBytes);     // while the first is live
@@ -293,15 +415,17 @@ p1.then(() => {
      d.state + ' / ' + JSON.stringify(d.failed));
   ok(!!d.meshes && Object.keys(d.meshes).length > 0,
      'with the parsed meshes held on the DEFINITION, not per instance');
-  // Each model is fitted to its OWN declared size, so the same unit-triangle
-  // bytes become three different meshes - which is the point: the profile,
-  // not the file, decides how big a part is.
+  // Each model is fitted to its OWN declared size, so the same source bytes
+  // become three different meshes - which is the point: the profile, not the
+  // file, decides how big a part is.  The declared sizes are the real
+  // Intimidator's, and the shared grid mesh is 2 m across, so each part
+  // lands on its own largest declared dimension.
   const bodyMax = Math.max.apply(null, d.meshes.Body.bounds.size);
-  ok(Math.abs(bodyMax - 0.32) < 1e-6,
+  ok(Math.abs(bodyMax - 0.322282) < 1e-6,
      'and each model is fitted to the size ITS part is declared to be - the '
-     + 'body to 0.32 m, the yoke to 0.23 m - from identical source bytes',
-     f4(d.meshes.Body.bounds.size));
-  ok(Math.abs(Math.max.apply(null, d.meshes.Yoke.bounds.size) - 0.23) < 1e-6,
+     + 'body to its 0.3223 m length, the yoke to 0.2311 m - from identical '
+     + 'source bytes', f4(d.meshes.Body.bounds.size));
+  ok(Math.abs(Math.max.apply(null, d.meshes.Yoke.bounds.size) - 0.231117) < 1e-6,
      'while sharing those bytes and one parsed geometry, never a re-parse',
      f4(d.meshes.Yoke.bounds.size));
   // Re-describing the same definition must NOT throw the meshes away.

@@ -258,7 +258,18 @@ body { min-width: 1080px; }          /* three columns → horizontal scroll belo
   transition: opacity .25s ease;
 }
 #viz-hint.dim { opacity: .3; }
-#viz-hint b { color: var(--text); font-weight: 600; }
+/* What the 3D view is drawing: real GDTF models where the profile has
+   them, generic bodies where it does not.  Sits above the hint, which dims
+   once the operator is driving the view, because it is information rather
+   than instruction. */
+#twin-status {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+#twin-status b { color: var(--text); font-weight: 600; }#viz-hint b { color: var(--text); font-weight: 600; }
 
 /* Full screen.  Hanging a rig means reaching across the room, and at desk
    size this view is a letterbox between two columns.

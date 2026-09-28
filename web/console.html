@@ -152,6 +152,15 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
                   aria-pressed="false">⛶ FULL</button>
         </div>
       </div>
+      <!-- What the 3D view is actually drawing.  A GDTF fixture with real
+           geometry is not a special case the operator has to notice; it is
+           the default where the profile supports it, and this says which
+           fixtures did not make it.  Hidden with the `.hidden` CLASS, not
+           the `hidden` attribute: the attribute is reserved for the three
+           elements that genuinely need it, and adding a fourth quietly
+           starts a second convention for the same thing - which is how the
+           help dialog ended up permanently open once already. -->
+      <p id="twin-status" class="hidden" aria-live="polite"></p>
       <p id="viz-hint">drag <b>orbit</b> &middot;
         <b>right-drag</b> or <b>middle-drag</b> <b>pan</b> &middot;
         <b>wheel</b> <b>zoom</b> to cursor &middot;
@@ -661,6 +670,11 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
 </aside>
 
 <script src="viz.js"></script>
+<!-- The GDTF twin's runtime.  Loaded before console.js, which hands its
+     scene to the visualiser.  A plain classic script with no dependencies,
+     and every entry point in it is optional, so a console with no WebGL
+     and no .gdtf behaves exactly as it did before it existed. -->
+<script src="gdtf3d.js"></script>
 <script src="console.js"></script>
 </body>
 </html>

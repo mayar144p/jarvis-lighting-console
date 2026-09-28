@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1660 checks, 46 suites, one command, no arguments, ~16 s (1657 in a clean clone: 3 of the geometry checks cross-check against a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
+| tests | `tools/selftest.py` | 1678 checks, 46 suites, one command, no arguments, ~16 s (1675 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1660 checks across 46 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1678 checks across 46 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1660 checks, 46 suites (section 12) |
+| | `tools/selftest.py` | 1678 checks, 46 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -862,7 +862,7 @@ exist, that a valid token works and a wrong or empty one does not, that `?token=
 refused, that an **unknown endpoint is authenticated rather than public**, and that the
 static pages are still served so a 401 cannot become a lockout.
 
-**1660 checks across 46 suites.**
+**1678 checks across 46 suites.**
 
 #### What the review got wrong
 
@@ -972,14 +972,31 @@ Verified against the real file: pan = Yoke, tilt = Body, root = Base.
 #### WHAT IS DONE, MEASURED.
 
   * `app/gdtf_geom.py` - hierarchy, pivots, beams, emitters, kinematics,
-    path-traversal-safe extraction, content-addressed cache.  47 checks.
+    path-traversal-safe extraction, content-addressed cache, and the
+    `<Models>` Name -> File mapping.  47 checks.
   * `web/gdtf3d.js` - loaders (GLB, 3DS, STL, OBJ), Definition, Instance,
-    Scene, the solver, beam location, the definition cache.  92 checks.
+    Scene, the solver, beam location, the definition cache, and the
+    profile-declared size fit.  105 checks.
+  * `web/viz.js` - a `prMesh` pass: interleaved position/normal buffers
+    uploaded ONCE per definition, a per-node `uModel` uniform, two-sided
+    lighting, depth-tested and drawn BEFORE the additive beams.
+  * `web/console.js` - fetches the manifest, builds the scene, loads each
+    definition's models once, feeds the solver the engine's DMX, and
+    reports what is real and what is generic.  Every step optional; a
+    failure is silent by design, because a console whose lights depend on
+    a 3D file parsing is a console that stops working when a 3D file does
+    not parse.
   * Two read-only routes, `/api/console/models` and `/api/console/model`.
-  * On the live rig: 3 definitions for 8 heads.  `rev9044` resolves to
-    1 node tree, 1 beam, pan=0/0, tilt=0/0/0 and 4 model files; the 5
-    built-in PARs and the SlimPAR report `ok=false` with a reason, which
-    is the fallback chain working rather than failing.
+
+On the live rig, measured in the browser:
+
+    drawn: 8    uploaded: 4 GPU buffers (one per model)
+    926 triangles, 3 types shared by 8 heads, scale 0.001
+
+  which reads on screen as: "3D: 6 generic - 4 models / 926 tris - 3 types
+  shared by 8 heads".  The 6 generics are the 5 built-in LED PARs and the
+  SlimPAR, which have no `.gdtf` at all - the fallback chain working, not
+  failing.
 
 Real measurements, not claims:
 
@@ -989,33 +1006,60 @@ Real measurements, not claims:
     three numbers a factor of 1000 apart: 3D Studio writes millimetres.
     So the profile's declared size is the authority and meshes are fitted
     to it (`fitModels`), uniformly, and a factor within 2% of a power of
-    ten is snapped to it.  Left unfitted, every mover is a kilometre
-    across, which reads as "the visualiser is broken".
-  * Composed: base at origin, yoke 93.4 mm below it, head 237.7 mm below
-    that, lens 337.7 mm below.  Pan and tilt each sweep 0/25/50/75/100%
-    with a constant 135-degree step in one direction, and the two ends of
-    the 540-degree range are genuinely different poses.
+    ten is snapped to it.  Left unfitted, every mover is drawn a kilometre
+    across, which reads as "the visualiser is broken".  The live rig
+    reports `scale: 0.001` with no intervention.
+  * Composed: base at the origin, yoke 93.4 mm below it, head 237.7 mm
+    below that, lens 337.7 mm below.  At tilt 45 degrees the head sits at
+    `(0, -0.1954, -0.102)`, which is the yoke's pivot plus its own
+    -144.3 mm pivot rotated - so the two compose, and the base does not
+    move under either.
+  * Pan and tilt each sweep 0/25/50/75/100% with a constant 135-degree
+    step in one direction, and the two ends of the 540-degree range are
+    genuinely different poses.
 
-WHAT IS NOT DONE.  Being clear, because the quality bar for this feature is
-"not just the model appears on screen" and it is not met yet.
+#### WHAT IS NOT DONE.
 
-  * NOTHING IS DRAWN.  `viz.js` still draws its generic primitives.  The
-    twin computes the correct world matrix for every node of every instance
-    and hands it to nothing.  This is the largest remaining piece: buffer
-    creation, instancing, materials, and swapping the body renderer over to
-    use a definition when one has geometry.
-  * No beam cone is built from `BeamAngle`/`FieldAngle`.  The solver
-    returns the emitter's origin and direction, which is the hard part and
-    is verified; the cone geometry from them is not written.
-  * Zoom, gobo, shutter, strobe, focus are not mapped.  The manifest
-    carries the channel roles the head has; nothing consumes them yet.
+The quality bar for this feature is "not just the model appears on
+screen", and it is met for geometry but not for light.
+
+  * The beam cones are the old ones.  The solver now returns each
+    emitter's real origin and direction from the LENS node - the hard part,
+    and verified - but nothing yet builds a cone from `BeamAngle`,
+    `FieldAngle` and `BeamRadius`.  A mover therefore shows its real
+    body and its old beam.
+  * Zoom, gobo, shutter, strobe and focus are not mapped.  The manifest
+    carries the channel roles each head has; nothing consumes them.
+  * No materials or textures: one Lambert-plus-rim shader for everything.
+    A profile's material information is not read.
+  * No performance benchmark at 10/50/100/250/500 fixtures.  Scene update
+    is 4x4 arithmetic over tiny trees and is O(instances x nodes), and the
+    per-definition buffers mean a 200-head rig of four types uploads four
+    models - but "is fast" is not a measurement and none has been made.
   * `buildScene()` in viz.js is still called per frame.  Unchanged by this
     work, and it was already the case before.
-  * No performance benchmark at 10/50/100/250/500 fixtures.  Scene update is
-    pure 4x4 arithmetic over tiny trees and is O(instances x nodes), but
-    "is fast" is not a measurement and has not been made.
-  * Materials, textures and gobo wheels are not loaded.
+  * The generic fallback bodies are still 2D canvas sprites, so a rig
+    mixes shaded 3D movers with flat drawings.  That is honest - they
+    really are different - but it is a rough edge.
 
+#### THE BUG THAT HID THE WHOLE FEATURE, AND THE LESSON IN IT.
+
+Back-face culling.  The GDTF-to-visualiser axis swap is a TRANSPOSITION -
+exchanging Y and Z - and a transposition is a reflection, determinant -1,
+which reverses triangle winding.  So a model authored counter-clockwise
+arrives clockwise, and `cullFace(BACK)` with the default `frontFace(CCW)`
+threw every visible face away.
+
+What makes it worth writing down is how it presented.  All eight
+`drawElements` calls still happened, with valid matrices and a real GPU
+buffer each.  Every counter said success: `drawn: 8`, `uploaded: 4`, 926
+triangles, `state: geometry`, no console errors, no failed fetches.  The
+screen showed the old 2D sprites, and the numbers were all true.
+
+**Counting draws is not counting pixels.**  A metric that can only go up
+cannot notice that nothing is visible.  The only thing that found it was a
+screenshot, and the only reason there was a screenshot to look at is that
+the tool happened to be available.
 
 #### FALLBACKS, WHICH ARE A FEATURE RATHER THAN AN ERROR.
 

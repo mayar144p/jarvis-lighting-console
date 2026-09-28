@@ -8172,6 +8172,41 @@ def test_gdtf_twin() -> None:
         check("node --check web/gdtf3d.js", proc.returncode == 0,
               (proc.stderr or "")[-200:])
 
+        # The renderer half.  These are SOURCE checks, and that is stated
+        # rather than dressed up: a node process has no WebGL, so nothing
+        # here can see a pixel.  What it can do is stop the two mistakes
+        # that made the feature invisible while every counter said it
+        # worked.
+        viz_src = (root / "web" / "viz.js").read_text(encoding="utf-8")
+        viz_code = "\n".join(ln for ln in viz_src.splitlines()
+                             if not ln.lstrip().startswith(("*", "//")))
+        check("viz.js does NOT enable back-face culling.  The GDTF axis swap "
+              "is a transposition - a reflection, determinant -1 - which "
+              "reverses triangle winding, so culling throws every visible "
+              "face away.  This is the bug that hid the entire feature while "
+              "all eight draw calls still succeeded and no counter moved.",
+              "gl.enable(gl.CULL_FACE)" not in viz_code,
+              "viz.js enables CULL_FACE")
+        check("and the mesh shader lights the model two-sided instead, "
+              "flipping the normal toward the camera - the two halves of "
+              "the same decision, and the reason culling is unnecessary "
+              "rather than merely forgone",
+              "dot(n, v) < 0.0" in viz_src, "no normal flip in the mesh "
+              "shader")
+        check("and the models are drawn BEFORE the additive beams, with the "
+              "depth test on for them and off afterwards - otherwise a "
+              "fixture's own beam is clipped by that same fixture's housing",
+              viz_src.index("drawTwin()") < viz_src.index("op.k === 1")
+              and "gl.disable(gl.DEPTH_TEST)" in viz_src, "")
+        check("and the twin's world matrices are solved on the frame that "
+              "draws them, so a head's transform cannot be a frame behind "
+              "the beam it is throwing",
+              "twin.update();" in viz_src, "")
+        check("and the 2D sprite body stands down for any head the GL pass "
+              "drew, so a fixture is never a box inside a moving head",
+              "twinHasModel(f)" in viz_src
+              and "if (twinHasModel(f)) return;" in viz_src, "")
+
         proc = _subprocess.run(
             [node, str(har), str(twin_js), str(man), str(mod)],
             capture_output=True, text=True, cwd=str(root))

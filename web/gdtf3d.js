@@ -260,24 +260,49 @@
     return null;
   }
 
-  /* 3DS is a legacy chunk format, and the files GDTF ships do not agree on
-   * how to lay it out.  A Chauvet Intimidator's Base.3ds on this machine
-   * has: MAIN -> VERSION, 3D_OBJECT -> MAT_GROUP + EDIT_OBJECT, and inside
-   * that a MESH whose first child is VERTICES (0x4110, 856 verts) followed
-   * by a 6856-byte faces chunk - which is exactly 8 + 856*8, the FACES
-   * layout - but carrying the id 0x4140, not the 0x4120 the structural
-   * walk would insist on.  A walk that trusts ids therefore finds vertices
-   * and no faces, and the fixture renders as a point cloud.
+  /* 3DS: a legacy chunk format, read by SELF-VALIDATION rather than by
+   * trusting a chunk walk.
    *
-   * So the scan is by SELF-CONSISTENCY, not by id: a candidate chunk is
-   * accepted only when its declared length equals 8 + count*stride for the
-   * stride that chunk type uses.  A false positive requires a 4-byte window
-   * to satisfy that arithmetic exactly, which is not something that happens
-   * by accident - whereas trusting ids is what just failed.
+   * What the real files actually contain, measured on the Chauvet
+   * Intimidator's Base.3ds (20,947 bytes, 856 vertices):
+   *
+   *   0     0x4D4D MAIN  len 20947
+   *   6       0x0002 VERSION
+   *   16      0x3D3D 3D_OBJECT
+   *   22        0xAFFF MAT_GROUP
+   *   159       0x4000 EDIT_OBJECT
+   *   170         0x4100 MESH
+   *   176         0x4110 VERTICES  len 10280  count 856   (8 + 856*12)
+   *   10456       0x4140  len 6856   <- NOT faces
+   *   17312       0x4120 FACES     len 3472   count 344
+   *
+   * Three things there are worth writing down, because each one defeated a
+   * plausible-looking implementation:
+   *
+   * 1. The FACES id really is 0x4120.  An earlier version also accepted
+   *    0x4140, on the theory that exporters vary - and the 6856-byte chunk
+   *    at 10456 then satisfied "length == 8 + count*8" exactly, so it was
+   *    accepted as faces and produced triangles referencing vertices that
+   *    do not exist.  Being lenient about an id is not safer here; it is how
+   *    the wrong chunk gets in.
+   *
+   * 2. A face record is FOUR uint16s - i, j, k, and then a flags word LAST.
+   *    Not flags-first.  Reading flags-first skips a word that is not there
+   *    and reads every face one slot out.
+   *
+   * 3. The FACES chunk is LONGER than its faces: 3472 bytes for 344 faces
+   *    that occupy 2760.  So requiring "length == 8 + count*8" rejects the
+   *    real chunk.  The length is only a ceiling, not an equality.
+   *
+   * So the rule is: take chunks that claim to be faces, and ACCEPT the
+   * first one whose every index names a real vertex.  The range check is not
+   * a safety net bolted on afterwards - it is the discriminator, and it is
+   * what tells a faces chunk from the several hundred other chunks in the
+   * file that could equally well be 8 + n*8 bytes long.  A wrong stride, a
+   * wrong field order or a wrong chunk all fail it.
    *
    * Nothing is executed and nothing is allocated from an unvalidated count:
-   * every accepted count is bounded by the chunk's own declared length,
-   * which was itself checked against the file size. */
+   * every count is bounded by the file's own length first. */
   function parse3DS(buf, name) {
     buf = asBuffer(buf);
     if (!buf) return { name, meshes: [], failed: "no bytes" };
@@ -291,13 +316,14 @@
     const u16 = (o) => dv.getUint16(o, LE), u32 = (o) => dv.getUint32(o, LE);
     const f32 = (o) => dv.getFloat32(o, LE);
 
-    let verts = null, faces = null;
+    let verts = null;
+    const faceChunks = [];
     for (let o = 0; o + 8 <= buf.byteLength; o++) {
       const clen = u32(o + 2);
       if (clen < 8 || o + clen > buf.byteLength) continue;
       const cid = u16(o);
       const n = u16(o + 6);
-      if (cid === 0x4110 && 8 + n * 12 === clen && !verts) {
+      if (cid === 0x4110 && !verts && 8 + n * 12 === clen) {
         const v = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) {
           v[i * 3] = f32(o + 8 + i * 12);
@@ -305,36 +331,46 @@
           v[i * 3 + 2] = f32(o + 8 + i * 12 + 8);
         }
         verts = v;
-      } else if ((cid === 0x4120 || cid === 0x4140) && 8 + n * 8 === clen
-                 && !faces && verts) {
-        // Paired with a vertex array that has already been found, and its
-        // indices are range-checked below - that is what stops an unrelated
-        // chunk which merely happens to be 8 + n*8 long from being read as
-        // faces.  The count is NOT required to equal the vertex count: most
-        // exporters do emit one face per vertex, but not all of them, and
-        // insisting on it rejects a perfectly good mesh.
-        const f = new Uint16Array(n * 3);
-        for (let i = 0; i < n * 3; i++) f[i] = u16(o + 10 + i * 2);
-        faces = f;
+      } else if (cid === 0x4120 && n > 0 && o + 8 + n * 8 <= buf.byteLength) {
+        faceChunks.push({ o: o, n: n });
       }
     }
     if (!verts) return { name, meshes: [], failed: "no vertex chunk" };
-    if (!faces) return { name, meshes: [], failed: "vertices but no faces" };
-    // Every index must name a real vertex.  A 3DS from the wild can pair
-    // faces with a vertex array we did not expect, and a triangle naming
-    // vertex 100000 of a 40-vertex mesh reads off the end of a typed array
-    // and hangs the tab rather than failing.
     const nv = verts.length / 3;
-    for (let i = 0; i < faces.length; i++) {
-      if (faces[i] >= nv) {
-        return { name, meshes: [],
-                 failed: "face index %d of %d vertices" % (faces[i], nv) };
+
+    let faces = null, why = null;
+    for (const c of faceChunks) {
+      const f = new Uint16Array(c.n * 3);
+      for (let fi = 0; fi < c.n; fi++) {
+        const base = c.o + 8 + fi * 8;    // +8 skips the count word
+        f[fi * 3] = u16(base);
+        f[fi * 3 + 1] = u16(base + 2);
+        f[fi * 3 + 2] = u16(base + 4);
+        // base + 6 is the flags word, and it is LAST
       }
+      let bad = -1;
+      for (let i = 0; i < f.length; i++) {
+        if (f[i] >= nv) { bad = i; break; }
+      }
+      if (bad < 0) { faces = f; break; }
+      why = "face " + Math.floor(bad / 3) + " index " + f[bad]
+          + " of " + nv + " vertices";
+    }
+    // Concatenation, not `%`: JavaScript has NO printf-style format operator.
+    // `"x %d" % n` is the MODULO operator - ToNumber of the string is NaN,
+    // so it evaluates to the NUMBER NaN.  That is not cosmetic: NaN is
+    // falsy, so `mesh.failed || "no triangles"` reported a generic reason
+    // and the real one was thrown away.
+    if (!faces) {
+      return { name, meshes: [],
+               failed: why || (faceChunks.length
+                 ? "no faces chunk with in-range indices"
+                 : "vertices but no faces chunk") };
     }
     const meshes = [{ positions: verts, normals: faceNormals(verts, faces),
                       indices: faces }];
     return { name, meshes, bounds: boundsOf(meshes), format: "3ds",
-             vertices: verts.length / 3, faces: faces.length / 3 };
+             vertices: nv, faces: faces.length / 3 };
   }
 
   function faceNormals(pos, idx) {
@@ -914,6 +950,33 @@
   /* The beam's world position and direction, which is where the cone
    * actually starts.  Derived from the BEAM NODE's matrix, so the beam
    * leaves the lens rather than the middle of the fixture. */
+  /* Can this instance be drawn from real geometry at all?
+   *
+   * NOT the same question as `state`, and the difference matters.  `state`
+   * describes the definition for a label - "primitives" is the honest
+   * summary when one of four models failed.  But three of four parts
+   * loading is not a reason to draw NO parts: standing the whole fixture
+   * down would leave a hole where the yoke should be, and the operator
+   * would see a 2D box for a fixture whose three working parts are sitting
+   * in GPU memory.
+   *
+   * So the draw decision is made per part, and this only says whether the
+   * 2D fallback should stand down - which needs at least one usable node. */
+  Instance.prototype.hasGeometry = function () {
+    const d = this.def;
+    if (!d || !d.nodes.length) return false;
+    if (!d.meshes || !Object.keys(d.meshes).length) return false;
+    const byPath = d.index();
+    for (const p in byPath) {
+      const rec = byPath[p];
+      if (rec.model && d.meshes[rec.model]
+          && d.meshes[rec.model].meshes && d.meshes[rec.model].meshes.length) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   Scene.prototype.beamFor = function (headNo) {
     const inst = this.instances.get(headNo);
     if (!inst || !inst.gdtfWorld) return null;

@@ -496,33 +496,65 @@ def description_xml(gdtf_path: str | os.PathLike) -> bytes:
     return b""
 
 
-def model_index(extracted: dict) -> dict:
+def model_index(extracted: dict, declared: dict | None = None) -> dict:
     """The cache's file list, keyed by the `<Model Name>` a node refers to.
 
-    GDTF's `<Model File="Body">` names a STEM, while the archive holds
-    `models/gltf/Body.glb` and the cache holds it under a content-addressed
-    directory.  Three names for one file, and getting the mapping wrong
-    means the renderer fetches nothing.
+    Three names for one file, and getting the mapping wrong means the
+    renderer fetches nothing at all while looking perfectly healthy.
 
-    So each entry carries all three, and which one you want is explicit:
+    A node says `Model="Base"`.  `<Models>` says
+    `Name="Base" File="Chauvet DJ Intimidator Spot 260 Base"`.  The archive
+    holds `models/3ds/Chauvet DJ Intimidator Spot 260 Base.3ds`.  The cache
+    holds the same file under a content-addressed directory.  So the only
+    thing that connects the node to the file is the `<Models>` declaration -
+    and the first version of this function ignored it and keyed by the file
+    stem instead, which meant every key was the long name and every node
+    lookup missed.  Nothing errored: four models downloaded, parsed and sat
+    in memory, and the renderer drew nothing.
 
-        {"Body": {"name": "models/gltf/Body.glb",   # the fetch route
-                  "path": "C:/.../cache/ab12../models/gltf/Body.glb",
-                  "ext": ".glb"}}
+    `Lens` is the case that shows the declaration is doing real work: the
+    Intimidator's Beam node refers to `Model="Lens"`, for which the profile
+    ships no model file at all.  It is the lens, not a part, and "no such
+    model" is the correct and complete answer for it.
 
-    The first version of this returned just the archive-relative name, which
-    is right for the browser and useless to the server: a caller holding it
-    could not open the file.  Both, and the mistake cannot be made twice.
+    Each entry carries all three names, and which one you want is explicit:
+
+        {"Body": {"name": "models/3ds/... Body.3ds",   # the fetch route
+                  "path": "C:/.../cache/ab12../...Body.3ds",
+                  "ext": ".3ds"}}
+
+    The first version returned just the archive-relative name, which is right
+    for the browser and useless to the server: a caller holding it could not
+    open the file.  All three, and the mistake cannot be made twice.
     """
-    out: dict[str, dict] = {}
+    by_stem: dict[str, tuple[str, str, str]] = {}
     for rel, abs_path in (extracted.get("files") or {}).items():
         base = os.path.basename(rel)
-        stem = os.path.splitext(base)[0]
-        out[stem] = {
-            "name": rel,
-            "path": abs_path,
-            "ext": os.path.splitext(base)[1].lower(),
-        }
+        stem, ext = os.path.splitext(base)
+        by_stem[stem] = (rel, abs_path, ext.lower())
+
+    declared = declared or {}
+    out: dict[str, dict] = {}
+    used: set[str] = set()
+    # Declared models first: the Name is what a node refers to, so that is
+    # the key.  Matched on the File attribute, which is a stem in every file
+    # seen so far but is not guaranteed to be one.
+    for name, meta in declared.items():
+        want = os.path.splitext(
+            os.path.basename(str(meta.get("file") or name)))[0]
+        hit = by_stem.get(want)
+        if hit:
+            out[name] = {"name": hit[0], "path": hit[1], "ext": hit[2]}
+            used.add(want)
+    # Then only what is genuinely LEFT OVER, so a GDTF with models and no
+    # <Models> block still reaches the renderer.  Testing "not already in
+    # `out`" is not enough: a declared entry is keyed by its Name, so that
+    # file's STEM is absent from `out` and gets added a second time - which
+    # is how this served EIGHT model keys for FOUR files and had the browser
+    # fetch, parse and upload every part twice.
+    for stem, hit in by_stem.items():
+        if stem not in used and stem not in out:
+            out[stem] = {"name": hit[0], "path": hit[1], "ext": hit[2]}
     return out
 
 
@@ -547,7 +579,7 @@ def build_definition(gdtf_path: str | os.PathLike, has_pan: bool = False,
     if cache_root is not None:
         try:
             ex = extract_models(gdtf_path, cache_root)
-            out["files"] = model_index(ex)
+            out["files"] = model_index(ex, geom.get("models"))
             out["key"] = ex["key"]
         except (GdtfGeometryError, OSError) as exc:
             # A model we cannot extract is a FALLBACK, not a failure: the

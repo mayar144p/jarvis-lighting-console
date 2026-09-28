@@ -8,7 +8,8 @@ import struct
 import zipfile
 
 
-def three_ds(tri=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))) -> bytes:
+def three_ds(tri=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+              faces=((0, 1, 2),), pad=b"") -> bytes:
     """A minimal 3DS chunk file, in the layout the REAL files use.
 
     Hand-built so the parser is exercised against bytes we control.  The
@@ -17,26 +18,51 @@ def three_ds(tri=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))) -> bytes:
     truss-bar test did exactly that and was only caught by cloning the
     commit somewhere clean.
 
-    The two chunks are the ones the scan looks for, and each is sized so
-    that `8 + count * stride == length` EXACTLY, which is the validity test
-    the parser applies:
+    Every detail below is one the real Intimidator Base.3ds taught us the
+    hard way, and each is a thing a plausible-looking implementation gets
+    wrong while still passing a naive test:
 
-        0x4110 VERTICES  count * 12 bytes of float3
-        0x4120 FACES     count * 8 bytes of (flags, i, j, k)
+    * The faces chunk is 0x4120.  Accepting 0x4140 as well is not leniency,
+      it is how the wrong chunk gets in - the 6856-byte 0x4140 in the real
+      file satisfies "length == 8 + count*8" exactly.
 
-    The faces carry the 0x4140 id, because that is what the real Intimidator
-    .3ds on this machine does, and a parser that only accepts 0x4120 finds
-    vertices and no faces on a genuine file.
+    * A face record is FOUR uint16s and the FLAGS WORD IS LAST:
+      `(i, j, k, flags)`.  Flags-first skips a word that is not there.
+
+    * The chunk is LONGER than its faces.  The real one is 3472 bytes for
+      344 faces occupying 2760, so a parser that requires
+      `length == 8 + count*8` rejects the genuine chunk.  `pad` reproduces
+      that trailing slack.
+
+    * MORE THAN ONE FACE.  With a single face there is exactly one flags
+      word, and a parser that skips the wrong end still lands on the right
+      answer.  Six faces and a distinctive flags value means a wrong
+      ordering reads 0xBEEF as a vertex index and fails loudly.
+
+    The count is a uint16, so "<HIH" (8 bytes) and NOT "<HII" (10): the
+    parser reads the count as u16 at +6, so a 4-byte count puts the real
+    value in the wrong half of the field and every chunk looks empty.
     """
     verts = tri
-    # The count is a uint16, so "<HIH" (8 bytes) and NOT "<HII" (10).  The
-    # parser reads the count as u16 at +6, so a 4-byte count puts the real
-    # value in the wrong half of the field and every chunk looks empty.
     vchunk = (struct.pack("<HIH", 0x4110, 8 + len(verts) * 12, len(verts))
               + b"".join(struct.pack("<fff", *v) for v in verts))
-    faces = [(0, 1, 2)]
-    fchunk = (struct.pack("<HIH", 0x4140, 8 + len(faces) * 8, len(faces))
-              + b"".join(struct.pack("<4H", 7, *f) for f in faces))
+    fchunk = (struct.pack("<HIH", 0x4120, 8 + len(faces) * 8 + len(pad),
+                          len(faces))
+              + b"".join(struct.pack("<4H", *(tuple(f) + (0xBEEF,)))
+                         for f in faces)
+              + pad)
+    body = vchunk + fchunk
+    mesh = struct.pack("<HI", 0x4100, 6 + len(body)) + body
+    obj = (struct.pack("<H", 0) + b"\0" * 26      # name, 26 bytes, empty
+           + struct.pack("<I", 0)                  # nmatids
+           + struct.pack("<H", 0)                  # mats[0]
+           + mesh)
+    edit = struct.pack("<HI", 0x4000, 6 + len(obj)) + obj
+    three_d = struct.pack("<HI", 0x3D3D, 6 + len(edit)) + edit
+    ver = struct.pack("<HI", 0x0002, 10) + struct.pack("<I", 3)
+    main = struct.pack("<HI", 0x4D4D,
+                       6 + len(ver) + len(three_d)) + ver + three_d
+    return main
     body = vchunk + fchunk
     mesh = struct.pack("<HI", 0x4100, 6 + len(body)) + body
     obj = (struct.pack("<H", 0) + b"\0" * 26      # name, 26 bytes, empty
@@ -116,10 +142,23 @@ def manifest() -> dict:
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<GDTF DataVersion="1.2"><FixtureType Name="TestCo" '
         'Manufacturer="TestCo" FixtureTypeID="T" Model="Digital Twin">'
+        # `File` is deliberately the LONG manufacturer name and `Name` the
+        # short part name, exactly as the real Intimidator does it, because
+        # the only thing connecting a node's Model="Base" to
+        # `models/3ds/Chauvet DJ Intimidator Spot 260 Base.3ds` is the
+        # <Models> declaration.  A fixture where the two are equal cannot
+        # catch a parser that keys by the file stem instead - and that parser
+        # downloads every model, parses every model and draws nothing, with
+        # no error anywhere.
         '<Models>'
-        '<Model File="Base" Name="Base" Width="0.15" Height="0.09" Length="0.19"/>'
-        '<Model File="Yoke" Name="Yoke" Width="0.08" Height="0.19" Length="0.23"/>'
-        '<Model File="Body" Name="Body" Width="0.2" Height="0.3" Length="0.32"/>'
+        '<Model File="TestCo Digital Twin Base" Name="Base" Width="0.1495"'
+        ' Height="0.089076" Length="0.192916"/>'
+        '<Model File="TestCo Digital Twin Yoke" Name="Yoke" Width="0.083"'
+        ' Height="0.191638" Length="0.231117"/>'
+        '<Model File="TestCo Digital Twin Body" Name="Body" Width="0.265643"'
+        ' Height="0.297168" Length="0.322282"/>'
+        '<Model File="TestCo Digital Twin Lens" Name="Lens" Width="0.03"'
+        ' Height="0.03" Length="0.03"/>'
         '</Models>'
         '<Geometries>' + MOVER_GEOMETRY + '</Geometries>'
         '</FixtureType></GDTF>'
@@ -135,12 +174,18 @@ def manifest() -> dict:
     pub = G.public_manifest(built)
     pub["heads"] = [17, 20]
     pub["summary"] = G.summarise(built)
-    # The models the frontend would fetch, by name.  Served as a lookup so
-    # the load test can hand real bytes to the real parser.
+    # The models the frontend would fetch, by the name a NODE refers to.
+    # Served as a lookup so the load test can hand real bytes to the real
+    # parser.  `Lens` is deliberately absent: the Intimidator's Beam node
+    # says Model="Lens" and the profile ships no model for it, because it is
+    # the lens rather than a part.  "No such model" is the right answer.
     pub["models"] = {
-        "Base": {"name": "models/gltf/Base.glb", "ext": ".glb"},
-        "Yoke": {"name": "models/gltf/Yoke.glb", "ext": ".glb"},
-        "Body": {"name": "models/gltf/Body.glb", "ext": ".glb"},
+        "Base": {"name": "models/3ds/TestCo Digital Twin Base.3ds",
+                 "ext": ".3ds"},
+        "Yoke": {"name": "models/3ds/TestCo Digital Twin Yoke.3ds",
+                 "ext": ".3ds"},
+        "Body": {"name": "models/3ds/TestCo Digital Twin Body.3ds",
+                 "ext": ".3ds"},
     }
     return {"definitions": [pub], "count": 1}
 
@@ -148,18 +193,35 @@ def manifest() -> dict:
 def model_bytes() -> dict:
     """Bytes for the loader tests, base64'd so the harness can carry them.
 
-    `millimetres` is a 3DS whose vertices are the REAL Intimidator Base.3ds
-    numbers: bounds 192.916 x 149.500 x 89.076, against a profile declaring
-    0.192916 x 0.1495 x 0.089076 metres.  Same three numbers, a factor of
-    1000 apart, which is what 3D Studio actually writes - and the reason the
-    renderer fits a mesh to the profile's declared size instead of trusting
-    the file's units.  Reproduced here from the measurement so the test does
-    not need the operator's gitignored .gdtf to exist.
+    `grid` is six faces over a 2x3 vertex grid.  Six, because one face is the
+    case a stride bug survives: with a single face there is exactly one flags
+    word and skipping it accidentally produces the right answer.  Six faces
+    and a distinctive flags word means a 2-byte stride reads 0xBEEF as a
+    vertex index and fails loudly instead of quietly.
+
+    `millimetres` reproduces the REAL Intimidator Base.3ds numbers: bounds
+    192.916 x 149.500 x 89.076 against a profile declaring 0.192916 x 0.1495
+    x 0.089076 metres.  Same three numbers a factor of 1000 apart, which is
+    what 3D Studio actually writes, and the reason the renderer fits a mesh
+    to the profile's declared size instead of trusting the file's units.
     """
+    grid_v = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0),
+              (0.0, 1.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0))
+    grid_f = ((0, 1, 4), (0, 4, 3), (1, 2, 5), (1, 5, 4), (3, 4, 5), (4, 5, 2))
     tri = ((0.0, 0.0, 0.0), (192.916, 0.0, 0.0), (0.0, 149.5, 0.0))
+    mm_v = ((0.0, 0.0, 0.0), (192.916, 0.0, 0.0), (0.0, 149.5, 0.0),
+            (0.0, 0.0, 0.0), (192.916, 0.0, 0.0), (0.0, 149.5, 0.0))
+    mm_f = tuple(tuple(f[i] for i in range(3)) for f in grid_f)
+    # 712 bytes of trailing slack, the same ratio the real file has, so a
+    # parser that insists length == 8 + count*8 is caught here too.
+    pad = b"\0" * 712
     return {
         "threeds": base64.b64encode(three_ds()).decode("ascii"),
-        "millimetres": base64.b64encode(three_ds(tri)).decode("ascii"),
+        "grid": base64.b64encode(three_ds(grid_v, grid_f)).decode("ascii"),
+        "padded": base64.b64encode(
+            three_ds(grid_v, grid_f, pad)).decode("ascii"),
+        "millimetres": base64.b64encode(
+            three_ds(mm_v, mm_f)).decode("ascii"),
         "glb": base64.b64encode(glb()).decode("ascii"),
     }
 
