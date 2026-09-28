@@ -276,7 +276,7 @@ lands somewhere useful rather than a 404.
 python tools/selftest.py
 ```
 
-**1682 checks across 46 suites, 0 failures** — GDTF parser (incl. 16-bit channels), database
+**1707 checks across 47 suites, 0 failures** — GDTF parser (incl. 16-bit channels), database
 search, the auto-patcher (DMX maths, universe rollover, CSV patch import),
 show-from-a-prompt staged on your own rig, the colour picker (its HSV maths
 *executed* from the shipped source under node, and every picked colour read
@@ -325,7 +325,7 @@ jarvis/
 ├── web/                 console.html + console.js + console.css
 │                        + style.css + viz.js (no build step, no CDN)
 ├── tools/
-│   ├── selftest.py      run after changes (1682 checks, 46 suites)
+│   ├── selftest.py      run after changes (1707 checks, 47 suites)
 │   ├── artnet_loopback.py  proves the Art-Net packet path end to end
 │   └── import_gdtf.py   bulk fixture import
 ├── fixtures_inbox/      drop .gdtf files here

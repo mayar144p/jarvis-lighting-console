@@ -37,59 +37,6 @@
     spot: "#ff8a2a", beam: "#3ad6ff", generic: "#94a3b8",
   };
 
-  /* Fixture BODY shapes, so a moving head does not look like a PAR.
-   *
-   * Keyed by manufacturer + model substring, lower-cased, most specific
-   * first; the engine sends the real manufacturer/model on every head
-   * (see app/engine.py snapshot), so the 3D view can draw a yoke-and-base
-   * spot, a wash bar, a floor par, or a strobe - which is what an operator
-   * actually recognises at a glance.  Anything unknown falls back to the
-   * role shape, so a newly imported GDTF still renders sensibly.
-   *
-   * Shapes: base (clamp), yoke (U), head (tilted can), tube (long bar),
-   * panel (flat wash), box.  All drawn in the fixture's own local frame,
-   * projected by the same matrix as the room, so they stay put when the
-   * camera orbits. */
-  const BODY_RULES = [
-    // Chauvet moving heads: yoke + base + tilted head
-    { match: ["intimidator", "spot 260"], shape: "yoke", beam: true },
-    { match: ["intimidator"], shape: "yoke", beam: true },
-    { match: ["spot", "moving head"], shape: "yoke", beam: true },
-    { match: ["beam"], shape: "tube" },
-    { match: ["bar", "batten", "strip"], shape: "tube" },
-    { match: ["wash"], shape: "panel" },
-    { match: ["par"], shape: "can" },
-    { match: ["strobe"], shape: "panel" },
-    { match: ["blinder", "strobe"], shape: "panel" },
-  ];
-  const SHAPE_BY_ROLE = {
-    wash: "panel", beam: "tube", spot: "yoke", bar: "tube",
-    par: "can", generic: "can",
-  };
-
-  /* Which channels a head actually has, from the engine's role map.
-   * Drives the body (a head with pan/tilt gets a yoke whether or not we
-   * recognise the model). */
-  function bodyFor(f) {
-    const map = (f.map || []).map((r) => String(r).toLowerCase());
-    const has = (r) => map.indexOf(r) >= 0;
-    const key = ((f.manufacturer || "") + " " + (f.model || ""))
-      .toLowerCase();
-    for (let i = 0; i < BODY_RULES.length; i++) {
-      const rule = BODY_RULES[i];
-      if (rule.match.every((m) => key.indexOf(m) >= 0)) {
-        return rule;
-      }
-    }
-    // fall back to what the channels say, not to the role name alone
-    if (has("pan") || has("tilt")) return { shape: "yoke", beam: true };
-    if (has("gobo") && has("zoom")) return { shape: "yoke", beam: true };
-    if (has("wheel") || has("strobe")) return { shape: "yoke", beam: true };
-    if (has("shutter")) return { shape: "can" };
-    if (map.length >= 8) return { shape: "panel" };
-    return { shape: SHAPE_BY_ROLE[f.role] || "can" };
-  }
-
   const TAU = Math.PI * 2;
   const HALF_PI = Math.PI / 2;
   const DEG = Math.PI / 180;
@@ -434,7 +381,8 @@ let prMesh = null, hasUint = false;
 // setTwin for why that has to be true rather than merely convenient.
 let twin = null;
 let twinDrawn = 0;
-let twinSuppressed = 0;      // 2D bodies stood down for, last frame
+let twinGenerated = 0;       // generated HEADS drawn, last frame
+let twinGeneratedDraws = 0;  // their drawElements ranges
 let twinDrew2 = 0;           // real model nodes drawn, last frame
 let twinSkipped = 0;         // instances skipped, and why
     let bufMain = null, bufBg = null, bufBeam = null, bufPool = null;
@@ -1526,31 +1474,36 @@ let twinSkipped = 0;         // instances skipped, and why
       curBlend = 0;                 // meshes are opaque, never blended
     }
 
-    /* ------------------------------------------------- the GDTF twin pass
-     *
-     * Does the GL pass draw this fixture's real model?  One predicate, used
-     * by the 2D body pass to decide to stand down.
-     *
-     * It asks the SCENE, not the manifest, because a definition can have
-     * geometry and still have failed to load its mesh - a 404, a truncated
-     * download, a format this browser's GL cannot index.  In that case the
-     * fixture must fall back to its 2D body, and asking the manifest would
-     * say "yes, it has geometry" and leave a hole where the fixture is. */
-    function twinHasModel(f) {
-      if (!twin || !twinDrawn) return false;
-      const hn = f && (f.head_no != null ? f.head_no : f.n);
-      if (hn == null) return false;
-      const inst = twin.get(hn);
-      const has = !!(inst && inst.hasGeometry && inst.hasGeometry());
-      // Counted, because "is the 2D body being suppressed" is a question
-      // that has been answered wrongly twice by eye.  Both times the answer
-      // was believed rather than measured, and both times the operator was
-      // looking at a sprite while the numbers said the model was fine.
-      if (has) twinSuppressed++;
-      return has;
-    }
+    /* ------------------------------------------------- the GDTF twin pass */
 
-    /* Upload a definition's meshes into GPU buffers, ONCE.
+    /* Upload a GENERATED body shape, once per shape.
+   *
+   * Same reasoning as the GDTF upload and the same trap: this is keyed off
+   * the shape object itself, so the second fixture of the same shape shares
+   * the buffer and the first one's presence is what stops a rebuild.  A rig
+   * of 40 PAR cans is one buffer and 40 draws, not 40 buffers. */
+  function uploadShape(shape) {
+    if (!shape || shape.gl) return shape && shape.gl;
+    const inter = new Float32Array(shape.p.length * 2);
+    for (let i = 0, k = 0; i < shape.p.length; i += 3) {
+      inter[k++] = shape.p[i];
+      inter[k++] = shape.p[i + 1];
+      inter[k++] = shape.p[i + 2];
+      inter[k++] = shape.n[i];
+      inter[k++] = shape.n[i + 1];
+      inter[k++] = shape.n[i + 2];
+    }
+    const vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
+    const ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shape.i, gl.STATIC_DRAW);
+    shape.gl = { vb: vb, ib: ib, n: shape.i.length, wide: shape.wide };
+    return shape.gl;
+  }
+
+  /* Upload a definition's meshes into GPU buffers, ONCE.
      *
      * This is where "one definition, one load, many instances" becomes real
      * rather than aspirational: the buffers hang off the Definition, so
@@ -1645,6 +1598,120 @@ let twinSkipped = 0;         // instances skipped, and why
      * must stay depth-test-free or every beam would be clipped by the
      * fixture in front of it - including the beam that fixture is
      * throwing, which is the one that matters most. */
+
+    /* A reusable identity, for the many places that need one.
+     *
+     * The matrix helpers in this file all WRITE INTO a caller-supplied
+     * array, which is what lets the hot path allocate nothing - and it is
+     * also the trap: mIdent() with no argument throws on o[0], and
+     * mMul(o, a, b) writes through o, so mMul(a, b) silently
+     * multiplies a matrix by itself.  Both mistakes were made here while
+     * writing this and both are quiet. */
+    const IDENT16 = m4();
+    mIdent(IDENT16);
+
+    /* Draw one generated body: the whole fixture in one buffer, with the
+     * yoke panning and the head tilting inside it.
+     *
+     * PLACEMENT IS THE TWIN'S PLACEMENT.  `Scene.update` in gdtf3d.js puts a
+     * real GDTF model at exactly (f.x, f.y, f.z) and hangs it down from
+     * there, for a floor fixture as much as a hanging one.  So this does the
+     * same - no bar offset, no roof height, no flip for a floor stand.  The
+     * 2D sprite did all three, and copying it here would have put the
+     * generated bodies in different places from the real models, which is
+     * the one thing this pass exists to stop.
+     *
+     * AIM MATCHES THE TWIN'S AIM.  The twin turns a profile-frame rotation
+     * `M` into the visualiser's frame with `swapYZ(transpose(M))`, and
+     * `swapYZ` is a reflection, so the whole map has determinant -1.  A
+     * generated body is authored directly in the +Y-up frame, and feeding a
+     * det -1 matrix to it would MIRROR the fixture - so the equivalent
+     * proper rotation is the same map conjugated by the axis swap, `S·Mᵀ·S`.
+     * Conjugating a rotation by a reflection keeps the magnitude and
+     * reflects the axis, which for a row-vector profile frame means:
+     *
+     *     pan  ->  -panDeg about +Y      (mRotYStd, the one this file
+     *                                      already flags as the model chain)
+     *     tilt ->  -tiltDeg about +X      (mRotX is already right-handed)
+     *
+     * and the sign is NEGATED by the reflection.  Order is pan OUTSIDE tilt,
+     * because the head hangs off the yoke: `base · pan · tilt`.  Reversed,
+     * a head tilts about the wrong axis and swings in a circle.
+     */
+    function drawBody(f, dmx, shapeName) {
+      const sh = window.Fixture3D && window.Fixture3D.shape(shapeName);
+      if (!sh) return 0;
+      uploadShape(sh);
+      if (!sh.gl) return 0;
+      const look = dmx || {};
+      // An unlit head is the housing's own colour, a dark grey-blue; a lit
+      // one is its output colour, because a lit fixture throws its own light
+      // onto its own housing and that is most of what tells an operator which
+      // head is in the cue.
+      const hex = look.a > 0.02 ? (look.hex || "#8a94a6") : "#8a94a6";
+      const rgb = hexRgb(hex);
+      const bright = Math.min(1, (look.a || 0) / 100);
+      useMesh();
+
+      const place = m4();
+      mTranslate(place, f.x || 0, f.y || 0, f.z || 0);
+
+      const out = m4();
+      // One draw primitive.  The spin is composed by Fixture3D.aimMatrix
+      // rather than here, because that is the one place the pan/tilt signs
+      // and the frame they happen in are decided - and it is the one place
+      // they can be TESTED, which a node process can do and a draw call
+      // cannot.  Composing them inline is what made the original error
+      // possible: it read correctly and could only be checked by reading.
+      const drawRange = (from, to, spin) => {
+        mMul(out, place, spin);
+        gl.uniformMatrix4fv(prMesh.u.uModel, false, out);
+        gl.uniform3f(prMesh.u.uColor,
+          0.30 + 0.45 * rgb[0] / 255, 0.33 + 0.45 * rgb[1] / 255,
+          0.38 + 0.45 * rgb[2] / 255);
+        gl.uniform3f(prMesh.u.uEmit,
+          rgb[0] / 255 * bright, rgb[1] / 255 * bright,
+          rgb[2] / 255 * bright);
+        // `f.sel` is the selection flag the 2D pass, the patch list and the
+        // keyboard all read, set by setSelected.  Reading it here rather
+        // than from a separate twin-side flag is what keeps the shaded body
+        // and the 2D overlay from disagreeing about what is selected.
+        gl.uniform1f(prMesh.u.uSel, f && f.sel ? 1 : 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, sh.gl.vb);
+        setAttrs(prMesh, [[prMesh.a.aPos, 3, 24, 0],
+                          [prMesh.a.aNrm, 3, 24, 12]]);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sh.gl.ib);
+        gl.drawElements(gl.TRIANGLES, to - from,
+          sh.wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+          from * (sh.wide ? 4 : 2));
+      };
+
+      /* A part's spin: T(pivot) · R · T(-pivot).
+       *
+       * Turning about the pivot rather than about the body's origin is the
+       * whole difference between a yoke that swings its head around and one
+       * that orbits it.  On a still both look like a head that moved; in
+       * motion the second is a head that came off its fixture. */
+      const p = sh.parts || {};
+      const aim = window.Fixture3D.aimMatrix(
+        p.yoke ? p.yoke.pivot : null, p.head ? p.head.pivot : null,
+        look.panDeg, look.tiltDeg);
+
+      if (p.yoke && p.head) {
+        drawRange(0, p.yoke.from, aim.yoke);              // the base never turns
+        drawRange(p.yoke.from, p.yoke.to, aim.yoke);
+        drawRange(p.head.from, p.head.to, aim.head);
+        return 3;
+      }
+      if (p.yoke) {
+        drawRange(0, p.yoke.from, aim.yoke);
+        drawRange(p.yoke.from, p.yoke.to, aim.yoke);
+        return 2;
+      }
+      drawRange(0, sh.i.length, aim.yoke);
+      return 1;
+    }
+
     function drawTwin() {
       if (!twin || !prMesh) return;
       let drew = 0;
@@ -1709,6 +1776,61 @@ let twinSkipped = 0;         // instances skipped, and why
       return drew;
     }
 
+    /* Draw a generated body for every fixture the twin does NOT draw, so the
+     * rig is uniformly 3D.  A rig that mixes shaded geometry with flat
+     * canvas boxes looks broken in a way that has nothing to do with
+     * lighting, and the flat one is the one that reads as a bug.
+     *
+     * THE TWIN OWNS A HEAD OR THIS DOES, NEVER BOTH.  The test is
+     * `hasGeometry()`, the same predicate drawTwin uses, so a head the twin
+     * draws is skipped here and a head it skips is drawn here.  The
+     * predicate is asked the same way on both sides deliberately: an earlier
+     * version compared `def.state` on one side and `hasGeometry` on the
+     * other, which disagreed for a profile with three of four models
+     * loaded, and the head came out drawn twice - once shaded, once flat.
+     *
+     * COUNTS HEADS, NOT DRAW CALLS.  A par is two ranges of one buffer and a
+     * mover is three, so counting drawElements here reported "4 generated"
+     * for two fixtures while the probe reported 2 - the same word meaning
+     * two different things in two places, which is how a number stops being
+     * evidence.  `generatedHeads` is fixtures; `generatedDraws` is ranges. */
+    function drawFallbackBodies() {
+      if (!prMesh || !window.Fixture3D) return 0;
+      const list = stage.fixtures || [];
+      let drew = 0;
+      for (const f of list) {
+        const hn = f.head_no != null ? f.head_no : f.n;
+        if (hn == null) continue;
+        const inst = twin ? twin.get(hn) : null;
+        if (inst && inst.hasGeometry && inst.hasGeometry()) continue;
+        // The ENGINE's DMX, not a value derived here.  If the twin happens
+        // to hold an instance for this head - the usual case for a profile
+        // that ships a model but not all of it - its dmx is the same object
+        // the real model is drawn from, so a partly-loaded head gets its
+        // stand-in aimed from the identical numbers.
+        let dmx = inst && inst.dmx ? inst.dmx : null;
+        if (!dmx || !dmx.hex) {
+          // No twin instance: derive the aim from the beam the console is
+          // already drawing, and convert the pair back to degrees so the
+          // one code path in drawBody stays in the twin's units.
+          const bm = beamOf(f);
+          const look = f._look || cur[f.role];
+          dmx = {
+            hex: look ? look.hex : "#334155",
+            a: look ? look.a : 0,
+            panDeg: bm.pan * 180 / Math.PI,
+            tiltDeg: bm.tilt * 180 / Math.PI,
+          };
+        }
+        // Brand first, then roles - the classifier moved to fixture3d.js
+        // when the 2D sprites went, and it is the same decision viz.js used
+        // to make in its body table, manufacturer/model strings included.
+        const n = drawBody(f, dmx, window.Fixture3D.shapeForFixture(f));
+        if (n) { twinGenerated++; drew += n; }
+      }
+      return drew;
+    }
+
     /* Which head is which, and what state its geometry is in - for the
      * diagnostic surface, so "is the model there" is answerable without
      * a screenshot and without trusting a counter. */
@@ -1740,7 +1862,21 @@ let twinSkipped = 0;         // instances skipped, and why
     function render() {
       if (!gl || !progs) return;
       curProg = 0; curBlend = -1;
-      twinDrawn = 0; twinSuppressed = 0; twinSkipped = 0;
+      // EVERY per-frame twin counter resets here, together.  Two of them
+      // of them did not, and the symptom was a number that could only go
+      // up: `generated` read 214 for a rig with 2 generated heads, and
+      // `nodesDrawn` read 288 for 96 real ones - both exactly three times
+      // the truth after a hundred frames, because nothing ever subtracted
+      // from them.  A counter that only rises cannot notice that nothing is
+      // being drawn, which is the whole reason these exist.
+      //
+      // ONE statement, deliberately.  A counter per line is a counter that
+      // can be half remembered the way the fifth was, and a selftest guard
+      // that has to find them all in a single line is what makes "add a
+      // sixth" a one-line job instead of a judgement call.  Two lines of
+      // five still needed two greps and still let a sixth land on its own.
+      twinDrawn = twinSkipped = twinDrew2 = twinGenerated
+        = twinGeneratedDraws = 0;
       gl.viewport(0, 0, canvas.width, canvas.height);
       // sky gradient first (opaque)
       gl.disable(gl.BLEND);
@@ -1762,11 +1898,17 @@ let twinSkipped = 0;         // instances skipped, and why
       gl.enable(gl.DEPTH_TEST);
       gl.depthMask(true);
       gl.disable(gl.BLEND);
-      const twinDrew = drawTwin();
+      // Generated bodies for the fixtures with no profile model, then the
+      // real GDTF models.  Generated first so a real model is never
+      // overdrawn by a stand-in - the two passes must never both own a head,
+      // and drawFallbackBodies skips anything the twin draws.
+      const gen = drawFallbackBodies();
+      const twin = drawTwin();
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.CULL_FACE);
       gl.enable(gl.BLEND);
-      if (twinDrew) twinDrawn = twinDrew;
+      twinDrawn = twin;
+      twinGeneratedDraws = gen;
       // upload this frame's geometry
       if (SB.n) {
         gl.bindBuffer(gl.ARRAY_BUFFER, bufMain);
@@ -2135,108 +2277,6 @@ let twinSkipped = 0;         // instances skipped, and why
       });
       c.restore();
 
-      // fixture bodies: brand/geometry shaped, drawn in the projected
-      // frame so they stay put while the camera orbits
-      (stage.fixtures || []).forEach((f, i) => {
-        const bm = beamList[i];
-        const look = bm ? bm.look : (f._look || cur[f.role]);
-        const on = look && look.a > 0.02;
-        const col = on ? look.hex : (ROLE_OFF[f.role] || ROLE_OFF.generic);
-        // If the twin drew this head's real model in the GL pass, drawing a
-        // 2D sprite on top of it as well would show two fixtures occupying
-        // one hang point - a box inside a moving head.  The 2D body is the
-        // FALLBACK, so this is the fallback decision, made in one place.
-        if (twinHasModel(f)) return;
-        const spec = bodyFor(f);
-        // hang point: on a bar, from the roof, or standing on the deck
-        let ax, ay, az;
-        if (onBar(f)) { ax = f.x; ay = f.y + 0.23; az = f.z; }
-        else if (hanging(f)) { ax = f.x; ay = ry; az = f.z; }
-        else { ax = f.x; ay = 0; az = f.z; }
-        seg([ax, ay, az], [f.x, f.y, f.z], "#4b5a75",
-            Math.max(1, project(f.x, f.y, f.z).s * 0.022));
-        const p = project(f.x, f.y, f.z);
-        if (!p) return;
-        const u = clamp(p.s * 0.06, 3, 11);      // px per body unit
-        const lit = on ? rgba(col, 0.9) : "#334155";
-        const face = on ? rgba(col, 0.95) : rgba(col, 0.5);
-        c.lineWidth = 1.4;
-        const box = (dx, dy, w, h, fill) => {
-          c.fillStyle = fill; c.strokeStyle = lit;
-          c.fillRect(p.x + dx * u - (w * u) / 2, p.y + dy * u - (h * u) / 2,
-            w * u, h * u);
-          c.strokeRect(p.x + dx * u - (w * u) / 2, p.y + dy * u - (h * u) / 2,
-            w * u, h * u);
-        };
-        const disc = (dx, dy, r, fill) => {
-          c.fillStyle = fill; c.strokeStyle = lit;
-          c.beginPath();
-          c.arc(p.x + dx * u, p.y + dy * u, Math.max(1.4, r * u), 0, TAU);
-          c.fill(); c.stroke();
-        };
-        switch (spec.shape) {
-          case "yoke":
-            // base clamp, two yoke arms, a head between them
-            box(0, 0.85, 0.5, 0.22, "#111a2e");
-            c.strokeStyle = lit; c.lineWidth = Math.max(1, u * 0.09);
-            c.beginPath();
-            c.moveTo(p.x - 0.26 * u, p.y + 0.78 * u);
-            c.lineTo(p.x - 0.26 * u, p.y - 0.12 * u);
-            c.lineTo(p.x + 0.26 * u, p.y - 0.12 * u);
-            c.lineTo(p.x + 0.26 * u, p.y + 0.78 * u);
-            c.stroke();
-            // the head, tilted downstage the way a spot points
-            c.save();
-            c.translate(p.x, p.y - 0.02 * u);
-            c.rotate(bm ? Math.max(-0.9, Math.min(0.9, (bm.pan || 0) * 0.2)) : 0);
-            c.fillStyle = "#0d1526";
-            c.fillRect(-0.19 * u, -0.19 * u, 0.38 * u, 0.38 * u);
-            c.strokeStyle = lit; c.lineWidth = 1.3;
-            c.strokeRect(-0.19 * u, -0.19 * u, 0.38 * u, 0.38 * u);
-            // lens
-            c.fillStyle = face;
-            c.beginPath();
-            c.ellipse(0, 0.14 * u, 0.11 * u, 0.11 * u, 0, 0, TAU);
-            c.fill();
-            c.restore();
-            break;
-          case "tube":
-            // batten: a long thin body, ends marked
-            c.fillStyle = "#0d1526"; c.strokeStyle = lit;
-            c.fillRect(p.x - 1.1 * u, p.y - 0.11 * u, 2.2 * u, 0.22 * u);
-            c.strokeRect(p.x - 1.1 * u, p.y - 0.11 * u, 2.2 * u, 0.22 * u);
-            for (let k = 0; k < 3; k++) {
-              disc(-0.72 * u + k * 0.72 * u, 0, 0.08, face);
-            }
-            break;
-          case "panel":
-            // wash panel: a wide flat face
-            c.fillStyle = "#0d1526"; c.strokeStyle = lit;
-            c.fillRect(p.x - 0.85 * u, p.y - 0.2 * u, 1.7 * u, 0.4 * u);
-            c.strokeRect(p.x - 0.85 * u, p.y - 0.2 * u, 1.7 * u, 0.4 * u);
-            c.fillStyle = face;
-            for (let k = 0; k < 4; k++) {
-              c.fillRect(p.x - 0.78 * u + k * 0.42 * u, p.y - 0.13 * u,
-                0.3 * u, 0.26 * u);
-            }
-            break;
-          case "can":
-          default:
-            // PAR can: a short body with one big lens
-            box(0, 0, 0.62, 0.44, "#0d1526");
-            disc(0, 0.13 * u, 0.17, face);
-            break;
-        }
-        // selection ring - drawn on the overlay too (drawSelection), but
-        // the poster is a separate 2D pass so it needs its own copy
-        if (f.sel || f.picked) {
-          c.strokeStyle = "#22d3ee";
-          c.lineWidth = 2;
-          c.beginPath();
-          c.arc(p.x, p.y, Math.max(9, u * 1.5), 0, TAU);
-          c.stroke();
-        }
-      });
     }
 
     /* ----------------------------------------------------------- render */
@@ -2993,35 +3033,57 @@ let twinSkipped = 0;         // instances skipped, and why
       },
       twinProbe: twinProbe,
 
-      /* What the 2D body pass is doing, and why.  The sprite suppression
-       * keys off the head number the 2D pass carries, and if that number
-       * is not the twin's, every suppression misses and the operator sees
-       * a 2D box on top of a perfectly good 3D model.  `spritesSuppressed`
-       * reads 0 in exactly that case and looks like good news. */
-      spriteProbe: function () {
+      /* Where every fixture's BODY is coming from.
+       *
+       * The 2D sprite pass is gone, so there is no suppression to report and
+       * pretending otherwise would be the same mistake in a new coat: a
+       * counter called `suppressed` that reads 0 because nothing asks the
+       * question any more.  What an operator actually needs to know is which
+       * heads are the real product and which are stand-ins, and that is now
+       * decided once, in drawFallbackBodies, and recorded per head.
+       *
+       * Keyed off the head number the 2D pass used to carry, so a mismatch
+       * between the twin's head numbers and the layout's shows up here as
+       * `model: false` on a head that plainly has one. */
+      bodyProbe: function () {
         const list = stage.fixtures || [];
-        return {
-          count: list.length,
-          suppressed: twinSuppressed,
-          drawn: twinDrawn,
-          fixtures: list.map((f) => ({
+        const out = { count: list.length, real: 0, generated: 0, none: 0,
+                      fixtures: [] };
+        for (const f of list) {
+          const hn = f.head_no != null ? f.head_no : f.n;
+          const inst = twin ? twin.get(hn) : null;
+          const real = !!(inst && inst.hasGeometry && inst.hasGeometry());
+          const from = real ? "model" : "generated";
+          if (!inst && !window.Fixture3D) from = "none";
+          if (from === "model") out.real++;
+          else if (from === "generated") out.generated++;
+          else out.none++;
+          out.fixtures.push({
             head_no: f.head_no != null ? f.head_no : null,
             n: f.n != null ? f.n : null,
             role: f.role || null,
             model: f.model || null,
-            twinKnows: twin ? !!twin.get(f.head_no != null ? f.head_no : f.n)
-                            : null,
-            suppressed: twinHasModel(f),
-          })),
-        };
+            twinKnows: inst ? true : false,
+            body: from,
+            shape: window.Fixture3D
+              ? window.Fixture3D.shapeForFixture(f) : null,
+          });
+        }
+        return out;
       },
+      // Kept under its old name so any existing console.js call and any
+      // saved diagnostic keeps working; it now reports the body source
+      // rather than sprite suppression, which no longer exists.
+      spriteProbe: function () { return this.bodyProbe(); },
 
       twinStats: function () {
         if (!twin) return null;
         const s = twin.stats();
         s.drawn = twinDrawn;
         s.nodesDrawn = twinDrew2;
-        s.spritesSuppressed = twinSuppressed;
+        s.generated = twinGenerated;
+        s.generatedDraws = twinGeneratedDraws;
+        s.bodies3d = (stage.fixtures || []).length;
         s.instancesSkipped = twinSkipped;
         s.uploaded = 0;
         if (twin.defs) {

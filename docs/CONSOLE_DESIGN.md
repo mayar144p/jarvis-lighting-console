@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1682 checks, 46 suites, one command, no arguments, ~16 s (1679 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
+| tests | `tools/selftest.py` | 1707 checks, 47 suites, one command, no arguments, ~16 s (1679 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1682 checks across 46 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1707 checks across 47 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1682 checks, 46 suites (section 12) |
+| | `tools/selftest.py` | 1707 checks, 47 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -862,7 +862,7 @@ exist, that a valid token works and a wrong or empty one does not, that `?token=
 refused, that an **unknown endpoint is authenticated rather than public**, and that the
 static pages are still served so a 401 cannot become a lockout.
 
-**1682 checks across 46 suites.**
+**1707 checks across 47 suites.**
 
 #### What the review got wrong
 
@@ -1110,3 +1110,208 @@ rewriting the security-header check from "there are two call sites" to
 counting version had been green the whole time.  A count cannot see a
 method that was not there when it was written.
 
+
+### 17.29  One visual language: every fixture is shaded 3D geometry
+
+Added after §17.28.  §17.28 gave twelve of the fourteen heads in the rig a
+real product model.  This section is about the other two, and about what
+having twelve and two was doing to the picture.
+
+#### THE PROBLEM WAS NOT THE TWO MISSING MODELS.
+
+A GDTF profile that ships `<Geometry>` but no model file is common - the
+Slim Par T12 USB (`rev16526.gdtf`) is one, and it is one of fourteen heads
+in this rig.  Until now such a head fell back to a **2D canvas sprite**: a
+`fillRect` and an `ellipse`, drawn in the projected frame, shaped by
+`bodyFor`, the function that looked at the channel roles and the
+manufacturer name and picked one of five hand-drawn silhouettes.
+
+So the rig contained two different visual languages at once.  Twelve heads
+were shaded 3D geometry with normals and a specular term; two were flat
+canvas shapes with a one-pixel stroke.  Beside each other they did not look
+like a fallback - they looked like a bug.  And the operator had no way to
+tell which was which, because the sprite was drawn *instead of* the model
+rather than *as well as* it, so the absence was invisible.
+
+The fix is not "draw a better sprite".  It is that **every fixture is
+shaded 3D geometry now**, from one of two sources:
+
+    the profile ships a model   ->  the actual product
+    the profile does not        ->  generated from its channel roles
+
+and there is no third case.  The 2D sprite path is gone: `bodyFor`,
+`BODY_RULES`, `SHAPE_BY_ROLE` and the 102-line block that drew it were
+deleted, and `tools/selftest.py` asserts their absence - because a
+retirement that leaves the code behind is a retirement somebody will
+re-introduce.
+
+#### THE GENERATED BODIES ARE BUILT, NOT DRAWN.
+
+`web/fixture3d.js` builds six shapes from boxes and cylinders: `mover`
+(base, yoke, head, lens barrel - 180 triangles), `wash`, `par`, `tube`,
+`panel`, `can`.  Sizes are real, in metres, because a body that is the
+wrong size sits in the scene pretending.
+
+They are not pictures of fixtures.  A `mover` has a `yoke` part and a
+`head` part as **index ranges into one shared buffer**, and each carries
+the pivot it turns about - so pan and tilt drive them independently, which
+is the entire difference between a moving head and a lump.  One shape is
+built once and cached, so a rig of forty PAR cans is one GPU buffer and
+forty draws.
+
+Which body a fixture gets is decided by the same rule the sprites used,
+**moved into `fixture3d.js`**: manufacturer and model substring first, then
+channel roles, then the channel count.  The brand table came with it,
+because it was the only part of the old identity system that knew what a
+fixture *was* - a Chauvet Intimidator and a generic wash are both "pan,
+tilt, dimmer", and an operator recognises the product long before they read
+the channel list.  Role-only classification threw that away and would have
+drawn every wash in the rig identically.
+
+Order is load-bearing and was wrong twice while writing it: a profile with
+13 channels and a pan channel is still a moving head, because gobo, zoom,
+wheel and strobe all say the fixture *has a head*.  Checking the count
+first turned every real profile in the rig into a batten.  The brand table
+has the mirror-image hazard - `intimidator` has to be listed before `spot`
+or "Intimidator Spot 260" is classified by the word "spot" inside its own
+name - so the order is pinned by a test that also checks it *changes* the
+answer, because an order that does not matter is not an order.
+
+#### THE HARD PART: MAKING A STAND-IN AND A REAL MODEL AGREE.
+
+Two decisions, both of which were wrong before they were right, and both of
+which are invisible on a still.
+
+**Placement.**  `Scene.update` in `gdtf3d.js` puts a real model at exactly
+`(f.x, f.y, f.z)` and hangs it down, for a floor fixture as much as a
+hanging one.  The 2D sprite did three different things: a `+0.23` offset
+for a bar fixture, the roof height for a hanging one, and a flip for a
+floor stand.  Copying the sprite's rule would have put the stand-ins in
+*different places from the real models*, which is the one thing this pass
+exists to prevent.  So the generated body uses the twin's placement, and a
+selftest check asserts the exact call.
+
+**Aim.**  The twin turns a profile-frame rotation `M` into the visualiser's
+frame with `swapYZ(transpose(M))`.  `swapYZ` is a **reflection**, so that
+whole map has determinant −1 - which is also why back-face culling is off
+(§17.28).  A generated body is authored directly in the +Y-up frame, and
+handing it a determinant −1 matrix would *mirror* the fixture.
+
+The equivalent proper rotation is the same map conjugated by the axis
+swap, `S·Mᵀ·S`.  Conjugating a rotation by a reflection keeps the magnitude
+and reflects the axis, which for a row-vector profile frame lands on:
+
+    pan  ->  −panDeg about +Y
+    tilt ->  −tiltDeg about +X
+
+**negated** by the reflection, and in **degrees**, because that is the unit
+the engine reports `panDeg`/`tiltDeg` in and the unit the twin takes.  Pan
+is **outside** tilt, because the head hangs off the yoke; reversed, a head
+tilts about the wrong axis and sweeps a circle on a real pan.
+
+This is the part that most wants to be a comment and least deserves to be
+one, because a wrong sign is *invisible*: the head still moves, the beam
+still leaves the lens, and only an operator watching a cue would know the
+rig aims the wrong way downstage.  So it lives in `Fixture3D.aimMatrix`,
+a pure function, and 28 node checks pin it as **matrices**:
+
+- zero aim is the identity on both parts
+- the determinant is +1 at seven pan/tilt pairs - never −1, which is the
+  property the whole conjugation argument exists for
+- the basis stays orthonormal, because a shear also has a determinant near
+  1 and `det` alone would pass it
+- pan moves only the fore/aft axis onto the left/right axis and leaves the
+  vertical alone; tilt does the reverse
+- a **pivot is a fixed point** of its own matrix, which is what
+  distinguishes a part that rotates in place from one that orbits
+- pan-then-tilt equals a hand-built chain, and does *not* equal the other
+  order, so the test is not passing by coincidence
+- `pan 180` lands on `(0,0,−1)`: a degrees/radians mix-up would put it
+  nowhere near
+
+Two bugs were found by that harness, neither of which a source check would
+have caught.  `aimMatrix` returned an **all-zero matrix** - not the
+identity - on the no-pivot, no-angle path, which is the common case for a
+head with no pan channel at all; a `m4()` is a zero-filled array and that
+path touches no rotation helper.  And one test expectation was wrong while
+the code was right: `mRotY` is the standard right-handed rotation about +Y,
+so a −90 pan sends `(0,0,1)` to `(−1,0,0)`, not `(1,0,0)`.
+
+#### TWO COUNTERS THAT COULD ONLY GO UP.
+
+The live probe reported `generated: 214` for a rig with **2** generated
+heads, and `nodesDrawn: 288` for **96** real ones.  Both were exactly
+three times the truth, after about a hundred frames, because neither
+`twinGenerated` nor `twinDrew2` was ever reset - only `twinDrawn` and
+`twinSkipped` were.
+
+Nothing about that reads as broken.  214 is a plausible number.  The
+symptom was only visible because the *new* counter was compared against a
+count that was independently known (the body probe's `generated: 2`), and
+disagreed with the twin's own `generated: 214` - the same word, two
+different numbers, in two places an operator can read.
+
+This is the §17.28 culling lesson again, in a different costume: **a
+metric that can only go up cannot notice that nothing is happening.**  The
+fix is the reset, and the guard is structural rather than a source match,
+because a missing reset is an *absence* and no amount of reading finds one:
+
+- all five counters are zeroed in `render()`, in **one statement**, so a
+  sixth cannot be half remembered the way the fifth was
+- each is declared exactly once at the top of `create()` - re-declaring one
+  inside `render()` would reset it every frame and read a permanent 1, the
+  same lie in the other direction
+- no *readout* may write to any of them, because a probe that corrects a
+  counter cannot then be used to check one
+
+`generated` also used to mean "draw calls" in one place and "fixtures" in
+another - 4 against 2 for the same rig - and is now `generated` (heads) and
+`generatedDraws` (ranges), counted separately.
+
+The guard is also a reminder that a strict check is not the same as a true
+one: the first version demanded all five counters on one line and **failed
+on correct code**, which had them on two.  Fixed on both sides.
+
+#### MEASURED, ON THE LIVE RIG, FOURTEEN HEADS
+
+| | |
+|---|---|
+| fixtures | 14 |
+| real GDTF models drawn | 12 |
+| generated bodies drawn | 2 (4 draw ranges) |
+| fixtures with **no** 3D body | **0** |
+| model node draws | 38 |
+| definitions / models / triangles | 4 / 13 / 17 282 |
+| instances skipped (no geometry) | 2 |
+
+Read twice, 1.6 s apart, identical - which is the check that matters, since
+a counter that rises between two reads is the bug.
+
+#### WHAT IS STILL NOT DONE
+
+- **The shading is still one lambert term plus a rim.**  Correct and
+  legible, and a real model is now unmistakably a real model - but there is
+  no material, no texture, and no anisotropy, so an aluminium extrusion and
+  a plastic housing shade identically.  This is the remaining gap between
+  "correct" and "recognisable", and it is a shader problem, not a geometry
+  one.
+- **The room is bright.**  The floor and the back wall read almost white
+  from most angles and wash out the fixtures in front of them.  Pre-existing
+  and untouched by this pass - it is in the room/truss shading, not the
+  twin - but it is the single worst thing in the picture.
+- **The beams still dominate.**  They are the same additive cones as
+  before, and at rig scale they are brighter than the fixtures they come
+  from.
+- **The beam cone is still generic.**  `BeamAngle`, `FieldAngle` and
+  `BeamRadius` are in the manifest and the solver already returns the
+  emitter origin and direction from the LENS node, but the cone is built
+  from the channel role's `spread`, not from the profile's own angles.
+- **Zoom, gobo, shutter, strobe and focus are not mapped.**  The roles are
+  in the manifest; nothing reads them for the picture yet.
+- **No performance measurement at scale.**  Never run at 10/50/100/250/500
+  fixtures.  A generated body is a few hundred triangles and shapes are
+  shared, so it should be fine, and "should be fine" is not a measurement.
+- **A head with no model and no recognisable name gets the plain `can`.**
+  That is honest - it is what "we do not know what this is" should look
+  like - but it is not recognisable, and it will be for any fixture whose
+  manufacturer string is spelled differently from the rules.
