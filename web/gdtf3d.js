@@ -834,6 +834,22 @@
     return this;
   };
 
+  /* How the fixture is mounted: "floor" stands it up, anything else hangs
+   * it.  Set from the PATCH, the same way the position is, because where a
+   * fixture physically is and how it is bolted on are both the operator's
+   * decision and the engine's record.
+   *
+   * This was not settable, so it sat on its `|| "floor"` default and every
+   * instance claimed to be a floor fixture.  That was harmless until the
+   * floor-stand rotation was added, at which point the default silently
+   * stood the ENTIRE rig on its head - a truss of moving heads pointing at
+   * the roof.  A default that is only ever right when nothing uses the field
+   * is a default that will be wrong the moment something does. */
+  Instance.prototype.setKind = function (kind) {
+    this.kind = kind || "floor";
+    return this;
+  };
+
   Instance.prototype.dispose = function () {
     if (this.def) { this.def.refs -= 1; this.def = null; }
   };
@@ -935,8 +951,25 @@
     const worlds = new Map();
     this.instances.forEach((inst) => {
       const gdtf = inst.def.solveGDTF(inst.dmx);
-      const base = mTranslate(inst.position[0], inst.position[1],
-                              inst.position[2]);
+      /* A GDTF model is authored HANGING: its mount is the top and its
+       * yoke drops below it, because that is how it bolts to a truss.  So a
+       * floor fixture has to be stood UP, and the way to do that is a
+       * rotation - never a negated geometry, which would mirror the model
+       * and reverse its winding as well as its shape.
+       *
+       * This was invisible while the beam was a per-role guess aimed at a
+       * geometric landing: the cone went where the guess said, so a
+       * below-floor lens made no difference.  The moment the beam was taken
+       * from the model's own beam node it became obvious - the SlimPAR
+       * Quad 12, a floor wash, reported a lens at y = -0.134, i.e. UNDER
+       * the deck, throwing its 90-degree cone at the ground.  A truthful
+       * beam found a placement bug that a dishonest one had been covering.
+       *
+       * 180 degrees about X, so the model stands on its base and its beam
+       * points up into the room, which is what a floor wash does. */
+      const stand = (inst.kind === "floor") ? mRotX(Math.PI) : mIdent();
+      const base = mMul(mTranslate(inst.position[0], inst.position[1],
+                                   inst.position[2]), stand);
       const perNode = {};
       for (const path in gdtf) perNode[path] = mMul(base, swapYZ(gdtf[path]));
       inst.world = base;
@@ -950,8 +983,7 @@
   /* The beam's world position and direction, which is where the cone
    * actually starts.  Derived from the BEAM NODE's matrix, so the beam
    * leaves the lens rather than the middle of the fixture. */
-  /* Can this instance be drawn from real geometry at all?
-   *
+  /* Can this instance be drawn from real geometry at all?   *
    * NOT the same question as `state`, and the difference matters.  `state`
    * describes the definition for a label - "primitives" is the honest
    * summary when one of four models failed.  But three of four parts
@@ -979,11 +1011,28 @@
 
   Scene.prototype.beamFor = function (headNo) {
     const inst = this.instances.get(headNo);
-    if (!inst || !inst.gdtfWorld) return null;
+    // `nodeWorld`, NOT `gdtfWorld`, and this is the whole function.
+    //
+    // `Scene.update` builds two matrices per node: `gdtfWorld` is the node's
+    // own CHAIN, in the profile's frame, with no instance position in it -
+    // that is the right thing for working out how a fixture is put together.
+    // `nodeWorld` is the same chain multiplied by the instance's world
+    // position and axis-swapped, and that is the only one in metres on the
+    // stage.
+    //
+    // Reading the local one put every cone at the world origin: a head on a
+    // truss at (-4.5, 6.2, -2.5) reported a beam origin of (0, 0.618, 0),
+    // and because the floor is at y=0 the cone was 0.34 m long instead of
+    // 6.2 m - a tight little stub at the middle of the room.  Nothing
+    // errored, every counter read healthy, and 14 of 14 beams reported
+    // `fromProfile: true`, which is exactly what a wrong answer looks like
+    // when the check is "did the profile path run" rather than "is the
+    // number right".
+    if (!inst || !inst.nodeWorld) return null;
     const nodes = inst.def.beamNodes();
     if (!nodes.length) return null;
     const rec = nodes[0];
-    const g = inst.gdtfWorld[rec.path];
+    const g = inst.nodeWorld[rec.path];
     if (!g) return null;
     // DERIVED, not read off a matrix column.  Two points go through the
     // chain and the answer is the difference, so nothing depends on which
@@ -994,13 +1043,25 @@
     // wrong, because the swap that makes the frame +Y up has by then MOVED
     // the data out of column 1 and into column 2.  Two plausible-looking
     // column indices and neither was right.
+    // NO gdtfPoint() HERE, and that is the second half of the same fix.
+    //
+    // `nodeWorld` has ALREADY been through swapYZ - it is the visualiser's
+    // frame, metres on the stage.  Running the profile-to-visualiser point
+    // conversion on it again swapped Y and Z a second time, so a lens at
+    // (-6.23, 5.86, 2.35) was reported at (-6.23, 2.35, 5.86): the head
+    // kept its X, and its height and depth traded places.  That is invisible
+    // in a total and obvious in a per-head number, which is the whole reason
+    // beamProbe reports one.
+    //
+    // The "there" point is likewise already converted.  The profile's beam
+    // points along its own -Y, and swapYZ maps -Y to -Z, so in this frame
+    // the beam leaves along -Z and the two points differ by exactly that.
     const here = pointMul(g, [0, 0, 0, 1]);
-    const there = pointMul(g, [0, -1, 0, 1]);      // the profile faces -Y
-    const origin = gdtfPoint(here);
-    let d = gdtfPoint([there[0] - here[0], there[1] - here[1],
-                       there[2] - here[2]]);
+    const there = pointMul(g, [0, 0, -1, 1]);
+    const origin = [here[0], here[1], here[2]];
+    const d = [there[0] - here[0], there[1] - here[1], there[2] - here[2]];
     const len = Math.hypot(d[0], d[1], d[2]) || 1;
-    d = [d[0] / len, d[1] / len, d[2] / len];
+    d[0] /= len; d[1] /= len; d[2] /= len;
     const b = rec.beam || {};
     return {
       path: rec.path, origin, dir: d,

@@ -8178,7 +8178,8 @@ def test_gdtf_twin() -> None:
         # that made the feature invisible while every counter said it
         # worked.
         viz_src = (root / "web" / "viz.js").read_text(encoding="utf-8")
-        fx3d_src = (root / "web" / "fixture3d.js").read_text(encoding="utf-8")
+        console_src = (root / "web" / "console.js").read_text(encoding="utf-8")
+        gdtf_src = (root / "web" / "gdtf3d.js").read_text(encoding="utf-8")
         viz_code = "\n".join(ln for ln in viz_src.splitlines()
                              if not ln.lstrip().startswith(("*", "//")))
         check("viz.js does NOT enable back-face culling.  The GDTF axis swap "
@@ -8214,39 +8215,92 @@ def test_gdtf_twin() -> None:
                "being left behind reading TRUE for everything and "
                "reporting a suppression that is not happening",
               "twinHasModel" not in viz_src, "")
-        check("every fixture the twin does NOT draw gets a generated 3D body, "
-               "chosen by the same brand-then-roles rule the sprites used",
-              "function drawFallbackBodies()" in viz_src
-              and "Fixture3D.shapeForFixture(f)" in viz_src
-              and "shapeForFixture" in fx3d_src, "")
-        check("and the two passes decide ownership with the SAME predicate, "
-               "so a head can never be drawn twice - once shaded, once flat. "
-               "An earlier version compared def.state on one side and "
-               "hasGeometry on the other, which disagreed for a profile with "
-               "three of four models loaded",
-              viz_src.count("inst.hasGeometry()") >= 2, "")
-        check("the generated body's placement is the TWIN's placement - same "
-               "point, hung the same way - so a stand-in and a real model are "
-               "never in different places",
-              "mTranslate(place, f.x || 0, f.y || 0, f.z || 0)" in viz_src, "")
-        check("and its aim comes from ONE tested function rather than from a "
-              "matrix composed inline in the draw loop - the pan/tilt signs "
-              "and the frame they happen in are the easiest thing in this "
-              "project to get backwards, and a wrong one still LOOKS aimed, "
-              "because the beam still leaves the lens",
-              "Fixture3D.aimMatrix(" in viz_src
-              and "function aimMatrix(" in fx3d_src, "")
-        check("...which negates BOTH angles, because the twin's swapYZ is a "
-              "reflection, and puts pan outside tilt because the head hangs "
-              "off the yoke - reversed, a head sweeps a circle on a real pan",
-              "-(panDeg || 0) * DEG" in fx3d_src
-              and "-(tiltDeg || 0) * DEG" in fx3d_src
-              and "mMul(head, yoke, t)" in fx3d_src, "")
-        check("...and it is handed the twin's OWN dmx object, in the twin's "
-              "own DEGREES, so a partly-loaded head aims its stand-in from "
-              "exactly the numbers its real parts are drawn from",
-              "look.panDeg" in viz_src and "look.tiltDeg" in viz_src
-              and "panDeg: bm.pan * 180 / Math.PI" in viz_src, "")
+        check("there is no stand-in body any more: a fixture whose profile "
+               "ships no model file is drawn as NOTHING rather than as a "
+               "substitute, because a generated box beside real fixtures "
+               "read as a bug rather than as an absence",
+              "drawFallbackBodies" not in viz_src
+              and "Fixture3D" not in viz_src
+              and "fixture3d.js" not in (root / "web" / "console.html")
+              .read_text(encoding="utf-8"), "")
+        check("and the diagnostic says so honestly, counting 'the twin has "
+               "no instance for this head' apart from 'the profile ships no "
+               "model' - collapsing those makes a patch that never loaded "
+               "look like a library that happens to be thin",
+              "missing" in viz_src and "twinKnows" in viz_src
+              and "ships no model file" in viz_src, "")
+        check("THE HOUSING IS NOT THE LAMP.  The mesh shader declares no "
+               "emissive uniform and nothing ever sets one, because feeding "
+               "a fixture's output colour into one is what rendered a "
+               "75%-amber Intimidator as a brown blob: a real fixture's "
+               "housing is matte black and stays that way at full.  The "
+               "colour in a rig is carried by the beam",
+              "uniform vec3 uEmit" not in viz_src
+              and "prMesh.u.uEmit" not in viz_src
+              and '"uEmit"' not in viz_src, "")
+        check("and every model gets the same powdercoat, so the chassis "
+               "cannot be mistaken for the light",
+              "gl.uniform3f(prMesh.u.uColor, 0.135, 0.142, 0.160)" in viz_src,
+              "")
+        check("THE BEAM COMES OUT OF THE MODEL.  When the twin knows the "
+               "head, the cone's origin and direction are read from the "
+               "profile's own <Beam> node via beamFor, so the light leaves "
+               "the lens and cannot be one frame behind the head throwing it",
+              "function profileBeam(" in viz_src
+              and "twin.beamFor(hn)" in viz_src
+              and "fromProfile: true" in viz_src, "")
+        check("and the cone opens to the profile's OWN field angle and "
+               "starts at the profile's OWN beam radius - 12 and 17 degrees "
+               "and 30 mm on a Chauvet Intimidator Spot 260 - instead of a "
+               "per-role spread and a hardcoded 50 mm at the lens",
+              "pb.fieldAngle || pb.beamAngle" in viz_src
+              and "pb.beamRadius" in viz_src
+              and "rad0: bm.rad0 || 0.05" in viz_src, "")
+        check("the twin is solved BEFORE buildScene, not only before the draw, "
+               "because buildScene now reads the beam node's matrix - solving "
+               "it afterwards would put this frame's beam on last frame's head",
+              viz_src.index("if (twin) twin.update();")
+              < viz_src.index("buildScene();"), "")
+        check("and the beam's orthonormal basis is computed in ONE place "
+               "and called from BOTH return paths, because a field only one "
+               "path carries is a field the other path eventually forgets - "
+               "which is exactly what happened when the profile path was "
+               "added, and the cone would have been drawn with no orientation",
+              "function beamBasis(" in viz_src
+              and viz_src.count("= beamBasis(") == 2, "")
+        check("beamFor reads nodeWorld, NOT gdtfWorld.  gdtfWorld is the "
+               "node's own chain with no instance position in it - right for "
+               "working out how a fixture is built, wrong for putting "
+               "anything on the stage.  Reading it put every cone at the "
+               "world origin: a head at (-4.5, 6.2, -2.5) reported an "
+               "origin of (0, 0.618, 0) and a 0.34 m cone instead of 6.2 m",
+              "inst.nodeWorld[rec.path]" in gdtf_src
+              and "inst.gdtfWorld[rec.path]" not in gdtf_src, "")
+        check("and it does NOT re-run the profile-to-visualiser point "
+               "conversion on that matrix, because nodeWorld has already "
+               "been axis-swapped.  Doing it twice swapped height and depth: "
+               "a lens at (-6.23, 5.86, 2.35) came back at "
+               "(-6.23, 2.35, 5.86) - X untouched, Y and Z traded",
+              "gdtfPoint(here)" not in gdtf_src
+              and "nodeWorld = perNode;      // the visualiser's frame"
+              in gdtf_src, "")
+        check("A FLOOR FIXTURE STANDS UP.  A GDTF model is authored hanging "
+               "- mount at the top, yoke below - so a floor fixture has to be "
+               "rotated 180 degrees about X.  A beam node 134 mm under the "
+               "deck, throwing its 90 degree cone at the floor, is what "
+               "happened without it, and it only became visible once the "
+               "beam was honest enough to report its own origin",
+              'inst.kind === "floor"' in gdtf_src
+              and "mRotX(Math.PI)" in gdtf_src, "")
+        check("...and the mount kind is SETTABLE, because it used to sit on a "
+               "`|| \"floor\"` default that no caller ever overrode.  The "
+               "moment the floor-stand rotation existed, that default stood "
+               "the ENTIRE rig on its head - a truss of moving heads aimed at "
+               "the roof - while every counter read healthy.  A default that "
+               "is only right while nothing reads the field is a default "
+               "that is wrong the moment something does",
+              "Instance.prototype.setKind" in gdtf_src
+              and "inst.setKind(h.kind)" in console_src, "")
 
         # The behaviour the operator actually asked for: choosing a light
         # shows the light.  Without the camera move and the hint hiding, the
@@ -8310,156 +8364,8 @@ def _standalone_suites():
     ("api auth", test_api_auth),
     ("gdtf geometry", test_gdtf_geometry),
     ("gdtf twin", test_gdtf_twin),
-    ("fixture bodies", test_fixture_bodies),
     )
 
-
-
-def test_fixture_bodies() -> None:
-    """The generated 3D bodies, and the pan/tilt convention, under node.
-
-    Every fixture in the rig is now shaded 3D geometry: the real product
-    where the profile ships a model, and a generated body where it does
-    not.  The 2D canvas sprites that used to stand in for the second case
-    are gone, because a flat box beside a shaded model reads as a bug and
-    is not one.
-
-    Two things here cannot be checked by reading the source, which is why
-    they are checked at all:
-
-      * the GEOMETRY is well formed - in-range indices, unit normals,
-        contiguous part ranges.  A bad index reads off the end of the
-        buffer and hangs the tab, and a zero normal lights the whole rig
-        wrong with no error anywhere.
-      * the AIM CONVENTION.  Which way a pan turns and which frame it
-        happens in is the single easiest thing in this project to get
-        backwards, and a wrong one is invisible: the head still moves, the
-        beam still leaves the lens, and only an operator watching a cue
-        would know the rig is aiming the wrong way downstage.
-    """
-    print("fixture bodies (JS: generated geometry, aim convention)")
-    import subprocess as _subprocess
-    import tempfile as _tempfile
-
-    from shutil import which
-    from tools import _fixture3d_harness as BH
-
-    root = Path(__file__).resolve().parent.parent
-    fx_js = root / "web" / "fixture3d.js"
-    viz_src = (root / "web" / "viz.js").read_text(encoding="utf-8")
-    check("web/fixture3d.js exists", fx_js.is_file(), str(fx_js))
-
-    node = which("node")
-    if not node:
-        check("node is available to run the JS half (SKIPPED, not failed)",
-              True, "node is not on PATH - the JS checks did not run")
-        return
-
-    proc = _subprocess.run([node, "--check", str(fx_js)],
-                           capture_output=True, text=True)
-    check("node --check web/fixture3d.js", proc.returncode == 0,
-          (proc.stderr or "")[-200:])
-
-    # The console loads this file as a plain classic script AFTER viz.js, so
-    # the order is part of the contract and a reorder is a real break.
-    html = (root / "web" / "console.html").read_text(encoding="utf-8")
-    i_viz = html.find('src="viz.js"')
-    i_fx = html.find('src="fixture3d.js"')
-    check("the console loads it, and AFTER viz.js - viz.js asks it for a "
-          "shape, so the other order is a blank panel",
-          i_viz > 0 and i_fx > i_viz, "viz %d fixture3d %d" % (i_viz, i_fx))
-    check("with no module system and no bundler, because the whole console "
-          "is classic <script> tags with no build step",
-          'src="fixture3d.js"' in html and "type=" not in html.split(
-              'src="fixture3d.js"')[0][-40:], "")
-
-    tmp = _tempfile.mkdtemp()
-    try:
-        for name, harness in (("shapes", BH.SHAPE_HARNESS),
-                              ("aim", BH.AIM_HARNESS)):
-            js = Path(tmp) / ("%s.js" % name)
-            js.write_text(harness, encoding="utf-8")
-            proc = _subprocess.run(
-                [node, str(js), str(fx_js)], capture_output=True, text=True)
-            out = (proc.stdout or "").strip().splitlines()
-            fails = [ln.strip() for ln in out if ln.strip().startswith("FAIL")]
-            tail = out[-1].strip() if out else "(no output)"
-            check("the %s harness runs clean under node" % name,
-                  proc.returncode == 0 and not fails,
-                  "; ".join(fails)[:400] or (proc.stderr or "")[-300:])
-            check("...and reports its own count, so a harness that silently "
-                  "checked nothing cannot pass", tail.startswith("-- "), tail)
-    finally:
-        import shutil as _shutil
-        _shutil.rmtree(tmp, ignore_errors=True)
-
-    src = fx_js.read_text(encoding="utf-8")
-    check("every shape is built ONCE and cached, so a rig of 40 identical "
-          "fixtures is one buffer and 40 draws, not 40 buffers",
-          "const _shapes = Object.create(null)" in src
-          and "if (!s) {" in src, "")
-    check("a part's range is in INDICES, not vertices - the renderer hands "
-          "it straight to drawElements, and mixing the two units slices the "
-          "wrong triangles with no error",
-          "from: iBase" in src and "to: iBase + sub.i.length" in src, "")
-    check("aimMatrix starts from IDENTITY, not a zero-filled array - the "
-          "no-pivot / no-angle path touches no rotation helper, so without "
-          "it a head with no pan channel collapsed to a point.  Found by the "
-          "harness, not by reading",
-          "const yoke = mIdent(m4());" in src, "")
-    check("and it is exposed with the transforms, so a harness can check the "
-          "convention instead of trusting a comment about it",
-          all(k in src for k in ("aimMatrix: aimMatrix", "xformPoint:",
-                                 "xformDir:", "det3: det3")), "")
-
-    # A COUNTER THAT CAN ONLY GO UP IS NOT EVIDENCE.  Two of the per-frame
-    # twin counters were never reset, so after a hundred frames `generated`
-    # read 214 for a rig with 2 generated heads, and `nodesDrawn` read 288
-    # for 96 real ones - both exactly 3x the truth, and both looking like
-    # perfectly healthy numbers.  Only a live run found it: a source check
-    # never could, because the code that resets the other three is present
-    # either way, and a missing reset is an ABSENCE, not a typo.
-    #
-    # So the guard is structural - and worth being careful that it is TRUE
-    # rather than merely strict.  The first attempt demanded all five
-    # counters on one line and failed on correct code, which is the worst
-    # kind of guard there is.
-    counters = ("twinDrawn", "twinSkipped", "twinDrew2", "twinGenerated",
-                "twinGeneratedDraws")
-    render_body = viz_src[viz_src.index("    function render() {"):
-                          viz_src.index("    function drawSelection(")]
-    zeroed = [ln for ln in render_body.splitlines()
-              if re.search(r"\btwinDrawn = twinSkipped = ", ln)]
-    # the statement may wrap, so the window is the reset plus the two lines
-    # after it rather than the single matched line
-    joined = "\n".join(render_body.splitlines())
-    m = re.search(r"twinDrawn = twinSkipped = [^;]+;", joined)
-    check("every per-frame twin counter is zeroed inside render(), in ONE "
-          "statement, so a counter added later cannot be silently left out",
-          len(zeroed) == 1 and m is not None
-          and all(c in m.group(0) for c in counters),
-          (m.group(0).replace("\n", " ")[:110] if m else "no such statement"))
-    check("and each is declared exactly once, at the top of create() with "
-          "`let` - re-declaring one inside render() would reset it every "
-          "frame and read a permanent 1, which is the same lie in the "
-          "other direction",
-          all(len(re.findall(r"^\s*let %s = " % c, viz_src, re.M)) == 1
-              for c in counters), "")
-    # A probe that "corrects" a counter is not a measurement any more.
-    dirty = []
-    for fn in ("twinProbe: ", "bodyProbe: function", "twinStats: function",
-               "spriteProbe: function"):
-        if fn not in viz_src:
-            continue
-        seg = viz_src[viz_src.index(fn):]
-        cut = seg.find("\n    },")
-        seg = seg[:cut] if cut > 0 else seg[:400]
-        for c in counters:
-            if re.search(r"\b%s\s*(\+\+|--|[+\-*/]?=[^=])" % c, seg):
-                dirty.append("%s in %s" % (c, fn.strip()))
-    check("and no readout writes to any of them - twinProbe, bodyProbe and "
-          "twinStats are measurements, and a probe that corrects a counter "
-          "cannot then be used to check one", not dirty, "dirty: %s" % dirty)
 
 
 def check_js() -> None:

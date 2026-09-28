@@ -239,20 +239,62 @@ if (bf) {
      'the beam direction is a unit vector');
   const flat = new G.Scene();
   flat.addManifest(m0);
+  flat.get(m0.heads[0]).setKind('truss');
   flat.setDmx(m0.heads[0], { panDeg: 0 });
   flat.update();
   const f0 = flat.beamFor(m0.heads[0]);
-  ok(near(f0.dir, [0, 0, -1], 1e-6),
-     'an un-panned head points its beam along the profile forward axis',
-     f4(f0.dir));
+  ok(!!f0, 'an un-panned head still has a beam after being told it hangs');
   ok(!near(bf.dir, f0.dir, 1e-3),
-     'and a panned head points it elsewhere - the beam FOLLOWS the head '
+     'a panned head points its beam elsewhere - the beam FOLLOWS the head '
      + 'rather than being drawn from a fixed vector', f4(bf.dir));
   ok(Math.abs(bf.dir[1]) < 1e-6,
      'staying level, because pan turns about the up axis and must not tip '
      + 'the beam', f4(bf.dir));
   ok(!near(bf.origin, [0, 0, 0], 1e-4),
      'and it leaves the LENS, not the middle of the fixture', f4(bf.origin));
+
+  // FLOOR vs HANGING.  Two scenes identical apart from the mount kind, so
+  // anything that differs between them is the stand-up rotation and nothing
+  // else.
+  //
+  // These assert the RELATIONSHIP between the two, never a hardcoded axis.
+  // The first version of this check expected a beam along -Z, taken from the
+  // profile's own frame before the axis swap - and it failed the moment the
+  // two mounts were compared, because the beam node carries its own rotation
+  // and so the world direction is whatever that rotation makes it.  "The two
+  // are opposites, and the floor one points up" is true whatever the node's
+  // orientation; "it points along -Z" is true only for one fixture.
+  const hangS = new G.Scene();
+  hangS.addManifest(m0);
+  hangS.get(m0.heads[0]).setKind('truss');
+  hangS.update();
+  const hHang = hangS.beamFor(m0.heads[0]);
+  const floorS = new G.Scene();
+  floorS.addManifest(m0);
+  floorS.get(m0.heads[0]).setKind('floor');
+  floorS.update();
+  const hFloor = floorS.beamFor(m0.heads[0]);
+  ok(!!hHang && !!hFloor, 'a head can be located mounted either way');
+  if (hHang && hFloor) {
+    ok(near(hFloor.dir, [-hHang.dir[0], -hHang.dir[1], -hHang.dir[2]], 1e-6),
+       'the two mounts throw in OPPOSITE directions, because the model is '
+       + 'stood up 180 degrees rather than nudged',
+       f4(hFloor.dir) + ' vs ' + f4(hHang.dir));
+    ok(hFloor.dir[1] > 0.9,
+       'and the floor head washes UPWARD into the room, which is what a '
+       + 'fixture standing on the deck does', f4(hFloor.dir));
+    ok(hHang.dir[1] < -0.9,
+       'while the hanging head throws DOWN at the floor', f4(hHang.dir));
+    ok(near(hFloor.origin, [-hHang.origin[0], -hHang.origin[1],
+                            -hHang.origin[2]], 1e-6),
+       'and the lens mirrors through the mount point, so it ends up on the '
+       + 'upright side of the fixture instead of under the deck',
+       f4(hFloor.origin) + ' vs ' + f4(hHang.origin));
+    ok(hFloor.origin[1] > 0 && hHang.origin[1] < 0,
+       'so a floor head has its lens ABOVE the deck and a hanging head BELOW '
+       + 'its mount - the underground-lens bug cannot come back',
+       f4(hFloor.origin) + ' / ' + f4(hHang.origin));
+  }
 }
 
 scene.remove(m0.heads[0]);

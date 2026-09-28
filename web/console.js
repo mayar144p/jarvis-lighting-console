@@ -3029,7 +3029,13 @@ async function loadTwin() {
     if (S && Array.isArray(S.patch)) {
       S.patch.forEach((h) => {
         const inst = scene.get(h.head_no);
-        if (inst) inst.setPosition(h.x || 0, h.y || 0, h.z || 0);
+        if (!inst) return;
+        inst.setPosition(h.x || 0, h.y || 0, h.z || 0);
+        // The mount kind goes with the position, from the same record.  It
+        // is what stands a floor fixture up instead of hanging it, and it
+        // used to be left on the twin's "floor" default for every head -
+        // which put a truss of moving heads on the ceiling.
+        if (inst.setKind) inst.setKind(h.kind);
       });
     }
     twinScene = scene;
@@ -3092,6 +3098,14 @@ function feedTwin() {
  * reads 0 - which looks like good news rather than like the bug it is. */
 window.jarvisSprite = function () {
   return viz && viz.spriteProbe ? viz.spriteProbe() : null;
+};
+
+/* What each beam is built from.  Separate from jarvisTwin because it is the
+ * OTHER half of the same claim: the twin says the model is there, and this
+ * says whether the light actually comes out of it.  A cone still starting at
+ * the middle of the chassis would look broadly right from across a room. */
+window.jarvisBeam = function () {
+  return viz && viz.beamProbe ? viz.beamProbe() : null;
 };
 
 window.jarvisTwin = function () {
@@ -3234,7 +3248,11 @@ function twinStatus() {
   const s = viz.twinStats();
   const bits = [];
   if (s.fallback) {
-    bits.push(s.fallback + " generic");
+    // Not "generic" any more - there IS no generic body, and calling these
+    // generic describes a substitute that is not drawn.  What is true is
+    // that the profile ships geometry and no model file, so there is
+    // nothing to draw and the head shows its beam alone.
+    bits.push(s.fallback + " with no model file");
   }
   if (s.models) {
     bits.push(s.models + " model" + (s.models === 1 ? "" : "s")

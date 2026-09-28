@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1707 checks, 47 suites, one command, no arguments, ~15 s (1704 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not. Verified by cloning the commit and running it, not by remembering the last number) |
+| tests | `tools/selftest.py` | 1702 checks, 46 suites, one command, no arguments, ~15 s (1704 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not. Verified by cloning the commit and running it, not by remembering the last number) |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1707 checks across 47 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1702 checks across 46 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1707 checks, 47 suites (section 12) |
+| | `tools/selftest.py` | 1702 checks, 46 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -862,7 +862,7 @@ exist, that a valid token works and a wrong or empty one does not, that `?token=
 refused, that an **unknown endpoint is authenticated rather than public**, and that the
 static pages are still served so a 401 cannot become a lockout.
 
-**1707 checks across 47 suites.**
+**1702 checks across 46 suites.**
 
 #### What the review got wrong
 
@@ -1315,3 +1315,187 @@ a counter that rises between two reads is the bug.
   That is honest - it is what "we do not know what this is" should look
   like - but it is not recognisable, and it will be for any fixture whose
   manufacturer string is spelled differently from the rules.
+
+
+### 17.30  The model IS the light
+
+Added after §17.29.  §17.29 gave every fixture shaded 3D geometry, and
+then two things were wrong with it that a screenshot of a lit rig made
+obvious and no counter had.
+
+#### THE BROWN BLOB WAS MY OWN FAULT.
+
+`drawTwin` set the mesh shader's `uEmit` to the fixture's own output
+colour, on the reasoning that "a lit fixture throws its own light back off
+its housing".  It does - and a Chauvet Intimidator Spot 260 at 75% amber
+rendered as a **brown lump**, because a real fixture's housing is matte
+black powdercoat and stays that way at full.  Nothing about a fixture
+changes colour when you fade it up; the light comes out of the lens.
+
+So the emissive term is **gone**, not dialled down.  `FS_MESH` no longer
+declares `uEmit`, nothing sets one, and every model gets the same
+`(0.135, 0.142, 0.160)` powdercoat.  The colour in a rig is carried by the
+beam, which is what a rig looks like from the audience and what the colours
+actually mean.
+
+#### THE STAND-IN BODIES ARE GONE TOO.
+
+§17.29 built generated geometry for profiles that ship no model file.  The
+operator's read was that it made the picture worse, and it did - not
+because the geometry was bad but because a substitute is the wrong answer.
+A fixture whose profile ships `<Geometry>` and no model file **cannot be
+drawn from**, and drawing *something* there puts an object in the scene
+that is not the thing the operator owns.  So `web/fixture3d.js`,
+`drawFallbackBodies`, `drawBody`, `uploadShape`, the script tag, the
+harness and the suite are all deleted, and the selftest asserts the
+absence.
+
+The diagnostic now says `none` with a reason, and counts **two different
+"none"s apart**: `the twin has no instance for this head` is a wiring
+fault, `this profile ships no model file` is a fact about the file.
+Collapsing them makes a patch that never loaded look like a library that
+happens to be thin.
+
+The cost is real and recorded: 28 matrix checks pinning the pan/tilt
+convention for those bodies went with them.  The convention still matters -
+it lives in `gdtf3d.js` for the real models - and it is pinned there.
+
+#### THE BEAM NOW COMES OUT OF THE MODEL.
+
+`beamOf` built every cone from the **channel role**: a `spread` constant,
+an origin at the middle of the chassis, and a direction aimed at a
+geometric landing on the deck.  That is a light bulb hanging under a grey
+box.  When the twin knows the head, the beam is now built from the
+profile's own `<Beam>` node via `Scene.beamFor`, and four things change:
+
+| | before | after |
+|---|---|---|
+| origin | the fixture's position | the lens, from the beam node's world matrix |
+| direction | aimed at a chosen spot on the deck | the model's own axis, so it *is* the aim |
+| radius at the lens | hardcoded 0.05 m | the file's `beam_radius` |
+| opening angle | a per-role `spread` | the file's `field_angle` |
+
+Measured on the live rig, all 14 heads, `window.jarvisBeam()`:
+
+| fixture | beam° | field° | cone got° | rad0 | len | dir |
+|---|---|---|---|---|---|---|
+| Chauvet Intimidator Spot 260 | 12 | 17 | **17** | **0.030** | 5.86 | down |
+| SlimPAR Quad 12 (floor wash) | 60 | 90 | **90** | 0.100 | 7.62 | up |
+| COLOR STRIKE V | 25 | 25 | **25** | 0.050 | 7.39 | down |
+| Slim Par T12 USB (no model) | 25 | 25 | **25** | 0.100 | 7.47 | up |
+
+`cone got°` is the angle the renderer actually used, recomputed from the
+geometry - it equals `field°` on every head, so the file's optics are
+reaching the screen.  The Intimidator's 30 mm start is the real diameter of
+that beam where it leaves the glass.
+
+Note the last row: the Slim Par T12 ships **no model file** and still gets
+a truthful beam, because the beam data does not need a model.  Losing the
+body cost it nothing.
+
+#### THREE BUGS, AND ALL THREE LOOKED HEALTHY
+
+This is the part worth keeping, because each one passed every counter that
+existed and was found only by printing the numbers.
+
+**1. `beamFor` read the LOCAL matrix.**  `Scene.update` keeps two per node:
+`gdtfWorld` is the node's own chain in the profile's frame with no
+instance position in it - right for working out how a fixture is built -
+and `nodeWorld` is that chain times the instance position, axis-swapped.
+`beamFor` read `gdtfWorld`.  So every cone started at the **world origin**:
+a head at `(-4.5, 6.2, -2.5)` reported an origin of `(0, 0.618, 0)`, and
+because the floor is at `y=0` the cone was **0.34 m long instead of
+6.2 m** - a tight stub in the middle of the room.
+
+**2. The axis swap was applied twice.**  With `nodeWorld` the beam is
+already in the +Y-up frame, so re-running the profile-to-visualiser point
+conversion swapped height and depth a second time: a lens at
+`(-6.23, 5.86, 2.35)` came back at `(-6.23, 2.35, 5.86)`.  X untouched, Y
+and Z traded.
+
+**3. A floor fixture was never stood up.**  A GDTF model is authored
+*hanging* - mount at the top, yoke below - so a floor fixture has to be
+rotated 180° about X.  It wasn't, so the SlimPAR Quad 12, a floor wash,
+had a lens at **y = −0.134**: under the deck, throwing its 90° cone at the
+ground.  Invisible while the beam was a guess, because the cone went where
+the guess said.  A truthful beam found a placement bug a dishonest one had
+been covering.
+
+And fixing #3 immediately caused a fourth: the mount kind was on a
+`|| "floor"` default that **no caller ever overrode**, so every instance
+claimed to be a floor fixture and the stand-up rotation put the entire rig
+on its head - a truss of moving heads aimed at the roof - while every
+counter read healthy.  `Instance.setKind` exists now, and `console.js`
+sets it from the same patch record the position comes from.  A default that
+is only safe while nothing reads the field is a default that is wrong the
+moment something does.
+
+The pattern is the same one as the culling bug in §17.28 and the two
+runaway counters in §17.29.  "Did the right code path run" is not "is the
+number right", and `fromProfile: 14, guessed: 0` was a perfect score for
+beams 6 m too short and pointed at the ceiling.
+
+#### WHAT A DIAGNOSTIC IS FOR
+
+`window.jarvisBeam()` reports, per head: the origin, the direction, the
+length, the radius at the lens, the angle the cone actually got, and
+`fromProfile`.  It exists because "the light comes out of the lens now" is
+a claim, and a cone starting at the middle of the chassis looks broadly
+correct from across a room.  `fromProfile: false` on a head whose
+definition *has* a beam node is the failure worth watching for.
+
+Also fixed here: the beam's orthonormal basis is computed in ONE place
+(`beamBasis`) and called from both return paths.  The profile path was
+written first without `R` and `F`, which the beam shader needs and which
+nothing forced it to have - a field only one branch returns is a field the
+other branch will eventually forget.
+
+#### DOES IT WORK ON EVERY GDTF?  MEASURED, WITH A LIMIT
+
+Every profile on this machine, per definition, live:
+
+| file | models wanted | loaded | on GPU | failed |
+|---|---|---|---|---|
+| rev93898 SlimPAR Quad 12 | 6 | 6 | 6 | 0 |
+| rev9044 Chauvet Intimidator Spot 260 | 4 | 4 | 4 | 0 |
+| rev48336 COLOR STRIKE V | 3 | 3 | 3 | 0 |
+| rev16526 Slim Par T12 USB | 0 | 0 | 0 | 0 |
+
+**13 models wanted, 13 loaded, 13 on the GPU, 0 failed**, loaded
+automatically with no per-file setup.  `wanted == shipped` for all three
+that ship models, and the one that ships none reports `primitives` rather
+than failing.
+
+**The limit, stated plainly: that is three files, not "every GDTF".**  Two
+formats (3DS and GLB) from two manufacturers.  The STL and OBJ loaders
+exist and are exercised by synthetic bytes, but no real file on this
+machine uses them.  A fourth profile with, say, a `<Models>` entry whose
+`File` is a path rather than a stem, or a GLB with Draco compression, would
+be new ground - and the honest thing is to say so rather than to call three
+files "all of them".
+
+What *is* general is the failure mode that was checked: a node naming a
+model the archive does not contain.  In all four files the only such node
+is the beam, and it declares `File=""` with a `PrimitiveType` - which is
+the correct way to say "there is a lens here and no mesh for it", and the
+reason head 5's cone has a 30 mm start radius and a real origin.
+
+#### STILL NOT DONE
+
+- **No materials, no textures.**  One lambert term, a sky term and a rim.
+  An aluminium extrusion and a plastic housing shade identically.  This is
+  the remaining gap between correct and recognisable, and it is a shader
+  problem.
+- **The room is still bright.**  Floor and back wall read almost white from
+  most angles.  Pre-existing, untouched here, and the worst thing in the
+  picture.
+- **The beams still dominate.**  They are brighter than the fixtures they
+  come from, at rig scale.
+- **Only the first beam node is used.**  A fixture with two beams - a
+  bi-colour tube, a split lens - throws one cone.
+- **No core/field distinction.**  The Intimidator declares a 12° beam
+  inside a 17° field; the cone is drawn at 17° with no hot core, so a spot
+  does not yet look like a spot next to a wash.
+- **Zoom, gobo, shutter, strobe and focus are still unmapped.**  The roles
+  are in the manifest.
+- **No performance measurement at scale.**  Never run at 10/50/100/250/500.

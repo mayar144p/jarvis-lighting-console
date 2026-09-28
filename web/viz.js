@@ -204,7 +204,6 @@
   const FS_MESH = PREC +
     "uniform vec3 uCam;\n" +
     "uniform vec3 uColor;\n" +
-    "uniform vec3 uEmit;\n" +
     "uniform float uSel;\n" +
     "varying vec3 vN;\n" +
     "varying vec3 vW;\n" +
@@ -217,9 +216,19 @@
     "  float sky = 0.5 + 0.5 * n.y;\n" +
     "  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);\n" +
     "  vec3 c = uColor * (0.16 + 0.62 * lam + 0.30 * sky) + vec3(rim) * 0.16;\n" +
-    // A lit fixture throws its own colour back off the housing, which is
-    // most of what tells the operator that head 17 is the one in the cue.
-    "  c += uEmit * (0.22 + 0.55 * max(dot(n, normalize(uEmit + 1e-4)), 0.0));\n" +
+    // NO EMISSIVE TERM, and that is the point.
+    //
+    // There used to be one: `c += uEmit * ...`, with uEmit set to the
+    // fixture's own output colour, on the reasoning that "a lit fixture
+    // throws its own light back off its housing".  It does, and it is why a
+    // 75%-amber Intimidator rendered as a BROWN BLOB - a real fixture's
+    // housing is matte black powdercoat and stays that way at 100%.  The
+    // light comes out of the LENS, and in this renderer the lens is the beam
+    // cone, which leaves the model at the profile's own beam node.
+    //
+    // So the housing carries no colour of its own beyond its material, and
+    // the operator reads a rig by its beams - which is what a rig looks like
+    // from the audience, and what the colours actually mean.
     "  c = mix(c, vec3(0.42, 0.86, 1.0), uSel * 0.55);\n" +
     "  gl_FragColor = vec4(c, 1.0);\n" +
     "}\n";
@@ -381,8 +390,6 @@ let prMesh = null, hasUint = false;
 // setTwin for why that has to be true rather than merely convenient.
 let twin = null;
 let twinDrawn = 0;
-let twinGenerated = 0;       // generated HEADS drawn, last frame
-let twinGeneratedDraws = 0;  // their drawElements ranges
 let twinDrew2 = 0;           // real model nodes drawn, last frame
 let twinSkipped = 0;         // instances skipped, and why
     let bufMain = null, bufBg = null, bufBeam = null, bufPool = null;
@@ -1008,6 +1015,85 @@ let twinSkipped = 0;         // instances skipped, and why
       ];
     }
 
+    /* ---------------------------------------------------------------------
+     * THE BEAM, FROM THE MODEL
+     *
+     * Everything above builds the beam out of the CHANNEL ROLE: a `spread`
+     * per role, a cone starting at the fixture's own position, and a
+     * direction that points at a geometric landing on the deck.  That is a
+     * light bulb hanging under a grey box, and it is the whole of what
+     * "the fixture" was before the twin existed.
+     *
+     * When the twin knows the head, the beam is built from the profile's own
+     * `<Beam>` node instead, and four things change at once:
+     *
+     *   ORIGIN   the cone starts at the lens, from the beam node's own
+     *            world matrix - not at the middle of the chassis
+     *   DIRECTION the model IS the aim.  It comes out of the same matrix the
+     *            head is drawn from, so the beam cannot be one frame behind
+     *            the head throwing it, and cannot disagree with it
+     *   RADIUS   the profile's own `beam_radius` (30 mm on an Intimidator
+     *            Spot 260) is the cone's radius where it leaves the glass
+     *   ANGLE    the cone opens to the profile's own `field_angle`, so a
+     *            17-degree spot looks like a 17-degree spot and a 60-degree
+     *            wash looks like a wash
+     *
+     * The DMX still decides where it points.  `Scene.beamFor` reads the
+     * same `panDeg`/`tiltDeg` the solver used to place the head, so driven
+     * aim arrives through the model rather than being re-derived here - and
+     * the 270-degree guessing convention this file used to apply becomes
+     * unreachable, because the profile's own travel is in the matrix.
+     *
+     * FALLS BACK WHOLE.  With no twin - no .gdtf on disk, or a head the
+     * twin has never heard of - every line of the old path is still here and
+     * is still used.  A profile that ships no model file keeps its beam,
+     * because the beam was never the model's job; it just stops pretending
+     * to know where the lens is.
+     */
+    function profileBeam(f) {
+      if (!twin) return null;
+      const hn = f.head_no != null ? f.head_no : f.n;
+      if (hn == null) return null;
+      const b = twin.beamFor(hn);
+      if (!b || !b.origin || !b.dir) return null;
+      // A direction of zero length is not a direction, and a beam with one
+      // would be a divide by zero that shows up as a cone across the room.
+      const L = Math.hypot(b.dir[0], b.dir[1], b.dir[2]);
+      if (!(L > 1e-6)) return null;
+      return {
+        origin: b.origin,
+        dir: [b.dir[0] / L, b.dir[1] / L, b.dir[2] / L],
+        beamAngle: b.beamAngle || 0,
+        fieldAngle: b.fieldAngle || 0,
+        beamRadius: b.beamRadius || 0,
+        flux: b.flux || 0,
+        beamType: b.beamType || "",
+        fromProfile: true,
+      };
+    }
+
+    /* An orthonormal basis around a beam axis: R = ref x D, F = D x R, with
+     * ref flipping to X when the beam is near-vertical so R never dies.
+     *
+     * FACTORED OUT, not written twice.  `beamOf` grew a second return path
+     * for the profile beam and that path came back without R and F, because
+     * nothing forced it to have them - the beam shader would have read
+     * `undefined` and drawn a cone with no orientation.  A field that only
+     * one branch returns is a field the other branch will eventually forget,
+     * so the basis is computed in one place and both paths call it. */
+    function beamBasis(dx, dy, dz) {
+      let rx, ry, rz;
+      if (Math.abs(dy) > 0.98) { rx = 0; ry = -dz; rz = dy; }
+      else { rx = dz; ry = 0; rz = -dx; }
+      const rl = Math.hypot(rx, ry, rz);
+      if (rl < 1e-5) { rx = 1; ry = 0; rz = 0; }
+      else { rx /= rl; ry /= rl; rz /= rl; }
+      return {
+        rx, ry, rz,
+        fx: dy * rz - dz * ry, fy: dz * rx - dx * rz, fz: dx * ry - dy * rx,
+      };
+    }
+
     // Landing point, direction, spread and pan/tilt for one fixture - used
     // by both the volumetric beam and the fixture body that aims it.
     function beamOf(f) {
@@ -1017,6 +1103,60 @@ let twinSkipped = 0;         // instances skipped, and why
       const hang = hanging(f);
       const ceil = roofY() - 0.05;
       const look = f._look || cur[f.role];
+
+      /* ---- the profile's own beam, when there is one ------------------ */
+      const pb = profileBeam(f);
+      if (pb) {
+        const [px, py, pz] = pb.origin;
+        const [dx, dy, dz] = pb.dir;
+        // Where the model's own axis meets the deck (or the roof, for a head
+        // throwing up).  Derived from the MODEL's direction, not aimed at a
+        // chosen spot - so the pool is where the light actually goes rather
+        // than where a geometric guess put it.
+        const E = aimedLanding(px, py, pz, dx, dy, dz, w, d, ceil, hang);
+        const len = Math.max(0.25, Math.hypot(E[0] - px, E[1] - py,
+                                              E[2] - pz));
+        // The cone opens to the profile's FIELD angle - the visible edge -
+        // and starts at the profile's beam radius, the physical size of the
+        // beam where it leaves the glass.  A profile that declares neither
+        // falls back to the role's spread, which is the only information
+        // there is at that point.
+        const halfAng = (pb.fieldAngle || pb.beamAngle) / 2;
+        const grown = halfAng > 0.2
+          ? len * Math.tan(halfAng * Math.PI / 180)
+          : null;
+        let halfW = grown != null
+          ? clamp(grown, 0.02, 60)
+          : Math.min(Math.max(0.06, len * meta.spread * 0.5),
+                     (w - 0.7) / 2.4, (d - 0.7) / 1.4);
+        // Keep the whole cone on the deck: a real 17-degree spot at 6 m
+        // throws a 0.9 m pool, and one that runs off the edge of the stage
+        // is a clamp, not a beam.
+        if (hang) {
+          halfW = Math.min(halfW, (w - 0.7) / 2.4, (d - 0.7) / 1.4);
+          const mx = 0.35 + halfW * 1.2, mz = 0.35 + halfW * 0.7;
+          E[0] = clamp(E[0], -w / 2 + mx, w / 2 - mx);
+          E[2] = clamp(E[2], mz, d - mz);
+        }
+        const rad0 = pb.beamRadius > 0
+          ? clamp(pb.beamRadius, 0.008, 0.35) : 0.05;
+        const bs = beamBasis(dx, dy, dz);
+        return {
+          f: f, meta: meta, hang: hang, look: look, aimed: true,
+          ox: px, oy: py, oz: pz, ex: E[0], ey: E[1], ez: E[2],
+          dx, dy, dz, len, halfW, rad0,
+          rx: bs.rx, ry: bs.ry, rz: bs.rz,
+          fx: bs.fx, fy: bs.fy, fz: bs.fz,
+          // Carried so the renderer can use the profile's optics, and so a
+          // diagnostic can say "this cone is 17 degrees because the file
+          // says 17" rather than "because of a constant".
+          fromProfile: true, beamAngle: pb.beamAngle,
+          fieldAngle: pb.fieldAngle, beamType: pb.beamType,
+          flux: pb.flux,
+        };
+      }
+
+      /* ---- the old geometric path, unchanged -------------------------- */
       let E = landing(f, w, d, ceil);
       if (hang) {
         // pull the landing inboard so the WHOLE cone base and its pool stay
@@ -1096,20 +1236,17 @@ let twinSkipped = 0;         // instances skipped, and why
         tilt = hang ? el + HALF_PI : HALF_PI - el;
       }
 
-      // orthonormal basis around the beam axis: R = ref x D, F = D x R
-      // (ref flips to X when the beam is near-vertical so R never dies)
-      let rx, ry, rz;
-      if (Math.abs(dy) > 0.98) { rx = 0; ry = -dz; rz = dy; }
-      else { rx = dz; ry = 0; rz = -dx; }
-      let rl = Math.hypot(rx, ry, rz);
-      if (rl < 1e-5) { rx = 1; ry = 0; rz = 0; rl = 1; }
-      rx /= rl; ry /= rl; rz /= rl;
-      const fx = dy * rz - dz * ry, fy = dz * rx - dx * rz, fz = dx * ry - dy * rx;
+      const bs = beamBasis(dx, dy, dz);
       return {
         f: f, meta: meta, hang: hang, look: look, aimed: hasPan || hasTilt,
         ox: ox, oy: oy, oz: oz, ex: ex, ey: ey, ez: ez,
         dx: dx, dy: dy, dz: dz, len: len, halfW: halfW,
-        rx: rx, ry: ry, rz: rz, fx: fx, fy: fy, fz: fz,
+        // 0.05 m at the lens, the same default the profile path uses when a
+        // file declares no beam radius - so the two paths cannot produce
+        // visibly different cones for the same head.
+        rad0: 0.05, fromProfile: false,
+        rx: bs.rx, ry: bs.ry, rz: bs.rz,
+        fx: bs.fx, fy: bs.fy, fz: bs.fz,
         pan: pan, tilt: tilt,
       };
     }
@@ -1234,7 +1371,15 @@ let twinSkipped = 0;         // instances skipped, and why
           dx: bm.dx, dy: bm.dy, dz: bm.dz,
           rx: bm.rx, ry: bm.ry, rz: bm.rz,
           fx: bm.fx, fy: bm.fy, fz: bm.fz,
-          len: bm.len, rad0: 0.05, rad1: bm.halfW,
+          len: bm.len,
+          // The cone's radius WHERE IT LEAVES THE GLASS.  For a profile
+          // that declares one this is the file's own `beam_radius` - 30 mm
+          // on a Chauvet Intimidator Spot 260, which is the real size of
+          // that beam - so a narrow-beam spot visibly starts narrow and a
+          // wash visibly starts wide.  Hardcoded 0.05 before, for every
+          // fixture in the rig, which is why every cone looked the same at
+          // the lens and only differed further out.
+          rad0: bm.rad0 || 0.05, rad1: bm.halfW,
           cr: c[0] / 255, cg: c[1] / 255, cb: c[2] / 255, a: alpha,
         });
         // pool where the beam lands (floor pool, or ceiling wash for heads
@@ -1333,7 +1478,7 @@ let twinSkipped = 0;         // instances skipped, and why
       prPool = pack(link(VS_POOL, FS_POOL),
         ["uVP", "uC", "uR", "uF", "uRad", "uColor", "uAlpha"], ["aP"]);
       prMesh = pack(link(VS_MESH, FS_MESH),
-        ["uVP", "uModel", "uCam", "uColor", "uEmit", "uSel"],
+        ["uVP", "uModel", "uCam", "uColor", "uSel"],
         ["aPos", "aNrm"]);
       // 32-bit indices.  WebGL 1 needs this for any mesh over 65k vertices,
       // and GDTF models are exported straight out of 3D Studio, so a
@@ -1476,34 +1621,7 @@ let twinSkipped = 0;         // instances skipped, and why
 
     /* ------------------------------------------------- the GDTF twin pass */
 
-    /* Upload a GENERATED body shape, once per shape.
-   *
-   * Same reasoning as the GDTF upload and the same trap: this is keyed off
-   * the shape object itself, so the second fixture of the same shape shares
-   * the buffer and the first one's presence is what stops a rebuild.  A rig
-   * of 40 PAR cans is one buffer and 40 draws, not 40 buffers. */
-  function uploadShape(shape) {
-    if (!shape || shape.gl) return shape && shape.gl;
-    const inter = new Float32Array(shape.p.length * 2);
-    for (let i = 0, k = 0; i < shape.p.length; i += 3) {
-      inter[k++] = shape.p[i];
-      inter[k++] = shape.p[i + 1];
-      inter[k++] = shape.p[i + 2];
-      inter[k++] = shape.n[i];
-      inter[k++] = shape.n[i + 1];
-      inter[k++] = shape.n[i + 2];
-    }
-    const vb = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-    gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
-    const ib = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shape.i, gl.STATIC_DRAW);
-    shape.gl = { vb: vb, ib: ib, n: shape.i.length, wide: shape.wide };
-    return shape.gl;
-  }
-
-  /* Upload a definition's meshes into GPU buffers, ONCE.
+    /* Upload a definition's meshes into GPU buffers, ONCE.
      *
      * This is where "one definition, one load, many instances" becomes real
      * rather than aspirational: the buffers hang off the Definition, so
@@ -1599,119 +1717,6 @@ let twinSkipped = 0;         // instances skipped, and why
      * fixture in front of it - including the beam that fixture is
      * throwing, which is the one that matters most. */
 
-    /* A reusable identity, for the many places that need one.
-     *
-     * The matrix helpers in this file all WRITE INTO a caller-supplied
-     * array, which is what lets the hot path allocate nothing - and it is
-     * also the trap: mIdent() with no argument throws on o[0], and
-     * mMul(o, a, b) writes through o, so mMul(a, b) silently
-     * multiplies a matrix by itself.  Both mistakes were made here while
-     * writing this and both are quiet. */
-    const IDENT16 = m4();
-    mIdent(IDENT16);
-
-    /* Draw one generated body: the whole fixture in one buffer, with the
-     * yoke panning and the head tilting inside it.
-     *
-     * PLACEMENT IS THE TWIN'S PLACEMENT.  `Scene.update` in gdtf3d.js puts a
-     * real GDTF model at exactly (f.x, f.y, f.z) and hangs it down from
-     * there, for a floor fixture as much as a hanging one.  So this does the
-     * same - no bar offset, no roof height, no flip for a floor stand.  The
-     * 2D sprite did all three, and copying it here would have put the
-     * generated bodies in different places from the real models, which is
-     * the one thing this pass exists to stop.
-     *
-     * AIM MATCHES THE TWIN'S AIM.  The twin turns a profile-frame rotation
-     * `M` into the visualiser's frame with `swapYZ(transpose(M))`, and
-     * `swapYZ` is a reflection, so the whole map has determinant -1.  A
-     * generated body is authored directly in the +Y-up frame, and feeding a
-     * det -1 matrix to it would MIRROR the fixture - so the equivalent
-     * proper rotation is the same map conjugated by the axis swap, `S·Mᵀ·S`.
-     * Conjugating a rotation by a reflection keeps the magnitude and
-     * reflects the axis, which for a row-vector profile frame means:
-     *
-     *     pan  ->  -panDeg about +Y      (mRotYStd, the one this file
-     *                                      already flags as the model chain)
-     *     tilt ->  -tiltDeg about +X      (mRotX is already right-handed)
-     *
-     * and the sign is NEGATED by the reflection.  Order is pan OUTSIDE tilt,
-     * because the head hangs off the yoke: `base · pan · tilt`.  Reversed,
-     * a head tilts about the wrong axis and swings in a circle.
-     */
-    function drawBody(f, dmx, shapeName) {
-      const sh = window.Fixture3D && window.Fixture3D.shape(shapeName);
-      if (!sh) return 0;
-      uploadShape(sh);
-      if (!sh.gl) return 0;
-      const look = dmx || {};
-      // An unlit head is the housing's own colour, a dark grey-blue; a lit
-      // one is its output colour, because a lit fixture throws its own light
-      // onto its own housing and that is most of what tells an operator which
-      // head is in the cue.
-      const hex = look.a > 0.02 ? (look.hex || "#8a94a6") : "#8a94a6";
-      const rgb = hexRgb(hex);
-      const bright = Math.min(1, (look.a || 0) / 100);
-      useMesh();
-
-      const place = m4();
-      mTranslate(place, f.x || 0, f.y || 0, f.z || 0);
-
-      const out = m4();
-      // One draw primitive.  The spin is composed by Fixture3D.aimMatrix
-      // rather than here, because that is the one place the pan/tilt signs
-      // and the frame they happen in are decided - and it is the one place
-      // they can be TESTED, which a node process can do and a draw call
-      // cannot.  Composing them inline is what made the original error
-      // possible: it read correctly and could only be checked by reading.
-      const drawRange = (from, to, spin) => {
-        mMul(out, place, spin);
-        gl.uniformMatrix4fv(prMesh.u.uModel, false, out);
-        gl.uniform3f(prMesh.u.uColor,
-          0.30 + 0.45 * rgb[0] / 255, 0.33 + 0.45 * rgb[1] / 255,
-          0.38 + 0.45 * rgb[2] / 255);
-        gl.uniform3f(prMesh.u.uEmit,
-          rgb[0] / 255 * bright, rgb[1] / 255 * bright,
-          rgb[2] / 255 * bright);
-        // `f.sel` is the selection flag the 2D pass, the patch list and the
-        // keyboard all read, set by setSelected.  Reading it here rather
-        // than from a separate twin-side flag is what keeps the shaded body
-        // and the 2D overlay from disagreeing about what is selected.
-        gl.uniform1f(prMesh.u.uSel, f && f.sel ? 1 : 0);
-        gl.bindBuffer(gl.ARRAY_BUFFER, sh.gl.vb);
-        setAttrs(prMesh, [[prMesh.a.aPos, 3, 24, 0],
-                          [prMesh.a.aNrm, 3, 24, 12]]);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sh.gl.ib);
-        gl.drawElements(gl.TRIANGLES, to - from,
-          sh.wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-          from * (sh.wide ? 4 : 2));
-      };
-
-      /* A part's spin: T(pivot) · R · T(-pivot).
-       *
-       * Turning about the pivot rather than about the body's origin is the
-       * whole difference between a yoke that swings its head around and one
-       * that orbits it.  On a still both look like a head that moved; in
-       * motion the second is a head that came off its fixture. */
-      const p = sh.parts || {};
-      const aim = window.Fixture3D.aimMatrix(
-        p.yoke ? p.yoke.pivot : null, p.head ? p.head.pivot : null,
-        look.panDeg, look.tiltDeg);
-
-      if (p.yoke && p.head) {
-        drawRange(0, p.yoke.from, aim.yoke);              // the base never turns
-        drawRange(p.yoke.from, p.yoke.to, aim.yoke);
-        drawRange(p.head.from, p.head.to, aim.head);
-        return 3;
-      }
-      if (p.yoke) {
-        drawRange(0, p.yoke.from, aim.yoke);
-        drawRange(p.yoke.from, p.yoke.to, aim.yoke);
-        return 2;
-      }
-      drawRange(0, sh.i.length, aim.yoke);
-      return 1;
-    }
-
     function drawTwin() {
       if (!twin || !prMesh) return;
       let drew = 0;
@@ -1742,10 +1747,13 @@ let twinSkipped = 0;         // instances skipped, and why
         uploadTwin(def);
         if (!def.gl || !Object.keys(def.gl).length) return;
         if (!inst.nodeWorld) return;
-        const look = inst.dmx || {};
-        const hex = look.hex || "#334155";
-        const rgb = hexRgb(hex);
-        const bright = Math.min(1, (look.a || 0) / 100);
+        // The fixture's own colour and level are NOT read here any more.
+        // They used to drive an emissive term on the housing, which is what
+        // made a lit head look like a coloured plastic toy; the beam shader
+        // reads them instead, from the profile's own beam node.  Keeping
+        // this function free of the look value is deliberate - it means a
+        // change to how a fixture is lit cannot reach back and tint its
+        // chassis.
         useMesh();
         const byPath = def.index();
         const draw = (path) => {
@@ -1755,10 +1763,18 @@ let twinSkipped = 0;         // instances skipped, and why
           const w = inst.nodeWorld[path];
           if (g && w) {
             gl.uniformMatrix4fv(prMesh.u.uModel, false, w);
-            gl.uniform3f(prMesh.u.uColor,
-              0.30 + 0.42 * rgb[0], 0.32 + 0.42 * rgb[1], 0.36 + 0.42 * rgb[2]);
-            gl.uniform3f(prMesh.u.uEmit,
-              rgb[0] * bright, rgb[1] * bright, rgb[2] * bright);
+            // THE HOUSING IS NOT THE LAMP.  Matte black powdercoat, the
+            // colour nearly every moving head in the world is, and the same
+            // for every model in the rig - because the colour in a rig is
+            // carried by the BEAM, which leaves the lens, and not by the
+            // chassis.  Feeding the fixture's own output colour in here is
+            // what turned a 75%-amber Intimidator into a brown blob: real
+            // fixtures do not change colour when you fade them up.
+            //
+            // Slightly cool and slightly blue rather than pure black, so the
+            // lambert and rim terms have something to shape instead of
+            // clipping at the bottom of the range.
+            gl.uniform3f(prMesh.u.uColor, 0.135, 0.142, 0.160);
             gl.uniform1f(prMesh.u.uSel, inst.selected ? 1 : 0);
             gl.bindBuffer(gl.ARRAY_BUFFER, g.vb);
             setAttrs(prMesh, [[prMesh.a.aPos, 3, 24, 0],
@@ -1773,61 +1789,6 @@ let twinSkipped = 0;         // instances skipped, and why
         for (const r of def._roots) draw(r);
       });
       if (drew) { gl.depthMask(true); }
-      return drew;
-    }
-
-    /* Draw a generated body for every fixture the twin does NOT draw, so the
-     * rig is uniformly 3D.  A rig that mixes shaded geometry with flat
-     * canvas boxes looks broken in a way that has nothing to do with
-     * lighting, and the flat one is the one that reads as a bug.
-     *
-     * THE TWIN OWNS A HEAD OR THIS DOES, NEVER BOTH.  The test is
-     * `hasGeometry()`, the same predicate drawTwin uses, so a head the twin
-     * draws is skipped here and a head it skips is drawn here.  The
-     * predicate is asked the same way on both sides deliberately: an earlier
-     * version compared `def.state` on one side and `hasGeometry` on the
-     * other, which disagreed for a profile with three of four models
-     * loaded, and the head came out drawn twice - once shaded, once flat.
-     *
-     * COUNTS HEADS, NOT DRAW CALLS.  A par is two ranges of one buffer and a
-     * mover is three, so counting drawElements here reported "4 generated"
-     * for two fixtures while the probe reported 2 - the same word meaning
-     * two different things in two places, which is how a number stops being
-     * evidence.  `generatedHeads` is fixtures; `generatedDraws` is ranges. */
-    function drawFallbackBodies() {
-      if (!prMesh || !window.Fixture3D) return 0;
-      const list = stage.fixtures || [];
-      let drew = 0;
-      for (const f of list) {
-        const hn = f.head_no != null ? f.head_no : f.n;
-        if (hn == null) continue;
-        const inst = twin ? twin.get(hn) : null;
-        if (inst && inst.hasGeometry && inst.hasGeometry()) continue;
-        // The ENGINE's DMX, not a value derived here.  If the twin happens
-        // to hold an instance for this head - the usual case for a profile
-        // that ships a model but not all of it - its dmx is the same object
-        // the real model is drawn from, so a partly-loaded head gets its
-        // stand-in aimed from the identical numbers.
-        let dmx = inst && inst.dmx ? inst.dmx : null;
-        if (!dmx || !dmx.hex) {
-          // No twin instance: derive the aim from the beam the console is
-          // already drawing, and convert the pair back to degrees so the
-          // one code path in drawBody stays in the twin's units.
-          const bm = beamOf(f);
-          const look = f._look || cur[f.role];
-          dmx = {
-            hex: look ? look.hex : "#334155",
-            a: look ? look.a : 0,
-            panDeg: bm.pan * 180 / Math.PI,
-            tiltDeg: bm.tilt * 180 / Math.PI,
-          };
-        }
-        // Brand first, then roles - the classifier moved to fixture3d.js
-        // when the 2D sprites went, and it is the same decision viz.js used
-        // to make in its body table, manufacturer/model strings included.
-        const n = drawBody(f, dmx, window.Fixture3D.shapeForFixture(f));
-        if (n) { twinGenerated++; drew += n; }
-      }
       return drew;
     }
 
@@ -1862,21 +1823,16 @@ let twinSkipped = 0;         // instances skipped, and why
     function render() {
       if (!gl || !progs) return;
       curProg = 0; curBlend = -1;
-      // EVERY per-frame twin counter resets here, together.  Two of them
-      // of them did not, and the symptom was a number that could only go
-      // up: `generated` read 214 for a rig with 2 generated heads, and
-      // `nodesDrawn` read 288 for 96 real ones - both exactly three times
-      // the truth after a hundred frames, because nothing ever subtracted
-      // from them.  A counter that only rises cannot notice that nothing is
-      // being drawn, which is the whole reason these exist.
+      // Every per-frame twin counter resets HERE, in ONE statement, and
+      // nowhere else.  Two of them once did not, and the symptom was a
+      // number that could only go up - which is the same lesson twice: a
+      // counter that only rises cannot notice that nothing is happening.
       //
       // ONE statement, deliberately.  A counter per line is a counter that
-      // can be half remembered the way the fifth was, and a selftest guard
-      // that has to find them all in a single line is what makes "add a
-      // sixth" a one-line job instead of a judgement call.  Two lines of
-      // five still needed two greps and still let a sixth land on its own.
-      twinDrawn = twinSkipped = twinDrew2 = twinGenerated
-        = twinGeneratedDraws = 0;
+      // can be half remembered, and a selftest guard that has to find them
+      // all in a single line is what makes "add a sixth" a one-line job
+      // rather than a judgement call.
+      twinDrawn = twinSkipped = twinDrew2 = 0;
       gl.viewport(0, 0, canvas.width, canvas.height);
       // sky gradient first (opaque)
       gl.disable(gl.BLEND);
@@ -1898,17 +1854,11 @@ let twinSkipped = 0;         // instances skipped, and why
       gl.enable(gl.DEPTH_TEST);
       gl.depthMask(true);
       gl.disable(gl.BLEND);
-      // Generated bodies for the fixtures with no profile model, then the
-      // real GDTF models.  Generated first so a real model is never
-      // overdrawn by a stand-in - the two passes must never both own a head,
-      // and drawFallbackBodies skips anything the twin draws.
-      const gen = drawFallbackBodies();
       const twin = drawTwin();
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.CULL_FACE);
       gl.enable(gl.BLEND);
       twinDrawn = twin;
-      twinGeneratedDraws = gen;
       // upload this frame's geometry
       if (SB.n) {
         gl.bindBuffer(gl.ARRAY_BUFFER, bufMain);
@@ -2286,6 +2236,12 @@ let twinSkipped = 0;         // instances skipped, and why
       roofMemo = null;
       updateCamera();
       timeNow = performance.now() / 1000;
+      // Solve the twin BEFORE the scene is built, not only before it is
+      // drawn.  `buildScene` reads the beam node's world matrix to place
+      // and aim the cone, so solving it afterwards would draw this frame's
+      // beams from LAST frame's head - the exact "one frame behind" failure
+      // this feature exists to avoid, reintroduced through the beam.
+      if (twin) twin.update();
       buildScene();
       if (gl && progs) {
         render();
@@ -3033,40 +2989,90 @@ let twinSkipped = 0;         // instances skipped, and why
       },
       twinProbe: twinProbe,
 
+      /* What the beam is actually being built from, per head.
+       *
+       * Added because "the light comes out of the lens now" is a claim, and
+       * the only way to settle it is to read back the numbers the renderer
+       * used.  A cone that still started at the middle of the chassis would
+       * look broadly correct from across a room, so this reports the origin
+       * and the angles and lets them be compared against the profile's own
+       * <Beam> node rather than believed.
+       *
+       * `fromProfile: false` on a head whose definition HAS a beam node is
+       * the failure worth watching for - it means the fallback path ran for
+       * a head that did not need it, and the cone is a guess again. */
+      beamProbe: function () {
+        const out = { count: beamList.length, fromProfile: 0, guessed: 0,
+                      rows: [] };
+        for (const bm of beamList) {
+          if (bm.fromProfile) out.fromProfile++; else out.guessed++;
+          out.rows.push({
+            head_no: bm.f && bm.f.head_no != null ? bm.f.head_no : null,
+            model: bm.f && bm.f.model || null,
+            role: bm.f && bm.f.role || null,
+            fromProfile: !!bm.fromProfile,
+            origin: [+bm.ox.toFixed(4), +bm.oy.toFixed(4), +bm.oz.toFixed(4)],
+            dir: [+bm.dx.toFixed(4), +bm.dy.toFixed(4), +bm.dz.toFixed(4)],
+            len: +bm.len.toFixed(3),
+            rad0: +(bm.rad0 || 0).toFixed(4),
+            rad1: +bm.halfW.toFixed(3),
+            beamAngle: bm.beamAngle || null,
+            fieldAngle: bm.fieldAngle || null,
+            beamType: bm.beamType || null,
+            // the opening angle the cone actually got, so it can be checked
+            // against fieldAngle rather than taken on trust
+            spreadDeg: +(2 * Math.atan(bm.halfW / Math.max(bm.len, 1e-6))
+                         * 180 / Math.PI).toFixed(2),
+          });
+        }
+        return out;
+      },
+
       /* Where every fixture's BODY is coming from.
        *
-       * The 2D sprite pass is gone, so there is no suppression to report and
-       * pretending otherwise would be the same mistake in a new coat: a
-       * counter called `suppressed` that reads 0 because nothing asks the
-       * question any more.  What an operator actually needs to know is which
-       * heads are the real product and which are stand-ins, and that is now
-       * decided once, in drawFallbackBodies, and recorded per head.
+       * There are exactly two answers now - the real product, or nothing -
+       * and the second one is a real state, not a failure to be papered
+       * over.  A profile with `<Geometry>` but no model file cannot be drawn
+       * from, and inventing a stand-in for it put a brown box in a rig of
+       * real fixtures, which read as a bug rather than as an absence.
        *
-       * Keyed off the head number the 2D pass used to carry, so a mismatch
-       * between the twin's head numbers and the layout's shows up here as
-       * `model: false` on a head that plainly has one. */
+       * `missing` and `none` are counted apart on purpose.  "The twin has
+       * never heard of this head" is a wiring fault; "the twin knows it and
+       * the profile ships no model" is a fact about the file.  Collapsing
+       * them into one number is how a patch that never loaded looks like a
+       * library that happens to be thin.
+       *
+       * Keyed off the head number the layout carries, so a mismatch between
+       * the twin's head numbers and the layout's shows up here as
+       * `missing: true` on a head that plainly has a model. */
       bodyProbe: function () {
         const list = stage.fixtures || [];
-        const out = { count: list.length, real: 0, generated: 0, none: 0,
+        const out = { count: list.length, real: 0, none: 0, missing: 0,
                       fixtures: [] };
         for (const f of list) {
           const hn = f.head_no != null ? f.head_no : f.n;
           const inst = twin ? twin.get(hn) : null;
           const real = !!(inst && inst.hasGeometry && inst.hasGeometry());
-          const from = real ? "model" : "generated";
-          if (!inst && !window.Fixture3D) from = "none";
-          if (from === "model") out.real++;
-          else if (from === "generated") out.generated++;
-          else out.none++;
+          let from, why = null;
+          if (real) {
+            from = "model";
+          } else if (!inst) {
+            from = "none"; why = "the twin has no instance for this head";
+            out.missing++;
+          } else {
+            from = "none";
+            why = inst.fallbackReason
+              || "this profile ships no model file - nothing to draw";
+          }
+          if (from === "model") out.real++; else out.none++;
           out.fixtures.push({
             head_no: f.head_no != null ? f.head_no : null,
             n: f.n != null ? f.n : null,
             role: f.role || null,
             model: f.model || null,
-            twinKnows: inst ? true : false,
+            twinKnows: !!inst,
             body: from,
-            shape: window.Fixture3D
-              ? window.Fixture3D.shapeForFixture(f) : null,
+            why: why,
           });
         }
         return out;
@@ -3081,8 +3087,6 @@ let twinSkipped = 0;         // instances skipped, and why
         const s = twin.stats();
         s.drawn = twinDrawn;
         s.nodesDrawn = twinDrew2;
-        s.generated = twinGenerated;
-        s.generatedDraws = twinGeneratedDraws;
         s.bodies3d = (stage.fixtures || []).length;
         s.instancesSkipped = twinSkipped;
         s.uploaded = 0;

@@ -670,11 +670,6 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
 </aside>
 
 <script src="viz.js"></script>
-<!-- Procedural 3D fixture bodies, for the fixtures whose profile ships no
-     model.  Loaded after viz.js and before console.js: viz.js asks it for
-     a shape, and every one of its entry points is optional, so a page with
-     no WebGL behaves exactly as it did before. -->
-<script src="fixture3d.js"></script>
 <!-- The GDTF twin's runtime.  Loaded before console.js, which hands its
      scene to the visualiser.  A plain classic script with no dependencies,
      and every entry point in it is optional, so a console with no WebGL
