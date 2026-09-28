@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import artnet, config, console_ai, dmxin, fixtures            # noqa: E402
+from app import artnet, config, console_ai, dmxin, fixtures, gdtf_geom  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from app import midi, profiles                                          # noqa: E402
 from app import gdtfshare                                            # noqa: E402
@@ -75,6 +75,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        # Every JSON response in the console comes through here, so this is
+        # the one that matters.  The §17.27 fix added these headers to the
+        # STATIC file path and the test counted call sites rather than
+        # checking which methods send a response - so this method, the one
+        # carrying the entire API, was left without nosniff, without
+        # Referrer-Policy, and without frame-ancestors, and the test stayed
+        # green.  A count cannot see a method that was never there.
+        self._security_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -84,6 +92,29 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("payload too large (max 30 MB)")
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8") or "{}")
+
+    def _json_bytes(self, data: bytes, ext: str = "") -> None:
+        """A model file's bytes, with the type its extension implies.
+
+        GDTF models are GLB, 3DS, OBJ or STL, and a browser will not guess:
+        the Content-Type is derived rather than defaulted.  A GLB served as
+        octet-stream still loads; a GLB served as anything else is a
+        confusing failure in three different places.
+        """
+        mime = {
+            ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
+            ".3ds": "application/octet-stream", ".obj": "text/plain",
+            ".stl": "model/stl",
+        }.get((ext or "").lower(), "application/octet-stream")
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(data)))
+        # Content-addressed by the definition cache, so a given URL's bytes
+        # never change: safe to cache hard in the browser and any proxy.
+        self.send_header("Cache-Control", "public, max-age=604800")
+        self._security_headers()
+        self.end_headers()
+        self.wfile.write(data)
 
     def _file(self, path: Path, status: int = 200) -> None:
         """Serve a static file, revalidated rather than cached.
@@ -365,6 +396,12 @@ class Handler(BaseHTTPRequestHandler):
                 # attribute of the Engine instance.
                 fixtures.invalidate_cache()
                 engine_mod._FIXTURE_CACHE.clear()
+                # The geometry behind those profiles moved with them,
+                # so the 3D twin's built definitions are stale too.
+                # Keyed by file name, so a re-import of a NEWER file
+                # under the same name would otherwise keep serving the
+                # old node tree.
+                gdtf_geom.clear_manifest_cache()
                 return self._json({**done, **client.status()})
             if route in ("/api/console", "/api/console/patch",
                          "/api/console/import_show",
@@ -656,6 +693,59 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 since = None
             return self._json(self._engine().look_feed(since))
+        if route == "/api/console/models":
+            # The 3D twin's manifest: one entry per definition in the patch,
+            # shared by every head of that type.  Deliberately NOT per head -
+            # a 200-head rig of four types sends four definitions and the
+            # browser instantiates them.  Sending 200 copies of the same
+            # node tree is the mistake that makes a manifest endpoint
+            # unusable on exactly the rigs that need it most.
+            eng = self._engine()
+            out = config.DATA / "gdtf_models"
+            seen, defs = set(), []
+            for h in eng.patch:
+                row = dict(h, source=eng.model_source(h))
+                did = gdtf_geom.definition_id(row)
+                if did in seen:
+                    continue
+                seen.add(did)
+                src = row["source"]
+                built = gdtf_geom.manifest_for(
+                    row, config.GDTF_SHARE_CACHE, out,
+                    manifest_of=(src if src and src.lower().endswith(".gdtf")
+                                 else None))
+                pub = gdtf_geom.public_manifest(built)
+                pub["heads"] = [x["head_no"] for x in eng.patch
+                                if gdtf_geom.definition_id(
+                                    dict(x, source=eng.model_source(x))) == did]
+                pub["summary"] = gdtf_geom.summarise(built)
+                defs.append(pub)
+            return self._json({"definitions": defs, "count": len(defs)})
+
+        if route == "/api/console/model":
+            # ONE model file's bytes, fetched once per definition by the
+            # browser and then cached there - so this is not on the hot path
+            # and is deliberately NOT part of the 20 Hz look feed.
+            did = str(query.get("id", "")).strip()
+            name = str(query.get("name", "")).strip()
+            if not did or not name:
+                return self._json({"error": "id and name are required"}, 400)
+            built = gdtf_geom.manifest_for(
+                {"source": did + ".gdtf", "manufacturer": "", "model": did,
+                 "mode": "", "map": ["pan", "tilt"]},
+                config.GDTF_SHARE_CACHE, config.DATA / "gdtf_models")
+            entry = (built.get("files") or {}).get(Path(name).stem)
+            # Re-checked against the extraction's own list.  `name` came from
+            # a query string, so it is attacker-controlled, and this route
+            # reads a file: the check is not optional.
+            if not entry or entry["name"] != name:
+                return self._json({"error": "no such model in this definition"},
+                                  404)
+            try:
+                data = Path(entry["path"]).read_bytes()
+            except OSError as exc:
+                return self._json({"error": "model unreadable: %s" % exc}, 500)
+            return self._json_bytes(data, entry["ext"])
         if route == "/api/console":
             eng = self._engine()
             if query.get("lite"):

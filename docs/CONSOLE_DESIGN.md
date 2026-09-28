@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1514 checks, 44 suites, one command, no arguments, ~16 s |
+| tests | `tools/selftest.py` | 1660 checks, 46 suites, one command, no arguments, ~16 s |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1514 checks across 44 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1660 checks across 46 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1514 checks, 44 suites (section 12) |
+| | `tools/selftest.py` | 1660 checks, 46 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -862,7 +862,7 @@ exist, that a valid token works and a wrong or empty one does not, that `?token=
 refused, that an **unknown endpoint is authenticated rather than public**, and that the
 static pages are still served so a 401 cannot become a lockout.
 
-**1514 checks across 44 suites.**
+**1660 checks across 46 suites.**
 
 #### What the review got wrong
 
@@ -872,3 +872,197 @@ The scan was still worth running: every blob in every commit, checked against th
 values from `.env` — **0 hits across 36 blobs**, and no `.env` blob has ever existed. So
 nothing needs rotating. Worth doing anyway, and worth doing *before* the first push rather
 than after, which is what the `.gitignore` now says.
+
+### 17.28  GDTF-driven 3D fixture twins
+
+Added after §17.27.  Every measurement below was taken against the real
+profiles on this machine (`rev9044.gdtf`, a Chauvet DJ Intimidator Spot
+260) and against the live rig.  Nothing here is aspirational, and the
+"what is not done" section is deliberately specific.
+
+#### THE POINT OF THE THING.
+
+Before this, every fixture in the visualiser was a primitive chosen by
+channel role: a box for a yoke, a sphere for a head, and a pan range guessed
+at 270 degrees.  The reason it was a guess is that the guess was all there
+was - `app/fixtures.py` read DMX modes, channel roles and physical ranges
+out of a GDTF, and read NO geometry.  Not `<Geometry>`, not `<Model>`, not
+`<Beam>`, not `<Axis>`, not `<Emitter>`.  All of it was being thrown away.
+
+The real files carry it.  A Chauvet DJ Intimidator Spot 260
+(`rev9044.gdtf`) ships:
+
+    <Geometry Model="Base"  Position="...{0,0,1,0}">
+      <Geometry Model="Yoke" Position="...{0,0,1,-0.0934}">
+        <Geometry Model="Body" Position="...{0,0,1,-0.1443}">
+          <Beam Model="Lens" BeamAngle="12" FieldAngle="17"
+                BeamRadius="0.03" LuminousFlux="48120" .../>
+
+That is the whole kinematic chain, in metres, with the pivots: the yoke
+turns 93.4 mm down from the base, the head tilts a further 144.3 mm down,
+and the lens sits 100 mm forward with a 12-degree core inside a 17-degree
+field.  None of it had to be guessed.
+
+
+#### THE CHAIN, AND WHERE THE ENGINE SITS IN IT.
+
+    GDTF (zip)
+      description.xml ──► app/gdtf_geom.py ──► normalised definition
+      models/*.glb  ──┐                       nodes, matrices, pivots,
+      models/*.3ds  ──┘                       beams, declared size
+                             │  cached by content hash: one definition,
+                             │  one extraction, every instance
+                             ▼
+                  GET /api/console/models     small JSON, no model bytes
+                  GET /api/console/model      one file's bytes, fetched once
+                             │
+    Jarvis Engine ──► the look feed (DMX is authoritative) ──┐
+                                                            ▼
+                            web/gdtf3d.js
+                              Definition  shared, immutable, refcounted
+                              Instance    per head, its own DMX
+                              Scene       add/remove/select/beam lookup
+                              solver      DMX -> node rotations
+                                                            │
+                                       (rendering into viz.js: NOT DONE)
+
+The engine is the only source of truth.  `Instance.setDmx()` takes the
+engine's numbers verbatim and never derives a DMX value; there is exactly
+one implementation of "what is head 17 doing" and it is in Python.
+
+
+#### WHICH COORDINATE SYSTEM, AND WHY IT MATTERS MORE THAN IT LOOKS.
+
+Three conventions meet here, and getting any of them wrong produces a
+fixture that still MOVES - which is why these bugs are so easy to ship:
+
+  * GDTF is +Z up, metres, and stores each matrix TRANSPOSED relative to
+    the usual column-major layout.  The translation sits at indices 3, 7, 11.
+  * The visualiser is +Y up, column-vector, translation at 12, 13, 14.
+
+So: transpose once on the way in (`gdtfTranspose`), compose the whole chain
+in the profile's own frame, and swap Y/Z once on the way out (`swapYZ`).
+Both halves of that swap matter.  The first version swapped the basis but
+not the translation, and a node 93.4 mm BELOW its parent - which is how
+GDTF spells a yoke - was placed 93.4 mm BEHIND it.  The hierarchy was
+right, the pivots were right, and every mover sat 93 mm off its truss
+position and partly through the floor.
+
+The second version converted each node on the way in.  That applies the
+swap once per LEVEL rather than once per chain, which mirrors the tree.
+Pan and tilt still looked correct - a double swap mostly cancels for
+rotations - and the pivots were wrong, which no single-value spot check
+sees, because every check was reading a matrix that had been flipped an
+even number of times.
+
+
+#### WHICH NODE IS PAN AND WHICH IS TILT.
+
+Not assumed.  A mode that has a Pan channel gets the first rotation node;
+one that also has Tilt gets the next.  A wash with a yoke gets pan and no
+tilt, and the solver is never asked to rotate a part the profile does not
+say can rotate.  The ROOT is excluded from the candidate list, and that
+exclusion is the whole difference between right and wrong: including it
+made pan the BASE, so a pan move spun the bottom of the fixture while the
+yoke stood still.  It moves, so it looks plausible.  It is the wrong part.
+
+Verified against the real file: pan = Yoke, tilt = Body, root = Base.
+
+
+#### WHAT IS DONE, MEASURED.
+
+  * `app/gdtf_geom.py` - hierarchy, pivots, beams, emitters, kinematics,
+    path-traversal-safe extraction, content-addressed cache.  47 checks.
+  * `web/gdtf3d.js` - loaders (GLB, 3DS, STL, OBJ), Definition, Instance,
+    Scene, the solver, beam location, the definition cache.  92 checks.
+  * Two read-only routes, `/api/console/models` and `/api/console/model`.
+  * On the live rig: 3 definitions for 8 heads.  `rev9044` resolves to
+    1 node tree, 1 beam, pan=0/0, tilt=0/0/0 and 4 model files; the 5
+    built-in PARs and the SlimPAR report `ok=false` with a reason, which
+    is the fallback chain working rather than failing.
+
+Real measurements, not claims:
+
+  * The Intimidator's Base.3ds parses to 856 vertices and 856 triangles.
+  * Its bounds come out 192.916 x 149.500 x 89.076 - and the same profile
+    declares Length 0.192916, Width 0.1495, Height 0.089076 METRES.  Same
+    three numbers a factor of 1000 apart: 3D Studio writes millimetres.
+    So the profile's declared size is the authority and meshes are fitted
+    to it (`fitModels`), uniformly, and a factor within 2% of a power of
+    ten is snapped to it.  Left unfitted, every mover is a kilometre
+    across, which reads as "the visualiser is broken".
+  * Composed: base at origin, yoke 93.4 mm below it, head 237.7 mm below
+    that, lens 337.7 mm below.  Pan and tilt each sweep 0/25/50/75/100%
+    with a constant 135-degree step in one direction, and the two ends of
+    the 540-degree range are genuinely different poses.
+
+WHAT IS NOT DONE.  Being clear, because the quality bar for this feature is
+"not just the model appears on screen" and it is not met yet.
+
+  * NOTHING IS DRAWN.  `viz.js` still draws its generic primitives.  The
+    twin computes the correct world matrix for every node of every instance
+    and hands it to nothing.  This is the largest remaining piece: buffer
+    creation, instancing, materials, and swapping the body renderer over to
+    use a definition when one has geometry.
+  * No beam cone is built from `BeamAngle`/`FieldAngle`.  The solver
+    returns the emitter's origin and direction, which is the hard part and
+    is verified; the cone geometry from them is not written.
+  * Zoom, gobo, shutter, strobe, focus are not mapped.  The manifest
+    carries the channel roles the head has; nothing consumes them yet.
+  * `buildScene()` in viz.js is still called per frame.  Unchanged by this
+    work, and it was already the case before.
+  * No performance benchmark at 10/50/100/250/500 fixtures.  Scene update is
+    pure 4x4 arithmetic over tiny trees and is O(instances x nodes), but
+    "is fast" is not a measurement and has not been made.
+  * Materials, textures and gobo wheels are not loaded.
+
+
+#### FALLBACKS, WHICH ARE A FEATURE RATHER THAN AN ERROR.
+
+`refreshState()` derives one of three states, recomputed every time rather
+than cached, because it has three inputs and any can change the answer:
+
+  geometry    the real model, from the real GDTF
+  primitives  the real hierarchy and pivots, but no usable mesh
+  fallback    no geometry at all: a generic fixture
+
+A state cached at parse time is a state that lies after a failed load, and
+a failed load is exactly when the operator most needs it to be honest.
+A model that will not load degrades that one definition to `primitives`,
+records why in `def.failed`, and the hierarchy, pivots and beam all survive.
+
+
+#### SECURITY.
+
+A GDTF is a ZIP from a website, so extraction checks the member name three
+ways (no absolute path, no drive letter, no `..` segment), re-checks the
+resolved destination is inside the cache, and caps sizes.  The model route
+re-validates the requested name against the extraction's own list, because
+it came from a query string and the route reads a file.  Nothing from a
+GDTF is ever executed.
+
+
+#### TESTING, AND THE LESSON IN IT.
+
+The JS half runs under node in `selftest.py`, not in a browser, because
+everything decidable without a GPU should be decided there.  The model
+bytes are SYNTHETIC: a test that reads a real .gdtf out of the operator's
+library is reading gitignored data, so it passes here and fails for
+everyone else.  The truss-bar test did exactly that and was only caught by
+cloning the commit somewhere clean.
+
+Every real bug in this section was found by a test that asserted a
+PROPERTY rather than a value: the base must not move; the pivots must ADD;
+each step of the pan sweep must be the same angle in the same direction; a
+truncated model must be reported, not thrown.  The assertions that got
+rewritten during the work were the ones asserting a value that was
+arbitrary anyway - a rotation sign, a column index, a component
+monotonicity that cannot hold across a 540-degree range.
+
+A last one, and it is about the security work rather than the geometry:
+rewriting the security-header check from "there are two call sites" to
+"every method that sends a response sets them" immediately found that
+`_json` - the method behind the entire API - had never had them.  The
+counting version had been green the whole time.  A count cannot see a
+method that was not there when it was written.
+

@@ -22,6 +22,8 @@ import tempfile
 import time
 import traceback
 import xml.etree.ElementTree as ET
+import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -7704,8 +7706,25 @@ def test_api_auth() -> None:
     check("the security headers are ONE method called from BOTH the 200 and "
           "the 304 path - the first version put them on the 304 only, so a "
           "normal page load carried none",
-          "def _security_headers" in code_only
-          and code_only.count("self._security_headers()") == 2, "")
+          "def _security_headers" in code_only, "")
+    # The invariant is not "there are two call sites", it is "EVERY method
+    # that sends a response sets them".  Counting call sites was true when
+    # there were two, and stopped being true - correctly - when the model
+    # route added a third, so the count needed replacing rather than
+    # adjusting.  What actually matters is the failure this prevents: a new
+    # response method that forgets, which is exactly what a count cannot see.
+    methods = re.findall(r"    def (\w+)\(.*?\n(?=    def |\Z)", src, re.S)
+    bare = [name for name in methods
+            if "self.send_response(" in _method_body(src, name)
+            and "self._security_headers()" not in _method_body(src, name)]
+    check("and every method that sends a response sets them - checked by "
+          "walking the methods, not by counting call sites, so a new "
+          "response method that forgets is caught",
+          not bare, "these send a response with no headers: %s" % (bare,))
+    _file_body = _method_body(src, "_file")
+    check("including _file, on BOTH the 200 and the 304 path",
+          _file_body.count("self._security_headers()") >= 2,
+          str(_file_body.count("self._security_headers()")))
     js = (ROOT / "web" / "console.js").read_text(encoding="utf-8")
     check("the privileged token is NOT in localStorage - that is permanent, "
           "and readable by any script in this origin",
@@ -7742,6 +7761,439 @@ def test_api_auth() -> None:
         _shutil.rmtree(tmp2, ignore_errors=True)
 
 
+def _gdtf_zip(geometry: str, models=None, models_xml: str = "",
+              channels: str = "", extra_files=None) -> bytes:
+    """A synthetic GDTF archive.
+
+    Built by hand rather than shipped, so a test can say exactly what it is
+    asserting - and so the malformed cases are malformed ON PURPOSE rather
+    than by accident.
+    """
+    models_xml = models_xml or (
+        "<Models>"
+        + "".join(
+            '<Model File="%s" Name="%s" Width="0.2" Height="0.2" Length="0.2"/>'
+            % (n, n) for n in (models or []))
+        + "</Models>")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<GDTF DataVersion="1.2"><FixtureType Name="TestCo" Manufacturer="TestCo" '
+        'FixtureTypeID="Test" Model="Digital Twin">'
+        '<Models_PLACEHOLDER/>'
+        '<DMXModes><DMXMode Name="8ch" DMXChannels="%s">'
+        '<DMXChannels>%s</DMXChannels></DMXMode></DMXModes>'
+        '<Geometries>%s</Geometries>'
+        '</FixtureType></GDTF>'
+    ) % (channels, channels, geometry)
+    if models_xml:
+        xml = xml.replace("<Models_PLACEHOLDER/>", models_xml)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("description.xml", xml)
+        for name, data in (models or {}).items() if isinstance(models, dict) else []:
+            z.writestr(name, data)
+        for name, data in (extra_files or {}).items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+_MOVER_GEOMETRY = (
+    '<Geometry Model="Base" Name="Base" Position="'
+    '{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">'
+    '<Geometry Model="Yoke" Name="Yoke" Position="'
+    '{1,0,0,0}{0,1,0,0}{0,0,1,-0.0934}{0,0,0,1}">'
+    '<Geometry Model="Body" Name="Body" Position="'
+    '{1,0,0,0}{0,1,0,0}{0,0,1,-0.1443}{0,0,0,1}">'
+    '<Beam Model="Lens" Name="Lens" BeamAngle="12" FieldAngle="17" '
+    'BeamRadius="0.03" LuminousFlux="48120" LampType="LED" Position="'
+    '{1,0,0,0}{0,1,0,-0.025}{0,0,1,-0.1}{0,0,0,1}"/>'
+    '</Geometry></Geometry></Geometry>')
+
+
+def test_gdtf_geometry() -> None:
+    """GDTF geometry -> a normalised, renderer-neutral definition.
+
+    The real files on this machine are the ground truth where they exist:
+    rev9044.gdtf is a Chauvet DJ Intimidator Spot 260 and carries a real
+    Base/Yoke/Body/Lens chain with real pivots, and every one of these
+    checks is either derived from it or deliberately contradicts it.
+    """
+    print("gdtf geometry (hierarchy, pivots, beams, safety, cache)")
+    import shutil as _shutil
+    import tempfile as _tempfile
+    import zipfile as _zipfile
+
+    from app import gdtf_geom as G
+
+    # ---- matrices ------------------------------------------------------
+    ident = G.identity()
+    check("identity is a real 4x4", len(ident) == 16 and ident[0] == 1.0
+          and ident[5] == 1.0 and ident[10] == 1.0 and ident[15] == 1.0, "")
+    m = G.parse_matrix("{1,0,0,0}{0,1,0,-0.025}{0,0,1,-0.1}{0,0,0,1}")
+    check("a braced Position parses to 16 floats", len(m) == 16, str(m))
+    # THE coordinate-system check.  GDTF is ROW-vector, so the translation
+    # is at 3, 7 and 11 - NOT in the last column where OpenGL keeps it.
+    # Reading it the other way is the classic "the fixture rotates about a
+    # point nowhere near its own mechanism" bug, and it still moves, so it
+    # is not obvious.
+    check("GDTF is ROW-vector: the translation is at 3, 7 and 11",
+          G.matrix_translation(m) == (0.0, -0.025, -0.1),
+          str(G.matrix_translation(m)))
+    check("and NOT at 12, 13, 14, which is the column-vector reading",
+          (m[12], m[13], m[14]) == (0.0, 0.0, 0.0),
+          "column-vector reading would give %s" % ((m[12], m[13], m[14]),))
+    check("an absent Position is the identity, not a crash",
+          G.parse_matrix(None) == ident and G.parse_matrix("") == ident, "")
+    check("garbage is the identity rather than a partial matrix",
+          G.parse_matrix("not a matrix") == ident, "")
+    check("a wrong group count is the identity",
+          G.parse_matrix("{1,0}{0,1}") == ident, "")
+    prod = G.mat_mul(m, ident)
+    check("multiplying by the identity changes nothing",
+          all(abs(a - b) < 1e-9 for a, b in zip(prod, m)), "")
+
+    # ---- hierarchy, from a synthetic mover ---------------------------
+    raw = _gdtf_zip(_MOVER_GEOMETRY, models=["Base", "Yoke", "Body"])
+    tmp = _tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp, "mover.gdtf")
+        with open(path, "wb") as fh:
+            fh.write(raw)
+        d = G.build_definition(path, has_pan=True, has_tilt=True)
+        check("a mover with geometry parses", d["ok"], d.get("reason", ""))
+        g = d["geometry"]
+        check("and produces exactly one root node", len(g["nodes"]) == 1, "")
+        root = g["nodes"][0]
+        check("whose children are the Yoke and the tail, in order",
+              [c["name"] for c in root["children"]][:1] == ["Yoke"],
+              str([c["name"] for c in root["children"]]))
+        yoke = root["children"][0]
+        body = yoke["children"][0]
+        check("the Yoke holds the Body", yoke["name"] == "Yoke"
+              and body["name"] == "Body", "")
+        check("and the Body holds the beam", body["children"][0]["kind"] == "beam",
+              "")
+        # The real pivots, which is the whole point of reading them.
+        check("the Yoke's pivot is 93.4 mm down, as the file says",
+              abs(G.matrix_translation(yoke["matrix"])[2] + 0.0934) < 1e-6,
+              str(G.matrix_translation(yoke["matrix"])))
+        check("the Body's pivot is a further 144.3 mm down",
+              abs(G.matrix_translation(body["matrix"])[2] + 0.1443) < 1e-6,
+              str(G.matrix_translation(body["matrix"])))
+        beam = body["children"][0]
+        check("the beam is 25 mm across and 100 mm forward of the head",
+              G.matrix_translation(beam["matrix"]) == (0.0, -0.025, -0.1),
+              str(G.matrix_translation(beam["matrix"])))
+        check("with the beam's real 12-degree core and 17-degree field",
+              beam["beam_angle"] == 12.0 and beam["field_angle"] == 17.0
+              and beam["beam_radius"] == 0.03, str(beam)[:120])
+        check("and 48120 lumens of output", beam["luminous_flux"] == 48120.0, "")
+
+        # ---- kinematics: DERIVED, not assumed ------------------------
+        kin = g["kinematics"]
+        check("pan is the YOKE, not the root - the root is the static base",
+              G.node_at(g, kin["pan"])["name"] == "Yoke",
+              str(kin))
+        check("tilt is the BODY inside the yoke",
+              G.node_at(g, kin["tilt"])["name"] == "Body", str(kin))
+        check("and the root is not offered as either",
+              kin["pan"] != "0" and kin["tilt"] != "0", str(kin))
+        order = [(p, n["name"]) for p, n in G.rotation_nodes(g)]
+        check("document order is what identifies them, so the list is "
+              "Yoke, Body, then the tail",
+              [n for _, n in order][:2] == ["Yoke", "Body"], str(order))
+        # A mode with no Tilt channel must not grow a tilt node.
+        g2 = G.parse_geometry(G.description_xml(path))
+        k2 = G.resolve_kinematics(g2, has_pan=True, has_tilt=False)
+        check("a mode with no Tilt channel gets no tilt node, so the solver "
+              "is never asked to rotate a part that has no tilt control",
+              k2["pan"] is not None and k2["tilt"] is None, str(k2))
+        k3 = G.resolve_kinematics(g2, has_pan=False, has_tilt=False)
+        check("and a mode with neither gets neither", k3["pan"] is None
+              and k3["tilt"] is None, str(k3))
+
+        # ---- the <Axis> spelling, and a non-moving fixture -----------
+        wash = G.parse_geometry(
+            G.description_xml(_write_gdtf(
+                os.path.join(tmp, "wash.gdtf"),
+                '<Geometry Model="Body" Name="Body" Position="'
+                '{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">'
+                '<Axis Model="Yoke" Name="Yoke" Position="'
+                '{1,0,0,0}{0,1,0,0}{0,0,1,0.161}{0,0,0,1}"/>'
+                '<Beam Model="Beam" Name="Beam" BeamAngle="60" FieldAngle="90" '
+                'Position="{1,0,0,0}{0,1,0,0}{0,0,1,-0.134}{0,0,0,1}"/>'
+                '</Geometry>', models=["Body", "Yoke", "Beam"])))
+        check("a fixture that spells its yoke <Axis> is understood too",
+              G.node_at(wash, G.resolve_kinematics(wash, True, False)["pan"])
+              ["name"] == "Yoke", "")
+        flat = G.parse_geometry(G.description_xml(_write_gdtf(
+            os.path.join(tmp, "flat.gdtf"),
+            '<Geometry Model="Body" Name="Body" Position="'
+            '{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/>', models=["Body"])))
+        check("a fixture with no rotation nodes gets none, rather than a "
+              "guess that would spin the whole thing",
+              G.rotation_nodes(flat) == []
+              and G.resolve_kinematics(flat, True, True)["pan"] is None, "")
+
+        # ---- model files and the cache -------------------------------
+        glb = _gdtf_zip(_MOVER_GEOMETRY, models=["Base", "Yoke", "Body"],
+                        extra_files={"models/gltf/Body.glb": b"GLB\x01\x02",
+                                     "models/gltf/Yoke.glb": b"GLB\x03\x04",
+                                     "thumbnail.png": b"\x89PNG"})
+        p2 = os.path.join(tmp, "glb.gdtf")
+        with open(p2, "wb") as fh:
+            fh.write(glb)
+        cache = os.path.join(tmp, "cache")
+        d2 = G.build_definition(p2, has_pan=True, has_tilt=True,
+                                cache_root=cache)
+        check("GLB models are found and extracted",
+              set(d2["files"]) == {"Body", "Yoke"}, str(d2["files"]))
+        check("a thumbnail is not mistaken for a model",
+              "thumbnail" not in d2["files"], str(d2["files"]))
+        # Three names for one file: the <Model Name> a node refers to, the
+        # archive route the browser fetches, and where it landed on disk.
+        # Getting this mapping wrong means the renderer fetches nothing,
+        # which looks exactly like "this GDTF has no model".
+        check("the stem a node refers to maps to the archive route AND the "
+              "extracted path - both, because one without the other is "
+              "useless to somebody",
+              d2["files"]["Body"]["name"] == "models/gltf/Body.glb"
+              and d2["files"]["Body"]["ext"] == ".glb"
+              and os.path.isfile(d2["files"]["Body"]["path"]),
+              str(d2["files"].get("Body")))
+        check("and the extracted bytes are the ones from the archive",
+              open(d2["files"]["Body"]["path"], "rb").read() == b"GLB\x01\x02", "")
+        d2b = G.build_definition(p2, has_pan=True, has_tilt=True,
+                                 cache_root=cache)
+        check("a second build of the same file reuses the SAME cache key, so "
+              "one definition is one load and many instances share it",
+              d2b["key"] == d2["key"] and d2b["key"], "")
+        check("and the definition id is stable enough to key a cache on",
+              len(d2["key"]) == 16, d2["key"])
+        # Three instances of one definition, one extraction.
+        dirs = {G.build_definition(p2, True, True, cache_root=cache)["key"]
+                for _ in range(3)}
+        check("three builds share ONE cache directory", len(dirs) == 1, str(dirs))
+
+        # ---- SECURITY: a GDTF is an untrusted archive ----------------
+        hostile = io.BytesIO()
+        with zipfile.ZipFile(hostile, "w") as z:
+            z.writestr("description.xml", "<GDTF><FixtureType/></GDTF>")
+            for evil in ("../../../../evil.glb", "..\\..\\evil.glb",
+                         "/etc/passwd.glb", "C:/windows/evil.glb",
+                         "models/../../../escape.glb"):
+                z.writestr(evil, b"PWNED")
+            z.writestr("models/ok.glb", b"GLB")
+        p3 = os.path.join(tmp, "hostile.gdtf")
+        with open(p3, "wb") as fh:
+            fh.write(hostile.getvalue())
+        ex = G.extract_models(p3, os.path.join(tmp, "hcache"))
+        names = [os.path.basename(v) for v in ex["files"].values()]
+        check("path traversal in a member name is refused - every variant",
+              all("evil" not in n and "passwd" not in n for n in names),
+              str(names))
+        check("and the one legitimate model still comes out",
+              any("ok" in n for n in names), str(names))
+        cache_root = os.path.realpath(os.path.join(tmp, "hcache"))
+        escaped = [v for v in ex["files"].values()
+                   if not os.path.realpath(v).startswith(cache_root)]
+        check("and nothing was written outside the cache directory",
+              not escaped, str(escaped))
+        check("an absolute member name is refused outright",
+              G._safe_member_name("/etc/passwd.glb") is None
+              and G._safe_member_name("C:/x.glb") is None
+              and G._safe_member_name("..\\x.glb") is None, "")
+        check("a normal name is allowed",
+              G._safe_member_name("models/gltf/Body.glb") is not None, "")
+
+        # ---- malformed input must never raise ------------------------
+        for name, blob, why in (
+            ("empty", b"", "an empty file"),
+            ("not a zip", b"this is not a zip file at all", "plain text"),
+            ("zip with no description.xml", None, "a missing description"),
+        ):
+            p = os.path.join(tmp, "%s.gdtf" % name.replace(" ", "_"))
+            if blob is None:
+                b = io.BytesIO()
+                with zipfile.ZipFile(b, "w") as z:
+                    z.writestr("thumbnail.png", b"\x89PNG")
+                blob = b.getvalue()
+            with open(p, "wb") as fh:
+                fh.write(blob)
+            try:
+                d = G.build_definition(p)
+                ok = d["ok"] is False and not d["geometry"]["nodes"]
+            except Exception as exc:                     # noqa: BLE001
+                ok = False
+                why += " raised %s" % exc
+            check("%s yields a definition with no geometry, not an exception"
+                  % why, ok, "")
+
+        p = os.path.join(tmp, "badxml.gdtf")
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            z.writestr("description.xml", "<GDTF><FixtureType>  <<< broken")
+        with open(p, "wb") as fh:
+            fh.write(b.getvalue())
+        try:
+            d = G.build_definition(p)
+            check("invalid XML is reported, not raised", d["ok"] is False
+                  and "XML" in d.get("reason", ""), str(d.get("reason")))
+        except G.GdtfGeometryError:
+            check("invalid XML is reported, not raised", True, "")
+        except Exception as exc:                          # noqa: BLE001
+            check("invalid XML is reported, not raised", False, repr(exc))
+
+        # A model we cannot extract is a FALLBACK, not a failure: the
+        # hierarchy, pivots and beam must survive.  A cache root under an
+        # existing FILE is used because it is genuinely unwritable on every
+        # platform - a "/proc/..." path is merely relative on Windows and
+        # gets created happily, which made the first version of this test
+        # pass for the wrong reason.
+        d4 = G.build_definition(
+            p2, has_pan=True, has_tilt=True,
+            cache_root=os.path.join(path, "not-a-directory"))
+        check("a cache root that cannot be written leaves the hierarchy and "
+              "the beam intact - a fallback, not a failure",
+              d4["ok"] and d4["geometry"]["nodes"]
+              and d4["geometry"]["kinematics"]["pan"] and not d4["files"],
+              str(d4.get("reason"))[:80])
+
+        # ---- the REAL files, if this machine has any ------------------
+        real = sorted(Path(ROOT / "data").rglob("*.gdtf"))
+        if real:
+            mover = None
+            for path in real:
+                d = G.build_definition(str(path), has_pan=True, has_tilt=True)
+                if d["ok"] and (d["geometry"]["kinematics"].get("tilt")):
+                    mover = (path, d)
+                    break
+            check("a real GDTF on this machine parses its geometry",
+                  mover is not None, "%d file(s) found" % len(real))
+            if mover:
+                path, d = mover
+                kin = d["geometry"]["kinematics"]
+                pn = G.node_at(d["geometry"], kin["pan"])
+                tn = G.node_at(d["geometry"], kin["tilt"])
+                check("  and names a real pan node that is NOT the root",
+                      pn is not None and kin["pan"] != "0",
+                      "%s -> %s" % (path.name, pn["name"] if pn else None))
+                check("  and a distinct tilt node below it",
+                      tn is not None and tn["name"] != pn["name"],
+                      "%s" % (tn["name"] if tn else None))
+                beams = list(G.walk_beams(d["geometry"]))
+                check("  with at least one beam carrying real angles",
+                      beams and beams[0]["beam_angle"] > 0,
+                      str([(b["beam_angle"], b["field_angle"]) for b in beams]))
+        else:
+            check("no real GDTF on this machine to cross-check against", True,
+                  "(skipped, not failed)")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _write_gdtf(path: str, geometry: str, models=None) -> str:
+    blob = _gdtf_zip(geometry, models=models or ["Body"])
+    with open(path, "wb") as fh:
+        fh.write(blob)
+    return path
+
+
+def _method_body(src: str, name: str) -> str:
+    """One `def` block out of a class, by indentation.
+
+    Used by the security-header check, which needs to know which methods send
+    a response and which of those forget the headers.  A regex over the
+    whole file would match methods from other classes and from docstrings;
+    bounding on the next line at the same indentation keeps it to the one
+    method.
+    """
+    m = re.search(r"^    def %s\(.*?^(?=    def |\Z)" % re.escape(name),
+                  src, re.S | re.M)
+    return m.group(0) if m else ""
+
+
+def test_gdtf_twin() -> None:
+    """The DMX -> physical geometry mapping, run under node.
+
+    The JavaScript half of the digital twin is exercised here rather than in
+    a browser, because everything that can be decided without a GPU should
+    be: matrices, the hierarchy, the pan/tilt solver, the loaders, the
+    definition cache.  What is left for a browser is drawing, and a drawing
+    bug found this way would have been a maths bug anyway.
+
+    The model bytes are SYNTHETIC, built by tools/_gdtf_fixtures.py from a
+    layout we control.  That is deliberate: a test that reads a real .gdtf
+    out of the operator's library is reading gitignored data, so it passes on
+    this machine and fails for everyone else.  The truss-bar test did exactly
+    that and was only caught by cloning the commit somewhere clean.
+    """
+    print("gdtf twin (JS: hierarchy, solver, loaders, cache)")
+    import shutil as _shutil
+    import subprocess as _subprocess
+    import tempfile as _tempfile
+
+    from shutil import which
+    from tools import _gdtf_fixtures as FX
+    from tools import _gdtf_harness as HH
+
+    root = Path(__file__).resolve().parent.parent
+    twin_js = root / "web" / "gdtf3d.js"
+    check("web/gdtf3d.js exists", twin_js.is_file(), str(twin_js))
+
+    node = which("node")
+    if not node:
+        check("node is available to run the JS half (SKIPPED, not failed)",
+              True, "node is not on PATH - the JS checks did not run")
+        return
+
+    tmp = _tempfile.mkdtemp()
+    try:
+        man = Path(tmp) / "manifest.json"
+        mod = Path(tmp) / "models.json"
+        har = Path(tmp) / "harness.js"
+        man.write_text(json.dumps(FX.manifest()), encoding="utf-8")
+        mod.write_text(json.dumps(FX.model_bytes()), encoding="utf-8")
+        har.write_text(HH.JAVASCRIPT_HARNESS, encoding="utf-8")
+
+        # The manifest must be the shape the ROUTE emits, not a hand-written
+        # guess at it, or this tests a shape the browser never receives.
+        probe = FX.manifest()["definitions"][0]
+        check("the manifest is built by the server's own manifest code, so a "
+              "change to what the route emits breaks this test",
+              probe["id"] == "test-mover" and probe["kinematics"]["pan"] == "0/0",
+              str(probe.get("kinematics")))
+        check("and it names the heads it covers, which is how one definition "
+              "reaches many instances",
+              probe["heads"] == [17, 20], str(probe.get("heads")))
+
+        proc = _subprocess.run(
+            [node, "--check", str(twin_js)], capture_output=True, text=True)
+        check("node --check web/gdtf3d.js", proc.returncode == 0,
+              (proc.stderr or "")[-200:])
+
+        proc = _subprocess.run(
+            [node, str(har), str(twin_js), str(man), str(mod)],
+            capture_output=True, text=True, cwd=str(root))
+        out = proc.stdout or ""
+        for line in out.splitlines():
+            if line.strip().startswith("ok "):
+                check(line.strip()[3:].strip(), True, "")
+            elif line.strip().startswith("FAIL"):
+                check(line.strip()[5:].strip() or "a JS check", False, "")
+            elif line.strip().startswith("---") or line.strip().startswith("> "):
+                print("  " + line.strip())
+            else:
+                print("      " + line.strip())
+        tail = [l for l in out.splitlines() if "passed," in l]
+        check("every JS check ran and passed"
+              + ((" (%s)" % tail[-1].strip()) if tail else ""),
+              proc.returncode == 0 and bool(tail) and " 0 failed" in tail[-1],
+              (proc.stderr or "")[-300:] or "no summary line")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _standalone_suites():
     return (
     ("simulated scan", test_scan_simulated),
@@ -7749,6 +8201,8 @@ def _standalone_suites():
     ("colour picker", test_colour_picker),
     ("console only", test_console_only),
     ("api auth", test_api_auth),
+    ("gdtf geometry", test_gdtf_geometry),
+    ("gdtf twin", test_gdtf_twin),
     )
 
 
