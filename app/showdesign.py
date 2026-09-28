@@ -318,26 +318,9 @@ def _concept(i: int, roles: list[str], palette: list[dict],
 # public API
 # ---------------------------------------------------------------------------
 
-_last: dict | None = None
-
-
-def clear() -> None:
-    global _last
-    _last = None
-
-
-def get_concept(index: int) -> dict | None:
-    if not _last:
-        return None
-    concepts = _last.get("concepts") or []
-    if 0 <= int(index) < len(concepts):
-        return concepts[int(index)]
-    return None
-
 
 def design(brief: dict | None = None, variant_index: int = 0) -> dict:
     """Turn interview answers into 2-3 alternative show concepts."""
-    global _last
     brief = brief if isinstance(brief, dict) else {}
     mood = str(brief.get("mood") or "").strip()
     event = str(brief.get("event") or "").strip()
@@ -434,5 +417,4 @@ def design(brief: dict | None = None, variant_index: int = 0) -> dict:
         # key stays, at -1, because the console's own panel reads it.
         "variant_index": -1,
     }
-    _last = {"concepts": concepts, "variant_index": -1}
     return result

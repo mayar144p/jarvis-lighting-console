@@ -29,10 +29,9 @@ from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
 from app import merge
-from app.artnet import ArtNetSender, DMX_SLOTS
+from app.artnet import ArtNetSender
 from app.sacn import SacnSender
 
-SLOTS = DMX_SLOTS
 # Safety rail for the automatic addressing loop: the flat patch grid runs
 # universes 1..MAX_UNIVERSES (Art-Net's 15-bit port-address space allows
 # 32768, we stop far earlier).  Explicit universe pinning (set_address)
@@ -137,7 +136,8 @@ from .engine_support import (ATTRIBUTE_ALIAS as _ATTRIBUTE_ALIAS,  # noqa: F401
                              BEAM_ROLES, COLOUR_ROLES, HTP_ROLES,
                              ROLE_HEX, ROLES, SLOTS,
                              channel_role, curve_pct as _curve_pct,
-                             is_fine_role, join_16bit, logical16 as _logical16,
+                             is_fine_role, join_16bit,  # noqa: F401 - re-exported
+                             logical16 as _logical16,
                              pos as _pos,
                              pos_to_ua as _pos_to_ua, split_16bit)
 
@@ -644,7 +644,7 @@ class Engine:
         self.presets: list[dict] = []
         # Physical channel ranges, per (manufacturer, model, mode).  Only
         # `remap_heads` can make one stale, and that clears it.
-        # design / operate / locked.  See LOCK_OPERATE above: a lock that
+        # design / operate / locked.  See LOCK_PATCH / LOCK_LIBRARY: a lock that
         # only says "no" is a lock the operator works around.
         self.lock_state = "design"
         self._lock_hash = ""
@@ -655,7 +655,6 @@ class Engine:
         self._source_cache: dict[tuple, str] = {}
         self._follow_stop = threading.Event()
         self._follow_thread: threading.Thread | None = None
-        self._follow_errors = 0
         self._handlers = {name: getattr(self, "_a_" + name)
                           for name in ACTIONS}
         # A fixture DB write (GDTF import, profile install) must drop our
@@ -803,11 +802,6 @@ class Engine:
                 "summary": "redid " + (entry.get("label")
                                         or entry["action"].replace("_", " "))}
 
-    def _clear_undo(self) -> None:
-        self._undo.clear()
-        self._redo.clear()
-        self._undo_label = ""
-        self._redo_label = ""
 
     def act(self, action: str, **params) -> dict:
         """Run one console action. Always returns a result dict.
@@ -2524,7 +2518,7 @@ class Engine:
                         "summary": (f"nothing to aim: none of the "
                                     f"{len(rows)} head(s) has a "
                                     + " or ".join(wanted)
-                                    + f" channel (they have: "
+                                    + " channel (they have: "
                                     + (", ".join(have)
                                        or "nothing controllable"))}
             by_role: dict[str, list] = {}
@@ -2791,9 +2785,6 @@ class Engine:
     # write would mean the channel sheet and the encoder disagreed with
     # the desk's own history after a reload.
 
-    DEFAULT_LIMITS = {"dimmer": (0, 100), "red": (0, 255), "green": (0, 255),
-                      "blue": (0, 255), "white": (0, 255), "pan": (0, 255),
-                      "tilt": (0, 255)}
 
     def _a_set_limits(self, heads=None, head=None, role=None, attribute=None,
                       low=None, high=None, **_):
@@ -2867,65 +2858,6 @@ class Engine:
         return {"heads": n,
                 "summary": f"cleared limits on {n} head(s)"}
 
-    @staticmethod
-    def _orient(head: dict, values: dict) -> dict:
-        """Apply pan/tilt INVERT and SWAP to one head's values.
-
-        Done here, at the frame boundary, because that is the only place
-        where "the operator asked for pan 90" and "the wire needs the
-        other end" can both be true.  Inverting at the programmer would
-        store 165 where the operator typed 90, and every readout in the
-        console would then disagree with the console's own history.
-        """
-        flags = head.get("orient") or {}
-        swap = _truthy(flags.get("swap"))
-        inv_pan = _truthy(flags.get("invert_pan"))
-        inv_tilt = _truthy(flags.get("invert_tilt"))
-        if not (swap or inv_pan or inv_tilt):
-            return values
-        out = dict(values)
-        if swap:
-            # Swap FIRST, then invert.  Doing it the other way round makes
-            # `swap` + `invert pan` mean something different from
-            # `invert pan` + `swap`, which is not a distinction any
-            # operator can hold in their head while rigging a truss.
-            p, t = out.get("pan"), out.get("tilt")
-            if p is not None:
-                out["tilt"] = p
-            if t is not None:
-                out["pan"] = t
-        top_pan = attr_domain(head, "pan")
-        top_tilt = attr_domain(head, "tilt")
-        if inv_pan and "pan" in out:
-            out["pan"] = top_pan - _clamp(out["pan"], 0, top_pan)
-        if inv_tilt and "tilt" in out:
-            out["tilt"] = top_tilt - _clamp(out["tilt"], 0, top_tilt)
-        return out
-
-    @staticmethod
-    def _limit(head: dict, values: dict) -> dict:
-        """Clamp one head's values to that head's own limits.
-
-        `low` is where the lamp really goes out, so a value under it is
-        sent as `low` - which for a fixture with a floor is not zero, and
-        that is the point.  The STORED value is untouched: the encoder
-        still reads what the operator typed, and the channel sheet shows
-        what actually went out.
-        """
-        limits = head.get("limits")
-        if not limits:
-            return values
-        out = dict(values)
-        for role, (lo, hi) in limits.items():
-            if role not in out:
-                continue
-            v = out[role]
-            if lo is not None and v < lo:
-                v = lo
-            if hi is not None and v > hi:
-                v = hi
-            out[role] = v
-        return out
 
     def _a_set_orient(self, heads=None, head=None, invert_pan=None,
                       invert_tilt=None, swap=None, clear=False, **_):
@@ -3004,19 +2936,11 @@ class Engine:
     # just fails looks like a broken console and gets worked around by
     # turning the lock off.
 
-    LOCK_OPERATE = frozenset({
-        # running the show
-        "cue_go", "cue_back", "cue_forward", "blackout", "master",
-        "playback_level", "playback_activate", "playback_release",
-        "set_intensity", "set_attribute", "set_attr_range", "set_colour",
-        "set_position", "run_fx", "stop_fx", "locate", "undo", "redo",
-        "follow_set", "fan", "run_command", "align", "distribute", "mirror",
-        "set_venue", "set_place",
-    })
     LOCK_PATCH = frozenset({
         "add_heads", "remove_heads", "patch_clear", "auto_patch",
         "set_address", "patch_from_csv", "import_scan",
-        "remap_heads",
+        "remap_heads", "patch_list", "rename_head",
+        "set_limits", "clear_limits", "set_orient",
     })
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
@@ -4221,7 +4145,6 @@ class Engine:
             try:
                 self._tick_follow()
             except Exception as exc:            # never die silently
-                self._follow_errors += 1
                 self.output["last_error"] = f"follow: {exc}"
 
     def _ensure_follow_thread(self) -> None:
@@ -4578,9 +4501,6 @@ class Engine:
             out[head_no] = row
         return out
 
-    def _htp_value(values: dict, role: str):
-        """Compatibility shim - the merge lives in app/merge.py."""
-        return merge.htp_value(values, role)
 
     def _resolve_head(self, head: dict, prog: dict,
                       pb_vals: list[tuple[int, dict]],
@@ -4949,7 +4869,6 @@ class Engine:
         "blackout", "clear", "home", "record", "thru", "off", "help",
         "fan", "select", "store", "align", "distribute", "mirror",
     } | set(CMD_AIM))
-    CMD_KEYWORDS = ("all", "none", "off", "full", "on")
     # What may BEGIN a line.  A verb needs no selection of its own; a
     # selection keyword IS one.  Getting this wrong is why `all` answered
     # "nothing is selected" on an empty rig - it was skipped as a keyword
@@ -5337,7 +5256,6 @@ class Engine:
             return self._cmd_finish(line, plan, note_lines, dry)
 
         # ---- attributes -------------------------------------------------
-        want = re.sub(r"[^a-z0-9]", "", tok)
         role = _attr_role(tok)
         if role is None:
             near = self._cmd_near(tok, list(_ATTRIBUTE_ALIAS))

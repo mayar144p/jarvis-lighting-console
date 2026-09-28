@@ -31,8 +31,6 @@ ART_NET_PORT = 6454
 ARTDMX_OP = 0x5000
 PROTOCOL_VERSION = 14
 DMX_SLOTS = 512
-# header (18 bytes) + 512 slots
-PACKET_SIZE = 18 + DMX_SLOTS
 NET_MASK = 0x7F
 
 
@@ -419,7 +417,6 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
                 "swept": 0, "subnets": [],
                 "message": "no local IPv4 network to sweep"}
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     bound_port = 0
     bind_note = ""
     try:
@@ -568,7 +565,6 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
     node_by_ip: dict[str, str] = {}
     polls_sent = replies = frames = 0
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # _Probe: poll from an ephemeral port (spec-compliant replies come
         # back to the source) and additionally own udp/6454 outright when

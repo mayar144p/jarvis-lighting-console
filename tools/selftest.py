@@ -21,7 +21,6 @@ import sys
 import tempfile
 import time
 import traceback
-import xml.etree.ElementTree as ET
 import io
 import os
 import zipfile
@@ -266,7 +265,6 @@ def test_showdesign() -> None:
 
     # An empty brief must still produce something, because that is the case
     # the operator hits: they press the button before they have decided.
-    showdesign.clear()
     thin = showdesign.design({})
     check("empty brief still designs",
           thin["ok"] and len(thin["concepts"]) == 3, json.dumps(thin)[:200])
@@ -390,7 +388,6 @@ def test_showdesign() -> None:
         eng_mod.ENGINE.shutdown()
     finally:
         eng_mod.ENGINE = saved
-    showdesign.clear()
 
 def test_artnet() -> None:
     print("Art-Net packets")
@@ -5027,7 +5024,7 @@ def test_cue_editing(tmp: Path) -> None:
         # Asserted against the list as it stands rather than a hard-coded
         # one: the moves above make the order hard to predict by hand, and
         # a test that hard-codes it tests the author's arithmetic.
-        before_names, before_nums = names(), nums()
+        before_names = names()
         e.act("delete_cue", playback=1, cue=1)
         check("delete removes exactly one cue",
               len(names()) == len(before_names) - 1, str(names()))
@@ -5757,6 +5754,9 @@ def test_console_only() -> None:
     # reads prose as a route.
     code = "\n".join(ln for ln in main_src.splitlines()
                      if not ln.lstrip().startswith("#"))
+    serve_root = re.search(r'if route in \(([^)]*)\):\s*\n\s*return self\._file\(config\.WEB / "index\.html"\)', code)
+    check("/ serves the console page itself, not a redirect",
+          bool(serve_root) and '"/"' in serve_root.group(1), "")
 
     for route in ("/api/chat", "/api/session", "/api/session/reset",
                   "//api/show", "/api/show/program", "/api/layout"):
@@ -5895,7 +5895,6 @@ def test_colour_picker() -> None:
           e._colour_values(wheel_head, "#ff8800") == {},
           str(e._colour_values(wheel_head, "#ff8800")))
 
-    eng_body = (eng.Engine._colour_values.__doc__ or "")
     src_eng = (ROOT / "app" / "engine.py").read_text(encoding="utf-8")
     ev = src_eng[src_eng.index("def _colour_values"):]
     ev = ev[:ev.index("def _white_values")]
@@ -7154,7 +7153,6 @@ def test_gdtf_geometry() -> None:
     print("gdtf geometry (hierarchy, pivots, beams, safety, cache)")
     import shutil as _shutil
     import tempfile as _tempfile
-    import zipfile as _zipfile
 
     from app import gdtf_geom as G
 

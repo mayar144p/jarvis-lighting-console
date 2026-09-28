@@ -20,6 +20,8 @@
 *.txt   text eol=crlf
 *.bat   text eol=crlf
 *.cmd   text eol=crlf
+# Shell scripts run on Mac/Linux, where a CR breaks the shebang.
+*.sh    text eol=lf
 *.json  text eol=crlf
 *.yml   text eol=crlf
 *.yaml  text eol=crlf

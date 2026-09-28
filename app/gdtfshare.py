@@ -95,10 +95,6 @@ def _as_json(payload: bytes) -> dict:
             "bad_response", f"gdtf-share.com sent something that is not JSON: {exc}") from exc
 
 
-def _clean_filename(text: str) -> str:
-    """A name that is safe on every platform we might meet."""
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(text)).strip("_") or "fixture"
-
 
 def _int(value, default: int = 0) -> int:
     """The Share sends numbers as strings more often than its spec says."""
