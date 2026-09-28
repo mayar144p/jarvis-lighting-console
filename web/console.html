@@ -306,6 +306,24 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
         <button class="cbtn mini go" id="btn-fx-run" title="start the effect on the selection">▶ run</button>
         <button class="cbtn mini" id="btn-fx-stop" title="stop every running effect">■ stop</button>
       </div>
+
+      <!-- NAMED EFFECTS.
+           The list is rendered from the ENGINE's answer to fx_available,
+           never filtered here.  A picker that decided for itself what a
+           fixture can do would be a second source of truth, and the two
+           would drift - which is how an operator ends up pressing Circle
+           on a PAR and watching nothing happen.  So this element is
+           populated only from what the engine says, and an effect the
+           selection cannot do is ABSENT rather than greyed out. -->
+      <div class="frow fxlib-row">
+        <label title="named effects, filtered to what the selection can do">effect</label>
+        <select id="fx-lib" class="cselect" aria-label="named effect"
+                title="only effects this selection can actually run"></select>
+        <button class="cbtn mini go" id="btn-fx-lib"
+                title="start the named effect on the selection">▶</button>
+        <span id="fx-lib-note" class="muted small"></span>
+      </div>
+      <div id="fx-lib-params" class="fx-params hidden"></div>
       <div id="fx-list" class="fx-list muted small">no effects running</div>
 
       <div id="pad-wrap" class="hidden">

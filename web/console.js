@@ -857,6 +857,20 @@ function renderSelection() {
   if ($("#sel-line").textContent !== line) $("#sel-line").textContent = line;
   const n = sel.length + " selected";
   if ($("#st-sel").textContent !== n) $("#st-sel").textContent = n;
+  // The named-effect picker is a function of the selection, so it is
+  // refreshed HERE rather than on a timer or on open.  A stale list is the
+  // same lie as a wrong one: it would offer Circle for a selection of PARs
+  // the operator has already changed to movers.
+  //
+  // Called through `window` because the picker is built in the wiring
+  // function and this is module scope; a bare name here would be a
+  // ReferenceError, and a `typeof` guard would hide it - see the note on
+  // the assignment.
+  if (typeof window.refreshFxLib === "function") {
+    window.refreshFxLib().catch(() => {
+      /* a failed ask leaves the list empty, and the note says so */
+    });
+  }
 }
 
 // What a head IS, for the selection line: "heads 17" does not say whether
@@ -3859,6 +3873,150 @@ function wireProgrammer() {
     });
   };
   $("#btn-fx-stop").onclick = () => doAction("stop_fx", {});
+
+  /* --- named effects, filtered by the ENGINE ---------------------------
+   *
+   * The rule this whole picker is built on: it does not decide what a
+   * fixture can do.  It asks (`fx_available`) and renders the answer, so
+   * the list and the engine cannot disagree - and an effect the selection
+   * cannot run is ABSENT, not greyed out, because a greyed button is a
+   * question the operator has to ask and then be told no.
+   *
+   * Re-asked whenever the selection or the patch changes, since both change
+   * what is possible.  A stale list is the same lie as a wrong one.
+   */
+  let fxLibCache = null;
+  async function refreshFxLib() {
+    const sel = $("#fx-lib");
+    if (!sel || !S) return;
+    if (!((S.selected || []).length)) {
+      sel.innerHTML = "";
+      const note = $("#fx-lib-note");
+      if (note) note.textContent = "select fixtures to see what they can do";
+      fxLibCache = null;
+      return;
+    }
+    // `doAction` already unwraps `data.result`, and already takes a
+    // `quiet` option, so there is nothing to do here beyond asking.
+    const res = await doAction("fx_available", {}, { quiet: true });
+    if (!res || !res.ok) {
+      sel.innerHTML = "";
+      const note = $("#fx-lib-note");
+      if (note) {
+        note.textContent = (res && res.error) ? res.error
+          : "could not ask what these can do";
+      }
+      fxLibCache = null;
+      return;
+    }
+    fxLibCache = res;
+    const groups = {};
+    (res.available || []).forEach((d) => {
+      (groups[d.group] = groups[d.group] || []).push(d);
+    });
+    const order = ["dimmer", "colour", "position", "beam"];
+    sel.innerHTML = "";
+    let total = 0;
+    order.forEach((g) => {
+      const items = groups[g];
+      if (!items || !items.length) return;
+      const og = document.createElement("optgroup");
+      og.label = g + " (" + items.length + ")";
+      items.forEach((d) => {
+        const o = document.createElement("option");
+        o.value = d.name;
+        o.textContent = d.label;
+        og.appendChild(o);
+        total++;
+      });
+      sel.appendChild(og);
+    });
+    const note = $("#fx-lib-note");
+    if (note) {
+      // Say what the number means.  "12 of 1 head(s) can run these" reads as
+      // though one head can run twelve things and the other fifteen cannot,
+      // which is a different claim from "twelve effects are on offer for
+      // this selection".
+      const n = (res.heads || []).length;
+      note.textContent = total
+        ? total + " effect" + (total === 1 ? "" : "s") + " for "
+          + n + " head" + (n === 1 ? "" : "s")
+        : "none of these " + n + " head" + (n === 1 ? " has" : "s have")
+          + " the channels for any effect";
+    }
+    renderFxLibParams();
+  }
+
+  /* The knobs for the chosen effect, straight from the engine's describe().
+   * Rendered from what the engine published rather than from a local copy
+   * of the parameter table, for the same reason the list is. */
+  function renderFxLibParams() {
+    const box = $("#fx-lib-params");
+    const sel = $("#fx-lib");
+    if (!box || !sel || !fxLibCache) return;
+    const name = sel.value;
+    const spec = (fxLibCache.available || []).find((d) => d.name === name);
+    box.innerHTML = "";
+    if (!spec || !spec.params || !spec.params.length) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.classList.remove("hidden");
+    const vals = {};
+    spec.params.forEach((p) => {
+      const wrap = document.createElement("label");
+      wrap.className = "fxp";
+      wrap.title = p.key + " " + p.min + "–" + p.max;
+      const lab = document.createElement("span");
+      lab.textContent = p.label;
+      const inp = document.createElement("input");
+      inp.type = "range";
+      inp.min = p.min; inp.max = p.max; inp.step = "any";
+      inp.value = p.default;
+      const num = document.createElement("input");
+      num.type = "number";
+      num.min = p.min; num.max = p.max; num.step = "any";
+      num.value = p.default;
+      inp.oninput = () => { num.value = inp.value; };
+      num.oninput = () => { inp.value = num.value; };
+      wrap.append(lab, inp, num);
+      box.appendChild(wrap);
+      vals[p.key] = () => Number(num.value);
+    });
+    box.dataset.effect = name;
+    box._getParams = () => {
+      const out = {};
+      spec.params.forEach((p) => { out[p.key] = vals[p.key](); });
+      return out;
+    };
+  }
+
+  const fxLibSel = $("#fx-lib");
+  if (fxLibSel) fxLibSel.onchange = renderFxLibParams;
+  const btnFxLib = $("#btn-fx-lib");
+  if (btnFxLib) {
+    btnFxLib.onclick = async () => {
+      const sel = $("#fx-lib");
+      if (!sel || !sel.value) return;
+      const box = $("#fx-lib-params");
+      const params = (box && box._getParams) ? box._getParams() : undefined;
+      await doAction("run_fx", { name: sel.value, params: params });
+    };
+  }
+  /* Exposed on `window` on purpose, not by accident.
+   *
+   * `refreshFxLib` is defined here, inside the wiring function, but it is
+   * CALLED from `renderSelection`, which is module scope.  A bare
+   * `typeof refreshFxLib === "function"` guard in that caller is false
+   * forever - a function-scoped name is simply not visible out here - so
+   * the picker silently rendered empty and nothing said so.  Hoisting does
+   * not cross a function boundary, and the guard made that invisible
+   * instead of loud.
+   *
+   * Going through `window` makes the cross-scope call explicit, and a typo
+   * becomes a TypeError rather than a feature that is quietly dead. */
+  window.refreshFxLib = refreshFxLib;
+  window.jfxLib = () => fxLibCache;
 
   $("#btn-locate").onclick = () => doAction("locate", {});
   $("#btn-clear").onclick = () => doAction("clear_programmer", {});

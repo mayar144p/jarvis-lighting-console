@@ -1301,3 +1301,53 @@ body.locked #fx-new { display: none !important; }
   cursor: pointer; user-select: none;
 }
 .ai-offline input { accent-color: var(--accent); cursor: pointer; }
+
+/* ----------------------------------------------------- named FX picker
+   The list is a <select> with optgroups, because the ENGINE decides what is
+   in it and a select is the one control that can render an arbitrary,
+   engine-supplied set without this file having to know the effect names.
+   That is the point: a hard-coded list here would be a second filter, and a
+   second filter is a second source of truth - which is how an operator ends
+   up pressing Circle on a PAR and watching nothing happen.
+
+   The row wraps and the note takes a full line, because the note is a
+   sentence and a sentence in a flex row that grows pushes the run button
+   off a narrow panel. */
+.fxlib-row { flex-wrap: wrap; align-items: center; }
+.fxlib-row #fx-lib { flex: 1 1 11rem; min-width: 10rem; max-width: 100%; }
+.fxlib-row #fx-lib-note { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
+
+/* One labelled row per knob.  The range and the number box are the same
+   value two ways: a desk operator drags, a keyboard operator types.  An
+   effect with a DEAD knob is worse than one with no knob at all, so what
+   is rendered here is exactly what the engine published - there is no local
+   copy of the parameter table to drift out of step. */
+.fx-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 3px 8px;
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .02);
+}
+.fx-params.hidden { display: none; }
+.fxp {
+  display: grid;
+  grid-template-columns: 4.4rem 1fr 4.4rem;
+  align-items: center; gap: 5px;
+  font: 10.5px Consolas, "Cascadia Mono", monospace;
+  color: var(--muted);
+}
+.fxp > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fxp input[type="range"] { width: 100%; min-width: 0; }
+.fxp input[type="number"] {
+  width: 100%; min-width: 0;
+  background: rgba(13, 17, 26, .8);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 3px;
+  font: inherit;
+}
