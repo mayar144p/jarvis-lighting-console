@@ -252,6 +252,48 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+    def _host_name(self, value: str) -> str:
+        value = (value or "").strip().lower()
+        if value.startswith("["):                      # [::1]:8787
+            return value[:value.find("]") + 1]
+        return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+    def _same_origin(self, method: str) -> str | None:
+        """Refuse requests a web page on another site could have made.
+
+        Two attacks reach a desk on 127.0.0.1 with no token at all:
+
+        * cross-site requests - any page the operator visits can POST a
+          `text/plain` body at localhost, which the browser sends without
+          asking.  So a write must be `application/json` (which forces a
+          CORS preflight this server never approves) and, when the browser
+          names an Origin, that origin must be this server.
+        * DNS rebinding - a hostile name that resolves to 127.0.0.1 makes
+          the browser treat the desk as that site.  On a loopback bind the
+          Host header must therefore be a loopback name.
+
+        Returns the reason to refuse, or None.
+        """
+        host = self._host_name(self.headers.get("Host", ""))
+        if not config.requires_token() and host and \
+                host not in self.LOOPBACK_HOSTS:
+            return "unexpected Host header"
+        origin = self.headers.get("Origin")
+        if origin and origin != "null":
+            o_host = self._host_name(urlparse(origin).netloc)
+            if o_host != host or urlparse(origin).port != \
+                    urlparse("//" + (self.headers.get("Host") or "")).port:
+                return "cross-origin request refused"
+        elif origin == "null":
+            return "cross-origin request refused"
+        if method == "POST":
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+            if ctype.strip().lower() != "application/json":
+                return "requests must be application/json"
+        return None
+
     def _deny(self) -> None:
         self._json({"error": "unauthorised - set CONSOLE_TOKEN in .env, "
                             "or bind to 127.0.0.1"}, 401)
@@ -277,12 +319,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(logo) if logo else self._json({"error": "not found"}, 404)
         if route.startswith("/api/"):
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
+            refused = self._same_origin("GET")
+            if refused:
+                return self._json({"error": refused}, 403)
             # Public-by-default would be wrong: see PUBLIC_API_GET.  An
             # endpoint is public because it is ON that list, not because it
             # failed to match a prefix.
             if self._needs_auth(route, "GET") and not self._authorised():
                 return self._deny()
-            return self._api_get(route, query)
+            try:
+                return self._api_get(route, query)
+            except (ValueError, TypeError, KeyError) as exc:
+                return self._json({"error": f"bad request: {exc}"}, 400)
+            except Exception as exc:  # noqa: BLE001 - surface to the UI
+                return self._json({"error": str(exc)}, 500)
 
         candidate = (config.WEB / route.lstrip("/")).resolve()
         if config.WEB.resolve() in candidate.parents or candidate == config.WEB.resolve():
@@ -293,6 +343,9 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         route = url.path
         query = {k: v[0] for k, v in parse_qs(url.query).items()}
+        refused = self._same_origin("POST")
+        if refused:
+            return self._json({"error": refused}, 403)
         # EVERY POST is authenticated.  There is nothing in this application
         # a browser should be able to change without a token, and the four
         # fixture-library mutations that used to slip through the old prefix
@@ -553,8 +606,16 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/console/ai":
             # Compile only unless the operator explicitly applies: the
             # plan-first shape keeps "ask before changing anything".
-            result = console_ai.plan(str(body.get("message", "")),
-                                     offline=bool(body.get("offline")))
+            if isinstance(body.get("steps"), list):
+                # Apply a plan the operator has already previewed - exactly
+                # those steps, re-validated, never a second model call that
+                # could answer differently.
+                result = {**console_ai._validate(
+                    {"reply": body.get("reply") or "OK.",
+                     "steps": body["steps"]}), "source": "preview"}
+            else:
+                result = console_ai.plan(str(body.get("message", "")),
+                                         offline=bool(body.get("offline")))
             if body.get("apply"):
                 try:
                     calls = console_ai.resolve(result["steps"], eng)
@@ -838,7 +899,7 @@ def main() -> None:
     print(f"* {config.APP_NAME} -> http://{config.HOST}:{config.PORT}")
     print(f"* fixtures: {fixtures.count(config.DB_PATH)} | brain: {brain}")
     print(f"* console: {config.DMX_TRANSPORT} {config.DMX_HOST}:{config.DMX_PORT} "
-          f"@ {config.DMX_HZ} Hz [{dmx_mode}] (/console.html)")
+          f"@ {config.DMX_HZ} Hz [{dmx_mode}]")
     if config.DMX_INPUT:
         dmx_status = dmxin.snapshot()
         dmx_err = dmx_status.get("errors") or {}

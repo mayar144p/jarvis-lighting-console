@@ -56,7 +56,8 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "locate": (),
     "clear_programmer": (),
     "clear_selection": (),
-    "select_heads": ("head", "head_end"),
+    "select_heads": ("head", "head_end", "heads"),
+    "select_query": ("role", "universe", "kind"),
     "select_group": ("group",),
     "select_all": (),
     "set_intensity": ("level", "fade"),
@@ -116,7 +117,8 @@ and nothing else - no markdown, no prose outside the JSON:
 
 Field rules
   target    "auto" (use the selection if any, else all), "selection",
-            "all", "group N", "heads A-B", "playback N" or "programmer".
+            "all", "group N", "heads A-B" or "heads 1,3,5", "type movers",
+            "type pars", "playback N" or "programmer".
   action    exactly one of these engine actions:
 {_param_ref()}
   attributes  keyword arguments for that action (numbers as JSON numbers).
@@ -291,12 +293,25 @@ def _fallback(text: str) -> dict:
 
     # --- target chosen from the words, "auto" = selection else all -------
     target = "auto"
+    nums = r"(\d+(?:\s*(?:-|to|thru|through)\s*\d+)?(?:\s*(?:,|and)\s*\d+)*)"
     group_hit = re.search(r"\bgroup\s*(\d+)\b", low)
-    head_hit = re.search(r"\bheads?\s+(\d+\s*-\s*\d+|\d+(?:\s*,\s*\d+)*)", low)
+    head_hit = (re.search(r"\b(?:heads?|fixtures?|lights?|units?)\s+"
+                          + nums, low)
+                or re.search(r"(?:\bon\s+|#)" + nums + r"(?!\s*(?:%|s\b|sec|hz))",
+                             low)
+                or re.match(r"\s*" + nums + r"\s+(?=[a-z])", low))
+    add_words = re.search(r"\b(?:add|patch|put|hang|rig)\s+\d+", low)
+    kind_hit = None if add_words else re.search(
+        r"\b(movers?|moving\s+heads?|spots?|washes|pars?|bars?)\b", low)
     if group_hit:
         target = f"group {group_hit.group(1)}"
     elif head_hit:
-        target = "heads " + head_hit.group(1).replace(" ", "")
+        spec = re.sub(r"\s*(?:to|thru|through)\s*", "-", head_hit.group(1))
+        target = "heads " + re.sub(r"\s*(?:and)\s*", ",", spec).replace(" ", "")
+    elif kind_hit:
+        word = kind_hit.group(1)
+        target = ("type movers" if word.startswith(("mover", "moving", "spot"))
+                  else "type pars")
     elif re.search(r"\b(everything|all|the rig|whole rig|everybody)\b", low):
         target = "all"
     elif re.search(r"\b(selection|selected heads?)\b", low):
@@ -373,7 +388,8 @@ def _fallback(text: str) -> dict:
     # --- cues -------------------------------------------------------------
     if re.search(r"\b(?:previous|last|back)\s+cue\b|\bcue\s+back\b", low):
         add(target, "cue_back")
-    elif re.search(r"\bgo\b|\bnext\s+cue\b", low):
+    elif re.search(r"^\s*go\s*[.!]?\s*$|\bnext\s+cue\b|\bcue\s+go\b|\bpress\s+go\b|"
+                   r"\bgo\s+(?:on\s+)?(?:playback|pb|cue)\b", low):
         add(target, "cue_go")
 
     # --- colour: first mentioned colour (skipping avoid/no constructions) -
@@ -397,6 +413,9 @@ def _fallback(text: str) -> dict:
         add(target, "set_colour", {"hex": colour_hits[0][2]})
 
     # --- intensity --------------------------------------------------------
+    for m in re.finditer(r"\b(?:zoom|focus|iris|frost|prism|gobo|shutter)\s+"
+                         r"(?:to\s+|at\s+)?\d{1,3}\s*%", low):
+        consumed.append((m.start(), m.end()))
     pct = free_percent()
     if pct:
         consumed.append((pct.start(), pct.end()))
@@ -406,8 +425,41 @@ def _fallback(text: str) -> dict:
                    low) or re.search(r"\bat full\b|\bfull (?:level|intensity)",
                                      low):
         add(target, "set_intensity", {"level": 100})
-    elif re.search(r"\b(?:everything|all)\s+(?:to\s+)?off\b", low):
+    elif re.search(r"\b(?:everything|all)\s+(?:to\s+)?off\b", low) or \
+            re.search(r"\bfade\b[^.]*\bout\b", low):
         add(target, "set_intensity", {"level": 0})
+    elif re.search(r"\bhalf\b", low):
+        add(target, "set_intensity", {"level": 50})
+    elif re.search(r"\bfade\b[^.]*\bin\b", low):
+        add(target, "set_intensity", {"level": 100})
+    fade_time = re.search(r"\b(?:over|in|fade(?:\s+time)?)\s+(\d+(?:\.\d+)?)\s*"
+                          r"(?:s\b|sec\b|secs\b|seconds?\b)", low)
+    if fade_time and steps and steps[-1]["action"] == "set_intensity":
+        steps[-1]["timing"] = {"fade": float(fade_time.group(1))}
+
+    # --- aim: "pan to 90", "tilt 40", "pan 90 tilt -30" ------------------
+    aim = {}
+    for axis in ("pan", "tilt"):
+        found = re.search(rf"\b{axis}\s+(?:to\s+|at\s+)?(-?\d+(?:\.\d+)?)"
+                          r"(?!\s*(?:hz|s\b))", low)
+        if found:
+            aim[axis] = float(found.group(1))
+    if aim:
+        add(target, "set_position", aim)
+
+    # --- beam attributes: "zoom 40", "gobo to 3", "focus 60%" ------------
+    for word, role in (("zoom", "zoom"), ("focus", "focus"), ("iris", "iris"),
+                       ("frost", "frost"), ("prism", "prism"),
+                       ("gobo", "gobo"), ("colou?r wheel", "wheel"),
+                       ("shutter", "shutter")):
+        found = re.search(rf"\b{word}\s+(?:to\s+|at\s+)?(\d+(?:\.\d+)?)\s*(%)?",
+                          low)
+        if found:
+            value = float(found.group(1))
+            if found.group(2):
+                value = value * 2.55
+            add(target, "set_attribute",
+                {"attribute": role, "value": max(0, min(255, round(value)))})
 
     if re.search(r"\blocate\b|\bflash\s+(?:them|the heads|the fixtures)\b",
                  low):
@@ -443,7 +495,8 @@ def _fallback(text: str) -> dict:
         fx_step("green", "sine", 120)
         fx_step("blue", "sine", 240)
     elif re.search(r"\b(circle|circles|rotate|rotation|spin|spinning|"
-                   r"swirl|figure\s?8|pan)\b", low):
+                   r"swirl|figure\s?8|figure\s+eight)\b", low) or \
+            re.search(r"\bpan\b[^.]*\b(?:sweep|back and forth|move)\b", low):
         fx_step("pan", "sine", 0)
         fx_step("tilt", "sine", 90)
     elif re.search(r"\b(pulse|breathe|breathing|throb|sine)\b", low):
@@ -575,15 +628,32 @@ def resolve(steps: list[dict], eng=None) -> list[dict]:
                 params.setdefault("head", nums[0])
                 if len(nums) > 1:
                     params.setdefault("head_end", nums[-1])
-            elif len(nums) == 1:
-                select = ("select_heads", {"head": nums[0]})
-            elif contiguous:
-                select = ("select_heads",
-                          {"head": nums[0], "head_end": nums[-1]})
-            else:
-                raise ValueError(
-                    f"step {idx}: heads {nums} are not contiguous - "
-                    "use a range like 'heads 1-4'")
+            elif action in SELECTION_ACTIONS:
+                if len(nums) == 1:
+                    select = ("select_heads", {"head": nums[0]})
+                elif contiguous:
+                    select = ("select_heads",
+                              {"head": nums[0], "head_end": nums[-1]})
+                else:
+                    select = ("select_heads", {"heads": nums})
+        elif target.startswith("type"):
+            movers = "mover" in target or "spot" in target
+            if action in SELECTION_ACTIONS or action == "run_fx":
+                if eng is not None:
+                    hits = sorted(h["head_no"] for h in eng.patch
+                                  if ("pan" in (h.get("map") or [])) == movers)
+                    if not hits:
+                        raise ValueError(
+                            f"step {idx}: no {'moving heads' if movers else 'fixed fixtures'}"
+                            " are patched")
+                    if action == "run_fx":
+                        params.setdefault("heads", hits)
+                    else:
+                        select = ("select_heads", {"heads": hits})
+                elif movers:
+                    select = ("select_query", {"role": "pan"})
+                else:
+                    raise ValueError(f"step {idx}: {target!r} needs the rig")
         elif target.startswith(("playback", "pb", "fader")):
             n = group_num(target)
             params.setdefault("playback", n)
@@ -598,8 +668,8 @@ def resolve(steps: list[dict], eng=None) -> list[dict]:
             last_select = ("select_group", {"group": params.get("group")})
         elif action == "select_heads":
             last_select = ("select_heads",
-                           {"head": params.get("head"),
-                            "head_end": params.get("head_end")})
+                           {k: params[k] for k in ("head", "head_end", "heads")
+                            if k in params})
 
         if select is not None and select != last_select:
             calls.append({"step": idx, "action": select[0],
@@ -610,7 +680,9 @@ def resolve(steps: list[dict], eng=None) -> list[dict]:
 
 
 def run(calls: list[dict], eng) -> dict:
-    """Execute calls in order; stop at the first failure."""
+    """Execute calls as one undoable edit; roll everything back on failure."""
+    if hasattr(eng, "act_batch"):
+        return eng.act_batch(calls, label="ai")
     results: list[dict] = []
     for call in calls:
         res = eng.act(call["action"], **call["params"])

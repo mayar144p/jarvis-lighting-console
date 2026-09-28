@@ -103,6 +103,9 @@ UNDO_EXCLUDED = frozenset({
     # Ctrl+Z would appear to do nothing to the show while silently
     # unlocking the desk.
     "set_lock", "unlock", "set_dry_run",
+    # Read-only queries change nothing, so they must not cost an undo step
+    # (the undo button used to read "undo: fx available").
+    "fx_available", "get_limits", "cue_info", "export_patch",
 })
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
@@ -569,11 +572,16 @@ class Engine:
         self.playbacks: list[dict] = [_new_playback(i + 1)
                                       for i in range(PLAYBACK_COUNT)]
         self.programmer: dict[int, dict[str, int]] = {}
+        # A timed programmer change (`set_intensity fade=`): the values the
+        # heads start FROM, eased into self.programmer over `dur` seconds.
+        self._prog_fade: dict | None = None
+        self._batching = False
         self.selected: list[int] = []
         self.fx: list[dict] = []            # running effects (see run_fx)
         self._fx_seq = 0
         self.autosave_path = Path(autosave_path) if autosave_path else None
         self._autosave_at = 0.0
+        self._autosave_dirty = False
         # Autosave writer thread: serialisation under the lock, the disk
         # write off it (see _autosave).
         self._writer: threading.Thread | None = None
@@ -675,10 +683,12 @@ class Engine:
         }
 
     def _restore_state(self, state: dict) -> None:
+        self._prog_fade = None
         self.patch = [dict(h) for h in state.get("patch", [])]
         self.programmer = {int(k): dict(v) for k, v
                            in (state.get("programmer") or {}).items()}
-        self.selected = set(int(h) for h in (state.get("selected") or []))
+        self.selected = list(dict.fromkeys(
+            int(h) for h in (state.get("selected") or [])))
         self.groups = [dict(g) for g in (state.get("groups") or [])]
         self.palettes = {k: [dict(p) for p in v]
                          for k, v in (state.get("palettes") or {}).items()}
@@ -697,7 +707,7 @@ class Engine:
                 else:
                     head.pop(key, None)
 
-    def _push_undo(self, label: str) -> None:
+    def _push_undo(self, label: str) -> bool:
         """Record the state as it was BEFORE an edit, for undo.
 
         When a run of the same continuous action is still going (a fader
@@ -717,7 +727,7 @@ class Engine:
                 and (now - top["at"]) <= UNDO_COALESCE_S):
             top["at"] = now
             self._undo_label = label
-            return
+            return False
         self._undo.append({"action": label, "state": self._undo_state(),
                            "at": now})
         if len(self._undo) > UNDO_LIMIT:
@@ -725,6 +735,7 @@ class Engine:
         self._redo.clear()
         self._undo_label = label
         self._redo_label = ""
+        return True
 
     def _undo_public(self) -> dict:
         """What undo and redo would do, for the UI.
@@ -815,20 +826,24 @@ class Engine:
             # entry is the state you return TO.  Only on success: a failed
             # action changed nothing, and an undo step for it would be a
             # no-op that still costs the operator one Ctrl+Z.
-            undoable = name not in UNDO_EXCLUDED
-            if undoable:
-                self._push_undo(name)
+            undoable = name not in UNDO_EXCLUDED and not self._batching
+            pushed = self._push_undo(name) if undoable else False
             try:
                 extra = handler(**params) or {}
-            except (ValueError, TypeError, KeyError, IndexError) as exc:
-                if undoable:
-                    self._undo.pop()          # nothing changed
-                    if self._undo:
-                        self._undo_label = self._undo[-1]["action"]
-                res = self._result(name, False, str(exc))
+            except Exception as exc:          # noqa: BLE001
+                if pushed and self._undo:
+                    # The handler may have half-applied before raising, so
+                    # put the state back rather than just dropping the step.
+                    self._restore_state(self._undo.pop()["state"])
+                    self._undo_label = (self._undo[-1]["action"]
+                                        if self._undo else "")
+                expected = isinstance(exc, (ValueError, TypeError, KeyError,
+                                            IndexError))
+                res = self._result(name, False, str(exc) if expected else
+                                   f"internal error: {exc!r}")
                 self._log(name, False, res["error"])
                 return res
-            if not extra.get("ok", True) and undoable and self._undo:
+            if not extra.get("ok", True) and pushed and self._undo:
                 # A handler that reports its own failure without raising.
                 self._undo.pop()
                 if self._undo:
@@ -837,10 +852,44 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
-            if name != "status":              # read-only polls never dirty it
+            if name != "status" and not self._batching:
                 self._autosave()
             self._sync_follow_thread()        # start/stop the follow ticker
             return res
+
+    def act_batch(self, calls: list[dict], label: str = "ai") -> dict:
+        """Run several actions as ONE edit: one undo step, all or nothing.
+
+        Used by the AI panel, where one sentence is one intent however many
+        engine calls it compiles to.  If any call fails, the state is put
+        back as it was before the first one, so a half-applied look can
+        never be left on the rig.
+        """
+        results: list[dict] = []
+        with self.lock:
+            pushed = self._push_undo(label) if calls else False
+            self._batching = True
+            try:
+                for call in calls:
+                    res = self.act(call["action"], **(call.get("params") or {}))
+                    results.append({"step": call.get("step"),
+                                    "action": call["action"],
+                                    "params": call.get("params") or {},
+                                    "ok": bool(res.get("ok")),
+                                    "summary": str(res.get("summary")
+                                                   or res.get("error") or "")})
+                    if not res.get("ok"):
+                        if pushed and self._undo:
+                            self._restore_state(self._undo.pop()["state"])
+                            self._undo_label = (self._undo[-1]["action"]
+                                                if self._undo else "")
+                        return {"ok": False, "executed": len(results) - 1,
+                                "steps_run": results, "rolled_back": True,
+                                "error": str(res.get("error") or "step failed")}
+            finally:
+                self._batching = False
+            self._autosave()
+        return {"ok": True, "executed": len(results), "steps_run": results}
 
     def _act_self_locked(self, name: str, params: dict) -> dict:
         """Run a two-phase action that locks only its own commit.
@@ -869,7 +918,7 @@ class Engine:
                 return res
         try:
             extra = handler(**params) or {}
-        except (ValueError, TypeError, KeyError, IndexError) as exc:
+        except Exception as exc:              # noqa: BLE001
             with self.lock:
                 res = self._result(name, False, str(exc))
                 self._log(name, False, res["error"])
@@ -2195,6 +2244,13 @@ class Engine:
             raise ValueError("level is required (0-100)")
         pct = _clamp(level, 0, 100)
         heads = self._require_selection()
+        try:
+            fade_s = max(0.0, min(600.0, float(fade or 0)))
+        except (TypeError, ValueError):
+            raise ValueError("fade must be a number of seconds")
+        now = self._clock()
+        start = self._programmer_now(now) if fade_s else {}
+        from_vals: dict[int, dict[str, int]] = {}
         no_dimmer, driven = [], 0
         for h in heads:
             values = self._level_values(h, pct)
@@ -2202,12 +2258,19 @@ class Engine:
                 no_dimmer.append(h["head_no"])
                 continue
             for role, value in values.items():
+                if fade_s:
+                    from_vals.setdefault(h["head_no"], {})[role] = \
+                        (start.get(h["head_no"]) or {}).get(role, 0)
                 self._set_programmer(h["head_no"], role, value)
             driven += 1
+        if fade_s and from_vals:
+            self._prog_fade = {"t0": now, "dur": fade_s, "from": from_vals}
         note = ""
         if no_dimmer:
             note = (f"; {len(no_dimmer)} head(s) have neither a dimmer nor a "
                     f"shutter channel")
+        if fade_s:
+            note += f" over {fade_s:g}s"
         return {"level": pct, "heads": driven, "no_dimmer": no_dimmer,
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
@@ -3077,6 +3140,7 @@ class Engine:
                     f"{t['head']} ({len(t['roles'])})" for t in touched)}
 
     def _a_clear_programmer(self, **_):
+        self._prog_fade = None
         n = sum(len(v) for v in self.programmer.values())
         self.programmer.clear()
         fx_n = len(self.fx)
@@ -4472,6 +4536,24 @@ class Engine:
         return merge.resolve_head(head, prog, pb_vals, fx_row,
                                   self.master, self.blackout)
 
+    def _programmer_now(self, now: float) -> dict:
+        """The programmer as it is at `now`, mid-fade if one is running."""
+        fade = self._prog_fade
+        if not fade:
+            return self.programmer
+        t = (now - fade["t0"]) / fade["dur"] if fade["dur"] > 0 else 1.0
+        if t >= 1.0:
+            self._prog_fade = None
+            return self.programmer
+        t = max(0.0, t)
+        out = {h: dict(row) for h, row in self.programmer.items()}
+        for head_no, start in fade["from"].items():
+            row = out.setdefault(head_no, {})
+            for role, v0 in start.items():
+                v1 = row.get(role, 0)
+                row[role] = int(round(v0 + (v1 - v0) * t))
+        return out
+
     def build_frames(self, now: float | None = None) -> dict[int, bytearray]:
         """Merge programmer + playbacks + effects into 512-byte frames.
 
@@ -4482,7 +4564,7 @@ class Engine:
         snapshots the state it needs and hands it over.
         """
         now = time.monotonic() if now is None else now
-        return merge.build_frames(self.patch, self.programmer,
+        return merge.build_frames(self.patch, self._programmer_now(now),
                                   self._active_playbacks(now),
                                   self._fx_values(now),
                                   self.master, self.blackout)
@@ -5632,7 +5714,7 @@ class Engine:
         driven", and the visualiser keeps its geometric default.
         """
         now = time.monotonic() if now is None else now
-        prog = self.programmer
+        prog = self._programmer_now(now)
         pb_vals = self._active_playbacks(now)
         fx_vals = self._fx_values(now)
         out = []
@@ -5834,7 +5916,12 @@ class Engine:
             return False
         now = time.monotonic()
         if not force and (now - self._autosave_at) < self.AUTOSAVE_MIN_INTERVAL:
+            # Throttled, not dropped: the writer thread saves the trailing
+            # edit once the interval has passed, so a crash a moment after
+            # the last change cannot lose it.
+            self._autosave_dirty = True
             return False
+        self._autosave_dirty = False
         with self.lock:
             try:
                 text = self._autosave_payload()
@@ -5884,6 +5971,9 @@ class Engine:
         while not self._writer_stop.is_set():
             self._writer_event.wait(0.25)
             self._writer_event.clear()
+            if (self._autosave_dirty and time.monotonic() - self._autosave_at
+                    >= self.AUTOSAVE_MIN_INTERVAL):
+                self._autosave()
             while not self._writer_stop.is_set():
                 with self._writer_lock:
                     text, path = self._writer_pending, self._writer_path

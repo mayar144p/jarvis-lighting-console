@@ -30,7 +30,7 @@ only way, so what it may reach is a short list.
 
 1. Double-click **`run.bat`** (creates `.env` on first run and opens the app).
    Or run `python app\main.py` and open <http://localhost:8787>.
-2. Add your AI key: edit **`jarvis/.env`** — the verified setup is the
+2. Add your AI key: edit **``.env` (next to `run.bat`)`** — the verified setup is the
    **Gemini free tier** (create a key at <https://aistudio.google.com/apikey>):
    ```
    LLM_API_KEY=AQ....                             # your AI Studio key
@@ -150,8 +150,10 @@ Typing in a field never fires the rig.
 
 ## Connecting a rig (Art-Net / sACN)
 
-1. `DMX_HOST=255.255.255.255` broadcasts (the default). Set it to your node's
-   IP for unicast. `DMX_TRANSPORT=artnet` or `sacn`.
+1. By default Art-Net goes to the directed broadcast of your lighting subnet
+   (e.g. `192.168.1.255`) and sACN to each universe's multicast group
+   (`239.255.x.y`). Set `DMX_HOST` to a node's IP for unicast.
+   `DMX_TRANSPORT=artnet` or `sacn`.
 2. Same LAN, and Windows firewall must allow Python on private networks.
 3. **Scan** in the console header to see which nodes answered, then
    **auto-patch** the universes that showed up.
@@ -176,7 +178,7 @@ the machine. With `CONSOLE_DRY_RUN=false`, arming still needs an explicit
 `CONSOLE_TOKEN` becomes **required** as soon as `HOST` is anything other than
 `127.0.0.1`: `/api/console` can start and stop real DMX, so anyone on the
 network could drive your rig. The console prompts for the token and
-remembers it.
+keeps it for that browser tab.
 
 ## Fixture library (the "every brand is in it" part)
 
@@ -185,7 +187,7 @@ database (free account). Download `.gdtf` files — or use the site's
 "download entire library" option — drop them into:
 
 ```
-jarvis/fixtures_inbox/
+fixtures_inbox/
 ```
 
 then click **Import GDTF files** in the sidebar, or run:
@@ -250,7 +252,7 @@ allowlist exists at all.
 `/index.html` still resolves, and serves the console — so an old bookmark
 lands somewhere useful rather than a 404.
 
-## Configuration reference (`jarvis/.env`)
+## Configuration reference (``.env` (next to `run.bat`)`)
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -262,11 +264,10 @@ lands somewhere useful rather than a 404.
 | `CONSOLE_DRY_RUN` | true | `false` = Art-Net/sACN frames may actually hit the network |
 | `CONSOLE_TOKEN` | *(empty)* | required once `HOST` is not loopback; sent as `X-Jarvis-Token` |
 | `DMX_TRANSPORT` | artnet | `artnet` or `sacn` (E1.31) |
-| `DMX_HOST` | 255.255.255.255 | broadcast, or the unicast IP of your Art-Net node |
+| `DMX_HOST` | *(auto)* | Art-Net: directed broadcast of your subnet; sACN: `multicast`. Or a node's unicast IP |
 | `DMX_PORT` / `DMX_HZ` / `DMX_NET` | 6454 / 40 / 0 | port, frame rate (10-120), Net (0-127) |
 | `DMX_BLACKOUT_ON_EXIT` | false | `true` = blackout frames on shutdown |
 | `CONSOLE_SHOW_DIR` | data/shows | where console show files (save/load) live |
-| `SHOW_FOLDER` | *(empty)* | optional extra folder exported patch CSVs are copied into |
 | `DMX_INPUT` | false | receive Art-Net/sACN as observable input state |
 | `MIDI_ENABLED` | true | MIDI input via winmm; degrades gracefully with no device |
 

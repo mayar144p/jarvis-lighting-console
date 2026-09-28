@@ -3804,34 +3804,43 @@ def test_network_address(tmp: Path) -> None:
               config.LOCAL_IP)
         check("and it is not the broadcast address",
               config.LOCAL_IP != "255.255.255.255", config.LOCAL_IP)
-        # On a machine with a VPN or a container adapter up, a public
-        # address can be detected first.  A rig is on a private network by
-        # convention, so a private one has to win.
-        check("and when several are visible, a private one is chosen",
-              config._is_private(config.LOCAL_IP),
-              config.LOCAL_IP)
+    # On a machine with a VPN or a container adapter up, a public address
+    # can be detected first.  The chooser is tested on its own, so the
+    # result does not depend on which network the test machine is on.
+    check("when several are visible, a private one is chosen",
+          config._pick_lan(["26.1.2.3", "192.168.1.20"]) == "192.168.1.20"
+          and config._pick_lan(["8.8.4.4"]) == "8.8.4.4"
+          and config._pick_lan([]) == "", "")
 
     # ---- what the console will actually use ------------------------------
-    check("the console does not default to broadcast",
-          config.DMX_HOST != "255.255.255.255", config.DMX_HOST)
-    check("and not to loopback, which reaches nothing",
+    check("the default destination is never this machine's own address",
+          not config.DMX_HOST_IS_DEFAULT
+          or config.DMX_HOST != config.LOCAL_IP, config.DMX_HOST)
+    check("and not loopback, which reaches nothing",
           config.DMX_HOST != "127.0.0.1", config.DMX_HOST)
-    check("it uses the detected address, or an explicit override",
-          config.DMX_HOST == config.LOCAL_IP
-          or not config.DMX_HOST_IS_DEFAULT, config.DMX_HOST)
+    check("Art-Net defaults to the directed broadcast of the lighting subnet",
+          config.directed_broadcast("192.168.1.20") == "192.168.1.255"
+          and config.directed_broadcast("2.0.0.9") == "2.255.255.255"
+          and config.directed_broadcast("") == "255.255.255.255", "")
+    from app import sacn as _sacn
+    check("sACN multicast goes to each universe's own E1.31 group",
+          _sacn.multicast_group(1) == "239.255.0.1"
+          and _sacn.multicast_group(256) == "239.255.1.0"
+          and _sacn.SacnSender("multicast").destination(3) == "239.255.0.3",
+          "")
     check("status says whether the value is a default or an override",
           "local_ip" in config.status()["console"]
           and "host_is_default" in config.status()["console"], "")
     st = config.status()["console"]
-    check("and it can tell the UI that the destination is a broadcast",
-          st["broadcast"] is False, str(st["broadcast"]))
+    check("and it can tell the UI whether the destination is a broadcast",
+          isinstance(st["broadcast"], bool) and "multicast" in st, str(st))
 
     # ---- .env must not pin it --------------------------------------------
     env = (ROOT / ".env")
     if env.is_file():
         for line in env.read_text(encoding="utf-8").splitlines():
             s = line.strip()
-            if s.startswith("DMX_HOST="):
+            if s.startswith("DMX_HOST=") and s.split("=", 1)[1].strip():
                 check(".env does not pin DMX_HOST to a value that will be "
                       "wrong on another network", False,
                       "pinned to %r" % s.split("=", 1)[1])
@@ -6195,7 +6204,143 @@ def _suites():
     ("merge core", test_merge),
     ("console api", test_engine_api),
     ("client contracts", test_client_contracts),
+    ("hardening", test_hardening),
     )
+
+
+def test_hardening(tmp: Path) -> None:
+    """Regressions for the audit fixes: cross-site writes, bad GETs,
+    atomic AI batches, read-only actions and the offline compiler."""
+    print("hardening")
+    import os as _os
+    import subprocess as _subprocess
+    import sys as _sys
+    import time as _time
+    import urllib.error
+    import urllib.request
+    from app import console_ai
+    from app import engine as eng_mod
+
+    # ---- engine: atomic batches and undo hygiene -------------------------
+    db = tmp / "hard.db"
+    fixtures.seed_generics(db)
+    e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "hard-shows")
+    e.act("add_heads", query="LED PAR", qty=4)
+    depth = len(e._undo)
+    e.act("fx_available")
+    check("a read-only query costs no undo step", len(e._undo) == depth,
+          "%d -> %d" % (depth, len(e._undo)))
+    res = e.act_batch([
+        {"action": "select_all", "params": {}},
+        {"action": "set_intensity", "params": {"level": 60}},
+        {"action": "set_colour", "params": {"hex": "#00ff00"}}])
+    check("a batch runs every step", res["ok"] and res["executed"] == 3,
+          json.dumps(res))
+    check("and costs exactly one undo step", len(e._undo) == depth + 1,
+          str(len(e._undo)))
+    e.act("undo")
+    check("one undo reverses the whole batch",
+          not any(e.programmer.values()) and e.selected == [],
+          json.dumps(e.programmer))
+    before = json.dumps(e.programmer, sort_keys=True)
+    res = e.act_batch([
+        {"action": "select_all", "params": {}},
+        {"action": "set_intensity", "params": {"level": 80}},
+        {"action": "set_attribute", "params": {"attribute": "nonsense",
+                                               "value": 3}}])
+    check("a failing batch reports the failure", not res["ok"]
+          and res.get("rolled_back"), json.dumps(res))
+    check("and leaves nothing half-applied",
+          json.dumps(e.programmer, sort_keys=True) == before, "")
+
+    # ---- programmer fades ------------------------------------------------
+    e.act("select_all")
+    e.act("set_intensity", level=100)
+    t0 = _time.monotonic()
+    e.act("set_intensity", level=0, fade=10)
+    mid = e.build_frames(t0 + 5)[1][0]
+    end = e.build_frames(t0 + 11)[1][0]
+    check("set_intensity fade= really fades", 90 <= mid <= 165 and end == 0,
+          "mid %d end %d" % (mid, end))
+
+    # ---- offline compiler ------------------------------------------------
+    def steps(text):
+        return [(s["target"], s["action"])
+                for s in console_ai.plan(text, offline=True)["steps"]]
+    check("'pan to 90' aims rather than starting an effect",
+          steps("pan to 90") == [("auto", "set_position")],
+          str(steps("pan to 90")))
+    check("'go red' does not fire a cue", ("auto", "cue_go")
+          not in steps("go red"), str(steps("go red")))
+    check("'red on 1-4' targets heads 1-4",
+          steps("red on 1-4") == [("heads 1-4", "set_colour")],
+          str(steps("red on 1-4")))
+    check("'movers to 50%' targets the moving heads",
+          steps("movers to 50%") == [("type movers", "set_intensity")],
+          str(steps("movers to 50%")))
+    check("'zoom 40' sets the zoom attribute",
+          steps("zoom 40") == [("auto", "set_attribute")],
+          str(steps("zoom 40")))
+    calls = console_ai.resolve(
+        console_ai.plan("heads 1,3 blue", offline=True)["steps"], e)
+    check("scattered heads are selected exactly, not refused",
+          calls[0] == {"step": 1, "action": "select_heads",
+                       "params": {"heads": [1, 3]}}, json.dumps(calls))
+
+    # ---- HTTP: a web page on another site cannot drive the desk ----------
+    port = 8973
+    env = dict(_os.environ, PORT=str(port), HOST="127.0.0.1",
+               CONSOLE_TOKEN="", CONSOLE_DRY_RUN="true",
+               FIXTURE_DB=str(tmp / "http.db"),
+               CONSOLE_SHOW_DIR=str(tmp / "http-shows"),
+               CONSOLE_AUTOSAVE="false", MIDI_ENABLED="false")
+    proc = _subprocess.Popen([_sys.executable, _os.path.join("app", "main.py")],
+                             env=env, cwd=str(ROOT),
+                             stdout=_subprocess.DEVNULL,
+                             stderr=_subprocess.DEVNULL)
+
+    def call(path, body=None, headers=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path),
+                                     data=data,
+                                     method="POST" if body is not None
+                                     else "GET")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status
+        except urllib.error.HTTPError as exc:
+            return exc.code
+        except Exception:
+            return 0
+
+    try:
+        for _ in range(40):
+            if call("/api/status") == 200:
+                break
+            _time.sleep(0.25)
+        blackout = {"action": "blackout", "params": {"state": 1}}
+        json_h = {"Content-Type": "application/json"}
+        check("a same-origin JSON POST works",
+              call("/api/console", blackout, json_h) == 200, "")
+        check("a text/plain POST (what a hostile page can send) is refused",
+              call("/api/console", blackout,
+                   {"Content-Type": "text/plain"}) == 403, "")
+        check("a POST naming another Origin is refused",
+              call("/api/console", blackout,
+                   dict(json_h, Origin="https://evil.example")) == 403, "")
+        check("a rebinding Host header is refused on a loopback bind",
+              call("/api/console?lite=1",
+                   headers={"Host": "attacker.example:%d" % port}) == 403, "")
+        check("a malformed GET answers 400 instead of dropping the connection",
+              call("/api/gdtf/search?limit=abc") == 400, "")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
 
 
 def test_gdtf_share(tmp: Path) -> None:

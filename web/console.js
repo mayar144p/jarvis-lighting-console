@@ -20,13 +20,19 @@ const $ = (sel) => document.querySelector(sel);
  * real DMX on a wire.  Stored locally so it survives a reload. */
 const TOKEN_KEY = "jarvis.token";
 
+let tokenPrompting = false;
+let tokenSnoozeUntil = 0;
+
 function apiToken() {
-  return window.sessionStorage.getItem(TOKEN_KEY) || "";
+  try { return window.sessionStorage.getItem(TOKEN_KEY) || ""; }
+  catch (e) { return ""; }
 }
 
 function setApiToken(t) {
-  if (t) window.sessionStorage.setItem(TOKEN_KEY, t);
-  else window.sessionStorage.removeItem(TOKEN_KEY);
+  try {
+    if (t) window.sessionStorage.setItem(TOKEN_KEY, t);
+    else window.sessionStorage.removeItem(TOKEN_KEY);
+  } catch (e) { /* storage blocked: the prompt will ask again */ }
 }
 
 async function api(path, body) {
@@ -37,10 +43,17 @@ async function api(path, body) {
     : { headers: headers };
   const resp = await fetch(path, opts);
   if (resp.status === 401) {
-    const t = window.prompt(
-      "This desk needs an access token.\n"
-      + "Set CONSOLE_TOKEN in jarvis/.env and enter it here:");
-    if (t) { setApiToken(t.trim()); return api(path, body); }
+    // One prompt at a time, and not again for a while after a cancel: the
+    // feeds poll many times a second and would otherwise re-open it forever.
+    if (!tokenPrompting && Date.now() > tokenSnoozeUntil) {
+      tokenPrompting = true;
+      const t = window.prompt(
+        "This desk needs an access token.\n"
+        + "Enter the CONSOLE_TOKEN from the .env file:");
+      tokenPrompting = false;
+      if (t) { setApiToken(t.trim()); return api(path, body); }
+      tokenSnoozeUntil = Date.now() + 30000;
+    }
     throw new Error("unauthorised - no token");
   }
   const data = await resp.json().catch(() => ({}));
@@ -2950,6 +2963,23 @@ function aiSay(kind, text, opts) {
     box.appendChild(pills);
   }
 
+  if (opts.onApply && planned.length && !runs.length) {
+    const bar = document.createElement("div");
+    bar.className = "ai-confirm";
+    const yes = document.createElement("button");
+    yes.className = "cbtn go";
+    yes.textContent = "apply";
+    const no = document.createElement("button");
+    no.className = "cbtn";
+    no.textContent = "discard";
+    const done = () => { yes.disabled = true; no.disabled = true; };
+    yes.onclick = () => { done(); opts.onApply(); };
+    no.onclick = () => { done(); bar.textContent = "discarded"; };
+    bar.append(yes, no);
+    box.appendChild(bar);
+    yes.focus();
+  }
+
   log.appendChild(box);
   log.scrollTop = log.scrollHeight;
 }
@@ -2979,23 +3009,47 @@ function wireAI() {
     chipBox.appendChild(b);
   }
 
+  // Plan first, then the operator applies exactly the previewed steps as
+  // one undoable edit - nothing touches the rig until "apply".
+  let busy = false;
+  const apply = async (plan) => {
+    try {
+      const d = await api("/api/console/ai", {
+        steps: plan.steps, reply: plan.reply, apply: true,
+      });
+      const r = d.result || {};
+      aiSay("bot", r.run && r.run.ok ? "Applied - one Ctrl+Z undoes it."
+        : "Nothing changed: " + ((r.run && r.run.error) || "failed"),
+        { source: plan.source, steps: r.steps, run: r.run });
+      await loadState();
+    } catch (err) {
+      aiSay("bot", "error: " + err.message, { source: "error" });
+    }
+  };
   const send = async () => {
     const input = $("#ai-text");
     const msg = input.value.trim();
-    if (!msg) return;
+    if (!msg || busy) return;
+    busy = true;
+    $("#ai-send").disabled = true;
+    $("#ai-send").textContent = "…";
     input.value = "";
     aiSay("user", msg);
     try {
       const d = await api("/api/console/ai", {
-        message: msg, apply: true, offline: !!$("#ai-offline").checked,
+        message: msg, apply: false, offline: !!$("#ai-offline").checked,
       });
       const r = d.result || {};
       const reply = (r.reply || "")
         + (r.note ? "\n(" + r.note + ")" : "");
-      aiSay("bot", reply, { source: r.source, steps: r.steps, run: r.run });
-      await loadState();          // programmer / fx / selection changed
+      aiSay("bot", reply, { source: r.source, steps: r.steps,
+        onApply: () => apply(r) });
     } catch (err) {
       aiSay("bot", "error: " + err.message, { source: "error" });
+    } finally {
+      busy = false;
+      $("#ai-send").disabled = false;
+      $("#ai-send").textContent = "plan";
     }
   };
   $("#ai-send").onclick = send;
