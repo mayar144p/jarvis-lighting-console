@@ -148,6 +148,11 @@ FAMILIES: list[tuple[str, str, str]] = [
      r"|\brobin\b|\besprite\b|\bt1\b|\bbmfl\b|\bpointe\b", "moving_spot", ""),
 ]
 
+_MOVING_NAMES = (r"\brobin\b|\bmac\b|\bbmfl\b|\bintimidator\b|\brogue\b"
+                 r"|\bmaverick\b|\bsharpy\b|\besprite\b|\bforte\b|\bpointe\b"
+                 r"|\bmega[- ]?pointe\b|\bscenius\b|\bkhamsin\b|\bdiablo\b"
+                 r"|\bmoving\b|\bmover\b|\bvl\d|\bimpression\b|\bb-?eye\b")
+
 _MOVING_FALLBACK = {"moving_bar": "moving_bar", "bar": "moving_bar",
                     "par": "moving_wash", "wash_panel": "moving_wash",
                     "profile": "moving_spot", "fresnel": "moving_wash",
@@ -183,7 +188,14 @@ def _describe(manufacturer: str, model: str, mode: str,
         if re.search(pattern, name):
             kind = typ
             break
-    if moving:
+    if not roles:
+        # Nothing known about the channels yet (a GDTF Share listing): the
+        # name is all there is, so trust it - and product families that are
+        # always moving heads override a word like "Profile" in the name.
+        kind = kind or "generic"
+        if re.search(_MOVING_NAMES, name) and not TYPES[kind]["moving"]:
+            kind = _MOVING_FALLBACK.get(kind, "moving_spot")
+    elif moving:
         if kind and not TYPES[kind]["moving"]:
             kind = _MOVING_FALLBACK.get(kind, "")
         if not kind:

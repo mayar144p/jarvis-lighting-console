@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import artnet, config, console_ai, dmxin, fixtures, gdtf_geom  # noqa: E402
-from app import fixture_kind  # noqa: E402
+from app import doctor, fixture_kind  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from app import midi, profiles                                          # noqa: E402
 from app import gdtfshare                                            # noqa: E402
@@ -325,8 +325,8 @@ class Handler(BaseHTTPRequestHandler):
         # be built twice or deliberately left on one of them.  The AI stayed
         # - it is a panel inside the console, on the same allowlist, reaching
         # the same engine - and the page around it went.
-        if route in ("/", "/index.html"):
-            return self._file(config.WEB / "console.html")
+        if route in ("/", "/index.html", "/console.html"):
+            return self._file(config.WEB / "index.html")
         if route == "/" + config.APP_LOGO:
             logo = config.logo_path()
             return self._file(logo) if logo else self._json({"error": "not found"}, 404)
@@ -654,6 +654,65 @@ class Handler(BaseHTTPRequestHandler):
                 offline=bool(body.get("offline")))
             return self._console_result(eng, result)
 
+    def _stream(self) -> None:
+        """One live connection instead of three polling loops.
+
+        Server-sent events: `snapshot` (the full state) on connect and after
+        every edit, `lite` (fast-changing state: faders, output, playback
+        position) five times a second, and `look` (the light, for the 3D
+        stage) up to 30 times a second when it changes.
+        """
+        import time as _time
+        eng = self._engine()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self._security_headers()
+        self.end_headers()
+        self.close_connection = True
+
+        def send(event: str, data) -> None:
+            body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+            self.wfile.write(f"event: {event}\ndata: {body}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        rev = None
+        last_look = None
+        next_lite = 0.0
+        next_beat = 0.0
+        next_snap = 0.0
+        try:
+            while True:
+                now = _time.monotonic()
+                # At most four snapshots a second: a fader drag is sixty
+                # edits, and the lite event already carries its value.
+                if eng.act_rev != rev and now >= next_snap:
+                    next_snap = now + 0.25
+                    rev = eng.act_rev
+                    snap = eng.snapshot()
+                    snap["actions"] = sorted(engine_mod.ACTIONS)
+                    send("snapshot", snap)
+                if now >= next_lite:
+                    next_lite = now + 0.1
+                    lite = eng.lite(eng.patch_rev)
+                    lite.pop("heads", None)
+                    send("lite", lite)
+                looks = eng.look_rows()
+                text = json.dumps(looks, separators=(",", ":"))
+                if text != last_look:
+                    last_look = text
+                    self.wfile.write(("event: look\ndata: " + text + "\n\n").encode("utf-8"))
+                    self.wfile.flush()
+                if now >= next_beat:
+                    next_beat = now + 10
+                    self.wfile.write(b": beat\n\n")
+                    self.wfile.flush()
+                _time.sleep(1 / 30)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
     def _api_get(self, route: str, query: dict) -> None:
         if route == "/api/status":
             status = config.status()
@@ -756,6 +815,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "heads must be a list of numbers"},
                                       400)
             return self._json(self._engine().capabilities(heads))
+        if route == "/api/console/stream":
+            return self._stream()
+        if route == "/api/console/doctor":
+            return self._json(doctor.examine(self._engine()))
         if route == "/api/console/look":
             # Per-tick LIGHT feed for the visualiser (see §13 fades).  The
             # lite feed above is structure and only ships head looks when
@@ -865,12 +928,17 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/gdtf/search":
             client = gdtf_share()
             try:
-                return self._json(client.search(
+                found = client.search(
                     q=query.get("q", ""),
                     man=query.get("man", ""),
                     footprint=int(query["footprint"]) if query.get("footprint") else None,
                     limit=int(query.get("limit", 60)),
-                    force=query.get("refresh", "") in ("1", "true", "yes")))
+                    force=query.get("refresh", "") in ("1", "true", "yes"))
+                for r in found.get("results") or []:
+                    r["body"] = fixture_kind.describe({
+                        "manufacturer": r.get("manufacturer"),
+                        "model": r.get("fixture"), "map": []})
+                return self._json(found)
             except gdtfshare.GdtfShareError as exc:
                 return self._json({"error": exc.message, "code": exc.code,
                                    **client.status()}, 200)

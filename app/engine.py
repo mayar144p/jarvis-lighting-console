@@ -106,12 +106,20 @@ UNDO_EXCLUDED = frozenset({
     # Read-only queries change nothing, so they must not cost an undo step
     # (the undo button used to read "undo: fx available").
     "fx_available", "get_limits", "cue_info", "export_patch",
+    # Choosing WHICH lights to work on is not an edit to the show; on a
+    # desk, undo walks back what you did to them, not what you clicked.
+    "select_all", "select_group", "select_heads", "select_similar",
+    "select_query", "clear_selection",
 })
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
 # operator is dragging or typing into.  Discrete edits must not coalesce -
 # recording two cues 400 ms apart is two cues, and collapsing them would
 # throw the first away.
+# Queries: they change nothing, so they do not make clients reload.
+_READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
+                        "export_patch"})
+
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "set_address", "set_place",
@@ -540,7 +548,7 @@ ACTIONS = (
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar",
-    "select_query", "set_address", "fan",
+    "select_query", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
     "set_limits", "clear_limits", "set_orient", "get_limits",
     "set_lock", "unlock", "set_dry_run",
@@ -610,6 +618,9 @@ class Engine:
         # Monotonic look-feed sequence (see look_feed); the visualiser
         # interpolates between ticks instead of stepping.
         self._look_seq = 0
+        # Bumped by every successful edit, so a live client knows when the
+        # structure (patch, cues, palettes, shows...) needs a full reload.
+        self.act_rev = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Auto-follow: one small ticker thread while any cue stack has
@@ -856,6 +867,8 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
+            if name not in _READ_ONLY and not params.get("dry"):
+                self.act_rev += 1
             if name != "status" and not self._batching:
                 self._autosave()
             self._sync_follow_thread()        # start/stop the follow ticker
@@ -932,6 +945,7 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
+            self.act_rev += 1
             if name != "status":
                 self._autosave()
             self._sync_follow_thread()
@@ -1636,6 +1650,14 @@ class Engine:
         name = None
         if path:
             target = Path(path)
+            if not target.is_absolute():
+                target = config.DATA / target
+            # Only inside the app's own data folder: this action is reachable
+            # over HTTP, and "write a file wherever the caller says" is not
+            # something a lighting desk should offer.
+            root = config.DATA.resolve()
+            if root not in target.resolve().parents and target.resolve() != root:
+                raise ValueError("patch sheets can only be written inside data/")
             if target.is_dir() or str(path).endswith(("/", "\\")):
                 # A directory gets the SHOW's name, not "patch.csv":
                 # `data/audition.mrk` and `data/show.mrk` are two different
@@ -1839,6 +1861,17 @@ class Engine:
             by_pos[p0] = h["head_no"]
 
     # --- groups -------------------------------------------------------
+    def _a_rename_head(self, head=None, name="", **_):
+        """Give one head a name of its own (e.g. "DS left spot")."""
+        h = self._head(int(head))
+        label = str(name or "").strip()[:60]
+        if not label:
+            raise ValueError("a name is required")
+        h["name"] = label
+        self.patch_rev += 1
+        return {"head": h["head_no"], "name": label,
+                "summary": f"#{h['head_no']} is now {label!r}"}
+
     def _a_group_create(self, name="", heads=None, **_):
         members = [int(n) for n in (heads if heads is not None
                                     else self.selected)]
@@ -5284,6 +5317,14 @@ class Engine:
             plan.append(("clear_heads", {"heads": sorted(heads)}))
             return self._cmd_finish(line, plan, note_lines, dry)
 
+        # ---- a colour by name: `1-4 red`, `all deep blue`, `3 #ff8800` -
+        colour_text = " ".join(tokens[i:])
+        from app import showdesign as _sd
+        hexcode = _sd._to_hex(colour_text) if not _is_num(colour_text) else None
+        if hexcode and (len(tokens) == i + 1 or _attr_role(tok) is None):
+            plan.append(("set_colour", {"hex": hexcode}))
+            return self._cmd_finish(line, plan, note_lines, dry)
+
         # ---- attributes -------------------------------------------------
         want = re.sub(r"[^a-z0-9]", "", tok)
         role = _attr_role(tok)
@@ -5833,6 +5874,11 @@ class Engine:
                     "full": since is None or since != seq - 1,
                     "heads": lit, "count": len(looks),
                     "lit": len(lit)}
+
+    def look_rows(self) -> list[dict]:
+        """The lit heads' looks, for the live stream (no sequence bump)."""
+        with self.lock:
+            return [row for row in self._looks() if row["a"] > 0]
 
     def _look(self, now: float | None = None) -> list[dict]:
         """Lite-feed look rows: {n, look:{hex, a, on}} (patch-revisioned)."""

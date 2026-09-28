@@ -427,9 +427,9 @@ export class Stage {
 
   view(name, instant = false) {
     const { w, d } = this.room;
-    const t = new THREE.Vector3(0, 1.6, d * 0.45);
+    const t = new THREE.Vector3(0, 2.7, d * 0.45);
     const at = {
-      front: [0, 3.4, d + 10.5],
+      front: [0, 4.4, d + 11.5],
       left: [-(w / 2 + 9), 4.2, d * 0.5],
       right: [w / 2 + 9, 4.2, d * 0.5],
       back: [0, 5.5, -9],
@@ -744,7 +744,7 @@ export class Stage {
       tag.className = "stage-tag" + (this.selected.has(head) ? " sel" : "");
       const d = inst.data;
       const brand = d.body && d.body.brand !== "generic" ? d.body.brand_name + " " : "";
-      tag.textContent = `#${head}  ${brand}${d.model || ""}`.trim();
+      tag.textContent = want.size > 4 ? `#${head}` : `#${head}  ${brand}${d.model || ""}`.trim();
       tag.style.left = ((p.x + 1) / 2 * w) + "px";
       tag.style.top = ((1 - p.y) / 2 * h) + "px";
       nodes.push(tag);
