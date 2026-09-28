@@ -3542,14 +3542,25 @@ class Engine:
                 "roles": sorted(values),
                 "summary": f"recorded {key} palette {label}{note}"}
 
+    @staticmethod
+    def _by_number_or_name(rows: list[dict], ref) -> dict | None:
+        """A palette or preset by its number, or by its name (any case)."""
+        if ref is None or ref == "":
+            return None
+        if _is_int(ref):
+            return next((p for p in rows if p["n"] == int(ref)), None)
+        want = str(ref).strip().lower()
+        return next((p for p in rows
+                     if str(p.get("name", "")).strip().lower() == want), None)
+
     def _a_include_palette(self, kind=None, n=None, palette=None, **_):
         key = str(kind or "").strip().lower()
         if key not in PALETTE_KINDS:
             raise ValueError(f"kind must be one of {sorted(PALETTE_KINDS)}")
-        num = int(n if n is not None else palette or 0)
-        entry = next((p for p in self.palettes[key] if p["n"] == num), None)
+        ref = n if n is not None else palette
+        entry = self._by_number_or_name(self.palettes[key], ref)
         if entry is None:
-            raise ValueError(f"no {key} palette {num}")
+            raise ValueError(f"no {key} palette {ref!r}")
         # The SELECTION decides who gets it - there is no longer a list of
         # heads baked into the entry, so the bug this replaces (a disjoint
         # selection falling through and writing to the recorded heads) is
@@ -3568,7 +3579,7 @@ class Engine:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s) - "
                 f"they have none of: {', '.join(sorted(entry.get('values') or {}))}")
-        return {"kind": key, "n": num, "heads": applied,
+        return {"kind": key, "n": entry["n"], "heads": applied,
                 "skipped": skipped,
                 "summary": (f"included {key} {entry['name']} on {applied} head(s)"
                             + (f"; {len(skipped)} had no matching channel"
@@ -3626,10 +3637,10 @@ class Engine:
                            f"({len(used)} head(s), {len(collapsed)} attribute(s))"}
 
     def _a_include_preset(self, n=None, preset=None, **_):
-        num = int(n if n is not None else preset or 0)
-        entry = next((p for p in self.presets if p["n"] == num), None)
+        ref = n if n is not None else preset
+        entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
-            raise ValueError(f"no preset {num}")
+            raise ValueError(f"no preset {ref!r}")
         heads = self._require_selection()
         applied, skipped = 0, []
         for h in heads:
@@ -3643,7 +3654,7 @@ class Engine:
         if not applied:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s)")
-        return {"n": num, "name": entry["name"], "heads": applied,
+        return {"n": entry["n"], "name": entry["name"], "heads": applied,
                 "skipped": skipped,
                 "summary": f"applied preset {entry['name']} to {applied} head(s)"
                            + (f"; {len(skipped)} had no matching channel"
@@ -6333,13 +6344,13 @@ class Engine:
         # {"dimmer": 0} and playback would look broken.  So fall back to
         # "every head participates" (and take the level/colour from
         # whichever role the concept did specify).
-        patch_roles = {str(h.get("role") or "generic") for h in self.patch}
+        patch_roles = {fixture_kind.design_role(h) for h in self.patch}
         # role -> the head numbers it would drive, so the UI can offer
         # "assign heads 2-5 to wash" instead of leaving the operator to
         # guess why the spots came up the wrong colour.
         role_heads: dict[str, list[int]] = {}
         for head in self.patch:
-            role_heads.setdefault(str(head.get("role") or "generic"),
+            role_heads.setdefault(fixture_kind.design_role(head),
                                   []).append(head["head_no"])
         role_mismatch = False
         used_roles: set[str] = set()
@@ -6380,7 +6391,7 @@ class Engine:
             cue_intensity = cue.get("intensity") or intensity
             values = {}
             for head in self.patch:
-                role = str(head.get("role") or "generic")
+                role = fixture_kind.design_role(head)
                 on = roles_on is None or role in roles_on
                 pct = level_for(cue_intensity, role) if on else 0
                 hexcol = colour_for(cue_colours, role)

@@ -1188,12 +1188,9 @@ def test_console_ai(tmp: Path) -> None:
 
         rainbow = console_ai.plan("rainbow across the rig", offline=True)
         fx = [s for s in rainbow["steps"] if s["action"] == "run_fx"]
-        check("rainbow = red/green/blue waves 120 deg apart",
-              len(fx) == 3
-              and [s["fx"]["attribute"] for s in fx]
-              == ["red", "green", "blue"]
-              and [s["fx"]["phase"] for s in fx] == [0, 120, 240]
-              and fx[0]["fx"]["spread"] == 180, json.dumps(rainbow))
+        check("rainbow is the library's Rainbow effect, spread across the rig",
+              len(fx) == 1 and fx[0]["fx"]["name"] == "rainbow"
+              and fx[0]["fx"]["params"]["spread"] == 180, json.dumps(rainbow))
 
         out = console_ai.plan("add 4 pars", offline=True)
         check("add pars -> add_heads qty 4",
@@ -1207,7 +1204,7 @@ def test_console_ai(tmp: Path) -> None:
         fx = [s for s in out["steps"] if s["action"] == "run_fx"]
         check("duration lands in fx timing",
               fx and fx[0]["fx"].get("duration") == 10.0
-              and fx[0]["fx"]["kind"] == "random", json.dumps(out))
+              and fx[0]["fx"].get("name") == "sparks", json.dumps(out))
 
         # --- allowlist ---------------------------------------------------
         for bad in sorted(console_ai.DENY_ACTIONS):
@@ -1255,10 +1252,13 @@ def test_console_ai(tmp: Path) -> None:
               [c["action"] for c in calls]
               == ["select_all", "set_intensity"], json.dumps(calls))
 
-        dedup = console_ai.resolve(rainbow["steps"])
-        check("select_all deduped across fx steps",
+        dedup = console_ai.resolve(console_ai._validate({"steps": [
+            {"target": "all", "action": "set_intensity", "attributes": {"level": 50}},
+            {"target": "all", "action": "set_colour", "attributes": {"hex": "#ff0000"}},
+            {"target": "all", "action": "run_fx", "fx": {"name": "breathe"}}]})["steps"])
+        check("select_all deduped across steps",
               [c["action"] for c in dedup]
-              == ["select_all", "run_fx", "run_fx", "run_fx"],
+              == ["select_all", "set_intensity", "set_colour", "run_fx"],
               json.dumps(dedup))
 
         group = console_ai.resolve(
@@ -1318,16 +1318,89 @@ def test_console_ai(tmp: Path) -> None:
         original_chat = console_ai.llm.chat
         try:
             config.LLM_API_KEY = "selftest-key"
-            console_ai.llm.chat = lambda messages, tools=None: {
-                "content": '```json\n{"reply":"dimmed","steps":[{"target":'
-                           '"all","action":"set_intensity","attributes":'
-                           '{"level":40}}]}\n```'}
-            out = console_ai.plan("to 40")
+            seen = {}
+
+            def fenced(messages, tools=None, tool_choice=None, temperature=0.3):
+                seen["messages"] = messages
+                seen["tools"] = tools
+                return {"content": '```json\n{"reply":"dimmed","steps":[{"target":'
+                                   '"all","action":"set_intensity","attributes":'
+                                   '{"level":40}}]}\n```'}
+            console_ai.llm.chat = fenced
+            out = console_ai.plan("to 40", eng=e, history=[
+                {"role": "user", "content": "warm wash"},
+                {"role": "assistant", "content": "Warm wash on everything."}])
             check("LLM path parses fenced JSON",
                   out.get("source") == "llm"
                   and out["steps"][0]["attributes"]["level"] == 40,
                   json.dumps(out))
-            console_ai.llm.chat = lambda messages, tools=None: {
+            check("the model is asked through a schema (a forced tool call)",
+                  seen.get("tools") and seen["tools"][0]["function"]["name"] == "plan",
+                  str(seen.get("tools"))[:120])
+            sysmsg = seen["messages"][0]["content"]
+            check("and it is shown the actual rig: heads, type and capabilities",
+                  "RIG: 4 fixtures" in sysmsg and "heads 1-4" in sysmsg
+                  and "can do:" in sysmsg, sysmsg[-400:])
+            check("and the effects library by name",
+                  "NAMED EFFECTS" in sysmsg and "circle" in sysmsg, "")
+            check("follow-ups carry the conversation",
+                  [m["role"] for m in seen["messages"]] ==
+                  ["system", "user", "assistant", "user"], "")
+            console_ai.llm.chat = lambda messages, tools=None, tool_choice=None, temperature=0.3: {
+                "tool_calls": [{"function": {"name": "plan", "arguments": json.dumps(
+                    {"reply": "circle", "answer": "You have 4 PARs.",
+                     "steps": [{"target": "heads 1,3", "action": "run_fx",
+                                "fx": {"name": "Rainbow"}}]})}}]}
+            out = console_ai.plan("rainbow on 1 and 3", eng=e)
+            check("a tool-call answer is read, and a named effect is normalised",
+                  out.get("source") == "llm" and out["steps"][0]["fx"]["name"] == "rainbow"
+                  and out.get("answer") == "You have 4 PARs.", json.dumps(out))
+            calls = console_ai.resolve(out["steps"], e)
+            check("scattered heads go straight to the effect",
+                  calls[-1]["params"].get("heads") == [1, 3], json.dumps(calls))
+            console_ai.llm.chat = lambda messages, tools=None, tool_choice=None, temperature=0.3: {
+                "tool_calls": [{"function": {"name": "plan", "arguments": json.dumps(
+                    {"reply": "x", "steps": [{"action": "set_output",
+                                              "attributes": {"state": 1}}]})}}]}
+            out = console_ai.plan("go live", eng=e)
+            check("a model that tries to arm the output is refused, and the "
+                  "offline compiler answers instead",
+                  out["source"] == "fallback" and "not available to the AI"
+                  in out.get("note", ""), json.dumps(out))
+            # Show design: the model designs for the rig's own design roles.
+            design_reply = {"concepts": [
+                {"name": "Ember", "tagline": "slow warm build",
+                 "palette": ["#ff8a2a", "#ffd9a8", "nonsense"],
+                 "cues": [
+                     {"name": "Open", "fade_s": 3, "hold_s": 0,
+                      "looks": [{"role": "par", "hex": "#ff8a2a", "level": 60},
+                                {"role": "laser", "hex": "#00ff00", "level": 100}]},
+                     {"name": "Peak", "fade_s": 999, "hold_s": -5,
+                      "looks": [{"role": "par", "hex": "#ffd9a8", "level": 140}]}]},
+                {"name": "Empty", "cues": [{"name": "x", "looks": []}]}]}
+            console_ai.llm.chat = lambda messages, tools=None, tool_choice=None, temperature=0.3: {
+                "tool_calls": [{"function": {"name": "design",
+                                             "arguments": json.dumps(design_reply)}}]}
+            gen = console_ai.generate("a warm acoustic set", eng=e)
+            concepts = gen["design"]["concepts"]
+            check("the AI designs concepts for the patched rig",
+                  gen["source"] == "llm" and len(concepts) == 1
+                  and concepts[0]["name"] == "Ember", json.dumps(gen)[:300])
+            cue1, cue2 = concepts[0]["cues"]
+            check("roles the rig does not have are dropped, bad colours too",
+                  set(cue1["intensity"]) == {"par"}
+                  and [p["hex"] for p in concepts[0]["palette"]] == ["#ff8a2a", "#ffd9a8"],
+                  json.dumps(concepts[0])[:300])
+            check("levels and timings are clamped to what a desk can do",
+                  cue2["intensity"]["par"] == 100 and cue2["fade_s"] == 30
+                  and cue2["hold_s"] == 0, json.dumps(cue2))
+            imported = e.act("import_show", concept=concepts[0], playback=2)
+            first = e.playbacks[1]["stack"][0]["values"]
+            check("a designed concept loads as cues that light the PARs",
+                  imported["ok"] and len(e.playbacks[1]["stack"]) == 2
+                  and all(row.get("dimmer", 0) > 0 for row in first.values()),
+                  json.dumps(imported)[:200])
+            console_ai.llm.chat = lambda messages, tools=None, tool_choice=None, temperature=0.3: {
                 "content": "sorry, no json here"}
             out = console_ai.plan("blackout")
             check("LLM garbage falls back to the compiler",
@@ -5734,8 +5807,8 @@ def test_console_only() -> None:
     check("`llm` and `showdesign` were NOT collateral: the console's AI "
           "needs both, and deleting them would have broken it silently",
           all((ROOT / "app" / n).exists() for n in ("llm.py", "showdesign.py"))
-          and "from . import llm, showdesign" in
-          (ROOT / "app" / "console_ai.py").read_text(encoding="utf-8"), "")
+          and bool(re.search(r"from \. import [^\n]*\bllm\b[^\n]*\bshowdesign\b",
+                             (ROOT / "app" / "console_ai.py").read_text(encoding="utf-8"))), "")
 
     # `style.css` and `viz.js` are SHARED.  The assistant page loaded them
     # too, which is exactly why they look like part of it and must not be

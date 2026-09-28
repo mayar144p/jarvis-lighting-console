@@ -306,3 +306,24 @@ def place(kind: str, count: int, existing: list[dict],
     while len(out) < count:                     # an absurdly full stage
         out.append({"x": 0.0, "y": height, "z": base_z, "kind": mount})
     return out
+
+
+# The design vocabulary the show designer speaks (wash / par / bar / spot /
+# beam), derived from what a head physically is when the operator has not
+# given it one.  A patch is almost always all "generic" otherwise, and a
+# concept that lights washes and beams differently then lights nothing
+# differently at all.
+_DESIGN_ROLE = {
+    "moving_wash": "wash", "wash_panel": "wash", "cyc": "wash", "fresnel": "wash",
+    "par": "par", "par_can": "par", "blinder": "par",
+    "bar": "bar", "moving_bar": "bar", "matrix": "bar", "tube": "bar",
+    "moving_spot": "spot", "profile": "spot", "followspot": "spot",
+    "moving_beam": "beam", "moving_hybrid": "beam", "laser": "beam",
+}
+
+
+def design_role(head: dict) -> str:
+    role = str(head.get("role") or "generic")
+    if role != "generic":
+        return role
+    return _DESIGN_ROLE.get(describe(head)["type"], "generic")

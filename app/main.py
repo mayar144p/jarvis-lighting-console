@@ -628,7 +628,8 @@ class Handler(BaseHTTPRequestHandler):
                      "steps": body["steps"]}), "source": "preview"}
             else:
                 result = console_ai.plan(str(body.get("message", "")),
-                                         offline=bool(body.get("offline")))
+                                         offline=bool(body.get("offline")),
+                                         eng=eng, history=body.get("history"))
             if body.get("apply"):
                 try:
                     calls = console_ai.resolve(result["steps"], eng)
@@ -651,7 +652,7 @@ class Handler(BaseHTTPRequestHandler):
             result = console_ai.generate(
                 str(body.get("prompt", "")),
                 variant=int(body.get("variant", 0) or 0),
-                offline=bool(body.get("offline")))
+                offline=bool(body.get("offline")), eng=eng)
             return self._console_result(eng, result)
 
     def _stream(self) -> None:

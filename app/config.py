@@ -134,7 +134,7 @@ LLM_API_KEY = _get("LLM_API_KEY", "")
 LLM_BASE_URL = _get("LLM_BASE_URL",
                     "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
 LLM_MODEL = _get("LLM_MODEL", "gemini-3.5-flash-lite")
-LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "120"))
+LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "45"))
 
 # --- Jarvis console engine ---------------------------------------------
 # The Jarvis engine is the console: patch, programmer, cues and direct
