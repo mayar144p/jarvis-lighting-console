@@ -8389,6 +8389,11 @@ def test_fx_library() -> None:
 
     _fx_check.run(check)
 
+    print("fx engine path (available, start, skip, refuse, publish, expire)")
+    from tools import _fx_engine_check
+
+    _fx_engine_check.run(check)
+
 
 def check_js() -> None:
     """node --check every web script: catches the class of bug a browser

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from app import config, fixtures
 from app import fx as fxmod
+from app import fxlib as fxlib_mod
 from app import profiles
 from app import merge
 from app.artnet import ArtNetSender, DMX_SLOTS
@@ -524,7 +525,7 @@ ACTIONS = (
     "patch_clear", "patch_from_csv", "patch_list",
     "playback_activate", "playback_level", "playback_release",
     "record_cue", "record_palette", "remove_heads", "run_command",
-    "run_fx", "save_show",
+    "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar",
     "select_query", "set_address", "fan",
     "align", "distribute", "mirror", "export_patch",
@@ -3077,20 +3078,96 @@ class Engine:
         return {"cleared": n, "fx": fx_n, "summary": "programmer cleared"}
 
     # --- effects ---------------------------------------------------------
+    def _a_fx_available(self, heads=None, group=None, **_):
+        """What the named effects these fixtures can actually do.
+
+        The UI asks this instead of filtering its own list, because a
+        second filter is a second source of truth - and that is how "it
+        offered me Circle and then nothing happened" happens.  This is the
+        same pure function the engine uses to decide whether an effect may
+        start, so the picker and the engine cannot disagree.
+
+        A MIXED selection is reported per head and per effect: what the
+        selection as a whole can do is the union, and `heads` says who.
+        Offering the union while the engine quietly skips the incapable
+        heads would be the same lie in a different place.
+        """
+        rows = self._fx_targets(heads, group)
+        if not rows:
+            raise ValueError("nothing selected")
+        per_head = {}
+        for h in rows:
+            avail = fxlib_mod.available(h.get("map") or [])
+            per_head[str(h["head_no"])] = avail
+        union: list[str] = []
+        for avail in per_head.values():
+            for n in avail:
+                if n not in union:
+                    union.append(n)
+        return {
+            "heads": [h["head_no"] for h in rows],
+            "available": fxlib_mod.describe(
+                # the union of roles, so describe() agrees with available()
+                sorted({r for h in rows for r in (h.get("map") or [])})),
+            "names": sorted(union),
+            "per_head": per_head,
+            "summary": "%d effect(s) available on %d head(s)"
+                       % (len(union), len(rows)),
+        }
+
+    def _fx_targets(self, heads=None, group=None) -> list[dict]:
+        """The head rows an fx action should act on.
+
+        Shared by run_fx and fx_available so the two can never disagree
+        about what "the selection" means - the first version had the
+        selection logic inline in run_fx, which meant the picker's idea of
+        the selection and the engine's were two functions.
+        """
+        patched = {h["head_no"]: h for h in self.patch}
+        if heads is not None:
+            wanted: list[int] = []
+            for h in heads:
+                n = int(h)
+                if n not in patched:
+                    raise ValueError(f"head {n} is not patched")
+                if n not in wanted:
+                    wanted.append(n)
+        elif group is not None:
+            num_g = int(group)
+            row = next((g for g in self.groups if g["n"] == num_g), None)
+            if row is None:
+                raise ValueError(f"no group {num_g}")
+            wanted = [n for n in row["heads"] if n in patched]
+        else:
+            wanted = [h["head_no"] for h in self._require_selection()]
+        return [patched[n] for n in wanted]
+
     def _a_run_fx(self, attribute=None, wave=None, kind=None, speed=1.0,
                   spread=0.0, phase=0.0, base=None, depth=None,
-                  duration=None, heads=None, group=None, **_):
+                  duration=None, heads=None, group=None, name=None,
+                  params=None, **_):
         """Start a running effect on the selection (or explicit heads/group).
 
-        `attribute` is the engine role to drive, `wave` (alias `kind`) one of
-        sine/saw/square/triangle/random.  `phase` is in DEGREES, `spread`
-        staggers the wave across the selection in degrees of a full turn,
-        `speed` in Hz (0.01-20).  `base`/`depth` shape the value range
-        (default: full range of the role - 0-100 intensity, 0-255 else).
-        Values resolve at merge time, so the DMX wire and the visualiser
-        always agree.  `duration` in seconds expires the effect by itself;
-        CLEAR stops every effect.
+        TWO KINDS, ONE ACTION.
+
+        With `name=`, one of the library effects in `app/fxlib.py` - Rainbow,
+        Circle, Fan, Gobo spin - and it writes SEVERAL roles per head, so
+        it needs no `attribute` and the old single-role arguments are
+        ignored.  Without it, the original LFO: one wave on one attribute,
+        which is the right primitive and is what the library is built on.
+
+        A named effect is offered only to a fixture that can do it, and on a
+        MIXED selection the incapable heads are SKIPPED and named in the
+        result, rather than the whole thing being refused: selecting four
+        PARs and two movers and asking for Circle should run Circle on the
+        movers, not do nothing because two of the six are PARs.  Refusing
+        outright is the other defensible choice and it is the wrong one -
+        it makes a mixed selection, which is the normal case on a rig, a
+        thing you cannot run an effect on.
         """
+        if name not in (None, ""):
+            return self._a_run_fx_named(
+                str(name).lower(), params, duration, heads, group)
 
         def num(value, default=0.0) -> float:
             if value in (None, ""):
@@ -3155,6 +3232,72 @@ class Engine:
         return {"fx": row["id"], "heads": len(wanted),
                 "summary": f"{name} {role} fx on {len(wanted)} head(s)"}
 
+    def _a_run_fx_named(self, name: str, params, duration, heads,
+                         group) -> dict:
+        """Start one of the `app/fxlib.py` effects.
+
+        The capability decision is made HERE, with the same pure function
+        the picker uses, and the heads that cannot do it are dropped and
+        reported.  That is the whole contract: an effect runs only where it
+        can, and the operator is told where it did not.
+        """
+        if name not in fxlib_mod.FX:
+            raise ValueError(
+                "unknown effect %r - one of %s"
+                % (name, ", ".join(sorted(fxlib_mod.FX))))
+        rows = self._fx_targets(heads, group)
+        if not rows:
+            raise ValueError("nothing selected")
+        capable, skipped = [], []
+        for h in rows:
+            avail = fxlib_mod.available(h.get("map") or [])
+            (capable if name in avail else skipped).append(h)
+        if not capable:
+            # Nothing here can do it.  The reason is per head, because the
+            # usual cause is a mode with no dimmer or no colour, and "needs
+            # pan" is useless if the fixture has no pan channel to lack.
+            why = "; ".join(
+                "head %d: %s" % (h["head_no"],
+                                 fxlib_mod.why_not(h.get("map") or [], name))
+                for h in skipped[:4])
+            raise ValueError(
+                "%s cannot run here - %s" % (
+                    fxlib_mod.FX[name]["label"],
+                    why + ("" if len(skipped) <= 4 else " (+%d more)"
+                           % (len(skipped) - 4))))
+        if len(self.fx) >= 16:
+            raise ValueError("too many effects running - stop some first")
+        p = fxlib_mod.defaults(name)
+        if isinstance(params, dict):
+            for k, v in params.items():
+                if k in p and v is not None:
+                    try:
+                        p[k] = float(v)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            "not a number for %s: %r" % (k, v)) from None
+        dur = None
+        if duration not in (None, "", 0, "0"):
+            try:
+                d = float(duration)
+            except (TypeError, ValueError):
+                raise ValueError("not a number: %r" % (duration,)) from None
+            dur = min(d, 86400.0) if d > 0 else None
+
+        self._fx_seq += 1
+        row = {"id": self._fx_seq, "lib": name, "params": p,
+               "heads": [h["head_no"] for h in capable],
+               "t0": time.monotonic(), "duration": dur}
+        self.fx.append(row)
+        msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
+                                   len(capable))
+        if skipped:
+            msg += " (skipped %d: %s)" % (
+                len(skipped), ", ".join(str(h["head_no"]) for h in skipped[:6]))
+        return {"fx": row["id"], "effect": name, "heads": len(capable),
+                "skipped": [h["head_no"] for h in skipped],
+                "summary": msg}
+
     def _a_stop_fx(self, id=None, fx=None, **_):
         target = id if id is not None else fx
         if target is None:
@@ -3191,6 +3334,32 @@ class Engine:
             keep.append(row)
             heads = row["heads"]
             count = len(heads)
+            if row.get("lib"):
+                # A NAMED effect writes SEVERAL roles per head, so the
+                # per-head dict is UPDATED rather than assigned.  The
+                # index passed in is the head's position among the heads
+                # this effect actually runs on - which is the running set,
+                # not the original selection - so a spread across two movers
+                # out of a mixed six spans those two, not every sixth of the
+                # original selection.
+                by_no = {h["head_no"]: h for h in self.patch}
+                for i, head_no in enumerate(heads):
+                    roles = by_no.get(head_no, {}).get("map") or []
+                    try:
+                        vals = fxlib_mod.apply(
+                            row["lib"], {}, roles, params=row.get("params"),
+                            elapsed=elapsed, index=i, count=count)
+                    except ValueError:
+                        # The patch changed under a running effect - a mode
+                        # was re-imported and the head lost the channel.  Drop
+                        # the effect rather than throwing inside the frame
+                        # builder, which would take the whole DMX tick with
+                        # it.  Silently, because there is nobody to tell at
+                        # 200 Hz; the effect stops being listed.
+                        continue
+                    if vals:
+                        out.setdefault(head_no, {}).update(vals)
+                continue
             for i, head_no in enumerate(heads):
                 cycles = fxmod.cycles_for(elapsed, row["speed"], row["phase"],
                                           row["spread"], i, count)
@@ -6011,6 +6180,23 @@ class Engine:
             if dur is not None and elapsed >= dur:
                 continue                              # expired - drop it
             keep.append(row)
+            if row.get("lib"):
+                # A NAMED effect has no single role/kind/speed - that is the
+                # point of it - so it publishes its name and knobs instead.
+                # The first version indexed row["role"] unconditionally,
+                # which meant every snapshot raised KeyError while any named
+                # effect was running: the console's own 10 Hz feed would have
+                # died the moment you pressed one of these buttons.
+                pub = {"id": row["id"], "lib": row["lib"],
+                       "label": fxlib_mod.FX.get(
+                           row["lib"], {}).get("label", row["lib"]),
+                       "params": dict(row.get("params") or {}),
+                       "heads": list(row["heads"]),
+                       "duration": dur,
+                       "remaining": (round(dur - elapsed, 1)
+                                     if dur is not None else None)}
+                out.append(pub)
+                continue
             pub = {"id": row["id"], "role": row["role"], "kind": row["kind"],
                    "speed": row["speed"], "spread": row["spread"],
                    "base": row["base"], "depth": row["depth"],
