@@ -542,6 +542,13 @@ ACTIONS = (
 )
 
 
+# A "not given" marker for action parameters that need to tell three states
+# apart.  `follow` is one: a number, an explicit zero (wait), or absent
+# (inherit the stack default).  None is already spoken for, so the default
+# cannot be.
+_UNSET = object()
+
+
 class Engine:
     """All console state + the DMX output thread. One RLock."""
 
@@ -3639,10 +3646,19 @@ class Engine:
                  "fade_s": float(fade if fade is not None else 0.0),
                  "hold_s": float(hold if hold is not None else 0.0),
                  "values": {}}
-        # Inherits, like a recorded cue - see record_cue.  An inserted slot
-        # with no opinion of its own is the right answer: a "record me here"
-        # marker that then refuses to be stepped through would be worse than
-        # useless, and one that always auto-fires would be worse still.
+        # Inherits unless told otherwise, like a recorded cue - see
+        # record_cue for why "a new cue waits by default" was the wrong
+        # call: a cue's own follow_s BEATS the stack delay, so writing an
+        # explicit 0 made follow_set(delay=...) unreachable.
+        #
+        # This assignment was MISSING for a while, so insert_cue took a
+        # `follow` argument, accepted it and threw it away.  A live stack
+        # built through the API came back with every cue inheriting and
+        # the parameter looked like it worked, because nothing
+        # complained.  An argument that is accepted and ignored is worse
+        # than one that is rejected.
+        if follow is not None:
+            entry["follow_s"] = max(0.0, float(follow))
         stack.insert(pos - 1, entry)
         self._renumber(stack)
         return {"playback": pb["n"], "cue": pos, "cues": len(stack),
@@ -3714,7 +3730,7 @@ class Engine:
                 "summary": f"renamed cue {num} to {label!r}"}
 
     def _a_edit_cue(self, playback=None, cue=None, fade=None, hold=None,
-                    name=None, follow=None, **_):
+                    name=None, follow=_UNSET, **_):
         """Change a cue's timing or name in place, without re-recording it."""
         pb = self._playback(playback if playback is not None else 1)
         stack = pb["stack"]
@@ -3732,13 +3748,18 @@ class Engine:
         if name is not None and str(name).strip():
             entry["name"] = str(name).strip()
             changed.append("name")
-        # follow=null CLEARS the cue's own value, so it goes back to
-        # inheriting the stack default.  That has to be expressible, or a cue
-        # pinned to "wait" can never be released once the operator changes
-        # their mind.  `_` is the leftover kwargs bag, so "follow" in it
-        # means the caller MENTIONED follow even when the value is null -
-        # the only way to tell "set it to wait" from "never mentioned it".
-        if "follow" in _:
+        # A SENTINEL, not a None default, and that is the whole trick.
+        #
+        # `follow` has to be able to say three things: set a number, set
+        # zero, and CLEAR the cue so it goes back to inheriting.  Three
+        # states need three values, and None is already one of them - so the
+        # default has to be something else.  The first version used
+        # `if "follow" in _`, checking the leftover kwargs bag, which is the
+        # usual trick for this - and it never fired, because `follow` was a
+        # NAMED parameter and therefore never reached `_`.  An edit that
+        # accepts a follow, returns a sensible result, and does nothing is
+        # worse than one that rejects it.
+        if follow is not _UNSET:
             if follow is None:
                 entry.pop("follow_s", None)
                 changed.append("follow back to the stack default")

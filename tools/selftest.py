@@ -8365,6 +8365,7 @@ def _standalone_suites():
     ("gdtf geometry", test_gdtf_geometry),
     ("gdtf twin", test_gdtf_twin),
     ("fx library", test_fx_library),
+    ("show building", test_show_building),
     )
 
 
@@ -8393,6 +8394,21 @@ def test_fx_library() -> None:
     from tools import _fx_engine_check
 
     _fx_engine_check.run(check)
+
+
+def test_show_building() -> None:
+    """Per-cue follow, playback crossfades, and the public readout.
+
+    Both features have a contract that is easy to state and easy to break
+    in a way nothing notices - follow in particular, because a cue that
+    fails to auto-advance looks exactly like a cue that was never told to.
+
+    The checks live in `tools/_show_check.py` and drive a real Engine.
+    """
+    print("show building (per-cue follow, crossfades, the public readout)")
+    from tools import _show_check
+
+    _show_check.run(check)
 
 
 def check_js() -> None:
