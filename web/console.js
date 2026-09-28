@@ -3148,7 +3148,79 @@ function buildVizIfChanged() {
   rebuildViz(patch);
 }
 
+/* ---- the three.js stage (web/js/stage) ------------------------------
+ * The stage is an ES module; it announces itself with a "jarvis-stage"
+ * event.  Until it has, the console waits rather than drawing anything. */
+let stage3d = null;
+const rawLooks = {};           // head -> the light feed's row, beam and all
+
+function stageFixtures(patch) {
+  return patch.map((h) => ({
+    head_no: h.head_no, name: h.name || "", manufacturer: h.manufacturer || "",
+    model: h.model || "", mode: h.mode || "", kind: h.kind,
+    x: Number(h.x) || 0, y: Number(h.y) || 0, z: Number(h.z) || 0,
+    body: h.body || null,
+  }));
+}
+
+function stageLooks() {
+  const out = {};
+  Object.keys(looks).forEach((k) => {
+    const lk = looks[k];
+    const raw = rawLooks[k] || {};
+    out[k] = { hex: lk.hex, a: lk.a, pan: lk.pan, tilt: lk.tilt,
+      deg: raw.deg || twinDeg[k], beam: raw.beam };
+  });
+  return out;
+}
+
+function stageAdapter(st) {
+  return {
+    setLooks: (_l, holdMs) => st.setLooks(stageLooks(), holdMs),
+    redraw: () => { st.dirty = true; },
+    setSelected: (sel) => st.setSelected(sel),
+    setPositions: (moves) => st.setPositions(moves),
+    frame: (heads) => st.frame(heads),
+    view: (name) => st.view(name === "reset" ? "front" : name),
+    zoom: (f) => st.zoom(f),
+    camera: () => st.cameraState(),
+    setCamera: (s) => st.setCamera(s),
+    touched: () => true,
+    destroy: () => {},
+  };
+}
+
+window.addEventListener("jarvis-stage", () => {
+  vizSig = null;
+  if (S) buildVizIfChanged();
+});
+
+function rebuildStage(patch) {
+  const pane = $("#viz-pane");
+  if (!stage3d) {
+    pane.replaceChildren();
+    stage3d = new window.JarvisStage.Stage(pane, {
+      onPick: (head, mods) => pickFixtureInPatch(head, mods),
+      onMoveFixture: (head, x, y, z, done) => { if (done) queueFixtureMove(head, x, y, z); },
+      onCamera: (s) => { camSaved = s; },
+    });
+    viz = stageAdapter(stage3d);
+  }
+  stage3d.setRig({ fixtures: stageFixtures(patch), venue: vizVenue() });
+  stage3d.setLooks(stageLooks(), 0);
+  if (S && S.selected) stage3d.setSelected(S.selected);
+  loadStageModels();
+}
+
+async function loadStageModels() {
+  try {
+    const d = await api("/api/console/models");
+    if (stage3d && d && d.definitions) stage3d.setGdtf(d.definitions, twinModelBytes);
+  } catch (err) { /* the procedural models stay - decoration, not data */ }
+}
+
 function rebuildViz(patch) {
+  if (window.JarvisStage) return rebuildStage(patch);
   const pane = $("#viz-pane");
   // Keep the operator's viewpoint across the rebuild.  Even with the
   // position-churn fixed, a re-patch or a loaded layout still rebuilds,
@@ -3870,8 +3942,10 @@ async function lookFeed() {
     }
     let changed = false;
     const seen = new Set();
+    Object.keys(rawLooks).forEach((k) => { if (!d.heads.some((h) => h.n === Number(k))) delete rawLooks[k]; });
     d.heads.forEach((h) => {
       seen.add(h.n);
+      rawLooks[h.n] = h;
       if (h.deg) twinDeg[h.n] = h.deg;
       if (mergeLook(h.n, h.hex || "#f4f7ff", h.a || 0, h)) changed = true;
     });
@@ -3886,7 +3960,7 @@ async function lookFeed() {
         changed = true;
       }
     });
-    if (changed) pushLooks(140);
+    if (changed || stage3d) pushLooks(140);
   } catch (err) {
     lookFails++;
     if (lookFails === 5) showErr("look feed unreachable — " + err.message,
@@ -6518,7 +6592,22 @@ function pickFixture(r, btn) {
   }
   $("#dlg-add").disabled = false;
   dlgErr(null);
+  showFixturePreview(r);
   $("#dlg-qty").focus();
+}
+
+// The picked fixture, in 3D, before it is patched.
+let dlgPreview = null;
+function showFixturePreview(r) {
+  const box = $("#dlg-preview");
+  if (!box || !window.JarvisStage || !r.body) {
+    if (box) box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
+  if (!dlgPreview) dlgPreview = new window.JarvisStage.FixturePreview(box);
+  dlgPreview.show(r.body, (r.manufacturer || "") + " " + (r.model || ""));
+  $("#dlg-preview-cap").textContent = r.body.label + " · " + r.body.brand_name;
 }
 
 function optNum(sel) {

@@ -24,7 +24,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import config, fixtures
+from app import config, fixtures, fixture_kind
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
@@ -133,6 +133,10 @@ from .engine_support import (ATTRIBUTE_ALIAS as _ATTRIBUTE_ALIAS,  # noqa: F401
                              pos as _pos,
                              pos_to_ua as _pos_to_ua, split_16bit)
 
+
+# Channels the light feed reports so the 3D beam can be shaped by them.
+_BEAM_LOOK_ROLES = ("zoom", "iris", "frost", "focus", "gobo", "gobo_rot",
+                    "prism", "strobe", "shutter")
 
 # Colour roles: on a fixture with no dimmer these ARE the brightness.
 _COLOUR_ROLES = COLOUR_ROLES
@@ -1407,6 +1411,16 @@ class Engine:
         if address not in (None, ""):
             entry["address"] = address
         plan = self.plan_addresses([entry])       # raises before state changes
+        if x is None and y is None and z is None and plan:
+            # No position given: hang it where that kind of light goes,
+            # beside the others of its kind, instead of on (0, 0, 0).
+            kind_now = fixture_kind.describe(plan[0])["type"]
+            spots = fixture_kind.place(
+                kind_now, len(plan), self.patch,
+                float(self.venue.get("width_m") or 0) or 10.0,
+                float(self.venue.get("depth_m") or 0) or 8.0)
+            for row, spot in zip(plan, spots):
+                row.update(spot)
         added = self._apply_plan(plan)
         return {"heads": added, "patched": len(self.patch),
                 "summary": f"added {len(added)} x {plan[0]['model']}"}
@@ -5762,6 +5776,13 @@ class Engine:
                     span[role] = [r["min"], r["max"]]
             if span:
                 row["deg"] = span
+            # Beam shaping for the visualiser, 0..1 per driven channel, so
+            # zoom, iris, frost, gobo, prism and strobe change the beam on
+            # screen exactly as they will on stage.
+            beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
+                    for r in _BEAM_LOOK_ROLES if r in values}
+            if beam:
+                row["beam"] = beam
             out.append(row)
         return out
 
@@ -6476,7 +6497,8 @@ class Engine:
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h) for h in self.patch],
+                "patch": [dict(h, body=fixture_kind.describe(h))
+                          for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
                             "heads": list(g["heads"])} for g in self.groups],

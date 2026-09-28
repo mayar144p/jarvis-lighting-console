@@ -161,15 +161,10 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
            starts a second convention for the same thing - which is how the
            help dialog ended up permanently open once already. -->
       <p id="twin-status" class="hidden" aria-live="polite"></p>
-      <p id="viz-hint">drag <b>orbit</b> &middot;
-        <b>right-drag</b> or <b>middle-drag</b> <b>pan</b> &middot;
-        <b>wheel</b> <b>zoom</b> to cursor &middot;
-        <b>two fingers</b> pinch &middot; <b>⛶ FULL</b> for the whole screen<br>
-        <b>click the view</b> then <b>WASD</b>/<b>QE</b> fly
-        (<b>Shift</b> faster) &middot; <b>1&ndash;5</b> views &middot;
-        <b>F</b> frame &middot; <b>0</b> reset<br>
-        drag a <b>light</b> to move it &middot; <b>shift</b>+drag for height
-        &middot; click to select</p>
+      <p id="viz-hint">drag <b>orbit</b> &middot; right-drag <b>pan</b> &middot;
+        wheel <b>zoom</b> &middot; click a <b>light</b> to select, drag it to move
+        (<b>shift</b> for height) &middot; double-click to <b>frame</b> &middot;
+        <b>1&ndash;5</b> views</p>
     </div>
 
     <div class="prog">
@@ -526,6 +521,7 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
                spellcheck="false" autocomplete="off">
 
       <div id="dlg-pick" class="hidden">
+      <div id="dlg-preview" class="dlg-preview hidden"><span id="dlg-preview-cap"></span></div>
       <div class="dlg-chosen">
         <b id="dlg-name">—</b>
         <span class="muted small" id="dlg-meta"></span>
@@ -545,11 +541,11 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
       </div>
       <div class="frow">
         <label for="dlg-pos-x">x m</label>
-        <input type="number" id="dlg-pos-x" step="0.1" placeholder="0">
+        <input type="number" id="dlg-pos-x" step="0.1" placeholder="auto">
         <label class="inline-lab" for="dlg-pos-y">height</label>
-        <input type="number" id="dlg-pos-y" step="0.1" placeholder="0">
+        <input type="number" id="dlg-pos-y" step="0.1" placeholder="auto">
         <label class="inline-lab" for="dlg-pos-z">depth</label>
-        <input type="number" id="dlg-pos-z" step="0.1" placeholder="0">
+        <input type="number" id="dlg-pos-z" step="0.1" placeholder="auto">
       </div>
       <div class="muted small">leave universe/address empty to auto-address after the last patched head ·
         x is centred, depth runs upstage → downstage</div>
@@ -687,6 +683,15 @@ LOCKED: the show runs and the patch is frozen too.">DESIGN</button>
   </div>
 </aside>
 
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/three.module.js",
+               "three/addons/": "/vendor/three/addons/" } }
+</script>
+<script type="module">
+  import { Stage, FixturePreview } from "/js/stage/stage.js";
+  window.JarvisStage = { Stage, FixturePreview };
+  window.dispatchEvent(new Event("jarvis-stage"));
+</script>
 <script src="viz.js"></script>
 <!-- The GDTF twin's runtime.  Loaded before console.js, which hands its
      scene to the visualiser.  A plain classic script with no dependencies,

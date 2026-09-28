@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import artnet, config, console_ai, dmxin, fixtures, gdtf_geom  # noqa: E402
+from app import fixture_kind  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from app import midi, profiles                                          # noqa: E402
 from app import gdtfshare                                            # noqa: E402
@@ -34,6 +35,14 @@ from tools import import_gdtf                    # noqa: E402
 # page's image attach, which went with it; the limit itself is still for the
 # fixture library.)
 MAX_BODY = 30 * 1024 * 1024
+
+_MIME = {
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+    ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".jpg": "image/jpeg", ".woff2": "font/woff2", ".glb": "model/gltf-binary",
+    ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon",
+}
 
 # One GDTF Share client for the process.  It owns the session cookie, so
 # it has to be a singleton: a per-request client would drop the 2-hour
@@ -138,7 +147,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
             return
         data = path.read_bytes()
-        mime, _ = mimetypes.guess_type(str(path))
+        # Explicit for the web types: on Windows `mimetypes` reads the
+        # registry, which often maps .js to text/plain - and a browser
+        # refuses to run an ES module served as text/plain.
+        mime = _MIME.get(path.suffix.lower()) or \
+            mimetypes.guess_type(str(path))[0]
         etag = '"%s-%d"' % (hashlib.sha256(data).hexdigest()[:16], len(data))
         if self.headers.get("If-None-Match") == etag:
             self.send_response(304)
@@ -833,7 +846,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(eng.lite(rev))
             return self._json(eng.snapshot())
         if route == "/api/fixtures":
-            return self._json({"results": fixtures.search(config.DB_PATH, query.get("q", ""))})
+            rows = fixtures.search(config.DB_PATH, query.get("q", ""))
+            for r in rows:
+                # What the light physically is, so the picker can show the
+                # 3D model before anything is patched.
+                mode = (r.get("modes") or [{}])[0]
+                r["body"] = fixture_kind.describe({
+                    "manufacturer": r.get("manufacturer"), "model": r.get("model"),
+                    "mode": mode.get("name", ""),
+                    "map": [channel_role(c) for c in mode.get("channels") or []]})
+            return self._json({"results": rows})
         if route == "/api/gdtf/status":
             # Never raises, and never pretends an empty catalogue means
             # "no fixtures published" - the UI has to be able to tell

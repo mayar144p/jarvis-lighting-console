@@ -6205,6 +6205,7 @@ def _suites():
     ("console api", test_engine_api),
     ("client contracts", test_client_contracts),
     ("hardening", test_hardening),
+    ("fixture kind", test_fixture_kind),
     )
 
 
@@ -6341,6 +6342,86 @@ def test_hardening(tmp: Path) -> None:
             proc.wait(timeout=5)
         except Exception:
             proc.kill()
+
+
+def test_fixture_kind(tmp: Path) -> None:
+    """Every head knows what it physically is, so the 3D stage can draw it."""
+    print("fixture kind + placement")
+    from app import fixture_kind as fk
+    from app import engine as eng_mod
+
+    def kind(man, model, roles):
+        return fk.describe({"manufacturer": man, "model": model,
+                            "mode": "std", "map": roles})
+    mover = ["pan", "tilt", "dimmer", "gobo"]
+    cases = [
+        ("Clay Paky", "Sharpy", mover, "moving_beam", "claypaky"),
+        ("Martin", "MAC Aura XB", ["pan", "tilt", "dimmer", "zoom"], "moving_hybrid", "martin"),
+        ("Robe", "Robin Spiider", ["pan", "tilt", "zoom", "red"], "moving_wash", "robe"),
+        ("Chauvet DJ", "Intimidator Spot 260", mover, "moving_spot", "chauvet"),
+        ("ETC", "Source Four LED", ["dimmer", "red"], "profile", "etc"),
+        ("Chauvet DJ", "SlimPAR Pro H", ["dimmer", "red", "green", "blue"], "par", "chauvet"),
+        ("Acme", "Unknown", ["red", "green", "blue"] * 8, "bar", "acme"),
+        ("Martin", "Atomic 3000", ["dimmer", "strobe"], "strobe", "martin"),
+        ("Astera", "AX1 PixelTube", ["dimmer", "red"], "tube", "astera"),
+        ("Nobody", "Mystery", ["pan", "tilt", "dimmer", "zoom"], "moving_wash", "generic"),
+        ("Nobody", "Dimmer", ["dimmer"], "par_can", "generic"),
+    ]
+    for man, model, roles, want_type, want_brand in cases:
+        d = kind(man, model, roles)
+        check(f"{man} {model} is a {want_type} by {want_brand}",
+              d["type"] == want_type and d["brand"] == want_brand,
+              f"{d['type']} / {d['brand']}")
+    d = kind("Acme", "Unknown", ["red", "green", "blue"] * 8)
+    check("a batten counts its cells", d["cells"] == 8, str(d["cells"]))
+    d = kind("Robe", "Robin Spiider", ["pan", "tilt", "zoom", "red"])
+    check("a zoom channel gives a beam range, a fixed lens does not",
+          d["beam"]["max"] > d["beam"]["min"]
+          and kind("ETC", "Source Four", ["dimmer"])["beam"]["max"]
+          == kind("ETC", "Source Four", ["dimmer"])["beam"]["min"],
+          json.dumps(d["beam"]))
+    check("every brand carries styling the renderer can use",
+          all(set(b) >= {"name", "body", "accent", "finish"}
+              for b in fk.BRANDS.values()), "")
+    check("a moving head that looks like a PAR by name is still drawn moving",
+          kind("Acme", "Moving PAR", ["pan", "tilt", "red"])["moving"], "")
+
+    spots = fk.place("moving_spot", 4, [], 10, 8)
+    xs = sorted(s["x"] for s in spots)
+    check("new heads are spread along a truss, not piled on one spot",
+          len(set(xs)) == 4 and all(s["kind"] == "truss" for s in spots),
+          str(spots))
+    full = [{"x": x * 1.2, "y": 6.0, "z": 2.0} for x in range(-8, 9)]
+    more = fk.place("moving_spot", 2, full, 10, 8)
+    check("a full row spills onto a parallel row instead of stacking",
+          all(m["z"] != 2.0 for m in more)
+          and len({(m["x"], m["z"]) for m in more}) == 2, str(more))
+    floor = fk.place("par", 2, [], 10, 8)
+    check("uplights go on the floor", all(f["kind"] == "floor" for f in floor),
+          str(floor))
+
+    db = tmp / "kind.db"
+    fixtures.seed_generics(db)
+    e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "kind-shows")
+    e.act("add_heads", query="Moving Head Spot", qty=3)
+    pos = [(h["x"], h["y"], h["z"]) for h in e.patch]
+    check("add_heads with no position hangs each head in its own place",
+          len(set(pos)) == 3, str(pos))
+    e.act("add_heads", query="Moving Head Spot", qty=1, x=1.5, y=0.5, z=3)
+    h = e.patch[-1]
+    check("an explicit position is kept", (h["x"], h["y"], h["z"]) == (1.5, 0.5, 3),
+          str(h))
+    snap = e.snapshot()
+    check("the snapshot tells the stage what each head is",
+          all(isinstance(p.get("body"), dict) and p["body"].get("type")
+              for p in snap["patch"]), "")
+    e.act("select_all")
+    e.act("set_intensity", level=100)
+    e.act("set_attribute", attribute="focus", value=128)
+    looks = {r["n"]: r for r in e._looks()}
+    check("the light feed carries beam shaping for the 3D beam",
+          abs(looks[1].get("beam", {}).get("focus", -1) - 128 / 255) < 0.01,
+          json.dumps(looks[1]))
 
 
 def test_gdtf_share(tmp: Path) -> None:
@@ -8544,7 +8625,8 @@ def check_js() -> None:
     """node --check every web script: catches the class of bug a browser
     only shows as a blank panel (a stray comma, a missing brace)."""
     print("javascript syntax")
-    scripts = sorted((ROOT / "web").glob("*.js"))
+    scripts = sorted((ROOT / "web").glob("*.js")) + sorted(
+        (ROOT / "web" / "js").rglob("*.js"))
     if not scripts:
         check("web scripts present", False, "no *.js in web/")
         return
@@ -8555,7 +8637,8 @@ def check_js() -> None:
     for path in scripts:
         proc = subprocess.run([node, "--check", str(path)],
                               capture_output=True, text=True)
-        check(f"node --check {path.name}", proc.returncode == 0,
+        check(f"node --check {path.relative_to(ROOT / 'web').as_posix()}",
+              proc.returncode == 0,
               (proc.stderr or "").strip()[:160])
     check_js_math(node)
 
@@ -8931,6 +9014,7 @@ def test_discovery() -> None:
         slots = bytearray(512)
         for i in range(40):                       # 40 channels in use
             slots[i] = 200
+        addr = None
         while not stop.is_set():
             try:
                 data, addr = s.recvfrom(2048)
@@ -8938,6 +9022,8 @@ def test_discovery() -> None:
                 # keep emitting: that is how a live rig behaves, and it is
                 # the only way channel depth can be observed.  Universe 1,
                 # not 0 - the builder is 1-based and says so.
+                if addr is None:
+                    continue              # nobody has polled us yet
                 try:
                     s.sendto(artnet.build_artdmx(1, bytes(slots),
                                                  sequence=seen["frames"] + 1),
