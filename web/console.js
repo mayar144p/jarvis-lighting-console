@@ -3105,6 +3105,50 @@ window.jarvisTwin = function () {
   };
 };
 
+/* Park the camera on one head, for support and for looking at a fixture
+ * close up.  The named-view buttons compare YAW only, so FRONT and TOP
+ * always light up together and a plan view cannot be told from an
+ * elevation; a pose has to be settable directly for that to be fixable
+ * from the outside. */
+window.jarvisLook = function (headNo, dist) {
+  if (!viz || !viz.setCamera || !viz.camera) return null;
+  const h = (S && Array.isArray(S.patch))
+    ? S.patch.find((x) => x.head_no === headNo) : null;
+  if (!h) return null;
+  const cam = viz.camera() || {};
+  // The camera's target is `tgt`, an ARRAY - not tx/ty/tz.  The first
+  // version of this passed tx/ty/tz, which setCamera silently ignored, so
+  // the camera never moved and the helper looked like it was framing
+  // nothing.  A setter that ignores unknown keys is exactly the kind of
+  // thing a wrong guess fails at quietly.
+  viz.setCamera({
+    tgt: [h.x || 0, h.y || 0, h.z || 0],
+    yaw: cam.yaw !== undefined ? cam.yaw : -0.55,
+    pitch: 0.16,
+    dist: dist || 1.8,
+  }, true);
+  if (viz.redraw) viz.redraw();
+  return viz.camera();
+};
+
+/* Light a head up, so a fixture is drawn lit - which is when the model's
+ * own colour comes from the beam rather than from the housing.  Both
+ * `set_intensity` and `set_colour` act on the SELECTION, so the head is
+ * selected first; doing it the other way round quietly does nothing to a
+ * head that was not selected, and a fixture that stays dark looks like a
+ * model that failed. */
+window.jarvisLight = async function (headNo, hex, level) {
+  if (!S) return null;
+  await api("/api/console", { action: "select_heads",
+                              params: { heads: [headNo] } });
+  await api("/api/console", { action: "set_intensity",
+                              params: { level: level === undefined ? 100 : level } });
+  await api("/api/console", { action: "set_colour",
+                              params: { hex: hex || "#ffb060" } });
+  if (pushLooks) pushLooks(0);
+  return true;
+};;
+
 function twinStatus() {
   const el = document.getElementById("twin-status");
   if (!el) return;

@@ -1554,9 +1554,18 @@ let twinDrawn = 0;
      * binding has to be repeated after every ARRAY_BUFFER bind, which is
      * why it lives in the draw loop rather than in useMesh(). */
     function uploadTwin(def) {
-      if (!def || def.gl) return def && def.gl;
-      def.gl = {};
+      if (!def) return null;
+      if (!def.gl) def.gl = {};
+      // RE-RUNS, and that is the point.  The first version returned early
+      // once `def.gl` existed, on the assumption that a definition's meshes
+      // are all present the first time it is drawn.  They are not: a
+      // definition loads its models in parallel, so a frame can arrive
+      // after two of four have landed.  The early return froze the upload at
+      // whatever had arrived, and the missing part stayed missing for the
+      // life of the view - a real fixture permanently drawn without its
+      // head, which reads as a modelling fault rather than a race.
       for (const stem of Object.keys(def.meshes || {})) {
+        if (def.gl[stem]) continue;                 // already on the GPU
         const mesh = def.meshes[stem];
         if (!mesh || !mesh.meshes || !mesh.meshes.length) continue;
         let total = 0;
@@ -1594,7 +1603,11 @@ let twinDrawn = 0;
         // as-is.  Truncating it silently would render half a fixture and
         // look like a modelling error, so the mesh is skipped instead and
         // the definition reports primitives.
-        if (wide && !hasUint) { def.failed[stem] = "needs 32-bit indices"; continue; }
+        if (wide && !hasUint) {
+          def.failed[stem] = "needs 32-bit indices";
+          def.failed[stem + "#gpu"] = true;   // do not retry every frame
+          continue;
+        }
         const vb = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, vb);
         gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
@@ -1640,7 +1653,17 @@ let twinDrawn = 0;
         // at least one node has a usable mesh, rather than `fallback`,
         // which is a label about the definition as a whole.
         if (!inst.hasGeometry || !inst.hasGeometry()) return;
-        if (!def.gl) uploadTwin(def);
+        // Called EVERY frame, not gated on `!def.gl`.  Two mistakes in a row
+        // here, both of which leave a fixture permanently missing parts:
+        // the guard made uploadTwin a one-shot, so a definition whose models
+        // land after the first frame was frozen at whatever had arrived; and
+        // then `def.gl` was initialised to `{}`, which is TRUTHY, so the
+        // repaired uploadTwin was never actually called again.  12 of 13
+        // models were parsed, in memory, and never reached the GPU.
+        //
+        // The function is idempotent and skips stems already uploaded, so
+        // calling it per frame costs one object-key scan per definition.
+        uploadTwin(def);
         if (!def.gl || !Object.keys(def.gl).length) return;
         if (!inst.nodeWorld) return;
         const look = inst.dmx || {};

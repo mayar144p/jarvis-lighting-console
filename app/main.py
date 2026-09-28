@@ -734,11 +734,27 @@ class Handler(BaseHTTPRequestHandler):
                 {"source": did + ".gdtf", "manufacturer": "", "model": did,
                  "mode": "", "map": ["pan", "tilt"]},
                 config.GDTF_SHARE_CACHE, config.DATA / "gdtf_models")
-            entry = (built.get("files") or {}).get(Path(name).stem)
-            # Re-checked against the extraction's own list.  `name` came from
-            # a query string, so it is attacker-controlled, and this route
-            # reads a file: the check is not optional.
-            if not entry or entry["name"] != name:
+            # Reverse lookup on the archive-relative name, NOT on its stem.
+            # The index is keyed by the `<Model Name>` a node refers to, and
+            # for a real library file the two differ:
+            #   node says        Model="DOT"
+            #   <Models> says     Name="DOT" File="CSVMdot"
+            #   archive holds     models/3ds/CSVMdot.3ds
+            # so `Path(name).stem` is "CSVMdot" and the lookup missed - every
+            # model of that fixture 404'd, six of them, with nothing in the
+            # server log because a 404 is a correct answer to a question
+            # asked wrongly.
+            #
+            # Comparing against the extraction's own list is also the whole
+            # of the path safety here: `name` came from a query string, and
+            # an exact match against what we extracted admits no traversal,
+            # no absolute path and no sibling file.
+            entry = None
+            for cand in (built.get("files") or {}).values():
+                if cand.get("name") == name:
+                    entry = cand
+                    break
+            if not entry:
                 return self._json({"error": "no such model in this definition"},
                                   404)
             try:
