@@ -3739,13 +3739,66 @@ class Engine:
     FOLLOW_DEFAULT_DELAY = 2.0   # delay when neither follow_set delay nor
     FOLLOW_TICK = 0.05           # cue hold time is set; ticker granularity
 
+    def _cue_follow(self, pb: dict) -> float | None:
+        """How long THIS cue waits before the next one can auto-start.
+
+        None means WAIT FOR GO, which is the default and the most common
+        state in any real show.  A number is an automatic advance after that
+        many seconds.
+
+        WHY THIS IS PER CUE AND NOT PER PLAYBACK
+        --------------------------------------
+        It used to be a single `delay` on the playback, so arming follow
+        made EVERY cue in the stack behave identically: either all of them
+        waited for GO (hold 0, delay 0, default 2s) or all of them ran away
+        from each other.  A show is "wait here, wait here, then run by
+        itself through the build" - and that is unrepresentable when the
+        wait is a property of the stack rather than of the cue in it.
+
+        So the cue carries it, and this is the precedence:
+
+            cue["follow_s"] present  ->  the cue's own value wins
+                                        0 or negative means WAIT
+            absent                   ->  inherit the playback's delay
+            playback delay 0         ->  fall back to the cue's hold
+            neither                  ->  FOLLOW_DEFAULT_DELAY
+
+        The distinction between "absent" and "0" is the whole point: absent
+        inherits the stack's default so an existing show keeps behaving
+        exactly as it did, while an explicit 0 is a deliberate "hold this
+        cue until someone presses GO".
+        """
+        if not pb.get("stack") or pb.get("index", -1) < 0:
+            return None
+        try:
+            cue = pb["stack"][pb["index"]]
+        except IndexError:
+            return None
+        own = cue.get("follow_s")
+        if own is not None:
+            try:
+                v = float(own)
+            except (TypeError, ValueError):
+                return None
+            return v if v > 0 else None          # 0 or less == wait for GO
+        delay = float(pb["follow"].get("delay") or 0)
+        if delay > 0:
+            return delay
+        hold = float(cue.get("hold_s") or 0)
+        return hold if hold > 0 else self.FOLLOW_DEFAULT_DELAY
+
     def _arm_follow(self, pb: dict, now: float | None = None) -> None:
         """(Re)arm the auto-advance deadline of one playback.
 
-        Effective delay: explicit follow_set delay > cue hold time >
-        FOLLOW_DEFAULT_DELAY.  Every manual cue step funnels through
-        _goto, which re-arms here - so a manual GO always cancels a
-        pending automatic advance.
+        A cue that says WAIT is simply not armed, so the ticker leaves it
+        alone and a manual GO is the only thing that moves it on.  That is
+        what makes a mixed stack possible, and it is why this has to be a
+        per-cue decision rather than a per-stack one: arming the playback
+        is a promise that SOMETHING in it may run by itself, not that
+        everything will.
+
+        Every manual cue step funnels through _goto, which re-arms here -
+        so a manual GO always cancels a pending automatic advance.
         """
         f = pb["follow"]
         if (not f["on"] or f["paused"] or not pb["active"]
@@ -3753,10 +3806,8 @@ class Engine:
             f["at"] = None
             return
         now = self._clock() if now is None else now
-        cue = pb["stack"][pb["index"]]
-        delay = (float(f["delay"] or 0) or float(cue.get("hold_s") or 0)
-                 or self.FOLLOW_DEFAULT_DELAY)
-        f["at"] = now + delay
+        delay = self._cue_follow(pb)
+        f["at"] = None if delay is None else now + delay
 
     def _tick_follow(self, now: float | None = None) -> list[dict]:
         """Advance every armed cue stack once.
