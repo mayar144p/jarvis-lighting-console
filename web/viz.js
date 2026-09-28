@@ -434,6 +434,9 @@ let prMesh = null, hasUint = false;
 // setTwin for why that has to be true rather than merely convenient.
 let twin = null;
 let twinDrawn = 0;
+let twinSuppressed = 0;      // 2D bodies stood down for, last frame
+let twinDrew2 = 0;           // real model nodes drawn, last frame
+let twinSkipped = 0;         // instances skipped, and why
     let bufMain = null, bufBg = null, bufBeam = null, bufPool = null;
     let glCap = 0, BEAM_VERTS = 0, POOL_VERTS = 0;
     const enLocs = [];
@@ -1538,7 +1541,13 @@ let twinDrawn = 0;
       const hn = f && (f.head_no != null ? f.head_no : f.n);
       if (hn == null) return false;
       const inst = twin.get(hn);
-      return !!(inst && inst.hasGeometry && inst.hasGeometry());
+      const has = !!(inst && inst.hasGeometry && inst.hasGeometry());
+      // Counted, because "is the 2D body being suppressed" is a question
+      // that has been answered wrongly twice by eye.  Both times the answer
+      // was believed rather than measured, and both times the operator was
+      // looking at a sprite while the numbers said the model was fine.
+      if (has) twinSuppressed++;
+      return has;
     }
 
     /* Upload a definition's meshes into GPU buffers, ONCE.
@@ -1647,12 +1656,12 @@ let twinDrawn = 0;
       twin.update();
       twin.instances.forEach((inst) => {
         const def = inst.def;
-        if (!def || !def.nodes.length) return;
+        if (!def || !def.nodes.length) { twinSkipped++; return; }
         // Per PART, not per definition: three of four models loading draws
         // those three.  The predicate is `hasGeometry`, which asks whether
         // at least one node has a usable mesh, rather than `fallback`,
         // which is a label about the definition as a whole.
-        if (!inst.hasGeometry || !inst.hasGeometry()) return;
+        if (!inst.hasGeometry || !inst.hasGeometry()) { twinSkipped++; return; }
         // Called EVERY frame, not gated on `!def.gl`.  Two mistakes in a row
         // here, both of which leave a fixture permanently missing parts:
         // the guard made uploadTwin a one-shot, so a definition whose models
@@ -1690,7 +1699,7 @@ let twinDrawn = 0;
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ib);
             gl.drawElements(gl.TRIANGLES, g.n,
               g.wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
-            drew++;
+            drew++; twinDrew2++;
           }
           for (const c of rec.children) draw(c);
         };
@@ -1700,10 +1709,38 @@ let twinDrawn = 0;
       return drew;
     }
 
+    /* Which head is which, and what state its geometry is in - for the
+     * diagnostic surface, so "is the model there" is answerable without
+     * a screenshot and without trusting a counter. */
+    function twinProbe() {
+      const out = [];
+      if (!twin) return out;
+      twin.instances.forEach((inst) => {
+        const d = inst.def;
+        const nodes = d ? (d.index ? Object.keys(d.index()) : []) : [];
+        const withMesh = d && d.meshes ? Object.keys(d.meshes) : [];
+        const onGpu = d && d.gl ? Object.keys(d.gl) : [];
+        out.push({
+          head: inst.head,
+          def: d ? d.id : null,
+          state: d ? d.state : null,
+          nodes: nodes.length,
+          modelsLoaded: withMesh,
+          onGpu: onGpu,
+          hasGeometry: !!(inst.hasGeometry && inst.hasGeometry()),
+          fallback: inst.fallback,
+          pos: inst.position,
+          dmx: inst.dmx,
+          worldNodes: inst.nodeWorld ? Object.keys(inst.nodeWorld).length : 0,
+        });
+      });
+      return out;
+    }
+
     function render() {
       if (!gl || !progs) return;
       curProg = 0; curBlend = -1;
-      twinDrawn = 0;
+      twinDrawn = 0; twinSuppressed = 0; twinSkipped = 0;
       gl.viewport(0, 0, canvas.width, canvas.height);
       // sky gradient first (opaque)
       gl.disable(gl.BLEND);
@@ -2954,10 +2991,38 @@ let twinDrawn = 0;
         twin = scene || null;
         return !!twin;
       },
+      twinProbe: twinProbe,
+
+      /* What the 2D body pass is doing, and why.  The sprite suppression
+       * keys off the head number the 2D pass carries, and if that number
+       * is not the twin's, every suppression misses and the operator sees
+       * a 2D box on top of a perfectly good 3D model.  `spritesSuppressed`
+       * reads 0 in exactly that case and looks like good news. */
+      spriteProbe: function () {
+        const list = stage.fixtures || [];
+        return {
+          count: list.length,
+          suppressed: twinSuppressed,
+          drawn: twinDrawn,
+          fixtures: list.map((f) => ({
+            head_no: f.head_no != null ? f.head_no : null,
+            n: f.n != null ? f.n : null,
+            role: f.role || null,
+            model: f.model || null,
+            twinKnows: twin ? !!twin.get(f.head_no != null ? f.head_no : f.n)
+                            : null,
+            suppressed: twinHasModel(f),
+          })),
+        };
+      },
+
       twinStats: function () {
         if (!twin) return null;
         const s = twin.stats();
         s.drawn = twinDrawn;
+        s.nodesDrawn = twinDrew2;
+        s.spritesSuppressed = twinSuppressed;
+        s.instancesSkipped = twinSkipped;
         s.uploaded = 0;
         if (twin.defs) {
           twin.defs.forEach((d) => {

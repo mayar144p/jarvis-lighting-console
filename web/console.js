@@ -3086,6 +3086,14 @@ function feedTwin() {
  * It is read-only, it exposes nothing that is not already either in the DOM
  * or in a response this page already fetched and holds, and it is how the
  * suite and the console agree on what "fallback" means. */
+/* Why is a 2D box appearing on top of a 3D model?  The suppression keys
+ * off the head number the 2D pass carries, and the twin is keyed off its
+ * own.  If those two disagree, every suppression misses and the count
+ * reads 0 - which looks like good news rather than like the bug it is. */
+window.jarvisSprite = function () {
+  return viz && viz.spriteProbe ? viz.spriteProbe() : null;
+};
+
 window.jarvisTwin = function () {
   if (!twinScene) return { present: false };
   const defs = [];
@@ -3103,6 +3111,7 @@ window.jarvisTwin = function () {
   return {
     present: true, stats: twinScene.stats(), definitions: defs,
     twins: viz && viz.twinStats ? viz.twinStats() : null,
+    heads: viz && viz.twinProbe ? viz.twinProbe() : [],
   };
 };
 
