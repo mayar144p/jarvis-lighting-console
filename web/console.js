@@ -21,12 +21,12 @@ const $ = (sel) => document.querySelector(sel);
 const TOKEN_KEY = "jarvis.token";
 
 function apiToken() {
-  return window.localStorage.getItem(TOKEN_KEY) || "";
+  return window.sessionStorage.getItem(TOKEN_KEY) || "";
 }
 
 function setApiToken(t) {
-  if (t) window.localStorage.setItem(TOKEN_KEY, t);
-  else window.localStorage.removeItem(TOKEN_KEY);
+  if (t) window.sessionStorage.setItem(TOKEN_KEY, t);
+  else window.sessionStorage.removeItem(TOKEN_KEY);
 }
 
 async function api(path, body) {

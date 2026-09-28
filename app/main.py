@@ -11,6 +11,7 @@ import mimetypes
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import hmac
 from urllib.parse import parse_qs, urlparse
 
 # Works both as `python app/main.py` and `python -m app.main`.
@@ -112,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(304)
             self.send_header("ETag", etag)
             self.send_header("Cache-Control", "no-cache")
+            self._security_headers()
             self.end_headers()
             return
         self.send_response(status)
@@ -119,8 +121,27 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("ETag", etag)
         self.send_header("Cache-Control", "no-cache")
+        self._security_headers()
         self.end_headers()
         self.wfile.write(data)
+
+    def _security_headers(self) -> None:
+        """Headers on every response, for a page that can move real fixtures.
+
+        A UI carrying GO LIVE, BLACKOUT, a master fader and cue execution is
+        worth more framed inside somebody else's page than an ordinary CRUD
+        form is: one click, on real equipment, with the operator watching.
+        `frame-ancestors 'none'` denies being embedded at all.
+
+        They live in ONE method called from both the 200 and the 304 path,
+        because the first version of this put them on the 304 only - the
+        `Cache-Control` line appears twice in `_file` and the edit landed on
+        the first one.  So a normal page load carried no security headers
+        and only a revalidation did, which is precisely backwards.
+        """
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
 
     # -- auth ------------------------------------------------------------
     def _authorised(self) -> bool:
@@ -134,16 +155,71 @@ class Handler(BaseHTTPRequestHandler):
         REQUIRED, and it is also accepted on loopback (harmless, and it
         lets one phone drive the desk).
 
-        The token is compared in constant time, and the static pages
-        never need it (they read nothing sensitive).
+        `hmac.compare_digest`, not `==`.  An ordinary string comparison
+        short-circuits on the first differing byte, so how long it takes
+        leaks how much of a guess was right.  That is a real side channel
+        against a credential that can drive real lights.
+
+        The previous version of this docstring CLAIMED to be constant time
+        while the code underneath it was `==`.  That is worse than no
+        comment at all: the comment is what stopped anyone looking, and a
+        comment that lies about a security property is a trap rather than
+        documentation.
+
+        The token is NOT accepted in the query string.  It used to be, "for
+        clients that cannot set headers" - and nothing in this repository
+        used it, because the browser sends `X-Jarvis-Token` on every call.
+        A credential that can move real fixtures does not belong in a URL:
+        those end up in browser history, in `Referer` headers, in
+        reverse-proxy and access logs, in links people paste to each other,
+        and in screenshots.  No real client cannot set a header either; a
+        shell can: `curl -H`.
         """
         token = config.CONSOLE_TOKEN
         if not token:
             return not config.requires_token()
-        if self.headers.get("X-Jarvis-Token") == token:
-            return True
-        # a token in the query string, for clients that cannot set headers
-        return parse_qs(urlparse(self.path).query).get("token", [""])[0] == token
+        return hmac.compare_digest(self.headers.get("X-Jarvis-Token") or "", token)
+
+    # THE AUTH BOUNDARY, INVERTED.
+    #
+    # This used to be a prefix test:
+    #
+    #     if route.startswith(("/api/console", "/api/gdtf")): gate it
+    #
+    # which is safe for the routes it names and unsafe for everything it does
+    # not.  Four POST routes mutate the persistent fixture library - create,
+    # channel, range, import - and none of them begin with either prefix, so
+    # on a network-bound server they ran with NO token.
+    #
+    # Measured, not reasoned about: with HOST=0.0.0.0 and CONSOLE_TOKEN set,
+    # an unauthenticated `POST /api/fixtures/create` returned **200** and
+    # wrote a profile into the database.  That is not an information leak.
+    # The fixture library decides each head's channel-to-role map, so it
+    # decides what the engine does with DMX - anyone who could reach the port
+    # could change what the rig would be told.  The other two returned 400,
+    # which is a VALIDATION error: their handlers had already run.
+    #
+    # The fix is not a longer prefix list - it is the safe default.  The
+    # public routes are now ENUMERATED and everything else under /api/ needs
+    # the token, so a new endpoint is private until somebody deliberately
+    # makes it public.  That is the only direction that fails safe.
+    #
+    # Deliberately still public, because the console's shell has to render
+    # before it has a token and a 401 on a GET would leave the operator
+    # staring at a blank page with no way to enter one:
+    #   GET /api/status    - the pills: brain, fixtures, dmx, dry run
+    #   GET /api/fixtures  - the fixture search box
+    # Both are read-only and neither reveals a credential.  Every POST, every
+    # console route, every GDTF route, and every endpoint that does not exist
+    # yet are authenticated.
+    PUBLIC_API_GET = frozenset({"/api/status", "/api/fixtures"})
+
+    def _needs_auth(self, route: str, method: str) -> bool:
+        if not route.startswith("/api/"):
+            return False        # a static file; reads nothing sensitive
+        if method == "GET" and route in self.PUBLIC_API_GET:
+            return False
+        return True
 
     def _deny(self) -> None:
         self._json({"error": "unauthorised - set CONSOLE_TOKEN in .env, "
@@ -170,11 +246,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(logo) if logo else self._json({"error": "not found"}, 404)
         if route.startswith("/api/"):
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
-            # The control API only; /api/status and the fixture search stay
-            # open so the console's shell can render without a token.
-            # /api/gdtf is gated too: it writes the shared fixture
-            # database, so off-box it needs the same token as the desk.
-            if route.startswith(("/api/console", "/api/gdtf")) and not self._authorised():
+            # Public-by-default would be wrong: see PUBLIC_API_GET.  An
+            # endpoint is public because it is ON that list, not because it
+            # failed to match a prefix.
+            if self._needs_auth(route, "GET") and not self._authorised():
                 return self._deny()
             return self._api_get(route, query)
 
@@ -187,7 +262,11 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         route = url.path
         query = {k: v[0] for k, v in parse_qs(url.query).items()}
-        if route.startswith(("/api/console", "/api/gdtf")) and not self._authorised():
+        # EVERY POST is authenticated.  There is nothing in this application
+        # a browser should be able to change without a token, and the four
+        # fixture-library mutations that used to slip through the old prefix
+        # test are exactly why there is no public-write list at all.
+        if self._needs_auth(route, "POST") and not self._authorised():
             return self._deny()
         try:
             body = self._read_body()

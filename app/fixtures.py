@@ -79,6 +79,19 @@ def connect(db_path: Path) -> sqlite3.Connection:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    # SQLite disables foreign keys PER CONNECTION and the default is
+    # off, so the schema's `ON DELETE CASCADE` was declared and never
+    # enforced: deleting a profile left its modes orphaned in the
+    # table forever, invisible to every query that joins from fixtures.
+    # Measured, not assumed - `PRAGMA foreign_keys` returned 0, and a
+    # deleted fixture's mode was still there after a commit.
+    #
+    # It has to be set on EVERY connection, which is why it lives in
+    # this one factory rather than at import time.  A pragma set once
+    # would silently stop applying the moment a second connection
+    # opened - and this module opens one per operation by design, so it
+    # would stop applying immediately.
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn

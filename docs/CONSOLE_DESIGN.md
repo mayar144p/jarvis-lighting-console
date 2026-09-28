@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1484 checks, 43 suites, one command, no arguments, ~16 s |
+| tests | `tools/selftest.py` | 1514 checks, 44 suites, one command, no arguments, ~16 s |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1484 checks across 43 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1514 checks across 44 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1484 checks, 43 suites (section 12) |
+| | `tools/selftest.py` | 1514 checks, 44 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -758,3 +758,117 @@ are gone, the six routes are gone, nothing imports them, `patch_from_layout` is
 gone from all four places it lived, the AI is still there and still allowlisted,
 `llm`/`showdesign` are still there, the shared assets are still there, and the
 top-level overlays are not nested inside a hidden modal.
+
+---
+
+### 17.27 The auth boundary was a prefix test, and four routes fell through it — done
+
+A static review of this repository found a critical gap. It was **correct, and worse
+than reported**, so it was worth measuring rather than believing.
+
+The gate in `do_POST` was:
+
+```python
+if route.startswith(("/api/console", "/api/gdtf")) and not self._authorised():
+```
+
+That is safe for the routes it names and unsafe for everything it does not. **Four POST
+routes mutate the persistent fixture library** — `create`, `channel`, `range`, `import` —
+and none of them begin with either prefix.
+
+**Measured**, by running a second instance with `HOST=0.0.0.0` and `CONSOLE_TOKEN` set,
+then attacking it with no token:
+
+| request | result |
+|---|---|
+| `POST /api/console` | 401 — correctly gated |
+| `POST /api/fixtures/create` | **200**, and it wrote a profile: `fixture_id: 2340` |
+| `POST /api/fixtures/channel` | 400 — a **validation** error, *after* the handler ran |
+| `POST /api/fixtures/range` | 400 — likewise |
+| `POST /api/fixtures/import` | **200** — it executed and reported the fixture count |
+
+The fixture library is not a cache. It decides each head's **channel-to-role map**, so it
+decides what the engine does with DMX. Anyone who could reach the port could change what
+the rig would be told — which is a physical-output problem wearing an HTTP costume.
+
+**The fix is not a longer prefix list; it is the safe default.** Public routes are now
+*enumerated*:
+
+```python
+PUBLIC_API_GET = frozenset({"/api/status", "/api/fixtures"})
+```
+
+and everything else under `/api/` requires the token. A new endpoint is private until
+somebody deliberately makes it public, which is the only direction that fails safe. Two
+GETs stay public because the console's shell has to render before it has a token, and a
+401 on a GET would leave the operator at a blank page with no way to enter one. **Every
+POST is authenticated** — there is no public-write list, because that is what the bug was.
+
+#### Four more, all verified before and after
+
+**A comment that lied about a security property.** The docstring said *"The token is
+compared in constant time"* and the code underneath was `==`, which short-circuits on the
+first differing byte. Now `hmac.compare_digest`. The comment mattered more than the code:
+a comment asserting a property is the thing that stops anyone checking it.
+
+**The token travelled in URLs.** `?token=` was accepted, "for clients that cannot set
+headers" — and nothing in this repository used it, because the browser sends
+`X-Jarvis-Token` on every call. A credential that can move real fixtures does not belong
+in a URL: history, `Referer`, access logs, pasted links, screenshots. Removed. No real
+client cannot set a header; a shell can: `curl -H`.
+
+**The token was in `localStorage`** — permanent, and readable by any script in this
+origin. Now `sessionStorage`, so closing the tab discards the credential. The residual
+risk is unchanged and worth stating: any script in this origin can still read it while
+the tab is open, because a pure-client app cannot do better. What changes is the blast
+radius. (`jarvis.venue` stays in `localStorage` — it is a UI preference, not a
+credential.)
+
+**`ON DELETE CASCADE` was declared and never enforced.** The schema puts it on
+`modes.fixture_id`; SQLite disables foreign keys *per connection* by default and nothing
+turned them on. Measured: `PRAGMA foreign_keys` returned 0, and deleting a profile left
+its mode in the table after a commit — an orphan nothing would ever join across. Now set
+in the one connection factory, because a pragma set at import time would stop applying the
+moment a second connection opened, and this module opens one per operation.
+
+**And the response headers.** `frame-ancestors 'none'`, `X-Content-Type-Options:
+nosniff`, `Referrer-Policy: no-referrer`. A page carrying GO LIVE and BLACKOUT is worth
+more framed inside somebody else's site than a CRUD form is.
+
+#### Two mistakes worth recording
+
+The first attempt at the headers put them on the **304 revalidation** path, not the 200 —
+`Cache-Control` appears twice in `_file` and the edit landed on the first. So a normal
+page load carried no security headers and only a revalidation did, which is precisely
+backwards. They are now one `_security_headers()` method called from both, and a check
+asserts it is called twice.
+
+And I corrupted `tools/selftest.py` with a PowerShell `Get-Content -Raw | WriteAllText`
+round-trip, which re-encoded every non-ASCII character in the file as cp1252. Four checks
+failed and a suite crashed. This project has notes warning about exactly that, written
+after I destroyed a document the same way. Restored from git and re-applied with the
+editor, which handles UTF-8 properly — and the invisible BOM literal the mangling
+exposed is now a `\ufeff` escape, so the next round-trip cannot break it again.
+
+#### The tests, which attack rather than assert
+
+A new `api auth` suite (29 checks) starts a real server bound off-loopback with a token
+set, because that is the only configuration where the boundary means anything — on
+loopback `_authorised()` returns true for everything by design, so a test against the
+default bind would pass against a server with no auth at all. It fires the four mutations
+with no token and asserts **401 specifically**, calling out a 400 separately because a 400
+means the handler already ran. Then it checks the database for the row that should not
+exist, that a valid token works and a wrong or empty one does not, that `?token=` is
+refused, that an **unknown endpoint is authenticated rather than public**, and that the
+static pages are still served so a 401 cannot become a lockout.
+
+**1514 checks across 44 suites.**
+
+#### What the review got wrong
+
+It reported that *"the repository is currently public"* and recommended an urgent secret
+scan. The repo was created **private**, as chosen, and is not reachable unauthenticated.
+The scan was still worth running: every blob in every commit, checked against the actual
+values from `.env` — **0 hits across 36 blobs**, and no `.env` blob has ever existed. So
+nothing needs rotating. Worth doing anyway, and worth doing *before* the first push rather
+than after, which is what the `.gitignore` now says.

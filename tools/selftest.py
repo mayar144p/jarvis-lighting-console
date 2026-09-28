@@ -7503,12 +7503,252 @@ def test_console_only() -> None:
               [{"head_no": 1, "x": None, "y": None}], "goalpost") is None, "")
 
 
+def test_api_auth() -> None:
+    """The authentication boundary, tested by ATTACKING it.
+
+    A static review of this repository found the gap; this suite exists so it
+    cannot be reintroduced silently.  Every check here drives a real HTTP
+    server bound to a non-loopback address with a token set - because that is
+    the only configuration in which the boundary means anything.  On loopback
+    `_authorised()` returns True for everything by design, so a test that ran
+    against the default bind would pass against a server with no auth at all.
+    """
+    print("api auth (real HTTP, off-loopback, token set)")
+    import os as _os
+    import shutil as _shutil
+    import subprocess as _subprocess
+    import sys as _sys
+    import tempfile as _tempfile
+    import time as _time
+    import urllib.error
+    import urllib.request
+
+    tmp = _tempfile.mkdtemp()
+    port = 8971
+    db = _os.path.join(tmp, "auth.db")
+    TOKEN = "selftest-token-abc123"
+    env = dict(_os.environ,
+               PORT=str(port), HOST="0.0.0.0", CONSOLE_TOKEN=TOKEN,
+               CONSOLE_DRY_RUN="true", FIXTURE_DB=db,
+               CONSOLE_SHOW_DIR=_os.path.join(tmp, "shows"),
+               CONSOLE_AUTOSAVE="false", MIDI_ENABLED="false",
+               GDTF_SHARE_USER="", GDTF_SHARE_PASSWORD="")
+    proc = _subprocess.Popen(
+        [_sys.executable, _os.path.join("app", "main.py")],
+        env=env, cwd=str(ROOT),
+        stdout=_subprocess.DEVNULL, stderr=_subprocess.DEVNULL)
+
+    def call(path, method="POST", body=None, token=None):
+        url = "http://127.0.0.1:%d%s" % (port, path)
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Content-Type", "application/json")
+        if token is not None:
+            req.add_header("X-Jarvis-Token", token)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.status, resp.read().decode()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read().decode()
+        except Exception as exc:                      # not up yet
+            return 0, str(exc)
+
+    try:
+        up = False
+        for _ in range(40):
+            if proc.poll() is not None:
+                break
+            if call("/api/status", "GET")[0] == 200:
+                up = True
+                break
+            _time.sleep(0.4)
+        check("the test server started, off-loopback, with a token set", up,
+              "HOST=0.0.0.0 PORT=%d" % port)
+        if not up:
+            return
+
+        # ---- the gate itself -------------------------------------------
+        code, _ = call("/api/status", "GET")
+        check("GET /api/status is public, so the shell renders before a token",
+              code == 200, "HTTP %s" % code)
+        code, _ = call("/api/fixtures?q=LED", "GET")
+        check("GET /api/fixtures is public - it is only a search box",
+              code == 200, "HTTP %s" % code)
+        code, _ = call("/api/console", "POST", {"action": "status", "params": {}})
+        check("POST /api/console is blocked with no token", code == 401,
+              "HTTP %s" % code)
+
+        # ---- the bug, in the four shapes it took ----------------------
+        # Each of these mutates the PERSISTENT fixture library, which decides
+        # every head's channel-to-role map - so this is not an info leak, it
+        # is a way to change what the engine will be told to do.
+        for route, body in (
+            ("/api/fixtures/create",
+             {"manufacturer": "EvilCo", "model": "Backdoor 9000",
+              "mode": "8ch", "channels": ["Dimmer", "Red"]}),
+            ("/api/fixtures/channel", {"mode_id": 1, "channel": 0, "label": "X"}),
+            ("/api/fixtures/range",
+             {"mode_id": 1, "channel": 0, "min": 0, "max": 9}),
+            ("/api/fixtures/import", {"path": "nope.gdtf"}),
+        ):
+            code, body_text = call(route, "POST", body)
+            # 401 is the ONLY correct answer.  A 400 is a validation error
+            # AFTER the handler ran, which is the bug this test exists for -
+            # so it is called out separately rather than lumped in.
+            check("POST %s is blocked with no token" % route, code == 401,
+                  "HTTP %s %s" % (code, body_text[:80]))
+            if code != 401:
+                check("  ...and it did not reach its handler either",
+                      code == 400,
+                      "HTTP %s means the handler RAN and then refused: %s"
+                      % (code, body_text[:100]))
+
+        # ...and it really did write nothing.  A 401 that still committed
+        # would be a worse bug than the one being fixed.
+        if _os.path.exists(db):
+            import sqlite3
+            conn = sqlite3.connect(db)
+            evil = conn.execute(
+                "SELECT count(*) FROM fixtures WHERE manufacturer='EvilCo'"
+            ).fetchone()[0]
+            conn.close()
+            check("and nothing reached the database", evil == 0,
+                  "%d EvilCo row(s) written by an unauthenticated call" % evil)
+        else:
+            check("and nothing reached the database (no db file was created)",
+                  True, "")
+
+        # ---- a valid token still works ---------------------------------
+        code, _ = call("/api/console", "POST",
+                       {"action": "status", "params": {}}, token=TOKEN)
+        check("a valid token is accepted", code == 200, "HTTP %s" % code)
+        code, _ = call("/api/console", "POST",
+                       {"action": "status", "params": {}}, token="wrong")
+        check("a wrong token is refused", code == 401, "HTTP %s" % code)
+        code, _ = call("/api/console", "POST",
+                       {"action": "status", "params": {}}, token="")
+        check("an empty token is refused", code == 401, "HTTP %s" % code)
+
+        # ---- the token must not travel in a URL -----------------------
+        # It used to be accepted as ?token=, which puts a credential that
+        # drives real fixtures into history, Referer headers and access logs.
+        code, _ = call("/api/console?token=%s" % TOKEN, "POST",
+                       {"action": "status", "params": {}})
+        check("the token is NOT accepted in the query string", code == 401,
+              "HTTP %s - a URL credential ends up in history and logs" % code)
+
+        # ---- an unknown endpoint is authenticated, not public ----------
+        # The safe default: a route nobody has written yet is private until
+        # somebody deliberately makes it public.
+        code, _ = call("/api/console/does-not-exist", "POST", {})
+        check("an unknown /api/ endpoint is authenticated, not public",
+              code in (401, 404), "HTTP %s" % code)
+        code, _ = call("/api/anything-at-all", "POST", {})
+        check("including one that does not exist yet", code in (401, 404),
+              "HTTP %s" % code)
+
+        # ---- the static pages are still open --------------------------
+        # A 401 on the HTML would leave the operator with no way to enter a
+        # token, which is a lockout rather than a security measure.
+        code, _ = call("/", "GET")
+        check("the console page itself is still served without a token",
+              code == 200, "HTTP %s" % code)
+        code, _ = call("/console.js", "GET")
+        check("and its script", code == 200, "HTTP %s" % code)
+
+        # ---- response headers -----------------------------------------
+        req = urllib.request.Request("http://127.0.0.1:%d/" % port)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            hdrs = {k.lower(): v for k, v in resp.getheaders()}
+        check("the page cannot be framed - it has GO LIVE and BLACKOUT on it",
+              "frame-ancestors" in hdrs.get("content-security-policy", ""),
+              hdrs.get("content-security-policy", "<no CSP header>"))
+        check("and is not sniffable into a different type",
+              hdrs.get("x-content-type-options") == "nosniff",
+              hdrs.get("x-content-type-options", "<missing>"))
+        check("and leaks no referrer, so a token cannot ride out in a URL",
+              hdrs.get("referrer-policy") == "no-referrer",
+              hdrs.get("referrer-policy", "<missing>"))
+    finally:
+        try:
+            proc.terminate()
+            proc.wait(timeout=10)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- properties of the CODE, which a live run cannot show --------
+    src = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    # Grep the CODE, not the prose.  The comment that documents the old
+    # prefix test quotes the old prefix test verbatim, so a naive substring
+    # check reads the explanation of the bug as the bug - which is what the
+    # first version of this check did, and it failed against correct code.
+    code_only = "\n".join(ln for ln in src.splitlines()
+                          if not ln.lstrip().startswith("#"))
+    check("the token comparison is hmac.compare_digest, not ==",
+          "hmac.compare_digest(" in code_only
+          and 'X-Jarvis-Token") == token' not in code_only, "")
+    check("and the docstring no longer CLAIMS constant time over a `==` - a "
+          "comment that lies about a security property is a trap",
+          "The token is compared in constant time" not in src, "")
+    check("the public list is an explicit allow-list, not a prefix test",
+          "PUBLIC_API_GET" in code_only and "_needs_auth" in code_only
+          and 'route.startswith(("/api/console"' not in code_only, "")
+    m = re.search(r"PUBLIC_API_GET = frozenset\(\{(.*?)\}\)", code_only, re.S)
+    check("and it is short, deliberately: only the two read-only reads the "
+          "shell needs before it has a token",
+          m is not None and len(re.findall(r'"/api/', m.group(1))) == 2, "")
+    check("the security headers are ONE method called from BOTH the 200 and "
+          "the 304 path - the first version put them on the 304 only, so a "
+          "normal page load carried none",
+          "def _security_headers" in code_only
+          and code_only.count("self._security_headers()") == 2, "")
+    js = (ROOT / "web" / "console.js").read_text(encoding="utf-8")
+    check("the privileged token is NOT in localStorage - that is permanent, "
+          "and readable by any script in this origin",
+          "localStorage.getItem(TOKEN_KEY)" not in js
+          and "localStorage.setItem(TOKEN_KEY" not in js, "")
+    check("it is in sessionStorage, so closing the tab discards the credential",
+          "sessionStorage.getItem(TOKEN_KEY)" in js
+          and "sessionStorage.setItem(TOKEN_KEY" in js, "")
+
+    # ---- the foreign key, which the schema declared and never enforced
+    import tempfile as _tf
+    from app import fixtures as _fx
+    tmp2 = _tf.mkdtemp()
+    try:
+        db2 = _os.path.join(tmp2, "fk.db")
+        _fx.seed_generics(db2)
+        conn = _fx.connect(db2)
+        check("SQLite foreign keys are actually ON, not just declared in the "
+              "schema (they are off by default, per connection)",
+              conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1, "")
+        victim = conn.execute("SELECT id FROM fixtures LIMIT 1").fetchone()[0]
+        owned = conn.execute(
+            "SELECT count(*) FROM modes WHERE fixture_id=?", (victim,)).fetchone()[0]
+        conn.execute("DELETE FROM fixtures WHERE id=?", (victim,))
+        conn.commit()
+        left = conn.execute(
+            "SELECT count(*) FROM modes WHERE fixture_id=?", (victim,)).fetchone()[0]
+        conn.close()
+        check("so ON DELETE CASCADE fires: deleting a profile takes its modes "
+              "with it instead of orphaning them forever",
+              owned > 0 and left == 0,
+              "owned %d mode(s), %d left behind" % (owned, left))
+    finally:
+        _shutil.rmtree(tmp2, ignore_errors=True)
+
+
 def _standalone_suites():
     return (
     ("simulated scan", test_scan_simulated),
     ("show design", test_showdesign),
     ("colour picker", test_colour_picker),
     ("console only", test_console_only),
+    ("api auth", test_api_auth),
     )
 
 
