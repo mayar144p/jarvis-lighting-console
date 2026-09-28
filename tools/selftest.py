@@ -6010,6 +6010,7 @@ def test_ux_contracts() -> None:
           and "r.barY = r.top + 0.45;" in viz, "")
     truss = []
     autosave = ROOT / "data" / "autosave.json"
+    rig_source = "your saved rig"
     if autosave.is_file():
         try:
             saved = json.loads(autosave.read_text(encoding="utf-8"))
@@ -6018,6 +6019,32 @@ def test_ux_contracts() -> None:
                          or (not h.get("kind") and (h.get("y") or 0) > 1.2))]
         except (ValueError, OSError):
             truss = []
+    # A test that needs the operator's PRIVATE show data is a test that only
+    # passes on the machine it was written on.  `data/autosave.json` is
+    # gitignored - correctly, it is your rig - so a fresh clone had no truss
+    # at all and this failed, and the failure said "fewer than 2 truss heads
+    # in data/autosave.json", which reads like a bug in the visualiser rather
+    # than like a missing file.
+    #
+    # So: if there is no saved rig, or it has too little hanging to prove
+    # anything, check the property on a rig the test builds.  The property is
+    # the point; whose rig it is measured on is not.
+    if len(truss) < 2:
+        rig_source = "a synthetic rig (yours has too few hanging lights)"
+        truss = [
+            # one front truss, three lights at slightly different heights
+            {"x": -4.0, "y": 4.0, "z": 6.0, "kind": "truss"},
+            {"x": 0.0, "y": 4.4, "z": 6.1, "kind": "truss"},
+            {"x": 4.0, "y": 3.8, "z": 5.9, "kind": "truss"},
+            # one back truss, at a genuinely different depth
+            {"x": -3.0, "y": 4.2, "z": 9.5, "kind": "truss"},
+            {"x": 3.0, "y": 4.2, "z": 9.6, "kind": "truss"},
+            # floor units, which must not pull a bar up with them
+            {"x": -6.0, "y": 0.3, "z": 0.0, "kind": "floor"},
+        ]
+        check("and it says which rig it measured, so a pass is never mistaken "
+              "for a pass on your own",
+              True, rig_source)
 
     def cluster(heads, ztol):
         rows = []
@@ -6052,8 +6079,8 @@ def test_ux_contracts() -> None:
               json.dumps([[round(r["z"], 2), round(r["top"], 2)]
                           for r in by_depth]))
     else:
-        check("the saved rig has hanging lights to hang bars from", False,
-              "fewer than 2 truss heads in data/autosave.json")
+        check("the rig under test has hanging lights to hang bars from", False,
+              "fewer than 2 truss heads in %s" % rig_source)
 
     # two lights at the same depth, different heights, must share one bar
     same_depth = [{"x": -3, "y": 5.0, "z": 6.5, "kind": "truss"},
