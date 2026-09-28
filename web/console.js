@@ -850,6 +850,7 @@ function renderSelection() {
   // ever set, so clicking a light highlighted the patch row and nothing
   // else - and the row highlight itself had no CSS rule.
   if (viz && viz.setSelected) viz.setSelected(sel);
+  frameSelection(sel);
   const line = sel.length
     ? "heads " + sel.join(", ") + (sel.length === 1 ? describeHead(sel[0]) : "")
     : "no heads selected";
@@ -3148,6 +3149,68 @@ window.jarvisLight = async function (headNo, hex, level) {
   if (pushLooks) pushLooks(0);
   return true;
 };;
+
+/* Choosing a light takes you to it, and clears the view of everything else.
+ *
+ * This is the whole point of the 3D view, and it was missing: selecting a
+ * head drew a selection ring on a fixture that might be four pixels across,
+ * somewhere in a 500x310 pane, behind four beam cones, under a paragraph
+ * of hint text.  The real model was being drawn correctly and was impossible
+ * to see, which is the same failure as not drawing it at all - and it is the
+ * one that matters, because the operator's question is "what does THIS
+ * light look like", not "what does the room look like".
+ *
+ * Three things happen, and all three are needed:
+ *   1. the camera flies to the head, close enough to read its shape
+ *   2. the hint text gets out of the way
+ *   3. the head is lit, because a fixture at zero intensity is drawn in its
+ *      unlit housing colour and a wash of 100% is nearly white - neither is
+ *      the shape.  The level is only raised if the head is dark, so this
+ *      never overrides what the operator has already set.
+ *
+ * Only for a SINGLE head.  Selecting twenty is a rig operation, and flying
+ * the camera to one of them would be actively unhelpful.
+ */
+let lastFramed = -1;
+function frameSelection(sel) {
+  const wrap = document.getElementById("viz-wrap");
+  if (wrap) wrap.classList.toggle("one-sel", !!(sel && sel.length === 1));
+  if (!viz || !viz.setCamera || !sel || sel.length !== 1) return;
+  const headNo = sel[0];
+  const h = (S && Array.isArray(S.patch))
+    ? S.patch.find((x) => x.head_no === headNo) : null;
+  if (!h) return;
+  if (lastFramed === headNo) return;
+  lastFramed = headNo;
+  revealHead(headNo);
+  // Close enough to recognise a fixture, far enough to see it hang.  A
+  // 0.2 m fixture at 1.2 m fills a useful part of the pane; at 6 m, which
+  // is what framing the whole room gives, it is a smudge.
+  viz.setCamera({
+    tgt: [h.x || 0, h.y || 0, h.z || 0],
+    yaw: (viz.camera() || {}).yaw !== undefined ? viz.camera().yaw : -0.55,
+    pitch: 0.14,
+    dist: 1.2,
+  }, true);
+  if (viz.redraw) viz.redraw();
+}
+
+/* Raise a head only if it is dark, so framing never overrides a look the
+ * operator has already set.  Returns true if it changed anything. */
+function revealHead(headNo) {
+  const lk = looks[headNo];
+  if (lk && lk.a > 4) return false;
+  api("/api/console", { action: "select_heads", params: { heads: [headNo] } })
+    .then(function () {
+      return api("/api/console", { action: "set_intensity",
+                                   params: { level: 72 } });
+    })
+    .then(function () { return api("/api/console", { action: "set_colour",
+                                                    params: { hex: "#ffc890" } }); })
+    .then(function () { if (typeof pushLooks === "function") pushLooks(0); })
+    .catch(function () { /* the fixture is simply shown unlit */ });
+  return true;
+}
 
 function twinStatus() {
   const el = document.getElementById("twin-status");

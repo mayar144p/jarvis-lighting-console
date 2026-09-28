@@ -8207,6 +8207,37 @@ def test_gdtf_twin() -> None:
               "twinHasModel(f)" in viz_src
               and "if (twinHasModel(f)) return;" in viz_src, "")
 
+        # The behaviour the operator actually asked for: choosing a light
+        # shows the light.  Without the camera move and the hint hiding, the
+        # real model was drawn correctly and then made impossible to see -
+        # a 0.2 m fixture four pixels across, behind the beams, under five
+        # lines of hint text, in a 500x310 pane.  Drawing it and not showing
+        # it are the same failure, and only a screenshot finds it.
+        cjs = (root / "web" / "console.js").read_text(encoding="utf-8")
+        ccode = "\n".join(ln for ln in cjs.splitlines()
+                           if not ln.lstrip().startswith(("*", "//")))
+        check("selecting a light FRAMES it - the camera flies to the head, "
+              "rather than leaving a selection ring on something too small "
+              "to recognise",
+              "function frameSelection" in ccode
+              and "frameSelection(sel);" in ccode
+              and "tgt: [h.x || 0, h.y || 0, h.z || 0]" in ccode, "")
+        check("and only for a SINGLE head, because selecting twenty is a rig "
+              "operation and flying the camera to one of them would be "
+              "actively unhelpful",
+              "sel.length !== 1" in ccode, "")
+        check("and the hint text gets out of the way, since it sits exactly "
+              "where the fixture is",
+              'classList.toggle("one-sel"' in ccode
+              and "#viz-wrap.one-sel #viz-hint" in
+              (root / "web" / "console.css").read_text(encoding="utf-8"), "")
+        check("and a dark head is lifted just enough to be seen - but only if "
+              "it IS dark, so framing never overrides a look the operator "
+              "has already set",
+              "function revealHead" in ccode
+              and "if (lk && lk.a > 4) return false;" in ccode, "")
+
+
         proc = _subprocess.run(
             [node, str(har), str(twin_js), str(man), str(mod)],
             capture_output=True, text=True, cwd=str(root))

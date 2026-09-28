@@ -258,6 +258,11 @@ body { min-width: 1080px; }          /* three columns → horizontal scroll belo
   transition: opacity .25s ease;
 }
 #viz-hint.dim { opacity: .3; }
+/* One light selected: the operator is asking what it looks like, so the
+   scene gets the pane to itself.  The hint is five lines of instruction
+   sitting exactly where the fixture is, and at 500x310 that is most of the
+   view - the model was being drawn correctly and covered by a paragraph. */
+#viz-wrap.one-sel #viz-hint { display: none; }
 /* What the 3D view is drawing: real GDTF models where the profile has
    them, generic bodies where it does not.  Sits above the hint, which dims
    once the operator is driving the view, because it is information rather

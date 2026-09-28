@@ -39,7 +39,7 @@ wire, because a bridge between two engines is a place for a cue to be lost.
 | library | `app/gdtfshare.py` | the GDTF Share client (login, search, download) |
 | client | `web/console.{html,css,js}` | the operator UI |
 | view | `web/viz.js` | the 3D view, WebGL with a 2D poster fallback |
-| tests | `tools/selftest.py` | 1678 checks, 46 suites, one command, no arguments, ~16 s (1675 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
+| tests | `tools/selftest.py` | 1682 checks, 46 suites, one command, no arguments, ~16 s (1679 in a clean clone: 3 of the geometry checks cross-check a real `.gdtf` when one is on disk, and skip cleanly when it is not) |
 
 **Where the frame is built, and why it is pure.** `merge.build_frames` takes the patch, the
 programmer, the active playbacks, the effects, the master and blackout, and returns a dict of
@@ -402,12 +402,12 @@ it, and all four routes close it. Restored, it goes back to 5 sections at 577 px
 
 ## Tests
 
-`tools/selftest.py` — **1678 checks across 46 suites, 0 failures**, one command, no arguments,
+`tools/selftest.py` — **1682 checks across 46 suites, 0 failures**, one command, no arguments,
 ~14 s. Per-suite exception isolation: a crash is a FAIL and the run continues. `node --check`
 on all four web scripts. Performance ceilings fail the build if missed. Three consecutive runs
 must be identical.
 
-| | `tools/selftest.py` | 1678 checks, 46 suites (section 12) |
+| | `tools/selftest.py` | 1682 checks, 46 suites (section 12) |
 |---|---|
 
 ## What is next
@@ -862,7 +862,7 @@ exist, that a valid token works and a wrong or empty one does not, that `?token=
 refused, that an **unknown endpoint is authenticated rather than public**, and that the
 static pages are still served so a 401 cannot become a lockout.
 
-**1678 checks across 46 suites.**
+**1682 checks across 46 suites.**
 
 #### What the review got wrong
 
