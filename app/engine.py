@@ -7542,10 +7542,15 @@ class Engine:
         pub = dict(self.output)
         pub["target"] = dict(self.dmx_target)
         pub["dry_run"] = self.dry_run
-        pub["transport"] = getattr(self._sender, "transport",
-                                   config.DMX_TRANSPORT)
-        if self._sender is not None:
+        if self._sender is not None and self._sender_fixed:
+            pub["transport"] = getattr(self._sender, "transport", "artnet")
             pub["host"] = self._sender.host + ":" + str(self._sender.port)
+        else:
+            # Where the output goes (or will, once live), not where it
+            # went at startup: the sender is only rebuilt while running.
+            transport, host, port = self._dmx_resolved()
+            pub["transport"] = transport
+            pub["host"] = f"{host}:{port}"
         return pub
 
     def _fx_public(self) -> list[dict]:

@@ -8119,6 +8119,12 @@ Wireless LAN adapter Wi-Fi:
             check("undo never moves the output", e.dmx_target["host"] == "2.0.0.10", "")
             check("the output feed reports the target",
                   e._output_public()["target"]["host"] == "2.0.0.10", "")
+            e2_pub = eng.Engine(db_path=db, dry_run=True)
+            e2_pub.act("set_dmx_target", mode="node", host="2.0.0.10")
+            check("the status bar shows the new target before GO LIVE",
+                  e2_pub._sender is None
+                  and e2_pub._output_public()["host"] == "2.0.0.10:6454",
+                  str(e2_pub._output_public().get("host")))
             e.act("set_lock", state="operate")
             r = e.act("set_dmx_target", mode="auto")
             check("the lock protects the output target", not r["ok"], str(r))
