@@ -8755,8 +8755,53 @@ def test_motion() -> None:
             check("...and is not an undo step", "speed_master" in eng.UNDO_EXCLUDED, "")
             check("the speed master reaches the live feed", e.lite().get("speed_master") == 0.5
                   if hasattr(e, "lite") else True, "")
+
+            # ---- the Move tab: spots from the venue, formations, nudge, range
+            e.fx = []
+            e.act("venue_template", key="club")
+            spots = {x["key"]: x for x in e._move_spots()}
+            check("one-tap spots come from the venue's dance floor and zones",
+                  {"floor", "front", "back", "left", "right", "dj"} <= set(spots)
+                  and spots["left"]["x"] < spots["floor"]["x"] < spots["right"]["x"], str(list(spots)))
+            check("...and a mark named like a zone isn't listed twice",
+                  sum(1 for x in e._move_spots() if x["label"].lower() == "dj") == 1, "")
+            e.act("select_all")
+            r = e.act("aim_spot", spot="floor")
+            check("tapping a spot aims every selected mover there", r.get("ok") and len(r.get("heads") or []) == 2, str(r))
+            r = e.act("aim_spot", formation="fan")
+            p1, p2 = e.programmer[1]["pan"], e.programmer[2]["pan"]
+            check("Fan out spreads them across the floor (different aims)", r.get("ok") and p1 != p2, str((p1, p2)))
+            before = e.programmer[1]["tilt"]
+            e.act("nudge", axis="tilt", step=0.02)
+            check("nudge moves tilt by a share of its travel", abs(e.programmer[1]["tilt"] - before - round(0.02 * 65535)) <= 1,
+                  str((before, e.programmer[1]["tilt"])))
+            e.act("select_heads", heads=[1])
+            e.act("move_range", axis="tilt", edge="clear")
+            e.act("move_range", axis="tilt", edge="top")
+            top = e.programmer[1]["tilt"]
+            check("one edge alone is only marked (its direction depends on how the light hangs)",
+                  "tilt" not in (e.patch[0].get("limits") or {}), str(e.patch[0].get("limits")))
+            e.act("nudge", axis="tilt", step=-0.1)
+            r = e.act("move_range", axis="tilt", edge="bottom")
+            bottom = e.programmer[1]["tilt"]
+            check("a light's own range: top + bottom set it, between the two",
+                  r.get("ok") and e.patch[0]["limits"]["tilt"] == (min(top, bottom), max(top, bottom)),
+                  str(e.patch[0]["limits"]))
+            e.act("nudge", axis="tilt", step=0.4)
+            wire = e.build_frames()[1]
+            coarse = wire[2] * 256 + wire[3]
+            check("...and the light can't be pushed past it",
+                  min(top, bottom) - 300 <= coarse <= max(top, bottom) + 300, str((coarse, top, bottom)))
+            e.act("move_range", axis="tilt", edge="clear")
+            check("...and Clear removes it", "tilt" not in (e.patch[0].get("limits") or {}), "")
+            check("the snapshot carries the spots for the Move tab", bool(e.snapshot().get("move_spots")), "")
         finally:
             e.shutdown()
+    js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the Move tab: spots, nudge, movement tiles, speed master, range",
+          all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
+          and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")
 
 
 def test_co2_preset() -> None:

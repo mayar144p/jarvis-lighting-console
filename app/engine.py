@@ -584,7 +584,7 @@ ACTIONS = (
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
-    "speed_master",
+    "speed_master", "aim_spot", "nudge", "move_range",
 )
 
 
@@ -4575,6 +4575,166 @@ class Engine:
                 "summary": f"aimed {len(aimed)} light(s) at "
                            f"x{tx:.1f} z{tz:.1f}"
                            + (f" ({len(skipped)} cannot move)" if skipped else "")}
+
+    # ------------------------------------------------------------------
+    # the Move tab: one-tap spots, formations, nudge, a light's own range
+    # ------------------------------------------------------------------
+    def _move_spots(self) -> list[dict]:
+        """Named aim points from the venue: the dance floor (centre and its
+        front / back / left / right, inset so beams land ON the floor), the
+        DJ, the stage, the bar - whatever zones the room has - and marks."""
+        v = self.venue if isinstance(self.venue, dict) else {}
+        zones = v.get("zones") or []
+        spots: list[dict] = []
+
+        def add(key, label, x, z, y=0.0):
+            spots.append({"key": key, "label": label, "x": round(float(x), 2),
+                          "y": round(float(y), 2), "z": round(float(z), 2)})
+        floor = next((z for z in zones if z.get("kind") == "dancefloor" and z.get("points")), None) \
+            or next((z for z in zones if z.get("kind") == "standing" and z.get("points")), None)
+        stage = next((z for z in zones if z.get("kind") == "stage" and z.get("points")), None)
+        if floor:
+            xs = [p[0] for p in floor["points"]]
+            zs = [p[1] for p in floor["points"]]
+            cx, cz = venue_mod.zone_centroid(floor)
+            inset_x, inset_z = (max(xs) - min(xs)) * 0.3, (max(zs) - min(zs)) * 0.3
+            # "front" is the side nearest the stage (else the lower z)
+            front_z, back_z = min(zs) + inset_z, max(zs) - inset_z
+            if stage and venue_mod.zone_centroid(stage)[1] > cz:
+                front_z, back_z = back_z, front_z
+            add("floor", "Dance floor", cx, cz)
+            add("front", "Front", cx, front_z)
+            add("back", "Back", cx, back_z)
+            add("left", "Left", min(xs) + inset_x, cz)
+            add("right", "Right", max(xs) - inset_x, cz)
+        labels = {"dj": "DJ", "stage": "Stage", "bar": "Bar", "vip": "VIP", "foh": "FOH"}
+        for z in zones:
+            k = z.get("kind")
+            if k in labels and z.get("points") and not any(s["key"] == k for s in spots):
+                cx, cz = venue_mod.zone_centroid(z)
+                add(k, labels[k], cx, cz, 1.2 if k in ("dj", "stage") else 0.0)
+        for o in v.get("objects") or []:
+            if o.get("kind") == "dj_booth" and not any(s["key"] == "dj" for s in spots):
+                add("dj", "DJ", o.get("x", 0), o.get("z", 0), 1.2)
+            if o.get("kind") == "mark" and o.get("name") and not any(
+                    s["label"].lower() == str(o["name"]).lower() for s in spots):
+                add("mark:" + str(o["name"]), str(o["name"]), o.get("x", 0), o.get("z", 0), 1.2)
+        return spots
+
+    def _a_aim_spot(self, spot=None, formation=None, heads=None, **_):
+        """Point the selection at a named spot (see _move_spots), or lay a
+        formation across the dance floor: fan (spread across it), cross
+        (each side to the other side), split (left heads left, right heads
+        right)."""
+        spots = {s["key"]: s for s in self._move_spots()}
+        rows = ([self._head(int(h)) for h in heads] if heads else self._require_selection())
+        movers = sorted((h for h in rows if "pan" in h["map"] and "tilt" in h["map"]),
+                        key=lambda h: float(h.get("x") or 0))
+        if not movers:
+            raise ValueError("none of the selected lights can pan and tilt")
+        if formation:
+            f = str(formation).lower()
+            if not all(k in spots for k in ("floor", "left", "right")):
+                raise ValueError("draw a dance floor zone in the venue first (Venue tab)")
+            left, right, mid = spots["left"], spots["right"], spots["floor"]
+            n = len(movers)
+            for i, h in enumerate(movers):
+                t = i / (n - 1) if n > 1 else 0.5
+                if f == "fan":
+                    x = left["x"] + (right["x"] - left["x"]) * t
+                elif f == "cross":
+                    x = right["x"] if t < 0.5 else left["x"]
+                elif f == "split":
+                    x = left["x"] if t < 0.5 else right["x"]
+                else:
+                    raise ValueError("formation is fan, cross or split")
+                self._a_aim_at(x=x, y=0.0, z=mid["z"], heads=[h["head_no"]])
+            return {"heads": [h["head_no"] for h in movers],
+                    "summary": f"{f} across the dance floor ({n} lights)"}
+        s = spots.get(str(spot or ""))
+        if s is None:
+            raise ValueError(f"no spot {spot!r} - the venue has: " + ", ".join(spots) if spots
+                             else "the venue has no dance floor or zones yet (Venue tab)")
+        r = self._a_aim_at(x=s["x"], y=s["y"], z=s["z"], heads=[h["head_no"] for h in movers])
+        r["summary"] = f"{len(r['heads'])} light(s) on {s['label']}" + (
+            f" ({len(r['skipped'])} can't reach it)" if r.get("skipped") else "")
+        return r
+
+    def _move_now(self, h: dict, role: str) -> int:
+        """The head's current value for pan/tilt in its own domain."""
+        v = (self.programmer.get(h["head_no"]) or {}).get(role)
+        if v is None:
+            for _lvl, vals in self._active_playbacks(time.monotonic()):
+                if role in (vals.get(h["head_no"]) or {}):
+                    v = vals[h["head_no"]][role]
+                    break
+        dom = attr_domain(h, role)
+        if v is None:
+            return dom // 2
+        return int(_logical16(v)) if dom > 255 else int(v)
+
+    def _a_nudge(self, axis="pan", step=0.01, **_):
+        """Move the selection's pan or tilt by a fraction of its travel
+        (+/-): the arrows on the Move tab, coarse 0.02 or fine 0.002."""
+        role = "tilt" if str(axis).lower().startswith("t") else "pan"
+        frac = max(-0.5, min(0.5, float(step)))
+        done = []
+        for h in self._require_selection():
+            if role not in h["map"]:
+                continue
+            dom = attr_domain(h, role)
+            v = max(0, min(dom, self._move_now(h, role) + round(frac * dom)))
+            if dom > 255 and 0 < v < 256:
+                v = 256
+            self._set_programmer(h["head_no"], role, v)
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError(f"none of the selected lights has {role}")
+        return {"heads": done, "summary": f"{role} {'+' if frac > 0 else ''}{round(frac * 100, 1)}%"}
+
+    def _a_move_range(self, axis="tilt", edge="top", **_):
+        """A light's own range: Set top / Set bottom (tilt) or Set left /
+        Set right (pan) at where it points now; `clear` removes it.  Every
+        cue, effect, spot and button then stays inside it, per light."""
+        role = "pan" if str(axis).lower().startswith("p") else "tilt"
+        edge = str(edge or "").lower()
+        rows = [h for h in self._require_selection() if role in h["map"]]
+        if not rows:
+            raise ValueError(f"none of the selected lights has {role}")
+        # One edge alone is ambiguous - a higher tilt value is "up" on one
+        # head and "down" on another, depending on how it hangs - so each
+        # edge is marked, and the range applies once BOTH are: between them.
+        first = {"tilt": ("top", "bottom"), "pan": ("left", "right")}[role]
+        out, waiting = [], []
+        for h in rows:
+            cur = dict(h.get("limits") or {})
+            marks = dict((h.get("range_marks") or {}).get(role) or {})
+            if edge == "clear":
+                cur.pop(role, None)
+                marks = {}
+            else:
+                side = first[0] if edge in (first[0], "low", "min") else first[1]
+                marks[side] = self._move_now(h, role)
+                if len(marks) == 2:
+                    lo, hi = sorted(marks.values())
+                    cur[role] = (lo, hi)
+                    marks = {}
+                else:
+                    waiting.append(h["head_no"])
+            h["limits"] = cur
+            rm = dict(h.get("range_marks") or {})
+            if marks:
+                rm[role] = marks
+            else:
+                rm.pop(role, None)
+            h["range_marks"] = rm
+            out.append({"head": h["head_no"], "range": cur.get(role), "marked": marks})
+        self.patch_rev += 1
+        other = first[1] if edge in (first[0], "low", "min") else first[0]
+        return {"ranges": out, "summary": (
+            f"{role} range cleared" if edge == "clear" else
+            f"{role} {edge} marked - now point it at the {other} and set that" if waiting else
+            f"{role} range set on {len(out)} light(s)")}
 
     # ------------------------------------------------------------------
     # the timeline (app/timeline.py): the engine owns the clock
@@ -8785,6 +8945,7 @@ class Engine:
                 "output": self._output_public(),
                 "master": self.master,
                 "speed_master": self.speed_master,
+                "move_spots": self._move_spots(),
                 "blackout": self.blackout,
                 "selected": list(self.selected),
                 "programmer": {

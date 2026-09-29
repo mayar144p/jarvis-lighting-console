@@ -168,7 +168,7 @@
       <nav class="tabs" id="prog-tabs" role="tablist">
         <button role="tab" data-tab="intensity" aria-selected="true" title="Intensity">Level</button>
         <button role="tab" data-tab="colour">Colour</button>
-        <button role="tab" data-tab="position">Position</button>
+        <button role="tab" data-tab="position">Move</button>
         <button role="tab" data-tab="beam">Beam</button>
         <button role="tab" data-tab="fx" title="Effects">FX</button>
         <button role="tab" data-tab="laser" title="Lasers" hidden>Laser</button>
@@ -215,6 +215,9 @@
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>
+          <div id="move-panel"></div>
+          <details class="more mv-more">
+          <summary>Pan/tilt pad, exact angles, aim at a point in 3D, marks, saved spots</summary>
           <div class="pad" id="pad" aria-label="Pan and tilt pad">
             <div class="pad-grid"></div>
             <div class="pad-dot" id="pad-dot"></div>
@@ -231,6 +234,7 @@
             <button class="btn ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
           </div>
           <div class="palette-strip" data-kind="position"></div>
+          </details>
         </div>
 
         <div class="tab-pane" data-pane="beam" hidden>

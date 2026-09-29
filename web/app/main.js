@@ -9,6 +9,7 @@ import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
 import { initFxPanel } from "./fxpanel.js";
+import { initMovePanel } from "./movepanel.js";
 import { initTimeline } from "./timeline.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
@@ -38,6 +39,7 @@ async function boot() {
   initPlaybacks();
   initQuickButtons();
   initFxPanel();
+  initMovePanel();
   initCmdbar();
   initCopilot();
   initKeys();
