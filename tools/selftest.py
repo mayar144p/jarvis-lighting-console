@@ -7497,6 +7497,7 @@ def _standalone_suites():
     ("shutter open value found and remembered", test_remember_open),
     ("test this light", test_light_test),
     ("forgiving fixture search", test_fixture_search),
+    ("beam bar lasers", test_beam_bar),
     )
 
 
@@ -8673,6 +8674,97 @@ def test_remember_open() -> None:
     check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
           [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
           str([d["role"] for d in cobra[:4]]))
+
+
+def test_beam_bar() -> None:
+    """A laser beam bar (Laserworld BeamBar 10B MK3, from its manual's
+    chart): every beam is its own programmable channel, but nothing lights
+    unless the laser is armed and fired; its output channel's mode (own
+    beams / built-in programs) is a per-laser setting."""
+    print("beam bar lasers (per-beam channels, output only when armed)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+    from app.engine_support import channel_role
+
+    item = {"manufacturer": "Acme", "model": "Laser Bar 6G", "type": "", "modes": [{"name": "8ch", "channels": [], "detail": []}]}
+    for i, n in enumerate(["Mode", "Motor position"] + [f"Laser {k}" for k in range(1, 7)]):
+        item["modes"][0]["channels"].append(n)
+        item["modes"][0]["detail"].append({"n": i + 1, "label": n, "name": n, "role": channel_role(n)})
+    fixlib.apply_fx(item)
+    roles = [d["role"] for d in item["modes"][0]["detail"]]
+    check("a laser's numbered outputs become its own beams, the motor its tilt",
+          roles[1] == "laser_y" and roles[2:] == [f"laser_beam{k}" for k in range(1, 7)], str(roles))
+    dup = {"manufacturer": "Acme", "model": "Laser X", "type": "", "modes": [{"name": "m", "channels": [], "detail": []}]}
+    for i, n in enumerate(["Mode", "Sound", "Auto program"]):
+        dup["modes"][0]["channels"].append(n)
+        dup["modes"][0]["detail"].append({"n": i + 1, "label": n, "name": n, "role": "raw"})
+    fixlib.apply_fx(dup)
+    r = [d["role"] for d in dup["modes"][0]["detail"]]
+    check("channels that would share one role each get their own control",
+          len(set(r)) == 3, str(r))
+    hits = fixlib.search("laserworld beambar 10b")
+    check("the BeamBar 10B MK3 is in the Jarvis library", hits and hits[0]["model"] == "BeamBar 10B MK3", str(hits[:1]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "b.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
+            h = e.patch[0]
+            check("patched at 25 with its 13 channels", h["address"] == 25 and len(h["map"]) == 13
+                  and h["map"][0] == "laser_on" and h["map"][12] == "laser_beam10", str(h["map"]))
+
+            def wire():
+                return list(e.build_frames()[1][24:37])
+            check("dark by default (channel 1 in 'laser off')", wire()[0] == 0 and not any(wire()[3:]), str(wire()))
+            e.act("select_all", include_fx=True)
+            e.act("set_intensity", level=100)
+            check("Full never lights a laser", wire()[0] == 0 and not any(wire()[3:]), str(wire()))
+            check("(Select all leaves lasers out: they're picked on purpose)",
+                  e.act("select_all").get("ok") is False or 1 not in e.selected, "")
+            e.act("select_heads", heads=[1])
+            r = e.act("set_attribute", attribute="laser_beam1", value=255)
+            e.act("set_attribute", attribute="laser_beam3", value=200)
+            check("beams are programmable (and recorded like any attribute)", r.get("ok"), str(r))
+            check("but a programmed beam stays dark until the laser is fired", not any(wire()[3:]) and wire()[0] == 0, str(wire()))
+            bad = e.act("set_attribute", attribute="laser_on", value=227)
+            check("the output/mode channel is never set from the programmer", not bad.get("ok"), "")
+            r = e.act("fx_laser", heads=[1], down=True, owner="t")
+            check("firing needs ARM", not r.get("ok"), str(r))
+            e.act("fx_arm", state=True)
+            e.act("fx_laser", heads=[1], down=True, owner="t")
+            w = wire()
+            check("armed + fired: beam-control mode, the programmed beams only",
+                  200 <= w[0] <= 255 and w[3] == 255 and w[5] == 200 and w[4] == 0 and w[6] == 0, str(w))
+            look = e._fx_look(h, dict(zip(h["map"], w)))
+            check("the 3D view gets which beams are lit, in blue",
+                  look and look.get("beams", [])[:4] == [1, 0, 1, 0] and look.get("hex") == "#3355ff", str(look))
+            e.act("blackout", state=True) if "blackout" in eng.ACTIONS else None
+            check("blackout puts it out", e.build_frames()[1][24] == 0 and not any(e.build_frames()[1][27:37]), "")
+            e.act("blackout", state=False)
+            e.act("clear_programmer")
+            check("blackout also disarmed it", not e.act("fx_laser", heads=[1], down=True, owner="t").get("ok"), "")
+            e.act("fx_arm", state=True)
+            e.act("fx_laser", heads=[1], down=True, owner="t")
+            w = wire()
+            check("fired with no beams programmed: every beam on", all(v == 255 for v in w[3:]), str(w))
+            r = e.act("laser_mode", heads=[1], value=175)
+            check("the output mode can be set to its built-in programs", r.get("ok") and wire()[0] == 175, str((r, wire()[0])))
+            r = e.act("laser_mode", heads=[1], value=10)
+            check("'laser off' is refused as a mode", not r.get("ok"), str(r))
+            e.act("fx_laser", heads=[1], down=False, owner="t")
+            check("released: off again", wire()[0] == 0 and not any(wire()[3:]), str(wire()))
+            e.act("fx_laser", heads=[1], down=True, owner="t2", values={"laser_on": 75})
+            check("a laser button can carry its own mode (sound)", wire()[0] == 75, str(wire()[0]))
+            e.act("fx_kill")
+            check("KILL FX stops it", wire()[0] == 0, "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    check("the Laser tab has beams, patterns, output mode and every other channel",
+          all(k in js for k in ("function beamsBlock", "BEAM_PATTERNS", "function modeBlock", "function otherBlock")), "")
 
 
 def test_fixture_search() -> None:

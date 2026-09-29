@@ -18,7 +18,8 @@ benchmarked and unit-tested on its own, without constructing a console.
 from __future__ import annotations
 
 from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS,  # noqa: I001
-                             SFX_ROLES as _SFX, LASER_ROLES as _LASER, curve_pct as _curve_pct,
+                             SFX_ROLES as _SFX, LASER_ROLES as _LASER,
+                             LASER_BEAM_ROLES as _BEAMS, curve_pct as _curve_pct,
                              is_fine_role, logical16 as _logical16,
                              split_16bit)
 
@@ -141,6 +142,21 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     if rest:
         for role, value in rest.items():
             resolved.setdefault(role, int(value))
+    # A BEAM BAR'S DIODES follow the laser's output: which beams is
+    # programmable (the look, in cues), but every beam is dark unless the
+    # FX layer says the laser is on (armed + its own button).  On, with no
+    # beam programmed at all, every beam lights.
+    beams = [r for r in head["map"] if r in _BEAMS]
+    if beams:
+        live_set = (over or {}).get("set") or {}
+        if live_set.get("_laser_live") and not blackout:
+            if not any(resolved.get(r) for r in beams):
+                on = int(live_set.get("_beam_on", 255))
+                for r in beams:
+                    resolved[r] = on
+        else:
+            for r in beams:
+                resolved[r] = int((rest or {}).get(r, 0))
     # A fixture with no dimmer still has to obey BLACKOUT and the master:
     # its shutter/strobe gate closes (0 is closed on every profile we
     # know), and its colour channels act as a virtual dimmer.

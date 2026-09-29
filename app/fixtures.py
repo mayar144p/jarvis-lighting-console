@@ -68,10 +68,11 @@ CREATE TABLE IF NOT EXISTS modes (
 # Bump when parse_gdtf learns something new from a file (3: shutter open
 # values and colour/gobo wheel slots; 4: strobe ranges and the direction
 # of the pan/tilt speed channel, for the visualiser; 5: special effects and
-# lasers get their own safe roles).  On start, fixtures imported by an
+# lasers get their own safe roles; 6: a beam bar's diodes get a beam each,
+# and channels no longer collapse onto one role).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 5
+PARSER_VERSION = 6
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than

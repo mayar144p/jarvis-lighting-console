@@ -148,6 +148,23 @@ class LaserFan {
     u.normalize();
     const v = new THREE.Vector3().crossVectors(dir, u).normalize();
     const d = new THREE.Vector3();
+    if (Array.isArray(fx.beams) && fx.beams.length) {
+      // a beam bar: one fixed beam per diode, spread along the bar, the lit
+      // ones only; the whole bar tilts with its motor (y)
+      const nb = Math.min(fx.beams.length, RAYS);
+      const fan = Math.tan(24 * Math.PI / 180);
+      for (let i = 0; i < RAYS; i++) {
+        const j = i * 6;
+        if (i >= nb || !fx.beams[i]) { this.pos.fill(0, j, j + 6); continue; }
+        const f = nb > 1 ? (i / (nb - 1)) * 2 - 1 : 0;
+        d.copy(dir).addScaledVector(u, f * fan).addScaledVector(v, ((fx.y ?? 0.5) - 0.5) * 1.2).normalize();
+        const len = reach(origin, d);
+        this.pos.set([origin.x + u.x * f * 0.3, origin.y + u.y * f * 0.3, origin.z + u.z * f * 0.3,
+          origin.x + d.x * len, origin.y + d.y * len, origin.z + d.z * len], j);
+      }
+      this.lines.geometry.attributes.position.needsUpdate = true;
+      return;
+    }
     const shape = pattern < 0.34 ? "fan" : pattern < 0.67 ? "cone" : "tunnel";
     for (let i = 0; i < RAYS; i++) {
       const j = i * 6;

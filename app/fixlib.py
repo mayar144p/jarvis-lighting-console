@@ -742,6 +742,11 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
         role = "raw"
     caps_text = " ".join(str(c[2]) for c in row.get("caps") or []).lower()
     if kind == "laser":
+        # a beam bar's diodes: "Beam 3", "Laser 3", "Diode 3", "Head 3"...
+        beam = re.search(r"\b(?:beam|diode|laser|head|lens|output|ld)\s*#?\s*(\d{1,2})\b", name)
+        if beam and 1 <= int(beam.group(1)) <= 16 and not re.search(
+                r"pattern|speed|colou?r|size|rotat|mode|position|move|zoom", name):
+            return f"Laser Beam {int(beam.group(1))}"
         if re.search(r"pattern|drawing|gobo|figure|effect|graphic|animation|\bshow\b", name) \
                 and "speed" not in name:
             return "Laser Pattern"
@@ -755,7 +760,8 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
             return "Laser Colour" if role in ("wheel", "macro", "raw") else None
         if re.search(r"\bx\b|x[- ]?axis|horizontal|x move|x pos", name) or role == "pan":
             return "Laser X"
-        if re.search(r"\by\b|y[- ]?axis|vertical|y move|y pos", name) or role == "tilt":
+        if re.search(r"\by\b|y[- ]?axis|vertical|y move|y pos|\btilt|motor\s*(pos|position|angle)?$|\bangle", name) \
+                or role == "tilt":
             return "Laser Y"
         if re.search(r"speed", name) or role == "speed":
             return "Laser Speed"
@@ -814,16 +820,27 @@ def apply_fx(item: dict) -> dict:
     for mode in item.get("modes") or []:
         rows = mode.get("detail") or []
         has_rgb = sum(1 for r in rows if r.get("role") in ("red", "green", "blue")) >= 3
+        used: set = set()
         for i, row in enumerate(rows):
             new = row.get("fx_label") or _fx_role(kind, row, has_rgb)
+            # a second channel landing on a role already taken would share it
+            # (one control, the other channel dead): give it its own setting
+            # (output channels - power, fire, fog, arm - share on purpose: every
+            # one of a two-laser unit's outputs comes on together)
+            if new and _role(new) in used and not _role(new).endswith("_fine") \
+                    and _role(new) not in ("laser_on", "fx_fire", "fog", "fx_arm"):
+                spare = next((k for k in range(2, 7) if f"fx_param{k}" not in used), None)
+                new = f"FX Setting {spare}" if spare else new
             if new:
                 row["label"] = new
                 row["role"] = _role(new)
                 if i < len(mode["channels"]):
                     mode["channels"][i] = new
+            if row.get("role") not in (None, "raw", "unused"):
+                used.add(row.get("role"))
             role = row.get("role")
             caps = row.get("caps")
-            if role in ("fx_fire", "laser_on"):
+            if role in ("fx_fire", "laser_on") or str(role).startswith("laser_beam"):
                 steps = [c for c in caps or [] if not _OFF_TEXT.search(str(c[2]))
                          and not _DANGER_TEXT.search(str(c[2]))]
                 fire = _pick(caps, _FIRE_TEXT, _DANGER_TEXT)

@@ -371,6 +371,21 @@ The "fire", "armed" and "on" values come from the fixture's own chart and
 are never guessed. For example, a MagicFX Psyco2Jet's safety channel is
 armed at 100–155, and 156–255 is its **test mode**.
 
+**Beam bars** (like the Laserworld BeamBar 10B MK3, in the Jarvis library) get
+one control per beam. On the **Laser** tab:
+
+- Tap beams on and off, or lay a pattern across the bar: All, Odd, Even, Left,
+  Right, Centre or Ends. **Beam level** sets how bright the lit beams are.
+- Beams record into cues like any attribute. Record a few patterns on one
+  playback to make a beam chase.
+- **Output mode** picks what the laser does when fired: your own beams, its
+  built-in programs, auto or sound. A laser button can also carry its own mode.
+- Any channel the tab doesn't know by name appears under **Other channels**, so
+  every channel has a control.
+
+The beams still only light while the laser is **armed and fired**. With no
+beams programmed, firing lights them all.
+
 **What never reaches an effect:**
 - light controls: Flash, Strobe, Full, colour, Locate, effects, the
   master and **Select all** (lights only);

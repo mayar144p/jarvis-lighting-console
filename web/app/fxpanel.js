@@ -118,6 +118,85 @@ function armedLine(st) {
     st.armed ? `ARMED · switches off in ${mmss(st.armed_left || 0)}` : "Disarmed: fire and laser output need ARM FX (top bar).");
 }
 
+// A beam bar's diodes: tap one to switch it in the look, or lay a
+// pattern across all of them.  Recorded in cues like any attribute; the
+// real beams still only light while the laser output is on (armed).
+const BEAM_PATTERNS = {
+  All: () => true, None: () => false, Odd: (i) => i % 2 === 0, Even: (i) => i % 2 === 1,
+  Left: (i, n) => i < n / 2, Right: (i, n) => i >= n / 2,
+  Centre: (i, n) => Math.abs(i - (n - 1) / 2) < n / 4, Ends: (i, n) => Math.abs(i - (n - 1) / 2) >= n / 4,
+};
+
+// one slider for how bright the lit beams are (a diode's brightness)
+function beamLevel(beams) {
+  const lit = beams.filter((a) => a.value > 0);
+  const start = lit.length ? Math.max(...lit.map((a) => a.value)) : 255;
+  const input = h("input", { type: "range", min: 1, max: 255, value: start });
+  const out = h("span.mono.small", String(start));
+  let t = 0;
+  input.addEventListener("input", () => {
+    out.textContent = input.value;
+    clearTimeout(t);
+    t = setTimeout(() => {
+      for (const a of beams.filter((b) => b.value > 0)) setAttr(a.role, +input.value);
+    }, 80);
+  });
+  return h("div.fx-row", h("span.k", "Beam level"), input, out);
+}
+
+function beamsBlock(e) {
+  const beams = Object.values(e).filter((a) => /^laser_beam\d+$/.test(a.role))
+    .sort((a, b) => +a.role.slice(10) - +b.role.slice(10));
+  if (!beams.length) return [];
+  const lit = (a) => a.value !== null && a.value !== undefined && a.value > 0;
+  const setBeams = async (fn) => {
+    for (let i = 0; i < beams.length; i++) {
+      const a = beams[i];
+      await run("set_attribute", { attribute: a.role, value: fn(i, beams.length) ? (a.on || 255) : 0 }, { silentError: true });
+    }
+  };
+  return [
+    h("h3", "Beams"),
+    h("div.beam-row", ...beams.map((a, i) => h("button.beam" + (lit(a) ? ".on" : ""), {
+      title: `Beam ${i + 1} (${a.role}) - tap to switch it in the look`,
+      onclick: () => setAttr(a.role, lit(a) ? 0 : (a.on || 255)),
+    }, String(+a.role.slice(10))))),
+    h("div.chip-row", h("span.k", "Pattern"),
+      ...Object.entries(BEAM_PATTERNS).map(([name, fn]) => h("button.chip", { onclick: () => setBeams(fn) }, name))),
+    beamLevel(beams),
+    h("p.muted.small", "Record a few patterns as cues on one playback to make a beam chase. "
+      + "With no beam set, Laser ON lights them all."),
+  ];
+}
+
+// What the laser does when fired: its own beams, its built-in programs,
+// auto or sound - its output channel's ranges, never the "off" one.
+function modeBlock(e, lasers) {
+  const out = e.laser_on;
+  const slots = ((out && out.slots) || []).filter((sl) => !/\b(off|blackout|disabled?|stop)\b/i.test(sl.name));
+  if (slots.length < 2) return [];
+  const cur = lasers[0].laser_mode;
+  const heads = lasers.map((x) => x.head_no);
+  return [h("div.fx-row", h("span.k", "Output mode"), h("div.chip-row",
+    ...slots.map((sl) => h("button.chip" + (cur !== undefined && cur >= sl.from && cur <= sl.to ? ".on" : ""), {
+      title: `${sl.name} - DMX ${sl.from}-${sl.to} on the output channel. Used when the laser is fired (armed).`,
+      onclick: () => run("laser_mode", { heads, value: sl.value }, { toast: true }),
+    }, sl.name)),
+    cur !== undefined ? h("button.chip", { title: "Back to the fixture's default", onclick: () => run("laser_mode", { heads, value: "" }) }, "Default") : null))];
+}
+
+// Every other channel the laser has, whatever it is called: nothing it
+// can do is left without a control.
+const LASER_SHOWN = new Set(["laser_on", "laser_pattern", "laser_colour", "laser_size", "laser_rot", "laser_x",
+  "laser_y", "laser_speed", "fx_mode", "fx_param"]);
+function otherBlock(e) {
+  const rest = Object.values(e).filter((a) => !LASER_SHOWN.has(a.role) && !/^laser_beam\d+$/.test(a.role)
+    && !a.role.endsWith("_fine") && !["raw", "unused"].includes(a.role));
+  if (!rest.length) return [];
+  const name = (r) => r.replace(/^fx_param(\d)$/, "Setting $1").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  return [h("h3", "Other channels"), ...rest.map((a) => chooser(name(a.role), a))];
+}
+
 // ------------------------------------------------------------ Laser tab
 function renderLaser(attrState) {
   const box = $("#laser-pane");
@@ -136,15 +215,18 @@ function renderLaser(attrState) {
       h("button.btn" + (onNow ? ".on" : ""), {
         onclick: () => run("fx_laser", { heads, down: !onNow, owner: "prog-latch" }),
       }, onNow ? "Laser OFF" : "Laser ON (latch)")),
+    ...modeBlock(e, lasers),
+    ...beamsBlock(e),
     chooser("Pattern", e.laser_pattern),
     chooser("Colour", e.laser_colour),
     slider("Size", e.laser_size),
     slider("Rotation", e.laser_rot),
     slider("X position", e.laser_x),
-    slider("Y position", e.laser_y),
+    slider("Y position / tilt", e.laser_y),
     slider("Scan speed", e.laser_speed),
     chooser("Mode", e.fx_mode),
     slider("Setting", e.fx_param),
+    ...otherBlock(e),
     h("p.muted.small", "Pattern, colour, size and movement are recorded in cues like any attribute. The laser's output only comes on from these buttons or an FX button, and only while armed."),
   ].filter(Boolean));
 }
