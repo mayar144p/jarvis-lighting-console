@@ -16,13 +16,13 @@ starts from the diagnosis, not from scratch.
   window-level pointerup/cancel that releases every hold, plus a per-owner
   sequence number the engine uses to ignore a stale "down".  Same pattern in
   `web/app/quickbuttons.js`.
-- **FX tab "Stop" and Looks tab "Record" flicker / sometimes unclickable.**
+- **(DONE) FX tab "Stop" and Looks tab "Record" flicker / sometimes unclickable.**
   `web/app/programmer.js` `refresh()` runs on every `lite` push and rebuilds
   `renderRunning()` and `renderLooks()` from scratch, many times a second; a
   click needs the same element from mousedown to mouseup.  Fix: keyed
   re-render (only when the content changes), as `renderOpenWarning` does.
   Sweep every panel for the same pattern.
-- **Circle (and pan sweep, tilt bounce, figure-8) make movers go berserk.**
+- **(DONE, Move tab) Circle (and pan sweep, tilt bounce, figure-8) make movers go berserk.**
   `app/fxlib.py` `_circle` etc. write 0..1 of the FULL pan/tilt travel
   (540 x 190 deg after `logical16`) at one cycle per second by default.
   Fix: move around the head's current position with a `size` knob (default
@@ -70,7 +70,16 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
-## 7. Move tab: floor-safe movement for every light, simple speed (agreed)
+## 7. Move tab: floor-safe movement for every light, simple speed (DONE)
+
+Built: one-tap spots and formations from the venue, nudge arrows, movement
+tiles with direction / arc / size / speed / wave / lock, Speed master,
+per-light range (Set top / bottom / left / right), dance-floor safe zones
+for every mover + Check the floor, a light's own spin / program speeds,
+laser safe zone (beam height / size), FX tab without movements, Tools ->
+Setup, "In the programmer" bar with per-kind clear.  Still open: Tap tempo
+on the Speed master, a live preview on a floor map, Record as cue / Make
+button straight from a movement.
 
 Replaces movement spread over Position / FX / Tools with ONE "Move" tab.
 

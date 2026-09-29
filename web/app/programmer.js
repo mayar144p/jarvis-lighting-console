@@ -469,6 +469,48 @@ function attrRow(a) {
   return h("div.attr-wrap", row, chips);
 }
 
+// ------------------------------------------------------ in the programmer
+// What the programmer holds, by kind, each with its own x: clear just the
+// colour (or the position...) without losing the rest.
+const IN_GROUPS = [["intensity", "Level"], ["colour", "Colour"], ["position", "Move"], ["beam", "Beam"], ["other", "Other"]];
+const GROUP_OF = (() => {
+  const m = {};
+  for (const r of ["dimmer", "zone_dimmer", "shutter", "strobe"]) m[r] = "intensity";
+  for (const r of ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "wheel", "macro"]) m[r] = "colour";
+  for (const r of ["pan", "tilt", "speed"]) m[r] = "position";
+  for (const r of ["gobo", "gobo_rot", "prism", "zoom", "focus", "frost", "iris"]) m[r] = "beam";
+  return m;
+})();
+const MOVE_FX = new Set(["circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan"]);
+let progInKey = "";
+let fxGridKey = "";
+let runningKey = "";
+let looksKey = "";
+
+function renderProgIn() {
+  const box = $("#prog-in");
+  const vals = ((state.snap && state.snap.programmer) || {}).values || {};
+  const counts = {};
+  for (const row of Object.values(vals)) {
+    const seen = new Set();
+    for (const r of Object.keys(row)) seen.add(GROUP_OF[r.replace(/_fine$/, "")] || "other");
+    for (const g of seen) counts[g] = (counts[g] || 0) + 1;
+  }
+  const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib));
+  if (moving && !counts.position) counts.position = 0;
+  const key = JSON.stringify(counts);
+  if (key === progInKey) return;          // redraw only on change: keeps the x clickable
+  progInKey = key;
+  const groups = IN_GROUPS.filter(([g]) => g in counts);
+  box.hidden = !groups.length;
+  box.replaceChildren(...(groups.length ? [h("span.muted.small", "In the programmer:"),
+    ...groups.map(([g, label]) => h("span.chip.prog-in-chip",
+      { title: counts[g] ? `${label} on ${counts[g]} light(s)` : `${label}: a movement is running` },
+      label, counts[g] ? h("small", ` ${counts[g]}`) : null,
+      h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
+    h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all")] : []));
+}
+
 // --------------------------------------------------------------- effects
 async function loadFx() {
   if (!hasSel()) { fxAvailable = null; renderFx(); return; }
@@ -480,13 +522,20 @@ async function loadFx() {
 function renderFx() {
   const grid = $("#fx-grid");
   if (!fxAvailable) {
+    fxGridKey = "";
     grid.replaceChildren(h("p.muted.small", "Select fixtures to see the effects they can run."));
     $("#fx-params").replaceChildren();
   } else {
-    grid.replaceChildren(...(fxAvailable.available || []).map((fx) => h("button.fx-card" + (fxChosen === fx.name ? ".on" : ""), {
-      title: "Run " + fx.label,
-      onclick: () => startFx(fx),
-    }, h("b", fx.label), h("small", fx.group))));
+    const list = (fxAvailable.available || []).filter((fx) => !MOVE_FX.has(fx.name));
+    const key = JSON.stringify([list.map((fx) => fx.name), fxChosen]);
+    if (key !== fxGridKey) {               // redraw only on change: keeps the cards clickable
+      fxGridKey = key;
+      grid.replaceChildren(...list.map((fx) => h("button.fx-card" + (fxChosen === fx.name ? ".on" : ""), {
+        title: "Run " + fx.label,
+        onclick: () => startFx(fx),
+      }, h("b", fx.label), h("small", fx.group))),
+      h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Move tab"), "."));
+    }
   }
   renderRunning();
   const attrs = new Set();
@@ -516,9 +565,14 @@ function startFx(fx) {
   }));
 }
 
-function renderRunning() {
+function renderRunning(force = false) {
   const list = (state.snap && state.snap.fx) || [];
   const box = $("#fx-running");
+  // redraw only when the list changes: rebuilt on every live update, Stop
+  // flickered and a click could land on a button already replaced
+  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length]));
+  if (!force && key === runningKey) return;
+  runningKey = key;
   if (!list.length) { box.replaceChildren(h("p.muted.small", "No effects running.")); return; }
   box.replaceChildren(...list.map((f) => h("div.fx-run",
     h("b", f.label || `${f.kind || "wave"} ${f.role || ""}`),
@@ -528,8 +582,11 @@ function renderRunning() {
 }
 
 // ----------------------------------------------------------------- looks
-function renderLooks() {
+function renderLooks(force = false) {
   const pals = (state.snap && state.snap.palettes) || {};
+  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || []]);
+  if (!force && key === looksKey) return;  // (same: Record stays put under the pointer)
+  looksKey = key;
   const kinds = ["colour", "position", "beam"];
   $("#pal-kinds").replaceChildren(...kinds.map((kind) => h("div.pal-row",
     h("div.pal-head", kind, h("button.btn.small.ghost", {
@@ -612,7 +669,7 @@ function showTab(name) {
   renderHeader();
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
-  if (name === "looks") renderLooks();
+  if (name === "looks") renderLooks(true);
   if (name === "tools") renderTools();
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
@@ -678,6 +735,7 @@ export function initProgrammer() {
 
   const refresh = () => {
     renderHeader();
+    renderProgIn();
     renderIntensity();
     if (tab === "colour") renderColour();
     if (tab === "fx") renderRunning();

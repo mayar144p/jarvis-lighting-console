@@ -8826,6 +8826,15 @@ def test_motion() -> None:
             check("'cues & aims too' holds everything on the floor",
                   plo - 0.01 <= pf <= phi + 0.01 and tlo - 0.01 <= tf <= thi + 0.01, str((pf, tf, fl[1])))
             e.act("floor_safe", everything=False)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            e.act("run_fx", name="circle", params={"size": 20})
+            r = e.act("clear_attrs", group="position")
+            row = e.programmer.get(1) or {}
+            check("the programmer bar's x clears one kind only (position gone, level kept, movement stopped)",
+                  r.get("ok") and "pan" not in row and "tilt" not in row and "dimmer" in row
+                  and not any(f.get("lib") == "circle" for f in e.fx), str((r, row)))
+            check("...and an unknown group is refused", not e.act("clear_attrs", group="smell").get("ok"), "")
             check("...and it's off by default (cues aimed elsewhere don't change on update)",
                   eng.Engine.__init__ and not e.floor_lock, "")
         finally:
@@ -8872,6 +8881,10 @@ def test_motion() -> None:
             e.shutdown()
     js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("tidy: an 'In the programmer' bar, FX tab without movements, keyed Stop / Record",
+          '"clear_attrs"' in pj and "MOVE_FX.has(fx.name)" in pj and "runningKey" in pj and "looksKey" in pj
+          and 'id="prog-in"' in html and 'data-tab="tools"' in html and ">Setup<" in html, "")
     check("the Move tab has a laser safe zone", "Laser safe zone" in js and '"laser_size", "max"' in js, "")
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))

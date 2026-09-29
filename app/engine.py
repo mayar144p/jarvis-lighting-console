@@ -556,7 +556,7 @@ def _new_playback(n: int) -> dict:
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
     "add_heads", "auto_patch", "blackout", "clear_heads",
-    "clear_programmer",
+    "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset",
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
@@ -5276,6 +5276,44 @@ class Engine:
         return {"heads": len(touched), "cleared": touched,
                 "summary": "cleared " + ", ".join(
                     f"{t['head']} ({len(t['roles'])})" for t in touched)}
+
+    # the "In the programmer" bar's groups (anything else is "other")
+    ATTR_GROUPS = {
+        "intensity": HTP_ROLES | {"shutter", "strobe"},
+        "colour": COLOUR_ROLES | {"wheel", "macro"},
+        "position": frozenset({"pan", "tilt", "speed"}),
+        "beam": BEAM_ROLES - {"shutter", "strobe"},
+    }
+
+    @classmethod
+    def attr_group(cls, role: str) -> str:
+        base = role[:-5] if role.endswith("_fine") else role
+        return next((g for g, rs in cls.ATTR_GROUPS.items() if base in rs), "other")
+
+    def _a_clear_attrs(self, group="colour", heads=None, **_):
+        """Drop ONE kind of value from the programmer - just the colour, just
+        the position... - keeping the rest (the bar's x per group).  Clearing
+        position also stops the movement effects."""
+        g = str(group or "").lower()
+        if g not in (*self.ATTR_GROUPS, "other"):
+            raise ValueError(f"not an attribute group: {group}")
+        wanted = {int(x) for x in heads} if heads else set(self.programmer)
+        n = 0
+        for no in list(self.programmer):
+            if no not in wanted:
+                continue
+            row = self.programmer[no]
+            for role in [r for r in row if self.attr_group(r) == g]:
+                row.pop(role)
+                n += 1
+            if not row:
+                self.programmer.pop(no)
+        fx_n = 0
+        if g == "position":
+            keep = [f for f in self.fx if f.get("lib") not in motion_mod.KINDS]
+            fx_n = len(self.fx) - len(keep)
+            self.fx = keep
+        return {"cleared": n, "fx": fx_n, "summary": f"{g} cleared ({n} values)"}
 
     def _a_clear_programmer(self, **_):
         self._prog_fade = None
