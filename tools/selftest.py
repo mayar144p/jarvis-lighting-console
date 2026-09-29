@@ -2960,8 +2960,11 @@ def test_channels(tmp: Path) -> None:
               by_role["pan"]["label"] == "Pan", by_role["pan"]["label"])
 
         # -- an un-driven channel reads zero, and that is not a bug -----
+        quiet = next(r for r in ("gobo", "prism", "gobo_rot", "focus") if r in by_role)
         check("an untouched channel reports 0 rather than blank",
-              by_role["red"]["value"] == 0, str(by_role["red"]))
+              by_role[quiet]["value"] == 0, str(by_role[quiet]))
+        check("an LED head with a dimmer shows white when nothing sets its colour",
+              by_role["red"]["value"] == 255 and not by_role["red"]["programmed"], str(by_role["red"]))
 
         # -- the whole selection at once ---------------------------------
         e.act("select_heads", heads=[1, 2, 3, 4])
@@ -8866,9 +8869,27 @@ def test_light_test() -> None:
     import tempfile
     import zipfile
     from app import engine as eng
-    from app import console_ai, fixtures
+    from app import console_ai, fixlib, fixtures
     from app.engine_support import channel_role
 
+    # an LED head at Full with no colour set is white, not dark (Wave 360)
+    with tempfile.TemporaryDirectory() as wd:
+        wdb = Path(wd) / "w.db"
+        fixtures.store_parsed(wdb, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "qlc")
+        w = eng.Engine(db_path=wdb, dry_run=True, show_dir=Path(wd) / "s")
+        try:
+            w.act("add_heads", query="Intimidator Wave 360", mode="33 ch.", qty=1, universe=1, address=211)
+            w.act("select_all")
+            w.act("set_intensity", level=100)
+            buf = w.build_frames()[1]
+            check("Full on an untouched LED head lights it white (RGB full, white LED left off)",
+                  list(buf[220:224]) == [255, 255, 255, 0] and buf[240] == 255, str(list(buf[220:224])))
+            w.act("set_attribute", attribute="green", value=200)
+            buf = w.build_frames()[1]
+            check("setting any colour drops the default white entirely",
+                  list(buf[220:224]) == [0, 200, 0, 0], str(list(buf[220:224])))
+        finally:
+            w.shutdown()
     check("GDTF 'Gobo1Pos' is the gobo's index, not a second gobo wheel",
           channel_role("Gobo1Pos") == "gobo_rot" and channel_role("Gobo1") == "gobo", "")
     with tempfile.TemporaryDirectory() as td:

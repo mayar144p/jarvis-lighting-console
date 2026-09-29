@@ -147,8 +147,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # brightness, and a shutter left at 0 is CLOSED on many movers (a
     # Chauvet Intimidator), which is "it moves but gives no light".
     if rest:
+        mix = rest.get("_mix")
+        if mix and not any(r in resolved for r in COLOUR_ROLES):
+            for r in mix:                      # an untouched LED head: white
+                resolved[r] = 255
         for role, value in rest.items():
-            resolved.setdefault(role, int(value))
+            if role != "_mix":
+                resolved.setdefault(role, int(value))
     # A BEAM BAR'S DIODES follow the laser's output: which beams is
     # programmable (the look, in cues), but every beam is dark unless the
     # FX layer says the laser is on (armed + its own button).  On, with no
