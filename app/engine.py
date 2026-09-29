@@ -565,7 +565,7 @@ ACTIONS = (
     "add_heads", "auto_patch", "blackout", "clear_heads",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
-    "record_preset", "include_preset", "delete_preset",
+    "record_preset", "include_preset", "delete_preset", "rename_preset",
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
     "cue_info", "set_attr_range", "remap_heads",
     "follow_set", "group_create", "group_delete", "import_scan",
@@ -3204,7 +3204,7 @@ class Engine:
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
-        "include_palette", "record_preset", "include_preset", "delete_preset",
+        "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
         "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
@@ -6152,25 +6152,52 @@ class Engine:
                                if skipped else ""))}
 
     # --- presets ----------------------------------------------------------
-    def _a_record_preset(self, name="", preset=None, **_):
-        """Store the SELECTION's whole programmer as a named look.
+    LOOK_PARTS = ("intensity", "colour", "position", "beam", "other", "fx")
 
-        A palette is one attribute family; a preset is a complete look -
-        colour and beam and position and level together - which is what
-        you actually build with, and which the app could not express at
-        all.  Re-recording an existing number overwrites it, so a look can
-        be revised in place.
-        """
-        heads = self._require_selection()
-        attrs: dict[str, int] = {}
+    def _look_hexes(self, heads: list[dict], values_of) -> list[str]:
+        """Up to three colours a look shows, for its tile."""
+        out: list[str] = []
         for h in heads:
-            for role in (h.get("map") or []):
-                attrs[role] = attrs.get(role, 0) + 1
+            v = values_of(h) or {}
+            hexc = None
+            if any(r in v for r in ("red", "green", "blue")):
+                hexc = "#%02x%02x%02x" % tuple(max(0, min(255, int(v.get(c, 0)))) for c in ("red", "green", "blue"))
+            elif "wheel" in v:
+                for slot in (self.head_ranges(h).get("wheel") or {}).get("slots") or []:
+                    if slot["from"] <= int(v["wheel"]) <= slot["to"] and slot.get("hex"):
+                        hexc = slot["hex"]
+                        break
+            if hexc and hexc not in out:
+                out.append(hexc)
+            if len(out) >= 3:
+                break
+        return out
+
+    def _a_record_preset(self, name="", preset=None, include=None, **_):
+        """Save a LOOK: the selection's programmer (or every light the
+        programmer holds, with nothing selected) under a name - colour,
+        position, beam, level and the effects running on those lights,
+        or just the parts in `include`.  One tap on it brings the whole
+        thing back.  Re-recording an existing number overwrites it."""
+        parts = set(self.LOOK_PARTS if not include else
+                    [str(x).lower() for x in (include if isinstance(include, (list, tuple)) else [include])])
+        bad = parts - set(self.LOOK_PARTS)
+        if bad:
+            raise ValueError(f"include is any of {', '.join(self.LOOK_PARTS)}")
+        if self.selected:
+            heads = self._require_selection()
+        else:
+            nums = {n for n, row in self.programmer.items() if row} | \
+                {n for f in self.fx if f.get("lib") for n in f.get("heads") or []}
+            heads = [h for h in self.patch if h["head_no"] in nums]
+            if not heads:
+                raise ValueError("programmer is empty - set something first")
+        nums = {h["head_no"] for h in heads}
         values: dict[str, object] = {}
         used: list[int] = []
         for h in heads:
             row = {r: v for r, v in (self.programmer.get(h["head_no"]) or {}).items()
-                   if r in PRESET_ROLES}
+                   if r in PRESET_ROLES and self.attr_group(r) in parts}
             if not row:
                 continue
             used.append(h["head_no"])
@@ -6178,7 +6205,13 @@ class Engine:
                 votes = values.setdefault(role, {})
                 votes.setdefault(repr(value), 0)
                 votes[repr(value)] += 1
-        if not values:
+        fx = []
+        if "fx" in parts:
+            for f in self.fx:
+                if f.get("lib") and nums & set(f.get("heads") or []) and len(fx) < 6:
+                    fx.append({"name": f["lib"], "params": dict(f.get("params") or {})})
+                    used.extend(n for n in f["heads"] if n in nums and n not in used)
+        if not values and not fx:
             raise ValueError("programmer is empty - set something first")
         collapsed: dict[str, object] = {}
         for role, tally in values.items():
@@ -6187,44 +6220,83 @@ class Engine:
                     max(tally.items(), key=lambda kv: kv[1])[0])
             except (TypeError, ValueError):
                 continue
-        n = int(preset) if preset else len(self.presets) + 1
-        label = str(name).strip() or f"Preset {n}"
+        n = int(preset) if preset else max([p["n"] for p in self.presets] or [0]) + 1
+        label = str(name).strip()[:32] or f"Look {n}"
+        groups = sorted({self.attr_group(r) for r in collapsed})
+        tags = [{"intensity": "Level", "colour": "Colour", "position": "Position", "beam": "Beam",
+                 "other": "Other"}[g] for g in groups]
+        tags += [fxlib_mod.FX[f["name"]]["label"] for f in fx]
         entry = {"n": n, "name": label, "values": collapsed,
-                 "heads": len(used)}
+                 "heads": len(used), "head_list": sorted(set(used)), "fx": fx,
+                 "hexes": self._look_hexes([h for h in heads if h["head_no"] in used],
+                                           lambda h: self.programmer.get(h["head_no"])),
+                 "tags": tags}
         for i, old in enumerate(self.presets):
             if old["n"] == n:
                 self.presets[i] = entry
                 break
         else:
             self.presets.append(entry)
-        return {"n": n, "name": label, "heads": len(used),
+        return {"n": n, "name": label, "heads": len(used), "fx": len(fx),
                 "roles": sorted(collapsed),
-                "summary": f"recorded preset {label} "
-                           f"({len(used)} head(s), {len(collapsed)} attribute(s))"}
+                "summary": f"saved look {label} ({len(used)} light(s)"
+                           + (f", {len(fx)} effect(s)" if fx else "") + ")"}
 
     def _a_include_preset(self, n=None, preset=None, **_):
+        """Play a look: on the selection, or - with nothing selected - on the
+        lights it was saved from.  Its effects start too, taking over from
+        effects of the same kind already on those lights."""
         ref = n if n is not None else preset
         entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
             raise ValueError(f"no preset {ref!r}")
-        heads = self._require_selection()
+        if self.selected:
+            heads = self._require_selection()
+        else:
+            want = set(entry.get("head_list") or [])
+            heads = [h for h in self.patch if h["head_no"] in want]
+            if not heads:
+                raise ValueError(f"select the lights for {entry['name']} first")
         applied, skipped = 0, []
         for h in heads:
             row = {r: v for r, v in (entry.get("values") or {}).items()
                    if r in (h.get("map") or [])}
             if not row:
-                skipped.append(h["head_no"])
                 continue
             self.programmer.setdefault(h["head_no"], {}).update(row)
             applied += 1
-        if not applied:
+        nums = sorted(h["head_no"] for h in heads)
+        started = 0
+        for item in entry.get("fx") or []:
+            group = (fxlib_mod.FX.get(item["name"]) or {}).get("group")
+            self.fx = [f for f in self.fx if not (f.get("lib") and set(f.get("heads") or []) & set(nums)
+                                                  and (fxlib_mod.FX.get(f["lib"]) or {}).get("group") == group)]
+            try:
+                self._a_run_fx_named(item["name"], item.get("params") or {}, None, nums, None)
+                started += 1
+            except ValueError:
+                pass
+        for h in heads:
+            if not any(r in (h.get("map") or []) for r in (entry.get("values") or {})):
+                skipped.append(h["head_no"])
+        if not applied and not started:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s)")
-        return {"n": entry["n"], "name": entry["name"], "heads": applied,
-                "skipped": skipped,
-                "summary": f"applied preset {entry['name']} to {applied} head(s)"
-                           + (f"; {len(skipped)} had no matching channel"
-                              if skipped else "")}
+        return {"n": entry["n"], "name": entry["name"], "heads": applied or len(nums),
+                "skipped": skipped, "fx": started,
+                "summary": f"look {entry['name']} on {applied or len(nums)} light(s)"
+                           + (f" + {started} effect(s)" if started else "")
+                           + (f"; {len(skipped)} had no matching channel" if skipped and applied else "")}
+
+    def _a_rename_preset(self, n=None, preset=None, name="", **_):
+        entry = self._by_number_or_name(self.presets, n if n is not None else preset)
+        if entry is None:
+            raise ValueError(f"no look {n or preset!r}")
+        new = str(name or "").strip()[:32]
+        if not new:
+            raise ValueError("a look needs a name")
+        entry["name"] = new
+        return {"n": entry["n"], "summary": f"renamed to {new}"}
 
     def _a_delete_preset(self, n=None, preset=None, **_):
         num = int(n if n is not None else preset or 0)

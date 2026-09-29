@@ -7514,6 +7514,7 @@ def _standalone_suites():
     ("buttons as customisable as possible", test_custom_buttons),
     ("ARM for the whole set; lasers stay on", test_arm_for_set),
     ("My moves: named movements, not cues", test_my_moves),
+    ("Looks: named, one tap brings it all back", test_looks),
     )
 
 
@@ -8996,6 +8997,70 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_looks() -> None:
+    """A look is saved under a name with its colours, positions and the
+    effects running (a movement too), and one tap brings all of it back -
+    on the selection, or with nothing selected on the lights it came from.
+    Parts can be left out; it can be renamed, updated, made a button."""
+    print("Looks (named; values + effects; one tap; parts; rename; button)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "l.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=70)
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle", params={"arc": 180, "direction": -1})
+            r = e.act("record_preset", name="Opening sweep")
+            look = e.presets[-1]
+            check("a look saves colours, level and the running movement",
+                  r.get("ok") and look["fx"] and look["fx"][0]["name"] == "circle"
+                  and look["fx"][0]["params"]["arc"] == 180 and "wheel" in look["values"]
+                  and look["head_list"] == [1, 2], str(look)[:300])
+            check("...with a colour preview and tags for its tile",
+                  look.get("hexes") and "Colour" in look.get("tags", []) and "Circle" in look.get("tags", []),
+                  str((look.get("hexes"), look.get("tags"))))
+            e.act("clear_programmer")
+            e.act("clear_selection")
+            r = e.act("include_preset", preset="Opening sweep")
+            check("one tap with nothing selected plays it on its own lights - values AND the movement",
+                  r.get("ok") and e.programmer.get(1, {}).get("dimmer") == 70
+                  and [f["lib"] for f in e.fx] == ["circle"] and e.fx[0]["heads"] == [1, 2], str(r))
+            e.act("include_preset", preset="Opening sweep")
+            check("...playing it again doesn't stack a second movement", len(e.fx) == 1, str(len(e.fx)))
+            e.act("select_heads", heads=[3, 4])
+            e.act("clear_programmer")
+            e.act("include_preset", preset="Opening sweep")
+            check("...on a selection it plays on those lights", e.fx and e.fx[-1]["heads"] == [3, 4]
+                  and e.programmer.get(3, {}).get("dimmer") == 70, str(e.fx))
+            e.act("set_intensity", level=40)
+            r = e.act("record_preset", name="Only colour", include=["colour"])
+            check("a look can leave parts out (just the colour)",
+                  r.get("ok") and set(e.presets[-1]["values"]) <= {"wheel", "red", "green", "blue", "white", "macro"}
+                  and not e.presets[-1]["fx"], str(e.presets[-1]))
+            check("...an unknown part is refused", not e.act("record_preset", name="x", include=["smell"]).get("ok"), "")
+            e.act("rename_preset", preset="Only colour", name="Red")
+            check("rename a look", any(p["name"] == "Red" for p in e.presets), "")
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "preset", "preset": look["n"], "label": "Opening"})
+            e.act("stop_fx")
+            e.act("clear_selection")
+            e.act("quick_press", id="q1-1")
+            check("a button plays a look in one tap", [f["lib"] for f in e.fx] == ["circle"], str(e.fx))
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Looks tab shows named look tiles with Save look",
+          "+ Save look" in html and 'id="preset-list"' in html and "lookTile" in js and '"rename_preset"' in js, "")
 
 
 def test_my_moves() -> None:

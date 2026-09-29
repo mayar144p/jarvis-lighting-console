@@ -964,3 +964,18 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .mv-play small { font-size: 11px; color: var(--muted); }
 .mv-more { width: 36px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
 .mv-more:hover { color: var(--text); }
+/* Looks: named, one tap plays colours + positions + effects */
+.looks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.looks-head h3 { margin: 0; }
+.looks-head h3 small { display: block; font-weight: 400; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+.look-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.look { display: flex; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-2, #151b24); }
+.look:hover { border-color: var(--accent); }
+.look-play { flex: 1; min-width: 0; padding: 0 0 8px; background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.look-sw { display: flex; height: 34px; margin-bottom: 4px; }
+.look-sw i { flex: 1; }
+.look-sw i.none { background: repeating-linear-gradient(45deg, #1b2230 0 6px, #151b24 6px 12px); }
+.look-play b { padding: 0 10px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-play small { padding: 0 10px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-more { width: 32px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
+.look-more:hover { color: var(--text); }

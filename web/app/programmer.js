@@ -2,7 +2,7 @@
 import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox } from "./ui.js";
+import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 
@@ -632,14 +632,73 @@ function renderLooks(force = false) {
   const strip = $(".palette-strip[data-kind=position]");
   strip.replaceChildren(...(pals.position || []).map((p) => palButton("position", p)));
   const presets = (state.snap && state.snap.presets) || [];
-  $("#preset-list").replaceChildren(...(presets.length ? presets.map((p) => h("button.pal-item", {
-    title: `${p.heads} heads · click to apply, right-click to delete`,
-    onclick: () => run("include_preset", { preset: p.n }),
-    oncontextmenu: async (e) => {
-      e.preventDefault();
-      if (await confirmBox("Delete preset", `Delete preset “${p.name}”?`, { ok: "Delete", danger: true })) run("delete_preset", { preset: p.n });
-    },
-  }, p.name)) : [h("span.muted.small", "none yet")]));
+  $("#preset-list").replaceChildren(...(presets.length ? presets.map(lookTile)
+    : [h("p.muted.small", "No looks yet. Set colours, positions or a movement on some lights, then + Save look.")]));
+}
+
+// A look's tile: its colours, name and what it holds; tap plays it.
+function lookTile(p) {
+  const hexes = p.hexes && p.hexes.length ? p.hexes : [];
+  const more = h("button.look-more", { "aria-label": `${p.name} options`, title: "Update, rename, make a button, delete",
+    onclick: (e) => {
+      e.stopPropagation();
+      menu(e.currentTarget, [
+        { label: "Update to what is on the lights now", run: () => run("record_preset", { name: p.name, preset: p.n }, { toast: true }) },
+        { label: "Rename…", run: async () => {
+          const name = await promptBox("Rename look", "Name", p.name, { ok: "Rename" });
+          if (name) run("rename_preset", { preset: p.n, name });
+        } },
+        { label: "Make a button for it", run: () => makeLookButton(p) },
+        "-",
+        { label: "Delete", danger: true, run: async () => {
+          if (await confirmBox("Delete look", `Delete “${p.name}”?`, { ok: "Delete", danger: true })) run("delete_preset", { preset: p.n });
+        } },
+      ]);
+    } }, "⋯");
+  return h("div.look",
+    h("button.look-play", { title: `Play ${p.name}${hasSel() ? " on the selected lights" : ` on its ${p.heads} light(s)`}`,
+      onclick: () => run("include_preset", { preset: p.n }, { toast: true }) },
+    h("div.look-sw", ...(hexes.length ? hexes.map((c) => h("i", { style: { background: c } })) : [h("i.none")])),
+    h("b", p.name),
+    h("small", [...(p.tags || []), `${p.heads} light${p.heads === 1 ? "" : "s"}`].join(" · "))),
+    more);
+}
+
+async function makeLookButton(p) {
+  const q = (state.snap && state.snap.quick) || { buttons: [], slots: 24 };
+  const taken = new Set(q.buttons.filter((b) => b.page === 1).map((b) => b.slot));
+  let slot = 1;
+  while (taken.has(slot) && slot <= (q.slots || 24)) slot++;
+  if (slot > (q.slots || 24)) { toast("Buttons page 1 is full", "bad"); return; }
+  const r = await run("quick_set", { page: 1, slot, button: { kind: "preset", label: p.name.slice(0, 24), preset: p.n,
+    tint: (p.hexes && p.hexes[0]) || undefined } });
+  if (r.ok) toast(`Button 1.${slot}: ${p.name}`, "ok");
+}
+
+async function saveLook() {
+  const parts = [["intensity", "Level"], ["colour", "Colour"], ["position", "Position"], ["beam", "Beam"],
+    ["fx", "Effects & movements"], ["other", "Other"]];
+  const on = new Set(parts.map(([k]) => k));
+  const name = h("input", { type: "text", placeholder: "e.g. Opening sweep", maxlength: 32, style: { width: "100%" } });
+  const chipsBox = h("div.chip-row");
+  const draw = () => chipsBox.replaceChildren(...parts.map(([k, label]) => h("button.chip" + (on.has(k) ? ".on" : ""), {
+    type: "button", onclick: () => { if (on.has(k)) on.delete(k); else on.add(k); draw(); } }, label)));
+  draw();
+  const go = async () => {
+    const r = await run("record_preset", { name: name.value.trim(), include: [...on] }, { toast: true });
+    if (r.ok) close();
+  };
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  const close = modal({
+    title: "Save look",
+    body: h("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } },
+      h("label.field", h("span", "Name"), name),
+      h("div", h("span.muted.small", "Include:"), chipsBox),
+      h("p.muted.small", { style: { margin: 0 } }, hasSel()
+        ? "Saves what the selected lights are doing. Playing it later with nothing selected uses these same lights."
+        : "Saves every light the programmer holds and the effects running on them.")),
+    foot: [h("button.btn", { onclick: () => close() }, "Cancel"), h("button.btn.primary", { onclick: go }, "Save look")],
+  });
 }
 
 function palButton(kind, p) {
@@ -754,10 +813,7 @@ export function initProgrammer() {
     attribute: $("#lfo-attr").value, kind: $("#lfo-wave").value,
     speed: +$("#lfo-speed").value || 1, spread: +$("#lfo-spread").value || 0, heads: sel(),
   }, { toast: true }));
-  $("#preset-rec").addEventListener("click", async () => {
-    const name = await promptBox("Record preset", "Name for this look", "", { ok: "Record" });
-    if (name) run("record_preset", { name }, { toast: true });
-  });
+  $("#preset-rec").addEventListener("click", saveLook);
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   let saved = "intensity";
   try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }

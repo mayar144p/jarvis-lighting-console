@@ -143,9 +143,13 @@ Found in the audit (same features kept, all of it re-laid out):
   truncated dropdowns; make "which lights" (selection, all, a group, a
   type) and "what it does" (flash, dim, colour, flash red / blue, strobe,
   movement, a saved look) tap choices.
-- **Looks:** palettes / presets / 24 unnamed quick slots.  One named
-  "Looks" library (colours + positions + movements + effects), one tap to
-  recall, search and tags, "also make a button".
+- **Looks (DONE):** the Looks tab is named look tiles (colour preview,
+  tags); "+ Save look" with a name and what to include (level, colour,
+  position, beam, effects & movements, other); a look keeps its effects
+  and its lights, so one tap with nothing selected brings the whole thing
+  back (on a selection, it plays there); update / rename / make a button /
+  delete from ⋯.  Palettes sit under a fold.  Still open: search and
+  "any light of these types" for another venue.
 - **Effects:** ARM switches itself off after 10 min (`_a_fx_arm` default)
   and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
   "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
