@@ -69,10 +69,11 @@ CREATE TABLE IF NOT EXISTS modes (
 # values and colour/gobo wheel slots; 4: strobe ranges and the direction
 # of the pan/tilt speed channel, for the visualiser; 5: special effects and
 # lasers get their own safe roles; 6: a beam bar's diodes get a beam each,
-# and channels no longer collapse onto one role).  On start, fixtures imported by an
+# and channels no longer collapse onto one role; 7: a light's unnamed
+# channels get their own controls - aux1..aux24).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 6
+PARSER_VERSION = 7
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
@@ -401,6 +402,7 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "fx_kind": d.get("fx_kind"), "max_s": d.get("max_s"),
             "caps": d.get("caps") or None,
             "slots": d.get("slots") or None,
+            "name": d.get("name") or None,
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
         }
@@ -805,7 +807,7 @@ def store_parsed(db_path: Path, parsed: list[dict], source: str) -> dict:
     its format: a fog machine's output or a laser's power is never stored
     as a light's dimmer."""
     from . import fixlib
-    parsed = [fixlib.apply_fx(item) for item in parsed]
+    parsed = [fixlib.apply_aux(fixlib.apply_fx(item)) for item in parsed]
     results = []
     with db(db_path) as conn:
         for item in parsed:

@@ -371,7 +371,7 @@ function renderAttributes() {
     if (page.page === "intensity") continue;
     const attrs = (page.attrs || []).filter((a) => !["red", "green", "blue", "pan", "tilt", "pan_fine", "tilt_fine"].includes(a.role));
     if (!attrs.length) continue;
-    rows.push(h("div.attr-page", page.page));
+    rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
     for (const a of attrs) rows.push(attrRow(a));
   }
   box.replaceChildren(...(rows.length ? rows : [h("p.muted.small", "These fixtures have no beam attributes.")]));
@@ -404,7 +404,7 @@ function attrRow(a) {
     val === null ? "–" : a.mixed ? "mix" : show(val));
   const clear = () => run("set_attr_range", { attribute: a.role, clear: true }).then(loadAttributes);
   const row = h("div.attr" + (a.set ? ".set" : "") + (a.partial ? ".partial" : ""),
-    h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role }, attrName(a.role)),
+    h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role }, a.name || attrName(a.role)),
     bar, out,
     h("button.clr", { title: "Remove from the programmer", onclick: clear }, "×"));
   let cur = val ?? 0;

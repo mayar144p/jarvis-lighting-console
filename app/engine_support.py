@@ -36,6 +36,9 @@ ROLES = ("dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber",
          # channels an effect has (a laser's strobe, a machine's timer...)
          *(f"laser_beam{i}" for i in range(1, 17)),
          *(f"fx_param{i}" for i in range(2, 7)),
+         # a light's channels no named role fits (a Wave 360's continuous
+         # pan rotation, its built-in tilt programs...): each its own control
+         *(f"aux{i}" for i in range(1, 25)),
          "unused", "raw")
 
 # Brightness roles: they combine by HTP (highest wins) and are 0-100.
@@ -57,6 +60,8 @@ LASER_ROLES = frozenset({"laser_on", "laser_pattern", "laser_size",
                          "laser_rot", "laser_x", "laser_y", "laser_speed",
                          "laser_colour"}) | LASER_BEAM_ROLES
 FX_ROLES = SFX_ROLES | LASER_ROLES
+AUX_ROLES = frozenset(f"aux{i}" for i in range(1, 25))
+_AUX_RE = re.compile(r"^aux\s*(\d{1,2})\b")
 
 # Beam-shape roles, used for the beam palette and the 3D body shapes.
 BEAM_ROLES = frozenset({"shutter", "strobe", "gobo", "gobo_rot", "prism",
@@ -145,6 +150,9 @@ def channel_role(label) -> str:
         return "unused"                     # label was only a width marker
     if s in _LABEL_ROLE:
         return _LABEL_ROLE[s]
+    aux = _AUX_RE.match(s)                  # "Aux 3 · Continuous Pan Rotating"
+    if aux and 1 <= int(aux.group(1)) <= 24:
+        return f"aux{int(aux.group(1))}"
     zone = _ZONE_RE.search(s)
     if zone:
         kind = zone.group(2).lower()
