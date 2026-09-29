@@ -2441,6 +2441,32 @@ class Engine:
         return {"attribute": role, "value": raw, "heads": len(heads),
                 "summary": f"{role}={raw} on {len(heads)} head(s)"}
 
+    def _wheel_slots(self, head: dict, role: str = "wheel") -> list[dict]:
+        """The wheel's real slots from the fixture file, or []."""
+        if not hasattr(self, "_range_cache"):     # a bare engine (tools)
+            return []
+        return list((self.head_ranges(head).get(role) or {}).get("slots") or [])
+
+    def _nearest_slot(self, head: dict, hexcol: str) -> dict | None:
+        """The colour-wheel slot closest to `hexcol`: a wheel can't mix,
+        so the picker lands on the nearest colour the fixture really has."""
+        slots = [s for s in self._wheel_slots(head) if s.get("hex")]
+        if not slots:
+            return None
+        r, g, b = _parse_hex(hexcol)
+
+        def norm(rgb):
+            top = max(rgb) or 1
+            return [c / top for c in rgb]
+        want = norm((r, g, b))
+        best, best_d = None, 1e9
+        for s in slots:
+            have = norm(_parse_hex(s["hex"]))
+            d = sum((a - c) ** 2 for a, c in zip(want, have))
+            if d < best_d:
+                best, best_d = s, d
+        return best
+
     def _colour_values(self, head: dict, hexcol: str) -> dict:
         r, g, b = _parse_hex(hexcol)
         roles = set(head["map"])
@@ -2456,6 +2482,10 @@ class Engine:
                     out[role] = v
         elif "white" in roles:
             out["white"] = int(0.299 * r + 0.587 * g + 0.114 * b)
+        elif "wheel" in roles:
+            slot = self._nearest_slot(head, hexcol)
+            if slot is not None:
+                out["wheel"] = int(slot["value"])
         return out
 
     def _white_values(self, head: dict) -> dict:
@@ -2475,6 +2505,10 @@ class Engine:
             for role in ("wheel", "gobo"):
                 if role in roles:
                     out[role] = 0
+                    for s in self._wheel_slots(head, role):
+                        if s["name"].strip().lower() in ("open", "white", "clear"):
+                            out[role] = int(s["value"])
+                            break
         return out
 
     def _a_set_colour(self, hex=None, colour=None, value=None, **_):
@@ -5971,6 +6005,13 @@ class Engine:
         if role in ("shutter", "strobe") and heads:
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
+        if role in ("wheel", "gobo", "gobo2") and heads:
+            # the fixture's real slots, when every head is the same model
+            kinds = {(h.get("manufacturer"), h.get("model"), h.get("mode")) for h in heads}
+            if len(kinds) == 1:
+                slots = self._wheel_slots(heads[0], role)
+                if slots:
+                    entry["slots"] = slots
         # The smallest domain on the capable heads, so a mixed selection
         # is not offered a number only some of them can take.
         full = min([attr_domain(h, role) for h in heads] or [255])

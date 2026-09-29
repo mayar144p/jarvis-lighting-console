@@ -169,11 +169,33 @@ function renderWheel() {
   $("#kelvin-row").hidden = !cap.mixing && hasSel();
   const box = $("#wheel-steps");
   box.hidden = !cap.roles.has("wheel");
-  if (box.hidden || box.childElementCount) return;
-  box.replaceChildren(h("span.muted.small", "Colour wheel:"), ...Array.from({ length: 8 }, (_, i) => h("button.chip", {
-    title: `DMX ${i * 16 + 8} - slot positions vary by fixture`,
-    onclick: () => run("set_attribute", { attribute: "wheel", value: i * 16 + 8 }),
-  }, i === 0 ? "Open" : String(i))));
+  if (box.hidden) return;
+  const wheel = attrEntry("wheel");
+  const key = wheel && wheel.slots ? JSON.stringify(wheel.slots) : "guess";
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren(h("span.muted.small", wheel && wheel.slots ? "Colour wheel:" : "Colour wheel (guessed positions):"), ...slotButtons("wheel", wheel));
+}
+
+// The attribute entry for one role, from the last /attributes read.
+function attrEntry(role) {
+  const attrs = attrState && attrState.pages ? attrState.pages.flatMap((p) => p.attrs || []) : [];
+  return attrs.find((a) => a.role === role) || null;
+}
+
+// Buttons for a wheel: the fixture's own named slots (each sent to the
+// middle of its range) when the file lists them, otherwise 8 even guesses.
+function slotButtons(role, entry) {
+  const send = (value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
+  if (entry && entry.slots && entry.slots.length) {
+    return entry.slots.map((s) => h("button.chip.slot", {
+      title: `${s.name} - DMX ${s.from}-${s.to}`, onclick: send(s.value),
+    }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name));
+  }
+  return Array.from({ length: 8 }, (_, i) => h("button.chip", {
+    title: `DMX ${i * 16 + 8} - this fixture's file lists no slots, so these are guesses`,
+    onclick: send(i * 16 + 8),
+  }, i === 0 ? "Open" : String(i)));
 }
 
 // ------------------------------------------------------------ position
@@ -275,10 +297,7 @@ function renderBeamQuick() {
   }
   for (const role of ["gobo", "gobo2"]) {
     if (!by[role]) continue;
-    rows.push(h("div.chip-row", h("span.k", role === "gobo" ? "Gobo" : "Gobo 2"),
-      ...Array.from({ length: 8 }, (_, i) => h("button.chip", {
-        title: `DMX ${i * 16 + 8} - slot positions vary by fixture`, onclick: set(role, i * 16 + 8),
-      }, i === 0 ? "Open" : String(i)))));
+    rows.push(h("div.chip-row", h("span.k", role === "gobo" ? "Gobo" : "Gobo 2"), ...slotButtons(role, by[role])));
   }
   if (by.prism) rows.push(h("div.chip-row", h("span.k", "Prism"), h("button.chip", { onclick: set("prism", 0) }, "Out"), h("button.chip", { onclick: set("prism", 128) }, "In")));
   for (const [role, label, a, b] of [["zoom", "Zoom", "Narrow", "Wide"], ["iris", "Iris", "Open", "Closed"], ["frost", "Frost", "Off", "Full"], ["focus", "Focus", "Near", "Far"]]) {
@@ -292,6 +311,7 @@ function renderBeamQuick() {
 
 function renderAttributes() {
   renderBeamQuick();
+  renderWheel();
   const box = $("#attr-list");
   if (!attrState || !attrState.pages) {
     box.replaceChildren(h("p.muted.small", "Select fixtures to see every attribute they have."));
@@ -475,7 +495,7 @@ function showTab(name) {
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
-  if (name === "beam") loadAttributes();
+  if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
   if (name === "looks") renderLooks();
   if (name === "tools") renderTools();
@@ -546,13 +566,13 @@ export function initProgrammer() {
   };
   on("snapshot", () => {
     refresh();
-    if (tab === "beam") loadAttributes();
+    if (tab === "beam" || tab === "colour") loadAttributes();
     if (tab === "tools") renderTools();
   });
   on("lite", refresh);
   on("selection", () => {
     refresh();
-    if (tab === "beam") loadAttributes();
+    if (tab === "beam" || tab === "colour") loadAttributes();
     if (tab === "fx") loadFx();
     if (tab === "tools") renderTools();
     if (tab === "position") renderPad();

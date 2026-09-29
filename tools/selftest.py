@@ -7483,6 +7483,8 @@ def _standalone_suites():
     ("auto show", test_autoshow),
     ("dmx target", test_dmx_target),
     ("shutter rests open", test_shutter_rest),
+    ("colour wheel slots", test_wheel_slots),
+    ("update on launch", test_auto_update),
     )
 
 
@@ -8225,6 +8227,176 @@ def test_shutter_rest() -> None:
                   bool(ent) and ent[0].get("open") == 4, str(ent[:1]))
         finally:
             e.shutdown()
+
+
+def test_wheel_slots() -> None:
+    """Wheel buttons land on the fixture's real slots, from its file."""
+    print("colour wheel slots (GDTF wheels, nearest colour)")
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import fixtures
+
+    xml = (
+        '<GDTF DataVersion="1.1"><FixtureType Name="WheelSpot" Manufacturer="TestCo">'
+        '<Wheels><Wheel Name="Color1">'
+        '<Slot Name="Open" Color="0.3127,0.3290,100"/>'
+        '<Slot Name="Red" Color="0.64,0.33,21"/>'
+        '<Slot Name="Green" Color="0.30,0.60,71"/>'
+        '<Slot Name="Blue" Color="0.15,0.06,7"/>'
+        '</Wheel></Wheels>'
+        '<DMXModes><DMXMode Name="3ch"><DMXChannels>'
+        '<DMXChannel Offset="1"><LogicalChannel Attribute="Pan">'
+        '<ChannelFunction Name="Pan" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+        '<DMXChannel Offset="2"><LogicalChannel Attribute="Color1">'
+        '<ChannelFunction Name="Color1" Attribute="Color1" Wheel="Color1" DMXFrom="0/1">'
+        '<ChannelSet Name="Open" DMXFrom="0/1" WheelSlotIndex="1"/>'
+        '<ChannelSet Name="Red" DMXFrom="6/1" WheelSlotIndex="2"/>'
+        '<ChannelSet Name="Green" DMXFrom="12/1" WheelSlotIndex="3"/>'
+        '<ChannelSet Name="Blue" DMXFrom="18/1" WheelSlotIndex="4"/>'
+        '</ChannelFunction>'
+        '<ChannelFunction Name="Spin" Attribute="Color1WheelSpin" DMXFrom="128/1"/>'
+        '</LogicalChannel></DMXChannel>'
+        '<DMXChannel Offset="3"><LogicalChannel Attribute="Dimmer">'
+        '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+        '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>')
+    check("CIE xyY slot colours become RGB",
+          fixtures._xyY_hex("0.64,0.33,21") == "#ff0000"
+          and fixtures._xyY_hex("0.3127,0.3290,100") in ("#ffffff", "#fffffe", "#feffff"),
+          str((fixtures._xyY_hex("0.64,0.33,21"), fixtures._xyY_hex("0.3127,0.3290,100"))))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.seed_generics(db)
+        path = tmp / "w.gdtf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("description.xml", xml)
+        slots = fixtures.parse_gdtf(path)[0]["modes"][0]["detail"][1]["slots"]
+        check("every slot is read with its name and DMX range",
+              [(x["name"], x["from"], x["to"]) for x in slots]
+              == [("Open", 0, 5), ("Red", 6, 11), ("Green", 12, 17), ("Blue", 18, 127)],
+              str(slots))
+        check("each button goes to the middle of its slot",
+              [x["value"] for x in slots[:3]] == [2, 8, 14], str([x["value"] for x in slots]))
+        fixtures.import_file(db, path)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="WheelSpot", mode="3ch", qty=1, universe=1, address=1)
+            check("the colour channel is a wheel", "wheel" in e.patch[0]["map"], str(e.patch[0]["map"]))
+            e.act("select_all")
+            ent = [a for p in e.attribute_state()["pages"] for a in p["attrs"] if a["role"] == "wheel"]
+            check("the programmer is given the real slots",
+                  bool(ent) and [x["name"] for x in ent[0].get("slots") or []] == ["Open", "Red", "Green", "Blue"],
+                  str(ent[:1]))
+            r = e.act("set_colour", hex="#00ff20")
+            check("the picker lands on the nearest real colour (green)",
+                  r.get("ok") and e.build_frames()[1][1] == 14, str((r, e.build_frames()[1][1])))
+            e.act("set_colour", hex="#ff1000")
+            check("and red for red", e.build_frames()[1][1] == 8, str(e.build_frames()[1][1]))
+            e.act("set_colour", hex="#ffffff")
+            check("white is the open slot", e.build_frames()[1][1] == 2, str(e.build_frames()[1][1]))
+        finally:
+            e.shutdown()
+
+
+def test_auto_update() -> None:
+    """run.bat/run.sh fast-forward to the latest version, and never
+    anything riskier; old fixture imports are re-read after an update."""
+    print("update on launch (fast-forward only, fixture refresh)")
+    import os as _os
+    import shutil
+    import subprocess as sp
+    import tempfile
+    import zipfile
+    sys.path.insert(0, str(ROOT / "tools"))
+    import update as upd
+    from app import fixtures
+
+    if shutil.which("git") is None:
+        check("git is available for the update test", True, "skipped: no git")
+        return
+    env = dict(_os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(cwd, *args):
+        return sp.run(["git", *args], cwd=cwd, env=env, capture_output=True,
+                      text=True, check=True).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        origin, dev, user = tmp / "origin.git", tmp / "dev", tmp / "user"
+        git(tmp, "init", "-q", "--bare", "-b", "main", str(origin))
+        git(tmp, "clone", "-q", str(origin), str(dev))
+        (dev / "app.txt").write_text("v1\n")
+        git(dev, "add", "."); git(dev, "commit", "-qm", "v1"); git(dev, "push", "-q", "origin", "HEAD:main")
+        git(tmp, "clone", "-q", str(origin), str(user))
+        check("an up-to-date desk says so", upd.update(user) == "up to date", upd.update(user))
+        (dev / "app.txt").write_text("v2\n")
+        git(dev, "commit", "-qam", "v2 shutter fix"); git(dev, "push", "-q", "origin", "HEAD:main")
+        (user / "data").mkdir()
+        (user / "data" / "show.json").write_text("mine")          # untracked data
+        msg = upd.update(user)
+        check("a new version is pulled on launch",
+              msg.startswith("updated") and (user / "app.txt").read_text() == "v2\n", msg)
+        check("it lists what changed", "v2 shutter fix" in msg, msg)
+        check("the operator's own data is untouched",
+              (user / "data" / "show.json").read_text() == "mine", "")
+        (dev / "app.txt").write_text("v3\n")
+        git(dev, "commit", "-qam", "v3"); git(dev, "push", "-q", "origin", "HEAD:main")
+        (user / "app.txt").write_text("my edit\n")
+        msg = upd.update(user)
+        check("local edits to Jarvis's files are never overwritten",
+              "local edits" in msg and (user / "app.txt").read_text() == "my edit\n", msg)
+        git(user, "checkout", "-q", "--", "app.txt")
+        (user / "mine.txt").write_text("x")
+        git(user, "add", "mine.txt"); git(user, "commit", "-qm", "my own change")
+        msg = upd.update(user)
+        check("a desk with its own commits is not merged into",
+              "of your own" in msg, msg)
+        git(user, "reset", "-q", "--hard", "HEAD~1")
+        (user / ".env").write_text("AUTO_UPDATE=false\n")
+        check("AUTO_UPDATE=false turns it off", "off" in upd.update(user), upd.update(user))
+        (user / ".env").unlink()
+        git(user, "remote", "set-url", "origin", str(tmp / "nowhere.git"))
+        msg = upd.update(user)
+        check("offline at a venue: it starts the version it has",
+              "no connection" in msg and (user / "app.txt").read_text() == "v2\n", msg)
+        check("a folder that is not a git checkout is skipped",
+              "not a git checkout" in upd.update(tmp), upd.update(tmp))
+        real = upd.update
+
+        def boom(*_a):
+            raise RuntimeError("disk on fire")
+        upd.update = boom
+        try:
+            check("even a crashing update never stops the desk starting", upd.main() == 0, "")
+        finally:
+            upd.update = real
+
+        # -- an update re-reads old fixture imports ---------------------------
+        db = tmp / "f.db"
+        cache = tmp / "cache"
+        cache.mkdir()
+        gd = cache / "rev1.gdtf"
+        with zipfile.ZipFile(gd, "w") as zf:
+            zf.writestr("description.xml", (
+                '<GDTF DataVersion="1.1"><FixtureType Name="OldSpot" Manufacturer="T">'
+                '<DMXModes><DMXMode Name="2ch"><DMXChannels>'
+                '<DMXChannel Offset="1" Highlight="4/1"><LogicalChannel Attribute="Shutter1">'
+                '<ChannelFunction Name="Shutter" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+        fixtures.import_file(db, gd)
+        with fixtures.db(db) as conn:          # as an older importer left it
+            conn.execute("UPDATE modes SET detail = '[]'")
+        first = fixtures.refresh_imports(db, [cache])
+        check("fixtures from an older importer are re-read on start",
+              first["refreshed"] == 1
+              and fixtures.role_ranges(db, "T", "OldSpot", "2ch").get("shutter", {}).get("open_from") == 4,
+              str(first))
+        again = fixtures.refresh_imports(db, [cache])
+        check("and only once", again["refreshed"] == 0, str(again))
 
 
 def _raises(fn) -> bool:

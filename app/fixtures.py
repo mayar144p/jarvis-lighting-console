@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS modes (
 );
 """
 
+# Bump when parse_gdtf learns something new from a file (3: shutter open
+# values and colour/gobo wheel slots).  On start, fixtures imported by an
+# older parser are re-read from their .gdtf files (refresh_imports), so an
+# update reaches the lights you already have without downloading again.
+PARSER_VERSION = 3
+
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
 # needing a rebuild - the operator's library is real work, not a cache.
@@ -357,6 +363,7 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "bits": d.get("bits") or 8,
             "wheel": d.get("wheel") or "",
             "open_from": d.get("open_from"),
+            "slots": d.get("slots") or None,
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
         }
@@ -435,6 +442,88 @@ def _gdtf_open_value(dmx_ch, logical) -> int | None:
     return None
 
 
+def _xyY_hex(text) -> str | None:
+    """A GDTF slot colour ("x,y,Y" in CIE 1931) as #rrggbb at full
+    brightness, or None."""
+    try:
+        x, y, _Y = (float(v) for v in str(text).split(","))
+    except (TypeError, ValueError):
+        return None
+    if y <= 0:
+        return None
+    X, Y, Z = x / y, 1.0, (1 - x - y) / y
+    rgb = [3.2406 * X - 1.5372 * Y - 0.4986 * Z,
+           -0.9689 * X + 1.8758 * Y + 0.0415 * Z,
+           0.0557 * X - 0.2040 * Y + 1.0570 * Z]
+    rgb = [max(0.0, c) for c in rgb]
+    top = max(rgb) or 1.0
+    out = []
+    for c in rgb:
+        c /= top
+        c = 12.92 * c if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
+        out.append(max(0, min(255, round(c * 255))))
+    return "#%02x%02x%02x" % tuple(out)
+
+
+def _gdtf_wheels(fixture_type) -> dict[str, list[dict]]:
+    """{wheel name: [{name, hex}] by slot index (1-based)}."""
+    wheels: dict[str, list[dict]] = {}
+    node = _child(fixture_type, "Wheels")
+    if node is None:
+        return wheels
+    for wheel in _children(node, "Wheel"):
+        slots = []
+        for slot in _children(wheel, "Slot"):
+            slots.append({"name": (slot.get("Name") or "").strip(),
+                          "hex": _xyY_hex(slot.get("Color"))})
+        wheels[wheel.get("Name") or ""] = slots
+    return wheels
+
+
+def _gdtf_slots(logical, wheels: dict) -> list[dict] | None:
+    """The slots a wheel channel can land on: [{name, value, from, to,
+    hex}], each value in the middle of its own range, so a button lands
+    on the colour and not on the split or the spin next to it."""
+    if logical is None:
+        return None
+    marks: list[int] = []
+    found: list[tuple[int, dict]] = []
+    for func in _children(logical, "ChannelFunction"):
+        f_from = _dmx_byte(func.get("DMXFrom"))
+        if f_from is not None:
+            marks.append(f_from)
+        wheel = wheels.get(func.get("Wheel") or "")
+        for cset in _children(func, "ChannelSet"):
+            start = _dmx_byte(cset.get("DMXFrom"))
+            if start is None:
+                start = f_from
+            if start is None:
+                continue
+            marks.append(start)
+            index = cset.get("WheelSlotIndex")
+            if wheel is None or not index or not str(index).strip().isdigit():
+                continue
+            i = int(index)
+            if not 1 <= i <= len(wheel):
+                continue
+            name = (cset.get("Name") or "").strip() or wheel[i - 1]["name"]
+            found.append((start, {"name": name or f"Slot {i}",
+                                  "hex": wheel[i - 1]["hex"], "slot": i}))
+    if not found:
+        return None
+    marks = sorted(set(marks))
+    out, seen = [], set()
+    for start, row in sorted(found, key=lambda t: t[0]):
+        later = [m for m in marks if m > start]
+        end = (later[0] - 1) if later else 255
+        key = (row["slot"], row["name"].lower())
+        if key in seen:
+            continue                        # the same slot again (spin ranges)
+        seen.add(key)
+        out.append({**row, "from": start, "to": end, "value": (start + end) // 2})
+    return out
+
+
 def parse_gdtf(path: Path) -> list[dict]:
     """Return [{'manufacturer','model','modes':[{name,channel_count,channels}]}]."""
     with zipfile.ZipFile(path) as zf:
@@ -470,6 +559,7 @@ def parse_gdtf(path: Path) -> list[dict]:
     if not model:
         model = path.stem
 
+    wheels = _gdtf_wheels(fixture_type)
     modes: list[dict] = []
     modes_node = _child(fixture_type, "DMXModes") or _child(root, "DMXModes")
     if modes_node is not None:
@@ -553,6 +643,7 @@ def parse_gdtf(path: Path) -> list[dict]:
                         "phys_from": phys_from, "phys_to": phys_to,
                         "wheel": wheel,
                         "open_from": _gdtf_open_value(dmx_ch, logical),
+                        "slots": _gdtf_slots(logical, wheels),
                     })
 
             channel_count = max((s + w - 1 for s, w, _ in entries), default=0)
@@ -648,6 +739,40 @@ def import_file(db_path: Path, path: Path) -> dict:
             results.append({"fixture_id": fid, "manufacturer": item["manufacturer"],
                             "model": item["model"], "modes": len(item["modes"])})
     return {"file": path.name, "imported": results}
+
+
+def refresh_imports(db_path: Path, folders) -> dict:
+    """Re-read installed GDTF fixtures when the parser has improved.
+
+    Each fixture remembers its source file name; the file is looked for
+    in `folders` (the GDTF Share cache, the inbox).  Patched heads keep
+    working because a re-import replaces modes by name.  Cheap when there
+    is nothing to do: one read of the stored version.
+    """
+    with db(db_path) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM meta WHERE key = 'parser_version'").fetchone()
+        have = int(row["value"]) if row and str(row["value"]).isdigit() else 0
+        if have >= PARSER_VERSION:
+            return {"refreshed": 0, "missing": 0, "errors": []}
+        sources = [r["source"] for r in conn.execute(
+            "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'")]
+    refreshed, missing, errors = 0, 0, []
+    for name in sources:
+        path = next((Path(f) / name for f in folders
+                     if f and (Path(f) / name).is_file()), None)
+        if path is None:
+            missing += 1
+            continue
+        try:
+            import_file(db_path, path)
+            refreshed += 1
+        except Exception as exc:          # noqa: BLE001 - one bad file
+            errors.append(f"{name}: {exc}")
+    with db(db_path) as conn:
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)",
+                     (str(PARSER_VERSION),))
+    return {"refreshed": refreshed, "missing": missing, "errors": errors}
 
 
 def list_modes(db_path: Path, fixture_id: int) -> list[dict]:

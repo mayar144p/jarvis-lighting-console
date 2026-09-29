@@ -887,6 +887,17 @@ def main() -> None:
     if config.FIXTURE_SEED_BUILTINS:
         fixtures.seed_generics(config.DB_PATH)
         profiles.install(config.DB_PATH)    # data-driven fixture definitions
+    # After an update: re-read installed GDTF files if the importer learned
+    # something new, so nobody has to download their fixtures again.
+    try:
+        done = fixtures.refresh_imports(config.DB_PATH,
+                                        [config.GDTF_SHARE_CACHE, config.INBOX])
+        if done["refreshed"]:
+            print(f"* fixtures: re-read {done['refreshed']} profile(s) with the new importer")
+        for err in done["errors"]:
+            print(f"* fixtures: {err}")
+    except Exception as exc:                # noqa: BLE001 - never block boot
+        print(f"* fixtures: refresh skipped ({exc})")
     engine_mod.ENGINE = engine_mod.Engine(
         db_path=config.DB_PATH, dry_run=config.CONSOLE_DRY_RUN,
         autosave_path=(config.DATA / "autosave.json")
