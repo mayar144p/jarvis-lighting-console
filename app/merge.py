@@ -17,7 +17,7 @@ benchmarked and unit-tested on its own, without constructing a console.
 """
 from __future__ import annotations
 
-from .engine_support import (HTP_ROLES, SLOTS, curve_pct as _curve_pct,
+from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS, curve_pct as _curve_pct,
                              is_fine_role, logical16 as _logical16,
                              split_16bit)
 
@@ -90,6 +90,17 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             if row and role in row:
                 resolved[role] = int(row[role])
                 break
+    # A fixture with no dimmer still has to obey BLACKOUT and the master:
+    # its shutter/strobe gate closes (0 is closed on every profile we
+    # know), and its colour channels act as a virtual dimmer.
+    if (blackout or master < 100) and not any(r in HTP_ROLES for r in head["map"]):
+        scale = 0 if blackout else master
+        for role in ("shutter", "strobe"):
+            if role in head["map"] and scale == 0:
+                resolved[role] = 0
+        for role in COLOUR_ROLES:
+            if role in resolved:
+                resolved[role] = resolved[role] * scale // 100
     # PER-FIXTURE LIMITS AND ORIENTATION, applied HERE and not on write.
     #
     # This is the frame boundary, which is the only place where "what the

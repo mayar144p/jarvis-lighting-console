@@ -112,14 +112,19 @@
           <button data-view="right" title="House right (3)">Right</button>
           <button data-view="back" title="Back (4)">Back</button>
           <button data-view="top" title="Plan (5)">Plan</button>
+          <button data-view="overview" title="Whole room from above (6)">3D</button>
         </div>
         <button class="hud-btn" id="frame-btn" title="Frame the selection (F)">Frame</button>
       </div>
       <div class="stage-hud top-right">
+        <label class="hud-slider" title="House lights: see the room with the rig dark">
+          <span>House</span><input type="range" id="house" min="0" max="1" step="0.01" value="0.35">
+        </label>
         <label class="hud-slider" title="Haze in the room">
           <span>Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
         </label>
-        <button class="hud-btn toggle on" id="people-btn" title="Performers on stage, for scale">People</button>
+        <button class="hud-btn toggle on" id="people-btn" title="The crowd and performers">Crowd</button>
+        <button class="hud-btn toggle" id="zones-btn" title="Show the room's zones (dance floor, bar...)">Zones</button>
         <button class="hud-btn icon" id="fullscreen-btn" title="Stage full screen (Esc to leave)">
           <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
         </button>

@@ -81,22 +81,34 @@ function render() {
   paintLamps();
 }
 
+// The row lamps follow the light feed (30 times a second), so only a
+// lamp whose colour or level actually changed is written: restyling every
+// row every frame is what made the list the busiest thing on the page.
+let lampQueued = false;
 function paintLamps() {
-  const looks = state.looks || {};
-  for (const tr of $("#fx-rows").children) {
-    const lk = looks[tr.dataset.head];
-    const lamp = tr.querySelector(".lamp");
-    if (!lamp) continue;
-    if (lk && lk.a > 0) {
-      lamp.style.background = lk.hex;
-      lamp.style.opacity = String(0.35 + lk.a * 0.65);
-      lamp.style.boxShadow = `0 0 ${4 + lk.a * 8}px ${lk.hex}`;
-    } else {
-      lamp.style.background = "";
-      lamp.style.opacity = "";
-      lamp.style.boxShadow = "";
+  if (lampQueued) return;
+  lampQueued = true;
+  requestAnimationFrame(() => {
+    lampQueued = false;
+    const looks = state.looks || {};
+    for (const tr of $("#fx-rows").children) {
+      const lamp = tr.querySelector(".lamp");
+      if (!lamp) continue;
+      const lk = looks[tr.dataset.head];
+      const key = lk && lk.a > 0 ? lk.hex + (Math.round(lk.a * 20) / 20) : "";
+      if (lamp.dataset.k === key) continue;
+      lamp.dataset.k = key;
+      if (key) {
+        lamp.style.background = lk.hex;
+        lamp.style.opacity = String(0.35 + lk.a * 0.65);
+        lamp.style.boxShadow = `0 0 ${Math.round(4 + lk.a * 8)}px ${lk.hex}`;
+      } else {
+        lamp.style.background = "";
+        lamp.style.opacity = "";
+        lamp.style.boxShadow = "";
+      }
     }
-  }
+  });
 }
 
 function renderGroups() {

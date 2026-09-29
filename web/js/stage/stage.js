@@ -15,7 +15,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
-import { buildVenue, hitDistance, roomFor } from "./venue.js";
+import { buildVenue, hitDistance, cutaway } from "./venue.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap,
 } from "./materials.js";
@@ -67,13 +67,20 @@ export class Stage {
     this.opts = opts;
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
-    this.options = { haze: 0.6, bloom: true, people: true, labels: true };
+    this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
+      quality: "auto", zones: false, dance: true };
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
     this.venueData = null;
-    this.room = { w: 10, d: 8, h: 7 };
+    this.room = { w: 10, d: 8, h: 7, x0: -5, x1: 5, z0: -1, z1: 7 };
+    this.stageFront = 6;
     this.planes = [];
+    this.boxes = [];
+    this.built = null;
+    this.q = { cap: 1.5, ratio: 1.5, ema: 16, slowSince: 0, fastSince: 0, last: 0 };
+    this.lastRender = 0;
+    this.tags = new Map();
     this._c = new THREE.Color();
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
@@ -91,7 +98,9 @@ export class Stage {
       return;
     }
     this.renderer = renderer;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    this.q.cap = Math.min(window.devicePixelRatio || 1, 1.5);
+    this.q.ratio = this.q.cap;
+    renderer.setPixelRatio(this.q.ratio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
@@ -108,10 +117,12 @@ export class Stage {
     this.scene = scene;
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.add(new THREE.HemisphereLight(0x8fa3c7, 0x0b0b10, 0.22));
+    this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
+    scene.add(this.hemi);
     const key = new THREE.DirectionalLight(0xdfe7ff, 0.35);
     key.position.set(4, 9, 12);
     scene.add(key);
+    this.key = key;
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 400);
     this.camera.position.set(0, 4, 18);
@@ -124,6 +135,7 @@ export class Stage {
     this.controls.maxDistance = 120;
     this.controls.addEventListener("change", () => {
       this.dirty = true;
+      this.camMoved = true;
       if (this.opts.onCamera) this.opts.onCamera(this.cameraState());
     });
 
@@ -148,6 +160,7 @@ export class Stage {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
+    this._applyHouse();
     this.buildVenue(null, []);
     this.view("front", true);
     this._loop = this._loop.bind(this);
@@ -159,9 +172,11 @@ export class Stage {
     if (!this.renderer) return;
     const w = Math.max(1, this.el.clientWidth);
     const h = Math.max(1, this.el.clientHeight);
+    this.renderer.setPixelRatio(this.q.ratio);
     this.renderer.setSize(w, h, false);
+    this.composer.setPixelRatio(this.q.ratio);
     this.composer.setSize(w, h);
-    this.bloom.setSize(w, h);
+    this.bloom.setSize(Math.ceil(w * this.q.ratio / 2), Math.ceil(h * this.q.ratio / 2));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.dirty = true;
@@ -169,20 +184,27 @@ export class Stage {
 
   // ----------------------------------------------------------------- venue
   buildVenue(venue, fixtures) {
-    const room = roomFor(venue || {}, fixtures);
-    const sig = JSON.stringify([room, (venue && venue.surfaces) || [],
-      fixtures.filter((f) => f.kind === "truss" || f.y >= 2)
-        .map((f) => [Math.round(f.x * 2), Math.round(f.y * 2), Math.round(f.z * 2)])]);
+    const auto = !venue || venue.auto || !(venue.room && venue.room.width);
+    const vsig = JSON.stringify(auto ? null : { ...venue, cameras: null });
+    const fsig = auto ? JSON.stringify(fixtures.map((f) => [Math.round(f.x * 2), Math.round(f.y * 2),
+      Math.round(f.z * 2), f.stance || f.kind])) : "";
+    const sig = vsig + "|" + fsig;
     if (sig === this.venueSig) return;
     this.venueSig = sig;
     this.venueGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     this.venueGroup.clear();
-    const built = buildVenue(venue || {}, fixtures, { people: this.options.people });
+    const built = buildVenue(auto ? null : venue, fixtures, {
+      people: this.options.people, zones: this.options.zones });
+    this.built = built;
     this.venueGroup.add(built.group);
-    this.room = built.room;
+    this.room = { ...built.room };
+    this.stageFront = built.stageFront;
     this.planes = built.planes;
+    this.boxes = built.boxes;
     this.people = built.people;
+    cutaway(built, this.camera.position);
     this.dirty = true;
+    if (this.opts.onVenueBuilt) this.opts.onVenueBuilt(built);
   }
 
   // ------------------------------------------------------------------- rig
@@ -284,7 +306,7 @@ export class Stage {
   /** Hang or stand the model, the right way up, where the patch says. */
   _place(inst) {
     const f = inst.data;
-    const hung = (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
+    const hung = f.stance ? f.stance === "hang" : (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
     inst.hung = hung;
     inst.holder.position.set(+f.x || 0, +f.y || 0, +f.z || 0);
     const flip = inst.sk.native === "hung" ? !hung : hung;
@@ -293,37 +315,45 @@ export class Stage {
     inst.staticAim = null;
   }
 
-  /** Where a light with no pan/tilt points: a sensible stage position. */
+  /** Where a light with no pan/tilt points: its stored aim, or a sensible spot. */
   _aimStatic(inst) {
     const body = inst.data.body || {};
-    const moving = body.moving;
-    if (moving && !inst.sk.gdtf) return;
-    const { w, d, h } = this.room;
+    if (body.moving) return;                         // driven by the feed
     const f = inst.data;
+    if (Array.isArray(f.rot) && f.rot.length === 2) {
+      const yaw = f.rot[0] * DEG, pitch = f.rot[1] * DEG;
+      this._setStaticDir(inst, new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch),
+        Math.cos(yaw) * Math.cos(pitch)));
+      return;
+    }
+    const { h } = this.room;
+    const front = this.stageFront;
     const p = new THREE.Vector3(+f.x || 0, +f.y || 0, +f.z || 0);
     let target;
     if (body.type === "tube") {
       target = new THREE.Vector3(p.x * 1.2, p.y, p.z + 6);
     } else if (body.type === "followspot") {
-      target = new THREE.Vector3(0, 1.4, d * 0.5);
+      target = new THREE.Vector3(0, 1.4, front * 0.6);
+    } else if (body.type === "blinder") {
+      target = new THREE.Vector3(p.x, 1.6, p.z + 8);
     } else if (!inst.hung) {
-      target = (p.z < 1.2 || body.type === "cyc")
-        ? new THREE.Vector3(p.x, h * 0.72, -0.6)
-        : new THREE.Vector3(p.x * 0.9, h, p.z + 0.4);
-    } else if (p.z > d * 0.75) {
-      target = new THREE.Vector3(p.x * 0.6, 1.3, d * 0.45);
+      // floor lights: uplight the back wall from the rear of the stage,
+      // otherwise lift into the room
+      target = (p.z < front - 1.2 || body.type === "cyc")
+        ? new THREE.Vector3(p.x * 1.1, h * 0.8, p.z - 2.5)
+        : new THREE.Vector3(p.x * 0.9, h * 0.75, p.z + 3);
+    } else if (p.z > front + 0.5) {
+      target = new THREE.Vector3(p.x * 0.8, 0, p.z + 2.5);
     } else {
-      target = new THREE.Vector3(p.x * 0.9, 0, Math.min(d - 0.4, p.z + 1.4));
+      target = new THREE.Vector3(p.x * 0.9, 0, Math.max(p.z + 1.2, front * 0.6));
     }
-    if (moving) return;               // GDTF movers: driven by the feed
-    const dir = target.sub(p).normalize();
-    this._setStaticDir(inst, dir);
-    void w;
+    this._setStaticDir(inst, target.sub(p).normalize());
   }
 
   _setStaticDir(inst, worldDir) {
     const sk = inst.sk;
     if (sk.gdtf) return;
+    inst.holder.updateMatrixWorld(true);
     const local = worldDir.clone().applyQuaternion(
       sk.root.getWorldQuaternion(this._q).invert());
     const yaw = Math.atan2(local.x, local.z);
@@ -396,6 +426,7 @@ export class Stage {
       inst.to = lookFrom(row, this._c);
       inst.t0 = now;
       inst.dur = Math.max(0, holdMs);
+      inst.settled = false;
     }
     this.dirty = true;
     return true;
@@ -407,8 +438,28 @@ export class Stage {
   }
 
   setOptions(o) {
+    const before = { ...this.options };
     Object.assign(this.options, o || {});
     if (this.people) this.people.visible = !!this.options.people;
+    if (this.built && this.built.zones) this.built.zones.visible = !!this.options.zones;
+    if (before.house !== this.options.house) this._applyHouse();
+    if (before.quality !== this.options.quality) {
+      const dpr = window.devicePixelRatio || 1;
+      this.q.cap = this.options.quality === "high" ? Math.min(dpr, 2)
+        : this.options.quality === "fast" ? Math.min(dpr, 0.75) : Math.min(dpr, 1.5);
+      this.q.ratio = this.q.cap;
+      this.resize();
+    }
+    this.dirty = true;
+  }
+
+  /** House lights: how much of the room you see with the rig dark. */
+  _applyHouse() {
+    const k = Math.max(0, Math.min(1, this.options.house));
+    LIGHTS.uAmbient.value.setRGB(0.5, 0.53, 0.6).multiplyScalar(0.03 + Math.pow(k, 1.1) * 1.9);
+    this.hemi.intensity = 0.12 + k * 1.5;
+    this.key.intensity = 0.15 + k * 1.1;
+    this.scene.background.setRGB(0.012, 0.014, 0.02).lerp(new THREE.Color(0.05, 0.056, 0.07), k);
     this.dirty = true;
   }
 
@@ -426,17 +477,21 @@ export class Stage {
   }
 
   view(name, instant = false) {
-    const { w, d } = this.room;
-    const t = new THREE.Vector3(0, 2.7, d * 0.45);
+    const R = this.room;
+    const front = this.stageFront;
+    const t = new THREE.Vector3(0, Math.min(2.4, R.h * 0.4), Math.max(R.z0 + 1, front * 0.55));
+    const house = front + Math.max(6, (R.z1 - front) * 0.72);
     const at = {
-      front: [0, 4.4, d + 11.5],
-      left: [-(w / 2 + 9), 4.2, d * 0.5],
-      right: [w / 2 + 9, 4.2, d * 0.5],
-      back: [0, 5.5, -9],
-      top: [0, 24, d * 0.45 + 0.01],
-      house: [0, 6.5, d + 16],
-    }[name] || [0, 3.4, d + 10.5];
-    this._flyTo(new THREE.Vector3(...at), t, instant);
+      front: [0, Math.max(3.2, R.h * 0.8), R.z1 + Math.max(3, R.d * 0.18)],
+      left: [R.x0 - 5, Math.min(R.h, 5), (R.z0 + R.z1) / 2],
+      right: [R.x1 + 5, Math.min(R.h, 5), (R.z0 + R.z1) / 2],
+      back: [0, Math.min(R.h * 0.7, 5), R.z0 - 5],
+      top: [0, Math.max(R.w, R.d) * 1.25 + R.h, (R.z0 + R.z1) / 2 + 0.01],
+      house: [0, Math.min(R.h - 0.5, 3.4), R.z1 - 1],
+      overview: [R.x1 + R.w * 0.35, R.h + Math.max(R.w, R.d) * 0.45, R.z1 + R.d * 0.35],
+    }[name];
+    if (name === "top" || name === "overview") t.set(0, 0, (R.z0 + R.z1) / 2);
+    this._flyTo(new THREE.Vector3(...(at || [0, 4, house])), t, instant);
   }
 
   _flyTo(pos, target, instant) {
@@ -559,7 +614,7 @@ export class Stage {
 
   _wireKeys() {
     const dom = this.renderer.domElement;
-    const views = { 1: "front", 2: "left", 3: "right", 4: "back", 5: "top" };
+    const views = { 1: "front", 2: "left", 3: "right", 4: "back", 5: "top", 6: "overview" };
     dom.addEventListener("keydown", (ev) => {
       if (views[ev.key]) { this.view(views[ev.key]); ev.preventDefault(); ev.stopPropagation(); }
       else if (ev.key === "0") { this.view("front"); ev.preventDefault(); ev.stopPropagation(); }
@@ -576,21 +631,23 @@ export class Stage {
     this._raf = requestAnimationFrame(this._loop);
     if (document.hidden) return;
     const now = performance.now();
-    const time = (now - this.t0) / 1000;
-    LIGHTS.uTime.value = time;
-    let animating = false;
+    let motion = false;
 
     if (this.fly) {
       const t = smooth((now - this.fly.start) / this.fly.dur);
       this.camera.position.lerpVectors(this.fly.p0, this.fly.p1, t);
       this.controls.target.lerpVectors(this.fly.t0, this.fly.t1, t);
       if (t >= 1) this.fly = null;
-      animating = true;
+      motion = true;
+      this.camMoved = true;
     }
-    if (this.controls.update()) animating = true;
+    if (this.controls.update()) motion = true;
+    if (this.camMoved) {
+      cutaway(this.built, this.camera.position);
+      this.camMoved = false;
+      this.dirty = true;
+    }
 
-    let lit = 0;
-    const lights = [];
     for (const inst of this.fixtures.values()) {
       // entrance: a light that was just patched drops into place
       const age = (now - inst.born) / 420;
@@ -598,26 +655,71 @@ export class Stage {
         const k = 1 - Math.pow(1 - age, 3);
         inst.sk.root.scale.setScalar(0.2 + 0.8 * k);
         inst.sk.root.position.y = (inst.hung ? -1 : 1) * 0.5 * (1 - k);
-        animating = true;
+        motion = true;
       } else if (inst.sk.root.scale.x !== 1) {
         inst.sk.root.scale.setScalar(1);
         inst.sk.root.position.y = 0;
       }
+      if (inst.dur > 0 && now - inst.t0 < inst.dur) motion = true;
+    }
+    // A lit rig still animates (strobe, haze drift, the crowd), but 30
+    // frames a second is plenty for that; a moving one gets every frame.
+    if (!this.dirty && !motion && !(this.anyLit && now - this.lastRender > 32)) return;
+
+    const time = (now - this.t0) / 1000;
+    LIGHTS.uTime.value = time;
+    LIGHTS.uBounce.value = this.options.dance ? 1 : 0;
+    const lights = [];
+    let lit = 0;
+    for (const inst of this.fixtures.values()) {
       const t = inst.dur > 0 ? Math.min(1, (now - inst.t0) / inst.dur) : 1;
-      if (t < 1) animating = true;
-      inst.cur = mixLook(inst.from, inst.to, smooth(t));
+      if (t < 1 || !inst.settled) {
+        inst.cur = mixLook(inst.from, inst.to, smooth(t));
+        inst.settled = t >= 1;
+      }
       if (this._drive(inst, time, lights)) lit++;
     }
+    this.anyLit = lit > 0;
     this.rigGroup.updateMatrixWorld(true);
     for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
     this._uploadLights(lights);
-    if (lit) animating = true;
 
-    if (this.dirty || animating) {
-      this.dirty = false;
-      this.bloom.enabled = !!this.options.bloom;
-      this.composer.render();
-      this._drawLabels();
+    this.dirty = false;
+    this._adapt(now);
+    this.lastRender = now;
+    this.bloom.enabled = !!this.options.bloom && this.q.ratio > 0.55;
+    this.composer.render();
+    this._drawLabels();
+    if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** Auto quality: shed resolution when frames run long, win it back later. */
+  _adapt(now) {
+    const q = this.q;
+    const dt = now - (q.last || now);
+    q.last = now;
+    if (this.options.quality !== "auto" || dt <= 0 || dt > 200) return;
+    q.ema = q.ema * 0.9 + dt * 0.1;
+    if (q.ema > 28) {
+      q.fastSince = 0;
+      if (!q.slowSince) q.slowSince = now;
+      else if (now - q.slowSince > 1200 && q.ratio > 0.5) {
+        q.ratio = Math.max(0.5, +(q.ratio * 0.8).toFixed(2));
+        q.slowSince = 0;
+        q.ema = 18;
+        this.resize();
+      }
+    } else if (q.ema < 17) {
+      q.slowSince = 0;
+      if (!q.fastSince) q.fastSince = now;
+      else if (now - q.fastSince > 6000 && q.ratio < q.cap) {
+        q.ratio = Math.min(q.cap, +(q.ratio * 1.15).toFixed(2));
+        q.fastSince = 0;
+        this.resize();
+      }
+    } else {
+      q.slowSince = 0;
+      q.fastSince = 0;
     }
   }
 
@@ -677,7 +779,7 @@ export class Stage {
       }
       em.node.getWorldPosition(b.origin);
       b.dir.copy(em.dir).transformDirection(em.node.matrixWorld).normalize();
-      const len = hitDistance(this.planes, b.origin, b.dir, 26);
+      const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40);
       const half = (angle / 2) * DEG;
       const r0 = Math.max(0.01, em.radius);
       const r1 = r0 + Math.tan(half) * len;
@@ -714,13 +816,41 @@ export class Stage {
     }
   }
 
+  /**
+   * Hand the brightest beams to the surface shader.  Beams that start
+   * close together and point the same way (the cells of one bar, a row of
+   * PARs on one look) are merged into one light first: the floor looks the
+   * same, and every pixel of the room loops over far fewer lights.
+   */
   _uploadLights(lights) {
-    lights.sort((x, y) => y.weight - x.weight);
-    const n = Math.min(MAX_LIGHTS, lights.length);
+    const groups = new Map();
+    for (const l of lights) {
+      const key = Math.round(l.pos.x / 1.2) + "," + Math.round(l.pos.y / 1.2) + "," + Math.round(l.pos.z / 1.2)
+        + "," + Math.round(l.dir.x * 5) + "," + Math.round(l.dir.y * 5) + "," + Math.round(l.dir.z * 5)
+        + "," + l.gobo + "," + Math.round(l.cosO * 50);
+      const g = groups.get(key);
+      if (!g) {
+        groups.set(key, { pos: l.pos.clone().multiplyScalar(l.weight), dir: l.dir.clone().multiplyScalar(l.weight),
+          r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot, weight: l.weight });
+      } else {
+        g.pos.addScaledVector(l.pos, l.weight);
+        g.dir.addScaledVector(l.dir, l.weight);
+        g.r += l.r; g.g += l.g; g.b += l.b;
+        g.cosO = Math.min(g.cosO, l.cosO);
+        g.cosI = Math.min(g.cosI, l.cosI);
+        g.weight += l.weight;
+      }
+    }
+    const list = [...groups.values()].sort((x, y) => y.weight - x.weight);
+    const cap = this.options.quality === "fast" ? 10
+      : this.options.quality === "high" ? MAX_LIGHTS
+        : this.q.ratio < 0.75 ? 14 : 24;
+    const n = Math.min(cap, list.length);
     for (let i = 0; i < n; i++) {
-      const l = lights[i];
-      LIGHTS.uPos.value[i].copy(l.pos);
-      LIGHTS.uDir.value[i].copy(l.dir);
+      const l = list[i];
+      const w = l.weight || 1;
+      LIGHTS.uPos.value[i].copy(l.pos).multiplyScalar(1 / w);
+      LIGHTS.uDir.value[i].copy(l.dir).normalize();
       LIGHTS.uCol.value[i].set(l.r, l.g, l.b);
       LIGHTS.uCone.value[i].set(l.cosO, l.cosI, l.gobo, l.rot);
     }
@@ -728,28 +858,36 @@ export class Stage {
   }
 
   _drawLabels() {
-    if (!this.options.labels) { this.labels.replaceChildren(); return; }
-    const want = new Set(this.selected);
-    if (this.hover !== null && this.hover !== undefined) want.add(this.hover);
+    // rings mark a big selection; a cloud of tags would hide the rig
+    const want = new Set(this.options.labels && this.selected.size <= 12 ? this.selected : []);
+    if (this.options.labels && this.hover !== null && this.hover !== undefined) want.add(this.hover);
     const w = this.el.clientWidth, h = this.el.clientHeight;
-    const nodes = [];
+    for (const [head, tag] of this.tags) {
+      if (!want.has(head) || !this.fixtures.has(head)) { tag.remove(); this.tags.delete(head); }
+    }
+    const p = this._v2;
     for (const head of want) {
       const inst = this.fixtures.get(head);
       if (!inst) continue;
-      const p = inst.holder.position.clone();
+      p.copy(inst.holder.position);
       p.y += (inst.hung ? 0.25 : inst.sk.height + 0.12);
       p.project(this.camera);
-      if (p.z > 1) continue;
-      const tag = document.createElement("div");
-      tag.className = "stage-tag" + (this.selected.has(head) ? " sel" : "");
+      let tag = this.tags.get(head);
+      if (!tag) {
+        tag = document.createElement("div");
+        this.labels.appendChild(tag);
+        this.tags.set(head, tag);
+      }
       const d = inst.data;
       const brand = d.body && d.body.brand !== "generic" ? d.body.brand_name + " " : "";
-      tag.textContent = want.size > 4 ? `#${head}` : `#${head}  ${brand}${d.model || ""}`.trim();
-      tag.style.left = ((p.x + 1) / 2 * w) + "px";
-      tag.style.top = ((1 - p.y) / 2 * h) + "px";
-      nodes.push(tag);
+      const text = want.size > 4 ? `#${head}` : `#${head}  ${brand}${d.model || ""}`.trim();
+      const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "");
+      if (tag.textContent !== text) tag.textContent = text;
+      if (tag.className !== cls) tag.className = cls;
+      tag.style.display = p.z > 1 ? "none" : "";
+      tag.style.left = ((p.x + 1) / 2 * w).toFixed(1) + "px";
+      tag.style.top = ((1 - p.y) / 2 * h).toFixed(1) + "px";
     }
-    this.labels.replaceChildren(...nodes);
     for (const inst of this.fixtures.values()) {
       const on = this.selected.has(inst.head);
       if (on && !inst.ring) {

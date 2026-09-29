@@ -16,6 +16,7 @@
 // same.
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const FINISH = {
   gloss: { roughness: 0.28, metalness: 0.35 },
@@ -755,13 +756,50 @@ const BUILDERS = {
   generic,
 };
 
+/**
+ * Merge each group's plain child meshes per material: a moving head is a
+ * few draw calls instead of thirty.  Lenses (their colour is the light),
+ * instanced LED cells, transparent decals and anything with children stay
+ * as they are, and so do the pan/tilt groups the stage animates.
+ */
+function mergeStatic(sk) {
+  const lenses = new Set(sk.lenses);
+  const groups = [];
+  sk.root.traverse((o) => { if (o.children.length) groups.push(o); });
+  for (const g of groups) {
+    const byMat = new Map();
+    for (const c of g.children) {
+      if (!c.isMesh || c.isInstancedMesh || c.children.length) continue;
+      const m = c.material;
+      if (Array.isArray(m) || lenses.has(m) || m.transparent) continue;
+      const a = c.geometry.attributes;
+      if (!a.position || !a.normal || !a.uv) continue;
+      if (!byMat.has(m)) byMat.set(m, []);
+      byMat.get(m).push(c);
+    }
+    for (const [mat, list] of byMat) {
+      if (list.length < 2) continue;
+      const geos = list.map((c) => {
+        c.updateMatrix();
+        const src = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+        const out = new THREE.BufferGeometry();
+        for (const k of ["position", "normal", "uv"]) out.setAttribute(k, src.attributes[k]);
+        out.applyMatrix4(c.matrix);
+        return out;
+      });
+      const geo = mergeGeometries(geos, false);
+      if (!geo) continue;
+      for (const c of list) g.remove(c);
+      g.add(new THREE.Mesh(geo, mat));
+    }
+  }
+}
+
 /** Build the 3D model for one head from its physical description. */
 export function buildFixture(body, family = "") {
   const b = body || { type: "generic", style: { body: "#26282c", accent: "#9aa4b2", finish: "matte" }, cells: 1 };
   const make = BUILDERS[b.type] || BUILDERS.generic;
   const sk = make(b, family.toLowerCase());
-  sk.root.traverse((o) => {
-    if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; }
-  });
+  mergeStatic(sk);
   return sk;
 }

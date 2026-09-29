@@ -28,6 +28,7 @@ from app import config, fixtures, fixture_kind
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
+from app import venue as venue_mod
 from app import merge
 from app.artnet import ArtNetSender
 from app.sacn import SacnSender
@@ -117,7 +118,7 @@ UNDO_EXCLUDED = frozenset({
 # throw the first away.
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
-                        "export_patch"})
+                        "export_patch", "venue_info"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -554,6 +555,9 @@ ACTIONS = (
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_place", "set_position", "set_venue", "status", "stop_fx",
+    "venue_template", "venue_room", "venue_stage", "venue_add",
+    "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
+    "venue_camera", "venue_info", "attach_heads",
 )
 
 
@@ -579,9 +583,9 @@ class Engine:
         self.mode = "jarvis"
         self.show_dir = Path(show_dir or config.CONSOLE_SHOW_DIR)
         self._sender = sender
-        # The room the operator drew; empty means "size it around the
-        # patch" (see _a_set_venue and the visualiser).
-        self.venue: dict = {}
+        # The room the rig lives in (app/venue.py).  "auto" means nothing
+        # was drawn and the visualiser sizes a room around the patch.
+        self.venue: dict = venue_mod.empty()
 
         self.patch: list[dict] = []
         self.patch_rev = 0
@@ -700,7 +704,7 @@ class Engine:
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
         }
 
     def _restore_state(self, state: dict) -> None:
@@ -715,14 +719,14 @@ class Engine:
                          for k, v in (state.get("palettes") or {}).items()}
         self.presets = [dict(p) for p in (state.get("presets") or [])]
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
-        self.venue = state.get("venue")
+        self.venue = state.get("venue") or venue_mod.empty()
         self.mode = state.get("mode", self.mode)
         # Limits and orientation come back with the patch, so an undo
         # restores a fixture's rigging as well as its position.
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient"):
+            for key in ("limits", "orient", "mount", "rot", "stance"):
                 if key in got:
                     head[key] = got[key]
                 else:
@@ -1377,6 +1381,8 @@ class Engine:
             "kind": row.get("kind") or ("truss" if y >= 2.0 else "floor"),
             "role": row.get("role") or "generic",
             "curve": "linear",
+            **({"mount": dict(row["mount"])} if isinstance(row.get("mount"), dict) else {}),
+            **({"stance": row["stance"]} if row.get("stance") in ("hang", "stand") else {}),
             "map": list(row.get("map") or ["raw"] * channels),
         }
         head["mapped"] = bool(row.get("mapped", not any(
@@ -1430,10 +1436,8 @@ class Engine:
             # No position given: hang it where that kind of light goes,
             # beside the others of its kind, instead of on (0, 0, 0).
             kind_now = fixture_kind.describe(plan[0])["type"]
-            spots = fixture_kind.place(
-                kind_now, len(plan), self.patch,
-                float(self.venue.get("width_m") or 0) or 10.0,
-                float(self.venue.get("depth_m") or 0) or 8.0)
+            spots = fixture_kind.place_in_venue(
+                kind_now, len(plan), self.patch, self.venue)
             for row, spot in zip(plan, spots):
                 row.update(spot)
         added = self._apply_plan(plan)
@@ -1665,7 +1669,7 @@ class Engine:
                 # sheets from one rig, and calling both `patch.csv` is how
                 # the wrong one gets handed to a house tech.
                 first = self.patch[0] if self.patch else {}
-                stem = (str(self.venue.get("name") or "").strip()
+                stem = (str((self.venue or {}).get("name") or "").strip()
                         or self._csv_name(first))
                 target = target / (stem + ".csv")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -2559,15 +2563,18 @@ class Engine:
             return out
 
     def _a_set_place(self, head=None, heads=None, x=None, y=None, z=None,
-                     kind=None, **_):
-        """Move a head on the stage (metres, floor = 0, truss from 2 m up).
+                     kind=None, rig=None, t=None, stance=None, snap=False,
+                     rot=None, **_):
+        """Put a head somewhere: free-standing at x/y/z, or on a rig.
 
-        This is the 3D view's drag handler: the operator drags a light to
-        where it actually hangs and the patch follows, because "head 17 is
-        at U1.113" is not what a lighting tech works with.  `kind` is
-        derived from the height when not given, so dragging a light above
-        2 m turns it into a truss fixture (which changes how it is drawn
-        and where its beam starts).
+        `rig` + `t` mounts it (t = 0..1 along the rig; when t is missing
+        the point nearest x/y/z is used).  `rig=""` lets go of a rig.
+        `snap` mounts to the nearest rig within reach of the new position.
+        `stance` is "hang" (under the bar) or "stand" (upright).  `rot` is
+        [yaw, pitch] in degrees for a light with no pan/tilt, or null to
+        let the visualiser aim it.  Positions are clamped to the room (plus
+        a margin), because a drag far from the camera turns a small mouse
+        move into a large jump and a light must never be lost off-screen.
         """
         targets: list[int] = []
         if head is not None:
@@ -2575,57 +2582,91 @@ class Engine:
         targets.extend(int(h) for h in (heads or []))
         if not targets:
             raise ValueError("head is required")
-        # Stage bounds.  A drag in the 3D view is a ray/plane intersection,
-        # so a light far from the camera amplifies a small screen movement
-        # into a large world jump - without a clamp, nudging a head
-        # repeatedly walks it off to x=28 in an 18 m room and the operator
-        # has no way to see it again.  Clamp to the drawn venue when there
-        # is one (plus a margin, so a light can sit just off the edge),
-        # otherwise to a generous default stage.
-        vw = float(self.venue.get("width_m") or 0.0)
-        vd = float(self.venue.get("depth_m") or 0.0)
-        half_w = (vw / 2.0 + 4.0) if vw > 0 else 40.0
-        max_z = (vd + 4.0) if vd > 0 else 60.0
-        max_y = (float(self.venue.get("height_m") or 0.0) + 4.0) \
-            if float(self.venue.get("height_m") or 0.0) > 0 else 20.0
+        b = venue_mod.bounds(self.venue)
+        half_w = max(abs(b["x0"]), abs(b["x1"])) + 4.0
+        min_z, max_z = b["z0"] - 4.0, b["z1"] + 4.0
+        max_y = b["h"] + 4.0
+        if stance not in (None, "hang", "stand"):
+            raise ValueError("stance is hang or stand")
         clamped = False
         moved = []
         for n in targets:
             h = self._head(n)                   # raises if unpatched
-            before = (h["x"], h["y"], h["z"])
-            if x is not None:
-                h["x"] = float(x)
-            if y is not None:
-                h["y"] = float(y)
-            if z is not None:
-                h["z"] = float(z)
-            cx = max(-half_w, min(half_w, h["x"]))
-            cy = max(0.0, min(max_y, h["y"]))
-            cz = max(0.0, min(max_z, h["z"]))
-            if (cx, cy, cz) != (h["x"], h["y"], h["z"]):
-                clamped = True
-            h["x"], h["y"], h["z"] = cx, cy, cz
-            h["kind"] = kind or ("truss" if h["y"] >= 2.0 else "floor")
-            if (h["x"], h["y"], h["z"]) != before or h["kind"] != kind:
+            before = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
+                      h.get("stance"), json.dumps(h.get("rot")))
+            px = float(x) if x is not None else h["x"]
+            py = float(y) if y is not None else h["y"]
+            pz = float(z) if z is not None else h["z"]
+            cx = max(-half_w, min(half_w, px))
+            cy = max(0.0, min(max_y, py))
+            cz = max(min_z, min(max_z, pz))
+            clamped = clamped or (cx, cy, cz) != (px, py, pz)
+            target_rig = None
+            tt = t
+            if rig:
+                target_rig = venue_mod.rig(self.venue, str(rig))
+                if not target_rig:
+                    raise ValueError(f"no rig {rig!r}")
+                if tt is None:
+                    near = venue_mod.nearest_rig(
+                        {"rigging": [target_rig]}, cx, cy, cz, reach=1e9)
+                    tt = near[1] if near else 0.5
+            elif rig is None and _truthy(snap):
+                near = venue_mod.nearest_rig(self.venue, cx, cy, cz, reach=0.6)
+                if near:
+                    target_rig, tt = near[0], near[1]
+            if stance is not None:
+                h["stance"] = stance
+            if target_rig:
+                h["mount"] = {"rig": target_rig["id"],
+                              "t": round(max(0.0, min(1.0, float(tt))), 4)}
+                pos = venue_mod.mount_position(target_rig, h["mount"]["t"],
+                                               h.get("stance"))
+                h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]
+                h["stance"] = pos["orient"]
+            else:
+                if rig == "" or x is not None or y is not None or z is not None:
+                    was_mounted = bool(h.pop("mount", None))
+                    if was_mounted and stance is None:
+                        h.pop("stance", None)    # free again: height decides
+                h["x"], h["y"], h["z"] = cx, cy, cz
+            if rot is not None:
+                if isinstance(rot, (list, tuple)) and len(rot) == 2:
+                    h["rot"] = [round(float(rot[0]), 2) % 360,
+                                round(max(-180.0, min(180.0, float(rot[1]))), 2)]
+                else:
+                    h.pop("rot", None)
+            if kind in ("truss", "floor"):
+                h["kind"] = kind
+                if not h.get("mount"):
+                    h["stance"] = "hang" if kind == "truss" else "stand"
+            else:
+                side = h.get("stance")
+                h["kind"] = ("truss" if side == "hang" else "floor") if side \
+                    else ("truss" if h["y"] >= 2.0 else "floor")
+            after = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
+                     h.get("stance"), json.dumps(h.get("rot")))
+            if after != before:
                 moved.append(h["head_no"])
+        first = self._head(moved[0] if moved else targets[0])
         if not moved:
-            return {"head_no": targets[0], "heads": 0, "moved": False,
-                    "clamped": clamped,
-                    "x": self._head(targets[0])["x"],
-                    "y": self._head(targets[0])["y"],
-                    "z": self._head(targets[0])["z"],
-                    "kind": self._head(targets[0])["kind"]}
+            return {"head_no": first["head_no"], "heads": 0, "moved": False,
+                    "clamped": clamped, "x": first["x"], "y": first["y"],
+                    "z": first["z"], "kind": first["kind"],
+                    "mount": first.get("mount")}
         self.patch_rev += 1                 # the 3D view rebuilds on a rev
-        h = self._head(moved[0])
-        return {"head_no": h["head_no"], "heads": len(moved), "moved": True,
+        where = (f" on {first['mount']['rig']}" if first.get("mount") else "")
+        return {"head_no": first["head_no"], "heads": len(moved), "moved": True,
                 "moved_heads": moved, "clamped": clamped,
-                "x": h["x"], "y": h["y"], "z": h["z"],
-                "kind": h["kind"],
-                "bounds": {"half_width_m": half_w, "max_depth_m": max_z,
-                           "max_height_m": max_y},
+                "x": first["x"], "y": first["y"], "z": first["z"],
+                "kind": first["kind"], "mount": first.get("mount"),
+                "stance": first.get("stance"),
+                "bounds": {"half_width_m": half_w, "min_depth_m": min_z,
+                           "max_depth_m": max_z, "max_height_m": max_y},
                 "summary": f"moved {len(moved)} head(s) to "
-                           f"x{h['x']:.2f} y{h['y']:.2f} z{h['z']:.2f}"
-                           + (" (clamped to the stage)" if clamped else "")}
+                           f"x{first['x']:.2f} y{first['y']:.2f} "
+                           f"z{first['z']:.2f}{where}"
+                           + (" (clamped to the room)" if clamped else "")}
 
     # ------------------------------------------------------------------
     # -- arrange: align, distribute, mirror ----------------------------
@@ -2948,6 +2989,9 @@ class Engine:
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
+        "set_place", "attach_heads", "set_venue", "venue_template",
+        "venue_room", "venue_stage", "venue_add", "venue_update",
+        "venue_remove", "venue_underlay",
     })
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
@@ -3021,47 +3065,244 @@ class Engine:
                 raise ValueError("wrong password")
         return self._a_set_lock(state="operate")
 
+    # ------------------------------------------------------------------
+    # the venue (app/venue.py): room, stage, zones, rigging, objects
+    # ------------------------------------------------------------------
+    def _set_venue_doc(self, v: dict) -> None:
+        """Store a new venue and carry mounted heads with their rigs."""
+        self.venue = v
+        self._reflow_mounts()
+        self.patch_rev += 1
+
+    def _reflow_mounts(self) -> list[int]:
+        """Put every mounted head back on its rig (after a rig moved), and
+        let go of mounts whose rig was removed."""
+        moved = []
+        for h in self.patch:
+            m = h.get("mount")
+            if not isinstance(m, dict):
+                continue
+            r = venue_mod.rig(self.venue, m.get("rig"))
+            if not r:
+                h.pop("mount", None)
+                continue
+            pos = venue_mod.mount_position(r, m.get("t", 0.5), h.get("stance"))
+            if (h["x"], h["y"], h["z"]) != (pos["x"], pos["y"], pos["z"]):
+                moved.append(h["head_no"])
+            h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]
+            h["stance"] = pos["orient"]
+            h["kind"] = "truss" if pos["orient"] == "hang" else "floor"
+        return moved
+
+    def ensure_venue(self, default: str = "club") -> bool:
+        """Give an empty desk a room to look at.  Not an undo step: it is
+        the starting point, not an edit."""
+        with self.lock:
+            if not self.venue.get("auto") or self.patch:
+                return False
+            self.venue = venue_mod.template(default)
+            self.patch_rev += 1
+            return True
+
+    def _venue_result(self, summary: str, **extra) -> dict:
+        return {"venue": self.venue, "summary": summary, **extra}
+
     def _a_set_venue(self, venue=None, width_m=None, depth_m=None,
                      height_m=None, name=None, surfaces=None, **_):
-        """Store the room the operator drew (metres).
+        """Replace the whole venue: a v2 document, or the old
+        {width_m, depth_m, height_m, surfaces} room."""
+        if isinstance(venue, dict) and int(venue.get("version") or 1) >= 2:
+            v = venue_mod.normalise(venue)
+        else:
+            raw = dict(venue) if isinstance(venue, dict) else {}
+            for key, val in (("width_m", width_m), ("depth_m", depth_m),
+                             ("height_m", height_m), ("name", name),
+                             ("surfaces", surfaces)):
+                if val is not None:
+                    raw[key] = val
+            v = venue_mod.normalise(raw)
+        self._set_venue_doc(v)
+        w, d, h = venue_mod.dims(v)
+        return self._venue_result(
+            f"venue {v.get('name') or 'room'} {w:g} x {d:g} m"
+            + (f" x {h:g} m high" if h else ""))
 
-        The visualiser reads it to draw the floor, the walls and any
-        truss lines, so the beams land on something real.  With nothing
-        stored it falls back to a stage sized around the patch, which is
-        why the view is never an empty void.
-        """
-        data = venue if isinstance(venue, dict) else {}
-        def num(value, key, fallback=0.0):
-            raw = value if value is not None else data.get(key, fallback)
-            try:
-                return float(raw)
-            except (TypeError, ValueError):
-                return fallback
-        w, d = num(width_m, "width_m"), num(depth_m, "depth_m")
-        hgt = num(height_m, "height_m")
-        rows = surfaces if surfaces is not None else data.get("surfaces")
-        clean_surfaces = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            try:
-                clean_surfaces.append({
-                    "kind": str(row.get("kind") or "wall")[:20],
-                    "x1": float(row["x1"]), "y1": float(row["y1"]),
-                    "z1": float(row["z1"]), "x2": float(row["x2"]),
-                    "y2": float(row["y2"]), "z2": float(row["z2"]),
-                    "color": str(row.get("color") or "#64748b")[:24],
-                })
-            except (KeyError, TypeError, ValueError):
-                continue                     # a malformed line, not a failure
-        self.venue = {"width_m": w, "depth_m": d, "height_m": hgt,
-                      "name": str(name or data.get("name") or "stage")[:60],
-                      "surfaces": clean_surfaces}
+    def _a_venue_template(self, name="club", width=None, depth=None,
+                          height=None, keep_mounts=False, **_):
+        """Start from a ready-made room: club, small_club, warehouse,
+        concert, theatre, ballroom or outdoor."""
+        v = venue_mod.template(name, width, depth, height)
+        if not _truthy(keep_mounts):
+            for h in self.patch:
+                h.pop("mount", None)
+        self._set_venue_doc(v)
+        w, d, hh = venue_mod.dims(v)
+        return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m",
+                                  templates=venue_mod.template_list())
+
+    def _a_venue_room(self, width=None, depth=None, height=None, back=None,
+                      ceiling=None, floor=None, wall_colour=None,
+                      outline=None, name=None, **_):
+        v = venue_mod.normalise(self.venue)
+        room = dict(v["room"])
+        for key, val in (("width", width), ("depth", depth), ("height", height),
+                         ("back", back), ("ceiling", ceiling), ("floor", floor),
+                         ("wall_colour", wall_colour), ("outline", outline)):
+            if val is not None:
+                room[key] = val
+        v["room"] = room
+        if name is not None:
+            v["name"] = str(name)
+        v["auto"] = False
+        v = venue_mod.normalise(v)
+        if not (v["room"]["width"] and v["room"]["depth"]):
+            raise ValueError("the room needs a width and a depth")
+        self._set_venue_doc(v)
+        w, d, h = venue_mod.dims(v)
+        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m")
+
+    def _a_venue_stage(self, x=None, z=None, width=None, depth=None,
+                       height=None, remove=False, **_):
+        v = venue_mod.normalise(self.venue)
+        if _truthy(remove):
+            v["stage"] = None
+            self._set_venue_doc(v)
+            return self._venue_result("stage removed")
+        cur = dict(v.get("stage") or {"x": 0, "z": 0, "width": 8, "depth": 4,
+                                       "height": 0.6})
+        for key, val in (("x", x), ("z", z), ("width", width),
+                         ("depth", depth), ("height", height)):
+            if val is not None:
+                cur[key] = val
+        v["stage"] = cur
+        v = venue_mod.normalise(v)
+        if not v["stage"]:
+            raise ValueError("a stage needs a width and a depth")
+        self._set_venue_doc(v)
+        s = v["stage"]
+        return self._venue_result(
+            f"stage {s['width']:g} x {s['depth']:g} m, {s['height']:g} m high")
+
+    def _a_venue_add(self, item=None, **params):
+        """Add rigging, an object or a zone: {kind, ...}.  Kinds are in
+        app/venue.py (truss, pipe, tower, stand, base; dj_booth, bar,
+        speaker, pillar, riser, mark...; dancefloor, standing, bar...)."""
+        raw = dict(item) if isinstance(item, dict) else {
+            k: v for k, v in params.items() if not k.startswith("_")}
+        v, made = venue_mod.add_item(self.venue, raw)
+        self._set_venue_doc(v)
+        return self._venue_result(f"added {made['kind']} {made['id']}",
+                                  item=made, id=made["id"])
+
+    def _a_venue_update(self, id=None, changes=None, **params):
+        """Change one venue item; a moved rig carries its lights."""
+        if not id:
+            raise ValueError("id is required")
+        raw = dict(changes) if isinstance(changes, dict) else {
+            k: v for k, v in params.items() if not k.startswith("_")}
+        v, item = venue_mod.update_item(self.venue, str(id), raw)
+        self._set_venue_doc(v)
+        return self._venue_result(f"updated {item['kind']} {item['id']}",
+                                  item=item)
+
+    def _a_venue_remove(self, id=None, **_):
+        if not id:
+            raise ValueError("id is required")
+        v = venue_mod.remove_item(self.venue, str(id))
+        freed = [h["head_no"] for h in self.patch
+                 if (h.get("mount") or {}).get("rig") == str(id)]
+        self._set_venue_doc(v)
+        return self._venue_result(
+            f"removed {id}" + (f"; {len(freed)} light(s) now free-standing"
+                               if freed else ""), freed=freed)
+
+    def _a_venue_underlay(self, id=None, x=None, z=None, width=None,
+                          aspect=None, rot=None, opacity=None, show=None,
+                          remove=False, **_):
+        """A floor plan (image or PDF page) laid on the floor to trace."""
+        v = venue_mod.normalise(self.venue)
+        if _truthy(remove):
+            v["underlay"] = None
+        else:
+            cur = dict(v.get("underlay") or {})
+            for key, val in (("id", id), ("x", x), ("z", z), ("width", width),
+                             ("aspect", aspect), ("rot", rot),
+                             ("opacity", opacity), ("show", show)):
+                if val is not None:
+                    cur[key] = val
+            v["underlay"] = venue_mod.clean_underlay(cur)
+            if not v["underlay"]:
+                raise ValueError("upload a floor plan first")
+        self.venue = v
         self.patch_rev += 1
-        return {"venue": self.venue,
-                "summary": f"venue {self.venue['name']!r} "
-                           f"{w:g}x{d:g} m" + (f" x {hgt:g} m high"
-                                                if hgt else "")}
+        return self._venue_result("floor plan " + ("removed" if remove else "placed"))
+
+    def _a_venue_crowd(self, style=None, density=None, show=None, **_):
+        v = venue_mod.normalise(self.venue)
+        crowd = dict(v["crowd"])
+        for key, val in (("style", style), ("density", density), ("show", show)):
+            if val is not None:
+                crowd[key] = _truthy(val) if key == "show" else val
+        v["crowd"] = crowd
+        self.venue = venue_mod.normalise(v)
+        self.patch_rev += 1
+        c = self.venue["crowd"]
+        return self._venue_result(
+            f"crowd {c['style']} at {round(c['density'] * 100)}%"
+            + ("" if c["show"] else " (hidden)"))
+
+    def _a_venue_camera(self, name=None, pos=None, target=None, remove=False,
+                        **_):
+        if not name:
+            raise ValueError("name the view")
+        v = venue_mod.normalise(self.venue)
+        cams = [c for c in v["cameras"] if c["name"] != str(name)]
+        if not _truthy(remove):
+            if pos is None or target is None:
+                raise ValueError("pos and target are required")
+            cams.append({"name": str(name), "pos": pos, "target": target})
+        v["cameras"] = cams
+        self.venue = venue_mod.normalise(v)
+        self.patch_rev += 1
+        return self._venue_result(("removed" if remove else "saved")
+                                  + f" view {name}")
+
+    def _a_venue_info(self, **_):
+        return {"venue": venue_mod.describe(self.venue),
+                "templates": venue_mod.template_list(),
+                "summary": "venue " + (self.venue.get("name") or "(auto)")}
+
+    def _a_attach_heads(self, heads=None, head=None, rig=None,
+                        spacing=None, stance=None, **_):
+        """Hang (or stand) heads along one rig, spread evenly from its
+        middle - the "put these on the front truss" gesture."""
+        r = venue_mod.rig(self.venue, str(rig or ""))
+        if not r:
+            raise ValueError(f"no rig {rig!r}")
+        rows = ([self._head(int(head))] if head is not None
+                else (self._cmd_rows(heads) if heads
+                      else self._require_selection()))
+        others = [float(h["mount"]["t"]) for h in self.patch
+                  if (h.get("mount") or {}).get("rig") == r["id"]
+                  and h not in rows]
+        gap = float(spacing) if spacing else (0.5 if r["kind"] == "pipe" else 0.7)
+        slots = venue_mod.free_slots(r, others, len(rows), gap)
+        if len(slots) < len(rows):
+            raise ValueError(f"{r['name'] or r['id']} has room for "
+                             f"{len(slots)} more at {gap:g} m spacing")
+        slots.sort()
+        rows = sorted(rows, key=lambda h: h["x"])
+        side = stance if stance in ("hang", "stand") else None
+        for h, t in zip(rows, slots):
+            h["mount"] = {"rig": r["id"], "t": t}
+            if side:
+                h["stance"] = side
+            else:
+                h.pop("stance", None)
+        self._reflow_mounts()
+        self.patch_rev += 1
+        return {"heads": [h["head_no"] for h in rows], "rig": r["id"],
+                "summary": f"{len(rows)} light(s) on {r['name'] or r['id']}"}
 
     def _a_locate(self, **_):
         """Show the selection: full light, white/open colour, open gobo.
@@ -6066,9 +6307,9 @@ class Engine:
             venue = payload.get("venue")
             if isinstance(venue, dict):
                 try:
-                    self.act("set_venue", venue=venue)
+                    self.venue = venue_mod.normalise(venue)
                 except (ValueError, TypeError):
-                    self.venue = {}       # a bad venue must not block boot
+                    self.venue = venue_mod.empty()  # never block boot
         except (ValueError, TypeError, KeyError):
             return False
         return True
@@ -6090,6 +6331,7 @@ class Engine:
                                                    default=str)),
                 "presets": json.loads(json.dumps(self.presets, default=str)),
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
+                "venue": json.loads(json.dumps(self.venue, default=str)),
                 "meta": {"master": self.master},
             }
             text = json.dumps(payload, indent=2)
@@ -6236,6 +6478,8 @@ class Engine:
                    if isinstance(q, dict)]
         playbacks = _normalize_playbacks(payload.get("playbacks") or [])
         master = _clamp((payload.get("meta") or {}).get("master", 100), 0, 100)
+        venue = (venue_mod.normalise(payload["venue"])
+                 if isinstance(payload.get("venue"), dict) else None)
 
         # Commit phase: swap the whole show in under the lock.  A bad patch
         # raises from _replace_patch, which rolls the patch back, and the
@@ -6249,6 +6493,10 @@ class Engine:
             self.playbacks = playbacks
             self.master = master
             self.show_file = label
+            if venue is not None:           # older shows kept no room
+                self.venue = venue
+                self._reflow_mounts()
+                self.patch_rev += 1
         return {"file": label, "heads": len(heads), "show_file": label,
                 "stale_heads": self._stale_heads(heads, playbacks),
                 "summary": f"loaded show {label!r} ({len(heads)} heads)"}
@@ -6546,7 +6794,6 @@ class Engine:
                 "lock": self.lock_state,
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
-                "venue": self.venue,
                 "patch_rev": self.patch_rev,
                 "output": self._output_public(),
                 "programmer": self._programmer_public(),

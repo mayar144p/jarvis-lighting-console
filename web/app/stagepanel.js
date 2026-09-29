@@ -16,13 +16,15 @@ function fixturesFor(p) {
     head_no: h.head_no, name: h.name || "", manufacturer: h.manufacturer || "",
     model: h.model || "", mode: h.mode || "", kind: h.kind,
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
+    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null,
   }));
 }
 
 function syncRig() {
   if (!stage || !state.snap) return;
   const p = patch();
-  const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z, h.body && h.body.type]), state.snap.venue]);
+  const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z,
+    h.body && h.body.type, h.stance, h.rot]), state.snap.venue]);
   if (sig !== rigSig) {
     rigSig = sig;
     stage.setRig({ fixtures: fixturesFor(p), venue: state.snap.venue || {} });
@@ -86,11 +88,26 @@ export function initStage() {
     stage.setOptions({ haze: +haze.value });
     try { localStorage.setItem("jarvis.haze", haze.value); } catch (e) { /* ignore */ }
   });
-  const people = $("#people-btn");
-  people.addEventListener("click", () => {
-    people.classList.toggle("on");
-    stage.setOptions({ people: people.classList.contains("on") });
-  });
+  const pref = (key, fallback) => { try { return localStorage.getItem("jarvis." + key) ?? fallback; } catch (e) { return fallback; } };
+  const keep = (key, value) => { try { localStorage.setItem("jarvis." + key, value); } catch (e) { /* ignore */ } };
+  const house = $("#house");
+  house.value = pref("house", house.value);
+  stage.setOptions({ house: +house.value, quality: pref("quality", "auto") });
+  house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
+  const toggle = (id, key, dflt) => {
+    const btn = $(id);
+    const on = pref(key, dflt ? "1" : "0") === "1";
+    btn.classList.toggle("on", on);
+    stage.setOptions({ [key]: on });
+    btn.addEventListener("click", () => {
+      const now = !btn.classList.contains("on");
+      btn.classList.toggle("on", now);
+      stage.setOptions({ [key]: now });
+      keep(key, now ? "1" : "0");
+    });
+  };
+  toggle("#people-btn", "people", true);
+  toggle("#zones-btn", "zones", false);
   $("#fullscreen-btn").addEventListener("click", toggleFull);
   on("lite", updateNowPlaying);
   on("snapshot", updateNowPlaying);
