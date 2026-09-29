@@ -41,7 +41,8 @@ export function openAddDialog(query = "") {
 
   const close = modal({
     title: "Add fixtures", wide: true, body,
-    foot: [h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
+    foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
+      h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],
     onClose: () => { if (preview) { preview.destroy(); preview = null; } },
   });
@@ -95,14 +96,18 @@ export function openAddDialog(query = "") {
 
   async function searchShare() {
     const st = await get("/api/gdtf/status").catch(() => ({}));
-    if (!st.signed_in && !st.configured && !st.catalogue) {
+    if (!st.signed_in && !st.configured) {
+      // Sign-in is offered whenever there is no live session - even with
+      // a saved catalogue to browse, a download needs one.
       shareNote.replaceChildren(
-        h("p", { style: { margin: "0 0 8px" } }, "Sign in with a free gdtf-share.com account. The password stays in this app's memory only."),
+        h("p", { style: { margin: "0 0 8px" } }, (st.catalogue ? `${st.catalogue} fixtures saved to browse. ` : "")
+          + (st.last_error_code === "unauthorized" ? "Your GDTF Share session expired: sign in again to download. " : "Sign in to download. ")
+          + "Free gdtf-share.com account; the password stays in this app's memory only."),
         shareLogin());
-      list.replaceChildren();
-      return;
+      if (!st.catalogue) { list.replaceChildren(); return; }
+    } else {
+      shareNote.textContent = st.catalogue ? `${st.catalogue} fixtures in the catalogue` : "";
     }
-    shareNote.textContent = st.catalogue ? `${st.catalogue} fixtures in the catalogue` : "";
     const q = search.value.trim();
     if (q.length < 2) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Type at least two letters to search the Share.")); return; }
     list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Searching…"));
@@ -186,6 +191,32 @@ export function openAddDialog(query = "") {
     }
   }
 
+  // A sign-in box on top of the dialog; resolves true once signed in.
+  function shareSignIn() {
+    return new Promise((resolve) => {
+      const user = h("input", { type: "text", placeholder: "gdtf-share.com user", autocomplete: "username" });
+      const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
+      const msg = h("div.muted.small", "Your GDTF Share session has ended. Sign in to download this fixture. The password stays in this app's memory only.");
+      let done = false;
+      const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+      const go = async () => {
+        const d = await post("/api/gdtf/login", { user: user.value, password: pass.value }).catch((e) => ({ error: e.message }));
+        if (d.error) { msg.textContent = d.error; return; }
+        toast("Signed in to GDTF Share", "ok");
+        finish(true);
+        closeBox();
+      };
+      pass.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+      const closeBox = modal({
+        title: "Sign in to GDTF Share",
+        body: h("div.form-grid", h("label.field", h("span", "User"), user), h("label.field", h("span", "Password"), pass), msg),
+        foot: [h("button.btn", { onclick: () => closeBox() }, "Cancel"), h("button.btn.primary", { onclick: go }, "Sign in")],
+        onClose: () => finish(false),
+      });
+      setTimeout(() => user.focus(), 50);
+    });
+  }
+
   function shareLogin() {
     const user = h("input", { type: "text", placeholder: "user", autocomplete: "username" });
     const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
@@ -222,7 +253,11 @@ export function openAddDialog(query = "") {
       let item = chosen;
       const origin = chosen._origin || source;
       if (origin === "share") {
-        const d = await post("/api/gdtf/download", { rid: chosen.rid });
+        let d = await post("/api/gdtf/download", { rid: chosen.rid });
+        if (d.error && ["no_session", "unauthorized", "no_credentials"].includes(d.code)) {
+          if (!(await shareSignIn())) throw new Error("not signed in to GDTF Share");
+          d = await post("/api/gdtf/download", { rid: chosen.rid });
+        }
         if (d.error) throw new Error(d.error);
         toast(d.summary || "Downloaded", "ok");
         const found = await get("/api/fixtures?q=" + encodeURIComponent(`${d.manufacturer} ${d.model}`));
@@ -735,4 +770,121 @@ export async function openMotionCalibration(hd) {
     onClose: () => run("motion_test_end", { head }, { silentError: true }),
   });
   render();
+}
+
+// ================================================= fixture from a manual
+// Any light or effect no library has: paste the DMX chart or drop the
+// manual's PDF, check the table, save.  Nothing is stored until Save.
+const FIXTURE_FUNCTIONS = ["dimmer", "red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow",
+  "pan", "pan fine", "tilt", "tilt fine", "pan/tilt speed", "shutter", "strobe", "colour wheel", "colour macro",
+  "gobo wheel", "gobo rotation", "prism", "zoom", "focus", "frost", "iris",
+  "fx fire", "fx arm", "fx fan", "fog output", "fx height", "fx mode",
+  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour",
+  "setting", "unused"];
+const FIXTURE_TYPES = [["light", "Light"], ["laser", "Laser"], ["confetti", "Confetti"], ["co2", "CO2 jet"],
+  ["flame", "Flame"], ["spark", "Spark fountain"], ["fog", "Fog"], ["haze", "Haze"], ["bubble", "Bubbles"],
+  ["snow", "Snow"], ["other", "Other effect"]];
+
+async function pdfText(file) {
+  const pdfjs = await import("/vendor/pdfjs/pdf.min.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pages = [];
+  for (let i = 1; i <= Math.min(doc.numPages, 60); i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    // rebuild lines from the text runs' y positions
+    const rows = new Map();
+    for (const it of tc.items) {
+      const y = Math.round(it.transform[5]);
+      rows.set(y, (rows.get(y) || "") + (rows.has(y) ? " " : "") + it.str);
+    }
+    pages.push([...rows.entries()].sort((a, b) => b[0] - a[0]).map(([, t]) => t).join("\n"));
+  }
+  return pages.join("\n");
+}
+
+export function openManualFixture(onSaved) {
+  const maker = h("input", { type: "text", placeholder: "e.g. Chauvet DJ" });
+  const model = h("input", { type: "text", placeholder: "e.g. Funfetti Shot" });
+  const text = h("textarea", { rows: 8, placeholder: "Paste the DMX chart here (from the manual or its PDF), e.g.\n1 Off/On\n000-009 Off\n010-255 On" });
+  const file = h("input", { type: "file", accept: ".pdf,.txt,application/pdf,text/plain" });
+  const status = h("div.muted.small");
+  const review = h("div.man-review");
+  let draft = null;
+  file.addEventListener("change", async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    status.textContent = "Reading the file…";
+    try {
+      text.value = f.name.toLowerCase().endsWith(".pdf") ? await pdfText(f) : await f.text();
+      status.textContent = `Read ${f.name}. Press "Read the chart".`;
+    } catch (err) {
+      status.textContent = "Could not read that file: " + err.message;
+    }
+  });
+  const readBtn = h("button.btn.primary", {
+    onclick: async () => {
+      status.textContent = "Reading the DMX chart…";
+      const d = await post("/api/fixtures/from_manual", { text: text.value, manufacturer: maker.value, model: model.value }).catch((e) => ({ error: e.message }));
+      if (d.error) { status.textContent = d.error; return; }
+      draft = d.draft;
+      status.textContent = (draft.via === "ai" ? "Read by the AI." : "Read by the offline reader.")
+        + " Check every channel against the manual before saving." + ((draft.warnings || []).length ? " " + draft.warnings.join(" ") : "");
+      renderReview();
+    },
+  }, "Read the chart");
+
+  function renderReview() {
+    if (!draft || !(draft.modes || []).length) { review.replaceChildren(); return; }
+    if (draft.manufacturer && !maker.value) maker.value = draft.manufacturer;
+    if (draft.model && !model.value) model.value = draft.model;
+    const type = h("select.select", ...FIXTURE_TYPES.map(([k, l]) => h("option", { value: k }, l)));
+    type.value = draft.type || "light";
+    type.addEventListener("change", () => { draft.type = type.value; });
+    const tables = draft.modes.map((m) => {
+      const name = h("input", { type: "text", value: m.name, style: { width: "160px" } });
+      name.addEventListener("input", () => { m.name = name.value; });
+      return h("div.man-mode", h("label.field.inline", h("span", "Mode"), name),
+        h("table.chan-table", h("thead", h("tr", h("th", "Ch"), h("th", "Name"), h("th", "Does"), h("th", "Values (one per line: 0-9 Off)"))),
+          h("tbody", ...m.channels.map((c, i) => {
+            const nm = h("input", { type: "text", value: c.name });
+            nm.addEventListener("input", () => { c.name = nm.value; });
+            const fn = h("select.select", ...FIXTURE_FUNCTIONS.map((f) => h("option", { value: f }, f)));
+            fn.value = c.function;
+            fn.addEventListener("change", () => { c.function = fn.value; });
+            const rg = h("textarea", { rows: Math.min(4, Math.max(1, c.ranges.length)) });
+            rg.value = c.ranges.map(([lo, hi, l]) => `${lo}-${hi} ${l}`).join("\n");
+            rg.addEventListener("change", () => {
+              c.ranges = rg.value.split("\n").map((ln) => /^\s*(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(.*)$/.exec(ln)).filter(Boolean)
+                .map((x) => [+x[1], +x[2], x[3].trim()]);
+            });
+            return h("tr", h("td.mono", i + 1), h("td", nm), h("td", fn), h("td", rg));
+          }))));
+    });
+    review.replaceChildren(h("div.form-grid", h("label.field", h("span", "Kind of fixture"), type)), ...tables);
+  }
+
+  const close = modal({
+    title: "Fixture from its manual", wide: true,
+    body: h("div.man",
+      h("div.form-grid", h("label.field", h("span", "Manufacturer"), maker), h("label.field", h("span", "Model"), model),
+        h("label.field", h("span", "Manual (PDF or text)"), file)),
+      text, h("div.row-btns", readBtn, status), review),
+    foot: [h("span.muted.small.grow", "Jarvis stores exactly this table. Effects fire only from their armed FX buttons."),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", {
+        onclick: async () => {
+          if (!draft) { toast("Read the chart first", "bad"); return; }
+          if (!maker.value.trim() || !model.value.trim()) { toast("Give the manufacturer and the model, so you can find it later", "bad"); return; }
+          draft.manufacturer = maker.value.trim();
+          draft.model = model.value.trim();
+          const d = await post("/api/fixtures/from_manual/save", { draft }).catch((e) => ({ error: e.message }));
+          if (d.error) { toast(d.error, "bad"); return; }
+          toast(d.summary, "ok");
+          close();
+          if (onSaved) onSaved(d.fixture);
+        },
+      }, "Save to library")],
+  });
 }

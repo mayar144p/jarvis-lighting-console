@@ -645,6 +645,7 @@ FX_KINDS = {
     "confetti": ("sfx", 30.0), "co2": ("sfx", 3.0), "flame": ("sfx", 2.0),
     "spark": ("sfx", 10.0), "fog": ("sfx", 20.0), "haze": ("sfx", 600.0),
     "bubble": ("sfx", 600.0), "snow": ("sfx", 600.0), "laser": ("laser", 600.0),
+    "other": ("sfx", 5.0),
 }
 
 _KIND_PATTERNS = [
@@ -793,8 +794,12 @@ def apply_fx(item: dict) -> dict:
     roles and values (in place; returns the item)."""
     from .engine_support import channel_role as _role
     labels = [c for m in item.get("modes") or [] for c in m.get("channels") or []]
-    kind = item.get("fx_kind") or fx_kind(item.get("manufacturer", ""), item.get("model", ""),
-                                          item.get("type", "") or "", labels)
+    kind = item.get("fx_kind")
+    if kind == "light":
+        kind = ""                                 # the operator said: a light
+    elif not kind:
+        kind = fx_kind(item.get("manufacturer", ""), item.get("model", ""),
+                       item.get("type", "") or "", labels)
     item["fx_kind"] = kind
     if not kind:
         return item
