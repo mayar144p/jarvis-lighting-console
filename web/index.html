@@ -301,9 +301,12 @@
     <!-- ------------------------------------------------------ playbacks -->
     <section class="playbacks" id="playbacks" aria-label="Playbacks">
       <nav class="pb-mode" id="pb-mode" aria-label="Bottom panel">
-        <button data-mode="faders" class="on" title="Playback faders">Faders</button>
-        <button data-mode="buttons" title="Quick buttons: flash, strobe, colour bumps, effects">Buttons</button>
-        <button data-mode="timeline" title="The show timeline: cues, hits, effects and levels against the music">Timeline</button>
+        <button data-mode="faders" class="on" title="Playback faders" aria-label="Faders">
+          <svg viewBox="0 0 16 16"><path d="M4 2v12M8 2v12M12 2v12"/><rect x="2.5" y="8" width="3" height="2.4" rx=".6"/><rect x="6.5" y="4" width="3" height="2.4" rx=".6"/><rect x="10.5" y="10" width="3" height="2.4" rx=".6"/></svg><span>Faders</span></button>
+        <button data-mode="buttons" title="Quick buttons: flash, strobe, colour bumps, effects" aria-label="Buttons">
+          <svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span>Buttons</span></button>
+        <button data-mode="timeline" title="The show timeline: cues, hits, effects and levels against the music" aria-label="Timeline">
+          <svg viewBox="0 0 16 16"><path d="M1 4h7M4 8h9M2 12h6M11 2v12"/></svg><span>Timeline</span></button>
       </nav>
       <div class="pb-strip" id="pb-strip"></div>
       <div class="qb" id="qb" hidden>

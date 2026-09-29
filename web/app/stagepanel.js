@@ -178,11 +178,13 @@ function viewsMenu(btn) {
   const sel = (state.snap && state.snap.selected) || [];
   const cams = v.cameras || [];
   menu(btn, [
+    ...[["front", "Front", "1"], ["left", "House left", "2"], ["right", "House right", "3"], ["back", "Back", "4"],
+      ["top", "Plan", "5"], ["overview", "Whole room (3D)", "6"]].map(([v, l, k]) => ({ label: l, hint: `key ${k}`, run: () => stage.view(v) })),
+    "-",
     { label: "From the crowd", hint: "Eye level on the dance floor", run: () => stage.viewCrowd() },
     { label: "From the DJ / stage", hint: "Looking out at the room", run: () => stage.viewStage() },
     { label: "Through the selected light", hint: sel.length ? `Down #${sel[0]}'s beam` : "Select a light first",
       disabled: !sel.length, run: () => stage.lookThrough(sel[0]) },
-    { label: "Whole room (3D)", run: () => stage.view("overview") },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
     { label: "Save this view…", run: async () => {

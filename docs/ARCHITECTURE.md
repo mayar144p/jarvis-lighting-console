@@ -54,6 +54,26 @@ and rolls all of them back if any fails. The copilot uses it.
   strobe…) and a **brand**, picks its design role for show generation, and
   places newly added heads on stage in rows by type.
 
+### Venue, quick buttons and the timeline
+
+* `venue.py` is the room as data: size or a traced outline, stage, zones,
+  rigging (every rig is a segment a→b), objects, marks, saved cameras, crowd
+  settings and a floor-plan underlay (stored by content hash under
+  `data/underlays`). Heads carry an optional `mount` ({rig, t}) and
+  `stance` (hang/stand); `_reflow_mounts` puts mounted heads back on their
+  rig after any venue edit, so a moved truss carries its lights.
+* Quick buttons are an **override layer** passed into `merge.resolve_head`:
+  a flash raises intensity (HTP floor), kill forces it to zero, a colour bump
+  overrides colour, and strobe gates the output in time. Blackout and the
+  master still apply after it. Button holds track their owners (a hand, a
+  timeline clip) so one never releases the other.
+* `timeline.py` is the timeline document. The engine runs a 50 Hz timeline
+  thread: point events (cue GOs, one-shot buttons) fire when the playhead
+  crosses them, span clips (held buttons, effects) start and stop as the
+  playhead enters and leaves them, and level tracks are interpolated each
+  tick. A seek chases: last cue re-fired, spans re-held, levels applied.
+  The transport is never an undo step; timeline edits are.
+
 ### AI
 
 * `llm.py` is a small OpenAI-compatible client. `structured()` gets one JSON
@@ -65,6 +85,12 @@ and rolls all of them back if any fails. The copilot uses it.
   imports and deleting heads. Plans are previewed, then applied with
   `act_batch`. A deterministic keyword compiler covers the offline case.
 * `showdesign.py` turns a brief into concepts staged on the patched rig.
+* `autoshow.py` builds a whole show in three layers. `analyse` makes groups by
+  type and location, capabilities, aim targets and song facts. The **design**
+  (sections × group looks, hits, master) comes from the model or an offline
+  designer, and is validated against the rig. `compile_calls` turns it into
+  engine actions (groups, one cue per section, quick buttons, a timeline
+  document) applied through `act_batch` as one undo step.
 * `doctor.py` inspects the show and returns findings, each with a severity
   and, where possible, an action that fixes it.
 
@@ -81,6 +107,8 @@ and rolls all of them back if any fails. The copilot uses it.
 | `/api/console/doctor` | GET | show health findings |
 | `/api/console/scan`, `/patch`, `/save`, `/load`, `/import_show`, `/midi`, `/look` | POST | rig and show operations |
 | `/api/gdtf/*` | GET/POST | GDTF Share login, search, download, geometry and models |
+| `/api/console/underlay`, `/api/console/audio` | POST/GET | floor-plan images and timeline audio, stored by content hash |
+| `/api/console/autoshow` | POST | design a whole show for the rig, or build a previewed design |
 | `/api/fixtures/*` | POST | edit the library: channel labels, ranges, create, import |
 
 **Security.** Everything under `/api/` needs the token except the two

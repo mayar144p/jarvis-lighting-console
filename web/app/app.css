@@ -453,7 +453,9 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
 .playbacks { display: flex; background: var(--bg-2); min-width: 0; }
 .pb-strip { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(118px, 1fr); gap: 1px; overflow-x: auto; background: var(--border); }
 .pb-mode { display: flex; flex-direction: column; gap: 2px; padding: 6px 4px; background: var(--bg-2); border-right: 1px solid var(--border); }
-.pb-mode button { border: 0; background: transparent; color: var(--text-2); font-size: 11px; font-weight: 700; padding: 8px 6px; border-radius: 6px; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .06em; text-transform: uppercase; }
+.pb-mode button { border: 0; background: transparent; color: var(--text-2); font-size: 9.5px; font-weight: 700; padding: 6px 4px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; letter-spacing: .03em; text-transform: uppercase; width: 52px; }
+.pb-mode button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.pb-mode button:hover { color: var(--text); }
 .pb-mode button.on { background: var(--accent-bg); color: var(--accent); }
 .qb { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 6px 8px; gap: 6px; }
 .qb-bar { display: flex; gap: 6px; align-items: center; }
@@ -758,3 +760,20 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .auto-sections li.hit { color: #fde047; }
 .auto-sections .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .auto-sections .dot.none { background: #475569; }
+
+/* narrow stages: named views live in the Views menu */
+@media (max-width: 1279px) {
+  #views { display: none; }
+  body.arranging .stage-hud.bottom-left { display: none; }
+}
+@media (max-width: 700px) {
+  #zones-btn, #frame-btn { display: none; }
+  .hud-btn.arrange { font-size: 0; gap: 0; }
+  .hud-btn.arrange svg { width: 15px; height: 15px; }
+  .pb-mode button span { display: none; }
+  .pb-mode button { width: 34px; }
+}
+@media (max-height: 820px) {
+  .pb-mode button span { display: none; }
+  .pb-mode button { width: 34px; padding: 7px 4px; }
+}
