@@ -90,6 +90,51 @@ def save_underlay(body: dict) -> dict:
     return {"id": ident, "bytes": len(data), "type": ext[1:]}
 
 
+# Show audio for the timeline, stored the same way.
+_AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
+                ".m4a": "audio/mp4", ".flac": "audio/flac"}
+
+
+def save_audio(body: dict) -> dict:
+    raw = str(body.get("data") or "")
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[-1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"audio is not valid base64: {exc}") from exc
+    if not data or len(data) > MAX_BODY:
+        raise ValueError("audio must be under 22 MB")
+    if data[:3] == b"ID3" or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        ext = ".mp3"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        ext = ".wav"
+    elif data[:4] == b"OggS":
+        ext = ".ogg"
+    elif data[:4] == b"fLaC":
+        ext = ".flac"
+    elif data[4:8] == b"ftyp":
+        ext = ".m4a"
+    else:
+        raise ValueError("audio must be MP3, WAV, OGG, FLAC or M4A")
+    ident = hashlib.sha256(data).hexdigest()[:32]
+    folder = config.DATA / "audio"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / (ident + ext)).write_bytes(data)
+    return {"id": ident, "bytes": len(data), "type": ext[1:]}
+
+
+def audio_path(ident: str) -> Path | None:
+    ident = "".join(ch for ch in ident if ch.isalnum())[:64]
+    if not ident:
+        return None
+    for ext in _AUDIO_TYPES:
+        p = config.DATA / "audio" / (ident + ext)
+        if p.is_file():
+            return p
+    return None
+
+
 def underlay_path(ident: str) -> Path | None:
     ident = "".join(ch for ch in ident if ch.isalnum())[:64]
     if not ident:
@@ -361,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/save", "/api/console/load",
                          "/api/console/scan", "/api/console/ai",
                          "/api/console/generate", "/api/console/midi",
-                         "/api/console/underlay",
+                         "/api/console/underlay", "/api/console/audio",
                          "/api/console/look"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
@@ -393,6 +438,8 @@ class Handler(BaseHTTPRequestHandler):
                 eng, eng.act(str(body.get("action", "")), **params))
         if route == "/api/console/underlay":
             return self._json(save_underlay(body))
+        if route == "/api/console/audio":
+            return self._json(save_audio(body))
         if route == "/api/console/look":
             # /api/console/look is a GET (it is a feed, polled at 20 Hz);
             # accept POST too so a caller that posts every console route
@@ -721,6 +768,19 @@ class Handler(BaseHTTPRequestHandler):
                 defs.append(pub)
             return self._json({"definitions": defs, "count": len(defs)})
 
+        if route == "/api/console/audio":
+            path = audio_path(str(query.get("id", "")))
+            if not path:
+                return self._json({"error": "no such audio"}, 404)
+            data = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", _AUDIO_TYPES[path.suffix])
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
         if route == "/api/console/underlay":
             path = underlay_path(str(query.get("id", "")))
             if not path:

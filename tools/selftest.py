@@ -7477,6 +7477,7 @@ def _standalone_suites():
     ("show building", test_show_building),
     ("venue", test_venue),
     ("quick buttons", test_quick_buttons),
+    ("timeline", test_timeline),
     )
 
 
@@ -7756,13 +7757,12 @@ def test_quick_buttons() -> None:
                   e.act("undo")["ok"] and not e.quick, "")
             e.act("quick_defaults")
             flash = next(b for b in e.quick if b["label"] == "Flash all")
-            before = e._undo_public() if hasattr(e, "_undo_public") else None
+            before = len(e._undo)
             e.act("quick_press", id=flash["id"], down=True)
             looks = e._looks()
             check("holding Flash all lights every head", all(r["a"] == 1.0 for r in looks),
                   str([r["a"] for r in looks]))
-            check("pressing a button is not an undo step",
-                  (e._undo_public() if hasattr(e, "_undo_public") else None) == before, "")
+            check("pressing a button is not an undo step", len(e._undo) == before, "")
             e.act("quick_press", id=flash["id"], down=False)
             check("releasing it lets go", not any(r["a"] > 0 for r in e._looks()), "")
             red = next(b for b in e.quick if b["label"] == "All Red")
@@ -7822,6 +7822,97 @@ def test_quick_buttons() -> None:
             e.act("venue_add", item={"kind": "mark", "name": "Singer", "x": -2, "z": 2, "y": 0.8})
             r = e.act("aim_at", mark="singer")
             check("aim_at a performer mark by name", r["ok"] and r["target"][0] == -2, r.get("error") or "")
+        finally:
+            e.shutdown()
+
+
+def test_timeline() -> None:
+    """The show timeline: tracks, clips, the clock, seeking and saving."""
+    print("timeline (tracks, clips, clock, chase)")
+    import tempfile
+    from app import engine as eng
+    from app import fixtures
+    from app import timeline as T
+
+    junk = T.normalise({"length": -5, "bpm": 9999, "tracks": [
+        {"kind": "nope"}, {"kind": "button", "clips": [{"t": 1}]},
+        {"kind": "level", "target": "evil", "clips": [{"t": 2, "v": 500}, {"t": 1, "v": 10}]}]})
+    check("junk normalises safely",
+          junk["length"] == 1 and junk["bpm"] == 300
+          and [t["kind"] for t in junk["tracks"]] == ["button", "level"]
+          and junk["tracks"][0]["clips"] == [] and junk["tracks"][1]["target"] == "pb1"
+          and [c["t"] for c in junk["tracks"][1]["clips"]] == [1, 2]
+          and junk["tracks"][1]["clips"][1]["v"] == 100, json.dumps(junk)[:300])
+    lvl = {"clips": [{"t": 0, "v": 0}, {"t": 10, "v": 100}]}
+    check("level keys interpolate and hold at the ends",
+          T.level_at(lvl, 5) == 50 and T.level_at(lvl, -1) == 0 and T.level_at(lvl, 99) == 100, "")
+    laid = T.clips_from_stack([{"n": 1, "fade_s": 2, "hold_s": 1, "follow_s": 3},
+                               {"n": 2, "fade_s": 0, "hold_s": 0}, {"n": 3}], default_wait=4)
+    check("a cue list lays out by fade + hold + follow",
+          [c["t"] for c in laid] == [0, 6, 10], str([c["t"] for c in laid]))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "tl.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        clock = [1000.0]
+        e._clock = lambda: clock[0]
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            for hx in ("#ff0000", "#00ff00", "#0000ff"):
+                e.act("set_colour", hex=hx)
+                e.act("set_intensity", level=100)
+                e.act("record_cue", playback=1, fade=0, hold=1)
+            e.act("clear_programmer")
+            r = e.act("timeline_from_playback", playback=1)
+            check("a playback becomes a cue track", r["ok"] and len(r["track"]["clips"]) == 3,
+                  r.get("error") or "")
+            e.act("quick_defaults")
+            strobe = next(b for b in e.quick if b["label"] == "Strobe all")
+            bt = e.act("timeline_track", kind="button", name="Hits")["id"]
+            e.act("timeline_clip", track=bt, t=2.0, dur=1.0, button=strobe["id"])
+            lv = e.act("timeline_track", kind="level", target="master")["id"]
+            e.act("timeline_clip", track=lv, t=0, v=100)
+            e.act("timeline_clip", track=lv, t=10, v=0)
+            undo_before = len(e._undo)
+            e.act("timeline_play")
+            seen = {}
+            for step in (0.1, 2.5, 3.5, 5.0, 6.5):
+                clock[0] = 1000.0 + step
+                e._tick_timeline()
+                seen[step] = (e.playbacks[0]["index"] + 1, sorted(e.quick_active), e.master)
+            check("cue 1 fires at the start", seen[0.1][0] == 1, str(seen))
+            check("the hit holds its button for its length only",
+                  seen[2.5][1] == [strobe["id"]] and seen[3.5][1] == [], str(seen))
+            check("the next cue fires on time", seen[6.5][0] == 2, str(seen))
+            check("level automation drives the grand master",
+                  seen[5.0][2] == 50, str(seen))
+            e.act("timeline_seek", t=2.2)
+            check("seeking chases the rig (back to cue 1, hit held)",
+                  e.playbacks[0]["index"] == 0 and e.quick_active.get(strobe["id"]) is not None,
+                  str(e.playbacks[0]["index"]))
+            e.act("timeline_pause")
+            check("pausing lets go of held hits", not e.quick_active, "")
+            check("the transport never adds undo steps", len(e._undo) == undo_before,
+                  f"{undo_before} -> {len(e._undo)}")
+            r = e.act("timeline_clip", track=bt, t=1, dur=1, button="")
+            check("a button clip without a button is refused", r["ok"] is False, "")
+            e.act("save_show", name="tl")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="tl")
+                check("the timeline travels with the show file",
+                      [t["kind"] for t in e2.timeline["tracks"]] == ["cue", "button", "level"], "")
+            finally:
+                e2.shutdown()
+            e.act("timeline_set", loop=True, length=4)
+            e.act("timeline_play", at=3.9)
+            clock[0] += 0.3
+            e._tick_timeline()
+            check("a looping timeline wraps round",
+                  e.tl["playing"] and e.tl["pos"] < 1.0, str(e.tl["pos"]))
         finally:
             e.shutdown()
 

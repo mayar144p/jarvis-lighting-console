@@ -8,6 +8,7 @@ import { initStage } from "./stagepanel.js";
 import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
+import { initTimeline } from "./timeline.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initKeys } from "./keys.js";
@@ -32,6 +33,7 @@ async function boot() {
   initFixtures();
   initStage();
   initProgrammer();
+  initTimeline();
   initPlaybacks();
   initQuickButtons();
   initCmdbar();

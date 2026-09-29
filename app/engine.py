@@ -28,6 +28,7 @@ from app import config, fixtures, fixture_kind
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
+from app import timeline as tl_mod
 from app import venue as venue_mod
 from app import merge
 from app.artnet import ArtNetSender
@@ -93,6 +94,8 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all",
+    # the timeline's transport is playing the show, not editing it
+    "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -561,7 +564,9 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "aim_at",
+    "aim_at", "timeline_set", "timeline_track", "timeline_clip",
+    "timeline_from_playback", "timeline_play", "timeline_pause",
+    "timeline_stop", "timeline_seek",
 )
 
 
@@ -593,6 +598,12 @@ class Engine:
         # Quick buttons (see _a_quick_set) and the ones held right now.
         self.quick: list[dict] = []
         self.quick_active: dict[str, dict] = {}
+        # The show timeline (app/timeline.py) and its transport.
+        self.timeline: dict = tl_mod.empty()
+        self.tl = {"playing": False, "pos": 0.0, "t0": 0.0, "pos0": 0.0,
+                   "last": 0.0, "spans": {}}
+        self._tl_stop = threading.Event()
+        self._tl_thread: threading.Thread | None = None
 
         self.patch: list[dict] = []
         self.patch_rev = 0
@@ -706,6 +717,7 @@ class Engine:
             "playbacks": _copy_playbacks(self.playbacks),
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
+            "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
             # the way it was rigged.  A patch change is an EDIT like any
@@ -729,6 +741,7 @@ class Engine:
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
+        self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
                              if any(b["id"] == k for b in self.quick)}
         self.mode = state.get("mode", self.mode)
@@ -3011,7 +3024,8 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "save_show", "load_show", "import_show",
-        "quick_set", "quick_defaults",
+        "quick_set", "quick_defaults", "timeline_set", "timeline_track",
+        "timeline_clip", "timeline_from_playback",
     })
 
     LOCK_STATES = ("design", "operate", "locked")
@@ -3352,7 +3366,10 @@ class Engine:
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
 
     def _quick_heads(self, btn: dict) -> list[int]:
-        t = btn.get("target") or {}
+        return self._heads_for_target(btn.get("target") or {})
+
+    def _heads_for_target(self, t: dict) -> list[int]:
+        """Heads for a target: {group}, {heads}, {type} or all."""
         patched = [h["head_no"] for h in self.patch]
         if t.get("group") is not None:
             for g in self.groups:
@@ -3396,19 +3413,44 @@ class Engine:
             turn_on = not active
         else:                                   # hold (tap behaves as hold)
             turn_on = down
-        if turn_on and not active:
-            run = {"since": time.monotonic(), "heads": self._quick_heads(btn)}
-            if kind == "fx":
-                r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
-                run["fx"] = r.get("fx")
-            self.quick_active[key] = run
-        elif not turn_on and active:
-            run = self.quick_active.pop(key)
-            if run.get("fx"):
-                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        if turn_on:
+            self._quick_on(key, owner="hand")
+        else:
+            self._quick_off(key, owner="hand", force=mode == "latch")
         on = key in self.quick_active
         return {"id": key, "active": on,
                 "summary": f"{btn['label']} {'on' if on else 'off'}"}
+
+    def _quick_on(self, key: str, owner: str = "hand") -> None:
+        """Hold a button on for `owner` (a hand, or a timeline clip)."""
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if not btn:
+            return
+        run = self.quick_active.get(key)
+        if run is None:
+            run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
+                   "owners": set()}
+            if btn["kind"] == "fx":
+                try:
+                    r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
+                    run["fx"] = r.get("fx")
+                except ValueError:
+                    pass
+            self.quick_active[key] = run
+        run.setdefault("owners", set()).add(owner)
+
+    def _quick_off(self, key: str, owner: str = "hand", force: bool = False) -> None:
+        """Let go for `owner`; the button stays on while anyone holds it."""
+        run = self.quick_active.get(key)
+        if run is None:
+            return
+        owners = run.setdefault("owners", set())
+        owners.discard(owner)
+        if owners and not force:
+            return
+        self.quick_active.pop(key, None)
+        if run.get("fx"):
+            self.fx = [f for f in self.fx if f["id"] != run["fx"]]
 
     def _a_quick_release_all(self, **_):
         for key in list(self.quick_active):
@@ -3579,6 +3621,312 @@ class Engine:
                 "summary": f"aimed {len(aimed)} light(s) at "
                            f"x{tx:.1f} z{tz:.1f}"
                            + (f" ({len(skipped)} cannot move)" if skipped else "")}
+
+    # ------------------------------------------------------------------
+    # the timeline (app/timeline.py): the engine owns the clock
+    # ------------------------------------------------------------------
+    TIMELINE_TICK = 0.02
+
+    def _tl_now(self) -> float:
+        st = self.tl
+        if not st["playing"]:
+            return st["pos"]
+        return st["pos0"] + (self._clock() - st["t0"])
+
+    def _timeline_public(self) -> dict:
+        return {**self.timeline, "transport": self._tl_transport()}
+
+    def _tl_transport(self) -> dict:
+        return {"playing": self.tl["playing"],
+                "pos": round(min(self._tl_now(), self.timeline["length"]), 3),
+                "length": self.timeline["length"], "loop": self.timeline["loop"]}
+
+    def _tl_set_doc(self, doc: dict) -> None:
+        self.timeline = tl_mod.normalise(doc)
+
+    def _a_timeline_set(self, timeline=None, length=None, bpm=None, loop=None,
+                        audio=None, markers=None, clear_audio=False, **_):
+        """Replace the timeline, or change its length, tempo, loop, audio
+        or markers."""
+        doc = dict(timeline) if isinstance(timeline, dict) else dict(self.timeline)
+        for key, val in (("length", length), ("bpm", bpm), ("loop", loop),
+                         ("audio", audio), ("markers", markers)):
+            if val is not None:
+                doc[key] = _truthy(val) if key == "loop" else val
+        if _truthy(clear_audio):
+            doc["audio"] = None
+        self._tl_set_doc(doc)
+        t = self.timeline
+        return {"timeline": self._timeline_public(),
+                "summary": f"timeline {t['length']:g} s at {t['bpm']:g} BPM"
+                           + (", looping" if t["loop"] else "")}
+
+    def _a_timeline_track(self, id=None, remove=False, **fields):
+        """Add a track ({kind, name, playback|target}), change one, or
+        remove it (remove=true)."""
+        fields = {k: v for k, v in fields.items() if not k.startswith("_")}
+        if id and _truthy(remove):
+            before = len(self.timeline["tracks"])
+            self._tl_release_spans()
+            self.timeline["tracks"] = [t for t in self.timeline["tracks"] if t["id"] != id]
+            if len(self.timeline["tracks"]) == before:
+                raise ValueError(f"no track {id}")
+            return {"summary": f"removed track {id}"}
+        if id:
+            doc = tl_mod.normalise(json.loads(json.dumps(self.timeline)))
+            t = tl_mod.track(doc, id)
+            if not t:
+                raise ValueError(f"no track {id}")
+            merged = {**t, **{k: v for k, v in fields.items() if k not in ("id", "kind", "clips")}}
+            clean = tl_mod.clean_track(merged, doc)
+            doc["tracks"] = [clean if x["id"] == id else x for x in doc["tracks"]]
+            self._tl_set_doc(doc)
+            return {"track": clean, "summary": f"track {clean['name']}"}
+        doc, t = tl_mod.with_track(self.timeline, fields)
+        self._tl_set_doc(doc)
+        return {"track": t, "id": t["id"], "summary": f"added {t['kind']} track {t['name']}"}
+
+    def _a_timeline_clip(self, track=None, id=None, remove=False, **fields):
+        """Add a clip to a track, change one (move, resize, retarget) or
+        remove it."""
+        fields = {k: v for k, v in fields.items() if not k.startswith("_")}
+        doc = tl_mod.normalise(json.loads(json.dumps(self.timeline)))
+        if id:
+            found = tl_mod.find_clip(doc, str(id))
+            if not found:
+                raise ValueError(f"no clip {id}")
+            t, c = found
+            if _truthy(remove):
+                t["clips"] = [x for x in t["clips"] if x["id"] != c["id"]]
+                self._tl_release_spans()
+                self._tl_set_doc(doc)
+                return {"summary": "clip removed"}
+            clean = tl_mod.clean_clip(t["kind"], {**c, **fields, "id": c["id"]}, doc)
+            if not clean:
+                raise ValueError("that change would leave the clip invalid")
+            t["clips"] = sorted([clean if x["id"] == c["id"] else x for x in t["clips"]],
+                                key=lambda x: x["t"])
+            self._tl_set_doc(doc)
+            return {"clip": clean, "summary": f"clip at {clean['t']:.2f} s"}
+        t = tl_mod.track(doc, str(track or ""))
+        if not t:
+            raise ValueError(f"no track {track}")
+        fields.pop("id", None)
+        clean = tl_mod.clean_clip(t["kind"], fields, doc)
+        if not clean:
+            raise ValueError({"cue": "a cue clip needs a time",
+                              "button": "a button clip needs a button",
+                              "fx": "an effect clip needs an effect",
+                              "level": "a level key needs a time"}[t["kind"]])
+        t["clips"] = sorted(t["clips"] + [clean], key=lambda x: x["t"])
+        doc["length"] = max(doc["length"], clean["t"] + clean.get("dur", 0) + 1)
+        self._tl_set_doc(doc)
+        return {"clip": clean, "id": clean["id"],
+                "summary": f"added a clip at {clean['t']:.2f} s"}
+
+    def _a_timeline_from_playback(self, playback=1, start=0.0, **_):
+        """Lay a playback's cue list out on a new cue track, one clip per
+        cue, spaced by each cue's fade, hold and follow."""
+        pb = self._playback(playback)
+        if not pb["stack"]:
+            raise ValueError(f"playback {pb['n']} has no cues")
+        doc, t = tl_mod.with_track(self.timeline, {
+            "kind": "cue", "name": pb.get("name") or f"PB{pb['n']}",
+            "playback": pb["n"],
+            "clips": tl_mod.clips_from_stack(pb["stack"], float(start or 0))})
+        doc["length"] = max(doc["length"], tl_mod.end_time(doc) + 4)
+        self._tl_set_doc(doc)
+        return {"track": t, "id": t["id"],
+                "summary": f"{len(t['clips'])} cues from PB{pb['n']} on the timeline"}
+
+    # -- transport -------------------------------------------------------
+    def _a_timeline_play(self, at=None, **_):
+        st = self.tl
+        if at is not None:
+            self._a_timeline_seek(t=at)
+        if not st["playing"]:
+            now = self._clock()
+            if st["pos"] >= self.timeline["length"] - 1e-3:
+                st["pos"] = 0.0
+            st.update({"playing": True, "t0": now, "pos0": st["pos"],
+                       "last": st["pos"] - 1e-6})
+            self._ensure_tl_thread()
+        return {"transport": self._tl_transport(), "summary": "timeline playing"}
+
+    def _a_timeline_pause(self, **_):
+        st = self.tl
+        if st["playing"]:
+            st["pos"] = min(self._tl_now(), self.timeline["length"])
+            st["playing"] = False
+            self._tl_release_spans()
+        return {"transport": self._tl_transport(), "summary": "timeline paused"}
+
+    def _a_timeline_stop(self, **_):
+        self._a_timeline_pause()
+        self.tl["pos"] = 0.0
+        return {"transport": self._tl_transport(), "summary": "timeline stopped"}
+
+    def _a_timeline_seek(self, t=None, chase=True, **_):
+        """Jump the playhead; the rig is put where it would be at `t`."""
+        if t is None:
+            raise ValueError("t is required")
+        pos = max(0.0, min(float(t), self.timeline["length"]))
+        st = self.tl
+        now = self._clock()
+        self._tl_release_spans()
+        st.update({"pos": pos, "pos0": pos, "t0": now, "last": pos})
+        if _truthy(chase):
+            for tr in self.timeline["tracks"]:
+                if tr["kind"] == "cue" and not tr["mute"]:
+                    c = tl_mod.last_cue_before(tr, pos)
+                    if c and c["cue"] != "next":
+                        try:
+                            self._a_cue_go(playback=tr["playback"], cue=c["cue"])
+                        except ValueError:
+                            pass
+            self._tl_spans(pos)
+            self._tl_levels(pos)
+        return {"transport": self._tl_transport(), "summary": f"playhead at {pos:.2f} s"}
+
+    # -- firing ----------------------------------------------------------
+    def _tl_release_spans(self) -> None:
+        for cid, span in list(self.tl["spans"].items()):
+            if span.get("button"):
+                self._quick_off(span["button"], owner=cid)
+            if span.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != span["fx"]]
+            del self.tl["spans"][cid]
+
+    def _tl_fire(self, a: float, b: float) -> bool:
+        """Point events with a < t <= b: cue GOs and one-shot buttons."""
+        fired = False
+        by_id = {x["id"]: x for x in self.quick}
+        for tr in self.timeline["tracks"]:
+            if tr["mute"]:
+                continue
+            for c in tr["clips"]:
+                if not (a < c["t"] <= b):
+                    continue
+                if tr["kind"] == "cue":
+                    try:
+                        if c["cue"] == "next":
+                            self._a_cue_go(playback=tr["playback"])
+                        else:
+                            self._a_cue_go(playback=tr["playback"], cue=c["cue"])
+                        fired = True
+                    except ValueError:
+                        pass
+                elif tr["kind"] == "button":
+                    btn = by_id.get(c["button"])
+                    if btn and btn["kind"] in ("go", "release", "preset"):
+                        try:
+                            self._a_quick_press(id=btn["id"], down=True)
+                            fired = True
+                        except ValueError:
+                            pass
+        return fired
+
+    def _tl_spans(self, pos: float) -> bool:
+        """Start the button/effect clips the playhead is inside, stop the
+        ones it has left."""
+        want = {}
+        by_id = {x["id"]: x for x in self.quick}
+        for tr in self.timeline["tracks"]:
+            if tr["mute"] or tr["kind"] not in ("button", "fx"):
+                continue
+            for c in tl_mod.spans_at(tr, pos):
+                if tr["kind"] == "button":
+                    btn = by_id.get(c["button"])
+                    if btn and btn["kind"] not in ("go", "release", "preset"):
+                        want[c["id"]] = ("button", c)
+                else:
+                    want[c["id"]] = ("fx", c)
+        changed = False
+        for cid in [k for k in self.tl["spans"] if k not in want]:
+            span = self.tl["spans"].pop(cid)
+            if span.get("button"):
+                self._quick_off(span["button"], owner=cid)
+            if span.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != span["fx"]]
+            changed = True
+        for cid, (kind, c) in want.items():
+            if cid in self.tl["spans"]:
+                continue
+            if kind == "button":
+                self._quick_on(c["button"], owner=cid)
+                self.tl["spans"][cid] = {"button": c["button"]}
+            else:
+                heads = self._heads_for_target(c.get("target") or {"all": True})
+                try:
+                    r = self._a_run_fx(name=c["fx"], heads=heads) if heads else {}
+                except ValueError:
+                    r = {}
+                self.tl["spans"][cid] = {"fx": r.get("fx")}
+            changed = True
+        return changed
+
+    def _tl_levels(self, pos: float) -> None:
+        for tr in self.timeline["tracks"]:
+            if tr["mute"] or tr["kind"] != "level":
+                continue
+            v = tl_mod.level_at(tr, pos)
+            if v is None:
+                continue
+            v = int(round(v))
+            if tr["target"] == "master":
+                self.master = v
+            else:
+                try:
+                    pb = self._playback(int(tr["target"][2:]))
+                except (ValueError, TypeError):
+                    continue
+                pb["level"] = v
+
+    def _tick_timeline(self, now: float | None = None) -> None:
+        with self.lock:
+            st = self.tl
+            if not st["playing"]:
+                return
+            now = self._clock() if now is None else now
+            pos = st["pos0"] + (now - st["t0"])
+            length = self.timeline["length"]
+            fired = False
+            if pos >= length:
+                fired = self._tl_fire(st["last"], length)
+                self._tl_release_spans()
+                if self.timeline["loop"]:
+                    pos = (pos - length) % max(length, 1e-3)
+                    st.update({"pos0": pos, "t0": now, "last": -1e-6})
+                else:
+                    st.update({"playing": False, "pos": length, "last": length})
+                    self.act_rev += 1
+                    return
+            fired = self._tl_fire(st["last"], pos) or fired
+            spans = self._tl_spans(pos)
+            self._tl_levels(pos)
+            st["last"] = pos
+            st["pos"] = pos
+            if fired or spans:
+                self.act_rev += 1
+
+    def _tl_loop(self) -> None:
+        while not self._tl_stop.wait(self.TIMELINE_TICK):
+            if not self.tl["playing"]:
+                break
+            try:
+                self._tick_timeline()
+            except Exception as exc:            # never die silently
+                self.output["last_error"] = f"timeline: {exc}"
+        self._tl_thread = None
+
+    def _ensure_tl_thread(self) -> None:
+        if self._tl_thread is not None and self._tl_thread.is_alive():
+            return
+        self._tl_stop.clear()
+        thread = threading.Thread(target=self._tl_loop, name="jarvis-timeline",
+                                  daemon=True)
+        self._tl_thread = thread
+        thread.start()
 
     def _a_place_many(self, moves=None, rig=None, **_):
         """Move several heads at once (a dragged selection): one undo step.
@@ -4940,6 +5288,8 @@ class Engine:
             pass
         self._stop_output()
         self._stop_follow_thread()
+        self.tl["playing"] = False
+        self._tl_stop.set()
         self._stop_writer()               # flush any queued autosave
         if config.DMX_BLACKOUT_ON_EXIT and not self.dry_run:
             try:
@@ -6502,6 +6852,7 @@ class Engine:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "timeline": self.timeline,
             "meta": {"master": self.master,
                      "show_file": self.show_file},
         }
@@ -6651,6 +7002,7 @@ class Engine:
             meta = payload.get("meta") or {}
             self.master = _clamp(meta.get("master", 100), 0, 100)
             self.show_file = meta.get("show_file") or self.show_file
+            self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             for b in payload.get("quick") or []:
                 try:
                     self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
@@ -6685,6 +7037,7 @@ class Engine:
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
+                "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "meta": {"master": self.master},
             }
             text = json.dumps(payload, indent=2)
@@ -6854,6 +7207,8 @@ class Engine:
             self.show_file = label
             self.quick = quick
             self.quick_active = {}
+            self._a_timeline_stop()
+            self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             if venue is not None:           # older shows kept no room
                 self.venue = venue
                 self._reflow_mounts()
@@ -7118,6 +7473,7 @@ class Engine:
                 "show_file": self.show_file,
                 "venue": self.venue,
                 "quick": self._quick_public(),
+                "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.
                 # Both feeds carry it so the warning survives a reload
@@ -7157,6 +7513,7 @@ class Engine:
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
                 "quick_active": sorted(self.quick_active),
+                "timeline": self._tl_transport(),
                 "patch_rev": self.patch_rev,
                 "output": self._output_public(),
                 "programmer": self._programmer_public(),
