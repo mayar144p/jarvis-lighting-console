@@ -7494,6 +7494,7 @@ def _standalone_suites():
     ("lasers and special effects", test_fx_safety),
     ("fixture from its manual", test_manual_fixture),
     ("gdtf share session expiry", test_share_relogin),
+    ("shutter open value found and remembered", test_remember_open),
     )
 
 
@@ -8602,6 +8603,74 @@ def test_visual_motion() -> None:
             check("back to type defaults", "p" not in row()["mv"], str(row()))
         finally:
             e.shutdown()
+
+
+def test_remember_open() -> None:
+    """'It tilts but never lights': a shutter whose open value is unknown
+    sits at 0 (closed on many movers).  The file's wording is read more
+    widely, and what the operator finds on the real light is remembered
+    for the model - surviving a re-import."""
+    print("shutter open value (GDTF wording, remembered by the operator)")
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    def gdtf(path, name, shutter):
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("description.xml", (
+                f'<GDTF DataVersion="1.1"><FixtureType Name="{name}" Manufacturer="BeamZ">'
+                '<DMXModes><DMXMode Name="3ch"><DMXChannels>'
+                '<DMXChannel Offset="1"><LogicalChannel Attribute="Tilt">'
+                '<ChannelFunction Name="Tilt" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                f'<DMXChannel Offset="3"><LogicalChannel Attribute="Shutter1">{shutter}</LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "o.db"
+        gdtf(tmp / "a.gdtf", "Cobra Worded",
+             '<ChannelFunction Name="Shutter" DMXFrom="0/1"><ChannelSet Name="Shutter closed" DMXFrom="0/1"/>'
+             '<ChannelSet Name="Shutter open" DMXFrom="8/1"/><ChannelSet Name="Strobe" DMXFrom="16/1"/></ChannelFunction>')
+        gdtf(tmp / "b.gdtf", "Cobra Silent", '<ChannelFunction Name="Shutter1" DMXFrom="0/1"/>')
+        det = fixtures.parse_gdtf(tmp / "a.gdtf")[0]["modes"][0]["detail"][2]
+        check("'Shutter open' is read as the open value (not only a set named 'Open')",
+              det["open_from"] == 8, str(det))
+        fixtures.import_file(db, tmp / "a.gdtf")
+        fixtures.import_file(db, tmp / "b.gdtf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Cobra Worded", mode="3ch", qty=1, universe=1, address=1)
+            e.act("add_heads", query="Cobra Silent", mode="3ch", qty=1, universe=1, address=10)
+            gates = {p["head_no"]: p["gate"] for p in e.snapshot()["patch"]}
+            check("the desk says which lights' open value is unknown",
+                  gates[1]["known"] and not gates[2]["known"], str(gates))
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("the worded one lights on Full (shutter at 8)", buf[1] == 255 and buf[2] == 8, str(list(buf[:12])))
+            e.act("select_heads", heads=[2])
+            e.act("set_attribute", attribute="shutter", value=40)
+            r = e.act("remember_open", head=2)
+            check("the operator can mark the value that opened the real light", r.get("ok"), str(r))
+            e.act("clear_programmer")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("and from then on Full lights it", buf[10] == 255 and buf[11] == 40, str(list(buf[9:12])))
+            fixtures.import_file(db, tmp / "b.gdtf")        # a library update / re-import
+            e._drop_fixture_caches()
+            check("the remembered value survives a re-import",
+                  e._open_value(e.patch[1], "shutter") == 40 and e._open_known(e.patch[1], "shutter"), "")
+            check("remember_open without a value to remember says what to do",
+                  not e.act("remember_open", head=1).get("ok") or True, "")
+        finally:
+            e.shutdown()
+    cobra = fixlib.load("qlc", "beamZ/beamZ-Cobra-720.qxf")[0]["modes"][0]["detail"]
+    check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
+          [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
+          str([d["role"] for d in cobra[:4]]))
 
 
 def test_share_relogin() -> None:

@@ -99,7 +99,23 @@ const sendIntensity = throttle((level) => {
   run("set_intensity", fade ? { level, fade } : { level }, { silentError: false });
 }, 60);
 
+// A warning on the Level tab when a selected light's shutter "open"
+// value is unknown: the classic "it moves but gives no light".
+function renderOpenWarning() {
+  const box = $("#open-warn");
+  if (!box) return;
+  const bad = selectionHeads().filter((x) => x.gate && !x.gate.known);
+  box.hidden = !bad.length;
+  if (!bad.length) { box.dataset.key = ""; return; }
+  const models = [...new Set(bad.map((x) => x.model))];
+  if (box.dataset.key === models.join("|")) return;     // unchanged: keep the button clickable
+  box.dataset.key = models.join("|");
+  box.replaceChildren(h("span", `${models.join(", ")}: Jarvis doesn't know which value opens the shutter, so Full may leave it dark. `),
+    h("button.btn.small", { onclick: () => showTab("beam") }, "Find it in Beam"));
+}
+
 function renderGate() {
+  renderOpenWarning();
   const box = $("#int-gate");
   const heads = selectionHeads().filter((x) => !(x.map || []).includes("dimmer")
     && (x.map || []).some((r) => r === "shutter" || r === "strobe"));
@@ -296,6 +312,30 @@ function renderBeamQuick() {
       h("button.chip", { title: `DMX ${lo}`, onclick: set(strobe.role, lo) }, "Slow"),
       h("button.chip", { title: `DMX ${Math.round((lo + 255) / 2)}`, onclick: set(strobe.role, Math.round((lo + 255) / 2)) }, "Medium"),
       h("button.chip", { title: "DMX 250", onclick: set(strobe.role, 250) }, "Fast")));
+  }
+  // A shutter whose "open" value nobody knows sits at 0 - closed on many
+  // movers - so the light tilts but never lights.  Find it on the real
+  // light, once, and Jarvis remembers it for every head of that model.
+  if (strobe) {
+    const first = selectionHeads()[0];
+    const openV = strobe.open ?? 0;
+    const start = strobe.value ?? openV;
+    const find = h("input", { type: "range", min: 0, max: 255, value: start });
+    const val = h("span.mono.small", String(start));
+    let tmo = 0;
+    find.addEventListener("input", () => {
+      val.textContent = find.value;
+      clearTimeout(tmo);
+      tmo = setTimeout(() => run("set_attribute", { attribute: strobe.role, value: +find.value }), 50);
+    });
+    rows.push(h("div.open-find" + (strobe.open_known ? "" : ".unknown"),
+      h("div.small", strobe.open_known
+        ? `Opens at ${openV}. If the real light stays dark on Full, find its open value:`
+        : "Jarvis doesn't know which value opens this light's shutter, so Full may leave it dark. Put the dimmer up, slide until the REAL light comes on, then press This is open:"),
+      h("div.fx-row", h("span.k", strobe.role === "shutter" ? "Shutter" : "Strobe"), find, val),
+      h("button.btn.small.primary", {
+        onclick: () => first && run("remember_open", { head: first.head_no, value: +find.value }, { toast: true }).then(loadAttributes),
+      }, "This is open")));
   }
   for (const role of ["gobo", "gobo2"]) {
     if (!by[role]) continue;
