@@ -70,6 +70,40 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 8. UI/UX overhaul (audited with a 21-light mixed rig; mock-ups agreed next)
+
+Found in the audit (same features kept, all of it re-laid out):
+
+- **Gig-readiness:** 64 of 96 visible controls are under 32 px (GO / back /
+  stop on faders, tabs, chips); 9 text sizes from 9.5 px; muted grey on
+  near-black.  Target 44 px, text >= 12 px, 4.5:1 contrast; Blackout / GO /
+  GM always on screen (the phone layout has no Blackout without a tab switch).
+- **Type-aware programmer:** Level shows a dead dimmer fader for lights
+  without a dimmer; Colour shows an RGB picker + 25 swatches on wheel-only
+  lights; tab dots disagree with the "In the programmer" bar (shutter is
+  Level in one, Beam in the other).  Lead with each type's own controls.
+- **Clutter:** 10 empty "Record a cue here" playbacks; fixture names and
+  button-dialog options truncated; programmer tabs cut off ("Setu");
+  status bar shows raw Art-Net addresses.
+- **Visualiser:** the crowd hides the rig and floor-level lights; head
+  labels overlap; lights are tiny at default zoom.  Truss / pipe / tower
+  (vertical when its ends differ in height) and a drawn room outline already
+  exist in the engine but are hidden behind Arrange -> Draw room: make
+  "Truss - horizontal / Pole - vertical / Pipe / Stand" first-class tools.
+- **Venues:** no save / load per venue (a venue lives only inside a show).
+  Add a venue library: room, rigging, positions and patch per venue.
+- **Custom buttons:** the button dialog works but hides its options in
+  truncated dropdowns; make "which lights" (selection, all, a group, a
+  type) and "what it does" (flash, dim, colour, flash red / blue, strobe,
+  movement, a saved look) tap choices.
+- **Looks:** palettes / presets / 24 unnamed quick slots.  One named
+  "Looks" library (colours + positions + movements + effects), one tap to
+  recall, search and tags, "also make a button".
+- **Effects:** ARM switches itself off after 10 min (`_a_fx_arm` default)
+  and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
+  "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
+  Confetti (one load) wants hold-to-fire; CO2 quick 0.5 / 1 / 3 s shots.
+
 ## 7. Move tab: floor-safe movement for every light, simple speed (DONE)
 
 Built: one-tap spots and formations from the venue, nudge arrows, movement
