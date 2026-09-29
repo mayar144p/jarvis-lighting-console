@@ -375,6 +375,11 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
         }
+    for role, keys in get_overrides(db_path, manufacturer, model, mode).items():
+        row = out.setdefault(role, {"min": None, "max": None, "unit": "raw", "bits": 8})
+        row.update(keys)
+        if "open_from" in keys:
+            row["open_user"] = True
     return out
 
 
@@ -486,15 +491,19 @@ def _gdtf_open_value(dmx_ch, logical) -> int | None:
         return found
     if logical is None:
         return None
+    def is_open(name: str) -> bool:
+        # "Open", "Shutter open", "Open (no strobe)", "Shutter Open 1"...
+        return (name in _OPEN_WORDS or re.search(r"\bopen\b", name) is not None) \
+            and not re.search(r"\bclos", name)
     for func in _children(logical, "ChannelFunction"):
         name = (func.get("Name") or "").strip().lower()
-        if name in _OPEN_WORDS or name.startswith("open"):
+        if is_open(name):
             got = _dmx_byte(func.get("DMXFrom"))
             if got is not None:
                 return got
         for cset in _children(func, "ChannelSet"):
             name = (cset.get("Name") or "").strip().lower()
-            if (name in _OPEN_WORDS or name.startswith("open")) and "close" not in name:
+            if is_open(name):
                 got = _dmx_byte(cset.get("DMXFrom"))
                 if got is None:
                     got = _dmx_byte(func.get("DMXFrom"))
@@ -863,6 +872,42 @@ def refresh_imports(db_path: Path, folders) -> dict:
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)",
                      (str(PARSER_VERSION),))
     return {"refreshed": refreshed, "missing": missing, "errors": errors}
+
+
+def _override_table(conn) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS channel_overrides (manufacturer TEXT NOT NULL,"
+                 " model TEXT NOT NULL, mode TEXT NOT NULL, role TEXT NOT NULL,"
+                 " key TEXT NOT NULL, value TEXT, PRIMARY KEY (manufacturer, model, mode, role, key))")
+
+
+def set_override(db_path: Path, manufacturer: str, model: str, mode: str,
+                 role: str, key: str, value) -> None:
+    """What the operator found out about a real light (e.g. the value that
+    opens its shutter).  Kept apart from the imported detail, so a library
+    update or a re-import never throws it away."""
+    with db(db_path) as conn:
+        _override_table(conn)
+        if value is None:
+            conn.execute("DELETE FROM channel_overrides WHERE manufacturer=? AND model=? AND mode=?"
+                         " AND role=? AND key=?", (manufacturer or "", model or "", mode or "", role, key))
+        else:
+            conn.execute("INSERT OR REPLACE INTO channel_overrides VALUES (?,?,?,?,?,?)",
+                         (manufacturer or "", model or "", mode or "", role, key, json.dumps(value)))
+
+
+def get_overrides(db_path: Path, manufacturer: str, model: str, mode: str) -> dict:
+    """{role: {key: value}} set by the operator for one fixture mode."""
+    with db(db_path) as conn:
+        _override_table(conn)
+        rows = conn.execute("SELECT role, key, value FROM channel_overrides WHERE manufacturer=?"
+                            " AND model=? AND mode=?", (manufacturer or "", model or "", mode or "")).fetchall()
+    out: dict = {}
+    for r in rows:
+        try:
+            out.setdefault(r["role"], {})[r["key"]] = json.loads(r["value"])
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _motion_table(conn) -> None:

@@ -355,6 +355,12 @@ def _qxf_label(ch) -> str:
             label = "Pan/Tilt Speed"
         else:
             label = name
+        if base in ("PositionPan", "PositionTilt"):
+            # some files tag Tilt Fine with the Pan preset: trust the name
+            if "tilt" in name.lower() and "pan" not in name.lower():
+                label = "Tilt"
+            elif "pan" in name.lower() and "tilt" not in name.lower():
+                label = "Pan"
         if preset.endswith("Fine"):
             if label.lower().endswith(" fine"):
                 return label

@@ -104,7 +104,7 @@ UNDO_EXCLUDED = frozenset({
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status",
+    "fx_status", "remember_open",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -581,7 +581,7 @@ ACTIONS = (
     "timeline_stop", "timeline_seek",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "quick_fx_defaults",
+    "fx_status", "quick_fx_defaults", "remember_open",
 )
 
 
@@ -2368,11 +2368,14 @@ class Engine:
         profile library first (its light_from column), fall back to the
         value the fixture rests at, and 0 only as a last resort.
         """
+        rng = self.head_ranges(head).get(role) or {}
+        if rng.get("open_user") and rng.get("open_from") is not None:
+            return int(rng["open_from"])          # the operator found it on the real light
         light_from = self._profile_levels(head)[1].get(role)
         if light_from:
             return int(light_from)
         # a GDTF file's own Highlight / "Open" value
-        from_file = (self.head_ranges(head).get(role) or {}).get("open_from")
+        from_file = rng.get("open_from")
         if from_file:
             return int(from_file)
         return int(self._profile_defaults(head).get(role, 0))
@@ -3148,7 +3151,7 @@ class Engine:
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
         "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
-        "motion_set",
+        "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
     })
 
@@ -4103,6 +4106,41 @@ class Engine:
         self._motion_cache = {}
         parts = [f"{k.split('_')[0]} {v:g} s" for k, v in vals.items() if v]
         return {"motion": vals, "summary": f"{h.get('model')}: full " + ", ".join(parts)}
+
+    def _open_known(self, head: dict, role: str) -> bool:
+        """Does Jarvis KNOW which value opens this shutter (file, profile
+        or the operator), rather than assuming 0?"""
+        rng = self.head_ranges(head).get(role) or {}
+        return (rng.get("open_from") is not None
+                or self._profile_levels(head)[1].get(role) not in (None, 0)
+                or bool(rng.get("strobe_ranges")))
+
+    def _gate_info(self, h: dict) -> dict | None:
+        """{role, open, known} for a light with a shutter/strobe channel."""
+        role = self._shutter_role(h)
+        if role is None or self._head_class(h) != "light":
+            return None
+        return {"role": role, "open": self._open_value(h, role), "known": self._open_known(h, role)}
+
+    def _a_remember_open(self, head=None, value=None, **_):
+        """The value that opens this light's shutter, found on the real
+        light: saved for every head of the same model and mode, so Full
+        lights it from now on."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        role = self._shutter_role(h)
+        if role is None:
+            raise ValueError("this light has no shutter or strobe channel")
+        if value is None:
+            value = (self.programmer.get(h["head_no"]) or {}).get(role)
+        if value is None:
+            raise ValueError("slide the shutter until the light comes on first")
+        v = int(_clamp(value, 0, 255))
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"),
+                              h.get("mode"), role, "open_from", v)
+        fixtures.invalidate_cache()
+        return {"summary": f"{h.get('model')}: {role} opens at {v} - Full will light it"}
 
     def _a_motion_get(self, head=None, **_):
         """This model's measured full pan/tilt times (null = type default)."""
@@ -6503,6 +6541,7 @@ class Engine:
         if role in ("shutter", "strobe") and heads:
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
+            entry["open_known"] = self._open_known(heads[0], role)
         if role in ("wheel", "gobo", "gobo2", "laser_pattern", "laser_colour",
                     "fx_mode", "fx_fire") and heads:
             # the fixture's real slots, when every head is the same model
@@ -8290,7 +8329,7 @@ class Engine:
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, body=fixture_kind.describe(h))
+                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],

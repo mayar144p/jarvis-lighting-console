@@ -829,3 +829,9 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .man-review .chan-table td { vertical-align: top; }
 .man-review .chan-table input, .man-review .chan-table select { width: 100%; }
 .man-mode { margin-top: 12px; }
+
+/* the shutter's "open" value */
+.open-find { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.open-find.unknown { border-color: var(--blind); background: var(--blind-bg); }
+#open-warn[hidden] { display: none; }
+.open-warn { background: var(--blind-bg); color: var(--blind); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
