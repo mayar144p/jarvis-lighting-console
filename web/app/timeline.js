@@ -69,7 +69,8 @@ function render() {
     const kindLabel = tr.kind === "cue" ? `Cue · PB${tr.playback}` : tr.kind === "button" ? "Buttons"
       : tr.kind === "fx" ? "Effects" : tr.target === "master" ? "Level · GM" : `Level · ${String(tr.target || "").toUpperCase()}`;
     heads.push(h("div.tl-head" + (tr.mute ? ".muted" : ""), { dataset: { track: tr.id } },
-      h("div.tl-head-text", h("b", tr.name), h("small", kindLabel)),
+      h("div.tl-head-text", h("b", { title: tr.name }, tr.name.replace(/^Auto · /, "")),
+        h("small", kindLabel + (tr.name.startsWith("Auto · ") ? " · auto" : ""))),
       h("button.tl-mute" + (tr.mute ? ".on" : ""), { title: "Mute this track", onclick: () => run("timeline_track", { id: tr.id, mute: !tr.mute }) }, "M"),
       h("button.icon-x", { title: "Delete this track", onclick: () => run("timeline_track", { id: tr.id, remove: true }) }, "×")));
     lanes.push(lane(tr, width));
@@ -286,7 +287,6 @@ function drawHead() {
   const head = $("#tl-playhead");
   head.style.transform = `translateX(${p * pxs}px)`;
   $("#tl-play").textContent = transport.playing ? "Pause" : "Play";
-  $("#tl-play").classList.toggle("on", transport.playing);
   if (transport.playing) {
     const sc = $("#tl-scroll");
     const x = p * pxs;

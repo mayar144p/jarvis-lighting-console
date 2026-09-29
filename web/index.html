@@ -407,9 +407,22 @@
     <label class="check small"><input type="checkbox" id="ai-offline"> Offline compiler (no AI service)</label>
   </div>
   <div class="ctab" data-cpane="design" hidden>
+    <section class="autoshow">
+      <h4>Build the whole show</h4>
+      <p class="muted small">Jarvis reads your rig in the 3D view - what each light is, where it hangs, what it can do - and the song on the timeline, then programs every section: a cue per section, effects, strobe hits on the beat and master fades, on the timeline. You preview it first; building it is one Ctrl+Z.</p>
+      <textarea id="auto-text" rows="2" placeholder="Dark techno in a warehouse, red and white, hard drops" spellcheck="false"></textarea>
+      <div class="chip-row" id="auto-styles"></div>
+      <div class="row-btns">
+        <button class="btn primary" id="auto-btn">Design the show</button>
+        <label class="field inline small"><span>Playback</span><input type="number" id="auto-pb" min="1" max="10" value="1"></label>
+      </div>
+      <div class="auto-plan" id="auto-plan"></div>
+    </section>
+    <hr>
+    <h4>Or: concepts for one playback</h4>
     <p class="muted small">Describe the event. You get two or three different concepts - palettes, cues and timings - staged on your own rig. Nothing plays until you load one and press GO.</p>
     <textarea id="design-text" rows="3" placeholder="A winter wedding, slow and elegant, warm whites, avoid red" spellcheck="false"></textarea>
-    <button class="btn primary" id="design-btn">Design concepts</button>
+    <button class="btn" id="design-btn">Design concepts</button>
     <div class="concepts" id="concepts"></div>
   </div>
   <div class="ctab" data-cpane="doctor" hidden>

@@ -135,6 +135,65 @@ async function design() {
   }
 }
 
+// ------------------------------------------------------------ whole show
+const STYLES = ["Techno warehouse", "House party", "EDM festival drop", "Hip hop club", "Chill lounge", "Wedding dance", "Latin night"];
+let autoDesign = null;
+
+function sectionBar(sections, length) {
+  const total = length || (sections.length ? sections[sections.length - 1].end : 1) || 1;
+  return h("div.auto-bar", ...sections.map((s) => {
+    const seg = h("i", { title: `${s.name} · ${s.start.toFixed(0)}-${s.end.toFixed(0)} s` }, s.name);
+    seg.style.flexGrow = String(Math.max(0.5, s.end - s.start));
+    seg.style.background = `hsl(${220 - s.energy * 220}, 70%, ${28 + s.energy * 22}%)`;
+    return seg;
+  }));
+}
+
+async function autoshow() {
+  const text = $("#auto-text").value.trim();
+  const box = $("#auto-plan");
+  box.replaceChildren(h("p.muted", "Reading the rig and designing…"));
+  let r;
+  try {
+    const d = await post("/api/console/autoshow", { prompt: text, offline: $("#ai-offline").checked });
+    r = d.result || {};
+  } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
+  if (r.error || !r.design) { box.replaceChildren(h("p.muted", r.error || "No design came back")); return; }
+  autoDesign = r.design;
+  const groups = (r.analysis && r.analysis.groups) || {};
+  const bpm = (r.analysis && r.analysis.bpm) || 120;
+  const spb = 240 / bpm;
+  let t = 0;
+  const rough = autoDesign.sections.map((s) => { const start = t; t += s.bars * spb; return { name: s.name, start, end: t, energy: s.energy }; });
+  box.replaceChildren(...[
+    h("div.auto-head", h("b", autoDesign.name), h("span.muted.small", r.source === "llm" ? "designed by the AI" : "designed offline"),
+      h("div.sw", ...(autoDesign.palette || []).map((c) => h("i", { style: { background: c }, title: c })))),
+    r.note ? h("p.muted.small", r.note) : null,
+    sectionBar(rough),
+    h("ol.auto-sections", ...autoDesign.sections.map((s) => h("li",
+      h("b", s.name), h("span.muted.small", ` ${s.bars} bars · energy ${Math.round(s.energy * 100)}%`),
+      h("ul", ...s.looks.map((lk) => h("li",
+        lk.colour ? h("i.dot", { style: { background: lk.colour } }) : h("i.dot.none"),
+        `${(groups[lk.group] || {}).name || lk.group}: ${lk.intensity}%`
+        + (lk.aim ? ` → ${lk.aim.replace("_", " ")}` : "") + (lk.fx ? ` · ${lk.fx.replace("_", " ")}` : "")
+        + (lk.gobo ? " · gobo" : "") + (lk.zoom ? ` · ${lk.zoom}` : ""))),
+        ...s.hits.map((hit) => h("li.hit", `${hit.kind} ${(groups[hit.group] || {}).name || hit.group} every ${hit.every}`
+          + (hit.last_bars ? ` in the last ${hit.last_bars} bars` : ""))))))),
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: async () => {
+        const pb = +$("#auto-pb").value || 1;
+        if (!(await confirmBox("Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
+        const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb }).catch((e) => ({ error: e.message }));
+        const rr = res.result || {};
+        if (res.error || rr.error || !rr.built) { toast(res.error || rr.error || "failed", "bad"); return; }
+        toast(rr.summary || "Show built", "ok", 6000);
+        const tlBtn = document.querySelector('#pb-mode button[data-mode="timeline"]');
+        if (tlBtn) tlBtn.click();
+      } }, "Build it on the timeline"),
+      h("button.btn", { onclick: autoshow }, "Another take")),
+  ].filter(Boolean));
+}
+
 // -------------------------------------------------------------- doctor
 async function diagnose() {
   const box = $("#doctor");
@@ -183,6 +242,8 @@ export function initCopilot() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); }
   });
   $("#design-btn").addEventListener("click", design);
+  $("#auto-btn").addEventListener("click", autoshow);
+  $("#auto-styles").replaceChildren(...STYLES.map((st) => h("button.chip", { onclick: () => { $("#auto-text").value = st; autoshow(); } }, st)));
   $("#doctor-btn").addEventListener("click", diagnose);
   on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
   const st = state.status;

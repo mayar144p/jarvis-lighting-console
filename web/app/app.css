@@ -743,3 +743,18 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
   .output .tb-btn.arm { display: none; }
   .show-menu { display: none; }
 }
+
+/* whole-show designer */
+.autoshow h4 { margin: 0 0 4px; }
+.autoshow textarea { width: 100%; }
+.auto-plan { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.auto-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.auto-head .sw { display: flex; gap: 3px; margin-left: auto; }
+.auto-head .sw i { width: 14px; height: 14px; border-radius: 3px; display: block; }
+.auto-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 1px; }
+.auto-bar i { display: flex; align-items: center; justify-content: center; font: 600 10px var(--font); font-style: normal; color: #fff; white-space: nowrap; overflow: hidden; min-width: 0; }
+.auto-sections { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.auto-sections ul { margin: 2px 0 0; padding-left: 4px; list-style: none; color: var(--text-2); }
+.auto-sections li.hit { color: #fde047; }
+.auto-sections .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.auto-sections .dot.none { background: #475569; }

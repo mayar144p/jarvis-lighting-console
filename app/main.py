@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, config, console_ai, dmxin, doctor,  # noqa: E402
+from app import (artnet, autoshow, config, console_ai, dmxin, doctor,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -407,6 +407,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/scan", "/api/console/ai",
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
+                         "/api/console/autoshow",
                          "/api/console/look"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
@@ -581,6 +582,14 @@ class Handler(BaseHTTPRequestHandler):
                         f"{result['reply']} [failed: "
                         f"{result['run'].get('error')}]")
             return self._console_result(eng, result)
+        if route == "/api/console/autoshow":
+            # Preview a whole-show design for this rig, or build a design
+            # the operator has already seen (never a second model call).
+            playback = int(body.get("playback") or 1)
+            if body.get("apply") and isinstance(body.get("design"), dict):
+                return self._console_result(eng, autoshow.build(eng, body["design"], playback))
+            return self._console_result(eng, autoshow.design(
+                eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
             # operator confirms via /api/console/import_show.

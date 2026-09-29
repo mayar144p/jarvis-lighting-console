@@ -7478,6 +7478,7 @@ def _standalone_suites():
     ("venue", test_venue),
     ("quick buttons", test_quick_buttons),
     ("timeline", test_timeline),
+    ("auto show", test_autoshow),
     )
 
 
@@ -7915,6 +7916,112 @@ def test_timeline() -> None:
                   e.tl["playing"] and e.tl["pos"] < 1.0, str(e.tl["pos"]))
         finally:
             e.shutdown()
+
+
+def test_autoshow() -> None:
+    """A whole show designed from the rig and built onto the timeline."""
+    print("auto show (rig analysis, design, build)")
+    import tempfile
+    from app import autoshow, console_ai
+    from app import engine as eng
+    from app import fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "auto.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("an empty rig is refused, not guessed at",
+                  _raises(lambda: autoshow.design(e, "techno", offline=True)), "")
+            e.ensure_venue()
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=6)
+            e.act("add_heads", query="LED PAR 4ch", qty=6)
+            e.act("timeline_set", bpm=128, audio={"id": "x1", "name": "t.mp3", "duration": 180})
+            a = autoshow.analyse(e)
+            roles = {g["role"] for g in a["groups"].values()}
+            check("the analysis groups lights by type and where they are",
+                  {"spot", "par"} <= roles
+                  and any("Front truss" in g["name"] or "truss" in g["name"].lower()
+                          for g in a["groups"].values() if g["role"] == "spot"), json.dumps(
+                      {k: g["name"] for k, g in a["groups"].items()}))
+            check("it finds aim targets in the room",
+                  {"dj", "floor", "crowd"} <= set(a["targets"]), str(list(a["targets"])))
+            movers = next(g for g in a["groups"].values() if g["role"] == "spot")
+            pars = next(g for g in a["groups"].values() if g["role"] == "par")
+            check("capabilities are what every light in the group can do",
+                  movers["caps"]["pan_tilt"] and not pars["caps"]["pan_tilt"]
+                  and pars["caps"]["colour"] == "mix", json.dumps(movers["caps"]))
+            check("effects offered per group are ones it can run",
+                  "circle" in movers["fx"] and "circle" not in pars["fx"], "")
+            r = autoshow.design(e, "dark techno warehouse", offline=True)
+            d = r["design"]
+            check("an offline design has contrasting sections",
+                  r["source"] == "offline" and len(d["sections"]) >= 5
+                  and min(s["energy"] for s in d["sections"]) < 0.4
+                  and max(s["energy"] for s in d["sections"]) == 1.0, "")
+            check("it never aims or colours a light that cannot",
+                  all(not (lk.get("aim") and not a["groups"][lk["group"]]["caps"]["pan_tilt"])
+                      and not (lk.get("colour") and a["groups"][lk["group"]]["caps"]["colour"] != "mix")
+                      for s in d["sections"] for lk in s["looks"]), "")
+            bad = {"name": "x", "sections": [{"name": "S", "bars": 8, "energy": 2, "looks": [
+                {"group": "nope", "intensity": 50},
+                {"group": [k for k, g in a["groups"].items() if g["role"] == "par"][0],
+                 "intensity": 500, "aim": "floor", "fx": "circle", "colour": "red"}]}]}
+            v = autoshow.validate(bad, a)
+            lk = v["sections"][0]["looks"][0]
+            check("validation drops unknown groups and impossible choices",
+                  len(v["sections"][0]["looks"]) == 1 and lk["intensity"] == 100
+                  and "aim" not in lk and "fx" not in lk and "colour" not in lk
+                  and v["sections"][0]["energy"] == 1.0, json.dumps(v))
+            e.act("record_cue", playback=1, name="old") if e.act("select_all") and e.act("set_intensity", level=50) else None
+            undo_before = len(e._undo)
+            out = autoshow.build(e, d, playback=1)
+            check("building makes one cue per section",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == [s["name"] for s in d["sections"]],
+                  str([c["name"] for c in e.playbacks[0]["stack"]]))
+            kinds = {t["kind"] for t in e.timeline["tracks"] if t["name"].startswith(autoshow.AUTO_PREFIX)}
+            check("and the timeline: cues, effects, hits and master",
+                  kinds == {"cue", "fx", "button", "level"}, str(kinds))
+            cue_t = [c["t"] for t in e.timeline["tracks"] if t["kind"] == "cue" for c in t["clips"]]
+            check("sections are laid out to fill the song",
+                  cue_t[0] == 0 and 150 < cue_t[-1] < 180 and e.timeline["length"] >= 180, str(cue_t))
+            beat = 60 / 128
+            hits = [c["t"] for t in e.timeline["tracks"] if t["kind"] == "button" for c in t["clips"]]
+            check("hits land on the beat grid",
+                  hits and all(abs((t / beat) - round(t / beat)) < 0.02 for t in hits), str(hits[:6]))
+            check("the whole build is ONE undo step",
+                  len(e._undo) == undo_before + 1 and e._undo[-1]["action"] == "auto show",
+                  out["summary"])
+            e.act("timeline_play")
+            clock = [e._clock()]
+            e._clock = lambda: clock[0]
+            e.tl["t0"] = clock[0]
+            clock[0] += 0.05
+            e._tick_timeline()
+            check("playing it fires the first section's cue",
+                  e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
+            e.act("timeline_stop")
+            again = autoshow.build(e, d, playback=1)
+            check("building again replaces the auto tracks rather than stacking them",
+                  sum(1 for t in e.timeline["tracks"] if t["kind"] == "cue") == 1
+                  and sum(1 for g in e.groups if g["name"].startswith(autoshow.AUTO_PREFIX))
+                  == len({lk["group"] for s in d["sections"] for lk in s["looks"]}), again["summary"])
+            ctx = console_ai.rig_context(e)
+            check("the copilot sees the room, its rigging and the timeline",
+                  "RIGGING" in ctx and "TIMELINE" in ctx and "ROOM" in ctx, ctx[-400:])
+            check("and may aim, attach and run the timeline",
+                  {"aim_at", "attach_heads", "timeline_play"} <= set(console_ai.ALLOWED_ACTIONS), "")
+        finally:
+            e.shutdown()
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
 
 
 def test_show_building() -> None:
