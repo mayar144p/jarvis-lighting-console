@@ -587,6 +587,7 @@ ACTIONS = (
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move",
     "venue_save", "venue_open", "venue_delete",
+    "patch_move_free",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
@@ -1120,6 +1121,48 @@ class Engine:
             if pos < h0 + h["channels"] and h0 < end:
                 return h["head_no"]
         return None
+
+    def _patch_clashes(self) -> list[dict]:
+        """Every pair of lights whose DMX channels overlap (both sending on
+        the same channels: the second one silently fights the first).  The
+        load-time check only caught one direction of this."""
+        rows = sorted(((_pos(h["universe"], h["address"]), h) for h in self.patch), key=lambda t: t[0])
+        out = []
+        for i, (p0, a) in enumerate(rows):
+            for p1, b in rows[i + 1:]:
+                if p1 >= p0 + a["channels"]:
+                    break
+                lo, hi = p1, min(p0 + a["channels"], p1 + b["channels"]) - 1
+                out.append({"a": a["head_no"], "b": b["head_no"], "universe": b["universe"],
+                            "from": b["address"], "to": b["address"] + (hi - lo)})
+        return out
+
+    def _free_block(self, channels: int, skip=None, universe=1) -> tuple[int, int]:
+        """The first universe.address (from `universe` on) with `channels`
+        free channels in a row."""
+        for u in range(max(1, int(universe)), 65):
+            taken = sorted((h["address"], h["address"] + h["channels"] - 1) for h in self.patch
+                           if h["universe"] == u and h["head_no"] != skip)
+            a = 1
+            for lo, hi in taken:
+                if a + channels - 1 < lo:
+                    break
+                a = max(a, hi + 1)
+            if a + channels - 1 <= SLOTS:
+                return u, a
+        raise ValueError("no free DMX space left")
+
+    def _a_patch_move_free(self, head=None, **_):
+        """Move a light to the first free block of addresses (its own
+        universe first) - the one-tap fix for a clash."""
+        h = self._head(head)
+        u, a = self._free_block(h["channels"], skip=h["head_no"], universe=h["universe"])
+        old = (h["universe"], h["address"])
+        h["universe"], h["address"] = u, a
+        self.patch_rev += 1
+        return {"head_no": h["head_no"], "universe": u, "address": a,
+                "summary": f"#{h['head_no']} moved from {old[0]}.{old[1]:03d} to {u}.{a:03d} - "
+                           f"set the light's own address to match"}
 
     def _next_free_pos(self, universe=None, address=None, channels=1) -> int:
         if universe and address:
@@ -9735,6 +9778,7 @@ class Engine:
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),
+                "clashes": self._patch_clashes(),
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.

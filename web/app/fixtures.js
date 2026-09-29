@@ -1,7 +1,7 @@
 // The fixture list: what is patched, where, and what is selected.
 import { state, on, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, h, menu, promptBox, confirmBox, toast } from "./ui.js";
+import { $, h, menu, promptBox, confirmBox, toast, modal } from "./ui.js";
 import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration, openLightTest } from "./dialogs.js";
 import { post, get } from "./api.js";
 
@@ -281,10 +281,79 @@ function rowMenu(btn, head) {
   ]);
 }
 
+// ---------------------------------------------------------- DMX map
+// Who owns which channels, universe by universe; clashes in red, each with
+// a one-tap "move to the next free address".
+const clashes = () => (state.snap && state.snap.clashes) || [];
+const hue = (n) => `hsl(${(n * 67) % 360} 55% 42%)`;
+
+function renderClashes() {
+  const box = $("#fx-clash");
+  const list = clashes();
+  const key = JSON.stringify(list);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.hidden = !list.length;
+  box.replaceChildren(...(list.length ? [
+    h("b", `⚠ ${list.length} address clash${list.length > 1 ? "es" : ""}`),
+    ...list.slice(0, 3).map((c) => h("div.clash-row",
+      h("span", `#${c.a} and #${c.b} share ${c.universe}.${String(c.from).padStart(3, "0")}–${String(c.to).padStart(3, "0")}`),
+      h("button.btn.small", { title: `Move #${c.b} to the first free block of addresses`,
+        onclick: () => run("patch_move_free", { head: c.b }, { toast: true }) }, `Move #${c.b}`))),
+    h("button.btn.small.ghost", { onclick: openDmxMap }, "Open the DMX map"),
+  ] : []));
+}
+
+export function openDmxMap() {
+  const draw = () => {
+    const heads = patch();
+    const bad = new Set(clashes().flatMap((c) => [c.a, c.b]));
+    const unis = [...new Set(heads.map((x) => x.universe))].sort((a, b) => a - b);
+    if (!unis.length) unis.push(1);
+    const blocks = unis.map((u) => {
+      const own = new Array(513).fill(null);
+      const clash = new Array(513).fill(false);
+      for (const x of heads.filter((y) => y.universe === u)) {
+        for (let c = x.address; c < x.address + (x.channels || (x.map || []).length || 1) && c <= 512; c++) {
+          if (own[c] !== null) clash[c] = true;
+          own[c] = x.head_no;
+        }
+      }
+      const used = own.filter((x) => x !== null).length;
+      const cells = [];
+      for (let c = 1; c <= 512; c++) {
+        const n = own[c];
+        const hd = n !== null ? heads.find((y) => y.head_no === n) : null;
+        cells.push(h("i" + (clash[c] ? ".clash" : n !== null ? ".own" : ""), {
+          title: `${u}.${String(c).padStart(3, "0")}` + (hd ? ` · #${n} ${hd.name || hd.model}` : " · free")
+            + (clash[c] ? " · CLASH" : ""),
+          style: n !== null && !clash[c] ? { background: hue(n) } : null,
+        }));
+      }
+      return h("div.dmx-uni", h("h4", `Universe ${u}`, h("small", ` ${used} of 512 channels used`)), h("div.dmx-grid", ...cells));
+    });
+    const rows = heads.slice().sort((a, b) => a.universe - b.universe || a.address - b.address).map((x) => {
+      const n = x.channels || (x.map || []).length || 1;
+      return h("div.dmx-row" + (bad.has(x.head_no) ? ".bad" : ""),
+        h("i", { style: { background: bad.has(x.head_no) ? "var(--live)" : hue(x.head_no) } }),
+        h("span.mono", `${x.universe}.${String(x.address).padStart(3, "0")}–${String(x.address + n - 1).padStart(3, "0")}`),
+        h("span", `#${x.head_no} ${x.name || x.model}`), h("span.muted.small", `${n} ch`),
+        bad.has(x.head_no) ? h("button.btn.small", { onclick: () => run("patch_move_free", { head: x.head_no }, { toast: true }) }, "Move to free") : null);
+    });
+    return h("div.dmx-map", ...blocks, h("div.dmx-list", ...rows));
+  };
+  const body = h("div", draw());
+  const close = modal({ title: "DMX map", wide: true, body,
+    foot: [h("span.muted.small", "Each square is one DMX channel. Red: two lights on the same channels. After moving a light, set the same address on the light itself."),
+      h("span.grow"), h("button.btn", { onclick: () => close() }, "Close")] });
+  const off = on("snapshot", () => { if (!document.body.contains(body)) { off && off(); return; } body.replaceChildren(draw()); });
+}
+
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
     { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
+    { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Scan the network for nodes", run: () => scanRig() },
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
@@ -358,7 +427,7 @@ export function initFixtures() {
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }
-  on("snapshot", () => { render(); renderGroups(); });
+  on("snapshot", () => { render(); renderGroups(); renderClashes(); });
   on("selection", () => { render(); renderGroups(); });
   on("lite", render);
   on("looks", paintLamps);

@@ -86,6 +86,7 @@
         <button class="btn ghost small icon" id="fx-more" title="Patch tools" aria-haspopup="menu">⋯</button>
       </div>
       <div class="group-chips" id="group-chips"></div>
+      <div class="fx-clash" id="fx-clash" hidden></div>
       <div class="fx-table-wrap">
         <table class="fx-table" id="fx-table">
           <thead><tr><th class="c-no">#</th><th>Fixture</th><th class="c-addr">DMX</th></tr></thead>
@@ -215,6 +216,7 @@
             <label class="field inline"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
             <span class="reach" id="colour-reach"></span>
           </div>
+          <div class="colour-extra" id="colour-extra"></div>
           <label class="field kelvin-row" id="kelvin-row"><span>White temperature <output id="kelvin-out">5600 K</output></span>
             <input type="range" id="kelvin" min="2000" max="10000" step="100" value="5600"></label>
           <div class="chip-row" id="wheel-steps" hidden></div>

@@ -7517,6 +7517,7 @@ def _standalone_suites():
     ("Looks: named, one tap brings it all back", test_looks),
     ("grouping for big rigs", test_big_rig_groups),
     ("My venues: saved per venue, any room shape, poles", test_my_venues),
+    ("DMX map: every address clash found and fixable", test_dmx_clashes),
     )
 
 
@@ -8999,6 +9000,48 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_dmx_clashes() -> None:
+    """Two lights on overlapping channels fight each other.  The load-time
+    check missed a light that started INSIDE an earlier one (laser A at 20
+    with 13 channels, laser B at 25): now every clash is listed, and one tap
+    moves a light to the first free block of addresses."""
+    print("DMX map (clashes found both ways; move to free)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "d.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=2)
+            a, b = e.patch
+            # the way a clash gets in: a show saved elsewhere / an older check
+            a["universe"], a["address"] = 1, 20
+            b["universe"], b["address"] = 1, 25
+            cl = e._patch_clashes()
+            check("a light starting inside another is a clash (20+13 ch vs 25)",
+                  len(cl) == 1 and {cl[0]["a"], cl[0]["b"]} == {a["head_no"], b["head_no"]}
+                  and cl[0]["from"] == 25 and cl[0]["to"] == 32, str(cl))
+            check("...and the console gets it in the snapshot", e.snapshot().get("clashes"), "")
+            r = e.act("set_address", head=a["head_no"], universe=1, address=30)
+            check("setting an address onto another light is refused", not r.get("ok") and "overlaps" in r.get("error", ""), str(r))
+            r = e.act("patch_move_free", head=b["head_no"])
+            nb = e._head(b["head_no"])
+            check("one tap moves it to the first free block (1-19 is free: 1.001)",
+                  r.get("ok") and not e._patch_clashes() and nb["address"] == 1, str((r, nb["address"])))
+            r = e.act("patch_move_free", head=a["head_no"])
+            check("...and the next one goes right after it", r.get("ok") and e._head(a["head_no"])["address"] == 14
+                  and not e._patch_clashes(), str(e._head(a["head_no"])["address"]))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the list warns about clashes and opens a DMX map", "openDmxMap" in fx and '"patch_move_free"' in fx
+          and "fx-clash" in fx, "")
 
 
 def test_my_venues() -> None:

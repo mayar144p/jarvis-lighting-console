@@ -174,7 +174,42 @@ function currentHex() {
   return rgbToHex(r[0] || 0, g[0] || 0, b[0] || 0);
 }
 
+// An RGBW / RGBA / UV light's extra LEDs, each its own slider: a picked
+// colour stays pure (no white mixed in), and white, amber or UV go on top
+// only when you ask for them.
+const EXTRA = [["white", "White", "#f5f5f0"], ["amber", "Amber", "#ffb000"], ["uv", "UV", "#8b5cf6"], ["lime", "Lime", "#b5ff4d"]];
+let extraKey = "";
+let extraHeld = 0;
+
+function renderColourExtra() {
+  const box = $("#colour-extra");
+  const heads = selectionHeads();
+  const roles = new Set(heads.flatMap((x) => x.map || []));
+  const mixes = ["red", "cyan"].some((r) => roles.has(r));
+  const list = mixes ? EXTRA.filter(([r]) => roles.has(r)) : [];
+  const vals = ((state.snap && state.snap.programmer) || {}).values || {};
+  const cur = (r) => {
+    const v = heads.map((x) => (vals[x.head_no] || {})[r]).filter((x) => x !== undefined);
+    return v.length ? Math.max(...v) : 0;
+  };
+  const key = JSON.stringify([list.map(([r]) => [r, cur(r)]), heads.map((x) => x.head_no)]);
+  if (key === extraKey || Date.now() < extraHeld) return;
+  extraKey = key;
+  box.replaceChildren(...(list.length ? [h("span.muted.small", "Added on top of the colour:"), ...list.map(([role, label, tint]) => {
+    const input = h("input", { type: "range", min: 0, max: 255, value: cur(role), style: { accentColor: tint } });
+    const out = h("output.mono.small", `${Math.round(cur(role) / 2.55)}%`);
+    const send = throttle((v) => run("set_attribute", { attribute: role, value: v }, { silentError: true }), 60);
+    input.addEventListener("input", () => {
+      extraHeld = Date.now() + 800;                 // don't redraw under the finger
+      out.textContent = `${Math.round(+input.value / 2.55)}%`;
+      send(+input.value);
+    });
+    return h("label.extra-row", h("i.extra-dot", { style: { background: tint } }), h("span", label), input, out);
+  })] : []));
+}
+
 function renderColour() {
+  renderColourExtra();
   const hex = currentHex();
   if (hex) {
     picker.set(hex);

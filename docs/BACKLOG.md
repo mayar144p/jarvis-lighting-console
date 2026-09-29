@@ -70,6 +70,16 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
+
+- Every overlap between two lights' channels is found (the load-time check
+  missed a light starting inside an earlier one: 20 + 13 ch vs 25), shown
+  as a red warning above the list with "Move #n" (first free block), and
+  in a DMX map (512 squares per universe, clashes red, per-light list).
+- The Colour tab adds White / Amber / UV / Lime sliders on top of a pure
+  picked colour, for the lights that have them.
+- Still open: change fixture type keeping position / groups / cues; RDM.
+
 ## 13. My venues, room shapes, rigging up front (DONE)
 
 - "Venues ▾" in Arrange: save this venue (room, rigging, zones, objects,
