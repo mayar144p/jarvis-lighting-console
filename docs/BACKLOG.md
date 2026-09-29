@@ -6,7 +6,7 @@ starts from the diagnosis, not from scratch.
 
 ## 1. Bug fixes (next)
 
-- **Laser "hold" sticks on; needs a second click to stop.**
+- **(DONE) Laser "hold" sticks on; needs a second click to stop.**
   `web/app/fxpanel.js` `holdButton`: the Laser tab re-renders while the
   button is held (attribute reloads on every snapshot), the element under
   the finger is replaced, and the browser sends `lostpointercapture` to the
@@ -46,12 +46,14 @@ and ch 3 + ch 10 share `speed`.  Fix: sub-fixtures (#9.1..#9.4) selectable
 alone or together, per-head values, and effects that run ACROSS the heads
 (colour chase, rainbow, tilt wave).  Also covers zoned LED bars.
 
-## 4. Group buttons and laser recording
+## 4. Group buttons and laser recording (DONE)
 
-- A Groups strip: tap = select the group, hold = flash that group.
-- Laser tab: **Record** (store the laser look - beams, mode, program,
-  speed - as a cue) and **Make a laser button** (a quick button from the
-  current laser look).  Output stays armed-only.
+- The group chips (yours and the automatic ones): tap = select the group,
+  hold = flash that group (`group_flash`, never stored or an undo step).
+- Laser tab: **Record as a cue…** (the cue dialog) and **Make a laser
+  button** (`quick_from_laser`: an on / off laser button from the laser
+  look in the programmer, on the first empty slot).  Output stays
+  armed-only.
 
 ## 5. Programming and cues redesign (mock-up first)
 

@@ -6,7 +6,9 @@
 // a CO2 jet's tilt, fan speed...) is programmable like any attribute.
 import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, modal } from "./ui.js";
+import { $, h, modal, promptBox } from "./ui.js";
+import { openCueDialog } from "./dialogs.js";
+import { focusedPlayback } from "./playbacks.js";
 
 const sfxState = () => (state.lite && state.lite.sfx) || (state.snap && state.snap.sfx) || { armed: false, runs: [], loads: {}, heads: {} };
 const selected = () => new Set(((state.snap && state.snap.selected) || []).map(Number));
@@ -265,6 +267,14 @@ function renderLaser(attrState) {
     chooser("Mode", e.fx_mode),
     slider("Setting", e.fx_param),
     ...otherBlock(e),
+    h("div.fx-fire-row",
+      h("button.btn", { title: "Record this laser look (and the rest of the programmer) as a cue",
+        onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…"),
+      h("button.btn", { title: "A quick button that switches this laser look on and off (only while armed)",
+        onclick: async () => {
+          const name = await promptBox("Make a laser button", "Name", "Laser look", { ok: "Make button" });
+          if (name !== null) run("quick_from_laser", { heads, label: name }, { toast: true });
+        } }, "Make a laser button")),
     h("p.muted.small", "Pattern, colour, size and movement are recorded in cues like any attribute. The laser's output only comes on from these buttons or an FX button, and only while armed."),
   ].filter(Boolean));
 }

@@ -95,7 +95,7 @@ UNDO_COALESCE_S = 1.2
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
-    "quick_press", "quick_release_all", "quick_rate",
+    "quick_press", "quick_release_all", "quick_rate", "group_flash",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -585,7 +585,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate",
+    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free",
     "move_save", "move_play", "move_delete", "move_rename",
@@ -850,7 +850,7 @@ class Engine:
         self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
-                             if any(b["id"] == k for b in self.quick)}
+                             if v.get("btn") or any(b["id"] == k for b in self.quick)}
         self.mode = state.get("mode", self.mode)
         # Limits and orientation come back with the patch, so an undo
         # restores a fixture's rigging as well as its position.
@@ -3362,7 +3362,7 @@ class Engine:
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
         "venue_save", "venue_open", "venue_delete",
-        "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
+        "quick_set", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
     })
@@ -3995,6 +3995,46 @@ class Engine:
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
 
+    def _a_group_flash(self, heads=None, group=None, auto=None, down=True, level=100, **_):
+        """Flash some lights while held (a group chip held down): full up
+        over everything else, the same as a flash button, never stored."""
+        key = "flash:chip"
+        if not _truthy(down):
+            self.quick_active.pop(key, None)
+            return {"active": False, "summary": "flash released"}
+        target = {"group": group} if group is not None else {"auto": auto} if auto else {"heads": heads or []}
+        nums = self._heads_for_target(target)
+        if not nums:
+            raise ValueError("no lights to flash")
+        btn = {"id": key, "kind": "flash", "mode": "hold", "level": int(_clamp(level, 0, 100)),
+               "label": "Flash", "target": target}
+        self.quick_active[key] = {"since": time.monotonic(), "heads": nums, "owners": {"hand"},
+                                  "fx_ids": [], "btn": btn}
+        return {"active": True, "heads": len(nums), "summary": f"flashing {len(nums)} light(s)"}
+
+    def _a_quick_from_laser(self, heads=None, label="", page=None, **_):
+        """A laser button from the laser look in the programmer (pattern,
+        colour, size, movement, beams): on / off, output only while armed."""
+        nums = [int(n) for n in (heads or [])]
+        lasers = [h for h in self.patch if h["head_no"] in nums and any(r in LASER_ROLES for r in h["map"])]
+        if not lasers:
+            raise ValueError("select a laser first")
+        values = {}
+        for h in lasers:
+            for role, v in (self.programmer.get(h["head_no"]) or {}).items():
+                if role in LASER_ROLES and isinstance(v, (int, float)):
+                    values.setdefault(role, int(v))
+        pages = [int(page)] if page else list(range(1, self.QUICK_PAGES + 1))
+        used = {(b["page"], b["slot"]) for b in self.quick}
+        spot = next(((p, sl) for p in pages for sl in range(1, self.QUICK_SLOTS + 1) if (p, sl) not in used), None)
+        if spot is None:
+            raise ValueError("no empty button left" + (f" on page {page}" if page else ""))
+        r = self._a_quick_set(page=spot[0], slot=spot[1], button={
+            "kind": "laser", "mode": "latch", "label": str(label or "Laser look")[:24],
+            "target": {"heads": [h["head_no"] for h in lasers]}, "values": values})
+        r["summary"] = f"laser button {spot[0]}.{spot[1]}: {r['button']['label']}"
+        return r
+
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
         heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
@@ -4344,7 +4384,7 @@ class Engine:
         out: dict[int, dict] = {}
         heads = {h["head_no"]: h for h in self.patch}
         for key, run in sorted(self.quick_active.items(), key=lambda kv: kv[1]["since"]):
-            btn = by_id.get(key)
+            btn = by_id.get(key) or run.get("btn")
             if not btn:
                 continue
             kind = btn["kind"]

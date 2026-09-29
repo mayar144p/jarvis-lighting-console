@@ -178,6 +178,32 @@ function paintLamps() {
   });
 }
 
+// Hold a group chip to flash that group (tap still selects it).
+function holdToFlash(el, params) {
+  let timer = 0, flashing = false;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.classList.contains("x")) return;
+    timer = setTimeout(() => {
+      flashing = true;
+      el.classList.add("flashing");
+      run("group_flash", { ...params, down: true }, { silentError: true });
+    }, 350);
+  });
+  const up = () => {
+    clearTimeout(timer);
+    if (!flashing) return;
+    el.classList.remove("flashing");
+    run("group_flash", { down: false }, { silentError: true });
+    // the click that follows a hold is not a tap
+    el.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); }, { capture: true, once: true });
+    setTimeout(() => { flashing = false; }, 0);
+  };
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  el.addEventListener("pointerleave", up);
+  return el;
+}
+
 function renderGroups() {
   const box = $("#group-chips");
   const groups = (state.snap && state.snap.groups) || [];
@@ -188,12 +214,12 @@ function renderGroups() {
   if (box.dataset.key === key) return;
   box.dataset.key = key;
   box.replaceChildren(
-    ...autos.map((g) => h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection`,
+    ...autos.map((g) => holdToFlash(h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection · hold to flash`,
       onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
-    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`))),
-    ...groups.map((g) => h("button.chip" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length})`,
+    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`)), { auto: g.key })),
+    ...groups.map((g) => holdToFlash(h("button.chip" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length}) · hold to flash`,
       onclick: (e) => {
         if (e.target.classList.contains("x")) return;
         select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
@@ -206,7 +232,7 @@ function renderGroups() {
           run("group_delete", { group: g.n });
         }
       },
-    }, "×"))));
+    }, "×")), { group: g.n })));
 }
 
 function rowClick(e) {

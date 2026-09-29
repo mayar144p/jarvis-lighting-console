@@ -7524,6 +7524,7 @@ def _standalone_suites():
     ("buttons: big tiles and icons", test_button_tiles),
     ("buttons: a speed of their own", test_button_speed),
     ("buttons: a MIDI note per button", test_button_midi),
+    ("group chips flash when held; laser looks make buttons", test_group_flash_laser_button),
     )
 
 
@@ -9181,6 +9182,54 @@ def test_button_midi() -> None:
     check("a controller on the tablet plays buttons too (Web MIDI, off until switched on)",
           "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
     check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
+
+
+def test_group_flash_laser_button() -> None:
+    """Holding a group chip flashes that group (never stored); the Laser
+    tab turns the laser look in the programmer into an on / off button."""
+    print("group flash and laser buttons")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2, universe=1, address=1)
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=40)
+            e.act("group_create", name="Left", heads=[1])
+            di = e.patch[0]["map"].index("dimmer")
+            dim2 = e.patch[1]["address"] - 1 + e.patch[1]["map"].index("dimmer")
+            undo_before = len(e._undo)
+            r = e.act("group_flash", group=1, down=True)
+            f = e.build_frames()[1]
+            check("holding a group chip flashes that group only", r.get("ok") and f[di] == 255 and f[dim2] == 0,
+                  str((r, f[di], f[dim2])))
+            e.act("group_flash", down=False)
+            check("...and letting go ends it", e.build_frames()[1][di] == 0 and "flash:chip" not in e.quick_active, "")
+            check("a group flash is not an undo step", len(e._undo) == undo_before, "")
+            r = e.act("group_flash", auto="kind:nothing", down=True)
+            check("a group with no lights says so", not r.get("ok"), str(r))
+            e.act("select_heads", heads=[3])
+            e.act("set_attribute", attribute="laser_beam1", value=255)
+            e.act("set_attribute", attribute="laser_beam3", value=200)
+            r = e.act("quick_from_laser", heads=[3], label="Beams 1+3")
+            b = r.get("button") or {}
+            check("the laser look becomes an on / off laser button", r.get("ok") and b.get("kind") == "laser"
+                  and b.get("mode") == "latch" and b.get("target") == {"heads": [3]}
+                  and b.get("values", {}).get("laser_beam1") == 255 and b["values"].get("laser_beam3") == 200, str(r))
+            r = e.act("quick_from_laser", heads=[1])
+            check("a PAR can't make a laser button", not r.get("ok"), str(r))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the Laser tab records a cue and makes a button", "quick_from_laser" in fx and "openCueDialog" in fx, "")
+    check("group chips flash while held", "holdToFlash" in fj and "group_flash" in fj, "")
 
 
 def test_cue_list_modes() -> None:
