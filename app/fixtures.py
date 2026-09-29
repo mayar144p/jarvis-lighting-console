@@ -873,29 +873,47 @@ def reapply_aux(db_path: Path) -> int:
         rows = conn.execute("SELECT id, channels, detail FROM modes").fetchall()
         for r in rows:
             try:
-                channels = json.loads(r["channels"] or "[]")
-                detail = json.loads(r["detail"] or "[]")
-            except (TypeError, ValueError):
-                continue
-            if not channels:
-                continue
-            if not detail or len(detail) != len(channels):
-                detail = [{"n": i + 1, "label": c, "name": c, "role": channel_role(c)}
-                          for i, c in enumerate(channels)]
-            for d, c in zip(detail, channels):
-                d.setdefault("role", channel_role(d.get("label") or c))
-            if any(str(d.get("role") or "").startswith(("fx_", "laser_")) or d.get("role") == "fog"
-                   for d in detail):
-                continue                          # an effect / laser: its own roles
-            before = json.dumps([channels, detail])
-            item = {"fx_kind": "", "modes": [{"channels": list(channels), "detail": detail}]}
-            fixlib.apply_aux(item)
-            mode = item["modes"][0]
-            if json.dumps([mode["channels"], mode["detail"]]) != before:
-                conn.execute("UPDATE modes SET channels = ?, detail = ? WHERE id = ?",
-                             (json.dumps(mode["channels"]), json.dumps(mode["detail"]), r["id"]))
-                changed += 1
+                changed += _reapply_one(conn, r, fixlib)
+            except Exception:             # noqa: BLE001 - one odd fixture never
+                continue                  # stops the rest from being upgraded
     return changed
+
+
+def _reapply_one(conn, r, fixlib) -> int:
+    """apply_aux on one stored mode; 1 if it changed."""
+    try:
+        channels = json.loads(r["channels"] or "[]")
+        detail = json.loads(r["detail"] or "[]")
+    except (TypeError, ValueError):
+        return 0
+    if not isinstance(channels, list) or not isinstance(detail, list):
+        return 0
+    if not channels:
+        return 0
+    if not detail or len(detail) != len(channels) or not all(isinstance(d, dict) for d in detail):
+        detail = [{"n": i + 1, "label": c, "name": c, "role": channel_role(c)}
+                  for i, c in enumerate(channels)]
+    for d, c in zip(detail, channels):
+        d.setdefault("role", channel_role(d.get("label") or c))
+    if any(str(d.get("role") or "").startswith(("fx_", "laser_")) or d.get("role") == "fog"
+           for d in detail):
+        return 0                          # an effect / laser: its own roles
+    before = json.dumps([channels, detail])
+    item = {"fx_kind": "", "modes": [{"channels": list(channels), "detail": detail}]}
+    fixlib.apply_aux(item)
+    mode = item["modes"][0]
+    if json.dumps([mode["channels"], mode["detail"]]) != before:
+        conn.execute("UPDATE modes SET channels = ?, detail = ? WHERE id = ?",
+                     (json.dumps(mode["channels"]), json.dumps(mode["detail"]), r["id"]))
+        return 1
+    return 0
+
+
+def _safe_reapply(db_path: Path) -> int:
+    try:
+        return reapply_aux(db_path)
+    except Exception:                     # noqa: BLE001 - never block boot
+        return 0
 
 
 def refresh_imports(db_path: Path, folders) -> dict:
@@ -911,7 +929,10 @@ def refresh_imports(db_path: Path, folders) -> dict:
         row = conn.execute("SELECT value FROM meta WHERE key = 'parser_version'").fetchone()
         have = int(row["value"]) if row and str(row["value"]).isdigit() else 0
         if have >= PARSER_VERSION:
-            return {"refreshed": 0, "missing": 0, "errors": []}
+            # the stored-data upgrade still runs on every start: it only
+            # writes what changes, and one that was cut short (an odd
+            # fixture made it stop) finishes next time instead of never
+            return {"refreshed": _safe_reapply(db_path), "missing": 0, "errors": []}
         sources = [r["source"] for r in conn.execute(
             "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'"
             " OR lower(source) LIKE '%.qxf' OR lower(source) LIKE '%.json'"
@@ -937,11 +958,7 @@ def refresh_imports(db_path: Path, folders) -> dict:
             refreshed += 1
         except Exception as exc:          # noqa: BLE001 - one bad file
             errors.append(f"{name}: {exc}")
-    # and every fixture whose file is gone gets the stored-data upgrades
-    try:
-        refreshed += reapply_aux(db_path)
-    except Exception as exc:              # noqa: BLE001 - never block boot
-        errors.append(f"channel controls: {exc}")
+    refreshed += _safe_reapply(db_path)
     with db(db_path) as conn:
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)",
                      (str(PARSER_VERSION),))

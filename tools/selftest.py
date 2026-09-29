@@ -8812,6 +8812,31 @@ def test_aux_channels() -> None:
                   names.get("aux1") == "Continuous Pan Rotating" and names.get("aux5") == "Auto Programs", str(names))
         finally:
             e.shutdown()
+        # THE OPERATOR'S CASE: the old one-shot upgrade crashed on an odd
+        # fixture (a capability row with a missing end), recorded itself as
+        # done, and the Wave stored after it never got its controls
+        broken = tmp / "broken.db"
+        _fl.apply_aux = lambda item: item
+        try:
+            fixtures.store_parsed(broken, [{"manufacturer": "Odd", "model": "Manual Read", "modes": [
+                {"name": "2ch", "channel_count": 2, "channels": ["Odd", "Mode"],
+                 "detail": [{"n": 1, "label": "Odd", "name": "Odd", "role": "raw", "caps": [[None, 10, "a"], [11, 255, "b"]]},
+                            {"n": 2, "label": "Mode", "name": "Mode", "role": "raw", "caps": [[0, 9, "x"], [10, 255, "y"]]}]}]}],
+                "manual:odd")
+            fixtures.store_parsed(broken, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "gone.gdtf")
+        finally:
+            _fl.apply_aux = keep
+        with fixtures.db(broken) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT OR REPLACE INTO meta VALUES ('parser_version', ?)", (str(fixtures.PARSER_VERSION),))
+        fixtures.refresh_imports(broken, [])
+        labels = fixtures.mode_channels(broken, "Chauvet", "Intimidator Wave 360 IRC", "33 ch.")
+        check("an odd fixture never stops the rest being upgraded, and a finished version still repairs",
+              labels[8].startswith("Aux ") and labels[28].startswith("Aux "), str(labels[8:10]))
+        check("a capability row with a missing end is skipped, not a crash",
+              fixlib.apply_aux({"fx_kind": "", "modes": [{"channels": ["X"], "detail": [
+                  {"label": "X", "name": "X", "role": "raw", "caps": [[None, 1, "a"], [2, 3, "b"], [4, 9, "c"]]}]}]})
+              ["modes"][0]["detail"][0]["role"] == "aux1", "")
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Beam tab shows them under their own names", "a.name || attrName(a.role)" in js, "")
 
