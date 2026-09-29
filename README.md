@@ -32,6 +32,14 @@ undo, the patch lock and dry run mean the same thing whichever you used.
 1. **Windows:** double-click `run.bat`. **Mac/Linux:** `./run.sh`.
    Both create `.env` from `.env.example` on first run and open
    <http://localhost:8787>. Or run `python app/main.py` yourself.
+
+   **Updates are automatic.** Each launch fetches the latest version and
+   fast-forwards to it. It's skipped with a one-line note when you're
+   offline, have edited Jarvis's own files, or have commits of your own.
+   Your shows, fixtures and `.env` are never touched. After an update,
+   fixtures you already downloaded are re-read if the importer has
+   improved, so there's no need to download them again. Set
+   `AUTO_UPDATE=false` in `.env` to turn it off.
 2. Optional: put an AI key in `.env` (the free Gemini tier works; get a key at
    <https://aistudio.google.com/apikey>):
    ```
@@ -308,6 +316,7 @@ machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 |---|---|---|
 | `APP_NAME` / `APP_SUBTITLE` | JARVIS / Lighting Assistant | branding |
 | `HOST` / `PORT` | 127.0.0.1 / 8787 | bind address and web port |
+| `AUTO_UPDATE` | true | `run.bat` / `run.sh` fetch the latest version on launch |
 | `CONSOLE_TOKEN` | *(empty)* | required when `HOST` is not loopback; sent as `X-Jarvis-Token` |
 | `LLM_API_KEY` | *(empty)* | empty: the copilot runs offline |
 | `LLM_BASE_URL` | Gemini's OpenAI endpoint | any OpenAI-compatible endpoint |
