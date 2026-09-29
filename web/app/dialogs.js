@@ -378,6 +378,105 @@ export async function saveShow(name) {
 // ============================================================== settings
 const VENUE_TEMPLATES = [["club", "Club"], ["small_club", "Small club / bar"], ["warehouse", "Warehouse rave"],
   ["concert", "Concert stage"], ["theatre", "Theatre"], ["ballroom", "Ballroom / event"], ["outdoor", "Outdoor stage"]];
+// ---- Settings -> Output: where the DMX goes at this venue -------------
+// Every venue's lighting network is different, so the node is chosen
+// here and saved with the show: Auto (this computer's lighting network),
+// one node's IP, or a broadcast address.  Find nodes polls every adapter.
+function outputSection(con) {
+  const box = h("div.out-box");
+  const mode = h("select.select",
+    h("option", { value: "auto" }, "Auto: broadcast on my lighting network"),
+    h("option", { value: "node" }, "One node: send to its IP"),
+    h("option", { value: "broadcast" }, "Broadcast address I choose"));
+  const ip = h("input", { type: "text", inputmode: "decimal", placeholder: "e.g. 2.0.0.10", spellcheck: "false", autocomplete: "off" });
+  const proto = h("select.select",
+    h("option", { value: "" }, `Default (${(con.transport || "artnet") === "sacn" ? "sACN" : "Art-Net"})`),
+    h("option", { value: "artnet" }, "Art-Net"),
+    h("option", { value: "sacn" }, "sACN (E1.31)"));
+  const status = h("div.out-status");
+  const adapters = h("div.out-list");
+  const nodes = h("div.out-list");
+  const syncIp = () => { ip.disabled = mode.value === "auto"; ip.parentElement.style.opacity = ip.disabled ? 0.5 : 1; };
+  mode.addEventListener("change", syncIp);
+
+  const verdict = (net) => {
+    const r = net.resolved || {};
+    const lines = [h("div", h("b", "Sending to "), h("span.mono", `${r.host}:${r.port}`), ` · ${r.transport === "sacn" ? "sACN" : "Art-Net"}`,
+      net.target.mode === "auto" && net.env_host ? " (from DMX_HOST in .env)" : "",
+      ` · ${con.hz || 40} Hz`)];
+    const c = net.check;
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    if (c) lines.push(h(c.ok ? "div.out-ok" : "div.out-bad", `${c.ok ? "✓" : "⚠"} ${cap(c.message)}`));
+    else if (r.host === "255.255.255.255") lines.push(h("div.out-bad", "⚠ Global broadcast: it leaves by one network only. Pick the node or connect to the lighting network."));
+    status.replaceChildren(...lines);
+  };
+  const showAdapters = (net) => {
+    const rows = net.interfaces || [];
+    adapters.replaceChildren(h("div.muted.small", "This computer's networks"),
+      ...(rows.length ? rows.map((i) => h("div.out-row",
+        h("span.mono", `${i.ip}${i.mask ? " / " + i.mask : ""}`),
+        h("span.muted.small", i.name || ""),
+        i.ip.startsWith("2.") ? h("span.out-tag", "Art-Net range") : null))
+        : [h("div.out-bad", "No network found. Plug in the lighting network cable.")]));
+  };
+  const refresh = async () => {
+    try {
+      const net = await get("/api/console/network");
+      mode.value = net.target.mode;
+      ip.value = net.target.host || "";
+      proto.value = net.target.transport || "";
+      syncIp(); verdict(net); showAdapters(net);
+      return net;
+    } catch (err) {
+      status.replaceChildren(h("div.out-bad", err.message));
+      return null;
+    }
+  };
+  const apply = async (params) => {
+    const res = await run("set_dmx_target", params, { toast: true });
+    if (res.ok) await refresh();
+  };
+  const find = async (btn) => {
+    btn.disabled = true;
+    nodes.replaceChildren(h("div.muted.small", "Asking every network for Art-Net nodes…"));
+    try {
+      const d = await post("/api/console/scan", { import: false });
+      const r = d.result || {};
+      const found = r.nodes || [];
+      if (!found.length) {
+        nodes.replaceChildren(h("div.out-bad", r.message || r.scan_error || "No node answered."),
+          h("div.muted.small", "Some nodes don't answer polls. If you know the node's IP (it is often on a label), type it above and choose \u201cOne node\u201d."));
+        return;
+      }
+      nodes.replaceChildren(h("div.muted.small", `${found.length} node(s) answered`),
+        ...found.map((n) => h("div.out-row",
+          h("span.mono", n.ip),
+          h("span", n.long_name || n.name || "Art-Net node"),
+          h("span.muted.small", (n.output_ports || []).length ? `universes ${n.output_ports.map((pa) => pa + 1).join(", ")}` : ""),
+          h("button.btn.small", { onclick: () => apply({ mode: "node", host: n.ip }) }, "Use this node"))));
+    } catch (err) {
+      nodes.replaceChildren(h("div.out-bad", err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  box.append(
+    h("div.form-grid",
+      h("label.field", h("span", "Send DMX to"), mode),
+      h("label.field", h("span", "Node / broadcast IP"), ip),
+      h("label.field", h("span", "Protocol"), proto)),
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: () => apply({ mode: mode.value, host: mode.value === "auto" ? "" : ip.value.trim(), transport: proto.value }) }, "Apply"),
+      h("button.btn", { onclick: (e) => find(e.currentTarget) }, "Find nodes"),
+      h("button.btn", { onclick: refresh }, "Re-check network")),
+    status, nodes, adapters,
+    h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."));
+  ip.addEventListener("keydown", (e) => { if (e.key === "Enter") apply({ mode: mode.value === "auto" ? "node" : mode.value, host: ip.value.trim(), transport: proto.value }); });
+  status.append(h("div.muted.small", "Checking the network…"));
+  refresh();
+  return box;
+}
+
 export async function openSettings() {
   const status = await get("/api/status").catch(() => ({}));
   const con = status.console || {};
@@ -419,13 +518,7 @@ export async function openSettings() {
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
-    h("dl.kv", { style: { display: "grid", gridTemplateColumns: "140px 1fr", gap: "6px 12px", margin: 0 } },
-      h("dt.muted", "Protocol"), h("dd", { style: { margin: 0 } }, (con.transport || "artnet").toUpperCase()),
-      h("dt.muted", "Sending to"), h("dd", { style: { margin: 0 } }, `${con.host}:${con.port}` + (con.multicast ? " (each universe's multicast group)" : con.broadcast ? " (broadcast on your lighting network)" : "")),
-      h("dt.muted", "This computer"), h("dd", { style: { margin: 0 } }, con.local_ip || "unknown"),
-      h("dt.muted", "Frame rate"), h("dd", { style: { margin: 0 } }, `${con.hz} Hz`)),
-    h("p.muted.small", "Change these in the .env file (DMX_TRANSPORT, DMX_HOST, DMX_HZ) and restart."),
-    h("div.row-btns", h("button.btn", { onclick: () => import("./fixtures.js").then((m) => m.scanRig()) }, "Scan for Art-Net nodes")),
+    outputSection(con),
     h("h3", "Fixture library"),
     h("div.row-btns",
       h("span.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),

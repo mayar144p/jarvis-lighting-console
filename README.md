@@ -243,15 +243,31 @@ buttons.
 
 ## Connecting a rig (Art-Net / sACN)
 
-1. Defaults: Art-Net goes to the directed broadcast of your lighting subnet
-   (for example `2.255.255.255` on a 2.x network, `192.168.1.255` on a
-   192.168.1.x one). sACN goes to each universe's multicast group
-   (`239.255.x.y`). Set `DMX_HOST` to a node's IP for unicast;
-   `DMX_TRANSPORT=artnet` or `sacn`.
-2. Same LAN, and the OS firewall must allow Python on private networks.
-3. **Scan** in settings to see which nodes answered, then auto-patch the
-   universes they reported.
-4. Press **GO LIVE**.
+Every venue's node has its own address, so you set it in the app for each
+venue. Open **Settings → Output**:
+
+1. **Send DMX to:**
+   * **Auto** broadcasts on the network facing the rig. The Art-Net 2.x
+     range comes first, using the adapter's real mask (2.0.255.255 on a
+     2.0.x.x/255.255.0.0 network).
+   * **One node** sends to that IP only. This is the most reliable option,
+     for example a Chauvet DMXAN2 labelled `2.0.0.10`.
+   * **Broadcast** sends to an address you give it.
+2. **Find nodes** polls every network the computer is on. Click **Use this
+   node** next to the one you want. Some nodes don't answer polls; if so,
+   type the IP from its label.
+3. The network check tells you when the computer has no address on the
+   node's network, and what to set. For a node at `2.0.0.10 / 255.255.0.0`,
+   give the Ethernet port a fixed address such as `2.0.0.100`, mask
+   `255.255.0.0`, and no gateway, and keep Wi-Fi on for the internet.
+4. The target is saved with the show, so each venue's show file brings its
+   own node back. It changes live, with no restart.
+
+   `DMX_HOST` and `DMX_TRANSPORT` in `.env` still set the default that
+   **Auto** uses. Universe 1 in Jarvis is Art-Net universe 0, which is
+   port A on most nodes. The OS firewall must allow Python on private
+   networks.
+5. Press **GO LIVE**.
 
 Verify before touching hardware:
 
@@ -384,8 +400,8 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 * **403 "unexpected Host header":** you opened the desk by a non-loopback name
   while it is bound to loopback. Use `localhost`, or set `HOST` and a token.
 * **Frames counted but nothing on the rig:** open **Diagnose** in the copilot. Then check the
-  output reads LIVE, scan for nodes, and set `DMX_HOST` to the node's IP if
-  broadcast is blocked on your network.
+  output reads LIVE, open **Settings → Output**, pick the node's IP and read the network check.
+  It says when the computer isn't on the node's network.
 * **A playback does nothing:** Diagnose lists cues that point at heads no
   longer patched.
 

@@ -357,8 +357,19 @@ def local_subnets(limit: int = 4) -> list[str]:
     picked for that route.  Connecting to the address itself sends
     nothing (UDP connect is local), so this is free and silent.
     """
-    probes = ["192.168.0.1", "10.0.0.1", "172.16.0.1", "8.8.8.8"]
     found: list[str] = []
+    try:                                    # every adapter, 2.x included
+        from . import netif
+        for row in netif.interfaces():
+            parts = row["ip"].split(".")
+            prefix = ".".join(parts[:3]) + "."
+            if len(parts) == 4 and prefix not in found:
+                found.append(prefix)
+    except Exception:                       # discovery is best-effort
+        pass
+    if len(found) >= limit:
+        return found[:limit]
+    probes = ["2.0.0.1", "192.168.0.1", "10.0.0.1", "172.16.0.1", "8.8.8.8"]
     for target in probes:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -531,7 +542,8 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
 
 def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
          net: int = 0, sweep_subnets: bool = True,
-         sweep_timeout: float = 1.5) -> dict:
+         sweep_timeout: float = 1.5,
+         targets: list[str] | None = None) -> dict:
     """Sniff the wire for the rig: ArtPollReply nodes + live ArtDmx.
 
     Broadcasts ArtPoll and listens for `timeout` seconds, merging two
@@ -558,6 +570,11 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
     "channels", "via", "node"}, ...] sorted by port address (universe
     already mapped 1-based through `net`), "nodes": [...], "error":
     str | None, "polls_sent", "replies", "frames"}.
+
+    `targets` are extra poll destinations: each adapter's own directed
+    broadcast (255.255.255.255 leaves by the default route only, so a
+    laptop on Wi-Fi and a 2.x lighting network would otherwise never
+    poll the lighting side) and any node IP already known.
     """
     timeout = max(0.2, float(timeout))
     universes: dict[int, dict] = {}
@@ -592,17 +609,25 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
             "announced": False, "src": "", "node": "",
         })
 
+    extra = [t for t in dict.fromkeys(targets or ())
+             if t and t not in ("255.255.255.255", "127.0.0.1")]
     deadline = time.monotonic() + timeout
     _poll("255.255.255.255")
     _poll("127.0.0.1")                  # local software nodes / bridges
+    for target in extra:
+        _poll(target)
     repoll_at = time.monotonic() + min(timeout / 2.0, 1.5)
+    repolled = False
     try:
         while True:
             now = time.monotonic()
             if now >= deadline:
                 break
-            if polls_sent == 2 and now >= repoll_at:
+            if not repolled and now >= repoll_at:
+                repolled = True
                 _poll("255.255.255.255")   # nodes may take up to 3 s
+                for target in extra:
+                    _poll(target)
             got = probe.poll(deadline)
             if got is None:
                 continue
@@ -670,7 +695,7 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
             "via": via,
             "node": row["node"],
         })
-    tried = ["broadcast", "loopback"]
+    tried = ["broadcast", "loopback"] + extra
     polled = polls_sent
 
     # Broadcast came up empty: that is not proof of absence, because Wi-Fi

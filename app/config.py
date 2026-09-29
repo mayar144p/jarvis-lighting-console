@@ -87,8 +87,8 @@ def _lan_ip() -> str:
             s.close()
 
     candidates: list[str] = []
-    for probe in ("8.8.8.8", "192.0.2.1", "10.255.255.255", "172.16.0.1",
-                  "192.168.0.1"):
+    for probe in ("8.8.8.8", "192.0.2.1", "2.255.255.255", "10.255.255.255",
+                  "172.16.0.1", "192.168.0.1"):
         got = _via(probe)
         if got and got not in candidates:
             candidates.append(got)
@@ -97,8 +97,13 @@ def _lan_ip() -> str:
 
 
 def _pick_lan(candidates: list[str]) -> str:
-    """A private address first: a rig lives on 10/8, 172.16/12 or
-    192.168/16, and a VPN or container adapter is the one it is NOT on."""
+    """The Art-Net range first (2.x is what nodes such as Chauvet and
+    ENTTEC ship on, and nothing else uses it on a LAN), then a private
+    address: a rig lives on 10/8, 172.16/12 or 192.168/16, and a VPN or
+    container adapter is the one it is NOT on."""
+    for ip in candidates:
+        if ip.startswith("2."):
+            return ip
     for ip in candidates:
         if _is_private(ip):
             return ip
