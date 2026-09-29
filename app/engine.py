@@ -3656,6 +3656,9 @@ class Engine:
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill"})
     SPLITS = ("odd", "even", "left", "right")
     QUICK_PAGES = 8
+    QUICK_SIZES = ("wide", "tall", "big")
+    QUICK_ICONS = ("bolt", "sun", "moon", "star", "heart", "fire", "snow", "drop", "music",
+                   "strobe", "spin", "sparkle", "eye", "stop", "up", "down")
     QUICK_SLOTS = 24
 
     def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
@@ -3692,6 +3695,15 @@ class Engine:
         tint = _hex_or_none(raw.get("tint"))
         if tint:
             btn["tint"] = tint
+        # a bigger tile (2 wide, 2 tall or both) and an icon on it
+        if raw.get("size") not in (None, "", "normal"):
+            if raw["size"] not in self.QUICK_SIZES:
+                raise ValueError(f"size is one of normal, {', '.join(self.QUICK_SIZES)}")
+            btn["size"] = raw["size"]
+        if raw.get("icon") not in (None, ""):
+            if raw["icon"] not in self.QUICK_ICONS:
+                raise ValueError(f"icon is one of {', '.join(self.QUICK_ICONS)}")
+            btn["icon"] = raw["icon"]
         if kind not in self.ONE_SHOT_BUTTONS:
             if raw.get("exclusive") not in (None, ""):
                 btn["exclusive"] = str(raw["exclusive"]).strip()[:20] or None

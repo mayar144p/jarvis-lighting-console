@@ -1089,3 +1089,18 @@ body.gig .pb-mode button { min-height: 44px; }
 .qbtn { position: relative; }
 .qkey { position: absolute; top: 4px; right: 5px; font: 700 10px var(--mono); padding: 1px 4px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); background: rgba(0, 0, 0, .3); }
 .qe-key { width: 56px; text-align: center; text-transform: uppercase; font-weight: 700; }
+/* tile icons and big tiles */
+.qicon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--tint); }
+.qbtn.on .qicon, .qbtn.down .qicon { color: #06080c; }
+.qbtn.qbig b { font-size: 1.25em; }
+.qbtn.qbig .qicon { width: 30px; height: 30px; }
+.qe-icons { display: flex; flex-wrap: wrap; gap: 6px; }
+.qe-icon { min-width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--border-2); background: transparent; color: var(--text); --tint: var(--text); }
+.qe-icon.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.qline { display: flex; align-items: center; justify-content: center; gap: 5px; max-width: 100%; min-width: 0; }
+.qline .qicon { width: 15px; height: 15px; }
+.qbtn.qbig .qline { flex-direction: column; gap: 4px; }
+.qbtn.qbig .qline .qicon { width: 30px; height: 30px; }
+.qe-note.warn { color: var(--warn, #f59e0b); }
+.qbtn.qwide b { font-size: 1.15em; }
+.qbtn.qwide .qline .qicon { width: 18px; height: 18px; }

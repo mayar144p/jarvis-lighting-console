@@ -7521,6 +7521,7 @@ def _standalone_suites():
     ("multi-head lights: each head on its own", test_multi_head),
     ("cue list: merge / replace / insert, update keeps the name", test_cue_list_modes),
     ("buttons: fade in / out and a keyboard key", test_button_fades),
+    ("buttons: big tiles and icons", test_button_tiles),
     )
 
 
@@ -9052,6 +9053,41 @@ def test_button_fades() -> None:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the editor sets fades and a key; keys play buttons", "fade_in" in qb and "RESERVED" in qb and '"keydown"' in qb, "")
+
+
+def test_button_tiles() -> None:
+    """A button can be 2 wide, 2 tall or both, and carry an icon; the
+    editor offers exactly the icons the engine accepts."""
+    print("button tiles (size and icon)")
+    import re
+    import tempfile
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "blackout", "size": "big", "icon": "moon"})
+            b = r.get("button") or {}
+            check("a button keeps its size and icon", b.get("size") == "big" and b.get("icon") == "moon", str(b))
+            r = e.act("quick_set", page=1, slot=2, button={"kind": "blackout", "size": "normal"})
+            check("normal size is not stored", "size" not in (r.get("button") or {}), str(r.get("button")))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "blackout", "size": "huge"})
+            check("an unknown size is refused", not r.get("ok"), str(r))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "blackout", "icon": "<svg>"})
+            check("an unknown icon is refused", not r.get("ok"), str(r))
+            r = e.act("quick_move", page=1, slot=1, to_page=2, to_slot=5)
+            moved = [x for x in e.quick if x["page"] == 2 and x["slot"] == 5]
+            check("moving a button keeps its size and icon", bool(moved) and moved[0].get("size") == "big"
+                  and moved[0].get("icon") == "moon", str(moved))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    m = re.search(r"const ICONS = \{(.*?)\n\};", qb, re.S)
+    ui = set(re.findall(r"^\s+(\w+):", m.group(1), re.M)) if m else set()
+    check("the editor's icons are the engine's icons", ui == set(eng.Engine.QUICK_ICONS),
+          str(ui ^ set(eng.Engine.QUICK_ICONS)))
+    check("big tiles span the grid and cover the slots under them", "gridColumn" in qb and "covered" in qb, "")
 
 
 def test_cue_list_modes() -> None:

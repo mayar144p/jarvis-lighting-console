@@ -51,6 +51,36 @@ const SPLITS = [["", "All of them"], ["odd", "Odd"], ["even", "Even"], ["left", 
 const FX_KINDS = new Set(["sfx", "fog", "laser", "arm", "fxkill"]);
 const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill"]);
 const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill"]);
+// Icons a tile can carry: 24x24 stroke paths (the engine keeps the same names).
+const ICONS = {
+  bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
+  sun: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
+  moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
+  star: "m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z",
+  heart: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z",
+  fire: "M12 22c4 0 7-2.7 7-7 0-4-3-6-4-9-1 2-2 3-3.5 3.5C12 7 11 4 9 2c0 4-4 7-4 13 0 4.3 3 7 7 7z",
+  snow: "M12 2v20M4.2 7l15.6 10M4.2 17 19.8 7M9 4l3 2 3-2M9 20l3-2 3 2",
+  drop: "M12 2.7 6.3 8.4a8 8 0 1 0 11.4 0z",
+  music: "M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+  strobe: "M3 12h3l2-6 4 12 3-9 2 3h4",
+  spin: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6",
+  sparkle: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
+  eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  stop: "M6 6h12v12H6z",
+  up: "M12 19V5M5 12l7-7 7 7",
+  down: "M12 5v14M19 12l-7 7-7-7",
+};
+const SVGNS = "http://www.w3.org/2000/svg";
+function icon(name) {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "qicon");
+  const p = document.createElementNS(SVGNS, "path");
+  p.setAttribute("d", ICONS[name] || "");
+  svg.append(p);
+  return svg;
+}
+
 // kinds whose brightness can fade in / out
 const FADES = new Set(["flash", "dim", "custom", "capture", "kill"]);
 // the console's own keys a button may not take
@@ -126,6 +156,18 @@ async function renamePage(p) {
   if (name !== null) run("quick_page", { page: p, name });
 }
 
+// The slots a big tile takes besides its own, or null when one of them
+// is used (then it shows at normal size).
+const COLS = 8;
+function tileFit(slot, size, total, used) {
+  const col = (slot - 1) % COLS;
+  const w = (size === "wide" || size === "big") && col < COLS - 1 ? 2 : 1;
+  const t = (size === "tall" || size === "big") && slot + COLS <= total ? 2 : 1;
+  const take = [];
+  for (let r = 0; r < t; r++) for (let c = 0; c < w; c++) if (r || c) take.push(slot + r * COLS + c);
+  return take.some(used) ? null : { w, t, take };
+}
+
 function render(force = false) {
   const box = $("#qb-grid");
   if (!box) return;
@@ -137,7 +179,17 @@ function render(force = false) {
   const active = activeIds();
   const byslot = new Map(q.buttons.filter((b) => b.page === page).map((b) => [b.slot, b]));
   const cells = [];
-  for (let slot = 1; slot <= (q.slots || 24); slot++) {
+  // big tiles take the empty slots next to / under them
+  const total = q.slots || 24, covered = new Set(), span = new Map();
+  for (const [slot, b] of [...byslot].sort((a, c) => a[0] - c[0])) {
+    if (!b.size || covered.has(slot)) continue;
+    const fit = tileFit(slot, b.size, total, (x) => byslot.has(x) || covered.has(x));
+    if (!fit) continue;                         // no room: stays normal size
+    fit.take.forEach((x) => covered.add(x));
+    span.set(slot, [fit.w, fit.t]);
+  }
+  for (let slot = 1; slot <= total; slot++) {
+    if (covered.has(slot)) continue;
     const b = byslot.get(slot);
     const drop = (el) => {
       if (!editing) return;
@@ -166,9 +218,15 @@ function render(force = false) {
       title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy)" : ""}`,
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
-    }, h("b", b.label), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
+    }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
     b.key ? h("kbd.qkey", b.key.toUpperCase()) : null);
     el.style.setProperty("--tint", tint);
+    const sp = span.get(slot);
+    if (sp) {
+      el.style.gridColumn = `${(slot - 1) % COLS + 1} / span ${sp[0]}`;
+      el.style.gridRow = `${Math.floor((slot - 1) / COLS) + 1} / span ${sp[1]}`;
+      el.classList.add(sp[1] > 1 ? "qbig" : "qwide");
+    }
     if (editing) {
       el.addEventListener("click", () => editButton(slot, b));
       el.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", JSON.stringify({ page, slot })));
@@ -235,7 +293,7 @@ function fromButton(b) {
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
-    move: b ? b.move || "" : "",
+    move: b ? b.move || "" : "", size: b ? b.size || "" : "", icon: b ? b.icon || "" : "",
     fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
@@ -255,6 +313,8 @@ function toButton(s) {
   const label = s.label.trim() || (DOES.find(([k]) => k === d) || [0, "Button"])[1];
   const b = { kind, label, mode: ONE_SHOT.has(d) ? "tap" : s.mode };
   if (s.tint) b.tint = s.tint;
+  if (s.size) b.size = s.size;
+  if (s.icon) b.icon = s.icon;
   if (!NO_TARGET.has(d)) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
@@ -310,6 +370,17 @@ function editButton(slot, btn) {
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; } })),
       row("Tile colour", swatches(TINTS, s.tint, (c) => { s.tint = c; draw(); }, { none: "Auto" })),
+      row("Tile size", h("div.chip-row", chips([["", "Normal"], ["wide", "Wide"], ["tall", "Tall"], ["big", "Big"]], s.size,
+        (v) => { s.size = v; draw(); }),
+        s.size && !tileFit(slot, s.size, quick().slots || 24,
+          (x) => quick().buttons.some((o) => o.page === page && o.slot === x && !(btn && o.id === btn.id)))
+          ? h("span.qe-note.warn", s.size === "tall" ? "The space below is taken: it will show at normal size until it is free."
+            : "The space next to it is taken: it will show at normal size until it is free.")
+          : null)),
+      row("Icon", h("div.qe-icons",
+        h("button.qe-icon" + (!s.icon ? ".on" : ""), { title: "No icon", onclick: () => { s.icon = ""; draw(); } }, "None"),
+        ...Object.keys(ICONS).map((k) => h("button.qe-icon" + (s.icon === k ? ".on" : ""),
+          { title: k, onclick: () => { s.icon = k; draw(); } }, icon(k))))),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
     if (!NO_TARGET.has(d)) {
