@@ -43,6 +43,12 @@ TYPES: dict[str, dict] = {
     "laser":         {"label": "Laser",         "moving": False, "beam": (1, 1)},
     "followspot":    {"label": "Follow spot",   "moving": False, "beam": (3, 12)},
     "atmos":         {"label": "Haze / fog",    "moving": False, "beam": (0, 0)},
+    # special effects: fired only from their own armed buttons
+    "confetti":      {"label": "Confetti",      "moving": False, "beam": (0, 0)},
+    "co2":           {"label": "CO2 jet",       "moving": False, "beam": (0, 0)},
+    "flame":         {"label": "Flame",         "moving": False, "beam": (0, 0)},
+    "spark":         {"label": "Spark fountain", "moving": False, "beam": (0, 0)},
+    "sfx":           {"label": "Effect",        "moving": False, "beam": (0, 0)},
     "generic":       {"label": "Fixture",       "moving": False, "beam": (20, 40)},
 }
 
@@ -179,11 +185,42 @@ def _cells(roles: list[str]) -> int:
     return max(1, reds, dims if reds == 0 else 1)
 
 
+def _fx_type(manufacturer: str, model: str, has: set) -> str:
+    """The physical type of a laser or SFX machine, or '' for a light."""
+    from .engine_support import LASER_ROLES, SFX_ROLES
+    if has & LASER_ROLES:
+        return "laser"
+    if not has & SFX_ROLES:
+        return ""
+    from .fixlib import fx_kind
+    kind = fx_kind(manufacturer, model, "", [])
+    if "fog" in has or kind in ("fog", "haze", "bubble", "snow"):
+        return "atmos"
+    return {"confetti": "confetti", "co2": "co2", "flame": "flame",
+            "spark": "spark"}.get(kind, "sfx")
+
+
+def _describe_fx(kind: str, manufacturer: str, has: set) -> dict:
+    t = TYPES[kind]
+    brand = brand_of(manufacturer)
+    b = BRANDS[brand]
+    return {"type": kind, "label": t["label"], "moving": False,
+            "class": "laser" if kind == "laser" else "sfx",
+            "brand": brand,
+            "brand_name": b["name"] if brand != "generic" else (manufacturer or "Generic"),
+            "style": {"body": b["body"], "accent": b["accent"], "finish": b["finish"]},
+            "cells": 1, "beam": {"min": t["beam"][0], "max": t["beam"][1]},
+            "features": sorted(r for r in has if r.startswith(("fx_", "laser_")) or r == "fog")}
+
+
 @lru_cache(maxsize=512)
 def _describe(manufacturer: str, model: str, mode: str,
               roles: tuple[str, ...], channels: int) -> dict:
     name = f"{manufacturer} {model} {mode}".lower()
     has = set(roles)
+    fx = _fx_type(manufacturer, model, has)
+    if fx:
+        return _describe_fx(fx, manufacturer, has)
     moving = "pan" in has and "tilt" in has
     kind = ""
     for pattern, typ, _family in FAMILIES:
@@ -230,6 +267,7 @@ def _describe(manufacturer: str, model: str, mode: str,
         "type": kind,
         "label": t["label"],
         "moving": t["moving"],
+        "class": "light",
         "brand": brand,
         "brand_name": b["name"] if brand != "generic" else (manufacturer or "Generic"),
         "style": {"body": b["body"], "accent": b["accent"],
@@ -266,6 +304,8 @@ _ZONES = {
     "bar": (0.15, 0.03), "cyc": (0.2, 0.02), "wash_panel": (6.0, 0.8),
     "strobe": (6.0, 0.55), "blinder": (6.0, 0.9), "tube": (0.8, 0.12),
     "matrix": (6.0, 0.4), "laser": (0.4, 0.1), "atmos": (0.3, 0.02),
+    "confetti": (0.3, 0.9), "co2": (0.3, 0.95), "flame": (0.3, 0.97),
+    "spark": (0.3, 0.97), "sfx": (0.3, 0.9),
     "generic": (6.0, 0.55),
 }
 

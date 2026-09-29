@@ -81,6 +81,31 @@ and rolls all of them back if any fails. The copilot uses it.
   tick. A seek chases: last cue re-fired, spans re-held, levels applied.
   The transport is never an undo step; timeline edits are.
 
+### Lasers and special effects
+
+`fixlib.apply_fx` runs on every fixture `fixtures.store_parsed` stores,
+whatever its format. It classifies the fixture (`fx_kind`: laser, confetti,
+co2, flame, spark, fog, haze…) and relabels its effect channels into the
+effects roles in `engine_support` (`fx_fire`, `fx_arm`, `fog`, `laser_on`,
+`laser_pattern`…). Each channel's `on_value` and `off_value` come from its
+capability ranges, never from a guess. `fixture_kind.describe` gives every
+head a `class`: light, laser or sfx.
+
+In `merge.resolve_head`, the effect **output** roles (`FX_OUTPUT_ROLES`)
+ignore the programmer, playbacks and effects. Only the FX layer's override
+sets them, anything not driven rests at its off value, and blackout forces
+them off.
+
+The engine's FX layer (`_sfx_*`, `fx_*` actions) holds the ARM state with
+its auto-disarm, the running fires/fogs/lasers (each with a hard `until`),
+and the confetti tank levels. It is never saved, so a desk starts
+disarmed. Light actions and light quick buttons filter to class `light`.
+FX quick buttons (`sfx`, `fog`, `laser`, `arm`, `fxkill`) filter to
+effects, and the look feed's `fx` field drives `web/js/stage/sfx.js`.
+
+`app/manual.py` turns a manual's DMX chart into a reviewable draft (AI, or
+the offline reader) and stores it through the same path.
+
 ### Output target
 
 Every venue's node has its own address, so where the DMX goes is desk

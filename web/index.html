@@ -36,6 +36,11 @@
       <button class="tb-btn arm" id="out-arm">Go live…</button>
     </div>
 
+    <div class="fxctl" id="fxctl" role="group" aria-label="Special effects" hidden>
+      <button class="tb-btn fx-arm" id="fx-arm" title="Arm lasers and special effects (fire, lasers). Switches itself off after 10 minutes.">ARM FX</button>
+      <button class="tb-btn fx-kill" id="fx-kill" title="Stop every laser and effect at once, and disarm">KILL FX</button>
+    </div>
+
     <div class="tb-spacer"></div>
 
     <button class="tb-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>
@@ -166,6 +171,8 @@
         <button role="tab" data-tab="position">Position</button>
         <button role="tab" data-tab="beam">Beam</button>
         <button role="tab" data-tab="fx" title="Effects">FX</button>
+        <button role="tab" data-tab="laser" title="Lasers" hidden>Laser</button>
+        <button role="tab" data-tab="sfx" title="Special effects: confetti, CO2, fog, flame…" hidden>SFX</button>
         <button role="tab" data-tab="looks">Looks</button>
         <button role="tab" data-tab="tools">Tools</button>
       </nav>
@@ -248,6 +255,9 @@
             </div>
           </details>
         </div>
+
+        <div class="tab-pane" data-pane="laser" hidden><div id="laser-pane"></div></div>
+        <div class="tab-pane" data-pane="sfx" hidden><div id="sfx-pane"></div></div>
 
         <div class="tab-pane" data-pane="looks" hidden>
           <h3>Palettes</h3>

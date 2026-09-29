@@ -16,12 +16,21 @@ const KINDS = [
   ["release", "Release", "Releases a playback"],
   ["preset", "Preset", "Applies a recorded preset"],
   ["blackout", "Blackout", "Everything off while held"],
+  // special effects: they never answer a light button, only these
+  ["sfx", "Fire SFX", "Confetti / CO2 / flame / sparks (needs ARM)"],
+  ["fog", "Fog / haze", "Fog or haze output"],
+  ["laser", "Laser", "Laser output (needs ARM)"],
+  ["arm", "ARM FX", "Arms fire and lasers"],
+  ["fxkill", "KILL FX", "Stops every effect, disarms"],
 ];
 const KIND_COLOUR = { flash: "#f8fafc", strobe: "#fde047", colour: null, kill: "#64748b", fx: "#a78bfa",
-  go: "#22c55e", release: "#f97316", preset: "#38bdf8", blackout: "#ef4444" };
+  go: "#22c55e", release: "#f97316", preset: "#38bdf8", blackout: "#ef4444",
+  sfx: "#f97316", fog: "#cbd5e1", laser: "#22d3ee", arm: "#ef4444", fxkill: "#ef4444" };
 const FX_NAMES = [["rainbow", "Rainbow"], ["circle", "Circle"], ["figure_eight", "Figure 8"], ["pan_sweep", "Pan sweep"],
   ["breathe", "Breathe"], ["dimmer_chase", "Dimmer chase"], ["sparks", "Sparks"]];
 const TYPES = [["spot", "Moving spots"], ["beam", "Beams"], ["wash", "Washes"], ["par", "PARs"], ["bar", "Bars / battens"]];
+const FX_TYPES = [["confetti", "Confetti"], ["co2", "CO2 jets"], ["flame", "Flames"], ["spark", "Spark fountains"],
+  ["sfx", "Other effects"], ["atmos", "Fog / haze"], ["laser", "Lasers"]];
 
 let page = 1;
 let editing = false;
@@ -94,10 +103,11 @@ function editButton(slot, btn) {
   mode.value = b.mode;
   const groups = (state.snap && state.snap.groups) || [];
   const target = h("select.select",
-    h("option", { value: "all" }, "All lights"),
+    h("option", { value: "all" }, "All (lights for a light button, effects for an FX button)"),
     h("option", { value: "sel" }, `The current selection (${((state.snap && state.snap.selected) || []).length})`),
     ...groups.map((g) => h("option", { value: "g" + g.n }, `Group: ${g.name}`)),
-    ...TYPES.map(([k, l]) => h("option", { value: "t" + k }, `Type: ${l}`)));
+    ...TYPES.map(([k, l]) => h("option", { value: "t" + k }, `Type: ${l}`)),
+    ...FX_TYPES.map(([k, l]) => h("option", { value: "t" + k }, `Effect: ${l}`)));
   const t = b.target || {};
   target.value = t.group !== undefined ? "g" + t.group : t.type ? "t" + t.type : t.heads ? "sel" : "all";
   const colour = h("input", { type: "color", value: b.colour || "#ffffff" });
@@ -106,6 +116,7 @@ function editButton(slot, btn) {
   const fx = h("select.select", ...FX_NAMES.map(([k, l]) => h("option", { value: k }, l)));
   fx.value = b.fx || "rainbow";
   const pb = h("input", { type: "number", min: 1, max: 10, value: b.playback ?? 1 });
+  const secs = h("input", { type: "number", min: 0.2, max: 600, step: 0.1, value: b.seconds ?? "", placeholder: "machine limit" });
   const cue = h("input", { type: "number", min: 1, value: b.cue ?? "", placeholder: "next" });
   const preset = h("select.select", ...((state.snap && state.snap.presets) || []).map((p) => h("option", { value: p.n }, p.name)));
   if (b.preset) preset.value = b.preset;
@@ -119,18 +130,20 @@ function editButton(slot, btn) {
     preset: h("label.field", h("span", "Preset"), preset),
     target: h("label.field", h("span", "Lights"), target),
     mode: h("label.field", h("span", "Behaviour"), mode),
+    secs: h("label.field", h("span", "Seconds (a tap fires this long)"), secs),
   };
   const show = () => {
     const k = kind.value;
     rows.colour.hidden = !["flash", "strobe", "colour"].includes(k);
-    rows.level.hidden = k !== "flash";
+    rows.level.hidden = !["flash", "fog"].includes(k);
+    rows.secs.hidden = !["sfx", "fog", "laser"].includes(k);
     rows.hz.hidden = k !== "strobe";
     rows.fx.hidden = k !== "fx";
     rows.pb.hidden = !["go", "release"].includes(k);
     rows.cue.hidden = k !== "go";
     rows.preset.hidden = k !== "preset";
-    rows.target.hidden = ["go", "release", "preset", "blackout"].includes(k);
-    rows.mode.hidden = ["go", "release", "preset"].includes(k);
+    rows.target.hidden = ["go", "release", "preset", "blackout", "arm", "fxkill"].includes(k);
+    rows.mode.hidden = ["go", "release", "preset", "arm", "fxkill"].includes(k);
   };
   kind.addEventListener("change", () => {
     show();
@@ -140,7 +153,7 @@ function editButton(slot, btn) {
   const close = modal({
     title: `Button ${page}.${slot}`,
     body: h("div.form-grid", h("label.field", h("span", "Label"), label), h("label.field", h("span", "Does"), kind),
-      rows.target, rows.mode, rows.colour, rows.level, rows.hz, rows.fx, rows.pb, rows.cue, rows.preset),
+      rows.target, rows.mode, rows.colour, rows.level, rows.hz, rows.secs, rows.fx, rows.pb, rows.cue, rows.preset),
     foot: [
       btn ? h("button.btn.danger", { onclick: async () => {
         await run("quick_set", { page, slot, clear: true });
@@ -155,7 +168,8 @@ function editButton(slot, btn) {
           target: tv === "all" ? { all: true } : tv === "sel" ? { heads: (state.snap && state.snap.selected) || [] }
             : tv[0] === "g" ? { group: +tv.slice(1) } : { type: tv.slice(1) } };
         if (!rows.colour.hidden && (k === "colour" || colour.value.toLowerCase() !== "#ffffff")) button.colour = colour.value;
-        if (k === "flash") button.level = +level.value || 100;
+        if (k === "flash" || k === "fog") button.level = +level.value || 100;
+        if (["sfx", "fog", "laser"].includes(k) && secs.value) button.seconds = +secs.value;
         if (k === "strobe") button.hz = +hz.value || 10;
         if (k === "fx") button.fx = fx.value;
         if (k === "go" || k === "release") button.playback = +pb.value || 1;
@@ -175,7 +189,8 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(); });
   $("#qb-suggest").addEventListener("click", async () => {
     if (!patch().length) { toast("Add some lights first"); return; }
-    await run("quick_defaults", { page }, { toast: true });
+    const fxOnly = patch().length && patch().every((x) => (x.map || []).some((r) => r.startsWith("fx_") || r.startsWith("laser_") || r === "fog"));
+    await run(fxOnly ? "quick_fx_defaults" : "quick_defaults", { page }, { toast: true });
   });
   $("#qb-release").addEventListener("click", () => run("quick_release_all"));
   on("snapshot", render);

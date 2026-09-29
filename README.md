@@ -299,7 +299,8 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
 
 ## Fixture library
 
-**Add fixtures** has three tabs:
+**Add fixtures** searches everything at once in the **All** tab, and
+also has separate tabs:
 
 * **Installed:** everything already in your library.
 * **Libraries:** the [Open Fixture Library](https://open-fixture-library.org)
@@ -323,9 +324,64 @@ their names and colours. Community libraries are sometimes wrong, so check
 an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
+**Match the 3D view to the real lights.** The visualiser moves heads with a
+motor model: it speeds up, travels and brakes, and follows the Pan/Tilt Speed
+channel, instead of snapping into place. To match your light exactly,
+right-click it → **Calibrate movement speed…**. The real head sweeps pan (then
+tilt) at top speed and you tap when it stops. The time is saved for that
+fixture model. Strobes show on screen only when the light really strobes: a
+strobe button, or the strobe channel inside a range its fixture file marks as
+strobe, never an "open" value.
+
 To refresh the bundled libraries from upstream, run
 `python tools/build_fixture_libraries.py`. `app/fixlib/NOTICE.md` has the
 licences and the exact upstream commits.
+
+## Lasers and special effects
+
+Confetti, CO₂, flame, sparks, fog, haze and lasers are **effects**, not
+lights, and Jarvis treats them that way.
+
+**How effects are recognised.** Every fixture Jarvis stores is sorted into
+light, laser or SFX, whatever its source. An effect's channels get their
+own jobs: *fire*, *arm*, *fog output*, *laser output*, *pattern* and so on.
+The "fire", "armed" and "on" values come from the fixture's own chart and
+are never guessed. For example, a MagicFX Psyco2Jet's safety channel is
+armed at 100–155, and 156–255 is its **test mode**.
+
+**What never reaches an effect:**
+- light controls: Flash, Strobe, Full, colour, Locate, effects, the
+  master and **Select all** (lights only);
+- cues, the programmer and the auto show;
+- the AI copilot, which is denied every effects action.
+
+**Blackout** stops every effect.
+
+**How effects run:**
+- **ARM FX** (top bar) arms fire and laser output. It turns itself off
+  after 10 minutes and shows a countdown. **KILL FX** stops everything
+  and disarms. Blackout and loading a show also disarm, and the desk
+  always starts disarmed.
+- **FX buttons:** an automatic **FX** button page has ARM, KILL, confetti
+  shot/hold, CO₂/flame bursts, fog (10 s, hold, haze) and laser
+  hold/latch. You can make your own in the button editor.
+- **Time limits:** every burst stops at the machine's limit, even if a
+  button sticks: a few seconds for CO₂ and flame, and the tank time for
+  confetti. The Funfetti Shot empties in 25 s, and its tank counts down
+  until you press **Reload**.
+- **Programmer tabs:** **Laser** has hold-to-fire output, pattern and
+  colour chips, size, rotation, position and speed. **SFX** has
+  hold-to-fire, 1 s shots, tank levels, and fog level and timer.
+- **Recording:** patterns and other settings are recorded in cues like any
+  attribute. Output never is.
+- **3D view:** laser fans, confetti bursts, CO₂ plumes, flames, sparks and
+  fog, exactly while the real machine is firing.
+
+**Adding a fixture that isn't in any library.** In **Add fixtures**, click
+**From its manual…**, then paste the DMX chart or drop the manual's PDF.
+With an AI key the copilot reads it; without one the offline reader
+handles the usual chart layouts, including multi-language manuals. You
+check the table, then save it to your library.
 
 ## Configuration (`.env`)
 
@@ -434,6 +490,11 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
   It says when the computer isn't on the node's network.
 * **A playback does nothing:** Diagnose lists cues that point at heads no
   longer patched.
+* **GDTF Share says "not signed in":** your session expired. The Add
+  dialog now shows **Sign in** whenever you're not signed in, even with the
+  catalogue saved, and a download that needs a session asks you to sign in
+  and then retries. With `GDTF_SHARE_USER` and `GDTF_SHARE_PASSWORD` in
+  `.env`, Jarvis signs in again by itself.
 
 ## Not built yet
 

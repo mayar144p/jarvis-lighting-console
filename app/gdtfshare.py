@@ -414,8 +414,17 @@ class GdtfShare:
             else:
                 raise GdtfShareError("no_session", "not signed in to GDTF Share")
         try:
-            _status, headers, payload = self._request(
-                "GET", f"{DOWNLOAD_URL}?rid={rid}")
+            try:
+                _status, headers, payload = self._request(
+                    "GET", f"{DOWNLOAD_URL}?rid={rid}")
+            except GdtfShareError as exc:
+                # An expired session with an account at hand: sign in
+                # again and retry once, instead of failing until restart.
+                if exc.code != "unauthorized" or not (self.user and self._password):
+                    raise
+                self.login()
+                _status, headers, payload = self._request(
+                    "GET", f"{DOWNLOAD_URL}?rid={rid}")
         except GdtfShareError as exc:
             raise self._fail(exc) from exc
 

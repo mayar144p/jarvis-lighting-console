@@ -7490,6 +7490,10 @@ def _standalone_suites():
     ("colour wheel slots", test_wheel_slots),
     ("update on launch", test_auto_update),
     ("open fixture libraries", test_open_libraries),
+    ("visual matches the rig", test_visual_motion),
+    ("lasers and special effects", test_fx_safety),
+    ("fixture from its manual", test_manual_fixture),
+    ("gdtf share session expiry", test_share_relogin),
     )
 
 
@@ -8421,7 +8425,12 @@ def test_open_libraries() -> None:
           all((fixlib.BUNDLE_DIR / f).is_file()
               for f in ("LICENSE-OFL.txt", "LICENSE-QLCPLUS.txt", "NOTICE.md")), "")
     bad = []
-    for src in fixlib.SOURCES:
+    for row in fixlib.index("jarvis"):          # the Jarvis library is plain JSON
+        try:
+            fixlib.apply_fx(fixlib.load("jarvis", row["key"])[0])
+        except Exception as exc:                 # noqa: BLE001 - collected
+            bad.append(f"jarvis {row['key']}: {exc}")
+    for src in ("ofl", "qlc"):
         with zipfile.ZipFile(fixlib.BUNDLE_DIR / fixlib.SOURCES[src]["file"]) as zf:
             for row in fixlib.index(src):
                 raw = zf.read("fixtures/" + row["key"])
@@ -8517,6 +8526,290 @@ def test_open_libraries() -> None:
               again["refreshed"] == 2 and fixtures.role_ranges(
                   db, "Chauvet DJ", "Intimidator Spot 260", "14-channel").get("strobe", {}).get("open_from") == 4,
               str(again))
+
+
+def test_visual_motion() -> None:
+    """The 3D view strobes only when the light does, and moves at the
+    real light's measured speed."""
+    print("visual matches the rig (strobe, movement speed)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    detail = fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json")[0]["modes"][0]["detail"]
+    strobe = next(d for d in detail if d["role"] == "strobe")
+    speed = next(d for d in detail if d["role"] == "speed")
+    check("OFL strobe ranges are read (8-215, not the open ranges)",
+          strobe["strobe_ranges"] == [[8, 76], [77, 145], [146, 215]], str(strobe["strobe_ranges"]))
+    check("the pan/tilt speed channel runs fast to slow", speed["fast_first"] is True, str(speed))
+    wave = fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")[0]["modes"][1]["detail"]
+    shut = next(d for d in wave if d["role"] == "shutter")
+    check("QLC+ shutter patterns are strobe ranges, 'On' is not",
+          shut["strobe_ranges"] and all(not lo <= 20 <= hi for lo, hi in shut["strobe_ranges"]),
+          str(shut["strobe_ranges"]))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "v.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"),
+                              "ofl:chauvet-dj/intimidator-spot-260.json")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1)
+            e.act("quick_defaults")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+
+            def row():
+                return e.look_rows()[0]
+            check("a lit head with its shutter open does not strobe on screen", "hz" not in row(), str(row()))
+            e.act("set_attribute", attribute="strobe", value=230)
+            check("230 is 'open' on this light: steady", "hz" not in row(), str(row()))
+            e.act("set_attribute", attribute="strobe", value=100)
+            check("100 is in a strobe range: it flickers", 1 < row().get("hz", 0) < 20, str(row()))
+            e.act("set_attribute", attribute="strobe", value=4)
+            e.act("quick_press", id="q1-2", down=True)
+            check("Strobe all shows its own 12 Hz", row().get("hz") == 12.0, str(row()))
+            e.act("quick_press", id="q1-2", down=False)
+            check("and stops the moment it is released", "hz" not in row(), str(row()))
+            check("the beam look never carries raw strobe bytes",
+                  "strobe" not in (row().get("beam") or {}), str(row()))
+            check("uncalibrated: the speed channel still reaches the view",
+                  row()["mv"] == {"s": 0.0}, str(row()))
+            e.act("set_attribute", attribute="speed", value=255)
+            check("speed channel at slowest reads as 1.0", row()["mv"]["s"] == 1.0, str(row()))
+            r = e.act("motion_set", head=1, pan_s=2.6, tilt_s=1.4)
+            check("a measured speed is saved for the model",
+                  r.get("ok") and row()["mv"]["p"] == 2.6 and row()["mv"]["t"] == 1.4, str(r))
+            check("and survives the cache (read back from the library)",
+                  fixtures.get_motion(db, "Chauvet DJ", "Intimidator Spot 260") == {"pan_s": 2.6, "tilt_s": 1.4}, "")
+            check("nonsense times are refused", not e.act("motion_set", head=1, pan_s=0.01).get("ok"), "")
+            before = {k: v for k, v in e.programmer[1].items()}
+            depth = len(e._undo)
+            e.act("motion_test", head=1, axis="pan", to="end")
+            prog = e.programmer[1]
+            check("the test move sends pan to its end at top speed, lamp open and steady",
+                  prog["pan"] == 65535 and prog["tilt"] == 32767 and prog["speed"] == 0
+                  and prog["strobe"] == 4, str(prog))
+            e.act("motion_test_end", head=1)
+            check("and the head gets back exactly what it was doing",
+                  e.programmer[1] == before and len(e._undo) == depth, str(e.programmer[1]))
+            e.act("set_intensity", level=0)
+            e.act("set_attribute", attribute="pan", value=20000)
+            check("a dark head that is being aimed still moves on screen",
+                  any("pan" in r for r in e.look_rows()), str(e.look_rows()))
+            e.act("motion_set", head=1, clear=True)
+            check("back to type defaults", "p" not in row()["mv"], str(row()))
+        finally:
+            e.shutdown()
+
+
+def test_share_relogin() -> None:
+    """An expired GDTF Share session must not need a restart: with an
+    account at hand the download signs in again and retries once."""
+    print("gdtf share (expired session re-signs in)")
+    import tempfile
+    from app import fixtures as fx
+    from app import gdtfshare as gs
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "s.db"
+        fx.seed_generics(db)
+        good = _share_transport(_share_gdtf_bytes(), b'{"result":true,"list":[]}')
+
+        def transport(method, url, *, body=None, headers=None, timeout=20.0):
+            if "downloadFile.php" in url and "PHPSESSID=old" in (headers or {}).get("Cookie", ""):
+                return (401, {"content-type": "application/json"}, b'{"result":false,"error":"expired"}')
+            return good(method, url, body=body, headers=headers, timeout=timeout)
+        c = gs.GdtfShare(db, tmp / "cache", user="me", password="pw", transport=transport)
+        c.cookies = {"PHPSESSID": "old"}
+        r = c.download(11)
+        check("an expired session signs in again and the download succeeds",
+              r.get("ok") and c.cookies.get("PHPSESSID") == "abc123", str(r))
+        anon = gs.GdtfShare(db, tmp / "cache2", transport=transport)
+        anon.cookies = {"PHPSESSID": "old"}
+        try:
+            anon.download(11)
+            ok = False
+        except gs.GdtfShareError as exc:
+            ok = exc.code == "unauthorized"
+        check("without an account it says so (and the dialog then asks to sign in)", ok, "")
+        st = anon.status()
+        check("and status no longer claims a session", not st["signed_in"], str(st))
+
+
+def test_manual_fixture() -> None:
+    """A manual's DMX chart becomes a fixture: offline reader, the
+    review round trip, and storing it through the effects classifier."""
+    print("fixture from its manual (DMX chart -> fixture)")
+    import tempfile
+    from app import engine as eng
+    from app import fixtures, manual
+
+    # The Funfetti Shot's QRG, as a PDF extracts it (the arrow between the
+    # two values is a private-use glyph, U+F0F3)
+    qrg = ("Funfetti Shot QRG EN 7\nDMX Linking The Funfetti Shot works with a DMX controller.\n"
+           "1. Fill the main tube with Funfetti Shot refills.\n2. Plug into a suitable power outlet.\n"
+           "Description The Funfetti Shot is an electric confetti launcher.\n"
+           "DMX Assignments \n1 Channel Channel Function Value Setting \n1 Off/On \n"
+           "000\uf0f3009 Off \n010\uf0f3255 On \n")
+    d = manual.read(qrg, "Chauvet DJ", "Funfetti Shot", offline=True)
+    ch = d["modes"][0]["channels"] if d["modes"] else []
+    check("the offline reader finds exactly the chart, not the numbered steps",
+          len(d["modes"]) == 1 and len(ch) == 1 and ch[0]["ranges"] == [[0, 9, "Off"], [10, 255, "On"]],
+          str(d))
+    check("and knows a confetti launcher's channel fires it",
+          d["type"] == "confetti" and ch[0]["function"] == "fx fire", str(d))
+    browser = (" DMX Assignments\nChannel   Function   Value   Setting\n 1 Channel  \n000 \uf0f3 009   Off\n"
+               " 1   Off/On  \n 010 \uf0f3 255   On\n 7\n Asignaciones DMX\n 1 Canal\n000 \uf0f3 009   Apaga\n"
+               " 1   Canal  \n 010 \uf0f3 255   Enciende\n")
+    b = manual.read(browser, "Chauvet DJ", "Funfetti Shot", offline=True)
+    check("as the browser's PDF reader lays it out (values before the row, six languages)",
+          len(b["modes"]) == 1 and b["modes"][0]["channels"][0]["ranges"] == [[0, 9, "Off"], [10, 255, "On"]]
+          and b["modes"][0]["channels"][0]["function"] == "fx fire", str(b))
+    d2 = manual.read(qrg, offline=True)
+    check("even with no model name, from the manual's own words", d2["type"] == "confetti", d2["type"])
+    spot = ("14-Channel\n1 Pan 000-255 0-540\n2 Fine Pan\n3 Tilt\n4 Fine Tilt\n5 Pan/Tilt Speed\n"
+            "6 Color Wheel\n000-006 White\n007-013 Orange\n028-034 Red\n7 Gobo Wheel\n8 Gobo Rotation\n"
+            "9 Prism\n10 Zoom\n11 Dimmer\n12 Strobe\n000-003 Closed\n004-007 Open\n008-076 Strobe slow-fast\n"
+            "13 Function\n14 Movement Macros\n")
+    s = manual.read(spot, "Chauvet DJ", "Spot 260", offline=True)
+    fns = [c["function"] for c in s["modes"][0]["channels"]]
+    check("a light's chart: every channel with its function",
+          fns[:6] == ["pan", "pan fine", "tilt", "tilt fine", "pan/tilt speed", "colour wheel"]
+          and fns[10:12] == ["dimmer", "strobe"] and fns[13] == "setting", str(fns))
+    check("junk is refused with a reason", _raises(lambda: manual.to_parsed({"modes": []})), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, manual.to_parsed(d), "manual:chauvet-dj-funfetti-shot")
+        fixtures.store_parsed(db, manual.to_parsed(s), "manual:chauvet-dj-spot-260")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Funfetti Shot", qty=1, universe=1, address=1)
+            e.act("add_heads", query="Spot 260", qty=1, universe=1, address=10)
+            check("the saved launcher is an SFX that fires 10-255",
+                  e.patch[0]["map"] == ["fx_fire"] and e._head_class(e.patch[0]) == "sfx"
+                  and 10 <= (e.head_ranges(e.patch[0]).get("fx_fire") or {}).get("on_value", 0) <= 255,
+                  str(e.patch[0]["map"]))
+            e.act("select_all")
+            e.act("set_colour", hex="#ff1010")
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("the saved spot: red on its real slot, strobe open, launcher untouched",
+                  buf[9 + 5] == 31 and buf[9 + 10] == 255 and buf[9 + 11] == 4 and buf[0] == 0,
+                  str(list(buf[:24])))
+        finally:
+            e.shutdown()
+
+
+def test_fx_safety() -> None:
+    """Lasers and special effects never answer a light's controls, fire
+    only while armed and within their limits, and stop on blackout."""
+    print("lasers and special effects (classes, ARM, limits, kill)")
+    import tempfile
+    import time as _t
+    from app import console_ai
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    kinds = {k: fixlib.fx_kind(*k.split("|"), "", []) for k in (
+        "Chauvet DJ|Funfetti Shot", "MagicFX|Psyco2Jet", "Pro-Lights|Jet Wash19",
+        "Ayrton|Mistral", "American DJ|Galaxian 3D Laser", "Antari|Z-1000 Fog")}
+    check("confetti, CO2, lasers and fog are recognised; a wash and a Mistral stay lights",
+          list(kinds.values()) == ["confetti", "co2", "", "", "laser", "fog"], str(kinds))
+    co2 = fixlib.apply_fx(fixlib.load("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf")[0])["modes"][0]["detail"]
+    arm = next(r for r in co2 if r["role"] == "fx_arm")
+    fire = next(r for r in co2 if r["role"] == "fx_fire")
+    check("the CO2 jet arms at 'Device enabled' (100-155), never at 'Test Mode' (156-255)",
+          100 <= arm["on_value"] <= 155 and arm["off_value"] == 0, str(arm))
+    check("and fires with its valve open (200-255)", 200 <= fire["on_value"] <= 255, str(fire))
+    flame = fixlib.apply_fx(fixlib.load("ofl", "magicfx/stage-flame.json")[0])["modes"][0]["detail"]
+    farm = next(r for r in flame if r["role"] == "fx_arm")
+    check("a flame unit's 'Safety OFF' range is its armed state", 140 <= farm["on_value"] <= 153, str(farm))
+    geyser = fixlib.apply_fx(fixlib.load("ofl", "chauvet-dj/geyser-rgb.json")[0])["modes"][0]["detail"]
+    check("a fog machine's LEDs stay lights, its output becomes fog",
+          [r["role"] for r in geyser][:4] == ["fog", "red", "green", "blue"]
+          and geyser[-1]["role"] == "dimmer", str([r["role"] for r in geyser]))
+    check("the copilot is denied every FX action",
+          {"fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill"} <= console_ai.DENY_ACTIONS, "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "fx.db"
+        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf"),
+                         ("ofl", "american-dj/galaxian-3d.json"), ("ofl", "chauvet-dj/geyser-rgb.json"),
+                         ("jarvis", "chauvet-dj/funfetti-shot")):
+            fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1, universe=1, address=1)
+            e.act("add_heads", query="Psyco2Jet", qty=1, universe=1, address=20)
+            e.act("add_heads", query="Galaxian 3D", mode="5-channel", qty=1, universe=1, address=30)
+            e.act("add_heads", query="Geyser RGB", mode="8-channel", qty=1, universe=1, address=40)
+            e.act("add_heads", query="Funfetti Shot", qty=1, universe=1, address=50)
+
+            def f():
+                return list(e.build_frames()[1][:52])
+            check("classes", [e._head_class(h) for h in e.patch] == ["light", "sfx", "laser", "sfx", "sfx"], "")
+            e.act("quick_defaults")
+            e.act("select_all")
+            check("select all selects only lights", e.selected == [1], str(e.selected))
+            e.act("set_intensity", level=100)
+            e.act("quick_press", id="q1-1", down=True)
+            fr = f()
+            check("Flash all flashes the spot and never touches CO2, laser, fog or confetti",
+                  fr[10] == 255 and fr[19] == fr[22] == 0 and fr[29:31] == [0, 0]
+                  and fr[39] == 0 and fr[49] == 0, str(fr))
+            e.act("quick_press", id="q1-1", down=False)
+            e.act("select_heads", heads=[2, 3, 5])
+            check("the programmer cannot drive an effect's output",
+                  not e.act("set_attribute", attribute="fx_fire", value=255).get("ok"), "")
+            check("nor can an effect generator",
+                  not e.act("run_fx", attribute="laser_on", wave="square").get("ok"), "")
+            check("fire needs ARM", not e.act("fx_fire", heads=[2]).get("ok"), "")
+            check("so does a laser", not e.act("fx_laser", heads=[3]).get("ok"), "")
+            fx_btn = next(b for b in e.quick if b["kind"] == "sfx")
+            check("and an FX button", not e.act("quick_press", id=fx_btn["id"], down=True).get("ok"), "")
+            e.act("fx_arm", state=True)
+            check("armed: the CO2 jet's safety goes to its enabled value", f()[19] == 127, str(f()[19]))
+            e.act("fx_fire", heads=[2], owner="t")
+            check("fire opens the valve", f()[22] >= 200, str(f()[22]))
+            e.act("fx_fire", heads=[2], owner="t", down=False)
+            check("release closes it", f()[22] == 0, "")
+            e.act("fx_fire", heads=[2], owner="cap", seconds=0.2)
+            _t.sleep(0.3)
+            check("every burst stops at its limit, even if a button sticks", f()[22] == 0, "")
+            e.act("fx_laser", heads=[3], owner="l")
+            check("laser output on (its 'Open' value)", f()[29:31] == [11, 11], str(f()[29:31]))
+            e.act("fx_fire", heads=[2, 5], owner="b")
+            e.act("blackout", state=1)
+            fr = f()
+            check("blackout stops fire and laser and disarms",
+                  fr[22] == 0 and fr[29:31] == [0, 0] and fr[19] == 0 and not e._sfx_armed(), str(fr))
+            e.act("blackout", state=0)
+            e.act("fx_fog", heads=[4], level=50, seconds=5)
+            check("fog runs without arming", f()[39] == 128, str(f()[39]))
+            e.act("fx_kill")
+            check("KILL FX stops fog too", f()[39] == 0, "")
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[5], owner="c")
+            e.fx_runs["fire:c"]["since"] -= 10
+            e.act("fx_fire", heads=[5], owner="c", down=False)
+            loads = e._sfx_public()["loads"]
+            check("a confetti tank counts down (25 s Funfetti)", loads[5]["left"] <= 15.1 and loads[5]["full"] == 25,
+                  str(loads))
+            e.fx_loads[5] = 0
+            check("an empty tank will not fire", not e.act("fx_fire", heads=[5], owner="d").get("ok"), "")
+            e.act("fx_reload", heads=[5])
+            check("until it is reloaded", e.act("fx_fire", heads=[5], owner="d").get("ok"), "")
+            e.act("fx_kill")
+            pages = {b["page"] for b in e.quick if b["kind"] in ("sfx", "fog", "laser", "arm", "fxkill")}
+            check("an FX page of buttons is made for the rig", pages == {2}, str(pages))
+            e.act("load_show", name="nope")
+            check("the desk starts (and a show loads) disarmed", not e._sfx_armed(), "")
+        finally:
+            e.shutdown()
 
 
 def _raises(fn) -> bool:

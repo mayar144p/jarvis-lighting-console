@@ -44,14 +44,16 @@ function capabilities() {
 function applyTabVisibility() {
   const any = hasSel();
   const cap = capabilities();
-  const show = { position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam };
+  const show = { position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
+    laser: any && [...cap.roles].some((r) => r.startsWith("laser_")),
+    sfx: any && [...cap.roles].some((r) => r.startsWith("fx_") || r === "fog") && ![...cap.roles].some((r) => r.startsWith("laser_")) };
   $$("#prog-tabs button").forEach((b) => {
     const t = b.dataset.tab;
     const visible = show[t] === undefined ? true : show[t];
     b.hidden = !visible;
     b.title = visible ? (b.dataset.title || b.title) : "";
   });
-  if (show[tab] === false) showTab("intensity");
+  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : "intensity");
 }
 
 // ------------------------------------------------------------- header
@@ -310,6 +312,7 @@ function renderBeamQuick() {
 }
 
 function renderAttributes() {
+  if (tab === "laser" || tab === "sfx") import("./fxpanel.js").then((m) => m.renderFxPane(tab, attrState));
   renderBeamQuick();
   renderWheel();
   const box = $("#attr-list");
@@ -501,6 +504,10 @@ function showTab(name) {
   if (name === "tools") renderTools();
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
+  if (name === "laser" || name === "sfx") {
+    loadAttributes();
+    import("./fxpanel.js").then((m) => m.renderFxPane(name, attrState));
+  }
   try { localStorage.setItem("jarvis.progtab", name); } catch (e) { /* ignore */ }
 }
 
@@ -566,13 +573,13 @@ export function initProgrammer() {
   };
   on("snapshot", () => {
     refresh();
-    if (tab === "beam" || tab === "colour") loadAttributes();
+    if (["beam", "colour", "laser", "sfx"].includes(tab)) loadAttributes();
     if (tab === "tools") renderTools();
   });
   on("lite", refresh);
   on("selection", () => {
     refresh();
-    if (tab === "beam" || tab === "colour") loadAttributes();
+    if (["beam", "colour", "laser", "sfx"].includes(tab)) loadAttributes();
     if (tab === "fx") loadFx();
     if (tab === "tools") renderTools();
     if (tab === "position") renderPad();

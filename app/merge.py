@@ -17,7 +17,8 @@ benchmarked and unit-tested on its own, without constructing a console.
 """
 from __future__ import annotations
 
-from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS, curve_pct as _curve_pct,
+from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS,  # noqa: I001
+                             SFX_ROLES as _SFX, LASER_ROLES as _LASER, curve_pct as _curve_pct,
                              is_fine_role, logical16 as _logical16,
                              split_16bit)
 
@@ -37,6 +38,13 @@ def htp_value(values: dict, role: str):
     if "zone_dimmer" in values:
         return values["zone_dimmer"]
     return None
+
+
+# The channels that make an effect DO something: output, arm, fire, laser
+# power.  Every other FX channel (pattern, size, tilt of a CO2 jet...) is
+# programmable like any attribute, because it is harmless on its own.
+FX_OUTPUT_ROLES = frozenset({"fx_fire", "fx_arm", "fog", "laser_on"})
+assert FX_OUTPUT_ROLES <= (_SFX | _LASER)
 
 
 def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
@@ -112,10 +120,21 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             if row and role in row:
                 resolved[role] = int(row[role])
                 break
+    # AN EFFECT'S OUTPUT OBEYS ONLY ITS OWN ARMED BUTTONS.  Whatever a cue,
+    # the programmer, an effect or a playback says about a fog machine's
+    # output, a CO2 valve, a confetti fan, an arm channel or a laser's
+    # power is thrown away here; the FX layer's override is the only way
+    # in, and anything not driven sits at its "off" value (the rest).
+    fx_out = FX_OUTPUT_ROLES.intersection(head["map"])
+    for role in fx_out:
+        resolved.pop(role, None)
     if over and over.get("set"):
         for role, value in over["set"].items():
             if role in head["map"]:
                 resolved[role] = int(value)
+    if blackout:
+        for role in fx_out:                   # blackout stops every effect
+            resolved[role] = int((rest or {}).get(role, 0))
     # A head WITH a dimmer rests with its shutter open: the dimmer is the
     # brightness, and a shutter left at 0 is CLOSED on many movers (a
     # Chauvet Intimidator), which is "it moves but gives no light".

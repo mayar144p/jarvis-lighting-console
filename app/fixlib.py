@@ -33,6 +33,10 @@ from .engine_support import channel_role
 
 BUNDLE_DIR = Path(__file__).resolve().parent / "fixlib"
 SOURCES = {
+    # Jarvis's own profiles, written from the manufacturers' manuals, for
+    # what no open library carries yet (confetti launchers first).
+    "jarvis": {"name": "Jarvis library", "file": "jarvis.json",
+               "licence": "part of Jarvis", "url": "app/fixlib/jarvis.json"},
     "ofl": {"name": "Open Fixture Library", "file": "ofl.zip",
             "licence": "MIT", "url": "https://open-fixture-library.org"},
     "qlc": {"name": "QLC+ fixture library", "file": "qlcplus.zip",
@@ -66,7 +70,9 @@ def _detail(label: str, **extra) -> dict:
     row = {"role": channel_role(label), "attribute": extra.pop("attribute", ""),
            "label": label, "bits": 8, "dmx_from": None, "dmx_to": None,
            "phys_from": None, "phys_to": None, "wheel": None,
-           "open_from": None, "slots": None, "coarse": True}
+           "open_from": None, "slots": None, "coarse": True,
+           "strobe_ranges": None, "fast_first": None, "name": label,
+           "caps": None}
     row.update(extra)
     return row
 
@@ -171,7 +177,11 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
 
     def byte(v):
         return max(0, min(255, int(v) >> shift))
-    row = _detail(label, attribute=_ofl_main_type(caps), bits=bits)
+    row = _detail(label, attribute=_ofl_main_type(caps), bits=bits, name=name)
+    row["caps"] = [[byte(c["dmxRange"][0]), byte(c["dmxRange"][1]),
+                    str(c.get("comment") or c.get("effectName") or c.get("shutterEffect")
+                        or c.get("color") or c.get("type") or "")[:48]]
+                   for c in caps if c.get("dmxRange")] or None
     if label in ("Pan", "Tilt"):
         c = caps[0] if caps else {}
         a, b = _ofl_angle(c.get("angleStart")), _ofl_angle(c.get("angleEnd"))
@@ -184,6 +194,18 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
              and c.get("dmxRange")]
     if opens:
         row["open_from"] = min(opens)
+    strobes = [[byte(c["dmxRange"][0]), byte(c["dmxRange"][1])] for c in caps
+               if c.get("type") == "ShutterStrobe" and c.get("dmxRange")
+               and c.get("shutterEffect") not in ("Open", "Closed", None)]
+    row["strobe_ranges"] = strobes or None
+    for c in caps:
+        if c.get("type") == "PanTiltSpeed":
+            first = str(c.get("speedStart") or c.get("duration") or "").lower()
+            if "fast" in first:
+                row["fast_first"] = True
+            elif "slow" in first:
+                row["fast_first"] = False
+            break
     found = []
     for c in caps:
         if c.get("type") != "WheelSlot" or not c.get("dmxRange"):
@@ -383,7 +405,14 @@ def _qxf_label(ch) -> str:
 
 def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
     label = _qxf_label(ch)
-    row = _detail(label, attribute=ch.get("Preset") or "")
+    row = _detail(label, attribute=ch.get("Preset") or "", name=(ch.get("Name") or "").strip())
+    caps_rows = []
+    for c in _kids(ch, "Capability"):
+        try:
+            caps_rows.append([int(c.get("Min") or 0), int(c.get("Max") or 0), (c.text or "").strip()[:48]])
+        except ValueError:
+            continue
+    row["caps"] = caps_rows or None
     role = row["role"]
     if role.endswith("_fine"):
         row.update(coarse=False, bits=16)
@@ -393,7 +422,24 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
     elif role == "tilt":
         row["phys_from"], row["phys_to"] = _centred(tilt_max)
     caps = _kids(ch, "Capability")
+    preset = ch.get("Preset") or ""
+    low_name = (ch.get("Name") or "").lower()
+    if role == "speed":
+        if "FastSlow" in preset or "fast to slow" in low_name or "fast-slow" in low_name:
+            row["fast_first"] = True
+        elif "SlowFast" in preset or "slow to fast" in low_name or "slow-fast" in low_name:
+            row["fast_first"] = False
     if role in ("shutter", "strobe"):
+        ranges = []
+        for c in caps:
+            text = (c.text or "").strip().lower()
+            if re.search(r"strobe|pulse|random|lightning|flash|^shutter \d", text) and not re.search(
+                    r"^(no strobe|strobe off|off|open|closed|shutter open|shutter closed)\b", text):
+                try:
+                    ranges.append([int(c.get("Min") or 0), int(c.get("Max") or 0)])
+                except ValueError:
+                    pass
+        row["strobe_ranges"] = ranges or None
         for c in caps:
             text = (c.text or "").strip()
             if c.get("Preset") == "ShutterOpen" or (_OPEN_TEXT.match(text) and "close" not in text.lower()):
@@ -493,7 +539,15 @@ def index(src: str) -> list[dict]:
         if src not in _INDEX:
             path = _bundle(src)
             rows: list[dict] = []
-            if path is not None:
+            if path is not None and src == "jarvis":
+                try:
+                    rows = [{"key": f["key"], "manufacturer": f["manufacturer"],
+                             "model": f["model"], "type": f.get("type", ""),
+                             "modes": [[m["name"], m["channel_count"]] for m in f["modes"]]}
+                            for f in json.loads(path.read_text(encoding="utf-8"))]
+                except (OSError, KeyError, ValueError):
+                    rows = []
+            elif path is not None:
                 try:
                     with zipfile.ZipFile(path) as zf:
                         rows = json.loads(zf.read("index.json"))
@@ -522,8 +576,9 @@ def search(query: str, limit: int = 60) -> list[dict]:
     # exact model words first, then shorter names (the base model before
     # its variants), then by library order
     q = _norm(query)
+    order = {s: i for i, s in enumerate(SOURCES)}
     out.sort(key=lambda r: (q not in _norm(f"{r['manufacturer']} {r['model']}"),
-                            len(r["model"]), r["manufacturer"].lower()))
+                            len(r["model"]), order.get(r["src"], 9), r["manufacturer"].lower()))
     return out[:limit]
 
 
@@ -535,6 +590,13 @@ def load(src: str, key: str) -> list[dict]:
     row = next((r for r in index(src) if r["key"] == key), None)
     if row is None:
         raise ValueError(f"no fixture {key!r} in the {SOURCES[src]['name']}")
+    if src == "jarvis":
+        fixture = next(f for f in json.loads(path.read_text(encoding="utf-8")) if f["key"] == key)
+        item = json.loads(json.dumps(fixture))          # a private copy
+        for mode in item["modes"]:
+            for row_ in mode["detail"]:
+                row_.setdefault("fx_label", row_["label"])
+        return [item]
     with zipfile.ZipFile(path) as zf:
         raw = zf.read("fixtures/" + key)
     if src == "ofl":
@@ -561,3 +623,222 @@ def libraries() -> list[dict]:
     """What is bundled, for the UI's credits line."""
     return [{"src": s, **{k: v for k, v in m.items() if k != "file"},
              "fixtures": len(index(s))} for s, m in SOURCES.items()]
+
+
+# ---------------------------------------------------------------------------
+# special effects and lasers: classify, and make them safe
+# ---------------------------------------------------------------------------
+# Every library describes a fog machine's output or a laser's power as a
+# "dimmer", a "shutter" or an "intensity" - so a Flash all button, Full or
+# the auto show would fire the fog, open a CO2 valve or light a laser.
+# `apply_fx` runs on EVERY fixture as it is stored (GDTF, OFL, QLC+, the
+# Jarvis library, dropped files): it works out whether the fixture is a
+# light, a laser or an SFX machine, and gives an effect's channels their
+# own vocabulary (fx_fire, fx_arm, fog, laser_on, laser_pattern...), which
+# no light action ever drives.  The value that means "fire", "armed" or
+# "on" is taken from the fixture's own capability ranges, never guessed:
+# a MagicFX Psyco2Jet's safety channel reads 100-155 as enabled and
+# 156-255 as TEST MODE, so "arm = 255" would be wrong.
+
+FX_KINDS = {
+    # kind: (class, default longest continuous fire in seconds)
+    "confetti": ("sfx", 30.0), "co2": ("sfx", 3.0), "flame": ("sfx", 2.0),
+    "spark": ("sfx", 10.0), "fog": ("sfx", 20.0), "haze": ("sfx", 600.0),
+    "bubble": ("sfx", 600.0), "snow": ("sfx", 600.0), "laser": ("laser", 600.0),
+    "other": ("sfx", 5.0),
+}
+
+_KIND_PATTERNS = [
+    ("confetti", r"confetti|funfetti|streamer|stadium shot|swirl fan"),
+    ("co2", r"\bco2\b|co\s?2 jet|cryo|psyco2|eco2"),
+    ("flame", r"\bflames?\b|flamer|fire\s*(jet|machine|effect|burst)|g-flame|dragon"),
+    ("spark", r"\bsparks?\b|cold\s*(fire|spark)|sparkular"),
+    ("bubble", r"bubble"),
+    ("snow", r"\bsnow"),
+    ("haze", r"\bhaze|\bhazer|\bfaze\b"),
+    ("fog", r"\bfog|\bsmoke|\bgeyser|\bsteam\b|\bjett?\b|\bmist\b"),
+]
+# Words that mean the fixture is really a light, whatever else it says.
+_LIGHT_WORDS = r"\bpar(\b|\d)|parcan|\bwash|\bspot(\b|\d)|\bbeam|\bbar\b|\bpanel|\bprofile"
+
+_OFF_TEXT = re.compile(r"\b(off|no function|closed|disabled?|safe|blackout|stop|none|idle)\b|^0$", re.I)
+_FIRE_TEXT = re.compile(r"\b(on|fire|firing|shoot|shot|launch|burst|blast|output|valve open|open|go|max|full|trigger|ignit\w*)\b", re.I)
+_ARM_TEXT = re.compile(r"\b(enabled?|armed?|ready|safety off|active|on)\b", re.I)
+_DANGER_TEXT = re.compile(r"\btest\b|\breset\b|\bpurge\b|\bclean", re.I)
+
+
+def fx_kind(manufacturer: str, model: str, type_text: str, labels: list[str]) -> str:
+    """'' for a light, else a key of FX_KINDS."""
+    text = f"{manufacturer} {model} {type_text}".lower()
+    if "laser" in type_text.lower() or re.search(r"\blaser", text):
+        return "laser"
+    for kind, pattern in _KIND_PATTERNS:
+        if re.search(pattern, text):
+            if kind in ("fog", "haze") and re.search(_LIGHT_WORDS, text) \
+                    and not re.search(r"\bfog|\bhaze", str(type_text).lower()):
+                return ""
+            if re.search(_LIGHT_WORDS, text) and kind not in ("fog", "haze", "co2", "confetti"):
+                continue
+            return kind
+    if re.search(r"smoke|hazer", str(type_text).lower()):
+        return "haze" if "haz" in str(type_text).lower() else "fog"
+    return ""
+
+
+def _pick(caps, pattern: re.Pattern, avoid: re.Pattern | None = None) -> int | None:
+    """The middle of the first range whose words match (and avoid danger)."""
+    for lo, hi, text in caps or []:
+        if pattern.search(str(text)) and not (avoid and avoid.search(str(text))) \
+                and not _OFF_TEXT.search(str(text)):
+            return (int(lo) + int(hi)) // 2
+    return None
+
+
+def _off_value(caps) -> int:
+    for lo, _hi, text in caps or []:
+        t = str(text)
+        if re.search(r"safety\s*on|disabled?|pre-?heat\s*off|\bsafe\b", t, re.I) or (
+                _OFF_TEXT.search(t) and not re.search(r"safety\s*off", t, re.I)):
+            return int(lo)
+    return 0
+
+
+def _arm_value(caps) -> int | None:
+    """Where an SFX machine is armed: 'Safety OFF', 'Enabled', 'Pre-heat
+    ON'... never a test, reset or purge range."""
+    for pattern in (r"safety\s*off|safe\s*off", r"pre-?heat\s*on",
+                    r"\b(enabled?|armed?|ready|active)\b", r"\bon\b"):
+        for lo, hi, text in caps or []:
+            t = str(text)
+            if re.search(pattern, t, re.I) and not _DANGER_TEXT.search(t) \
+                    and not re.search(r"disabled?|safety\s*on|emergency", t, re.I):
+                return (int(lo) + int(hi)) // 2
+    return None
+
+
+def _is_led(name: str) -> bool:
+    return bool(re.search(r"\bled\b|colou?r|\brgb|\bred\b|\bgreen\b|\bblue\b|\bwhite\b|"
+                          r"\bamber\b|\buv\b|light|lamp|dimmer led|led dimmer", name.lower()))
+
+
+def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
+    """The effects label for one channel of an FX fixture, or None to keep."""
+    orig = (row.get("name") or "").lower()
+    name = f"{orig} {row.get('label') or ''}".lower()
+    role = row.get("role") or "raw"
+    if role.endswith("_fine"):
+        return None
+    if role == "unused":
+        if not orig or re.search(r"maintenance|reset|no function|not used|unused|reserved|^function$", orig):
+            return None
+        name = orig                                   # judge it by its own name
+        role = "raw"
+    caps_text = " ".join(str(c[2]) for c in row.get("caps") or []).lower()
+    if kind == "laser":
+        if re.search(r"pattern|drawing|gobo|figure|effect|graphic|animation|\bshow\b", name) \
+                and "speed" not in name:
+            return "Laser Pattern"
+        if re.search(r"rotat|rolling|roll|spin|twist", name) or role == "gobo_rot":
+            return "Laser Rotation"
+        if re.search(r"zoom|size|scale|scan(ning)? size", name) or role == "zoom":
+            return "Laser Size"
+        if re.search(r"colou?r|\bred\b|\bgreen\b|\bblue\b|\brgb", name) and role in (
+                "wheel", "macro", "raw", "red", "green", "blue", "white", "cyan", "magenta",
+                "yellow", "amber") and not re.search(r"dimmer|intensity|on/off|output|laser$", orig):
+            return "Laser Colour" if role in ("wheel", "macro", "raw") else None
+        if re.search(r"\bx\b|x[- ]?axis|horizontal|x move|x pos", name) or role == "pan":
+            return "Laser X"
+        if re.search(r"\by\b|y[- ]?axis|vertical|y move|y pos", name) or role == "tilt":
+            return "Laser Y"
+        if re.search(r"speed", name) or role == "speed":
+            return "Laser Speed"
+        if re.search(r"mode|control|sound|auto|program|function", name) or role == "macro":
+            return "FX Mode"
+        if role in ("dimmer", "zone_dimmer", "shutter") or re.search(
+                r"on/off|output|power|enable|blackout|laser on", name):
+            return "Laser Output"
+        if role == "strobe":
+            return "FX Setting"
+        if role == "gobo":
+            return "Laser Pattern"
+        return None if role in ("red", "green", "blue", "white") else ("FX Setting" if role == "raw" else None)
+    # SFX machines
+    if re.search(r"safety|\barm\b|armed|ignit|enable|security|interlock", name) \
+            or re.search(r"pre-?heat\s*on", caps_text):
+        return "FX Arm"
+    if re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name):
+        return "FX Fan"
+    if re.search(r"height|size|level of spark", name):
+        return "FX Height"
+    if re.search(r"\bmode\b|program|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
+        return "FX Mode" if re.search(r"mode|program|auto|sound|control", name) else "FX Setting"
+    if role in ("pan", "tilt", "speed", "pan_fine", "tilt_fine"):
+        return None                               # a CO2 jet's tilt stays tilt
+    led = _is_led(row.get("name") or "")
+    if led and (has_rgb or role in ("red", "green", "blue", "white", "amber", "uv")):
+        return None                               # the machine's own LEDs
+    if has_rgb and role in ("dimmer", "zone_dimmer", "strobe") and not re.search(
+            r"fog|smoke|haze|output|volume|pump|fire|flame|spark|co2|confetti", orig):
+        return None                               # the LEDs' master dimmer / strobe
+    out_words = r"fog|smoke|haze|output|volume|pump|on/off|fire|shoot|shot|launch|valve|" \
+                r"flame|spark|co2|confetti|burst|blast|dimmer|intensity|trigger|\bon\b|" \
+                r"fountain|jet|effect|height"
+    if role in ("dimmer", "zone_dimmer", "shutter", "strobe", "raw", "macro") and (
+            re.search(out_words, name) or role in ("dimmer", "zone_dimmer")):
+        return "Fog Output" if kind in ("fog", "haze", "bubble", "snow") else "FX Fire"
+    return "FX Setting" if role == "raw" else None
+
+
+def apply_fx(item: dict) -> dict:
+    """Classify one parsed fixture and give its effect channels their own
+    roles and values (in place; returns the item)."""
+    from .engine_support import channel_role as _role
+    labels = [c for m in item.get("modes") or [] for c in m.get("channels") or []]
+    kind = item.get("fx_kind")
+    if kind == "light":
+        kind = ""                                 # the operator said: a light
+    elif not kind:
+        kind = fx_kind(item.get("manufacturer", ""), item.get("model", ""),
+                       item.get("type", "") or "", labels)
+    item["fx_kind"] = kind
+    if not kind:
+        return item
+    cls, max_s = FX_KINDS[kind]
+    for mode in item.get("modes") or []:
+        rows = mode.get("detail") or []
+        has_rgb = sum(1 for r in rows if r.get("role") in ("red", "green", "blue")) >= 3
+        for i, row in enumerate(rows):
+            new = row.get("fx_label") or _fx_role(kind, row, has_rgb)
+            if new:
+                row["label"] = new
+                row["role"] = _role(new)
+                if i < len(mode["channels"]):
+                    mode["channels"][i] = new
+            role = row.get("role")
+            caps = row.get("caps")
+            if role in ("fx_fire", "laser_on"):
+                steps = [c for c in caps or [] if not _OFF_TEXT.search(str(c[2]))
+                         and not _DANGER_TEXT.search(str(c[2]))]
+                fire = _pick(caps, _FIRE_TEXT, _DANGER_TEXT)
+                if fire is None and len(steps) >= 2:  # graded (spark height): lowest step
+                    fire = (int(steps[0][0]) + int(steps[0][1])) // 2
+                row.setdefault("on_value", fire if fire is not None else 255)
+                row.setdefault("off_value", _off_value(caps))
+            elif role == "fx_arm":
+                on = _arm_value(caps)
+                row.setdefault("on_value", on if on is not None else 255)
+                row.setdefault("off_value", _off_value(caps))
+            elif role == "fog":
+                row.setdefault("off_value", _off_value(caps))
+            if role in ("laser_pattern", "laser_colour", "fx_mode", "fx_fire") and caps and not row.get("slots"):
+                found = [(int(lo), int(hi), {"name": str(t)[:40], "hex": None, "slot": n})
+                         for n, (lo, hi, t) in enumerate(caps, start=1)
+                         if str(t).strip() and int(hi) - int(lo) <= 64
+                         and not (role == "fx_fire" and _OFF_TEXT.search(str(t)))]
+                row["slots"] = _slot_rows(found) if len(found) >= 2 else None
+            if role in ("fx_fire", "fog", "laser_on"):
+                row.setdefault("fx_kind", kind)
+                row.setdefault("max_s", max_s)
+        mode["fx_class"] = cls
+    item["fx_class"] = cls
+    return item

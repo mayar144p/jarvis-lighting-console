@@ -10,6 +10,7 @@ import binascii
 import hashlib
 import json
 import mimetypes
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib,  # noqa: E402
+from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -389,6 +390,32 @@ class Handler(BaseHTTPRequestHandler):
                                        **client.status()}, 200)
             if route == "/api/gdtf/logout":
                 return self._json(gdtf_share().logout())
+            if route == "/api/fixtures/from_manual":
+                # A manual's DMX chart -> a DRAFT for the operator to check;
+                # nothing is stored until they save it.
+                try:
+                    draft = manual.read(str(body.get("text", "")),
+                                        str(body.get("manufacturer", "")),
+                                        str(body.get("model", "")),
+                                        offline=bool(body.get("offline")))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                return self._json({"draft": draft})
+            if route == "/api/fixtures/from_manual/save":
+                try:
+                    parsed = manual.to_parsed(body.get("draft") or {})
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                item = parsed[0]
+                slug = re.sub(r"[^a-z0-9]+", "-", f"{item['manufacturer']} {item['model']}".lower()).strip("-")
+                done = fixtures.store_parsed(config.DB_PATH, parsed, f"manual:{slug}")
+                fixtures.invalidate_cache()
+                engine_mod._FIXTURE_CACHE.clear()
+                first = (done.get("imported") or [{}])[0]
+                fixture = fixtures.get(config.DB_PATH, int(first["fixture_id"])) \
+                    if first.get("fixture_id") else None
+                return self._json({"fixture": fixture,
+                                   "summary": f"saved {item['manufacturer']} {item['model']} to your library"})
             if route == "/api/fixtures/library/install":
                 # A bundled OFL / QLC+ fixture into the installed library.
                 src, key = str(body.get("src", "")), str(body.get("key", ""))

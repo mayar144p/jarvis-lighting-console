@@ -2,7 +2,7 @@
 import { state, on, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, promptBox, confirmBox, toast } from "./ui.js";
-import { openAddDialog, openChannels, openProfileEditor, openCsvImport } from "./dialogs.js";
+import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration } from "./dialogs.js";
 import { post, get } from "./api.js";
 
 let anchor = null;                 // last plain-clicked head, for shift ranges
@@ -172,6 +172,8 @@ function rowMenu(btn, head) {
     } },
     { label: "Show DMX channels", run: () => openChannels([head]) },
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
+    ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
+      ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
     "-",

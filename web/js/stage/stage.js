@@ -16,6 +16,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
+import { SfxSystem } from "./sfx.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap,
 } from "./materials.js";
@@ -33,7 +34,7 @@ function hexLinear(hex, out) {
   return out;
 }
 
-const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {} };
+const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {}, hz: 0, mv: null, fx: null };
 
 function lookFrom(row, scratch) {
   if (!row) return { ...EMPTY_LOOK, beam: {} };
@@ -44,21 +45,60 @@ function lookFrom(row, scratch) {
     tilt: typeof row.tilt === "number" ? row.tilt : null,
     deg: row.deg || null,
     beam: row.beam || {},
+    hz: +row.hz || 0,            // the real strobe rate, 0 = steady
+    mv: row.mv || null,          // {p, t: full-travel seconds, s: speed 0..1}
+    fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
   };
 }
 
 function mixLook(a, b, t) {
+  // Only what the NEW look has: a value the engine stopped sending (a
+  // strobe that was released) must go, not linger from the old look.
   const beam = {};
-  for (const k of new Set([...Object.keys(a.beam), ...Object.keys(b.beam)])) {
+  for (const k of Object.keys(b.beam)) {
     const x = a.beam[k], y = b.beam[k];
-    beam[k] = x === undefined ? y : y === undefined ? x : lerp(x, y, t);
+    beam[k] = x === undefined ? y : lerp(x, y, t);
   }
   const ang = (x, y) => (x === null ? y : y === null ? x : lerp(x, y, t));
   return {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
-    deg: b.deg || a.deg, beam,
+    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx,
   };
+}
+
+// Seconds for a FULL pan / tilt at top speed, by type, until a fixture
+// model is calibrated against the real light (Calibrate movement speed).
+const TRAVEL = {
+  moving_beam: [2.2, 1.3], moving_spot: [3.0, 1.8], moving_wash: [3.2, 1.9],
+  moving_hybrid: [2.8, 1.7], moving_bar: [3.0, 1.5],
+};
+
+/**
+ * One axis of a moving head's motor: accelerates, cruises at the
+ * fixture's top speed (slowed by its speed channel), and brakes into the
+ * target - instead of snapping there in a tenth of a second.  Positions
+ * are the look's 0..1 across the axis's travel.
+ */
+function motorStep(m, target, full, speed, dt) {
+  if (target === null) { m.v = 0; return m.x; }          // not driven: hold
+  if (m.x === null) { m.x = target; m.v = 0; return m.x; } // first sight
+  const slow = 1 + 14 * Math.pow(Math.max(0, Math.min(1, speed || 0)), 1.6);
+  // A full sweep takes `total` seconds INCLUDING speeding up and braking
+  // (that is what a stopwatch measures): travel/vmax + ramp = total.
+  const total = Math.max(0.2, full * slow);
+  const ramp = Math.min(0.35, 0.12 + total * 0.08, total * 0.45);
+  const vmax = 1 / (total - ramp);
+  const acc = vmax / ramp;
+  const dist = target - m.x;
+  if (Math.abs(dist) < 1e-4 && Math.abs(m.v) < vmax * 0.02) { m.x = target; m.v = 0; return m.x; }
+  const want = Math.sign(dist) * Math.min(vmax, Math.sqrt(2 * acc * Math.abs(dist)));
+  const dv = want - m.v;
+  m.v += Math.sign(dv) * Math.min(Math.abs(dv), acc * dt);
+  const step = m.v * dt;
+  m.x = Math.abs(step) >= Math.abs(dist) ? target : m.x + step;
+  if (m.x === target) m.v = 0;
+  return m.x;
 }
 
 export class Stage {
@@ -115,6 +155,7 @@ export class Stage {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x040508);
     this.scene = scene;
+    this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
@@ -735,6 +776,8 @@ export class Stage {
         inst.sk.root.position.y = 0;
       }
       if (inst.dur > 0 && now - inst.t0 < inst.dur) motion = true;
+      if (inst.moving) motion = true;          // a head still travelling
+      if (this.sfxBusy) motion = true;          // confetti still falling
     }
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
@@ -756,6 +799,10 @@ export class Stage {
     this.anyLit = lit > 0;
     this.rigGroup.updateMatrixWorld(true);
     for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
+    const dtS = this._sfxLast ? Math.min(0.1, (now - this._sfxLast) / 1000) : 0;
+    this._sfxLast = now;
+    this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
+      (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
 
     this.dirty = false;
@@ -801,13 +848,23 @@ export class Stage {
   _drive(inst, time, lights) {
     const L = inst.cur;
     const sk = inst.sk;
-    const moving = inst.data.body && inst.data.body.moving;
+    const body = inst.data.body || {};
+    const moving = body.moving;
     if (moving || sk.gdtf) {
       const deg = L.deg || {};
       const pr = deg.pan || DEFAULT_PAN;
       const tr = deg.tilt || DEFAULT_TILT;
-      const pan = L.pan === null ? 0 : lerp(pr[0], pr[1], L.pan) * DEG;
-      const tilt = L.tilt === null ? 0 : lerp(tr[0], tr[1], L.tilt) * DEG;
+      // the motor: real-speed travel toward where the desk says
+      const m = inst.motor || (inst.motor = { pan: { x: null, v: 0 }, tilt: { x: null, v: 0 }, last: time });
+      const dt = Math.max(0, Math.min(0.1, time - m.last));
+      m.last = time;
+      const mv = L.mv || {};
+      const [dp, dtl] = TRAVEL[body.type] || [3.0, 1.8];
+      const px = motorStep(m.pan, L.pan, mv.p || dp, mv.s, dt);
+      const tx = motorStep(m.tilt, L.tilt, mv.t || dtl, mv.s, dt);
+      inst.moving = (L.pan !== null && px !== L.pan) || (L.tilt !== null && tx !== L.tilt);
+      const pan = px === null ? 0 : lerp(pr[0], pr[1], px) * DEG;
+      const tilt = tx === null ? 0 : lerp(tr[0], tr[1], tx) * DEG;
       if (sk.gdtf) {
         if (moving) { sk.setPan(pan); sk.setTilt(tilt); }
       } else {
@@ -816,11 +873,7 @@ export class Stage {
       }
     }
     let a = L.a;
-    const strobe = L.beam.strobe || 0;
-    if (strobe > 0.05) {
-      const hz = 1 + strobe * 19;
-      if ((time * hz) % 1 > 0.28) a = 0;
-    }
+    if (L.hz > 0 && (time * L.hz) % 1 > 0.3) a = 0;      // a real strobe only
     inst.level = a;
     const col = this._c.setRGB(L.r, L.g, L.b);
     for (const lens of sk.lenses) {

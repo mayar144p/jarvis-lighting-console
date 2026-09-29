@@ -99,6 +99,12 @@ UNDO_EXCLUDED = frozenset({
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
+    # calibrating a fixture model's speed is library setup, and the test
+    # moves restore themselves
+    "motion_set", "motion_test", "motion_test_end", "motion_get",
+    # special effects are performed, not edited: never an undo step
+    "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
+    "fx_status",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -126,7 +132,8 @@ UNDO_EXCLUDED = frozenset({
 # throw the first away.
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
-                        "export_patch", "venue_info"})
+                        "export_patch", "venue_info", "motion_get",
+                        "fx_status"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -141,7 +148,9 @@ UNDO_COALESCE = frozenset({
 # because `from app.engine import HTP_ROLES` is the established entry
 # point for the tests and the profile tooling.
 from . import engine_support as _engine_support
+from .merge import FX_OUTPUT_ROLES
 from .engine_support import (ATTRIBUTE_ALIAS as _ATTRIBUTE_ALIAS,  # noqa: F401
+                             LASER_ROLES, FX_ROLES,
                              BEAM_ROLES, COLOUR_ROLES, HTP_ROLES,
                              ROLE_HEX, ROLES, SLOTS,
                              channel_role, curve_pct as _curve_pct,
@@ -570,6 +579,9 @@ ACTIONS = (
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
+    "motion_set", "motion_test", "motion_test_end", "motion_get",
+    "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
+    "fx_status", "quick_fx_defaults",
 )
 
 
@@ -653,6 +665,12 @@ class Engine:
         # Quick buttons (see _a_quick_set) and the ones held right now.
         self.quick: list[dict] = []
         self.quick_active: dict[str, dict] = {}
+        # Special effects (see the FX layer): armed until (monotonic), the
+        # runs firing now, and how much each confetti tank has left (s).
+        # Never saved: a desk always starts DISARMED with nothing firing.
+        self.fx_armed_until = 0.0
+        self.fx_runs: dict[str, dict] = {}
+        self.fx_loads: dict[int, float] = {}
         # The show timeline (app/timeline.py) and its transport.
         self.timeline: dict = tl_mod.empty()
         self.tl = {"playing": False, "pos": 0.0, "t0": 0.0, "pos0": 0.0,
@@ -2158,10 +2176,12 @@ class Engine:
                 "summary": f"fanned {resolved} {lo_v:g}→{hi_v:g} across "
                            f"{applied} head(s) ({how}){note}"}
 
-    def _a_select_all(self, **_):
-        self.selected = [h["head_no"] for h in self.patch]
+    def _a_select_all(self, include_fx=False, **_):
+        """Every LIGHT (lasers and special effects only with include_fx)."""
+        self.selected = [h["head_no"] for h in self.patch
+                         if _truthy(include_fx) or self._head_class(h) == "light"]
         if not self.selected:
-            raise ValueError("patch is empty")
+            raise ValueError("patch is empty" if not self.patch else "no lights patched")
         return {"selected": len(self.selected)}
 
     def _a_select_similar(self, model=None, manufacturer=None, head=None,
@@ -2262,11 +2282,17 @@ class Engine:
         self.selected = []
         return {"selected": 0}
 
-    def _require_selection(self) -> list[dict]:
+    def _require_selection(self, lights_only: bool = False) -> list[dict]:
         if not self.selected:
             raise ValueError("nothing selected")
         wanted = set(self.selected)
         heads = [h for h in self.patch if h["head_no"] in wanted]
+        if lights_only and heads:
+            lights = [h for h in heads if self._head_class(h) == "light"]
+            if not lights:
+                raise ValueError("the selection is only lasers / special effects - "
+                                 "use the Laser and SFX tabs or their FX buttons")
+            heads = lights
         if not heads:
             # A selection that no longer intersects the patch must not
             # pass silently: LOCATE/intensity would report "0 heads" and
@@ -2379,7 +2405,7 @@ class Engine:
         if level is None:
             raise ValueError("level is required (0-100)")
         pct = _clamp(level, 0, 100)
-        heads = self._require_selection()
+        heads = self._require_selection(lights_only=True)
         try:
             fade_s = max(0.0, min(600.0, float(fade or 0)))
         except (TypeError, ValueError):
@@ -2417,6 +2443,9 @@ class Engine:
         role = _attr_role(attribute)
         if role is None:
             raise ValueError(f"unknown attribute {attribute!r}")
+        if role in FX_OUTPUT_ROLES:
+            raise ValueError(f"{role} is an effect's output: it moves only from the "
+                             f"armed FX buttons, never from the programmer")
         heads = self._require_selection()
         if role in HTP_ROLES:
             pct = _clamp(value, 0, 100)
@@ -2516,7 +2545,7 @@ class Engine:
         if not hexcol:
             raise ValueError("hex colour is required (#rrggbb)")
         _parse_hex(hexcol)                       # validate before selecting
-        heads = self._require_selection()
+        heads = self._require_selection(lights_only=True)
         touched = 0
         for h in heads:
             values = self._colour_values(h, str(hexcol))
@@ -3118,7 +3147,8 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
-        "quick_set", "quick_defaults", "timeline_set", "timeline_track",
+        "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
+        "motion_set",
         "timeline_clip", "timeline_from_playback",
     })
 
@@ -3398,7 +3428,10 @@ class Engine:
     # quick buttons: instant, MagicQ-style executor buttons
     # ------------------------------------------------------------------
     QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
-                   "release", "preset", "blackout")
+                   "release", "preset", "blackout",
+                   # special effects: their own buttons, never a light's
+                   "sfx", "fog", "laser", "fxkill", "arm")
+    FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
     QUICK_PAGES = 4
     QUICK_SLOTS = 24
 
@@ -3406,8 +3439,9 @@ class Engine:
         kind = str(raw.get("kind") or "flash").lower()
         if kind not in self.QUICK_KINDS:
             raise ValueError(f"button kind must be one of {', '.join(self.QUICK_KINDS)}")
-        mode = str(raw.get("mode") or ("hold" if kind in ("flash", "strobe", "kill", "blackout") else
-                                       "latch" if kind in ("colour", "fx") else "tap")).lower()
+        mode = str(raw.get("mode") or ("hold" if kind in ("flash", "strobe", "kill", "blackout",
+                                                          "sfx", "laser") else
+                                       "latch" if kind in ("colour", "fx", "arm") else "tap")).lower()
         if mode not in ("hold", "latch", "tap"):
             raise ValueError("mode is hold, latch or tap")
         target = raw.get("target") if isinstance(raw.get("target"), dict) else {"all": True}
@@ -3441,6 +3475,14 @@ class Engine:
                 btn["cue"] = int(raw["cue"])
         if kind == "preset":
             btn["preset"] = int(raw.get("preset") or 0)
+        if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
+            btn["seconds"] = float(_clamp(raw.get("seconds"), 0.2, 600))
+        if kind == "fog":
+            btn["level"] = int(_clamp(raw.get("level", 100), 1, 100))
+            btn.setdefault("seconds", 10.0)
+        if kind == "laser" and isinstance(raw.get("values"), dict):
+            btn["values"] = {str(k): int(_clamp(v, 0, 255)) for k, v in raw["values"].items()
+                             if str(k) in LASER_ROLES and str(k) != "laser_on"}
         return btn
 
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
@@ -3460,10 +3502,25 @@ class Engine:
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
 
     def _quick_heads(self, btn: dict) -> list[int]:
-        return self._heads_for_target(btn.get("target") or {})
+        return self._heads_for_target(btn.get("target") or {},
+                                      fx=btn["kind"] in self.FX_BUTTONS)
 
-    def _heads_for_target(self, t: dict) -> list[int]:
-        """Heads for a target: {group}, {heads}, {type} or all."""
+    def _head_class(self, h: dict) -> str:
+        """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
+        return fixture_kind.describe(h).get("class", "light")
+
+    def _lights_only(self, heads) -> list[int]:
+        by = {h["head_no"]: h for h in self.patch}
+        return [n for n in heads if n in by and self._head_class(by[n]) == "light"]
+
+    def _heads_for_target(self, t: dict, fx: bool = False) -> list[int]:
+        """Heads for a target: {group}, {heads}, {type} or all.  A light
+        button only ever reaches lights; an FX button only effects."""
+        out = self._target_heads(t)
+        by = {h["head_no"]: h for h in self.patch}
+        return [n for n in out if (self._head_class(by[n]) != "light") == fx]
+
+    def _target_heads(self, t: dict) -> list[int]:
         patched = [h["head_no"] for h in self.patch]
         if t.get("group") is not None:
             for g in self.groups:
@@ -3487,6 +3544,24 @@ class Engine:
             raise ValueError(f"no button {key}")
         down = _truthy(down)
         kind, mode = btn["kind"], btn["mode"]
+        if kind == "fxkill":
+            if down:
+                self._a_fx_kill()
+            return {"id": key, "active": False, "summary": "all effects stopped, disarmed"}
+        if kind == "arm":
+            if not down:
+                return {"id": key, "active": self._sfx_armed()}
+            r = self._a_fx_arm(state=not self._sfx_armed())
+            return {"id": key, "active": self._sfx_armed(), "summary": r["summary"]}
+        if kind in ("sfx", "laser") and down and not self._sfx_armed():
+            raise ValueError("ARM the effects first (the ARM switch in the top bar)")
+        if kind in ("sfx", "fog", "laser") and mode == "tap":
+            # a timed shot: runs its seconds (or the machine's limit, or
+            # until a confetti tank is empty), whatever the finger does
+            if down:
+                self._quick_on(key, owner=f"tap:{time.monotonic():.3f}")
+            return {"id": key, "active": key in self.quick_active,
+                    "summary": f"{btn['label']} fired"}
         if kind in ("go", "release", "preset"):
             if not down:
                 return {"id": key, "active": False}
@@ -3521,6 +3596,16 @@ class Engine:
         if not btn:
             return
         run = self.quick_active.get(key)
+        if btn["kind"] in ("sfx", "fog", "laser"):
+            heads = self._quick_heads(btn)
+            started = self._sfx_start(key, {"sfx": "fire", "fog": "fog", "laser": "laser"}[btn["kind"]],
+                                     heads, owner, seconds=btn.get("seconds"),
+                                     level=btn.get("level", 100), values=btn.get("values"))
+            if started:
+                self.quick_active.setdefault(key, {"since": time.monotonic(), "heads": heads,
+                                                   "owners": set(), "fx_layer": True})
+                self.quick_active[key]["owners"].add(owner)
+            return
         if run is None:
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
                    "owners": set()}
@@ -3540,6 +3625,8 @@ class Engine:
             return
         owners = run.setdefault("owners", set())
         owners.discard(owner)
+        if run.get("fx_layer"):
+            self._sfx_stop(key, owner, force=force)
         if owners and not force:
             return
         self.quick_active.pop(key, None)
@@ -3549,9 +3636,53 @@ class Engine:
     def _a_quick_release_all(self, **_):
         for key in list(self.quick_active):
             run = self.quick_active.pop(key)
+            if run.get("fx_layer"):
+                self._sfx_stop(key, "hand", force=True)
             if run.get("fx"):
                 self.fx = [f for f in self.fx if f["id"] != run["fx"]]
         return {"summary": "all quick buttons released"}
+
+    def _a_quick_fx_defaults(self, page=2, replace=False, **_):
+        """Fill a page with this rig's special-effect buttons: ARM, Kill
+        FX, and fire / fog / laser buttons per kind of effect."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if any(b["page"] == page for b in self.quick) and not _truthy(replace):
+            raise ValueError(f"page {page} already has buttons")
+        kinds: dict[str, int] = {}
+        for h in self.patch:
+            if self._head_class(h) != "light":
+                t = fixture_kind.describe(h)["type"]
+                kinds[t] = kinds.get(t, 0) + 1
+        if not kinds:
+            raise ValueError("no lasers or special effects are patched")
+        self.quick = [b for b in self.quick if b["page"] != page]
+        plan = [{"kind": "arm", "label": "ARM FX"}, {"kind": "fxkill", "label": "KILL FX"}]
+        names = {"confetti": "Confetti", "co2": "CO2", "flame": "Flame", "spark": "Sparks",
+                 "sfx": "Effect", "laser": "Laser", "atmos": "Fog"}
+        for t in sorted(kinds, key=lambda k: -kinds[k]):
+            nm = names.get(t, t.title())
+            target = {"type": t}
+            if t == "confetti":
+                plan += [{"kind": "sfx", "label": "Confetti shot", "mode": "tap", "target": target},
+                         {"kind": "sfx", "label": "Confetti (hold)", "target": target}]
+            elif t in ("co2", "flame", "spark", "sfx"):
+                plan += [{"kind": "sfx", "label": f"{nm} 1 s", "mode": "tap", "seconds": 1, "target": target},
+                         {"kind": "sfx", "label": f"{nm} (hold)", "target": target}]
+            elif t == "laser":
+                plan += [{"kind": "laser", "label": "Laser (hold)", "target": target},
+                         {"kind": "laser", "label": "Laser on/off", "mode": "latch", "target": target}]
+            elif t == "atmos":
+                plan += [{"kind": "fog", "label": "Fog 10 s", "mode": "tap", "seconds": 10, "target": target},
+                         {"kind": "fog", "label": "Fog (hold)", "mode": "hold", "seconds": 60, "target": target},
+                         {"kind": "fog", "label": "Haze 30%", "mode": "latch", "level": 30,
+                          "seconds": 600, "target": target}]
+        made = []
+        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+            btn = self._quick_clean(raw, page, slot)
+            self.quick.append(btn)
+            made.append(btn)
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"buttons": len(made), "summary": f"page {page}: {len(made)} FX buttons"}
 
     def _a_quick_defaults(self, page=1, replace=False, **_):
         """Fill a page with buttons that suit this rig: flash and strobe
@@ -3588,10 +3719,24 @@ class Engine:
             self.quick.append(btn)
             made.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
-        return {"buttons": len(made), "summary": f"page {page}: {len(made)} buttons for this rig"}
+        summary = f"page {page}: {len(made)} buttons for this rig"
+        fx_page = 2 if page != 2 else 3
+        if any(self._head_class(h) != "light" for h in self.patch) \
+                and not any(b["page"] == fx_page for b in self.quick):
+            r = self._a_quick_fx_defaults(page=fx_page)
+            summary += f"; {r['summary']}"
+        return {"buttons": len(made), "summary": summary}
 
     def _override_vals(self) -> dict:
-        """Per-head overrides from the quick buttons that are held now."""
+        """Per-head overrides from the quick buttons that are held now,
+        and from the FX layer (the only way an effect's output moves)."""
+        out = self._quick_override_vals()
+        if self.fx_runs or self.fx_armed_until:
+            for n, sets in self._sfx_override_vals().items():
+                out.setdefault(n, {}).setdefault("set", {}).update(sets)
+        return out
+
+    def _quick_override_vals(self) -> dict:
         if not self.quick_active:
             return {}
         by_id = {b["id"]: b for b in self.quick}
@@ -3655,8 +3800,232 @@ class Engine:
             value = self._open_value(h, role)
             if value > 0:
                 rests[h["head_no"]] = {role: value}
+        # an effect's output rests at its own "off" value
+        for h in self.patch:
+            for role in FX_OUTPUT_ROLES.intersection(h["map"]):
+                off = (self.head_ranges(h).get(role) or {}).get("off_value") or 0
+                rests.setdefault(h["head_no"], {})[role] = int(off)
         self._rest_cache = (self.patch_rev, rests)
         return rests
+
+    # ------------------------------------------------------------------
+    # the FX layer: special effects and lasers
+    # ------------------------------------------------------------------
+    # An effect's output (fire, arm, fog, laser power) moves ONLY here.
+    # Light actions never reach it (merge drops every other source), fire
+    # and laser need the desk ARMED, every run has a hard time limit even
+    # if a button sticks, blackout / Kill FX / loading a show stop it all,
+    # and the desk always starts disarmed.
+    FX_ARM_S = 600.0
+
+    def _sfx_armed(self, now: float | None = None) -> bool:
+        return (time.monotonic() if now is None else now) < self.fx_armed_until
+
+    def _sfx_detail(self, h: dict, role: str) -> dict:
+        return self.head_ranges(h).get(role) or {}
+
+    def _sfx_heads(self, heads, kind: str) -> list[dict]:
+        """The patched heads among `heads` that can do `kind`."""
+        role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
+        by = {h["head_no"]: h for h in self.patch}
+        return [by[n] for n in heads or [] if n in by and role in by[n]["map"]]
+
+    def _sfx_limit(self, h: dict, kind: str) -> float:
+        role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
+        d = self._sfx_detail(h, role)
+        cap = float(d.get("max_s") or {"fire": 3.0, "fog": 20.0, "laser": 600.0}[kind])
+        if d.get("fx_kind") == "confetti":
+            cap = min(cap, self.fx_loads.get(h["head_no"], cap))
+        return max(0.0, cap)
+
+    def _sfx_finish(self, now: float | None = None) -> None:
+        """Retire runs whose time is up, and charge confetti tanks."""
+        now = time.monotonic() if now is None else now
+        for key in [k for k, r in self.fx_runs.items() if now >= r["until"]]:
+            self._sfx_end(key, now)
+
+    def _sfx_end(self, key: str, now: float) -> None:
+        run = self.fx_runs.pop(key, None)
+        if not run:
+            return
+        used = max(0.0, min(now, run["until"]) - run["since"])
+        for n in run["heads"]:
+            h = next((x for x in self.patch if x["head_no"] == n), None)
+            if h is not None and self._sfx_detail(h, "fx_fire").get("fx_kind") == "confetti":
+                full = float(self._sfx_detail(h, "fx_fire").get("max_s") or 30)
+                self.fx_loads[n] = max(0.0, self.fx_loads.get(n, full) - used)
+        if key in self.quick_active and self.quick_active[key].get("fx_layer"):
+            self.quick_active.pop(key, None)
+        self.act_rev += 1
+
+    def _sfx_start(self, key: str, kind: str, heads, owner: str = "hand",
+                  seconds=None, level=100, values=None) -> bool:
+        now = time.monotonic()
+        self._sfx_finish(now)
+        if kind in ("fire", "laser") and not self._sfx_armed(now):
+            return False
+        targets = self._sfx_heads(heads, kind)
+        if not targets:
+            return False
+        limit = min(self._sfx_limit(h, kind) for h in targets)
+        if seconds is not None:
+            limit = min(limit, max(0.2, float(seconds)))
+        if limit <= 0:
+            return False                         # a confetti tank is empty
+        run = self.fx_runs.get(key)
+        if run is None:
+            run = self.fx_runs[key] = {"kind": kind, "heads": [h["head_no"] for h in targets],
+                                       "since": now, "until": now + limit, "owners": set(),
+                                       "level": int(_clamp(level, 1, 100)),
+                                       "values": dict(values or {})}
+        run["owners"].add(owner)
+        self.act_rev += 1
+        return True
+
+    def _sfx_stop(self, key: str, owner: str = "hand", force: bool = False) -> None:
+        run = self.fx_runs.get(key)
+        if run is None:
+            return
+        run["owners"].discard(owner)
+        if force or not run["owners"]:
+            self._sfx_end(key, time.monotonic())
+
+    def _sfx_override_vals(self, now: float | None = None) -> dict:
+        """{head_no: {role: value}} the FX layer drives right now.  Read
+        only (it runs inside build_frames): expired runs are ignored here
+        and retired by the next FX action or status read."""
+        now = time.monotonic() if now is None else now
+        armed = self._sfx_armed(now)
+        by = {h["head_no"]: h for h in self.patch}
+        out: dict[int, dict] = {}
+        if armed:
+            for h in self.patch:
+                if "fx_arm" in h["map"]:
+                    d = self._sfx_detail(h, "fx_arm")
+                    out.setdefault(h["head_no"], {})["fx_arm"] = int(d.get("on_value") or 255)
+        for run in self.fx_runs.values():
+            if now >= run["until"] or (run["kind"] != "fog" and not armed):
+                continue
+            for n in run["heads"]:
+                h = by.get(n)
+                if h is None:
+                    continue
+                sets = out.setdefault(n, {})
+                if run["kind"] == "fire":
+                    sets["fx_fire"] = int(self._sfx_detail(h, "fx_fire").get("on_value") or 255)
+                elif run["kind"] == "fog":
+                    off = int(self._sfx_detail(h, "fog").get("off_value") or 0)
+                    sets["fog"] = off + round((255 - off) * run["level"] / 100)
+                else:
+                    sets["laser_on"] = int(self._sfx_detail(h, "laser_on").get("on_value") or 255)
+                    for role, v in run["values"].items():
+                        if role in h["map"]:
+                            sets[role] = int(v)
+        return out
+
+    def _sfx_public(self) -> dict:
+        now = time.monotonic()
+        self._sfx_finish(now)
+        loads = {}
+        for h in self.patch:
+            d = self._sfx_detail(h, "fx_fire") if "fx_fire" in h["map"] else {}
+            if d.get("fx_kind") == "confetti":
+                full = float(d.get("max_s") or 30)
+                left = self.fx_loads.get(h["head_no"], full)
+                for r in self.fx_runs.values():         # a shot in progress
+                    if r["kind"] == "fire" and h["head_no"] in r["heads"]:
+                        left -= max(0.0, min(now, r["until"]) - r["since"])
+                loads[h["head_no"]] = {"left": round(max(0.0, left), 1), "full": full}
+        return {"armed": self._sfx_armed(now),
+                "armed_left": max(0, round(self.fx_armed_until - now)),
+                "runs": [{"key": k, "kind": r["kind"], "heads": r["heads"],
+                          "left": round(max(0.0, r["until"] - now), 1)}
+                         for k, r in self.fx_runs.items()],
+                "loads": loads,
+                "heads": {h["head_no"]: self._head_class(h) for h in self.patch
+                          if self._head_class(h) != "light"}}
+
+    def _sfx_targets(self, heads=None, group=None) -> list[int]:
+        if heads is not None:
+            nums = [int(x) for x in (heads if isinstance(heads, (list, tuple)) else [heads])]
+        elif group is not None:
+            nums = self._target_heads({"group": int(group)})
+        else:
+            nums = list(self.selected) or [h["head_no"] for h in self.patch]
+        by = {h["head_no"]: h for h in self.patch}
+        return [n for n in nums if n in by and self._head_class(by[n]) != "light"]
+
+    def _a_fx_arm(self, state=True, minutes=None, **_):
+        """ARM (or disarm) special effects and lasers.  Fire and laser
+        output only work while armed; it switches itself off after
+        `minutes` (10 by default)."""
+        if _truthy(state):
+            secs = self.FX_ARM_S if minutes in (None, "") else max(30.0, min(3600.0, float(minutes) * 60))
+            self.fx_armed_until = time.monotonic() + secs
+            return {"armed": True, "summary": f"effects ARMED for {secs / 60:g} min"}
+        self.fx_armed_until = 0.0
+        for key in [k for k, r in self.fx_runs.items() if r["kind"] != "fog"]:
+            self._sfx_end(key, time.monotonic())
+        return {"armed": False, "summary": "effects disarmed"}
+
+    def _a_fx_fire(self, heads=None, group=None, down=True, seconds=None, owner="hand", **_):
+        """Fire SFX (confetti, CO2, flame, sparks) while held, capped at
+        each machine's limit.  Needs ARM."""
+        key = f"fire:{owner}"
+        if not _truthy(down):
+            self._sfx_stop(key, owner, force=True)
+            return {"summary": "fire stopped"}
+        if not self._sfx_armed():
+            raise ValueError("ARM the effects first")
+        nums = self._sfx_targets(heads, group)
+        if not self._sfx_start(key, "fire", nums, owner, seconds=seconds):
+            raise ValueError("nothing to fire (no SFX selected, or a confetti tank is empty)")
+        return {"summary": f"FIRE on {len(self.fx_runs[key]['heads'])} effect(s)"}
+
+    def _a_fx_fog(self, heads=None, group=None, level=100, seconds=10, down=True, owner="hand", **_):
+        """Fog / haze at `level` % for `seconds` (or while held)."""
+        key = f"fog:{owner}"
+        if not _truthy(down):
+            self._sfx_stop(key, owner, force=True)
+            return {"summary": "fog stopped"}
+        nums = self._sfx_targets(heads, group)
+        if not self._sfx_start(key, "fog", nums, owner, seconds=seconds, level=level):
+            raise ValueError("no fog or haze machine selected")
+        return {"summary": f"fog {int(_clamp(level, 1, 100))}% for {float(seconds or 0):g} s"}
+
+    def _a_fx_laser(self, heads=None, group=None, down=True, seconds=None, values=None, owner="hand", **_):
+        """Laser output on while held (pattern etc. from `values` or the
+        programmer).  Needs ARM."""
+        key = f"laser:{owner}"
+        if not _truthy(down):
+            self._sfx_stop(key, owner, force=True)
+            return {"summary": "laser off"}
+        if not self._sfx_armed():
+            raise ValueError("ARM the effects first")
+        nums = self._sfx_targets(heads, group)
+        vals = {str(k): int(_clamp(v, 0, 255)) for k, v in (values or {}).items()
+                if str(k) in LASER_ROLES and str(k) != "laser_on"}
+        if not self._sfx_start(key, "laser", nums, owner, seconds=seconds, values=vals):
+            raise ValueError("no laser selected")
+        return {"summary": f"laser ON ({len(self.fx_runs[key]['heads'])})"}
+
+    def _a_fx_kill(self, **_):
+        """Stop every effect and laser at once, and disarm."""
+        now = time.monotonic()
+        for key in list(self.fx_runs):
+            self._sfx_end(key, now)
+        self.fx_armed_until = 0.0
+        return {"summary": "all effects stopped, disarmed"}
+
+    def _a_fx_reload(self, heads=None, **_):
+        """Confetti refilled: tanks back to full."""
+        nums = self._sfx_targets(heads) if heads is not None else [h["head_no"] for h in self.patch]
+        for n in nums:
+            self.fx_loads.pop(n, None)
+        return {"summary": "confetti reloaded"}
+
+    def _a_fx_status(self, **_):
+        return {"sfx": self._sfx_public(), "summary": "effects armed" if self._sfx_armed() else "effects disarmed"}
 
     def _drop_fixture_caches(self) -> None:
         """A profile was imported or edited: open values may have changed."""
@@ -3664,6 +4033,131 @@ class Engine:
         _LEVELS_CACHE.clear()
         self._gate_cache = None
         self._rest_cache = None
+        self._motion_cache = {}
+
+    # -- movement speed, for the visualiser ------------------------------
+    def _motion_of(self, head: dict) -> dict:
+        """{pan_s, tilt_s} measured for this model, or {} (type defaults)."""
+        cache = getattr(self, "_motion_cache", None)
+        if cache is None:
+            cache = self._motion_cache = {}
+        key = (head.get("manufacturer") or "", head.get("model") or "")
+        if key not in cache:
+            try:
+                cache[key] = fixtures.get_motion(self.db_path, *key) or {}
+            except Exception:                # the visual is an enhancement
+                cache[key] = {}
+        return cache[key]
+
+    def _speed_frac(self, head: dict, values: dict) -> float:
+        """The pan/tilt speed channel as 0 (fastest) .. 1 (slowest)."""
+        if "speed" not in head["map"]:
+            return 0.0
+        v = max(0, min(255, int(values.get("speed", 0)))) / 255.0
+        fast_first = (self.head_ranges(head).get("speed") or {}).get("fast_first")
+        return round(v if fast_first is not False else 1.0 - v, 3)
+
+    def _strobe_hz(self, head: dict, values: dict, over: dict | None) -> float:
+        """How fast the light is really strobing, 0 for steady.  From a
+        strobe button, else the strobe channel inside a range the
+        fixture's file marks as strobe (never an 'open' value)."""
+        if over and over.get("strobe"):
+            return round(float(over["strobe"]), 2)
+        role = self._shutter_role(head)
+        if role is None or role not in values:
+            return 0.0
+        v = max(0, min(255, int(values[role])))
+        ranges = (self.head_ranges(head).get(role) or {}).get("strobe_ranges")
+        if ranges:
+            for lo, hi in ranges:
+                if lo <= v <= hi:
+                    return round(1 + 19 * (v - lo) / max(1, hi - lo), 2)
+            return 0.0
+        opened = self._open_value(head, role)
+        if v > opened + 8 and v < 248:        # no ranges known: a guess
+            return round(1 + 19 * (v - opened) / max(1, 255 - opened), 2)
+        return 0.0
+
+    def _a_motion_set(self, head=None, pan_s=None, tilt_s=None, clear=False, **_):
+        """Store how long this fixture model takes for a full pan and a
+        full tilt at top speed (seconds), so the visualiser moves it at
+        the real speed.  Applies to every head of the same model."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        if _truthy(clear):
+            fixtures.set_motion(self.db_path, h.get("manufacturer"), h.get("model"), None, None)
+            self._motion_cache = {}
+            return {"summary": f"{h.get('model')}: movement back to defaults"}
+        vals = {}
+        for key, v in (("pan_s", pan_s), ("tilt_s", tilt_s)):
+            if v is None or v == "":
+                vals[key] = self._motion_of(h).get(key)
+                continue
+            f = float(v)
+            if not 0.2 <= f <= 60:
+                raise ValueError(f"{key.split('_')[0]} time must be 0.2 to 60 seconds")
+            vals[key] = round(f, 2)
+        fixtures.set_motion(self.db_path, h.get("manufacturer"), h.get("model"),
+                            vals["pan_s"], vals["tilt_s"])
+        self._motion_cache = {}
+        parts = [f"{k.split('_')[0]} {v:g} s" for k, v in vals.items() if v]
+        return {"motion": vals, "summary": f"{h.get('model')}: full " + ", ".join(parts)}
+
+    def _a_motion_get(self, head=None, **_):
+        """This model's measured full pan/tilt times (null = type default)."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        m = self._motion_of(h)
+        return {"motion": {"pan_s": m.get("pan_s"), "tilt_s": m.get("tilt_s")},
+                "axes": [a for a in ("pan", "tilt") if a in h["map"]],
+                "summary": f"{h.get('model')}: " + (", ".join(
+                    f"{k[:-2]} {v:g} s" for k, v in m.items() if v) or "not calibrated")}
+
+    def _a_motion_test(self, head=None, axis="pan", to="start", **_):
+        """Calibration move: one head's pan (or tilt) to one end of its
+        travel at top speed, the other axis centred and the lamp open.
+        The head's own programmer values are restored by motion_test_end."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        axis = str(axis)
+        if axis not in ("pan", "tilt") or axis not in h["map"]:
+            raise ValueError(f"this fixture has no {axis}")
+        n = h["head_no"]
+        saved = self.__dict__.setdefault("_motion_saved", {})
+        if n not in saved:
+            saved[n] = dict(self.programmer.get(n) or {})
+        other = "tilt" if axis == "pan" else "pan"
+        full = attr_domain(h, axis)
+        self._set_programmer(n, axis, 0 if str(to) == "start" else full)
+        if other in h["map"]:
+            self._set_programmer(n, other, attr_domain(h, other) // 2)
+        if "speed" in h["map"]:
+            fast_first = (self.head_ranges(h).get("speed") or {}).get("fast_first")
+            self._set_programmer(n, "speed", 0 if fast_first is not False else 255)
+        for role, v in self._level_values(h, 100).items():
+            self._set_programmer(n, role, v)
+        gate = self._shutter_role(h)
+        if gate:                              # lit and steady, never strobing
+            self._set_programmer(n, gate, self._open_value(h, gate))
+        return {"summary": f"#{n} {axis} to the {'start' if str(to) == 'start' else 'end'}"}
+
+    def _a_motion_test_end(self, head=None, **_):
+        """Give the head back exactly what it had before the test."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        n = h["head_no"]
+        saved = self.__dict__.setdefault("_motion_saved", {})
+        if n in saved:
+            before = saved.pop(n)
+            if before:
+                self.programmer[n] = before
+            else:
+                self.programmer.pop(n, None)
+        return {"summary": f"#{n} back to what it was doing"}
 
     def _quick_public(self) -> dict:
         return {"buttons": [dict(b) for b in self.quick],
@@ -4115,7 +4609,7 @@ class Engine:
         ones with no dimmer channel (their shutter/strobe opens) and
         ones whose colour lives on a wheel/gobo wheel (slot 1 = open).
         """
-        heads = self._require_selection()
+        heads = self._require_selection(lights_only=True)
         no_light = []
         for h in heads:
             values = self._level_values(h, 100)
@@ -4274,6 +4768,8 @@ class Engine:
         if role is None or role not in ROLES or role == "unused":
             raise ValueError(
                 "run_fx needs an attribute (dimmer, pan, tilt, red, ...)")
+        if role in FX_OUTPUT_ROLES:
+            raise ValueError("an effect's output never runs from an effect generator")
         name = str(wave if wave not in (None, "") else kind or "sine").lower()
         if name not in fxmod.WAVES:
             raise ValueError(f"unknown wave {name!r} - use one of "
@@ -5372,6 +5868,8 @@ class Engine:
                 "0", "off", "false", "no", "release")
         else:
             self.blackout = bool(int(state or 0))
+        if self.blackout:
+            self._a_fx_kill()          # blackout stops every effect and disarms
         return {"blackout": self.blackout,
                 "summary": "blackout on" if self.blackout else
                            "blackout released"}
@@ -6005,7 +6503,8 @@ class Engine:
         if role in ("shutter", "strobe") and heads:
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
-        if role in ("wheel", "gobo", "gobo2") and heads:
+        if role in ("wheel", "gobo", "gobo2", "laser_pattern", "laser_colour",
+                    "fx_mode", "fx_fire") and heads:
             # the fixture's real slots, when every head is the same model
             kinds = {(h.get("manufacturer"), h.get("model"), h.get("mode")) for h in heads}
             if len(kinds) == 1:
@@ -6638,6 +7137,8 @@ class Engine:
             asked = 0.0 if value is None else float(value)
         except (TypeError, ValueError):
             raise ValueError(f"not a number: {value!r}") from None
+        if resolved in FX_OUTPUT_ROLES:
+            raise ValueError(f"{resolved} is an effect's output: use the armed FX buttons")
         heads = self._require_selection()
         capable = [h for h in heads if resolved in (h.get("map") or [])]
         if not capable:
@@ -6958,13 +7459,77 @@ class Engine:
             # zoom, iris, frost, gobo, prism and strobe change the beam on
             # screen exactly as they will on stage.
             beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
-                    for r in _BEAM_LOOK_ROLES if r in values}
-            if over and over.get("strobe") and row["a"] > 0:
-                beam["strobe"] = round(min(1.0, float(over["strobe"]) / 20.0), 3)
+                    for r in _BEAM_LOOK_ROLES if r in values
+                    and r not in ("strobe", "shutter")}
             if beam:
                 row["beam"] = beam
+            fxl = self._fx_look(head, values)
+            if fxl:
+                row["fx"] = fxl
+                if fxl.get("laser"):
+                    row["a"], row["on"] = 1.0, True
+                    row["hex"] = fxl.get("hex", "#22ff44")
+            # How fast it REALLY strobes (0 = steady): a raw strobe byte
+            # is not a speed - 4 or 20 is "open" on many lights.
+            hz = self._strobe_hz(head, values, over) if row["a"] > 0 else 0.0
+            if hz:
+                row["hz"] = hz
+            # How it moves: measured full-travel times for this model (if
+            # calibrated) and the speed channel, so the visualiser's head
+            # turns at the real light's pace instead of snapping.
+            if "pan" in head["map"] or "tilt" in head["map"]:
+                m = self._motion_of(head)
+                mv = {"s": self._speed_frac(head, values)}
+                if m.get("pan_s"):
+                    mv["p"] = m["pan_s"]
+                if m.get("tilt_s"):
+                    mv["t"] = m["tilt_s"]
+                row["mv"] = mv
             out.append(row)
         return out
+
+    _LASER_HEX = (("red", "#ff2020"), ("green", "#22ff44"), ("blue", "#2244ff"),
+                  ("yellow", "#ffee22"), ("cyan", "#22ffee"), ("magenta", "#ff22dd"),
+                  ("purple", "#aa33ff"), ("pink", "#ff66cc"), ("white", "#ffffff"),
+                  ("orange", "#ff8a1a"))
+
+    def _fx_look(self, head: dict, values: dict) -> dict | None:
+        """What an effect is doing, for the 3D view: firing, fog level,
+        laser on with its pattern, rotation, size and colour."""
+        m = head["map"]
+        if not FX_ROLES.intersection(m):
+            return None
+        out: dict = {}
+
+        def off(role):
+            return int((self.head_ranges(head).get(role) or {}).get("off_value") or 0)
+        if "fx_fire" in m and int(values.get("fx_fire", off("fx_fire"))) != off("fx_fire"):
+            out["fire"] = True
+        if "fog" in m:
+            o = off("fog")
+            v = int(values.get("fog", o))
+            if v > o:
+                out["fog"] = round((v - o) / max(1, 255 - o), 2)
+        if "laser_on" in m and int(values.get("laser_on", off("laser_on"))) != off("laser_on"):
+            out["laser"] = True
+            for role, key in (("laser_pattern", "pattern"), ("laser_rot", "rot"),
+                              ("laser_size", "size"), ("laser_speed", "speed"),
+                              ("laser_x", "x"), ("laser_y", "y")):
+                if role in values:
+                    out[key] = round(max(0, min(255, int(values[role]))) / 255, 3)
+            hexc = None
+            if "laser_colour" in values:
+                v = int(values["laser_colour"])
+                for s in (self.head_ranges(head).get("laser_colour") or {}).get("slots") or []:
+                    if s["from"] <= v <= s["to"]:
+                        name = s["name"].lower()
+                        hexc = next((hx for word, hx in self._LASER_HEX if word in name), None)
+                        break
+            if hexc is None and any(r in values for r in ("red", "green", "blue")):
+                hexc = "#%02x%02x%02x" % tuple(max(0, min(255, int(values.get(c, 0))))
+                                               for c in ("red", "green", "blue"))
+            out["hex"] = hexc if hexc and hexc != "#000000" else "#22ff44"
+        return out or None
 
     @staticmethod
     def _aim01(head: dict, values: dict, base: str) -> float | None:
@@ -7015,9 +7580,11 @@ class Engine:
                     "lit": len(lit)}
 
     def look_rows(self) -> list[dict]:
-        """The lit heads' looks, for the live stream (no sequence bump)."""
+        """The lit heads' looks, and dark heads whose aim is driven (a head
+        moves in the dark too), for the live stream (no sequence bump)."""
         with self.lock:
-            return [row for row in self._looks() if row["a"] > 0]
+            return [row for row in self._looks()
+                    if row["a"] > 0 or "pan" in row or "tilt" in row or "fx" in row]
 
     def _look(self, now: float | None = None) -> list[dict]:
         """Lite-feed look rows: {n, look:{hex, a, on}} (patch-revisioned)."""
@@ -7463,6 +8030,7 @@ class Engine:
             self.show_file = label
             self.quick = quick
             self.quick_active = {}
+            self._a_fx_kill()                  # a new show starts disarmed
             self._a_timeline_stop()
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             if venue is not None:           # older shows kept no room
@@ -7737,6 +8305,7 @@ class Engine:
                 "shows": self._show_names(),
                 "show_file": self.show_file,
                 "venue": self.venue,
+                "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
@@ -7778,6 +8347,7 @@ class Engine:
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
                 "quick_active": sorted(self.quick_active),
+                "sfx": self._sfx_public(),
                 "timeline": self._tl_transport(),
                 "patch_rev": self.patch_rev,
                 "output": self._output_public(),

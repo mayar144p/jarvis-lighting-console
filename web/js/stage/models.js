@@ -725,6 +725,65 @@ function atmos(body) {
   }
   sk.height = 0.3;
   sk.radius = 0.3;
+  sk.nozzle = new THREE.Object3D();          // fog leaves forward, low
+  sk.nozzle.position.set(0, 0.15, 0.22);
+  sk.nozzle.userData.dir = [0, 0.05, 1];
+  sk.root.add(sk.nozzle);
+  return sk;
+}
+
+// Special effects: a body, and a `nozzle` the visualiser's particles
+// leave from (its userData.dir is the direction they are thrown).
+function sfxBody(body, kind) {
+  const sk = skeleton();
+  const H = housing(body.style);
+  const S = steel();
+  let top = 0.3;
+  if (kind === "confetti") {                 // a launcher tube on a yoke
+    const base = rbox(0.3, 0.12, 0.26, 0.02, H);
+    base.position.y = 0.06;
+    sk.root.add(base);
+    const tube = cyl(0.11, 0.1, 0.55, H, 24);
+    tube.position.y = 0.42;
+    tube.rotation.x = -0.25;
+    sk.root.add(tube);
+    top = 0.68;
+  } else if (kind === "co2") {                // a jet with a long nozzle
+    const body_ = rbox(0.22, 0.18, 0.22, 0.02, H);
+    body_.position.y = 0.09;
+    sk.root.add(body_);
+    const pipe = cyl(0.025, 0.035, 0.35, S, 16);
+    pipe.position.y = 0.35;
+    sk.root.add(pipe);
+    top = 0.53;
+  } else if (kind === "flame") {              // a burner head on a box
+    const box = rbox(0.34, 0.2, 0.34, 0.02, H);
+    box.position.y = 0.1;
+    sk.root.add(box);
+    const head = cyl(0.06, 0.08, 0.12, S, 20);
+    head.position.y = 0.26;
+    sk.root.add(head);
+    top = 0.32;
+  } else {                                    // spark fountain / other
+    const box = rbox(0.36, 0.22, 0.3, 0.02, H);
+    box.position.y = 0.11;
+    sk.root.add(box);
+    const vent = cyl(0.05, 0.05, 0.03, S, 20);
+    vent.position.y = 0.235;
+    sk.root.add(vent);
+    top = 0.25;
+  }
+  const plate = logo(body, 0.2, 0.05);
+  if (plate) {
+    plate.position.set(0, 0.08, 0.14);
+    sk.root.add(plate);
+  }
+  sk.nozzle = new THREE.Object3D();
+  sk.nozzle.position.set(0, top, kind === "confetti" ? 0.07 : 0);
+  sk.nozzle.userData.dir = kind === "confetti" ? [0, 1, 0.25] : [0, 1, 0];
+  sk.root.add(sk.nozzle);
+  sk.height = top + 0.02;
+  sk.radius = 0.25;
   return sk;
 }
 
@@ -753,6 +812,11 @@ const BUILDERS = {
   laser,
   followspot,
   atmos,
+  confetti: (b) => sfxBody(b, "confetti"),
+  co2: (b) => sfxBody(b, "co2"),
+  flame: (b) => sfxBody(b, "flame"),
+  spark: (b) => sfxBody(b, "spark"),
+  sfx: (b) => sfxBody(b, "sfx"),
   generic,
 };
 

@@ -2,7 +2,7 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
-import { state, patch, selected } from "./store.js";
+import { state, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox } from "./ui.js";
 
@@ -11,17 +11,18 @@ let preview = null;
 
 export function openAddDialog(query = "") {
   let chosen = null;
-  let source = "lib";
+  let source = "all";
   const list = h("div.lib-list");
   const search = h("input", { type: "search", placeholder: "Search: brand, model, type…", value: query, autocomplete: "off" });
   const tabs = h("div.lib-tabs",
-    h("button", { "aria-selected": "true", dataset: { src: "lib" } }, "Installed"),
-    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"),
-    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"));
+    h("button", { "aria-selected": "true", dataset: { src: "all" }, title: "Installed, the Jarvis library, Open Fixture Library, QLC+ and GDTF Share at once" }, "All"),
+    h("button", { "aria-selected": "false", dataset: { src: "lib" } }, "Installed"),
+    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Jarvis library + Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"),
+    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"));
   const shareNote = h("div.muted.small", { style: { padding: "8px 12px" } });
   const pv = h("div.preview3d", h("div.cap"));
   const title = h("div.pick-title", "Pick a fixture");
-  const meta = h("div.pick-meta", "Everything installed is listed on the left. Libraries has thousands more, offline; GDTF Share has the manufacturers' own files.");
+  const meta = h("div.pick-meta", "One search covers everything: your installed fixtures, the Jarvis library, Open Fixture Library, QLC+ and (signed in) GDTF Share.");
   const mode = h("select.select", { style: { width: "100%" } });
   const qty = h("input", { type: "number", min: 1, max: 64, value: 1 });
   const uni = h("input", { type: "number", min: 1, placeholder: "auto" });
@@ -40,7 +41,8 @@ export function openAddDialog(query = "") {
 
   const close = modal({
     title: "Add fixtures", wide: true, body,
-    foot: [h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
+    foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
+      h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],
     onClose: () => { if (preview) { preview.destroy(); preview = null; } },
   });
@@ -57,10 +59,11 @@ export function openAddDialog(query = "") {
     const modes = item.modes || [];
     mode.replaceChildren(...modes.map((m) => h("option", { value: m.name },
       `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)`)));
-    if (source === "share") {
+    const origin = item._origin || source;
+    if (origin === "share") {
       meta.textContent = `GDTF Share · revision ${item.revision || "?"} · downloads the manufacturer's file, then adds it`;
       addBtn.textContent = "Download and add";
-    } else if (source === "open") {
+    } else if (origin === "open") {
       meta.textContent = `${item.library} · ${modes.length} DMX mode(s) · community-made: check the mode against the light's manual`;
       addBtn.textContent = "Install and add";
     } else {
@@ -93,14 +96,18 @@ export function openAddDialog(query = "") {
 
   async function searchShare() {
     const st = await get("/api/gdtf/status").catch(() => ({}));
-    if (!st.signed_in && !st.configured && !st.catalogue) {
+    if (!st.signed_in && !st.configured) {
+      // Sign-in is offered whenever there is no live session - even with
+      // a saved catalogue to browse, a download needs one.
       shareNote.replaceChildren(
-        h("p", { style: { margin: "0 0 8px" } }, "Sign in with a free gdtf-share.com account. The password stays in this app's memory only."),
+        h("p", { style: { margin: "0 0 8px" } }, (st.catalogue ? `${st.catalogue} fixtures saved to browse. ` : "")
+          + (st.last_error_code === "unauthorized" ? "Your GDTF Share session expired: sign in again to download. " : "Sign in to download. ")
+          + "Free gdtf-share.com account; the password stays in this app's memory only."),
         shareLogin());
-      list.replaceChildren();
-      return;
+      if (!st.catalogue) { list.replaceChildren(); return; }
+    } else {
+      shareNote.textContent = st.catalogue ? `${st.catalogue} fixtures in the catalogue` : "";
     }
-    shareNote.textContent = st.catalogue ? `${st.catalogue} fixtures in the catalogue` : "";
     const q = search.value.trim();
     if (q.length < 2) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Type at least two letters to search the Share.")); return; }
     list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Searching…"));
@@ -142,6 +149,74 @@ export function openAddDialog(query = "") {
     if (!chosen) showPick(list.firstChild._item);
   }
 
+  // One box, every source: installed first, then the Jarvis library,
+  // OFL and QLC+ (offline), then GDTF Share when signed in.
+  async function searchAll() {
+    const q = search.value.trim();
+    const tag = (text) => h("span.src-tag", text);
+    const row = (item, name, bits, label) => {
+      const b = h("button.lib-item", { onclick: () => showPick(item) },
+        h("div.li-t", h("b", name, " ", tag(label)), h("small", bits.filter(Boolean).join(" · "))));
+      b._item = item;
+      return b;
+    };
+    shareNote.textContent = "";
+    const [inst, lib] = await Promise.all([
+      get("/api/fixtures?q=" + encodeURIComponent(q)).catch(() => ({})),
+      q.length >= 2 ? get("/api/fixtures/library?limit=60&q=" + encodeURIComponent(q)).catch(() => ({})) : Promise.resolve({}),
+    ]);
+    const rows = [];
+    for (const r of inst.results || []) {
+      rows.push(row({ ...r, _origin: "lib" }, `${r.manufacturer} ${r.model}`,
+        [(r.body && r.body.label) || "", `${(r.modes || []).length} mode(s)`], "installed"));
+    }
+    for (const r of lib.results || []) {
+      const item = { ...r, _origin: "open", modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
+      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.type || "", `${(r.modes || []).length} mode(s)`],
+        r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Jarvis"));
+    }
+    list.replaceChildren(...rows);
+    if (!rows.length) {
+      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
+        q.length < 2 ? "Type a brand or model (e.g. \u201cfunfetti\u201d, \u201cwave 360\u201d)." : "Nothing matches in the installed fixtures or the libraries."));
+    } else if (!chosen) showPick(rows[0]._item);
+    if (q.length < 2) return;
+    const st = await get("/api/gdtf/status").catch(() => ({}));
+    if (!(st.signed_in || st.catalogue) || search.value.trim() !== q) return;
+    const d = await get("/api/gdtf/search?limit=30&q=" + encodeURIComponent(q)).catch(() => ({}));
+    if (search.value.trim() !== q || source !== "all") return;
+    for (const r of d.results || []) {
+      list.append(row({ ...r, model: r.fixture, _origin: "share" }, `${r.manufacturer} ${r.fixture}`,
+        [(r.body && r.body.label) || "", `rev ${r.revision || "?"}`], "GDTF Share"));
+    }
+  }
+
+  // A sign-in box on top of the dialog; resolves true once signed in.
+  function shareSignIn() {
+    return new Promise((resolve) => {
+      const user = h("input", { type: "text", placeholder: "gdtf-share.com user", autocomplete: "username" });
+      const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
+      const msg = h("div.muted.small", "Your GDTF Share session has ended. Sign in to download this fixture. The password stays in this app's memory only.");
+      let done = false;
+      const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+      const go = async () => {
+        const d = await post("/api/gdtf/login", { user: user.value, password: pass.value }).catch((e) => ({ error: e.message }));
+        if (d.error) { msg.textContent = d.error; return; }
+        toast("Signed in to GDTF Share", "ok");
+        finish(true);
+        closeBox();
+      };
+      pass.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+      const closeBox = modal({
+        title: "Sign in to GDTF Share",
+        body: h("div.form-grid", h("label.field", h("span", "User"), user), h("label.field", h("span", "Password"), pass), msg),
+        foot: [h("button.btn", { onclick: () => closeBox() }, "Cancel"), h("button.btn.primary", { onclick: go }, "Sign in")],
+        onClose: () => finish(false),
+      });
+      setTimeout(() => user.focus(), 50);
+    });
+  }
+
   function shareLogin() {
     const user = h("input", { type: "text", placeholder: "user", autocomplete: "username" });
     const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
@@ -158,7 +233,7 @@ export function openAddDialog(query = "") {
   let t = 0;
   search.addEventListener("input", () => {
     clearTimeout(t);
-    t = setTimeout(() => (source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "share" ? 350 : 120);
+    t = setTimeout(() => (source === "all" ? searchAll() : source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "lib" ? 120 : 300);
   });
   tabs.addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -168,7 +243,7 @@ export function openAddDialog(query = "") {
     chosen = null;
     addBtn.disabled = true;
     shareNote.replaceChildren();
-    if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
+    if (source === "all") searchAll(); else if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
   });
 
   addBtn.addEventListener("click", async () => {
@@ -176,14 +251,19 @@ export function openAddDialog(query = "") {
     addBtn.disabled = true;
     try {
       let item = chosen;
-      if (source === "share") {
-        const d = await post("/api/gdtf/download", { rid: chosen.rid });
+      const origin = chosen._origin || source;
+      if (origin === "share") {
+        let d = await post("/api/gdtf/download", { rid: chosen.rid });
+        if (d.error && ["no_session", "unauthorized", "no_credentials"].includes(d.code)) {
+          if (!(await shareSignIn())) throw new Error("not signed in to GDTF Share");
+          d = await post("/api/gdtf/download", { rid: chosen.rid });
+        }
         if (d.error) throw new Error(d.error);
         toast(d.summary || "Downloaded", "ok");
         const found = await get("/api/fixtures?q=" + encodeURIComponent(`${d.manufacturer} ${d.model}`));
         item = (found.results || [])[0];
         if (!item) throw new Error("downloaded, but it did not appear in the library");
-      } else if (source === "open") {
+      } else if (origin === "open") {
         const d = await post("/api/fixtures/library/install", { src: chosen.src, key: chosen.key });
         if (d.error || !d.fixture) throw new Error(d.error || "the fixture could not be installed");
         toast(d.summary || "Installed", "ok");
@@ -203,7 +283,7 @@ export function openAddDialog(query = "") {
       addBtn.disabled = false;
     }
   });
-  searchLib();
+  searchAll();
   return close;
 }
 
@@ -604,3 +684,207 @@ export function openHelp() {
 }
 
 export { patch, selected };
+
+// ===================================================== movement speed
+// Time the REAL light, so the visualiser moves it at the same pace: the
+// light sweeps pan (then tilt) end to end at top speed and you tap when
+// it stops.  Saved per fixture model, so every head of it matches.
+const REACTION_S = 0.2;          // a tap lands about this late
+export async function openMotionCalibration(hd) {
+  const head = hd.head_no;
+  const got = await run("motion_get", { head }, { silentError: true });
+  if (!got.ok) { toast(got.error || "This fixture cannot be calibrated", "bad"); return; }
+  const axes = got.axes || [];
+  if (!axes.length) { toast("This fixture has no pan or tilt", "bad"); return; }
+  const taps = { pan: [], tilt: [] };
+  const inputs = {};
+  let t0 = 0;
+  let axis = axes[0];
+  let phase = "idle";                       // idle -> ready -> timing
+  const live = outputState() === "live";
+  const stepText = h("div.cal-step");
+  const big = h("button.btn.primary.cal-big");
+  const result = h("div.muted.small");
+  const fields = h("div.form-grid", ...axes.map((ax) => {
+    inputs[ax] = h("input", { type: "number", min: 0.2, max: 60, step: 0.1,
+      value: got.motion && got.motion[ax + "_s"] ? got.motion[ax + "_s"] : "", placeholder: "default" });
+    return h("label.field", h("span", `Full ${ax}, seconds`), inputs[ax]);
+  }));
+  const axisPick = h("div.row-btns", ...axes.map((ax) => h("button.btn.small", {
+    dataset: { ax }, onclick: () => { axis = ax; reset(); },
+  }, `Time ${ax}`)));
+
+  const avg = (list) => list.reduce((a, b) => a + b, 0) / list.length;
+  function render() {
+    [...axisPick.children].forEach((b) => b.classList.toggle("on", b.dataset.ax === axis));
+    if (phase === "idle") {
+      stepText.textContent = `1. Send the head to the start of its ${axis}. Wait until the REAL light has stopped moving.`;
+      big.textContent = `Move to ${axis} start`;
+    } else if (phase === "ready") {
+      stepText.textContent = `2. Press Go and watch the real light: it sweeps the whole ${axis} at top speed.`;
+      big.textContent = "Go";
+    } else {
+      stepText.textContent = "3. Tap the moment the real light STOPS.";
+      big.textContent = "It stopped!";
+    }
+    const n = taps[axis].length;
+    result.textContent = n ? `${axis}: ${taps[axis].map((x) => x.toFixed(2)).join(" s, ")} s → using ${avg(taps[axis]).toFixed(2)} s` +
+      (n < 2 ? " (time it twice for a better average)" : "") : "";
+  }
+  function reset() { phase = "idle"; render(); }
+  big.addEventListener("click", async () => {
+    if (phase === "idle") {
+      const r = await run("motion_test", { head, axis, to: "start" });
+      if (r.ok) { phase = "ready"; render(); }
+    } else if (phase === "ready") {
+      phase = "timing";
+      render();
+      t0 = performance.now();
+      const r = await run("motion_test", { head, axis, to: "end" });
+      if (!r.ok) reset();
+    } else {
+      const s = Math.max(0.2, (performance.now() - t0) / 1000 - REACTION_S);
+      taps[axis].push(s);
+      inputs[axis].value = avg(taps[axis]).toFixed(2);
+      reset();
+    }
+  });
+  const body = h("div.cal",
+    h("p", `Make the 3D view move #${head} ${hd.name || hd.model} as fast as the real light. The result is saved for every ${hd.model}.`),
+    live ? null : h("p.out-bad", "The output is not live, so the real light will not move. Press Go live first, or type the times below from a stopwatch."),
+    axisPick, stepText, big, result, fields,
+    h("p.muted.small", "Tip: time each axis twice. The speed channel is set to fastest for the test, and the head gets back exactly what it was doing when you close this."));
+  const close = modal({
+    title: "Calibrate movement speed", body,
+    foot: [
+      h("button.btn", { onclick: async () => { await run("motion_set", { head, clear: true }, { toast: true }); close(); } }, "Back to defaults"),
+      h("span.grow"),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const params = { head };
+        for (const ax of axes) if (inputs[ax].value) params[ax + "_s"] = +inputs[ax].value;
+        const r = await run("motion_set", params, { toast: true });
+        if (r.ok) close();
+      } }, "Save"),
+    ],
+    onClose: () => run("motion_test_end", { head }, { silentError: true }),
+  });
+  render();
+}
+
+// ================================================= fixture from a manual
+// Any light or effect no library has: paste the DMX chart or drop the
+// manual's PDF, check the table, save.  Nothing is stored until Save.
+const FIXTURE_FUNCTIONS = ["dimmer", "red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow",
+  "pan", "pan fine", "tilt", "tilt fine", "pan/tilt speed", "shutter", "strobe", "colour wheel", "colour macro",
+  "gobo wheel", "gobo rotation", "prism", "zoom", "focus", "frost", "iris",
+  "fx fire", "fx arm", "fx fan", "fog output", "fx height", "fx mode",
+  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour",
+  "setting", "unused"];
+const FIXTURE_TYPES = [["light", "Light"], ["laser", "Laser"], ["confetti", "Confetti"], ["co2", "CO2 jet"],
+  ["flame", "Flame"], ["spark", "Spark fountain"], ["fog", "Fog"], ["haze", "Haze"], ["bubble", "Bubbles"],
+  ["snow", "Snow"], ["other", "Other effect"]];
+
+async function pdfText(file) {
+  const pdfjs = await import("/vendor/pdfjs/pdf.min.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pages = [];
+  for (let i = 1; i <= Math.min(doc.numPages, 60); i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    // rebuild lines from the text runs' y positions
+    const rows = new Map();
+    for (const it of tc.items) {
+      const y = Math.round(it.transform[5]);
+      rows.set(y, (rows.get(y) || "") + (rows.has(y) ? " " : "") + it.str);
+    }
+    pages.push([...rows.entries()].sort((a, b) => b[0] - a[0]).map(([, t]) => t).join("\n"));
+  }
+  return pages.join("\n");
+}
+
+export function openManualFixture(onSaved) {
+  const maker = h("input", { type: "text", placeholder: "e.g. Chauvet DJ" });
+  const model = h("input", { type: "text", placeholder: "e.g. Funfetti Shot" });
+  const text = h("textarea", { rows: 8, placeholder: "Paste the DMX chart here (from the manual or its PDF), e.g.\n1 Off/On\n000-009 Off\n010-255 On" });
+  const file = h("input", { type: "file", accept: ".pdf,.txt,application/pdf,text/plain" });
+  const status = h("div.muted.small");
+  const review = h("div.man-review");
+  let draft = null;
+  file.addEventListener("change", async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    status.textContent = "Reading the file…";
+    try {
+      text.value = f.name.toLowerCase().endsWith(".pdf") ? await pdfText(f) : await f.text();
+      status.textContent = `Read ${f.name}. Press "Read the chart".`;
+    } catch (err) {
+      status.textContent = "Could not read that file: " + err.message;
+    }
+  });
+  const readBtn = h("button.btn.primary", {
+    onclick: async () => {
+      status.textContent = "Reading the DMX chart…";
+      const d = await post("/api/fixtures/from_manual", { text: text.value, manufacturer: maker.value, model: model.value }).catch((e) => ({ error: e.message }));
+      if (d.error) { status.textContent = d.error; return; }
+      draft = d.draft;
+      status.textContent = (draft.via === "ai" ? "Read by the AI." : "Read by the offline reader.")
+        + " Check every channel against the manual before saving." + ((draft.warnings || []).length ? " " + draft.warnings.join(" ") : "");
+      renderReview();
+    },
+  }, "Read the chart");
+
+  function renderReview() {
+    if (!draft || !(draft.modes || []).length) { review.replaceChildren(); return; }
+    if (draft.manufacturer && !maker.value) maker.value = draft.manufacturer;
+    if (draft.model && !model.value) model.value = draft.model;
+    const type = h("select.select", ...FIXTURE_TYPES.map(([k, l]) => h("option", { value: k }, l)));
+    type.value = draft.type || "light";
+    type.addEventListener("change", () => { draft.type = type.value; });
+    const tables = draft.modes.map((m) => {
+      const name = h("input", { type: "text", value: m.name, style: { width: "160px" } });
+      name.addEventListener("input", () => { m.name = name.value; });
+      return h("div.man-mode", h("label.field.inline", h("span", "Mode"), name),
+        h("table.chan-table", h("thead", h("tr", h("th", "Ch"), h("th", "Name"), h("th", "Does"), h("th", "Values (one per line: 0-9 Off)"))),
+          h("tbody", ...m.channels.map((c, i) => {
+            const nm = h("input", { type: "text", value: c.name });
+            nm.addEventListener("input", () => { c.name = nm.value; });
+            const fn = h("select.select", ...FIXTURE_FUNCTIONS.map((f) => h("option", { value: f }, f)));
+            fn.value = c.function;
+            fn.addEventListener("change", () => { c.function = fn.value; });
+            const rg = h("textarea", { rows: Math.min(4, Math.max(1, c.ranges.length)) });
+            rg.value = c.ranges.map(([lo, hi, l]) => `${lo}-${hi} ${l}`).join("\n");
+            rg.addEventListener("change", () => {
+              c.ranges = rg.value.split("\n").map((ln) => /^\s*(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(.*)$/.exec(ln)).filter(Boolean)
+                .map((x) => [+x[1], +x[2], x[3].trim()]);
+            });
+            return h("tr", h("td.mono", i + 1), h("td", nm), h("td", fn), h("td", rg));
+          }))));
+    });
+    review.replaceChildren(h("div.form-grid", h("label.field", h("span", "Kind of fixture"), type)), ...tables);
+  }
+
+  const close = modal({
+    title: "Fixture from its manual", wide: true,
+    body: h("div.man",
+      h("div.form-grid", h("label.field", h("span", "Manufacturer"), maker), h("label.field", h("span", "Model"), model),
+        h("label.field", h("span", "Manual (PDF or text)"), file)),
+      text, h("div.row-btns", readBtn, status), review),
+    foot: [h("span.muted.small.grow", "Jarvis stores exactly this table. Effects fire only from their armed FX buttons."),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", {
+        onclick: async () => {
+          if (!draft) { toast("Read the chart first", "bad"); return; }
+          if (!maker.value.trim() || !model.value.trim()) { toast("Give the manufacturer and the model, so you can find it later", "bad"); return; }
+          draft.manufacturer = maker.value.trim();
+          draft.model = model.value.trim();
+          const d = await post("/api/fixtures/from_manual/save", { draft }).catch((e) => ({ error: e.message }));
+          if (d.error) { toast(d.error, "bad"); return; }
+          toast(d.summary, "ok");
+          close();
+          if (onSaved) onSaved(d.fixture);
+        },
+      }, "Save to library")],
+  });
+}
