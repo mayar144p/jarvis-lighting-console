@@ -353,6 +353,12 @@ class GdtfShare:
         tight = cls._squash(needle)
         if tight and (tight in cls._squash(maker) or tight in cls._squash(fixture)):
             return 5
+        # brand AND model typed together, extra describing words, a typo:
+        # the shared forgiving matcher, ranked below every hit above
+        from . import searchmatch
+        hit = searchmatch.score(needle, maker, fixture)
+        if hit is not None:
+            return 6 + hit[0] * 3 + min(2, hit[1] + hit[2])
         return None
 
     def search(self, q: str = "", man: str = "", footprint: int | None = None,

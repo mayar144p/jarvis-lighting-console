@@ -7496,6 +7496,7 @@ def _standalone_suites():
     ("gdtf share session expiry", test_share_relogin),
     ("shutter open value found and remembered", test_remember_open),
     ("test this light", test_light_test),
+    ("forgiving fixture search", test_fixture_search),
     )
 
 
@@ -8674,6 +8675,44 @@ def test_remember_open() -> None:
           str([d["role"] for d in cobra[:4]]))
 
 
+def test_fixture_search() -> None:
+    """'I type the right text and nothing is found': short brand names,
+    extra describing words and typos find the light; brand + model typed
+    together finds a GDTF Share entry; stale replies never win in the UI."""
+    print("fixture search (forgiving, one matcher for every source)")
+    import tempfile
+    from app import fixlib, fixtures, gdtfshare, searchmatch
+
+    def top(q):
+        r = fixlib.search(q, 5)
+        return (r[0]["manufacturer"], r[0]["model"], r[0]["close"]) if r else None
+
+    check("'ADJ' finds American DJ", (top("adj galaxian") or ("",))[0] == "American DJ", str(top("adj galaxian")))
+    check("an extra describing word (LED) doesn't empty the list",
+          (top("chauvet intimidator spot 110 led") or ("", ""))[1] == "Intimidator Spot 110", str(top("chauvet intimidator spot 110 led")))
+    check("'moving head' after the model still finds it",
+          (top("Intimidator Spot 110 moving head") or ("", ""))[1] == "Intimidator Spot 110", "")
+    check("a typo finds it", (top("intimidater spot 110") or ("", ""))[1] == "Intimidator Spot 110", str(top("intimidater spot 110")))
+    check("spacing doesn't matter ('beam z')", (top("beam z cobra") or ("", ""))[1] == "Cobra 720", str(top("beam z cobra")))
+    check("a number is never a typo (100 is not 120)", searchmatch.score("cobra 100", "BeamZ", "Cobra 120") is None, "")
+    check("a different model number is offered only as a close match, below exact ones",
+          (searchmatch.score("beamz cobra 100 spot", "BeamZ", "Cobra 120 Spot") or (0,))[0] == 1
+          and searchmatch.score("beamz cobra 120 spot", "BeamZ", "Cobra 120 Spot")[0] == 0, "")
+    check("nonsense still finds nothing", fixlib.search("xyzzy qwv", 5) == [], "")
+    entry = {"fixture": "Cobra 120 Spot", "manufacturer": "BeamZ"}
+    check("GDTF Share: brand + model typed together matches",
+          gdtfshare.GdtfShare._score(entry, "beamz cobra 120 spot", "") is not None
+          and gdtfshare.GdtfShare._score(entry, "cobra", "") < gdtfshare.GdtfShare._score(entry, "beamz cobra 120", ""), "")
+    with tempfile.TemporaryDirectory() as td:
+        db = Path(td) / "s.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-110.json"), source="t")
+        got = fixtures.search(db, "chauvet intimdator 110", fuzzy=True)
+        check("installed search forgives a typo in the Add dialog", len(got) == 1, str(len(got)))
+        check("but the engine's own lookups stay strict", fixtures.search(db, "chauvet intimdator 110") == [], "")
+    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("only the newest search may fill the list", js.count("if (my !== seq) return;") >= 5, str(js.count("if (my !== seq) return;")))
+
+
 def test_light_test() -> None:
     """The 'Test this light' step after adding a model: lit white and
     centred, then the operator walks the shutter's likely open values - and
@@ -8798,8 +8837,8 @@ def test_light_test() -> None:
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
-    check("the Add dialog offers the test for an untested model",
-          "openLightTest(first)" in js and "export async function openLightTest" in js, "")
+    check("adding a light no longer pops up the test (it stays on the right-click menu)",
+          "openLightTest(first)" not in js and "export async function openLightTest" in js, "")
 
 
 def test_share_relogin() -> None:

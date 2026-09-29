@@ -326,9 +326,8 @@ machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
 **Test this light.** A fixture file can be wrong in ways Jarvis can't see: a
 shutter whose open value it never states, or a channel order that doesn't match
-the light's mode. So after you add a model Jarvis hasn't seen pass, it offers a
-30-second test (also on right-click → **Test this light…**, and on the Level
-tab's warning). Go live first, then:
+the light's mode. If a new light misbehaves, run the 30-second test: right-click
+it → **Test this light…** (also on the Level tab's warning). Go live first, then:
 
 1. Jarvis lights it at full, white and centred, and asks whether the real light
    is on.

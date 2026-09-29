@@ -569,23 +569,24 @@ def _norm(text: str) -> str:
 
 def search(query: str, limit: int = 60) -> list[dict]:
     """Every bundled fixture whose maker + model matches all the words."""
+    from . import searchmatch
     words = _norm(query).split()
     if not words:
         return []
     out = []
     for src in SOURCES:
         for row in index(src):
-            hay = _norm(f"{row['manufacturer']} {row['model']} {row.get('type', '')}")
-            squashed = hay.replace(" ", "")
-            if all(w in hay or w in squashed for w in words):
-                out.append({**row, "src": src, "library": SOURCES[src]["name"]})
-    # exact model words first, then shorter names (the base model before
-    # its variants), then by library order
+            hit = searchmatch.score(query, row["manufacturer"], row["model"], row.get("type", ""))
+            if hit is not None:
+                out.append(({**row, "src": src, "library": SOURCES[src]["name"],
+                             "close": hit[0] > 0}, hit))
+    # full matches first (typos after), then the exact phrase, then shorter
+    # names (the base model before its variants), then by library order
     q = _norm(query)
     order = {s: i for i, s in enumerate(SOURCES)}
-    out.sort(key=lambda r: (q not in _norm(f"{r['manufacturer']} {r['model']}"),
-                            len(r["model"]), order.get(r["src"], 9), r["manufacturer"].lower()))
-    return out[:limit]
+    out.sort(key=lambda t: (t[1], q not in _norm(f"{t[0]['manufacturer']} {t[0]['model']}"),
+                            len(t[0]["model"]), order.get(t[0]["src"], 9), t[0]["manufacturer"].lower()))
+    return [r for r, _ in out[:limit]]
 
 
 def load(src: str, key: str) -> list[dict]:
