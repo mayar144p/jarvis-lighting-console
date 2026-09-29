@@ -70,6 +70,17 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 13. My venues, room shapes, rigging up front (DONE)
+
+- "Venues ▾" in Arrange: save this venue (room, rigging, zones, objects,
+  and - if you say so - the lights with their addresses and positions),
+  open a saved one (room and lights, or room only), delete.  Stored under
+  shows/venues/, never listed as a show.
+- "Draw room shape" (any outline: L-shaped, custom) and "+ Truss",
+  "+ Pole" (a vertical pipe), "+ Pipe" up front; the rest under "+ More".
+- Still open: reshaping the room doesn't move rigging that ends up
+  outside it; a venue picker at start-up.
+
 ## 12. Gig mode (DONE)
 
 Every control at least 44 px (40 for chips / small), text 12 px and up,

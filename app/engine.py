@@ -586,6 +586,7 @@ ACTIONS = (
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move",
+    "venue_save", "venue_open", "venue_delete",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
@@ -3276,6 +3277,7 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
+        "venue_save", "venue_open", "venue_delete",
         "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
@@ -9143,6 +9145,109 @@ class Engine:
             return False
         return True
 
+    # ------------------------------------------------------------------
+    # My venues: a venue saved on its own (room, rigging, zones, objects -
+    # and, if wanted, the lights hung in it), to open for the next gig there
+    # ------------------------------------------------------------------
+    def _venue_dir(self) -> Path:
+        return self.show_dir / "venues"
+
+    @staticmethod
+    def _venue_key(name) -> str:
+        """A file name for a venue name ("Tom's Bar" -> "Toms Bar")."""
+        key = re.sub(r"[^A-Za-z0-9 _-]+", "", str(name or "")).strip()[:40]
+        if not key:
+            raise ValueError("a venue name needs some letters or digits")
+        return key
+
+    def _venue_list(self) -> list[dict]:
+        d = self._venue_dir()
+        try:
+            stamp = d.stat().st_mtime_ns if d.exists() else 0
+        except OSError:
+            stamp = 0
+        cache = getattr(self, "_venue_list_cache", None)
+        if cache and cache[0] == stamp:
+            return cache[1]
+        out = []
+        for path in sorted(d.glob("*.json")) if d.exists() else []:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            v = data.get("venue") or {}
+            room = v.get("room") or {}
+            out.append({"key": path.stem, "name": data.get("name") or path.stem,
+                        "lights": len(data.get("patch") or []), "saved": data.get("saved"),
+                        "shape": "custom" if room.get("outline") else "rectangle",
+                        "size": [room.get("width"), room.get("depth")],
+                        "rigging": len(v.get("rigging") or [])})
+        self._venue_list_cache = (stamp, out)
+        return out
+
+    def _a_venue_save(self, name="", lights=True, **_):
+        """Save this venue under a name - its room, rigging, zones and
+        objects, and (lights=True) the lights hung in it with their
+        addresses and positions - to open again at the next gig there."""
+        label = str(name or self.venue.get("name") or "").strip()[:40]
+        if not label:
+            raise ValueError("a venue needs a name")
+        key = self._venue_key(label)
+        with self.lock:
+            payload = {"version": 1, "name": label,
+                       "saved": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                       "venue": json.loads(json.dumps(dict(self.venue, name=label), default=str))}
+            if _truthy(lights):
+                payload["patch"] = json.loads(json.dumps(self.patch, default=str))
+                payload["groups"] = json.loads(json.dumps(self.groups, default=str))
+            self.venue["name"] = label
+        d = self._venue_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"{key}.json"
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+        self._venue_list_cache = None
+        return {"key": key, "summary": f"venue {label!r} saved"
+                + (f" with {len(payload.get('patch') or [])} light(s)" if _truthy(lights) else "")}
+
+    def _a_venue_open(self, name="", lights=True, **_):
+        """Open a saved venue: its room, rigging and zones replace this one;
+        with lights=True (and lights saved in it) the patch too."""
+        key = self._venue_key(name)
+        path = self._venue_dir() / f"{key}.json"
+        if not path.exists():
+            hit = next((v for v in self._venue_list() if v["name"].lower() == str(name).strip().lower()), None)
+            if hit is None:
+                raise ValueError(f"no saved venue {name!r}")
+            path = self._venue_dir() / f"{hit['key']}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        venue = venue_mod.normalise(data.get("venue") or {})
+        heads = None
+        if _truthy(lights) and data.get("patch"):
+            heads = [self._head_from_layout(h) for h in data["patch"]]
+        with self.lock:
+            if heads is not None:
+                self._replace_patch(heads)
+                self.groups = [dict(g) for g in data.get("groups") or [] if isinstance(g, dict)]
+                self.programmer = {}
+                self.selected = []
+                self.fx = []
+            self.venue = venue
+            self.patch_rev += 1
+        return {"name": data.get("name"), "lights": len(heads) if heads is not None else None,
+                "summary": f"opened venue {data.get('name')!r}"
+                + (f" with {len(heads)} light(s)" if heads is not None else "")}
+
+    def _a_venue_delete(self, name="", **_):
+        key = self._venue_key(name)
+        path = self._venue_dir() / f"{key}.json"
+        if not path.exists():
+            raise ValueError(f"no saved venue {name!r}")
+        path.unlink()
+        self._venue_list_cache = None
+        return {"summary": f"deleted venue {name!r}"}
+
     def _a_save_show(self, name="", **_):
         label = self._safe_name(name or "show")
         # Snapshot + serialise under the lock, write the file OUTSIDE it:
@@ -9629,6 +9734,7 @@ class Engine:
                 "quick": self._quick_public(),
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
+                "venues": self._venue_list(),
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.

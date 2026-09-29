@@ -7516,6 +7516,7 @@ def _standalone_suites():
     ("My moves: named movements, not cues", test_my_moves),
     ("Looks: named, one tap brings it all back", test_looks),
     ("grouping for big rigs", test_big_rig_groups),
+    ("My venues: saved per venue, any room shape, poles", test_my_venues),
     )
 
 
@@ -8998,6 +8999,55 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_my_venues() -> None:
+    """A venue is saved on its own - room (any shape), rigging (horizontal
+    truss, vertical poles), zones and, if wanted, the lights in it - and
+    opened again at the next gig there, with or without its lights."""
+    print("My venues (save / open / delete; room shape; poles; with or without lights)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "v.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", key="club")
+            e.act("venue_room", outline=[[-7, 0], [7, 0], [7, 6], [3, 6], [3, 12], [-7, 12]])
+            r = e.act("venue_add", item={"kind": "pipe", "name": "Pole", "a": [2, 0, 4], "b": [2, 3, 4]})
+            pole = next((x for x in e.venue["rigging"] if x["name"] == "Pole"), None)
+            check("a vertical pole is a pipe standing up", r.get("ok") and pole and pole["a"][1] == 0 and pole["b"][1] == 3,
+                  str(pole))
+            e.act("add_heads", query="LED PARty RGBW", qty=6)
+            r = e.act("venue_save", name="Tom's Bar")
+            check("save the venue with its lights", r.get("ok") and (tmp / "s" / "venues" / "Toms Bar.json").exists(), str(r))
+            lst = e.snapshot().get("venues") or []
+            check("...it is listed (name, shape, rigging, lights)",
+                  lst and lst[0]["name"] == "Tom's Bar" and lst[0]["lights"] == 6, str(lst))
+            check("...and a saved venue is not listed as a show", "venues" not in e._show_names(), str(e._show_names()))
+            e.act("venue_template", key="ballroom")
+            e.act("patch_clear")
+            r = e.act("venue_open", name="Tom's Bar", lights=False)
+            check("open it again: the room comes back (room only keeps the patch)",
+                  r.get("ok") and any(x["name"] == "Pole" for x in e.venue["rigging"]) and not e.patch, str(r))
+            e.act("venue_open", name="tom's bar")
+            check("...or with its lights (name in any case)", len(e.patch) == 6, str(len(e.patch)))
+            check("the room shape survives the round trip", len((e.venue.get("room") or {}).get("outline") or []) == 6,
+                  str((e.venue.get("room") or {}).get("outline")))
+            check("an unknown venue is refused", not e.act("venue_open", name="Nowhere").get("ok"), "")
+            e.act("venue_delete", name="Tom's Bar")
+            check("delete a saved venue", not (e.snapshot().get("venues") or []), "")
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("Arrange has Venues, Draw room shape, + Truss / + Pole / + Pipe up front",
+          all(k in html for k in ('id="vt-venues"', 'id="vt-truss"', 'id="vt-pole"', 'id="vt-pipe"', "Draw room shape"))
+          and '"venue_save"' in vp and '"venue_open"' in vp, "")
 
 
 def test_big_rig_groups() -> None:
