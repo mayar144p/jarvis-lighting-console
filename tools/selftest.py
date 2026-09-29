@@ -9045,6 +9045,12 @@ def test_my_venues() -> None:
             e.shutdown()
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pbj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    stj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    tbj = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    check("less clutter: used playbacks + one empty, short 3D labels, a plain-words status bar",
+          "firstEmpty" in pbj and "+ Record a cue" in pbj and "const clash = placed.some" in stj
+          and "safe to program, nothing reaches the lights" in tbj, "")
     check("Arrange has Venues, Draw room shape, + Truss / + Pole / + Pipe up front",
           all(k in html for k in ('id="vt-venues"', 'id="vt-truss"', 'id="vt-pole"', 'id="vt-pipe"', "Draw room shape"))
           and '"venue_save"' in vp and '"venue_open"' in vp, "")

@@ -1040,3 +1040,11 @@ body.gig .pb-mode button { min-height: 44px; }
   .int-side { min-width: 0; }
   body.gig .quick button { min-width: 0; padding: 0; font-size: 13px; }
 }
+.pb[hidden] { display: none; }
+.pb-rec { background: none; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--text-2); font-weight: 600; padding: 6px 8px; cursor: pointer; width: 100%; }
+.pb-rec:hover { border-color: var(--accent); color: var(--text); }
+/* a few playbacks sit at the left at a sensible width, not stretched */
+@media (min-width: 821px) {
+  .pb-strip { grid-auto-columns: minmax(130px, 190px); justify-content: start; background: transparent; gap: 0; }
+  .pb-strip .pb { border-right: 1px solid var(--border); }
+}

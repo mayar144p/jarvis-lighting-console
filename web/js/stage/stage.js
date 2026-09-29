@@ -1048,7 +1048,11 @@ export class Stage {
       if (!want.has(head) || !this.fixtures.has(head)) { tag.remove(); this.tags.delete(head); }
     }
     const p = this._v2;
-    for (const head of want) {
+    // tags that would sit on top of one another are dropped (the hovered
+    // light's always wins): a pile of overlapping names reads as nothing
+    const placed = [];
+    const order = [...want].sort((a, b) => (b === this.hover) - (a === this.hover) || a - b);
+    for (const head of order) {
       const inst = this.fixtures.get(head);
       if (!inst) continue;
       p.copy(inst.holder.position);
@@ -1062,13 +1066,19 @@ export class Stage {
       }
       const d = inst.data;
       const brand = d.body && d.body.brand !== "generic" ? d.body.brand_name + " " : "";
-      const text = want.size > 4 ? `#${head}` : `#${head}  ${brand}${d.model || ""}`.trim();
+      // the full name only where there is room for it: the light under the
+      // pointer, or a single selected light; otherwise just its number
+      const full = head === this.hover || want.size === 1;
+      const text = full ? `#${head}  ${brand}${d.model || ""}`.trim() : `#${head}`;
       const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "");
       if (tag.textContent !== text) tag.textContent = text;
       if (tag.className !== cls) tag.className = cls;
-      tag.style.display = p.z > 1 ? "none" : "";
-      tag.style.left = ((p.x + 1) / 2 * w).toFixed(1) + "px";
-      tag.style.top = ((1 - p.y) / 2 * h).toFixed(1) + "px";
+      const sx = (p.x + 1) / 2 * w, sy = (1 - p.y) / 2 * h;
+      const clash = placed.some(([x, y]) => Math.abs(x - sx) < (full ? 90 : 34) && Math.abs(y - sy) < 18);
+      tag.style.display = p.z > 1 || clash ? "none" : "";
+      if (!clash) placed.push([sx, sy]);
+      tag.style.left = sx.toFixed(1) + "px";
+      tag.style.top = sy.toFixed(1) + "px";
     }
     for (const inst of this.fixtures.values()) {
       const on = this.selected.has(inst.head);

@@ -73,6 +73,13 @@ function pbMenu(btn, n) {
 function render() {
   build();
   const pbs = (state.snap && state.snap.playbacks) || [];
+  // show the playbacks in use and ONE empty slot to record into - ten
+  // "Record a cue here" boxes were noise
+  const firstEmpty = (pbs.find((pb) => !(pb.stack || []).length && !pb.active) || {}).n;
+  for (const pb of pbs) {
+    const cc = cards.get(pb.n);
+    if (cc) cc.card.hidden = !(pb.stack || []).length && !pb.active && pb.n !== firstEmpty;
+  }
   for (const pb of pbs) {
     const c = cards.get(pb.n);
     if (!c) continue;
@@ -83,7 +90,8 @@ function render() {
     c.card.classList.toggle("empty", !stack.length);
     c.name.textContent = pb.name || (stack.length ? `${stack.length} cue${stack.length > 1 ? "s" : ""}` : "Empty");
     if (!stack.length) {
-      c.cue.replaceChildren("Record a cue here");
+      c.cue.replaceChildren(h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue",
+        onclick: () => openCueDialog(pb.n) }, "+ Record a cue"));
     } else {
       c.cue.replaceChildren(
         h("b", cur ? `${pb.index + 1}  ${cueLabel(cur)}` : "Not started"),
