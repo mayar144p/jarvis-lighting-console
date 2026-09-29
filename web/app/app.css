@@ -543,6 +543,14 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
 .chan-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .chan-table th, .chan-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
 .chan-table th { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+.cue-tl { display: flex; height: 4px; margin-top: 4px; border-radius: 2px; overflow: hidden; background: var(--border); }
+.cue-tl i { display: block; min-width: 2px; height: 100%; }
+.cue-tl .seg-fade { background: #4a7fd6; }
+.cue-tl .seg-hold { background: #6f7f9e; }
+.cue-tl .seg-follow { background: var(--accent); }
+.cue-tl.auto { box-shadow: 0 0 0 1px var(--accent); }
+.cue-tl.inherit { opacity: .6; }
+.chan-table select.small { padding: 2px 4px; font-size: 12px; }
 .chan-table td.mono { font-family: var(--mono); }
 .chan-table .raw { color: var(--blind); }
 .help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }

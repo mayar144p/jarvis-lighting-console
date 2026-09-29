@@ -260,31 +260,80 @@ export function openCueDialog(playback) {
   });
 }
 
+// A cue's follow has three states: null inherits the stack delay, 0 waits
+// for GO, a positive number auto-advances after that many seconds.
+function followState(c) {
+  if (c.follow_s === null || c.follow_s === undefined) return "inherit";
+  return c.follow_s > 0 ? "auto" : "wait";
+}
+
+// Fade, hold and auto-follow wait as proportional segments, scaled to the
+// longest cue in the stack so short and long shows both read.
+function cueTimeline(c, longest) {
+  const f = Math.max(0, +(c.fade_s || 0));
+  const hd = Math.max(0, +(c.hold_s || 0));
+  const mode = followState(c);
+  const w = mode === "auto" ? c.follow_s : 0;
+  const seg = (cls, secs, title) => secs > 0
+    ? h("i." + cls, { title, style: { width: (secs / longest) * 100 + "%" } }) : null;
+  const how = mode === "auto" ? `auto after ${w}s` : mode === "wait" ? "waits for GO" : "inherits the stack";
+  return h("div.cue-tl." + mode, { title: `fade ${f}s · hold ${hd}s · ${how}` },
+    seg("seg-fade", f, `fade ${f}s`), seg("seg-hold", hd, `hold ${hd}s`), seg("seg-follow", w, how));
+}
+
+function followCell(n, c, refresh) {
+  const mode = followState(c);
+  const sel = h("select.select.small", { title: "What happens after this cue" },
+    h("option", { value: "inherit" }, "Stack"), h("option", { value: "wait" }, "Wait"),
+    h("option", { value: "auto" }, "Auto"));
+  sel.value = mode;
+  const secs = h("input.num", { type: "number", min: 0, step: 0.5, title: "Seconds before the next cue runs",
+    value: mode === "auto" ? c.follow_s : "", placeholder: "s", disabled: mode !== "auto" });
+  const send = () => {
+    const follow = sel.value === "inherit" ? null : sel.value === "wait" ? 0 : Math.max(0.1, +secs.value || 2);
+    run("edit_cue", { playback: n, cue: c.n, follow }).then(refresh);
+  };
+  sel.addEventListener("change", () => {
+    secs.disabled = sel.value !== "auto";
+    if (sel.value === "auto" && !secs.value) secs.value = 2;
+    send();
+  });
+  secs.addEventListener("change", send);
+  return h("div.row-btns", sel, secs);
+}
+
 export function openCueList(n) {
   let close = null;
   const render = () => {
     const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || { stack: [] };
-    const rows = (pb.stack || []).map((c, i) => {
+    const stack = pb.stack || [];
+    const longest = Math.max(1, ...stack.map((c) =>
+      (+c.fade_s || 0) + (+c.hold_s || 0) + (c.follow_s > 0 ? c.follow_s : 0)));
+    const rows = stack.map((c, i) => {
       const nm = h("input", { type: "text", value: c.name || "", placeholder: `Cue ${c.n}` });
       const fd = h("input.num", { type: "number", min: 0, step: 0.5, value: c.fade_s ?? 0 });
       const hd = h("input.num", { type: "number", min: 0, step: 0.5, value: c.hold_s ?? 0 });
       nm.addEventListener("change", () => run("rename_cue", { playback: n, cue: c.n, name: nm.value }));
-      fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }));
-      hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }));
+      fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
+      hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
       return h("tr" + (i === pb.index ? ".sel" : ""),
-        h("td.mono", c.n), h("td", nm), h("td", fd), h("td", hd),
+        h("td.mono", c.n), h("td", nm, cueTimeline(c, longest)), h("td", fd), h("td", hd),
+        h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),
           h("button.btn.small.ghost", { title: "Move up", disabled: i === 0, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n - 1 }).then(refresh) }, "↑"),
-          h("button.btn.small.ghost", { title: "Move down", disabled: i === pb.stack.length - 1, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n + 1 }).then(refresh) }, "↓"),
+          h("button.btn.small.ghost", { title: "Move down", disabled: i === stack.length - 1, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n + 1 }).then(refresh) }, "↓"),
           h("button.btn.small.ghost", { title: "Update this cue from the programmer", onclick: () => run("record_cue", { playback: n, cue: c.n }, { toast: true }) }, "Update"),
+          h("button.btn.small.ghost", { title: "Insert an empty cue below", onclick: () => run("insert_cue", { playback: n, at: c.n + 1 }).then(refresh) }, "+"),
           h("button.btn.small.ghost", { title: "Delete", onclick: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) }, "×"))));
     });
-    const pbName = h("input", { type: "text", value: pb.name || "", placeholder: "Playback name" });
+    const delay = (pb.follow || {}).delay;
     return h("div",
-      h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", "Fade s"), h("th", "Hold s"), h("th", ""))),
-        h("tbody", ...(rows.length ? rows : [h("tr", h("td", { colspan: 5, class: "muted" }, "No cues yet - set a look and record one."))]))),
-      void pbName);
+      h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", "Fade s"), h("th", "Hold s"),
+        h("th", { title: "Stack inherits the playback's auto-follow; Wait holds for GO; Auto runs the next cue by itself" }, "Then"), h("th", ""))),
+        h("tbody", ...(rows.length ? rows : [h("tr", h("td", { colspan: 6, class: "muted" }, "No cues yet - set a look and record one."))]))),
+      h("p.muted.small", "Then: ", h("b", "Stack"), ` follows the playback's auto-follow${delay ? ` (${delay}s)` : ""}, `,
+        h("b", "Wait"), " holds for GO, ", h("b", "Auto"), " runs the next cue after the seconds given."));
   };
   const body = h("div", render());
   const refresh = () => setTimeout(() => body.replaceChildren(render()), 300);
@@ -372,7 +421,7 @@ const KEYS = [
   ["Space / Enter", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"],
   ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
   ["A / Shift+A", "select all / none"], ["1 … 9", "select fixture 1–9 (Shift adds)"], ["G", "group the selection"],
-  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
+  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O", "overwrite the current cue"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
   ["F", "frame the selection on stage"], ["Esc", "close / leave full screen"], ["?", "this help"],
 ];
 const SYNTAX = [

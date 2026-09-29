@@ -54,7 +54,7 @@ Python 3.10+ is required. Node is only needed to run the full test suite.
 | **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar |
 | **Stage** (centre) | the 3D visualiser; named views, frame selection, haze, performers, full screen, and a *now playing* strip |
 | **Programmer** (right) | tabs for Level, Colour (HSV picker, swatches, hex, and how many selected heads the colour can reach), Position (pan/tilt pad and aim in degrees), Beam, FX, Looks (palettes and presets), Tools (fan, arrange, limits) |
-| **Playbacks** (bottom) | cue stacks with GO / back / release, faders, grand master, BLACKOUT |
+| **Playbacks** (bottom) | cue stacks with GO / back / release, faders with crossfade time, grand master, BLACKOUT. The cue list shows each cue as a fade / hold / follow timeline, and each cue can inherit the stack's auto-follow, wait for GO, or run the next cue after its own delay |
 | **Status bar** | output target and rate, network, feed health, last save |
 
 It adapts to a 1024 px tablet and to a phone, where the regions become tabs.
@@ -92,6 +92,7 @@ Drag a light to reposition it (shift-drag for height). Views:
 | <kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>A</kbd> | select all / none | <kbd>L</kbd> | locate |
 | <kbd>1</kbd>–<kbd>9</kbd> | select head (<kbd>Shift</kbd> adds) | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
 | <kbd>R</kbd> | record a cue | <kbd>G</kbd> | group the selection |
+| <kbd>O</kbd> | overwrite the current cue | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
 | <kbd>F</kbd> | frame the selection | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | command bar |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | undo / redo | <kbd>Ctrl</kbd>+<kbd>S</kbd> | save show |
 | <kbd>?</kbd> | help | <kbd>Esc</kbd> | close the top panel |

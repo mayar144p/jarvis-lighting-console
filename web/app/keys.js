@@ -2,13 +2,34 @@
 // fires the rig.
 import { state, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
-import { typingInField, anyModal, closeTopModal } from "./ui.js";
+import { typingInField, anyModal, closeTopModal, confirmBox, toast } from "./ui.js";
 import { openCmdbar, isOpen as cmdOpen, close as closeCmd } from "./cmdbar.js";
 import { copilotOpen, closeCopilot } from "./copilot.js";
 import { focusedPlayback } from "./playbacks.js";
 import { openHelp, openCueDialog, saveShow } from "./dialogs.js";
 import { makeGroup } from "./fixtures.js";
 import { toggleFull, getStage } from "./stagepanel.js";
+
+// The cue the focused playback is on: the one O, I and D act on.
+function currentCue() {
+  const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === focusedPlayback());
+  const c = pb && pb.index >= 0 ? (pb.stack || [])[pb.index] : null;
+  return { pb: focusedPlayback(), cue: c ? c.n : null };
+}
+
+async function overwriteCue() {
+  const { pb, cue } = currentCue();
+  if (cue == null) return toast("No cue to overwrite - press GO or R first");
+  run("record_cue", { playback: pb, cue }, { toast: true });
+}
+
+async function deleteCue() {
+  const { pb, cue } = currentCue();
+  if (cue == null) return toast("No cue to delete - press GO first");
+  if (await confirmBox("Delete cue", `Delete cue ${cue} on PB${pb}? Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) {
+    run("delete_cue", { playback: pb, cue });
+  }
+}
 
 function nudgeIntensity(delta) {
   const vals = ((state.snap && state.snap.programmer) || {}).values || {};
@@ -44,6 +65,9 @@ export function initKeys() {
     if (low === "l") return run("locate");
     if (low === "c") return run("clear_programmer");
     if (low === "r") return openCueDialog(focusedPlayback());
+    if (low === "o") return overwriteCue();
+    if (low === "i") { const { pb, cue } = currentCue(); return run("insert_cue", { playback: pb, at: cue == null ? 1 : cue + 1 }); }
+    if (low === "d") return deleteCue();
     if (low === "g") return makeGroup();
     if (low === "f") {
       const st = getStage();

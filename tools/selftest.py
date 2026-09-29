@@ -6057,6 +6057,21 @@ def test_web_app() -> None:
                 bad.append(f"{m.name}: {spec}")
     check("every module import resolves to a file that ships", not bad, str(bad))
 
+    # Show building: per-cue follow is tri-state (null inherits, 0 waits,
+    # seconds auto-run), and the cue list and keys must be able to say all three.
+    dlg = (web / "app" / "dialogs.js").read_text(encoding="utf-8")
+    keys = (web / "app" / "keys.js").read_text(encoding="utf-8")
+    check("the cue list edits follow as inherit / wait / auto",
+          'sel.value === "inherit" ? null : sel.value === "wait" ? 0' in dlg
+          and 'run("edit_cue", { playback: n, cue: c.n, follow })' in dlg, "")
+    check("the cue list draws a fade / hold / follow timeline per cue",
+          all(f'"seg-{k}"' in dlg for k in ("fade", "hold", "follow")), "")
+    check("a cue can be inserted from the list and the keyboard",
+          'run("insert_cue"' in dlg and 'run("insert_cue"' in keys, "")
+    check("O overwrites and D deletes the cue the playback is on",
+          'low === "o"' in keys and 'low === "d"' in keys
+          and 'run("delete_cue"' in keys, "")
+
     ids = set(re.findall(r'\bid="([^"]+)"', html))
     used = set()
     for s in srcs.values():
@@ -7454,6 +7469,7 @@ def _standalone_suites():
     ("api auth", test_api_auth),
     ("gdtf geometry", test_gdtf_geometry),
     ("fx library", test_fx_library),
+    ("show building", test_show_building),
     )
 
 
@@ -7482,6 +7498,21 @@ def test_fx_library() -> None:
     from tools import _fx_engine_check
 
     _fx_engine_check.run(check)
+
+
+def test_show_building() -> None:
+    """Per-cue follow, playback crossfades, and the public readout.
+
+    Both features have a contract that is easy to state and easy to break
+    in a way nothing notices - follow in particular, because a cue that
+    fails to auto-advance looks exactly like a cue that was never told to.
+
+    The checks live in `tools/_show_check.py` and drive a real Engine.
+    """
+    print("show building (per-cue follow, crossfades, the public readout)")
+    from tools import _show_check
+
+    _show_check.run(check)
 
 
 def check_js() -> None:
