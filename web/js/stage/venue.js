@@ -67,8 +67,35 @@ export function effectiveVenue(venue, fixtures) {
 export function roomBox(v) {
   const r = v.room;
   const back = r.back ?? -1;
-  return { x0: -r.width / 2, x1: r.width / 2, z0: back, z1: back + r.depth, h: r.height || 6,
-    w: r.width, d: r.depth };
+  const cx = r.cx || 0;
+  return { x0: cx - r.width / 2, x1: cx + r.width / 2, z0: back, z1: back + r.depth, h: r.height || 6,
+    w: r.width, d: r.depth, cx };
+}
+
+/** The room's outline, as [x, z] corners (the box when none was traced). */
+export function outlineOf(v) {
+  const o = v.room.outline;
+  if (o && o.length >= 3) return o;
+  const R = roomBox(v);
+  return [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]];
+}
+
+function inPolygon(x, z, pts) {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i], [xj, zj] = pts[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / ((zj - zi) || 1e-9) + xi) c = !c;
+  }
+  return c;
+}
+
+function polygonGeo(pts, y, flip = false) {
+  const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(flip ? Math.PI / 2 : -Math.PI / 2);
+  if (flip) geo.scale(1, 1, -1);
+  geo.translate(0, y, 0);
+  return geo;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,57 +527,49 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   const outdoor = v.room.ceiling === "none";
   const edgeParts = [];
 
-  // floor: the room, plus a wide apron outside it so the cutaway view has ground
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(R.w, R.d), M.floor);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(0, 0, R.z0 + R.d / 2);
+  // floor: the room's own shape, plus a wide apron outside it so the
+  // cutaway view has ground under it
+  const outline = outlineOf(v);
+  const floor = new THREE.Mesh(polygonGeo(outline, 0), M.floor);
   floor.userData = { venueKind: "floor" };
   group.add(floor);
   const apron = new THREE.Mesh(new THREE.PlaneGeometry(R.w + 60, R.d + 60),
     surfaceMaterial(outdoor ? 0x1d2618 : 0x0b0c0f));
   apron.rotation.x = -Math.PI / 2;
-  apron.position.set(0, -0.01, R.z0 + R.d / 2);
+  apron.position.set(R.cx, -0.01, R.z0 + R.d / 2);
   group.add(apron);
 
-  // walls: one per side of the room, each with its outward normal
+  // walls: one per edge of the outline, each knowing which way is out
   const walls = [];
-  if (!outdoor) {
-    const sides = [
-      { w: R.w, x: 0, z: R.z0, ry: 0, n: [0, 0, -1] },
-      { w: R.w, x: 0, z: R.z1, ry: Math.PI, n: [0, 0, 1] },
-      { w: R.d, x: R.x0, z: R.z0 + R.d / 2, ry: Math.PI / 2, n: [-1, 0, 0] },
-      { w: R.d, x: R.x1, z: R.z0 + R.d / 2, ry: -Math.PI / 2, n: [1, 0, 0] },
-    ];
-    for (const s of sides) {
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(s.w, R.h), M.wall);
-      mesh.position.set(s.x, R.h / 2, s.z);
-      mesh.rotation.y = s.ry;
-      mesh.userData = { venueKind: "wall" };
-      group.add(mesh);
-      walls.push({ mesh, normal: new THREE.Vector3(...s.n), centre: mesh.position.clone() });
-    }
-  }
-  const box = [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]];
-  for (let i = 0; i < 4; i++) {
-    const [ax, az] = box[i], [bx, bz] = box[(i + 1) % 4];
+  const segments = [];
+  for (let i = 0; i < outline.length; i++) {
+    const [ax, az] = outline[i], [bx, bz] = outline[(i + 1) % outline.length];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 0.05) continue;
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+    let nx = (bz - az) / len, nz = -(bx - ax) / len;          // a perpendicular
+    if (inPolygon(mx + nx * 0.05, mz + nz * 0.05, outline)) { nx = -nx; nz = -nz; }
     edgeParts.push(ax, 0.01, az, bx, 0.01, bz);
-    if (!outdoor) {
-      edgeParts.push(ax, R.h, az, bx, R.h, bz);
-      edgeParts.push(ax, 0, az, ax, R.h, az);
-    }
+    if (outdoor) continue;
+    edgeParts.push(ax, R.h, az, bx, R.h, bz, ax, 0, az, ax, R.h, az);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(len, R.h), M.wall);
+    mesh.position.set(mx, R.h / 2, mz);
+    mesh.rotation.y = Math.atan2(-nx, -nz);                   // face into the room
+    mesh.userData = { venueKind: "wall" };
+    group.add(mesh);
+    walls.push({ mesh, normal: new THREE.Vector3(nx, 0, nz), centre: mesh.position.clone() });
+    segments.push({ ax, az, bx, bz, nx, nz, h: R.h });
   }
 
   // ceiling: flat, or an open roof structure of beams
   let ceiling = null;
   if (v.room.ceiling === "flat") {
-    ceiling = new THREE.Mesh(new THREE.PlaneGeometry(R.w, R.d), M.ceiling);
-    ceiling.rotation.x = Math.PI / 2;
-    ceiling.position.set(0, R.h, R.z0 + R.d / 2);
+    ceiling = new THREE.Mesh(polygonGeo(outline, R.h, true), M.ceiling);
     group.add(ceiling);
   } else if (v.room.ceiling === "open") {
     const beams = [];
     for (let z = R.z0 + 2; z < R.z1; z += 4) {
-      beams.push(boxGeo(R.w, 0.3, 0.15, 0, R.h + 0.15, z));
+      beams.push(boxGeo(R.w, 0.3, 0.15, R.cx, R.h + 0.15, z));
     }
     const roof = merged(beams, M.black);
     if (roof) group.add(roof);
@@ -607,13 +626,37 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   const planes = [{ n: new THREE.Vector3(0, 1, 0), c: 0 }];
   if (!outdoor && v.room.ceiling === "flat") planes.push({ n: new THREE.Vector3(0, -1, 0), c: -R.h });
-  if (!outdoor) {
-    planes.push({ n: new THREE.Vector3(0, 0, 1), c: R.z0 }, { n: new THREE.Vector3(0, 0, -1), c: -R.z1 },
-      { n: new THREE.Vector3(1, 0, 0), c: R.x0 }, { n: new THREE.Vector3(-1, 0, 0), c: -R.x1 });
+
+  // the traced floor plan, laid on the floor
+  let underlay = null;
+  const u = v.underlay;
+  if (u && u.id && opts.loadUnderlay) {
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: u.opacity ?? 0.6,
+      depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    underlay = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    underlay.rotation.x = -Math.PI / 2;
+    underlay.rotation.z = -(u.rot || 0) * DEG;
+    underlay.scale.set(u.width, u.width / (u.aspect || 1), 1);
+    underlay.position.set(u.x, 0.006, u.z);
+    underlay.visible = u.show !== false;
+    underlay.userData = { venueKind: "underlay", venueId: "underlay" };
+    underlay.renderOrder = 1;
+    group.add(underlay);
+    opts.loadUnderlay(u.id).then((blob) => new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      new THREE.TextureLoader().load(url, (t) => { URL.revokeObjectURL(url); resolve(t); }, undefined, reject);
+    })).then((tex) => {
+      if (!tex) return;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      if (opts.onChange) opts.onChange();
+    }).catch(() => { /* the room still draws without its plan */ });
   }
 
-  return { group, venue: v, room: R, planes, boxes: blockers(v), walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront };
+  return { group, venue: v, room: R, planes, segments, boxes: blockers(v), walls, ceiling, zones, people,
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline };
 }
 
 /** Hide the walls between the camera and the room, and the ceiling from above. */
@@ -629,8 +672,19 @@ export function cutaway(built, cameraPos) {
 const _box = new THREE.Vector3();
 
 /** Distance along a ray to the first surface or solid it meets (capped). */
-export function hitDistance(planes, boxes, origin, dir, cap = 30) {
+export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = null) {
   let best = cap;
+  for (const w of segments || []) {
+    const denom = w.nx * dir.x + w.nz * dir.z;             // heading out through it?
+    if (denom <= 1e-4) continue;
+    const t = ((w.ax - origin.x) * w.nx + (w.az - origin.z) * w.nz) / denom;
+    if (t <= 0.02 || t >= best) continue;
+    const hx = origin.x + dir.x * t, hz = origin.z + dir.z * t, hy = origin.y + dir.y * t;
+    if (hy < 0 || hy > w.h) continue;
+    const ex = w.bx - w.ax, ez = w.bz - w.az;
+    const k = ((hx - w.ax) * ex + (hz - w.az) * ez) / (ex * ex + ez * ez);
+    if (k >= -0.01 && k <= 1.01) best = t;
+  }
   for (const p of planes) {
     const denom = p.n.dot(dir);
     if (denom >= -1e-4) continue;

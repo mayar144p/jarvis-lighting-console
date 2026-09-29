@@ -84,6 +84,7 @@ def _polygon(raw) -> list[list[float]]:
 def empty() -> dict:
     return {"version": VERSION, "name": "", "auto": True,
             "room": {"width": 0.0, "depth": 0.0, "height": 0.0, "back": -1.0,
+                     "cx": 0.0,
                      "outline": [], "ceiling": "flat", "floor": "concrete",
                      "wall_colour": "#3a3d45"},
             "stage": None, "zones": [], "rigging": [], "objects": [],
@@ -100,16 +101,26 @@ def _next_id(v: dict, prefix: str) -> str:
 def _clean_room(raw: dict) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     ceiling = str(raw.get("ceiling") or "flat")
-    return {
+    room = {
         "width": round(_num(raw.get("width"), 0, 0, _LIMIT), 3),
         "depth": round(_num(raw.get("depth"), 0, 0, _LIMIT), 3),
         "height": round(_num(raw.get("height"), 0, 0, 60), 3),
         "back": round(_num(raw.get("back"), -1.0), 3),
+        "cx": round(_num(raw.get("cx"), 0.0), 3),
         "outline": _polygon(raw.get("outline")),
         "ceiling": ceiling if ceiling in CEILINGS else "flat",
         "floor": _text(raw.get("floor"), "concrete", 20),
         "wall_colour": _colour(raw.get("wall_colour"), "#3a3d45"),
     }
+    if room["outline"]:
+        # A traced room: its box is the outline's extent.
+        xs = [p[0] for p in room["outline"]]
+        zs = [p[1] for p in room["outline"]]
+        room.update({"width": round(max(xs) - min(xs), 3),
+                     "depth": round(max(zs) - min(zs), 3),
+                     "back": round(min(zs), 3),
+                     "cx": round((max(xs) + min(xs)) / 2, 3)})
+    return room
 
 
 def _clean_stage(raw) -> dict | None:
@@ -299,8 +310,10 @@ def bounds(v: dict) -> dict:
     w, d, h = dims(v)
     if not w or not d:
         return {"x0": -36.0, "x1": 36.0, "z0": -4.0, "z1": 56.0, "h": 16.0}
-    back = float(((v or {}).get("room") or {}).get("back") or 0)
-    return {"x0": -w / 2, "x1": w / 2, "z0": back, "z1": back + d,
+    room = (v or {}).get("room") or {}
+    back = float(room.get("back") or 0)
+    cx = float(room.get("cx") or 0)
+    return {"x0": cx - w / 2, "x1": cx + w / 2, "z0": back, "z1": back + d,
             "h": h or 20.0}
 
 

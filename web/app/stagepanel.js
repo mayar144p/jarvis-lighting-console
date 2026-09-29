@@ -1,9 +1,10 @@
 // The 3D stage in the middle of the desk, and its HUD.
 import { Stage } from "/js/stage/stage.js";
-import { get, modelBytes } from "./api.js";
+import { get, modelBytes, token } from "./api.js";
+import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
-import { run, select } from "./actions.js";
-import { $, $$, throttle } from "./ui.js";
+import { select } from "./actions.js";
+import { $, $$ } from "./ui.js";
 
 let stage = null;
 let rigSig = "";
@@ -41,12 +42,18 @@ function syncRig() {
   const empty = !p.length;
   $("#stage-hint").textContent = empty
     ? "The stage is empty - add fixtures and they appear here, modelled for their type and brand."
-    : "Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · drag it to move (Shift = height)";
+    : document.body.classList.contains("arranging")
+      ? "Arrange: click a light, truss, object or zone to move it · W move · E rotate · Del delete · Esc done"
+      : "Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · Arrange to move things";
 }
 
-const moveLight = throttle((head, x, y, z) => {
-  run("set_place", { head, x, y, z, kind: y >= 2 ? "truss" : "floor" }, { silentError: true });
-}, 150);
+async function loadUnderlay(id) {
+  const t = token();
+  const r = await fetch("/api/console/underlay?id=" + encodeURIComponent(id),
+    { headers: t ? { "X-Jarvis-Token": t } : {} });
+  if (!r.ok) throw new Error("floor plan " + r.status);
+  return r.blob();
+}
 
 export function initStage() {
   const el = $("#stage");
@@ -64,9 +71,10 @@ export function initStage() {
         select([head]);
       }
     },
-    onMoveFixture: (head, x, y, z) => moveLight(head, x, y, z),
+    loadUnderlay,
   });
   window.jarvisStage = stage;          // for the browser console and tests
+  initVenuePanel(stage);
 
   on("snapshot", syncRig);
   on("selection", (sel) => stage.setSelected(sel));

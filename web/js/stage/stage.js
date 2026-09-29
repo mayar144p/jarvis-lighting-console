@@ -194,16 +194,20 @@ export class Stage {
     this.venueGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     this.venueGroup.clear();
     const built = buildVenue(auto ? null : venue, fixtures, {
-      people: this.options.people, zones: this.options.zones });
+      people: this.options.people, zones: this.options.zones,
+      loadUnderlay: this.opts.loadUnderlay, onChange: () => { this.dirty = true; } });
     this.built = built;
     this.venueGroup.add(built.group);
     this.room = { ...built.room };
     this.stageFront = built.stageFront;
     this.planes = built.planes;
     this.boxes = built.boxes;
+    this.segments = built.segments;
     this.people = built.people;
     cutaway(built, this.camera.position);
+    this._underlayVisibility();
     this.dirty = true;
+    if (this.editor) this.editor.refresh();
     if (this.opts.onVenueBuilt) this.opts.onVenueBuilt(built);
   }
 
@@ -241,6 +245,7 @@ export class Stage {
     this.buildVenue(venue, fixtures);
     for (const inst of this.fixtures.values()) this._aimStatic(inst);
     this._applyGdtf();
+    if (this.editor) this.editor.refresh();
     this.dirty = true;
   }
 
@@ -486,11 +491,11 @@ export class Stage {
       left: [R.x0 - 5, Math.min(R.h, 5), (R.z0 + R.z1) / 2],
       right: [R.x1 + 5, Math.min(R.h, 5), (R.z0 + R.z1) / 2],
       back: [0, Math.min(R.h * 0.7, 5), R.z0 - 5],
-      top: [0, Math.max(R.w, R.d) * 1.25 + R.h, (R.z0 + R.z1) / 2 + 0.01],
+      top: [R.cx || 0, Math.max(R.w * 0.9, R.d) * 1.55 + R.h, (R.z0 + R.z1) / 2 + 0.01],
       house: [0, Math.min(R.h - 0.5, 3.4), R.z1 - 1],
       overview: [R.x1 + R.w * 0.35, R.h + Math.max(R.w, R.d) * 0.45, R.z1 + R.d * 0.35],
     }[name];
-    if (name === "top" || name === "overview") t.set(0, 0, (R.z0 + R.z1) / 2);
+    if (name === "top" || name === "overview") t.set(R.cx || 0, 0, (R.z0 + R.z1) / 2);
     this._flyTo(new THREE.Vector3(...(at || [0, 4, house])), t, instant);
   }
 
@@ -545,71 +550,55 @@ export class Stage {
     let down = null;
     dom.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
-      const inst = this._hit(ev);
-      down = inst ? { inst, x: ev.clientX, y: ev.clientY, dragging: false, ev } : null;
+      const ed = this.editor;
+      const onGizmo = ed && this.editing && !ed.drawing && ed.tc.object && ed.tc.axis;
+      down = { x: ev.clientX, y: ev.clientY, gizmo: !!onGizmo };
     });
     dom.addEventListener("pointermove", (ev) => {
-      if (!down) {
-        const inst = this._hit(ev);
-        const h = inst ? inst.head : null;
-        if (h !== this.hover) { this.hover = h; this.dirty = true; }
-        dom.style.cursor = inst ? (this.opts.editable === false ? "pointer" : "grab") : "";
-        return;
-      }
-      if (this.opts.editable === false) return;
-      if (!down.dragging && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) {
-        down.dragging = true;
-        this.controls.enabled = false;
-        dom.setPointerCapture(ev.pointerId);
-        const p = down.inst.holder.position;
-        down.plane = ev.shiftKey
-          ? new THREE.Plane().setFromNormalAndCoplanarPoint(
-            this.camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().negate(), p)
-          : new THREE.Plane(new THREE.Vector3(0, 1, 0), -p.y);
-        down.vertical = ev.shiftKey;
-        dom.style.cursor = "grabbing";
-      }
-      if (down.dragging) {
-        const r = dom.getBoundingClientRect();
-        this.pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
-        this.raycaster.setFromCamera(this.pointer, this.camera);
-        const at = this.raycaster.ray.intersectPlane(down.plane, new THREE.Vector3());
-        if (!at) return;
-        const f = down.inst.data;
-        const snap = (v) => Math.round(v * 20) / 20;
-        if (down.vertical) f.y = Math.max(0, Math.min(this.room.h + 3, snap(at.y)));
-        else { f.x = snap(at.x); f.z = snap(at.z); }
-        f.kind = f.y >= 2 ? "truss" : "floor";
-        this._place(down.inst);
-        this._aimStatic(down.inst);
-        this.dirty = true;
-        const now = performance.now();
-        if (this.opts.onMoveFixture && (!down.sent || now - down.sent > 120)) {
-          down.sent = now;
-          this.opts.onMoveFixture(f.head_no, f.x, f.y, f.z, false);
-        }
-      }
+      if (down) return;
+      const inst = this._hit(ev);
+      const h = inst ? inst.head : null;
+      if (h !== this.hover) { this.hover = h; this.dirty = true; }
+      dom.style.cursor = this.editing && this.editor && this.editor.drawing ? "crosshair"
+        : inst ? "pointer" : "";
     });
-    const end = (ev) => {
+    const up = (ev) => {
       if (!down) return;
       const d0 = down;
       down = null;
-      this.controls.enabled = true;
-      dom.style.cursor = "";
-      if (d0.dragging) {
-        const f = d0.inst.data;
-        this.buildVenue(this.venueData, [...this.fixtures.values()].map((i) => i.data));
-        if (this.opts.onMoveFixture) this.opts.onMoveFixture(f.head_no, f.x, f.y, f.z, true);
-      } else if (this.opts.onPick) {
-        this.opts.onPick(d0.inst.head, { shift: ev.shiftKey, toggle: ev.ctrlKey || ev.metaKey });
+      if (d0.gizmo || (this.editor && this.editor.busy)) return;
+      if (Math.hypot(ev.clientX - d0.x, ev.clientY - d0.y) > 5) return;   // that was an orbit
+      if (this.editing && this.editor) { this.editor.click(ev); return; }
+      const inst = this._hit(ev);
+      if (inst && this.opts.onPick) {
+        this.opts.onPick(inst.head, { shift: ev.shiftKey, toggle: ev.ctrlKey || ev.metaKey });
       }
     };
-    dom.addEventListener("pointerup", end);
-    dom.addEventListener("pointercancel", end);
+    dom.addEventListener("pointerup", up);
+    dom.addEventListener("pointercancel", () => { down = null; });
     dom.addEventListener("dblclick", (ev) => {
+      if (this.editing && this.editor && this.editor.drawing) { this.editor.finishDraw(); return; }
       const inst = this._hit(ev);
       if (inst) this.frame([inst.head]);
     });
+  }
+
+  /** The traced floor plan is a drawing aid: shown while arranging. */
+  _underlayVisibility() {
+    const u = this.built && this.built.underlay;
+    if (!u) return;
+    const v = this.built.venue.underlay || {};
+    u.visible = this.editing && v.show !== false;
+    this.dirty = true;
+  }
+
+  /** Arrange mode: the editor owns clicks and shows its gizmo. */
+  setEditing(on, editor) {
+    if (editor) this.editor = editor;
+    this.editing = !!on;
+    if (this.editor) this.editor.setEnabled(this.editing);
+    this._underlayVisibility();
+    this.dirty = true;
   }
 
   _wireKeys() {
@@ -779,7 +768,7 @@ export class Stage {
       }
       em.node.getWorldPosition(b.origin);
       b.dir.copy(em.dir).transformDirection(em.node.matrixWorld).normalize();
-      const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40);
+      const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40, this.segments);
       const half = (angle / 2) * DEG;
       const r0 = Math.max(0.01, em.radius);
       const r1 = r0 + Math.tan(half) * len;

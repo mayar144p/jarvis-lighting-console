@@ -557,7 +557,7 @@ ACTIONS = (
     "set_place", "set_position", "set_venue", "status", "stop_fx",
     "venue_template", "venue_room", "venue_stage", "venue_add",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
-    "venue_camera", "venue_info", "attach_heads",
+    "venue_camera", "venue_info", "attach_heads", "place_many",
 )
 
 
@@ -2617,6 +2617,8 @@ class Engine:
                     target_rig, tt = near[0], near[1]
             if stance is not None:
                 h["stance"] = stance
+            elif target_rig and (h.get("mount") or {}).get("rig") != target_rig["id"]:
+                h.pop("stance", None)        # a new rig: hang or stand as it does
             if target_rig:
                 h["mount"] = {"rig": target_rig["id"],
                               "t": round(max(0.0, min(1.0, float(tt))), 4)}
@@ -2989,7 +2991,7 @@ class Engine:
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
-        "set_place", "attach_heads", "set_venue", "venue_template",
+        "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
         "venue_room", "venue_stage", "venue_add", "venue_update",
         "venue_remove", "venue_underlay",
     })
@@ -3271,6 +3273,33 @@ class Engine:
         return {"venue": venue_mod.describe(self.venue),
                 "templates": venue_mod.template_list(),
                 "summary": "venue " + (self.venue.get("name") or "(auto)")}
+
+    def _a_place_many(self, moves=None, rig=None, **_):
+        """Move several heads at once (a dragged selection): one undo step.
+        With `rig`, each head mounts on it at the point nearest where it
+        was dropped - drop a row of lights on a truss and they hang there."""
+        if not isinstance(moves, list) or not moves:
+            raise ValueError("moves must be a list of {head, x, y, z}")
+        target = venue_mod.rig(self.venue, str(rig)) if rig else None
+        if rig and not target:
+            raise ValueError(f"no rig {rig!r}")
+        done = []
+        for m in moves[:512]:
+            if not isinstance(m, dict) or m.get("head") is None:
+                continue
+            if target:
+                near = venue_mod.nearest_rig({"rigging": [target]}, float(m.get("x", 0)),
+                                             float(m.get("y", 0)), float(m.get("z", 0)),
+                                             reach=1e9)
+                self._a_set_place(head=m["head"], rig=target["id"],
+                                  t=near[1] if near else 0.5)
+            else:
+                self._a_set_place(head=m["head"], x=m.get("x"), y=m.get("y"),
+                                  z=m.get("z"))
+            done.append(int(m["head"]))
+        return {"heads": done, "rig": target["id"] if target else None,
+                "summary": f"moved {len(done)} light(s)"
+                           + (f" onto {target['name'] or target['id']}" if target else "")}
 
     def _a_attach_heads(self, heads=None, head=None, rig=None,
                         spacing=None, stance=None, **_):

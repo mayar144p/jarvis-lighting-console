@@ -6038,6 +6038,11 @@ def test_web_app() -> None:
     mods = sorted((web / "app").glob("*.js")) + sorted((web / "js").rglob("*.js"))
     srcs = {m: m.read_text(encoding="utf-8") for m in mods}
 
+    check("pdf.js is vendored for PDF floor plans",
+          (web / "vendor" / "pdfjs" / "pdf.min.mjs").is_file()
+          and (web / "vendor" / "pdfjs" / "pdf.worker.min.mjs").is_file(), "")
+    check("the move gizmo is vendored",
+          (web / "vendor" / "three" / "addons" / "controls" / "TransformControls.js").is_file(), "")
     check("the page maps `three` and its addons to vendored files",
           '"three": "/vendor/three/three.module.js"' in html
           and (web / "vendor" / "three" / "three.module.js").is_file()
@@ -7625,6 +7630,27 @@ def test_venue() -> None:
                                          "a": [-3, 4, 9], "b": [3, 4, 9]})
             check("venue_add returns the new item's id",
                   r["ok"] and V.rig(e.venue, r["id"]) is not None, json.dumps(r)[:200])
+            side = r["id"]
+            floor = [h for h in e.patch if h["model"].startswith("LED PAR")][:3]
+            for h in floor:                          # start them on the floor
+                e.act("set_place", head=h["head_no"], rig="", x=0, y=0, z=10)
+            r = e.act("place_many", rig=side, moves=[
+                {"head": h["head_no"], "x": -1 + i, "y": 3.7, "z": 9.1}
+                for i, h in enumerate(floor)])
+            placed = [e._head(h["head_no"]) for h in floor]
+            check("dropping a selection on a truss hangs every light on it",
+                  r["ok"] and all((h.get("mount") or {}).get("rig") == side for h in placed),
+                  r.get("error") or json.dumps([h.get("mount") for h in placed]))
+            check("floor lights dropped on a truss hang under it",
+                  all(h["stance"] == "hang" and h["y"] < 4 for h in placed),
+                  json.dumps([(h.get("stance"), h["y"]) for h in placed]))
+            check("each at the point nearest where it landed",
+                  sorted(round(h["x"]) for h in placed) == [-1, 0, 1],
+                  str([h["x"] for h in placed]))
+            e.act("undo")
+            check("the whole drop is one undo step",
+                  not any((e._head(h["head_no"]).get("mount") or {}).get("rig") == side
+                          for h in floor), "")
             check("an unknown kind is refused",
                   e.act("venue_add", item={"kind": "spaceship"})["ok"] is False, "")
             r = e.act("venue_template", name="warehouse")
