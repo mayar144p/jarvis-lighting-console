@@ -7502,6 +7502,7 @@ def _standalone_suites():
     ("forgiving fixture search", test_fixture_search),
     ("beam bar lasers", test_beam_bar),
     ("every channel gets a control", test_aux_channels),
+    ("CO2 preset mode never fires on its own", test_co2_preset),
     )
 
 
@@ -8678,6 +8679,60 @@ def test_remember_open() -> None:
     check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
           [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
           str([d["role"] for d in cobra[:4]]))
+
+
+def test_co2_preset() -> None:
+    """MagicFX Psyco2Jet, Preset mode: its GO channel (200-249 continuous)
+    was filed as a plain setting - sharing Direction's control before, its
+    own setting after - so a Direction of "Right" (192-255), a cue or a
+    fader fired the jet over and over whenever it was armed.  GO is its fire
+    output now: armed + held only, capped, released when the finger lifts."""
+    print("CO2 jet preset mode (GO is the fire channel)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+    from app.engine_support import channel_role
+
+    check("'Preset' is not a reset/maintenance channel", channel_role("Preset") != "unused"
+          and channel_role("FixtureGlobalReset") == "unused", channel_role("Preset"))
+    for src, key in (("ofl", "magicfx/psyco2jet.json"), ("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf")):
+        it = fixlib.apply_fx(fixlib.load(src, key)[0])
+        pre = next(m for m in it["modes"] if m["name"].lower() == "preset")
+        roles = {d["name"].lower(): d for d in pre["detail"]}
+        check(f"{src}: GO is the jet's fire output (continuous while held), Preset its mode",
+              roles["go"]["role"] == "fx_fire" and roles["go"]["on_value"] == 224
+              and roles["go"]["off_value"] == 0 and roles["preset"]["role"] == "fx_mode",
+              str({k: v["role"] for k, v in roles.items()}))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf"), "qlc:MagicFX/MagicFX-Psyco2Jet.qxf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Psyco2Jet", mode="Preset", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_attribute", attribute="fx_param", value=230)       # Direction: Right
+            e.act("fx_arm", state=True)
+
+            def go():
+                return e.build_frames()[1][4]
+            check("Direction 'Right' + armed does NOT fire it", go() == 0, str(list(e.build_frames()[1][:5])))
+            check("GO can't be set from the programmer",
+                  not e.act("set_attribute", attribute="fx_fire", value=224).get("ok"), "")
+            e.act("record_cue", playback=1, fade=0)
+            e.act("cue_go", playback=1)
+            check("...nor from a cue", go() == 0, str(go()))
+            e.act("fx_fire", heads=[1], down=True, owner="t")
+            check("armed + held: it sprays (continuous)", go() == 224, str(go()))
+            e.act("fx_fire", heads=[1], down=False, owner="t")
+            check("released: it stops", go() == 0, str(go()))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("a hold is released by any pointer release, and stop waits for start",
+          'addEventListener("pointerup", releaseAll, true)' in js and "started.then(() => stop())" in js
+          and "before.then(() => run(\"quick_press\"" in qb, "")
 
 
 def test_aux_channels() -> None:
