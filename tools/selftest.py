@@ -8795,6 +8795,39 @@ def test_motion() -> None:
             e.act("move_range", axis="tilt", edge="clear")
             check("...and Clear removes it", "tilt" not in (e.patch[0].get("limits") or {}), "")
             check("the snapshot carries the spots for the Move tab", bool(e.snapshot().get("move_spots")), "")
+
+            # ---- stay on the dance floor -----------------------------------
+            fl = e._floor_limits()
+            check("every mover gets its own dance-floor pan/tilt range",
+                  set(fl) == {1, 2} and all(0 <= lo < hi <= 1 for r in fl.values() for lo, hi in r.values()),
+                  str(fl))
+            e.fx = []
+            e.act("select_all")
+            e.act("move_range", axis="tilt", edge="clear")   # (a light's own range wins over the floor)
+            e.act("aim_spot", spot="dj")               # aimed OFF the floor
+            e.act("run_fx", name="circle", params={"size": 60})
+            t2 = _t.monotonic()
+            inside = True
+            for k in range(12):
+                v = e._fx_values(t2 + k * 0.7)
+                for n in (1, 2):
+                    pf, tf = v[n]["pan"] / 65535, v[n]["tilt"] / 65535
+                    (plo, phi), (tlo, thi) = fl[n]["pan"], fl[n]["tilt"]
+                    inside &= plo - 1e-3 <= pf <= phi + 1e-3 and tlo - 1e-3 <= tf <= thi + 1e-3
+            check("movement stays on the dance floor, even aimed at the DJ", inside, "")
+            e.fx = []
+            e.act("floor_safe", everything=True)
+            e.act("select_heads", heads=[1])
+            e.act("nudge", axis="tilt", step=0.45)
+            e.act("nudge", axis="pan", step=0.45)
+            wire = e.build_frames()[1]
+            pf, tf = (wire[0] * 256 + wire[1]) / 65535, (wire[2] * 256 + wire[3]) / 65535
+            (plo, phi), (tlo, thi) = fl[1]["pan"], fl[1]["tilt"]
+            check("'cues & aims too' holds everything on the floor",
+                  plo - 0.01 <= pf <= phi + 0.01 and tlo - 0.01 <= tf <= thi + 0.01, str((pf, tf, fl[1])))
+            e.act("floor_safe", everything=False)
+            check("...and it's off by default (cues aimed elsewhere don't change on update)",
+                  eng.Engine.__init__ and not e.floor_lock, "")
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")

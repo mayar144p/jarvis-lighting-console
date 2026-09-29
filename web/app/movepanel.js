@@ -5,6 +5,7 @@
 // Built from the venue (spots come from its dance floor and zones) and the
 // engine's movement effects (app/motion.py): a shape of a given size around
 // the aim, fitted inside each light's range, never faster than its motor.
+import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, toast, promptBox } from "./ui.js";
@@ -21,6 +22,102 @@ const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0 
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
+let own = { key: "", attrs: [] };         // the selection's own motor channels (Wave spin...)
+
+// ---------------------------------------------------- a light's own moves
+// A light's own motor channels (a Wave 360's continuous pan rotation, its
+// built-in tilt programs, their speeds) arrive as ranges like "1-127
+// counter-clockwise with decreasing speed".  Here they become ↺ ■ ↻ and a
+// slow-to-fast slider; Jarvis works out the value inside the right range.
+const OWN_RE = /rotat|spin|auto ?tilt|built.?in|program|macro|movement|moves?\b/i;
+const slowFirst = (text) => !/decreas|fast\s*(to|->|→|-)\s*slow/i.test(text || "");
+
+function inRange(slot, speed01) {
+  const s = Math.max(0, Math.min(1, speed01));
+  const f = slowFirst(slot.name) ? s : 1 - s;
+  return Math.round(slot.from + f * (slot.to - slot.from));
+}
+
+async function loadOwn() {
+  const heads = movers().map((x) => x.head_no);
+  const key = heads.join(",");
+  if (!heads.length) { own = { key, attrs: [] }; return; }
+  if (own.key === key) return;
+  try {
+    const d = await get("/api/console/attributes?heads=" + key);
+    const attrs = (d.pages || []).flatMap((p) => p.attrs || [])
+      .filter((a) => /^aux\d+$/.test(a.role) && OWN_RE.test(a.name || ""));
+    own = { key, attrs };
+  } catch {
+    own = { key, attrs: [] };
+  }
+  render(true);
+}
+
+// send a light's own channel and remember it, so the control shows it at once
+// (redraw false while a slider is being dragged - rebuilding it would drop the drag)
+function setOwn(a, value, redraw = true) {
+  a.value = value;
+  if (redraw) { own.rev = (own.rev || 0) + 1; render(true); }
+  return run("set_attribute", { attribute: a.role, value });
+}
+
+function spinControl(a) {
+  const slots = a.slots || [];
+  const ccw = slots.find((s) => /counter|anti|ccw|left/i.test(s.name));
+  const cw = slots.find((s) => s !== ccw && /clockwise|\bcw\b|right/i.test(s.name));
+  const stop = slots.find((s) => /no function|stop|off|^0$/i.test(s.name));
+  if (!ccw || !cw) return null;
+  const cur = a.value;
+  const dir = cur == null ? 0 : cur >= ccw.from && cur <= ccw.to ? -1 : cur >= cw.from && cur <= cw.to ? 1 : 0;
+  const slot = dir < 0 ? ccw : dir > 0 ? cw : null;
+  const speed0 = slot && cur != null ? (slowFirst(slot.name) ? (cur - slot.from) : (slot.to - cur)) / ((slot.to - slot.from) || 1) : 0.3;
+  const speed = h("input", { type: "range", min: 0, max: 100, value: Math.round(speed0 * 100), title: "Spin speed" });
+  const send = (d, redraw = true) => {
+    if (d === 0) return setOwn(a, stop ? stop.from : 0);
+    return setOwn(a, inRange(d < 0 ? ccw : cw, +speed.value / 100), redraw);
+  };
+  let t = 0;
+  speed.addEventListener("input", () => {
+    clearTimeout(t);
+    const d = dir;
+    if (d) t = setTimeout(() => send(d, false), 60);
+  });
+  const b = (label, d, title) => h("button.chip" + (dir === d ? ".on" : ""), { title, onclick: () => send(d) }, label);
+  return h("div.mv-row", h("span.k", "Spin"),
+    h("span.chip-row", b("↺", -1, "Spin counter-clockwise"), b("■ stop", 0, "Stop spinning"), b("↻", 1, "Spin clockwise")),
+    h("span.muted.small", "slow"), speed, h("span.muted.small", "fast"));
+}
+
+function speedControl(a) {
+  const full = a.full || 255;
+  const input = h("input", { type: "range", min: 0, max: full, value: a.value ?? 0 });
+  let t = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(t);
+    const v = +input.value;
+    t = setTimeout(() => { a.value = v; run("set_attribute", { attribute: a.role, value: v }, { silentError: true }); }, 60);
+  });
+  return h("div.mv-row", h("span.k", (a.name || "").replace(/speed/i, "").trim() || "Speed"),
+    h("span.muted.small", "slow"), input, h("span.muted.small", "fast"));
+}
+
+function ownBlock() {
+  if (!own.attrs.length) return null;
+  const rows = [];
+  for (const a of own.attrs) {
+    const spin = /rotat|spin/i.test(a.name || "") ? spinControl(a) : null;
+    if (spin) { rows.push(spin); continue; }
+    if (/speed/i.test(a.name || "")) { rows.push(speedControl(a)); continue; }
+    if ((a.slots || []).length) {
+      rows.push(h("div.mv-row", h("span.k", a.name), h("select.select", {
+        onchange: (e) => setOwn(a, +e.target.value),
+      }, ...(a.slots || []).map((s) => h("option", { value: s.value, selected: a.value != null && a.value >= s.from && a.value <= s.to }, s.name)))));
+    }
+  }
+  return rows.length ? section("This light's own moves", ...rows,
+    h("p.muted.small", "The light's own motor programs. With 'Movement stays on the floor', keep its tilt pointing down so a spin stays on the floor.")) : null;
+}
 
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
 const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
@@ -73,6 +170,43 @@ function spotsBlock() {
       h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan" }, { toast: true }) }, "Fan out"),
       h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross" }, { toast: true }) }, "Cross"),
       h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split" }, { toast: true }) }, "Split")) : null);
+}
+
+// Stay on the dance floor: every mover's own pan/tilt range for the floor,
+// worked out from where it hangs.  Movement always fits inside it (on by
+// default); the second switch holds cues and aims to it too.
+function floorBlock() {
+  const snap = state.snap || {};
+  const n = snap.floor_movers || 0;
+  if (!n) {
+    return section("Stay on the dance floor",
+      h("p.muted.small", "Draw a dance floor zone in the Venue tab (and place your lights roughly where they hang) - then every moving light keeps its beam on the floor."));
+  }
+  const toggle = (label, key, on, title) => h("button.chip" + (on ? ".on" : ""), {
+    title, onclick: () => run("floor_safe", { [key]: !on }, { toast: true }),
+  }, (on ? "✓ " : "") + label);
+  let checking = false;
+  return section("Stay on the dance floor",
+    h("div.chip-row",
+      toggle("Movement stays on the floor", "movement", snap.floor_safe !== false,
+        "Circles, sweeps and the rest fit inside the dance floor for every light"),
+      toggle("Cues & aims too", "everything", !!snap.floor_lock,
+        "Nothing may point off the dance floor - also cues, spots and the programmer")),
+    h("div.mv-row",
+      h("span.muted.small", `${n} moving light(s) know where the floor is.`),
+      h("button.btn.small", {
+        title: "Point the selection at the front, right, back and left of the floor in turn - check each real beam lands on it",
+        onclick: async () => {
+          if (checking) return;
+          checking = true;
+          for (const spot of ["front", "right", "back", "left", "floor"]) {
+            await run("aim_spot", { spot }, { silentError: true });
+            toast(`Check: ${spot === "floor" ? "centre" : spot}`, "ok");
+            await new Promise((r) => setTimeout(r, 1600));
+          }
+          checking = false;
+        },
+      }, "Check the floor")));
 }
 
 function nudgeBlock() {
@@ -195,7 +329,8 @@ function render(force = false) {
   // update swallows clicks and flickers
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib]), knobs, fine]);
+    running().map((f) => [f.id, f.lib]), knobs, fine, own.key, own.attrs.length, own.rev,
+    state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers]]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);
     const m = box.querySelector(".mv-master");
@@ -215,7 +350,8 @@ function render(force = false) {
     box.replaceChildren(h("p.muted.small", "The selected lights can't move (no pan or tilt). Colour, brightness and effects are on the other tabs."));
     return;
   }
-  box.replaceChildren(spotsBlock(), nudgeBlock(), movementBlock(), rangeBlock(sel));
+  box.replaceChildren(...[spotsBlock(), floorBlock(), nudgeBlock(), movementBlock(), ownBlock(), rangeBlock(sel)].filter(Boolean));
+  loadOwn();
 }
 
 export function initMovePanel() {
