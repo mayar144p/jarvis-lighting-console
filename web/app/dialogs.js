@@ -2,9 +2,9 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
-import { state, patch, selected, outputState } from "./store.js";
+import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, modal, toast, confirmBox, promptBox } from "./ui.js";
+import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
 
 // ================================================================== add
 let preview = null;
@@ -399,16 +399,43 @@ export function openCueDialog(playback) {
   const name = h("input", { type: "text", placeholder: "e.g. Verse 1" });
   const fade = h("input", { type: "number", min: 0, step: 0.5, value: 2 });
   const hold = h("input", { type: "number", min: 0, step: 0.5, placeholder: "none" });
+  // where it goes: a new cue at the end, or over / before an existing one
+  const where = h("select.select");
+  const modeBox = h("div.chip-row");
+  let mode = "replace";
+  const drawWhere = () => {
+    const pb = pbs.find((p) => p.n === +pbSel.value) || { stack: [] };
+    const stack = pb.stack || [];
+    where.replaceChildren(h("option", { value: "" }, `New cue ${stack.length + 1} at the end`),
+      ...stack.map((c) => h("option", { value: c.n }, `Cue ${c.n}: ${c.name || ""}`)));
+    drawMode();
+  };
+  const drawMode = () => {
+    const over = where.value !== "";
+    modeBox.hidden = !over;
+    modeBox.replaceChildren(...[["replace", "Replace", "The cue becomes exactly what the programmer holds"],
+      ["merge", "Merge", "Add the programmer's changes into the cue, keep the rest of it"],
+      ["insert", "Insert before", "A new cue at this number; the later cues move down"]].map(([v, label, title]) =>
+      h("button.chip" + (mode === v ? ".on" : ""), { type: "button", title, onclick: () => { mode = v; drawMode(); } }, label)));
+    fade.placeholder = over ? "keep" : "";
+  };
+  pbSel.addEventListener("change", drawWhere);
+  where.addEventListener("change", drawMode);
+  drawWhere();
   const close = modal({
     title: "Record cue",
     body: h("div.form-grid",
-      h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Name"), name),
+      h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where),
+      h("div.field", h("span", " "), modeBox),
+      h("label.field", h("span", "Name"), name),
       h("label.field", h("span", "Fade (s)"), fade), h("label.field", h("span", "Hold before auto-follow (s)"), hold)),
-    foot: [h("span.muted.small.grow", "Records what the programmer holds, then clears it."),
+    foot: [h("span.muted.small.grow", "Records what the programmer holds, then clears it. Over a cue, its name and times are kept unless you type new ones."),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
         onclick: async () => {
-          const params = { playback: +pbSel.value, name: name.value.trim(), fade: +fade.value || 0 };
+          const params = { playback: +pbSel.value, name: name.value.trim() };
+          if (where.value !== "") { params.cue = +where.value; params.mode = mode; }
+          if (fade.value !== "") params.fade = +fade.value || 0;
           if (hold.value !== "") params.hold = +hold.value;
           const r = await run("record_cue", params, { toast: true });
           if (r.ok) close();
@@ -473,16 +500,32 @@ export function openCueList(n) {
       nm.addEventListener("change", () => run("rename_cue", { playback: n, cue: c.n, name: nm.value }));
       fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
       hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
-      return h("tr" + (i === pb.index ? ".sel" : ""),
-        h("td.mono", c.n), h("td", nm, cueTimeline(c, longest)), h("td", fd), h("td", hd),
+      const tr = h("tr" + (i === pb.index ? ".sel" : ""), { draggable: "true", title: "Drag to reorder" },
+        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest)), h("td", fd), h("td", hd),
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),
           h("button.btn.small.ghost", { title: "Move up", disabled: i === 0, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n - 1 }).then(refresh) }, "↑"),
           h("button.btn.small.ghost", { title: "Move down", disabled: i === stack.length - 1, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n + 1 }).then(refresh) }, "↓"),
-          h("button.btn.small.ghost", { title: "Update this cue from the programmer", onclick: () => run("record_cue", { playback: n, cue: c.n }, { toast: true }) }, "Update"),
+          h("button.btn.small.ghost", { title: "Update this cue from the programmer: merge or replace", onclick: (e) => menu(e.currentTarget, [
+            { label: "Merge the programmer into it", hint: "adds the changes, keeps the rest", run: () => run("record_cue", { playback: n, cue: c.n, mode: "merge" }, { toast: true }) },
+            { label: "Replace it with the programmer", hint: "exactly what the programmer holds", run: () => run("record_cue", { playback: n, cue: c.n, mode: "replace" }, { toast: true }) },
+            { label: "Record a new cue before it", run: () => run("record_cue", { playback: n, cue: c.n, mode: "insert" }, { toast: true }) },
+          ]) }, "Update ▾"),
           h("button.btn.small.ghost", { title: "Insert an empty cue below", onclick: () => run("insert_cue", { playback: n, at: c.n + 1 }).then(refresh) }, "+"),
           h("button.btn.small.ghost", { title: "Delete", onclick: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) }, "×"))));
+      // drag a row onto another to move the cue there
+      tr.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(c.n)); tr.classList.add("dragging"); });
+      tr.addEventListener("dragend", () => tr.classList.remove("dragging"));
+      tr.addEventListener("dragover", (e) => { e.preventDefault(); tr.classList.add("drop"); });
+      tr.addEventListener("dragleave", () => tr.classList.remove("drop"));
+      tr.addEventListener("drop", (e) => {
+        e.preventDefault();
+        tr.classList.remove("drop");
+        const from = +e.dataTransfer.getData("text/plain");
+        if (from && from !== c.n) run("move_cue", { playback: n, cue: from, to: c.n }, { toast: true }).then(refresh);
+      });
+      return tr;
     });
     const delay = (pb.follow || {}).delay;
     return h("div",
@@ -493,7 +536,15 @@ export function openCueList(n) {
         h("b", "Wait"), " holds for GO, ", h("b", "Auto"), " runs the next cue after the seconds given."));
   };
   const body = h("div", render());
-  const refresh = () => setTimeout(() => body.replaceChildren(render()), 300);
+  // live: redraw when the cue list changes (not while typing in it)
+  const sig = () => JSON.stringify(((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {});
+  let last = sig();
+  const refresh = () => { last = sig(); body.replaceChildren(render()); };
+  const off = on("snapshot", () => {
+    if (!document.body.contains(body)) { off(); return; }
+    if (body.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+    if (sig() !== last) refresh();
+  });
   close = modal({
     title: `Playback ${n} · cue list`, wide: true, body,
     foot: [h("button.btn", { onclick: () => openCueDialog(n) }, "Record new cue"),
