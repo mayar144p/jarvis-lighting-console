@@ -24,7 +24,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import config, fixtures, fixture_kind
+from app import config, fixtures, fixture_kind, motion as motion_mod
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
@@ -105,6 +105,8 @@ UNDO_EXCLUDED = frozenset({
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "remember_open", "light_test", "light_tested",
+    # the Speed master is performed live, like the grand master
+    "speed_master",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -582,6 +584,7 @@ ACTIONS = (
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
+    "speed_master",
 )
 
 
@@ -696,6 +699,10 @@ class Engine:
         self.selected: list[int] = []
         self.fx: list[dict] = []            # running effects (see run_fx)
         self._fx_seq = 0
+        # the Speed master: every running effect's clock runs at this rate
+        # (0.1 = a tenth of the speed, 2 = double) - movement, colour chases,
+        # everything, smoothly and without a jump when it changes
+        self.speed_master = 1.0
         self.autosave_path = Path(autosave_path) if autosave_path else None
         self._autosave_at = 0.0
         self._autosave_dirty = False
@@ -5235,6 +5242,86 @@ class Engine:
             raise ValueError(f"no effect {tid} running")
         return {"stopped": 1, "fx": tid, "summary": f"stopped effect {tid}"}
 
+    # --- movement effects ------------------------------------------------
+    def _move_values(self, row: dict, step: float, base, out: dict) -> None:
+        """One movement effect (app/motion.py) for this frame: a shape of a
+        given size in degrees around where each head is aimed, fitted into
+        its limits, never faster than the slowest head's motor."""
+        by_no = {h["head_no"]: h for h in self.patch}
+        heads = [by_no[n] for n in row["heads"] if n in by_no]
+        if not heads:
+            return
+        p = row["params"]
+        kind = row["lib"]
+        cap = row.get("_cap")
+        if not cap or cap[0] != (self.patch_rev, tuple(sorted(p.items()))):
+            spans = [self._move_span(h) for h in heads]
+            amps = [(kind, *motion_mod.amplitude(kind, p, s)) for s in spans]
+            travel = [self._move_travel(h) for h in heads]
+            cap = row["_cap"] = ((self.patch_rev, tuple(sorted(p.items()))),
+                                 motion_mod.max_rate(amps, travel), spans)
+        rate = min(float(p.get("speed", 0.125)), cap[1])
+        row["_turns"] = row.get("_turns", 0.0) + step * rate
+        prog, pbs = base
+        for i, h in enumerate(heads):
+            n = h["head_no"]
+            centre, limits = [], []
+            for role in ("pan", "tilt"):
+                dom = attr_domain(h, role) if role in h["map"] else 255
+                v = (prog.get(n) or {}).get(role)
+                if v is None:
+                    for _lvl, vals in pbs:
+                        if role in (vals.get(n) or {}):
+                            v = vals[n][role]
+                            break
+                if v is None:
+                    frac = 0.5
+                else:
+                    frac = (_logical16(v) / 65535.0) if dom > 255 else (float(v) / 255.0)
+                centre.append(frac)
+                lo, hi = (h.get("limits") or {}).get(role) or (None, None)
+                limits.append(((lo or 0) / dom if lo is not None else 0.0,
+                               (hi / dom) if hi is not None else 1.0))
+            vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
+                                       cap[2][i], i, len(heads))
+            dst = out.setdefault(n, {})
+            for role, frac in vals.items():
+                if role not in h["map"]:
+                    continue
+                if attr_domain(h, role) > 255:
+                    v16 = int(round(frac * 65535))
+                    dst[role] = 256 if 0 < v16 < 256 else v16    # never read as 8-bit
+                else:
+                    dst[role] = int(round(frac * 255))
+
+    def _move_span(self, h: dict) -> tuple[float, float]:
+        """Degrees of pan and tilt travel, from the fixture file."""
+        out = []
+        for role, default in zip(("pan", "tilt"), motion_mod.DEFAULT_SPAN_DEG):
+            r = self.head_ranges(h).get(role) or {}
+            lo, hi = r.get("min"), r.get("max")
+            span = abs(float(hi) - float(lo)) if lo is not None and hi is not None else 0.0
+            out.append(span if 20.0 <= span <= 720.0 else default)
+        return out[0], out[1]
+
+    def _move_travel(self, h: dict) -> tuple[float, float]:
+        """Seconds for a full pan / tilt: measured, else by type."""
+        m = self._motion_of(h)
+        dp, dt = motion_mod.TRAVEL_S.get(fixture_kind.describe(h).get("type"),
+                                         motion_mod.DEFAULT_TRAVEL_S)
+        return float(m.get("pan_s") or dp), float(m.get("tilt_s") or dt)
+
+    def _a_speed_master(self, value=None, pct=None, **_):
+        """The Speed master: every running effect's speed x value (0.1 .. 4);
+        pct=50 is half speed."""
+        if pct is not None:
+            value = float(pct) / 100.0
+        if value is None:
+            raise ValueError("value is required (1 = normal, 0.5 = half, 2 = double)")
+        self.speed_master = max(0.05, min(4.0, float(value)))
+        return {"speed_master": self.speed_master,
+                "summary": f"effects at {round(self.speed_master * 100)}% speed"}
+
     def _fx_values(self, now: float | None = None) -> dict[int, dict[str, int]]:
         """{head_no: {role: value}} for every running, unexpired effect.
 
@@ -5247,6 +5334,7 @@ class Engine:
         now = time.monotonic() if now is None else now
         out: dict[int, dict[str, int]] = {}
         keep: list[dict] = []
+        base = None                       # programmer + cues under the effects
         for row in self.fx:
             elapsed = now - row["t0"]
             dur = row.get("duration")
@@ -5255,6 +5343,18 @@ class Engine:
             keep.append(row)
             heads = row["heads"]
             count = len(heads)
+            # the effect's own clock, run at the Speed master's rate: changing
+            # the master changes the SPEED from here on, never jumps the shape
+            last = row.get("_last", row["t0"])
+            step = max(0.0, now - last) * float(self.speed_master)
+            row["_last"] = max(last, now)
+            row["_v"] = row.get("_v", 0.0) + step
+            if row.get("lib") in motion_mod.KINDS:
+                if base is None:
+                    base = (self._programmer_now(now), self._active_playbacks(now))
+                self._move_values(row, step, base, out)
+                continue
+            elapsed = row["_v"]
             if row.get("lib"):
                 # A NAMED effect writes SEVERAL roles per head, so the
                 # per-head dict is UPDATED rather than assigned.  The
@@ -8684,6 +8784,7 @@ class Engine:
                 "live": self.live,
                 "output": self._output_public(),
                 "master": self.master,
+                "speed_master": self.speed_master,
                 "blackout": self.blackout,
                 "selected": list(self.selected),
                 "programmer": {
@@ -8740,6 +8841,7 @@ class Engine:
                 "dry_run": self.dry_run,
                 "live": self.live,
                 "master": self.master,
+                "speed_master": self.speed_master,
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out

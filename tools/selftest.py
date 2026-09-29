@@ -7510,6 +7510,7 @@ def _standalone_suites():
     ("beam bar lasers", test_beam_bar),
     ("every channel gets a control", test_aux_channels),
     ("CO2 preset mode never fires on its own", test_co2_preset),
+    ("movement stays where it is aimed", test_motion),
     )
 
 
@@ -8686,6 +8687,76 @@ def test_remember_open() -> None:
     check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
           [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
           str([d["role"] for d in cobra[:4]]))
+
+
+def test_motion() -> None:
+    """Circle & co. used to swing pan/tilt across the WHOLE travel (540 x 190
+    degrees) once a second - movers thrashed and hit walls.  Now: a shape of
+    a given size in degrees around where the head is aimed, fitted into its
+    limits, direction / arc / lock / speed as knobs, capped at the motor's
+    speed, and a Speed master that slows every effect together."""
+    print("movement effects (around the aim, fitted, slow, speed master)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures, motion
+
+    c, a = motion.fit(0.95, 0.2, 0.0, 1.0)
+    check("a swing near the end of travel shifts to fit, it isn't clipped flat",
+          abs(c - 0.8) < 1e-9 and abs(a - 0.2) < 1e-9, str((c, a)))
+    c, a = motion.fit(0.5, 0.3, 0.4, 0.6)
+    check("...and shrinks to the room a limit leaves", abs(a - 0.1) < 1e-9 and abs(c - 0.5) < 1e-9, str((c, a)))
+    ccw = motion.shape("circle", 0.1, {"direction": -1})
+    cw = motion.shape("circle", 0.1, {"direction": 1})
+    check("counter-clockwise runs the other way round", abs(ccw[1] + cw[1]) < 1e-9 and ccw[1] < 0, str((ccw, cw)))
+    arc = [motion.shape("circle", k / 20, {"arc": 180})[0] for k in range(21)]
+    check("a 180-degree arc stays on one half and comes back", min(arc) >= -1e-9 and arc[0] == arc[-1], str(arc[:5]))
+    fast = motion.max_rate([("circle", 1.0, 1.0)], [(3.0, 1.8)])
+    check("a full-travel circle is capped far below one turn a second", fast < 0.1, str(fast))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=2, universe=1, address=1)
+            e.act("select_all")
+            e.act("set_attribute", attribute="pan", value=128)
+            e.act("set_attribute", attribute="tilt", value=128)
+            e.act("set_limits", role="tilt", low=100 * 257, high=140 * 257)
+            e.act("run_fx", name="circle", params={"size": 40, "arc": 180, "direction": -1})
+            t0 = _t.monotonic()
+            pans, tilts = [], []
+            for k in range(0, 17):
+                v = e._fx_values(t0 + k * 0.5)[1]
+                pans.append(v["pan"] / 65535 * 540 - 270)
+                tilts.append(v["tilt"] / 65535)
+            check("the circle is around where the light is aimed (pan within ~45 deg of it)",
+                  max(abs(x) for x in pans) < 46, str([round(x) for x in pans[:6]]))
+            check("...and never leaves the light's tilt limit",
+                  min(tilts) >= 100 / 255 - 1e-3 and max(tilts) <= 140 / 255 + 1e-3,
+                  str((min(tilts), max(tilts))))
+            check("the default speed is slow (one arc in 8 s)",
+                  abs(pans[0] - pans[16]) < 1.0 and max(pans) - min(pans) > 20, str([round(x) for x in pans]))
+            e.fx = []
+            e.act("run_fx", name="circle", params={"size": 20, "lock": 1})
+            v = e._fx_values(_t.monotonic() + 1.0)[1]
+            check("lock tilt: only pan moves, tilt keeps its aim", "pan" in v and "tilt" not in v, str(v))
+            e.fx = []
+            e.act("run_fx", name="pan_sweep", params={"size": 30, "speed": 0.25})
+            t1 = _t.monotonic()
+            e._fx_values(t1)
+            e.act("speed_master", value=0.5)
+            e._fx_values(t1 + 2.0)
+            half = e.fx[0]["_turns"]
+            check("the Speed master slows every effect (2 s at half speed = 1 s of turning)",
+                  abs(half - 0.25) < 0.02, str(half))
+            check("...and is not an undo step", "speed_master" in eng.UNDO_EXCLUDED, "")
+            check("the speed master reaches the live feed", e.lite().get("speed_master") == 0.5
+                  if hasattr(e, "lite") else True, "")
+        finally:
+            e.shutdown()
 
 
 def test_co2_preset() -> None:

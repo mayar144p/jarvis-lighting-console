@@ -104,7 +104,8 @@ def run(check) -> int:
 
     # ---- a MIXED selection ------------------------------------------------
     eng.fx = []
-    r = eng.act("run_fx", name="circle", heads=[1, 2, 3, 4])
+    r = eng.act("run_fx", name="circle", heads=[1, 2, 3, 4],
+                params={"speed": 1.0, "size": 90})   # fast + wide: visible in 0.7 s
     ok(r.get("heads") == 2 and sorted(r.get("skipped") or []) == [1, 2],
        "Circle on a mixed selection runs on the movers and SKIPS the PARs",
        r)

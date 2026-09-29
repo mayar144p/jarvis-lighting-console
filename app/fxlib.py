@@ -387,6 +387,16 @@ _SPARK = (("speed", "rate", 1.0, 0.01, 20.0), ("rate", "hits", 8.0, 1.0, 40.0),
           ("low", "low", 0.0, 0.0, 100.0), ("high", "high", 100.0, 0.0, 100.0))
 _SPREAD = (("speed", "rate", 1.0, 0.01, 20.0), ("spread", "spread", 90.0, 0.0, 720.0),
            ("phase", "phase", 0.0, 0.0, 100.0))
+# Movement (app/motion.py): a shape of `size` degrees around where the head
+# is aimed, fitted into its limits.  `speed` is turns per second - the
+# default 0.125 is one turn in 8 s, which real motors can follow; `arc` <
+# 360 makes a circle go out and back over that arc (a 180-degree turn);
+# `direction` 1 / -1 = clockwise / counter-clockwise; `lock` 1 keeps the
+# tilt where it is (pan only), 2 keeps the pan (tilt only).
+_MOVE = (("speed", "speed (turns/s)", 0.125, 0.005, 2.0), ("size", "size (deg)", 20.0, 1.0, 270.0),
+         ("arc", "arc (deg)", 360.0, 10.0, 360.0), ("direction", "direction", 1.0, -1.0, 1.0),
+         ("lock", "lock", 0.0, 0.0, 2.0), ("spread", "spread", 0.0, 0.0, 720.0),
+         ("phase", "phase", 0.0, 0.0, 100.0))
 _LEVELS = (("speed", "rate", 1.0, 0.01, 20.0), ("rate", "rate", 4.0, 1.0, 40.0),
            ("spread", "spread", 0.0, 0.0, 720.0),
            ("phase", "phase", 0.0, 0.0, 100.0),
@@ -430,15 +440,15 @@ FX: dict[str, dict] = {
                "needs": (), "params": _SPARK, "fn": _sparks},
     # --- position ---------------------------------------------------------
     "pan_sweep": {"label": "Pan sweep", "group": "position", "needs": (PAN,),
-                  "params": _SPREAD, "fn": _pan_sweep},
+                  "params": _MOVE, "fn": _pan_sweep},
     "tilt_bounce": {"label": "Tilt bounce", "group": "position",
-                    "needs": (TILT,), "params": _SPREAD, "fn": _tilt_bounce},
+                    "needs": (TILT,), "params": _MOVE, "fn": _tilt_bounce},
     "fan_pan": {"label": "Fan pan", "group": "position", "needs": (PAN,),
-                "params": _SPREAD, "fn": _fan_pan},
+                "params": _MOVE, "fn": _fan_pan},
     "circle": {"label": "Circle", "group": "position", "needs": (PAN, TILT),
-               "params": _SPREAD, "fn": _circle},
+               "params": _MOVE, "fn": _circle},
     "figure_eight": {"label": "Figure eight", "group": "position",
-                     "needs": (PAN, TILT), "params": _SPREAD,
+                     "needs": (PAN, TILT), "params": _MOVE,
                      "fn": _figure_eight},
     # --- beam -------------------------------------------------------------
     "gobo_spin": {"label": "Gobo spin", "group": "beam",
