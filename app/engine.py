@@ -4046,6 +4046,7 @@ class Engine:
         _LEVELS_CACHE.clear()
         self._gate_cache = None
         self._rest_cache = None
+        self._hold_cache = None
         self._motion_cache = {}
 
     # -- movement speed, for the visualiser ------------------------------
@@ -4184,10 +4185,21 @@ class Engine:
                 out.append({"role": role, "value": v, "label": (ranges.get(role) or {}).get("label") or role})
         return out[:24]
 
+    def _test_slots(self, h: dict) -> list[dict]:
+        """Every DMX channel of the head: its label, role, address and the
+        byte on the wire now - the light test's channel faders."""
+        labels = fixtures.mode_channels(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"))
+        buf = self.build_frames().get(h["universe"])
+        base = int(h["address"]) - 1
+        return [{"n": i + 1, "abs": base + i + 1, "role": role,
+                 "label": (labels[i] if i < len(labels) else "") or role,
+                 "value": int(buf[base + i]) if buf is not None and base + i < len(buf) else 0}
+                for i, role in enumerate(h["map"])]
+
     def _tested(self, h: dict) -> bool:
         return bool((self.head_ranges(h).get("_model") or {}).get("tested"))
 
-    def _a_light_test(self, head=None, step="start", value=None, hex=None, role=None, **_):
+    def _a_light_test(self, head=None, step="start", value=None, hex=None, role=None, slot=None, **_):
         """Drive one head through the setup test: start (full, open,
         white, centred), open (try a shutter value), pan / tilt (a
         position 0..1), colour (a hex), end (give it back)."""
@@ -4202,6 +4214,7 @@ class Engine:
         gate = self._shutter_role(h)
         if step == "end":
             self.__dict__.get("_test_hunt", {}).pop(n, None)
+            self.__dict__.get("_test_raw", {}).pop(n, None)
             if n in saved:
                 before = saved.pop(n)
                 if before:
@@ -4229,6 +4242,7 @@ class Engine:
                     "open_known": self._open_known(h, gate) if gate else True,
                     "candidates": self._open_candidates(h, gate) if gate else [],
                     "hunt": self._hunt_list(h),
+                    "slots": self._test_slots(h),
                     "pan": "pan" in h["map"], "tilt": "tilt" in h["map"],
                     "colour": bool(colour), "mixing": "red" in h["map"] or "cyan" in h["map"],
                     "channels": len(h["map"]), "mode": h.get("mode"),
@@ -4245,6 +4259,47 @@ class Engine:
             frac = max(0.0, min(1.0, float(value if value is not None else 0.5)))
             self._set_programmer(n, step, int(round(attr_domain(h, step) * frac)))
             return {"summary": f"{step} to {round(frac * 100)}%"}
+        if step == "raw":
+            # one DMX channel of this head, straight to the wire (slot 1 =
+            # its start address): finds what the REAL light needs even when
+            # the file's channel list, or its mode, is wrong
+            live = self.__dict__.setdefault("_test_raw", {})
+            if value is None and slot is None:
+                live.pop(n, None)
+                return {"summary": "channel faders off"}
+            s = int(slot or 0)
+            if not 1 <= s <= len(h["map"]):
+                raise ValueError(f"slot is 1..{len(h['map'])}")
+            if value is None:
+                live.get(n, {}).pop(s, None)
+                return {"summary": f"channel {s} back to the show"}
+            v = int(_clamp(value, 0, 255))
+            live.setdefault(n, {})[s] = v
+            return {"summary": f"channel {s} (DMX {int(h['address']) + s - 1}) at {v}"}
+        if step == "keep":
+            # what the faders found, kept for the model: a named channel
+            # becomes its role's rest/open value, an unnamed one is held
+            live = dict(self.__dict__.get("_test_raw", {}).get(n) or {})
+            if not live:
+                raise ValueError("move a channel fader first")
+            kept, hold = [], {}
+            for s, v in sorted(live.items()):
+                role = h["map"][s - 1]
+                if role in ("raw", "unused"):
+                    hold[str(s)] = v
+                elif role in HTP_ROLES or role in ("pan", "tilt", "speed") or role.endswith("_fine"):
+                    continue                      # the show drives these
+                else:
+                    fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"),
+                                          h.get("mode"), role, "open_from", v)
+                kept.append(f"ch {s} = {v}")
+            if hold:
+                old = (self.head_ranges(h).get("_model") or {}).get("hold") or {}
+                fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"),
+                                      h.get("mode"), "_model", "hold", {**old, **hold})
+            fixtures.invalidate_cache()
+            self._drop_fixture_caches()
+            return {"kept": kept, "summary": f"{h.get('model')}: kept " + (", ".join(kept) or "nothing")}
         if step == "channel":
             # one other channel at a value; the one tried before goes back
             role = str(role or "")
@@ -4267,7 +4322,7 @@ class Engine:
             for role, v in self._colour_values(h, str(hex or "#ffffff")).items():
                 self._set_programmer(n, role, v)
             return {"summary": f"colour {hex}"}
-        raise ValueError("step is start, open, channel, pan, tilt, colour or end")
+        raise ValueError("step is start, open, channel, raw, keep, pan, tilt, colour or end")
 
     def _a_light_tested(self, head=None, light=True, move=True, colour=True, **_):
         """Record the result: a model that passed is not asked about again."""
@@ -6444,12 +6499,60 @@ class Engine:
         snapshots the state it needs and hands it over.
         """
         now = time.monotonic() if now is None else now
-        return merge.build_frames(self.patch, self._programmer_now(now),
-                                  self._active_playbacks(now),
-                                  self._fx_values(now),
-                                  self.master, self.blackout,
-                                  overrides=self._override_vals(), now=now,
-                                  gates=self._gates(), rests=self._rests())
+        frames = merge.build_frames(self.patch, self._programmer_now(now),
+                                    self._active_playbacks(now),
+                                    self._fx_values(now),
+                                    self.master, self.blackout,
+                                    overrides=self._override_vals(), now=now,
+                                    gates=self._gates(), rests=self._rests())
+        if not self.blackout:
+            self._write_raw(frames)
+        return frames
+
+    def _raw_holds(self) -> dict:
+        """{head_no: {slot: value}}: bytes written straight to the wire,
+        under the role layer.  A channel the fixture file never named (a
+        `raw` "Control" channel some lights need at a value before they
+        light) held at what the operator found on the real light, and the
+        light test's per-channel faders while the test is open."""
+        cache = getattr(self, "_hold_cache", None)
+        if cache and cache[0] == self.patch_rev:
+            held = cache[1]
+        else:
+            held = {}
+            for h in self.patch:
+                if self._head_class(h) != "light":
+                    continue
+                hold = (self.head_ranges(h).get("_model") or {}).get("hold") or {}
+                for slot, v in hold.items():
+                    i = int(slot) - 1
+                    if 0 <= i < len(h["map"]) and h["map"][i] in ("raw", "unused"):
+                        held.setdefault(h["head_no"], {})[i + 1] = int(v)
+            self._hold_cache = (self.patch_rev, held)
+        live = self.__dict__.get("_test_raw") or {}
+        if not live:
+            return held
+        out = {n: dict(v) for n, v in held.items()}
+        for n, slots in live.items():
+            out.setdefault(n, {}).update(slots)
+        return out
+
+    def _write_raw(self, frames: dict) -> None:
+        holds = self._raw_holds()
+        if not holds:
+            return
+        for h in self.patch:
+            slots = holds.get(h["head_no"])
+            if not slots:
+                continue
+            buf = frames.get(h["universe"])
+            if buf is None:
+                buf = frames[h["universe"]] = bytearray(512)
+            base = int(h["address"]) - 1
+            for slot, v in slots.items():
+                pos = base + int(slot) - 1
+                if 0 <= pos < len(buf):
+                    buf[pos] = max(0, min(255, int(v)))
 
     def channel_report(self, heads: list[int] | None = None) -> dict:
         """Per-channel DMX truth: label, role, and the byte on the wire.

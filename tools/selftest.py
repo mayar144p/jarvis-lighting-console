@@ -8746,6 +8746,17 @@ def test_light_test() -> None:
             buf = e.build_frames()[1]
             check("every head of the model then lights on Full (shutter + found channel)",
                   buf[8] == 255 and buf[9] == 32 and buf[11] == 200, str(list(buf[6:12])))
+            # channel faders: straight to the wire, whatever the file says
+            r = e.act("light_test", head=1, step="start")
+            check("the test lists every DMX channel with its label and address",
+                  [c["n"] for c in r["slots"]] == [1, 2, 3, 4, 5, 6] and r["slots"][2]["abs"] == 3
+                  and r["slots"][2]["value"] == 255, str(r.get("slots")))
+            e.act("light_test", head=1, step="raw", slot=6, value=99)
+            check("a channel fader writes the byte directly", e.build_frames()[1][5] == 99, "")
+            bad = e.act("light_test", head=1, step="raw", slot=9, value=1)
+            check("a slot outside the head is refused", not bad.get("ok"), str(bad))
+            e.act("light_test", head=1, step="end")
+            check("closing the test lets go of the faders", e.build_frames()[1][5] == 200, str(list(e.build_frames()[1][:6])))
             r = e.act("light_tested", head=1, light=True, move=True, colour=False)
             check("a wrong colour is not a pass, and says to check the mode",
                   not r["tested"] and any("mode" in a for a in r["advice"]), str(r))
@@ -8755,6 +8766,35 @@ def test_light_test() -> None:
                   r["tested"] and p[1]["tested"] and p[2]["tested"], str(r))
             check("the copilot cannot drive the test", {"light_test", "light_tested"} <= set(console_ai.DENY_ACTIONS), "")
             check("the test is not an undo step", "light_test" in eng.UNDO_EXCLUDED, "")
+        finally:
+            e.shutdown()
+        # a channel the file never named ("Control1" -> raw) that the light
+        # needs at a value: found on the faders, kept, held for the model
+        with zipfile.ZipFile(tmp / "r.gdtf", "w") as zf:
+            zf.writestr("description.xml", (
+                '<GDTF DataVersion="1.1"><FixtureType Name="Raw Hold" Manufacturer="BeamZ">'
+                '<DMXModes><DMXMode Name="3ch"><DMXChannels>'
+                '<DMXChannel Offset="1"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Control1">'
+                '<ChannelFunction Name="Control1" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="3"><LogicalChannel Attribute="Tilt">'
+                '<ChannelFunction Name="Tilt" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+        fixtures.import_file(db, tmp / "r.gdtf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+        try:
+            e.act("add_heads", query="Raw Hold", mode="3ch", qty=2, universe=1, address=1)
+            check("(the unnamed channel has no role)", e.patch[0]["map"][1] in ("raw", "unused"), str(e.patch[0]["map"]))
+            e.act("light_test", head=1, step="start")
+            e.act("light_test", head=1, step="raw", slot=2, value=180)
+            r = e.act("light_test", head=1, step="keep")
+            e.act("light_test", head=1, step="end")
+            buf = e.build_frames()[1]
+            check("a kept unnamed channel is held on every head of the model",
+                  r.get("ok") and buf[1] == 180 and buf[4] == 180, str(list(buf[:6])))
+            e.act("blackout", state=True) if "blackout" in eng.ACTIONS else setattr(e, "blackout", True)
+            check("and blackout still blacks it out", e.build_frames()[1][1] == 0, "")
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")

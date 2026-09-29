@@ -920,41 +920,80 @@ export async function openLightTest(hd) {
       h("div.row-btns", ...buttons.map(([label, value, cls]) => h("button.btn" + (cls ? "." + cls : ""), { onclick: () => resolve(value) }, label))));
   });
 
+  // Every DMX channel of the light on its own fader, written straight to
+  // the wire: finds what the REAL light needs even when the file (or the
+  // mode it describes) is wrong.  "It's on" keeps what was found.
+  function faders() {
+    return new Promise((resolve) => {
+      const rows = (st.slots || []).map((c) => {
+        const input = h("input", { type: "range", min: 0, max: 255, value: c.value });
+        const out = h("span.mono.small.lt-v", String(c.value));
+        let t = 0;
+        input.addEventListener("input", () => {
+          out.textContent = input.value;
+          clearTimeout(t);
+          t = setTimeout(() => run("light_test", { head, step: "raw", slot: c.n, value: +input.value }, { silentError: true }), 40);
+        });
+        const quick = (v) => h("button.chip", { onclick: () => { input.value = v; input.dispatchEvent(new Event("input")); } }, String(v));
+        return h("div.lt-ch",
+          h("span.lt-n", { title: `DMX address ${c.abs}` }, `${c.n}`),
+          h("span.lt-l", { title: `${c.label} (${c.role}) - DMX ${c.abs}` }, c.label),
+          input, out, h("span.lt-q2", quick(0), quick(128), quick(255)));
+      });
+      box.replaceChildren(
+        live ? null : h("p.out-bad", "The output is not live: the real light will not react. Press Go live first."),
+        h("p.small", "Each fader drives one DMX channel of this light directly (the number is its channel, hover for the address). "
+          + "Move them until the real light comes on - usually a dimmer to 255 and a shutter somewhere between 0 and 255. "
+          + "If the channel that lights it is not the one called Dimmer or Shutter, the light is in a different DMX mode from the one added."),
+        h("div.lt-chs", ...rows),
+        h("div.row-btns",
+          h("button.btn.primary", { onclick: async () => {
+            const r = await run("light_test", { head, step: "keep" }, { silentError: true });
+            if (r.ok) toast(r.summary, "ok");
+            resolve(true);
+          } }, "It's on - keep these"),
+          h("button.btn", { onclick: () => resolve(false) }, "Still dark")));
+    });
+  }
+
   async function lightStep() {
-    if (await ask(`#${head} ${hd.name || hd.model} should now be ON: full, white, centred. Is the real light on?`,
-      [["Yes, it's on", true, "primary"], ["No, it's dark", false]])) return true;
-    if (!st.gate) return false;
-    const cands = st.candidates || [];
+    const first = await ask(`#${head} ${hd.name || hd.model} should now be ON: full, white, centred. Is the real light on?`,
+      [["Yes, it's on", "yes", "primary"], ["No, it's dark", "no"], ["Set channels by hand", "hand"]]);
+    if (first === "yes") return true;
+    if (first === "hand") return faders();
+    const cands = st.gate ? st.candidates || [] : [];
+    let stopped = false;
     for (let i = 0; i < cands.length && !closed; i++) {
       await run("light_test", { head, step: "open", value: cands[i] }, { silentError: true });
       const a = await ask(`Trying shutter value ${cands[i]} (${i + 1} of ${cands.length}). Is the real light on now?`,
-        [["It's on!", "on", "primary"], ["Still dark", "next"], ["Stop", "stop"]]);
+        [["It's on!", "on", "primary"], ["Still dark", "next"], ["Set channels by hand", "stop"]]);
       if (a === "on") {
         await run("remember_open", { head, value: cands[i] }, { toast: true });
         return true;
       }
-      if (a === "stop") return false;
+      if (a === "stop") { stopped = true; break; }
     }
     if (st.gate) await run("light_test", { head, step: "open", value: st.open }, { silentError: true });
     // still dark: the file may not have named the channel that opens it
     // (a lamp / "control" channel, or a mode whose channels sit elsewhere)
     const hunt = st.hunt || [];
-    if (!hunt.length || closed) return false;
-    if (!await ask("None of the shutter values lit it. Try each of its other channels in turn? (Some lights need a control channel set before they light.)",
-      [["Try them", true, "primary"], ["Skip", false]])) return false;
-    for (let i = 0; i < hunt.length && !closed; i++) {
-      const c = hunt[i];
-      await run("light_test", { head, step: "channel", role: c.role, value: c.value }, { silentError: true });
-      const a = await ask(`Trying ${c.label} at ${c.value} (${i + 1} of ${hunt.length}). Is the real light on now?`,
-        [["It's on!", "on", "primary"], ["Still dark", "next"], ["Stop", "stop"]]);
-      if (a === "on") {
-        await run("remember_open", { head, role: c.role, value: c.value }, { toast: true });
-        return true;
+    if (!stopped && hunt.length && !closed && await ask("None of the shutter values lit it. Try each of its other channels in turn? (Some lights need a control channel set before they light.)",
+      [["Try them", true, "primary"], ["Set channels by hand", false]])) {
+      for (let i = 0; i < hunt.length && !closed; i++) {
+        const c = hunt[i];
+        await run("light_test", { head, step: "channel", role: c.role, value: c.value }, { silentError: true });
+        const a = await ask(`Trying ${c.label} at ${c.value} (${i + 1} of ${hunt.length}). Is the real light on now?`,
+          [["It's on!", "on", "primary"], ["Still dark", "next"], ["Set channels by hand", "stop"]]);
+        if (a === "on") {
+          await run("remember_open", { head, role: c.role, value: c.value }, { toast: true });
+          return true;
+        }
+        if (a === "stop") break;
       }
-      if (a === "stop") break;
+      await run("light_test", { head, step: "channel" }, { silentError: true });
     }
-    await run("light_test", { head, step: "channel" }, { silentError: true });
-    return false;
+    if (closed) return false;
+    return faders();
   }
 
   async function sweep(axis) {
@@ -980,7 +1019,7 @@ export async function openLightTest(hd) {
   }
 
   const close = modal({
-    title: `Test ${hd.model}`, body: box,
+    title: `Test ${hd.model}`, body: box, wide: true,
     foot: [h("span.muted.small.grow", `Mode ${st.mode} (${st.channels} channels) at ${st.address}. The light gets back what it was doing afterwards.`),
       h("button.btn", { onclick: () => close() }, "Close")],
     onClose: () => { closed = true; run("light_test", { head, step: "end" }, { silentError: true }); },

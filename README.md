@@ -335,6 +335,11 @@ tab's warning). Go live first, then:
 2. If it's dark, Jarvis tries the shutter's likely open values one at a time. Press
    **It's on!** when the light comes on. If none work, it tries each of the light's
    other channels the same way.
+   If it's still dark, or you'd rather skip ahead, **Set channels by hand** gives
+   every DMX channel of the light its own fader, sent straight to the light. Move
+   them until the real light comes on, then press **It's on - keep these**. That
+   works even when the fixture file is wrong. A channel the file never named is
+   then held at that value for the model.
 3. It then moves pan and tilt, and shows red, green and blue, asking each time
    whether the real light did the same. A wrong answer usually means the light's
    DMX mode doesn't match the one you added, and Jarvis tells you which mode to set.
