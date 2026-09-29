@@ -475,6 +475,7 @@ export class Stage {
 
   setCamera(s) {
     if (!s || !s.pos || !s.target) return;
+    this.povHead = null;
     this.camera.position.fromArray(s.pos);
     this.controls.target.fromArray(s.target);
     this.controls.update();
@@ -499,7 +500,51 @@ export class Stage {
     this._flyTo(new THREE.Vector3(...(at || [0, 4, house])), t, instant);
   }
 
+  /** Eye level on the dance floor (or the middle of the audience). */
+  viewCrowd() {
+    const v = (this.built && this.built.venue) || {};
+    const zone = (v.zones || []).find((z) => z.kind === "dancefloor")
+      || (v.zones || []).find((z) => z.kind === "standing" || z.kind === "seating");
+    let x = 0, z = this.stageFront + 6;
+    if (zone) {
+      x = zone.points.reduce((a, q) => a + q[0], 0) / zone.points.length;
+      z = zone.points.reduce((a, q) => a + q[1], 0) / zone.points.length;
+    }
+    this._flyTo(new THREE.Vector3(x, 1.65, z), new THREE.Vector3(x * 0.5, 2.6, Math.max(0.5, this.stageFront * 0.5)), false);
+  }
+
+  /** From the DJ mark (or the stage centre), looking out at the room. */
+  viewStage() {
+    const v = (this.built && this.built.venue) || {};
+    const mark = (v.objects || []).find((o) => o.kind === "mark");
+    const st = v.stage;
+    const x = mark ? mark.x : st ? st.x : 0;
+    const z = mark ? mark.z : st ? st.z + st.depth * 0.4 : 1;
+    const y = (mark ? mark.y || 0 : st ? st.height : 0) + 1.7;
+    this._flyTo(new THREE.Vector3(x, y, z), new THREE.Vector3(x, 1.4, this.room.z1 - 1), false);
+  }
+
+  /** Look down a light's beam, the way you would check its focus. */
+  lookThrough(head) {
+    const inst = this.fixtures.get(Number(head));
+    if (!inst) return false;
+    this.rigGroup.updateMatrixWorld(true);
+    const b = inst.beams[0];
+    const origin = new THREE.Vector3(), dir = new THREE.Vector3(0, -1, 0);
+    if (b) {
+      b.em.node.getWorldPosition(origin);
+      dir.copy(b.em.dir).transformDirection(b.em.node.matrixWorld).normalize();
+    } else {
+      origin.copy(inst.holder.position);
+    }
+    const eye = origin.clone().addScaledVector(dir, 0.12);
+    this._flyTo(eye, origin.clone().addScaledVector(dir, 6), false);
+    this.povHead = inst.head;                        // its own beam would fill the view
+    return true;
+  }
+
   _flyTo(pos, target, instant) {
+    this.povHead = null;
     if (instant) {
       this.camera.position.copy(pos);
       this.controls.target.copy(target);
@@ -794,6 +839,10 @@ export class Stage {
       b.glow.scale.setScalar(g);
       b.glow.material.color.setRGB(L.r, L.g, L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
 
+      if (inst.head === this.povHead) {            // looking down this beam
+        b.mesh.visible = false;
+        b.glow.visible = false;
+      }
       const goboId = goboV > 0.06 ? 1 + (Math.floor(goboV * 7.99) % 7) : 0;
       const rot = (L.beam.gobo_rot || 0) > 0.03 ? time * (L.beam.gobo_rot - 0.03) * 6 : 0;
       const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;

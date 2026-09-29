@@ -3,8 +3,8 @@ import { Stage } from "/js/stage/stage.js";
 import { get, modelBytes, token } from "./api.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
-import { select } from "./actions.js";
-import { $, $$ } from "./ui.js";
+import { run, select } from "./actions.js";
+import { $, $$, menu, promptBox, toast } from "./ui.js";
 
 let stage = null;
 let rigSig = "";
@@ -114,8 +114,12 @@ export function initStage() {
       keep(key, now ? "1" : "0");
     });
   };
-  toggle("#people-btn", "people", true);
   toggle("#zones-btn", "zones", false);
+  const dance = pref("dance", "1") === "1";
+  stage.setOptions({ people: pref("people", "1") === "1", dance });
+  $("#people-btn").classList.toggle("on", stage.options.people);
+  $("#people-btn").addEventListener("click", (e) => crowdMenu(e.currentTarget, keep));
+  $("#views-more").addEventListener("click", (e) => viewsMenu(e.currentTarget));
   $("#fullscreen-btn").addEventListener("click", toggleFull);
   on("lite", updateNowPlaying);
   on("snapshot", updateNowPlaying);
@@ -140,4 +144,57 @@ function updateNowPlaying() {
     span.innerHTML = `PB${p.n} <b>▶ ${cue ? (cue.name || "cue " + cue.n) : ""}</b>`;
     return span;
   }));
+}
+
+const DENSITY = [["Light", 0.2], ["Medium", 0.45], ["Packed", 0.8]];
+
+function crowdMenu(btn, keep) {
+  const v = (state.snap && state.snap.venue) || {};
+  const c = v.crowd || { style: "varied", density: 0.45, show: true };
+  const shown = stage.options.people;
+  const tick = (on) => (on ? "✓ " : "   ");
+  menu(btn, [
+    { label: tick(shown) + "Show the crowd", run: () => {
+      stage.setOptions({ people: !shown });
+      btn.classList.toggle("on", !shown);
+      keep("people", !shown ? "1" : "0");
+    } },
+    { label: tick(stage.options.dance) + "Dancing", run: () => {
+      stage.setOptions({ dance: !stage.options.dance });
+      keep("dance", stage.options.dance ? "1" : "0");
+    } },
+    "-",
+    { label: tick(c.style === "simple") + "Simple figures", hint: "Plain grey, lightest to draw", run: () => run("venue_crowd", { style: "simple" }) },
+    { label: tick(c.style !== "simple") + "Varied crowd", hint: "Clothes, heights, arms up", run: () => run("venue_crowd", { style: "varied" }) },
+    "-",
+    ...DENSITY.map(([label, d]) => ({
+      label: tick(Math.abs((c.density ?? 0.45) - d) < 0.1) + label, run: () => run("venue_crowd", { density: d }),
+    })),
+  ]);
+}
+
+function viewsMenu(btn) {
+  const v = (state.snap && state.snap.venue) || {};
+  const sel = (state.snap && state.snap.selected) || [];
+  const cams = v.cameras || [];
+  menu(btn, [
+    { label: "From the crowd", hint: "Eye level on the dance floor", run: () => stage.viewCrowd() },
+    { label: "From the DJ / stage", hint: "Looking out at the room", run: () => stage.viewStage() },
+    { label: "Through the selected light", hint: sel.length ? `Down #${sel[0]}'s beam` : "Select a light first",
+      disabled: !sel.length, run: () => stage.lookThrough(sel[0]) },
+    { label: "Whole room (3D)", run: () => stage.view("overview") },
+    "-",
+    ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
+    { label: "Save this view…", run: async () => {
+      const name = await promptBox("Save view", "Name this view", "");
+      if (!name) return;
+      const cam = stage.cameraState();
+      const r = await run("venue_camera", { name: name.trim(), pos: cam.pos.map((n) => +n.toFixed(2)), target: cam.target.map((n) => +n.toFixed(2)) });
+      if (r.ok) toast(`Saved view "${name.trim()}"`, "ok");
+    } },
+    cams.length ? { label: "Delete a saved view…", run: async () => {
+      const name = await promptBox("Delete view", `Which one? (${cams.map((c) => c.name).join(", ")})`, "");
+      if (name) run("venue_camera", { name: name.trim(), remove: true }, { toast: true });
+    } } : null,
+  ]);
 }
