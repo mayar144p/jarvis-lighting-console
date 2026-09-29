@@ -1081,3 +1081,8 @@ body.gig .pb-mode button { min-height: 44px; }
 .prog-cells .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 .fx-across { grid-column: 1 / -1; justify-self: start; }
 .fx-across.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+/* cue list: drag to reorder */
+.chan-table tr[draggable="true"] { cursor: grab; }
+.chan-table tr.dragging { opacity: .45; }
+.chan-table tr.drop td { box-shadow: inset 0 2px 0 var(--accent); }
+.cue-grip { color: var(--muted); white-space: nowrap; }

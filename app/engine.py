@@ -6516,8 +6516,17 @@ class Engine:
         return self.playbacks[num - 1]
 
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
-                      cue=None, follow=None, **_):
+                      cue=None, follow=None, mode="replace", **_):
+        """Record the programmer as a cue.  Over an existing cue, `mode`:
+        "replace" (the cue becomes exactly the programmer), "merge" (the
+        programmer's values are added into the cue, the rest of it kept) or
+        "insert" (a new cue at that number, the later ones move down).
+        Recording over a cue keeps its name and times unless new ones are
+        given - "Update" used to rename it "Cue 3" and zero its fade."""
         pb = self._playback(playback if playback is not None else 1)
+        mode = str(mode or "replace").lower()
+        if mode not in ("replace", "merge", "insert"):
+            raise ValueError("mode is replace, merge or insert")
         if not self.programmer:
             raise ValueError("programmer is empty - set something first")
         values = {h: dict(row) for h, row in self.programmer.items() if row}
@@ -6526,10 +6535,28 @@ class Engine:
         cue_n = int(cue) if cue else len(pb["stack"]) + 1
         if cue_n < 1:
             raise ValueError("cue numbers start at 1")
-        entry = {"n": cue_n, "name": str(name).strip() or f"Cue {cue_n}",
-                 "fade_s": float(fade if fade is not None else 0.0),
-                 "hold_s": float(hold if hold is not None else 0.0),
+        old = pb["stack"][cue_n - 1] if cue_n <= len(pb["stack"]) and mode != "insert" else None
+        if old is not None and mode == "merge":
+            merged = {int(k): dict(v) for k, v in (old.get("values") or {}).items()}
+            for h, row in values.items():
+                merged.setdefault(int(h), {}).update(row)
+            values = merged
+        entry = {"n": cue_n,
+                 "name": str(name).strip() or (old or {}).get("name") or f"Cue {cue_n}",
+                 "fade_s": float(fade if fade is not None else (old or {}).get("fade_s", 0.0)),
+                 "hold_s": float(hold if hold is not None else (old or {}).get("hold_s", 0.0)),
                  "values": values}
+        if old is not None and follow is None and old.get("follow_s") is not None:
+            entry["follow_s"] = old["follow_s"]
+        if mode == "insert" and cue_n <= len(pb["stack"]):
+            if follow is not None:
+                entry["follow_s"] = max(0.0, float(follow))
+            pb["stack"].insert(cue_n - 1, entry)
+            for i, c in enumerate(pb["stack"], start=1):
+                c["n"] = i
+            self.programmer.clear()
+            return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
+                    "summary": f"inserted cue {cue_n} on PB{pb['n']}"}
         # follow_s is stored ONLY when the caller gave one, so a new cue
         # INHERITS the stack's follow.
         #
@@ -6559,8 +6586,9 @@ class Engine:
         else:
             pb["stack"].append(entry)
         self.programmer.clear()
+        verb = "merged into" if old is not None and mode == "merge" else "updated" if old is not None else "recorded"
         return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
-                "summary": f"recorded cue {cue_n} on PB{pb['n']}"}
+                "summary": f"{verb} cue {cue_n} on PB{pb['n']}"}
 
     # --- cue-list editing -------------------------------------------------
     # You could record a cue and you could step through one.  You could not

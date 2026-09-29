@@ -7519,6 +7519,7 @@ def _standalone_suites():
     ("My venues: saved per venue, any room shape, poles", test_my_venues),
     ("DMX map: every address clash found and fixable", test_dmx_clashes),
     ("multi-head lights: each head on its own", test_multi_head),
+    ("cue list: merge / replace / insert, update keeps the name", test_cue_list_modes),
     )
 
 
@@ -9001,6 +9002,57 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_cue_list_modes() -> None:
+    """Recording over a cue: Replace makes it the programmer, Merge adds the
+    programmer's changes and keeps the rest, Insert puts a new cue before
+    it.  Updating a cue used to rename it "Cue 2" and zero its fade."""
+    print("cue list (merge / replace / insert; update keeps name and times)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1, name="Red", fade=3)
+            e.act("select_heads", heads=[1])
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1, name="Blue one", fade=2)
+            stack = e.playbacks[0]["stack"]
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#00ff00")
+            r = e.act("record_cue", playback=1, cue=2, mode="merge")
+            c2 = e.playbacks[0]["stack"][1]
+            check("merge adds the programmer's changes and keeps the rest of the cue",
+                  r.get("ok") and c2["values"][1]["blue"] == 255 and c2["values"][2]["green"] == 255, str(c2["values"]))
+            check("...and keeps its name and fade", c2["name"] == "Blue one" and c2["fade_s"] == 2.0, str(c2))
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#ffffff")
+            e.act("record_cue", playback=1, cue=2, mode="replace")
+            c2 = e.playbacks[0]["stack"][1]
+            check("replace makes it exactly the programmer (name and fade still kept)",
+                  list(c2["values"]) == [2] and c2["name"] == "Blue one" and c2["fade_s"] == 2.0, str(c2))
+            e.act("select_heads", heads=[1])
+            e.act("set_colour", hex="#ff00ff")
+            e.act("record_cue", playback=1, cue=2, mode="insert", name="Pink")
+            names = [c["name"] for c in e.playbacks[0]["stack"]]
+            check("insert puts a new cue before it and renumbers", names == ["Red", "Pink", "Blue one"]
+                  and [c["n"] for c in e.playbacks[0]["stack"]] == [1, 2, 3], str(names))
+            check("an unknown mode is refused", not e.act("record_cue", playback=1, cue=1, mode="squash").get("ok"), "")
+            del stack
+        finally:
+            e.shutdown()
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the cue list drags to reorder, Update offers merge / replace, the record dialog says where",
+          '"dragstart"' in dj and 'mode: "merge"' in dj and "Insert before" in dj and "New cue" in dj, "")
 
 
 def test_multi_head() -> None:

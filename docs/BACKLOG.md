@@ -70,6 +70,16 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 16. Cue list (DONE, first part)
+
+- Recording over a cue: Replace / Merge (adds the programmer's changes,
+  keeps the rest) / Insert before; the cue keeps its name and times unless
+  new ones are typed ("Update" used to rename it "Cue 2" and zero its fade).
+- Record dialog: "Where" (new cue at the end, or over cue N) + the mode.
+- Cue list: drag a row by its ⋮⋮ to reorder, "Update ▾" (merge / replace
+  / record before), live refresh (not while typing).
+- Still open: effects stored in cues, cue part timing per attribute.
+
 ## 15. Multi-head lights (DONE, first part)
 
 A Wave 360's four tilts and RGBW cells: a value for one head is kept as
