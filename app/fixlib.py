@@ -850,11 +850,25 @@ def apply_aux(item: dict) -> dict:
             row["role"] = _role(label)
             if i < len(mode.get("channels") or []):
                 mode["channels"][i] = label
-            caps = row.get("caps") or []
-            found = [(int(lo), int(hi), {"name": str(t)[:56], "hex": None, "slot": n})
-                     for n, (lo, hi, t) in enumerate(caps, start=1) if str(t).strip()]
+            found = [(lo, hi, {"name": str(t)[:56], "hex": None, "slot": n})
+                     for n, (lo, hi, t) in enumerate(_clean_caps(row.get("caps")), start=1)
+                     if str(t).strip()]
             row["slots"] = _slot_rows(found) if len(found) >= 2 else None
     return item
+
+
+def _clean_caps(caps) -> list[tuple[int, int, str]]:
+    """Capability rows as (lo, hi, text) ints, skipping any a file left
+    half-empty ([None, 10, "..."]) - one such row crashed the whole
+    upgrade pass and left every fixture after it without its controls."""
+    out = []
+    for c in caps or []:
+        try:
+            lo, hi, text = c[0], c[1], c[2] if len(c) > 2 else ""
+            out.append((int(lo), int(hi), str(text or "")))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return out
 
 
 def apply_fx(item: dict) -> dict:
