@@ -789,3 +789,7 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .out-row .btn { margin-left: auto; }
 .out-tag { font-size: 11px; color: var(--accent); background: var(--accent-bg); padding: 1px 6px; border-radius: 999px; }
 .mono { font-family: var(--mono); }
+
+/* wheel slots named by the fixture file */
+.chip.slot { display: inline-flex; align-items: center; gap: 6px; }
+.slot-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); display: inline-block; }

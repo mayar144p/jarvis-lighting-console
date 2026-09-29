@@ -7483,6 +7483,7 @@ def _standalone_suites():
     ("auto show", test_autoshow),
     ("dmx target", test_dmx_target),
     ("shutter rests open", test_shutter_rest),
+    ("colour wheel slots", test_wheel_slots),
     )
 
 
@@ -8223,6 +8224,76 @@ def test_shutter_rest() -> None:
                    if isinstance(a, dict) and a.get("role") == "shutter"]
             check("the Beam tab's Open button writes the real open value",
                   bool(ent) and ent[0].get("open") == 4, str(ent[:1]))
+        finally:
+            e.shutdown()
+
+
+def test_wheel_slots() -> None:
+    """Wheel buttons land on the fixture's real slots, from its file."""
+    print("colour wheel slots (GDTF wheels, nearest colour)")
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import fixtures
+
+    xml = (
+        '<GDTF DataVersion="1.1"><FixtureType Name="WheelSpot" Manufacturer="TestCo">'
+        '<Wheels><Wheel Name="Color1">'
+        '<Slot Name="Open" Color="0.3127,0.3290,100"/>'
+        '<Slot Name="Red" Color="0.64,0.33,21"/>'
+        '<Slot Name="Green" Color="0.30,0.60,71"/>'
+        '<Slot Name="Blue" Color="0.15,0.06,7"/>'
+        '</Wheel></Wheels>'
+        '<DMXModes><DMXMode Name="3ch"><DMXChannels>'
+        '<DMXChannel Offset="1"><LogicalChannel Attribute="Pan">'
+        '<ChannelFunction Name="Pan" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+        '<DMXChannel Offset="2"><LogicalChannel Attribute="Color1">'
+        '<ChannelFunction Name="Color1" Attribute="Color1" Wheel="Color1" DMXFrom="0/1">'
+        '<ChannelSet Name="Open" DMXFrom="0/1" WheelSlotIndex="1"/>'
+        '<ChannelSet Name="Red" DMXFrom="6/1" WheelSlotIndex="2"/>'
+        '<ChannelSet Name="Green" DMXFrom="12/1" WheelSlotIndex="3"/>'
+        '<ChannelSet Name="Blue" DMXFrom="18/1" WheelSlotIndex="4"/>'
+        '</ChannelFunction>'
+        '<ChannelFunction Name="Spin" Attribute="Color1WheelSpin" DMXFrom="128/1"/>'
+        '</LogicalChannel></DMXChannel>'
+        '<DMXChannel Offset="3"><LogicalChannel Attribute="Dimmer">'
+        '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+        '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>')
+    check("CIE xyY slot colours become RGB",
+          fixtures._xyY_hex("0.64,0.33,21") == "#ff0000"
+          and fixtures._xyY_hex("0.3127,0.3290,100") in ("#ffffff", "#fffffe", "#feffff"),
+          str((fixtures._xyY_hex("0.64,0.33,21"), fixtures._xyY_hex("0.3127,0.3290,100"))))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.seed_generics(db)
+        path = tmp / "w.gdtf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("description.xml", xml)
+        slots = fixtures.parse_gdtf(path)[0]["modes"][0]["detail"][1]["slots"]
+        check("every slot is read with its name and DMX range",
+              [(x["name"], x["from"], x["to"]) for x in slots]
+              == [("Open", 0, 5), ("Red", 6, 11), ("Green", 12, 17), ("Blue", 18, 127)],
+              str(slots))
+        check("each button goes to the middle of its slot",
+              [x["value"] for x in slots[:3]] == [2, 8, 14], str([x["value"] for x in slots]))
+        fixtures.import_file(db, path)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="WheelSpot", mode="3ch", qty=1, universe=1, address=1)
+            check("the colour channel is a wheel", "wheel" in e.patch[0]["map"], str(e.patch[0]["map"]))
+            e.act("select_all")
+            ent = [a for p in e.attribute_state()["pages"] for a in p["attrs"] if a["role"] == "wheel"]
+            check("the programmer is given the real slots",
+                  bool(ent) and [x["name"] for x in ent[0].get("slots") or []] == ["Open", "Red", "Green", "Blue"],
+                  str(ent[:1]))
+            r = e.act("set_colour", hex="#00ff20")
+            check("the picker lands on the nearest real colour (green)",
+                  r.get("ok") and e.build_frames()[1][1] == 14, str((r, e.build_frames()[1][1])))
+            e.act("set_colour", hex="#ff1000")
+            check("and red for red", e.build_frames()[1][1] == 8, str(e.build_frames()[1][1]))
+            e.act("set_colour", hex="#ffffff")
+            check("white is the open slot", e.build_frames()[1][1] == 2, str(e.build_frames()[1][1]))
         finally:
             e.shutdown()
 
