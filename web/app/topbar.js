@@ -117,7 +117,7 @@ function renderStatus() {
   const out = $("#st-out");
   out.className = st === "live" ? (o.errors ? "bad" : "ok") : "warn";
   out.textContent = st === "live"
-    ? `● ${o.frames_sent || 0} frames · ${o.hz || 0} Hz` + (o.errors ? ` · ${o.errors} errors` : "")
+    ? `● ${o.frames_sent || 0} frames · ${o.hz || 0} Hz` + (o.errors ? ` · ${o.errors} errors` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "")
     : st === "blind" ? `○ blind · ${o.simulated_frames || 0} simulated` : "○ stopped";
   $("#st-net").textContent = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;
   $("#st-last").textContent = state.lastAction || "";
