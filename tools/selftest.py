@@ -7510,6 +7510,7 @@ def _standalone_suites():
     ("beam bar lasers", test_beam_bar),
     ("every channel gets a control", test_aux_channels),
     ("CO2 preset mode never fires on its own", test_co2_preset),
+    ("movement stays where it is aimed", test_motion),
     )
 
 
@@ -8686,6 +8687,208 @@ def test_remember_open() -> None:
     check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
           [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
           str([d["role"] for d in cobra[:4]]))
+
+
+def test_motion() -> None:
+    """Circle & co. used to swing pan/tilt across the WHOLE travel (540 x 190
+    degrees) once a second - movers thrashed and hit walls.  Now: a shape of
+    a given size in degrees around where the head is aimed, fitted into its
+    limits, direction / arc / lock / speed as knobs, capped at the motor's
+    speed, and a Speed master that slows every effect together."""
+    print("movement effects (around the aim, fitted, slow, speed master)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures, motion
+
+    c, a = motion.fit(0.95, 0.2, 0.0, 1.0)
+    check("a swing near the end of travel shifts to fit, it isn't clipped flat",
+          abs(c - 0.8) < 1e-9 and abs(a - 0.2) < 1e-9, str((c, a)))
+    c, a = motion.fit(0.5, 0.3, 0.4, 0.6)
+    check("...and shrinks to the room a limit leaves", abs(a - 0.1) < 1e-9 and abs(c - 0.5) < 1e-9, str((c, a)))
+    ccw = motion.shape("circle", 0.1, {"direction": -1})
+    cw = motion.shape("circle", 0.1, {"direction": 1})
+    check("counter-clockwise runs the other way round", abs(ccw[1] + cw[1]) < 1e-9 and ccw[1] < 0, str((ccw, cw)))
+    arc = [motion.shape("circle", k / 20, {"arc": 180})[0] for k in range(21)]
+    check("a 180-degree arc stays on one half and comes back", min(arc) >= -1e-9 and arc[0] == arc[-1], str(arc[:5]))
+    fast = motion.max_rate([("circle", 1.0, 1.0)], [(3.0, 1.8)])
+    check("a full-travel circle is capped far below one turn a second", fast < 0.1, str(fast))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=2, universe=1, address=1)
+            e.act("select_all")
+            e.act("set_attribute", attribute="pan", value=128)
+            e.act("set_attribute", attribute="tilt", value=128)
+            e.act("set_limits", role="tilt", low=100 * 257, high=140 * 257)
+            e.act("run_fx", name="circle", params={"size": 40, "arc": 180, "direction": -1})
+            t0 = _t.monotonic()
+            pans, tilts = [], []
+            for k in range(0, 17):
+                v = e._fx_values(t0 + k * 0.5)[1]
+                pans.append(v["pan"] / 65535 * 540 - 270)
+                tilts.append(v["tilt"] / 65535)
+            check("the circle is around where the light is aimed (pan within ~45 deg of it)",
+                  max(abs(x) for x in pans) < 46, str([round(x) for x in pans[:6]]))
+            check("...and never leaves the light's tilt limit",
+                  min(tilts) >= 100 / 255 - 1e-3 and max(tilts) <= 140 / 255 + 1e-3,
+                  str((min(tilts), max(tilts))))
+            check("the default speed is slow (one arc in 8 s)",
+                  abs(pans[0] - pans[16]) < 1.0 and max(pans) - min(pans) > 20, str([round(x) for x in pans]))
+            e.fx = []
+            e.act("run_fx", name="circle", params={"size": 20, "lock": 1})
+            v = e._fx_values(_t.monotonic() + 1.0)[1]
+            check("lock tilt: only pan moves, tilt keeps its aim", "pan" in v and "tilt" not in v, str(v))
+            e.fx = []
+            e.act("run_fx", name="pan_sweep", params={"size": 30, "speed": 0.25})
+            t1 = _t.monotonic()
+            e._fx_values(t1)
+            e.act("speed_master", value=0.5)
+            e._fx_values(t1 + 2.0)
+            half = e.fx[0]["_turns"]
+            check("the Speed master slows every effect (2 s at half speed = 1 s of turning)",
+                  abs(half - 0.25) < 0.02, str(half))
+            check("...and is not an undo step", "speed_master" in eng.UNDO_EXCLUDED, "")
+            check("the speed master reaches the live feed", e.lite().get("speed_master") == 0.5
+                  if hasattr(e, "lite") else True, "")
+
+            # ---- the Move tab: spots from the venue, formations, nudge, range
+            e.fx = []
+            e.act("venue_template", key="club")
+            spots = {x["key"]: x for x in e._move_spots()}
+            check("one-tap spots come from the venue's dance floor and zones",
+                  {"floor", "front", "back", "left", "right", "dj"} <= set(spots)
+                  and spots["left"]["x"] < spots["floor"]["x"] < spots["right"]["x"], str(list(spots)))
+            check("...and a mark named like a zone isn't listed twice",
+                  sum(1 for x in e._move_spots() if x["label"].lower() == "dj") == 1, "")
+            e.act("select_all")
+            r = e.act("aim_spot", spot="floor")
+            check("tapping a spot aims every selected mover there", r.get("ok") and len(r.get("heads") or []) == 2, str(r))
+            r = e.act("aim_spot", formation="fan")
+            p1, p2 = e.programmer[1]["pan"], e.programmer[2]["pan"]
+            check("Fan out spreads them across the floor (different aims)", r.get("ok") and p1 != p2, str((p1, p2)))
+            before = e.programmer[1]["tilt"]
+            e.act("nudge", axis="tilt", step=0.02)
+            check("nudge moves tilt by a share of its travel", abs(e.programmer[1]["tilt"] - before - round(0.02 * 65535)) <= 1,
+                  str((before, e.programmer[1]["tilt"])))
+            e.act("select_heads", heads=[1])
+            e.act("move_range", axis="tilt", edge="clear")
+            e.act("move_range", axis="tilt", edge="top")
+            top = e.programmer[1]["tilt"]
+            check("one edge alone is only marked (its direction depends on how the light hangs)",
+                  "tilt" not in (e.patch[0].get("limits") or {}), str(e.patch[0].get("limits")))
+            e.act("nudge", axis="tilt", step=-0.1)
+            r = e.act("move_range", axis="tilt", edge="bottom")
+            bottom = e.programmer[1]["tilt"]
+            check("a light's own range: top + bottom set it, between the two",
+                  r.get("ok") and e.patch[0]["limits"]["tilt"] == (min(top, bottom), max(top, bottom)),
+                  str(e.patch[0]["limits"]))
+            e.act("nudge", axis="tilt", step=0.4)
+            wire = e.build_frames()[1]
+            coarse = wire[2] * 256 + wire[3]
+            check("...and the light can't be pushed past it",
+                  min(top, bottom) - 300 <= coarse <= max(top, bottom) + 300, str((coarse, top, bottom)))
+            e.act("move_range", axis="tilt", edge="clear")
+            check("...and Clear removes it", "tilt" not in (e.patch[0].get("limits") or {}), "")
+            check("the snapshot carries the spots for the Move tab", bool(e.snapshot().get("move_spots")), "")
+
+            # ---- stay on the dance floor -----------------------------------
+            fl = e._floor_limits()
+            check("every mover gets its own dance-floor pan/tilt range",
+                  set(fl) == {1, 2} and all(0 <= lo < hi <= 1 for r in fl.values() for lo, hi in r.values()),
+                  str(fl))
+            e.fx = []
+            e.act("select_all")
+            e.act("move_range", axis="tilt", edge="clear")   # (a light's own range wins over the floor)
+            e.act("aim_spot", spot="dj")               # aimed OFF the floor
+            e.act("run_fx", name="circle", params={"size": 60})
+            t2 = _t.monotonic()
+            inside = True
+            for k in range(12):
+                v = e._fx_values(t2 + k * 0.7)
+                for n in (1, 2):
+                    pf, tf = v[n]["pan"] / 65535, v[n]["tilt"] / 65535
+                    (plo, phi), (tlo, thi) = fl[n]["pan"], fl[n]["tilt"]
+                    inside &= plo - 1e-3 <= pf <= phi + 1e-3 and tlo - 1e-3 <= tf <= thi + 1e-3
+            check("movement stays on the dance floor, even aimed at the DJ", inside, "")
+            e.fx = []
+            e.act("floor_safe", everything=True)
+            e.act("select_heads", heads=[1])
+            e.act("nudge", axis="tilt", step=0.45)
+            e.act("nudge", axis="pan", step=0.45)
+            wire = e.build_frames()[1]
+            pf, tf = (wire[0] * 256 + wire[1]) / 65535, (wire[2] * 256 + wire[3]) / 65535
+            (plo, phi), (tlo, thi) = fl[1]["pan"], fl[1]["tilt"]
+            check("'cues & aims too' holds everything on the floor",
+                  plo - 0.01 <= pf <= phi + 0.01 and tlo - 0.01 <= tf <= thi + 0.01, str((pf, tf, fl[1])))
+            e.act("floor_safe", everything=False)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            e.act("run_fx", name="circle", params={"size": 20})
+            r = e.act("clear_attrs", group="position")
+            row = e.programmer.get(1) or {}
+            check("the programmer bar's x clears one kind only (position gone, level kept, movement stopped)",
+                  r.get("ok") and "pan" not in row and "tilt" not in row and "dimmer" in row
+                  and not any(f.get("lib") == "circle" for f in e.fx), str((r, row)))
+            check("...and an unknown group is refused", not e.act("clear_attrs", group="smell").get("ok"), "")
+            check("...and it's off by default (cues aimed elsewhere don't change on update)",
+                  eng.Engine.__init__ and not e.floor_lock, "")
+        finally:
+            e.shutdown()
+
+    # ---- the laser safe zone: beam height and size stay where they were marked
+    from app.engine_support import channel_role
+    item = {"manufacturer": "Acme", "model": "Safe Laser", "type": "", "modes": [{"name": "4ch", "channel_count": 4, "channels": [], "detail": []}]}
+    for i, n in enumerate(["Laser output", "Laser pattern", "Laser Y", "Laser size"]):
+        item["modes"][0]["channels"].append(n)
+        item["modes"][0]["detail"].append({"n": i + 1, "label": n, "name": n, "role": channel_role(n)})
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "l.db"
+        fixtures.store_parsed(db, [item], "test")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Safe Laser", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            m = e.patch[0]["map"]
+            check("a laser patched with its height and size", "laser_y" in m and "laser_size" in m, str(m))
+            e.act("set_attribute", attribute="laser_y", value=120)
+            r1 = e.act("move_range", axis="laser_y", edge="low")
+            check("one beam-height edge is only marked", "laser_y" not in (e.patch[0].get("limits") or {}), str(r1))
+            e.act("set_attribute", attribute="laser_y", value=200)
+            e.act("move_range", axis="laser_y", edge="high")
+            e.act("set_attribute", attribute="laser_size", value=90)
+            e.act("move_range", axis="laser_size", edge="max")
+            lim = e.patch[0]["limits"]
+            check("laser safe zone: beam height between the marks, size up to the largest",
+                  tuple(lim["laser_y"]) == (120, 200) and tuple(lim["laser_size"]) == (0, 90), str(lim))
+            e.act("set_attribute", attribute="laser_y", value=10)
+            e.act("set_attribute", attribute="laser_size", value=255)
+            wire = e.build_frames()[1]
+            yi, si = m.index("laser_y"), m.index("laser_size")
+            check("...a cue asking for beams lower or bigger is held inside it",
+                  wire[yi] == 120 and wire[si] == 90, str(list(wire[:4])))
+            e.programmer.clear()
+            wire = e.build_frames()[1]
+            check("...and an unset height doesn't drop the beams to 0 (into the crowd)", wire[yi] == 120, str(list(wire[:4])))
+            e.act("move_range", axis="laser_y", edge="clear")
+            check("...Clear removes it", "laser_y" not in e.patch[0]["limits"], "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("tidy: an 'In the programmer' bar, FX tab without movements, keyed Stop / Record",
+          '"clear_attrs"' in pj and "MOVE_FX.has(fx.name)" in pj and "runningKey" in pj and "looksKey" in pj
+          and 'id="prog-in"' in html and 'data-tab="tools"' in html and ">Setup<" in html, "")
+    check("the Move tab has a laser safe zone", "Laser safe zone" in js and '"laser_size", "max"' in js, "")
+    check("the Move tab: spots, nudge, movement tiles, speed master, range",
+          all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
+          and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")
 
 
 def test_co2_preset() -> None:

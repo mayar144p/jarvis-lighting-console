@@ -884,3 +884,34 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 /* a small text-style button inside a line of text */
 .linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
 .linkish:hover { color: var(--text); }
+
+/* ---- the Move tab ---- */
+.mv-sec { margin-bottom: 14px; }
+.mv-sec h3 { margin: 4px 0 8px; }
+.mv-spots { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.mv-spot { padding: 10px 6px; font-weight: 600; }
+.mv-nudge { display: flex; gap: 14px; align-items: center; }
+.mv-pad { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 40px); gap: 4px; }
+.mv-arrow { font-size: 18px; padding: 0; }
+.mv-fine { font-size: 10.5px; padding: 0; }
+.mv-fine.on { border-color: var(--accent); color: var(--accent); }
+.mv-nudge-side { display: flex; flex-direction: column; gap: 8px; }
+.mv-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+.mv-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border-radius: 8px;
+  border: 1px solid var(--border-2); background: var(--bg-2); color: var(--text-2); cursor: pointer; font-size: 11.5px; }
+.mv-tile b { font-size: 20px; line-height: 1; color: var(--text); }
+.mv-tile:hover { border-color: var(--accent); }
+.mv-tile.on { border-color: var(--accent); background: rgba(56, 189, 248, .14); color: var(--text); }
+.mv-row { display: flex; align-items: center; gap: 8px; min-height: 32px; flex-wrap: wrap; }
+.mv-row .k { width: 84px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.mv-row input[type=range] { flex: 1; min-width: 90px; }
+.mv-running { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.mv-run { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; }
+.mv-more { margin-top: 8px; }
+@media (max-width: 520px) { .mv-tiles { grid-template-columns: repeat(3, 1fr); } }
+.mv-warn { color: var(--warn, #f5a524); margin: 4px 0; }
+.prog-in { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 10px 6px; }
+.prog-in-chip { display: inline-flex; align-items: center; gap: 2px; }
+.prog-in-chip .x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 2px 0 6px; font-size: 15px; line-height: 1; opacity: .7; }
+.prog-in-chip .x:hover { opacity: 1; color: var(--bad, #f55); }
+.fx-move-note { grid-column: 1 / -1; margin: 4px 0 0; }

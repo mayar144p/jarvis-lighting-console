@@ -24,7 +24,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import config, fixtures, fixture_kind
+from app import config, fixtures, fixture_kind, motion as motion_mod
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
@@ -105,6 +105,8 @@ UNDO_EXCLUDED = frozenset({
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "remember_open", "light_test", "light_tested",
+    # the Speed master is performed live, like the grand master
+    "speed_master", "floor_safe",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -554,7 +556,7 @@ def _new_playback(n: int) -> dict:
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
     "add_heads", "auto_patch", "blackout", "clear_heads",
-    "clear_programmer",
+    "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset",
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
@@ -582,6 +584,7 @@ ACTIONS = (
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
+    "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
 )
 
 
@@ -696,6 +699,15 @@ class Engine:
         self.selected: list[int] = []
         self.fx: list[dict] = []            # running effects (see run_fx)
         self._fx_seq = 0
+        # the Speed master: every running effect's clock runs at this rate
+        # (0.1 = a tenth of the speed, 2 = double) - movement, colour chases,
+        # everything, smoothly and without a jump when it changes
+        self.speed_master = 1.0
+        # The dance floor as a pan/tilt range per mover (see _floor_limits):
+        # movement always fits inside it (floor_safe), and with floor_lock
+        # EVERYTHING does - cues, aims, the programmer.
+        self.floor_safe = True
+        self.floor_lock = False
         self.autosave_path = Path(autosave_path) if autosave_path else None
         self._autosave_at = 0.0
         self._autosave_dirty = False
@@ -4496,6 +4508,54 @@ class Engine:
                 "active": sorted(self.quick_active),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
 
+    def _aim_solve(self, h: dict, tx: float, ty: float, tz: float,
+                   near: tuple[float, float] | None = None):
+        """(pan frac, tilt frac, pan deg, tilt deg) that point head `h` at a
+        point in the room, from where it hangs and which way up it is, or
+        None if it can't reach it.  `near` (degrees) picks, of the several
+        pan/tilt pairs that reach a point, the one closest to it - so a set
+        of points (the corners of the dance floor) is reached without the
+        head flipping between them."""
+        import math
+        if "pan" not in h["map"] or "tilt" not in h["map"]:
+            return None
+        hung = (h.get("stance") == "hang") if h.get("stance") else \
+            h.get("kind") == "truss"
+        ox, oy, oz = h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]
+        dx, dy, dz = tx - ox, ty - oy, tz - oz
+        n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+        dx, dy, dz = dx / n, dy / n, dz / n
+        lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
+        t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
+        p0 = math.degrees(math.atan2(lx, lz))
+        ranges = self.head_ranges(h)
+        pr = ranges.get("pan") or {}
+        tr = ranges.get("tilt") or {}
+        pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
+                      and pr.get("min") is not None else (-270.0, 270.0))
+        tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
+                      and tr.get("min") is not None else (-135.0, 135.0))
+        cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
+        cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
+        fits = [(p, t) for p, t in cands
+                if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
+        if not fits:
+            return None
+        if near is not None:
+            p, t = min(fits, key=lambda c: abs(c[0] - near[0]) + abs(c[1] - near[1]))
+        else:
+            p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
+        fp = (p - pmin) / ((pmax - pmin) or 1)
+        ft = (t - tmin) / ((tmax - tmin) or 1)
+        flags = h.get("orient") or {}
+        if flags.get("invert_pan"):
+            fp = 1 - fp
+        if flags.get("invert_tilt"):
+            ft = 1 - ft
+        if flags.get("swap"):
+            fp, ft = ft, fp
+        return fp, ft, p, t
+
     def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
                   **_):
         """Point every selected moving head at one spot in the room.
@@ -4504,7 +4564,6 @@ class Engine:
         its own pan/tilt travel, so twelve movers on three trusses all land
         on the same mark - the thing you would otherwise do head by head.
         """
-        import math
         if mark:
             found = next((o for o in (self.venue.get("objects") or [])
                           if o.get("kind") == "mark"
@@ -4520,42 +4579,11 @@ class Engine:
                 else self._require_selection())
         aimed, skipped = [], []
         for h in rows:
-            if "pan" not in h["map"] or "tilt" not in h["map"]:
+            solved = self._aim_solve(h, tx, ty, tz)
+            if solved is None:
                 skipped.append(h["head_no"])
                 continue
-            hung = (h.get("stance") == "hang") if h.get("stance") else \
-                h.get("kind") == "truss"
-            ox, oy, oz = h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]
-            dx, dy, dz = tx - ox, ty - oy, tz - oz
-            n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
-            dx, dy, dz = dx / n, dy / n, dz / n
-            lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
-            t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
-            p0 = math.degrees(math.atan2(lx, lz))
-            ranges = self.head_ranges(h)
-            pr = ranges.get("pan") or {}
-            tr = ranges.get("tilt") or {}
-            pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
-                          and pr.get("min") is not None else (-270.0, 270.0))
-            tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
-                          and tr.get("min") is not None else (-135.0, 135.0))
-            cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
-            cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
-            fits = [(p, t) for p, t in cands
-                    if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
-            if not fits:
-                skipped.append(h["head_no"])
-                continue
-            p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
-            fp = (p - pmin) / ((pmax - pmin) or 1)
-            ft = (t - tmin) / ((tmax - tmin) or 1)
-            flags = h.get("orient") or {}
-            if flags.get("invert_pan"):
-                fp = 1 - fp
-            if flags.get("invert_tilt"):
-                ft = 1 - ft
-            if flags.get("swap"):
-                fp, ft = ft, fp
+            fp, ft = solved[0], solved[1]
             top = 65535 if "pan_fine" in h["map"] else 255
             self._a_set_position(pan=round(max(0, min(1, fp)) * top),
                                  tilt=round(max(0, min(1, ft)) * top),
@@ -4568,6 +4596,267 @@ class Engine:
                 "summary": f"aimed {len(aimed)} light(s) at "
                            f"x{tx:.1f} z{tz:.1f}"
                            + (f" ({len(skipped)} cannot move)" if skipped else "")}
+
+    # ------------------------------------------------------------------
+    # the Move tab: one-tap spots, formations, nudge, a light's own range
+    # ------------------------------------------------------------------
+    def _move_spots(self) -> list[dict]:
+        """Named aim points from the venue: the dance floor (centre and its
+        front / back / left / right, inset so beams land ON the floor), the
+        DJ, the stage, the bar - whatever zones the room has - and marks."""
+        v = self.venue if isinstance(self.venue, dict) else {}
+        zones = v.get("zones") or []
+        spots: list[dict] = []
+
+        def add(key, label, x, z, y=0.0):
+            spots.append({"key": key, "label": label, "x": round(float(x), 2),
+                          "y": round(float(y), 2), "z": round(float(z), 2)})
+        floor = next((z for z in zones if z.get("kind") == "dancefloor" and z.get("points")), None) \
+            or next((z for z in zones if z.get("kind") == "standing" and z.get("points")), None)
+        stage = next((z for z in zones if z.get("kind") == "stage" and z.get("points")), None)
+        if floor:
+            xs = [p[0] for p in floor["points"]]
+            zs = [p[1] for p in floor["points"]]
+            cx, cz = venue_mod.zone_centroid(floor)
+            inset_x, inset_z = (max(xs) - min(xs)) * 0.3, (max(zs) - min(zs)) * 0.3
+            # "front" is the side nearest the stage (else the lower z)
+            front_z, back_z = min(zs) + inset_z, max(zs) - inset_z
+            if stage and venue_mod.zone_centroid(stage)[1] > cz:
+                front_z, back_z = back_z, front_z
+            add("floor", "Dance floor", cx, cz)
+            add("front", "Front", cx, front_z)
+            add("back", "Back", cx, back_z)
+            add("left", "Left", min(xs) + inset_x, cz)
+            add("right", "Right", max(xs) - inset_x, cz)
+        labels = {"dj": "DJ", "stage": "Stage", "bar": "Bar", "vip": "VIP", "foh": "FOH"}
+        for z in zones:
+            k = z.get("kind")
+            if k in labels and z.get("points") and not any(s["key"] == k for s in spots):
+                cx, cz = venue_mod.zone_centroid(z)
+                add(k, labels[k], cx, cz, 1.2 if k in ("dj", "stage") else 0.0)
+        for o in v.get("objects") or []:
+            if o.get("kind") == "dj_booth" and not any(s["key"] == "dj" for s in spots):
+                add("dj", "DJ", o.get("x", 0), o.get("z", 0), 1.2)
+            if o.get("kind") == "mark" and o.get("name") and not any(
+                    s["label"].lower() == str(o["name"]).lower() for s in spots):
+                add("mark:" + str(o["name"]), str(o["name"]), o.get("x", 0), o.get("z", 0), 1.2)
+        return spots
+
+    def _a_aim_spot(self, spot=None, formation=None, heads=None, **_):
+        """Point the selection at a named spot (see _move_spots), or lay a
+        formation across the dance floor: fan (spread across it), cross
+        (each side to the other side), split (left heads left, right heads
+        right)."""
+        spots = {s["key"]: s for s in self._move_spots()}
+        rows = ([self._head(int(h)) for h in heads] if heads else self._require_selection())
+        movers = sorted((h for h in rows if "pan" in h["map"] and "tilt" in h["map"]),
+                        key=lambda h: float(h.get("x") or 0))
+        if not movers:
+            raise ValueError("none of the selected lights can pan and tilt")
+        if formation:
+            f = str(formation).lower()
+            if not all(k in spots for k in ("floor", "left", "right")):
+                raise ValueError("draw a dance floor zone in the venue first (Venue tab)")
+            left, right, mid = spots["left"], spots["right"], spots["floor"]
+            n = len(movers)
+            for i, h in enumerate(movers):
+                t = i / (n - 1) if n > 1 else 0.5
+                if f == "fan":
+                    x = left["x"] + (right["x"] - left["x"]) * t
+                elif f == "cross":
+                    x = right["x"] if t < 0.5 else left["x"]
+                elif f == "split":
+                    x = left["x"] if t < 0.5 else right["x"]
+                else:
+                    raise ValueError("formation is fan, cross or split")
+                self._a_aim_at(x=x, y=0.0, z=mid["z"], heads=[h["head_no"]])
+            return {"heads": [h["head_no"] for h in movers],
+                    "summary": f"{f} across the dance floor ({n} lights)"}
+        s = spots.get(str(spot or ""))
+        if s is None:
+            raise ValueError(f"no spot {spot!r} - the venue has: " + ", ".join(spots) if spots
+                             else "the venue has no dance floor or zones yet (Venue tab)")
+        r = self._a_aim_at(x=s["x"], y=s["y"], z=s["z"], heads=[h["head_no"] for h in movers])
+        r["summary"] = f"{len(r['heads'])} light(s) on {s['label']}" + (
+            f" ({len(r['skipped'])} can't reach it)" if r.get("skipped") else "")
+        return r
+
+    def _floor_limits(self) -> dict:
+        """{head_no: {"pan": (lo, hi), "tilt": (lo, hi)}} as fractions: the
+        pan/tilt each mover needs to reach every corner and edge of the dance
+        floor from where it hangs (solved without flipping between them), a
+        little margin added.  Cached per patch / venue."""
+        key = (self.patch_rev, json.dumps((self.venue or {}).get("zones") or [], sort_keys=True))
+        cache = getattr(self, "_floor_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        out: dict = {}
+        zones = (self.venue or {}).get("zones") or []
+        floor = next((z for z in zones if z.get("kind") == "dancefloor" and z.get("points")), None)
+        if floor:
+            cx, cz = venue_mod.zone_centroid(floor)
+            pts = [(cx + (x - cx) * 0.95, cz + (z - cz) * 0.95) for x, z in floor["points"]]
+            ring = pts + [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(pts, pts[1:] + pts[:1])]
+            for h in self.patch:
+                if "pan" not in h["map"] or "tilt" not in h["map"] or h.get("x") is None:
+                    continue
+                mid = self._aim_solve(h, cx, 0.0, cz)
+                if mid is None:
+                    continue
+                fps, fts = [mid[0]], [mid[1]]
+                for x, z in ring:
+                    s = self._aim_solve(h, x, 0.0, z, near=(mid[2], mid[3]))
+                    if s is not None:
+                        fps.append(s[0])
+                        fts.append(s[1])
+                m = 0.01
+                out[h["head_no"]] = {"pan": (max(0.0, min(fps) - m), min(1.0, max(fps) + m)),
+                                     "tilt": (max(0.0, min(fts) - m), min(1.0, max(fts) + m))}
+        self._floor_cache = (key, out)
+        return out
+
+    def _eff_limits(self, h: dict, floor: bool) -> dict:
+        """A head's pan/tilt range as fractions: its own range, narrowed to
+        the dance floor when `floor` - {"pan": (lo, hi), "tilt": (lo, hi)}."""
+        out = {}
+        fl = self._floor_limits().get(h["head_no"]) if floor else None
+        for role in ("pan", "tilt"):
+            if role not in h["map"]:
+                continue
+            dom = attr_domain(h, role)
+            lo, hi = (h.get("limits") or {}).get(role) or (None, None)
+            lo = lo / dom if lo is not None else 0.0
+            hi = hi / dom if hi is not None else 1.0
+            if fl and role in fl:
+                nlo, nhi = max(lo, fl[role][0]), min(hi, fl[role][1])
+                if nlo <= nhi:               # both apply; if they don't overlap, the light's own wins
+                    lo, hi = nlo, nhi
+            out[role] = (lo, hi)
+        return out
+
+    def _frame_patch(self) -> list[dict]:
+        """The patch as the frame builder sees it: with floor_lock on, each
+        mover carries its floor range as its limits, so cues and aims can't
+        leave the dance floor either."""
+        if not self.floor_lock:
+            return self.patch
+        fl = self._floor_limits()
+        key = (self.patch_rev, id(fl))
+        cache = getattr(self, "_frame_patch_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        out = []
+        for h in self.patch:
+            if h["head_no"] not in fl:
+                out.append(h)
+                continue
+            lim = dict(h.get("limits") or {})
+            for role, (lo, hi) in self._eff_limits(h, True).items():
+                dom = attr_domain(h, role)
+                lim[role] = (int(lo * dom), int(round(hi * dom)))
+            out.append(dict(h, limits=lim))
+        self._frame_patch_cache = (key, out)
+        return out
+
+    def _a_floor_safe(self, movement=None, everything=None, **_):
+        """Movement stays on the dance floor (movement=true, the default);
+        everything=true also keeps cues, aims and the programmer on it."""
+        if movement is not None:
+            self.floor_safe = _truthy(movement)
+        if everything is not None:
+            self.floor_lock = _truthy(everything)
+        n = len(self._floor_limits())
+        return {"floor_safe": self.floor_safe, "floor_lock": self.floor_lock, "movers": n,
+                "summary": ("no dance floor zone yet - draw one in the Venue tab" if not n else
+                            f"movement {'stays on' if self.floor_safe else 'may leave'} the dance floor"
+                            + ("; cues and aims too" if self.floor_lock else "") + f" ({n} movers)")}
+
+    def _move_now(self, h: dict, role: str) -> int:
+        """The head's current value for pan/tilt in its own domain."""
+        v = (self.programmer.get(h["head_no"]) or {}).get(role)
+        if v is None:
+            for _lvl, vals in self._active_playbacks(time.monotonic()):
+                if role in (vals.get(h["head_no"]) or {}):
+                    v = vals[h["head_no"]][role]
+                    break
+        dom = attr_domain(h, role)
+        if v is None:
+            return dom // 2
+        return int(_logical16(v)) if dom > 255 else int(v)
+
+    def _a_nudge(self, axis="pan", step=0.01, **_):
+        """Move the selection's pan or tilt by a fraction of its travel
+        (+/-): the arrows on the Move tab, coarse 0.02 or fine 0.002."""
+        role = "tilt" if str(axis).lower().startswith("t") else "pan"
+        frac = max(-0.5, min(0.5, float(step)))
+        done = []
+        for h in self._require_selection():
+            if role not in h["map"]:
+                continue
+            dom = attr_domain(h, role)
+            v = max(0, min(dom, self._move_now(h, role) + round(frac * dom)))
+            if dom > 255 and 0 < v < 256:
+                v = 256
+            self._set_programmer(h["head_no"], role, v)
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError(f"none of the selected lights has {role}")
+        return {"heads": done, "summary": f"{role} {'+' if frac > 0 else ''}{round(frac * 100, 1)}%"}
+
+    def _a_move_range(self, axis="tilt", edge="top", **_):
+        """A light's own range: Set top / Set bottom (tilt) or Set left /
+        Set right (pan) at where it points now; `clear` removes it.  Every
+        cue, effect, spot and button then stays inside it, per light."""
+        a = str(axis or "").lower()
+        # a laser's safe zone: its beam height (Y) between two marked edges,
+        # and its pattern no bigger than a marked size - so beams stay above
+        # the audience's eyes whatever a cue or button asks for
+        role = ("laser_size" if "size" in a else "laser_y" if a.startswith(("laser", "beam", "height", "y"))
+                else "pan" if a.startswith("p") else "tilt")
+        edge = str(edge or "").lower()
+        rows = [h for h in self._require_selection() if role in h["map"]]
+        if not rows:
+            raise ValueError(f"none of the selected lights has {role.replace('_', ' ')}")
+        # One edge alone is ambiguous - a higher tilt value is "up" on one
+        # head and "down" on another, depending on how it hangs - so each
+        # edge is marked, and the range applies once BOTH are: between them.
+        # (A size is not: 0 is the smallest pattern, so "largest" is enough.)
+        first = {"tilt": ("top", "bottom"), "pan": ("left", "right"),
+                 "laser_y": ("low", "high"), "laser_size": ("max", "max")}[role]
+        out, waiting = [], []
+        for h in rows:
+            cur = dict(h.get("limits") or {})
+            marks = dict((h.get("range_marks") or {}).get(role) or {})
+            if edge == "clear":
+                cur.pop(role, None)
+                marks = {}
+            elif role == "laser_size":
+                cur[role] = (0, self._move_now(h, role))
+                marks = {}
+            else:
+                side = first[0] if edge in (first[0], "low", "min", "top", "left") else first[1]
+                marks[side] = self._move_now(h, role)
+                if len(marks) == 2:
+                    lo, hi = sorted(marks.values())
+                    cur[role] = (lo, hi)
+                    marks = {}
+                else:
+                    waiting.append(h["head_no"])
+            h["limits"] = cur
+            rm = dict(h.get("range_marks") or {})
+            if marks:
+                rm[role] = marks
+            else:
+                rm.pop(role, None)
+            h["range_marks"] = rm
+            out.append({"head": h["head_no"], "range": cur.get(role), "marked": marks})
+        self.patch_rev += 1
+        other = first[1] if edge in (first[0], "low", "min", "top", "left") else first[0]
+        name = {"laser_y": "beam height", "laser_size": "laser size"}.get(role, role)
+        return {"ranges": out, "summary": (
+            f"{name} range cleared" if edge == "clear" else
+            f"{name} {edge} marked - now point it at the {other} and set that" if waiting else
+            f"{name} range set on {len(out)} light(s)")}
 
     # ------------------------------------------------------------------
     # the timeline (app/timeline.py): the engine owns the clock
@@ -4988,6 +5277,44 @@ class Engine:
                 "summary": "cleared " + ", ".join(
                     f"{t['head']} ({len(t['roles'])})" for t in touched)}
 
+    # the "In the programmer" bar's groups (anything else is "other")
+    ATTR_GROUPS = {
+        "intensity": HTP_ROLES | {"shutter", "strobe"},
+        "colour": COLOUR_ROLES | {"wheel", "macro"},
+        "position": frozenset({"pan", "tilt", "speed"}),
+        "beam": BEAM_ROLES - {"shutter", "strobe"},
+    }
+
+    @classmethod
+    def attr_group(cls, role: str) -> str:
+        base = role[:-5] if role.endswith("_fine") else role
+        return next((g for g, rs in cls.ATTR_GROUPS.items() if base in rs), "other")
+
+    def _a_clear_attrs(self, group="colour", heads=None, **_):
+        """Drop ONE kind of value from the programmer - just the colour, just
+        the position... - keeping the rest (the bar's x per group).  Clearing
+        position also stops the movement effects."""
+        g = str(group or "").lower()
+        if g not in (*self.ATTR_GROUPS, "other"):
+            raise ValueError(f"not an attribute group: {group}")
+        wanted = {int(x) for x in heads} if heads else set(self.programmer)
+        n = 0
+        for no in list(self.programmer):
+            if no not in wanted:
+                continue
+            row = self.programmer[no]
+            for role in [r for r in row if self.attr_group(r) == g]:
+                row.pop(role)
+                n += 1
+            if not row:
+                self.programmer.pop(no)
+        fx_n = 0
+        if g == "position":
+            keep = [f for f in self.fx if f.get("lib") not in motion_mod.KINDS]
+            fx_n = len(self.fx) - len(keep)
+            self.fx = keep
+        return {"cleared": n, "fx": fx_n, "summary": f"{g} cleared ({n} values)"}
+
     def _a_clear_programmer(self, **_):
         self._prog_fade = None
         n = sum(len(v) for v in self.programmer.values())
@@ -5235,6 +5562,86 @@ class Engine:
             raise ValueError(f"no effect {tid} running")
         return {"stopped": 1, "fx": tid, "summary": f"stopped effect {tid}"}
 
+    # --- movement effects ------------------------------------------------
+    def _move_values(self, row: dict, step: float, base, out: dict) -> None:
+        """One movement effect (app/motion.py) for this frame: a shape of a
+        given size in degrees around where each head is aimed, fitted into
+        its limits, never faster than the slowest head's motor."""
+        by_no = {h["head_no"]: h for h in self.patch}
+        heads = [by_no[n] for n in row["heads"] if n in by_no]
+        if not heads:
+            return
+        p = row["params"]
+        kind = row["lib"]
+        cap = row.get("_cap")
+        if not cap or cap[0] != (self.patch_rev, tuple(sorted(p.items()))):
+            spans = [self._move_span(h) for h in heads]
+            amps = [(kind, *motion_mod.amplitude(kind, p, s)) for s in spans]
+            travel = [self._move_travel(h) for h in heads]
+            cap = row["_cap"] = ((self.patch_rev, tuple(sorted(p.items()))),
+                                 motion_mod.max_rate(amps, travel), spans)
+        rate = min(float(p.get("speed", 0.125)), cap[1])
+        row["_turns"] = row.get("_turns", 0.0) + step * rate
+        prog, pbs = base
+        for i, h in enumerate(heads):
+            n = h["head_no"]
+            centre, limits = [], []
+            for role in ("pan", "tilt"):
+                dom = attr_domain(h, role) if role in h["map"] else 255
+                v = (prog.get(n) or {}).get(role)
+                if v is None:
+                    for _lvl, vals in pbs:
+                        if role in (vals.get(n) or {}):
+                            v = vals[n][role]
+                            break
+                if v is None:
+                    frac = 0.5
+                else:
+                    frac = (_logical16(v) / 65535.0) if dom > 255 else (float(v) / 255.0)
+                centre.append(frac)
+            eff = self._eff_limits(h, self.floor_safe)
+            for role in ("pan", "tilt"):
+                limits.append(eff.get(role, (0.0, 1.0)))
+            vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
+                                       cap[2][i], i, len(heads))
+            dst = out.setdefault(n, {})
+            for role, frac in vals.items():
+                if role not in h["map"]:
+                    continue
+                if attr_domain(h, role) > 255:
+                    v16 = int(round(frac * 65535))
+                    dst[role] = 256 if 0 < v16 < 256 else v16    # never read as 8-bit
+                else:
+                    dst[role] = int(round(frac * 255))
+
+    def _move_span(self, h: dict) -> tuple[float, float]:
+        """Degrees of pan and tilt travel, from the fixture file."""
+        out = []
+        for role, default in zip(("pan", "tilt"), motion_mod.DEFAULT_SPAN_DEG):
+            r = self.head_ranges(h).get(role) or {}
+            lo, hi = r.get("min"), r.get("max")
+            span = abs(float(hi) - float(lo)) if lo is not None and hi is not None else 0.0
+            out.append(span if 20.0 <= span <= 720.0 else default)
+        return out[0], out[1]
+
+    def _move_travel(self, h: dict) -> tuple[float, float]:
+        """Seconds for a full pan / tilt: measured, else by type."""
+        m = self._motion_of(h)
+        dp, dt = motion_mod.TRAVEL_S.get(fixture_kind.describe(h).get("type"),
+                                         motion_mod.DEFAULT_TRAVEL_S)
+        return float(m.get("pan_s") or dp), float(m.get("tilt_s") or dt)
+
+    def _a_speed_master(self, value=None, pct=None, **_):
+        """The Speed master: every running effect's speed x value (0.1 .. 4);
+        pct=50 is half speed."""
+        if pct is not None:
+            value = float(pct) / 100.0
+        if value is None:
+            raise ValueError("value is required (1 = normal, 0.5 = half, 2 = double)")
+        self.speed_master = max(0.05, min(4.0, float(value)))
+        return {"speed_master": self.speed_master,
+                "summary": f"effects at {round(self.speed_master * 100)}% speed"}
+
     def _fx_values(self, now: float | None = None) -> dict[int, dict[str, int]]:
         """{head_no: {role: value}} for every running, unexpired effect.
 
@@ -5247,6 +5654,7 @@ class Engine:
         now = time.monotonic() if now is None else now
         out: dict[int, dict[str, int]] = {}
         keep: list[dict] = []
+        base = None                       # programmer + cues under the effects
         for row in self.fx:
             elapsed = now - row["t0"]
             dur = row.get("duration")
@@ -5255,6 +5663,18 @@ class Engine:
             keep.append(row)
             heads = row["heads"]
             count = len(heads)
+            # the effect's own clock, run at the Speed master's rate: changing
+            # the master changes the SPEED from here on, never jumps the shape
+            last = row.get("_last", row["t0"])
+            step = max(0.0, now - last) * float(self.speed_master)
+            row["_last"] = max(last, now)
+            row["_v"] = row.get("_v", 0.0) + step
+            if row.get("lib") in motion_mod.KINDS:
+                if base is None:
+                    base = (self._programmer_now(now), self._active_playbacks(now))
+                self._move_values(row, step, base, out)
+                continue
+            elapsed = row["_v"]
             if row.get("lib"):
                 # A NAMED effect writes SEVERAL roles per head, so the
                 # per-head dict is UPDATED rather than assigned.  The
@@ -6566,7 +6986,7 @@ class Engine:
         snapshots the state it needs and hands it over.
         """
         now = time.monotonic() if now is None else now
-        frames = merge.build_frames(self.patch, self._programmer_now(now),
+        frames = merge.build_frames(self._frame_patch(), self._programmer_now(now),
                                     self._active_playbacks(now),
                                     self._fx_values(now),
                                     self.master, self.blackout,
@@ -7800,7 +8220,7 @@ class Engine:
         fx_vals = self._fx_values(now)
         overrides = self._override_vals()
         out = []
-        for head in self.patch:
+        for head in self._frame_patch():       # the floor lock, as on the wire
             over = overrides.get(head["head_no"])
             values = self._resolve_head(head, prog, pb_vals,
                                         fx_vals.get(head["head_no"]), over)
@@ -8684,6 +9104,10 @@ class Engine:
                 "live": self.live,
                 "output": self._output_public(),
                 "master": self.master,
+                "speed_master": self.speed_master,
+                "move_spots": self._move_spots(),
+                "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
+                "floor_movers": len(self._floor_limits()),
                 "blackout": self.blackout,
                 "selected": list(self.selected),
                 "programmer": {
@@ -8740,6 +9164,7 @@ class Engine:
                 "dry_run": self.dry_run,
                 "live": self.live,
                 "master": self.master,
+                "speed_master": self.speed_master,
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out
