@@ -2525,6 +2525,16 @@ class Engine:
             for role, v in (("red", r), ("green", g), ("blue", b)):
                 if role in roles:
                     out[role] = v
+            # A picked colour is the WHOLE colour: an RGBWA(UV) PAR's white
+            # and amber LEDs left where Full / a white look put them turned
+            # every saturated pick pastel ("pink with whiteness").  The white
+            # LED joins only for a neutral pick (white / grey).
+            neutral = max(r, g, b) - min(r, g, b) < 12
+            if "white" in roles:
+                out["white"] = min(r, g, b) if neutral else 0
+            for extra in ("amber", "uv", "lime", "indigo"):
+                if extra in roles:
+                    out[extra] = 0
         elif roles & {"cyan", "magenta", "yellow"}:
             for role, v in (("cyan", 255 - r), ("magenta", 255 - g),
                             ("yellow", 255 - b)):

@@ -5894,6 +5894,13 @@ def test_colour_picker() -> None:
     # red/green/blue, so `set_colour` writes nothing to it and raises if
     # nothing else was written.  There are two of these in the rig, so this
     # is not hypothetical.
+    rgbwa = {"head_no": 99, "map": ["red", "green", "blue", "white", "amber", "uv", "dimmer"]}
+    check("a picked colour is the whole colour: pink has no white/amber/UV in it",
+          e._colour_values(rgbwa, "#ff0080") == {"red": 255, "green": 0, "blue": 128,
+                                                 "white": 0, "amber": 0, "uv": 0},
+          str(e._colour_values(rgbwa, "#ff0080")))
+    check("...and a white pick uses the white LED",
+          e._colour_values(rgbwa, "#ffffff")["white"] == 255, "")
     check("a colour WHEEL head gets nothing, which is why the picker warns",
           e._colour_values(wheel_head, "#ff8800") == {},
           str(e._colour_values(wheel_head, "#ff8800")))
@@ -5902,8 +5909,8 @@ def test_colour_picker() -> None:
     ev = src_eng[src_eng.index("def _colour_values"):]
     ev = ev[:ev.index("def _white_values")]
     check("and the engine itself still tests RGB, then CMY, then white",
-          [ev.index('"red"') < ev.index('"cyan"'),
-           ev.index('"cyan"') < ev.index('"white"')] == [True, True], "")
+          [ev.index('if roles & {"red"') < ev.index('elif roles & {"cyan"'),
+           ev.index('elif roles & {"cyan"') < ev.index('elif "white" in roles')] == [True, True], "")
     check("the engine's three-digit hex really does expand, which is why "
           "the client has to",
           eng._parse_hex("#f80") == (255, 136, 0), "")
