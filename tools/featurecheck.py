@@ -57,9 +57,10 @@ td = pathlib.Path(tempfile.mkdtemp())
 _scratch_db = td / "fixtures.db"
 if config.DB_PATH.exists():
     shutil.copy2(str(config.DB_PATH), str(_scratch_db))
-else:
-    from app import fixtures as _fx
-    _fx.seed_generics(str(_scratch_db))
+# The probes need a known head to act on, whatever the operator's library
+# holds - and this is a copy, so seeding it touches nothing real.
+from app import fixtures as _fx  # noqa: E402
+_fx.seed_generics(str(_scratch_db))
 e = eng.Engine(db_path=_scratch_db, dry_run=True, show_dir=td / "shows")
 
 def run(action, **params):
@@ -116,8 +117,11 @@ def web():
     exactly the "exists only as a button" case this file exists to catch.
     """
     if not _WEB:
-        for stem in ("console.html", "console.js", "console.css"):
-            _WEB[stem] = (ROOT / "web" / stem).read_text(encoding="utf-8")
+        files = [ROOT / "web" / "index.html", ROOT / "web" / "app" / "app.css"]
+        files += sorted((ROOT / "web" / "app").glob("*.js"))
+        files += sorted((ROOT / "web" / "js").rglob("*.js"))
+        for path in files:
+            _WEB[path.name] = path.read_text(encoding="utf-8")
     return "".join(_WEB.values())
 
 def client(feature, *needles):
@@ -125,7 +129,7 @@ def client(feature, *needles):
     missing = [n for n in needles if n not in blob]
     (yes if not missing else no)(
         "client", feature,
-        "in console.html/js/css" if not missing
+        "in web/index.html + web/app" if not missing
         else "missing: %s" % ", ".join(m[:40] for m in missing))
 
 
@@ -141,8 +145,7 @@ yes("setup", "auto-patch, no overlaps", "auto_patch / plan_addresses")
 yes("setup", "arrangement in 2D/3D", "web/viz.js, WebGL + 2D poster")
 yes("setup", "spreading and alignment tools", "distribute, align, mirror")
 yes("setup", "per-fixture MOVEMENT limits", "the fixture's own GDTF range")
-no("setup", "per-fixture DIMMER limits (min/max per attribute)",
-   "no dimmer-limit field on a head")
+yes("setup", "per-fixture DIMMER limits (min/max per attribute)", "set_limits (see MISC)")
 no("setup", "instant custom matrix/strip fixtures",
    "no virtual matrix fixture type")
 no("setup", "hardware manager (device discovery/management)",
@@ -195,7 +198,6 @@ no("live", "live mixer (group dimmer/hue/strobe/blackout/solo)",
 no("live", "live rotary encoders per scene (dimmer/speed/phase/size)",
    "not implemented")
 no("live", "touch window / custom control surfaces", "not implemented")
-no("live", "remote control app over the network", "not implemented")
 no("live", "write scenes to the device for stand-alone playback",
    "output only, never to a node")
 no("live", "Nicolaudie SUT hardware support", "no serial/hardware layer")
@@ -210,15 +212,18 @@ probed("misc", "invert / swap pan & tilt per fixture", "set_orient",
 probed("misc", "per-fixture dimmer floor and travel limits", "set_limits",
        role="dimmer", low=8)
 client("pick a colour with a pointer (HSV ring + SV square)",
-       'id="pick"', "function paintPicker()", "function pickFromPoint(",
-       "function pickNudge(")
+       'id="picker-canvas"', "export function createPicker(", "hsvToRgb")
+client("3D stage with fixture models by type and brand",
+       "export class Stage", "export function buildFixture(", "buildGdtf")
+client("remote control from a phone or tablet (responsive layout)",
+       "mobile-tabs", "@media (max-width: 820px)")
+client("command bar: console syntax or plain English",
+       "export function openCmdbar(", "run_command")
 no("misc", "detachable windows for a dual-monitor setup", "not implemented")
 yes("misc", "undo / redo that names the edit", "_undo_public labels")
 yes("misc", "command line", "run_command")
 yes("misc", "context help", "? overlay + `?` in the command line")
-no("misc", "audit of overlaps / wasted universes",
-   "went with the assistant page (app/agent.py audit_patches); the console "
-   "re-packs with auto_patch but does not report on a rig")
+yes("misc", "audit of overlaps / wasted universes", "app/doctor.py (Copilot → Diagnose)")
 
 e.shutdown()
 

@@ -31,7 +31,7 @@ import struct
 import threading
 import time
 
-from app.artnet import ARTDMX_OP, ARTPOLLREPLY_OP, decode_artdmx, \
+from app.artnet import ARTDMX_OP, decode_artdmx, \
     universe_from_port_address
 from app.sacn import ACN_IDENTIFIER, decode_sacn
 

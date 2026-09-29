@@ -53,10 +53,7 @@ t=2.5 without a rig.
 """
 from __future__ import annotations
 
-import math
-from typing import Callable
-
-from .fx import WAVES, fx_value, wave
+from .fx import wave
 
 # --- capability groups -----------------------------------------------------
 # Alternatives, not requirements: every entry in one of these tuples does
@@ -119,16 +116,6 @@ def _bright(have: set[str]) -> bool:
             or bool(have & {"red", "green", "blue", "white", "amber", "uv",
                             "cyan", "magenta", "yellow"}))
 
-
-def _writes(have: set[str], out: dict[str, int], base: dict) -> None:
-    """Merge an effect's output onto a base row, keeping a sane range.
-
-    A role is written at 0..100 for the programmer and 0..255 on the wire,
-    and the effect only knows the 0..100 world, so the scaling happens once,
-    here, rather than in every effect.
-    """
-    for role, pct in out.items():
-        base[role] = max(0, min(255, int(round(pct * 2.55))))
 
 
 # --- the effects -----------------------------------------------------------
@@ -516,7 +503,6 @@ def available(roles) -> list[str]:
 
 def describe(roles) -> list[dict]:
     """`available` with the labels and knobs, for a picker."""
-    have = normalise(roles)
     out = []
     for name in available(roles):
         spec = FX[name]

@@ -34,8 +34,6 @@ from pathlib import Path
 
 from app.engine import ACTIONS
 
-# winmm constants
-MIM_OPEN = 0x3C1
 MIM_CLOSE = 0x3C2
 MIM_DATA = 0x3C4
 CALLBACK_FUNCTION = 0x00030000

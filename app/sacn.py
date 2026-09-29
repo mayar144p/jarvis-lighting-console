@@ -139,6 +139,13 @@ def _name_bytes(source_name) -> bytes:
     return raw.ljust(64, b"\0")
 
 
+def multicast_group(universe: int, net: int = 0) -> str:
+    """E1.31 multicast group for a 1-based patch universe."""
+    wire = ((int(net) & 0x7F) << 8) + int(universe)
+    wire = max(UNIVERSE_MIN, min(UNIVERSE_MAX, wire))
+    return "239.255.%d.%d" % (wire >> 8, wire & 0xFF)
+
+
 def build_sacn(universe: int, data, sequence: int = 0, net: int = 0,
                priority: int = DEFAULT_PRIORITY,
                source_name: str = DEFAULT_SOURCE_NAME, cid=None,
@@ -277,10 +284,22 @@ class SacnSender:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 8)
             except OSError:
-                pass                      # unicast targets need no broadcast
+                pass                      # unicast targets need neither
             self._sock = sock
         return self._sock
+
+    def destination(self, universe: int) -> str:
+        """The address one universe is sent to.
+
+        `multicast` (the default for sACN) is the E1.31 group for that
+        universe, 239.255.<hi>.<lo>; anything else is a fixed unicast or
+        broadcast host.
+        """
+        if self.host in ("multicast", ""):
+            return multicast_group(universe, self.net)
+        return self.host
 
     # -- sending ---------------------------------------------------------
     def send(self, universe: int, data) -> bool:
@@ -292,11 +311,13 @@ class SacnSender:
                             self.net, self.priority, self.source_name,
                             self.cid)
         try:
-            self._socket().sendto(packet, (self.host, self.port))
+            self._socket().sendto(packet,
+                                  (self.destination(universe), self.port))
         except OSError as exc:
             self.errors += 1
             self.last_error = str(exc)
-            print(f"[sacn] universe {universe} -> {self.host}:{self.port} "
+            print(f"[sacn] universe {universe} -> "
+                  f"{self.destination(universe)}:{self.port} "
                   f"FAILED: {exc}")
             return False
         self.frames_sent += 1

@@ -16,6 +16,7 @@ the open slot, so a cue still reads as "white" rather than black.
 from __future__ import annotations
 
 from . import engine as engine_mod
+from . import fixture_kind
 
 # ---------------------------------------------------------------------------
 # interview
@@ -216,7 +217,7 @@ def _stage_from_patch(patch: list[dict], structure: str) -> dict | None:
             "name": h.get("name") or f"Head {h.get('head_no', '?')}",
             # The role the operator gave the head, so a wash is presented
             # as a wash rather than as a generic fixture.
-            "role": h.get("role") or "generic",
+            "role": fixture_kind.design_role(h),
             "kind": h.get("kind") or ("truss" if y >= 2.0 else "floor"),
             "x": round(x, 2), "y": round(y, 2),
             "z": round(float(h.get("z") or 0.0), 2),
@@ -317,26 +318,9 @@ def _concept(i: int, roles: list[str], palette: list[dict],
 # public API
 # ---------------------------------------------------------------------------
 
-_last: dict | None = None
-
-
-def clear() -> None:
-    global _last
-    _last = None
-
-
-def get_concept(index: int) -> dict | None:
-    if not _last:
-        return None
-    concepts = _last.get("concepts") or []
-    if 0 <= int(index) < len(concepts):
-        return concepts[int(index)]
-    return None
-
 
 def design(brief: dict | None = None, variant_index: int = 0) -> dict:
     """Turn interview answers into 2-3 alternative show concepts."""
-    global _last
     brief = brief if isinstance(brief, dict) else {}
     mood = str(brief.get("mood") or "").strip()
     event = str(brief.get("event") or "").strip()
@@ -433,5 +417,4 @@ def design(brief: dict | None = None, variant_index: int = 0) -> dict:
         # key stays, at -1, because the console's own panel reads it.
         "variant_index": -1,
     }
-    _last = {"concepts": concepts, "variant_index": -1}
     return result

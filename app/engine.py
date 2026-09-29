@@ -24,15 +24,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import config, fixtures
+from app import config, fixtures, fixture_kind
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
 from app import merge
-from app.artnet import ArtNetSender, DMX_SLOTS
+from app.artnet import ArtNetSender
 from app.sacn import SacnSender
 
-SLOTS = DMX_SLOTS
 # Safety rail for the automatic addressing loop: the flat patch grid runs
 # universes 1..MAX_UNIVERSES (Art-Net's 15-bit port-address space allows
 # 32768, we stop far earlier).  Explicit universe pinning (set_address)
@@ -103,12 +102,23 @@ UNDO_EXCLUDED = frozenset({
     # Ctrl+Z would appear to do nothing to the show while silently
     # unlocking the desk.
     "set_lock", "unlock", "set_dry_run",
+    # Read-only queries change nothing, so they must not cost an undo step
+    # (the undo button used to read "undo: fx available").
+    "fx_available", "get_limits", "cue_info", "export_patch",
+    # Choosing WHICH lights to work on is not an edit to the show; on a
+    # desk, undo walks back what you did to them, not what you clicked.
+    "select_all", "select_group", "select_heads", "select_similar",
+    "select_query", "clear_selection",
 })
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
 # operator is dragging or typing into.  Discrete edits must not coalesce -
 # recording two cues 400 ms apart is two cues, and collapsing them would
 # throw the first away.
+# Queries: they change nothing, so they do not make clients reload.
+_READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
+                        "export_patch"})
+
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "set_address", "set_place",
@@ -126,10 +136,15 @@ from .engine_support import (ATTRIBUTE_ALIAS as _ATTRIBUTE_ALIAS,  # noqa: F401
                              BEAM_ROLES, COLOUR_ROLES, HTP_ROLES,
                              ROLE_HEX, ROLES, SLOTS,
                              channel_role, curve_pct as _curve_pct,
-                             is_fine_role, join_16bit, logical16 as _logical16,
+                             is_fine_role, join_16bit,  # noqa: F401 - re-exported
+                             logical16 as _logical16,
                              pos as _pos,
                              pos_to_ua as _pos_to_ua, split_16bit)
 
+
+# Channels the light feed reports so the 3D beam can be shaped by them.
+_BEAM_LOOK_ROLES = ("zoom", "iris", "frost", "focus", "gobo", "gobo_rot",
+                    "prism", "strobe", "shutter")
 
 # Colour roles: on a fixture with no dimmer these ARE the brightness.
 _COLOUR_ROLES = COLOUR_ROLES
@@ -533,7 +548,7 @@ ACTIONS = (
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar",
-    "select_query", "set_address", "fan",
+    "select_query", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
     "set_limits", "clear_limits", "set_orient", "get_limits",
     "set_lock", "unlock", "set_dry_run",
@@ -576,11 +591,16 @@ class Engine:
         self.playbacks: list[dict] = [_new_playback(i + 1)
                                       for i in range(PLAYBACK_COUNT)]
         self.programmer: dict[int, dict[str, int]] = {}
+        # A timed programmer change (`set_intensity fade=`): the values the
+        # heads start FROM, eased into self.programmer over `dur` seconds.
+        self._prog_fade: dict | None = None
+        self._batching = False
         self.selected: list[int] = []
         self.fx: list[dict] = []            # running effects (see run_fx)
         self._fx_seq = 0
         self.autosave_path = Path(autosave_path) if autosave_path else None
         self._autosave_at = 0.0
+        self._autosave_dirty = False
         # Autosave writer thread: serialisation under the lock, the disk
         # write off it (see _autosave).
         self._writer: threading.Thread | None = None
@@ -605,6 +625,9 @@ class Engine:
         # Monotonic look-feed sequence (see look_feed); the visualiser
         # interpolates between ticks instead of stepping.
         self._look_seq = 0
+        # Bumped by every successful edit, so a live client knows when the
+        # structure (patch, cues, palettes, shows...) needs a full reload.
+        self.act_rev = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Auto-follow: one small ticker thread while any cue stack has
@@ -628,7 +651,7 @@ class Engine:
         self.presets: list[dict] = []
         # Physical channel ranges, per (manufacturer, model, mode).  Only
         # `remap_heads` can make one stale, and that clears it.
-        # design / operate / locked.  See LOCK_OPERATE above: a lock that
+        # design / operate / locked.  See LOCK_PATCH / LOCK_LIBRARY: a lock that
         # only says "no" is a lock the operator works around.
         self.lock_state = "design"
         self._lock_hash = ""
@@ -639,7 +662,6 @@ class Engine:
         self._source_cache: dict[tuple, str] = {}
         self._follow_stop = threading.Event()
         self._follow_thread: threading.Thread | None = None
-        self._follow_errors = 0
         self._handlers = {name: getattr(self, "_a_" + name)
                           for name in ACTIONS}
         # A fixture DB write (GDTF import, profile install) must drop our
@@ -682,10 +704,12 @@ class Engine:
         }
 
     def _restore_state(self, state: dict) -> None:
+        self._prog_fade = None
         self.patch = [dict(h) for h in state.get("patch", [])]
         self.programmer = {int(k): dict(v) for k, v
                            in (state.get("programmer") or {}).items()}
-        self.selected = set(int(h) for h in (state.get("selected") or []))
+        self.selected = list(dict.fromkeys(
+            int(h) for h in (state.get("selected") or [])))
         self.groups = [dict(g) for g in (state.get("groups") or [])]
         self.palettes = {k: [dict(p) for p in v]
                          for k, v in (state.get("palettes") or {}).items()}
@@ -704,7 +728,7 @@ class Engine:
                 else:
                     head.pop(key, None)
 
-    def _push_undo(self, label: str) -> None:
+    def _push_undo(self, label: str) -> bool:
         """Record the state as it was BEFORE an edit, for undo.
 
         When a run of the same continuous action is still going (a fader
@@ -724,7 +748,7 @@ class Engine:
                 and (now - top["at"]) <= UNDO_COALESCE_S):
             top["at"] = now
             self._undo_label = label
-            return
+            return False
         self._undo.append({"action": label, "state": self._undo_state(),
                            "at": now})
         if len(self._undo) > UNDO_LIMIT:
@@ -732,6 +756,7 @@ class Engine:
         self._redo.clear()
         self._undo_label = label
         self._redo_label = ""
+        return True
 
     def _undo_public(self) -> dict:
         """What undo and redo would do, for the UI.
@@ -784,11 +809,6 @@ class Engine:
                 "summary": "redid " + (entry.get("label")
                                         or entry["action"].replace("_", " "))}
 
-    def _clear_undo(self) -> None:
-        self._undo.clear()
-        self._redo.clear()
-        self._undo_label = ""
-        self._redo_label = ""
 
     def act(self, action: str, **params) -> dict:
         """Run one console action. Always returns a result dict.
@@ -822,20 +842,24 @@ class Engine:
             # entry is the state you return TO.  Only on success: a failed
             # action changed nothing, and an undo step for it would be a
             # no-op that still costs the operator one Ctrl+Z.
-            undoable = name not in UNDO_EXCLUDED
-            if undoable:
-                self._push_undo(name)
+            undoable = name not in UNDO_EXCLUDED and not self._batching
+            pushed = self._push_undo(name) if undoable else False
             try:
                 extra = handler(**params) or {}
-            except (ValueError, TypeError, KeyError, IndexError) as exc:
-                if undoable:
-                    self._undo.pop()          # nothing changed
-                    if self._undo:
-                        self._undo_label = self._undo[-1]["action"]
-                res = self._result(name, False, str(exc))
+            except Exception as exc:          # noqa: BLE001
+                if pushed and self._undo:
+                    # The handler may have half-applied before raising, so
+                    # put the state back rather than just dropping the step.
+                    self._restore_state(self._undo.pop()["state"])
+                    self._undo_label = (self._undo[-1]["action"]
+                                        if self._undo else "")
+                expected = isinstance(exc, (ValueError, TypeError, KeyError,
+                                            IndexError))
+                res = self._result(name, False, str(exc) if expected else
+                                   f"internal error: {exc!r}")
                 self._log(name, False, res["error"])
                 return res
-            if not extra.get("ok", True) and undoable and self._undo:
+            if not extra.get("ok", True) and pushed and self._undo:
                 # A handler that reports its own failure without raising.
                 self._undo.pop()
                 if self._undo:
@@ -844,10 +868,46 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
-            if name != "status":              # read-only polls never dirty it
+            if name not in _READ_ONLY and not params.get("dry"):
+                self.act_rev += 1
+            if name != "status" and not self._batching:
                 self._autosave()
             self._sync_follow_thread()        # start/stop the follow ticker
             return res
+
+    def act_batch(self, calls: list[dict], label: str = "ai") -> dict:
+        """Run several actions as ONE edit: one undo step, all or nothing.
+
+        Used by the AI panel, where one sentence is one intent however many
+        engine calls it compiles to.  If any call fails, the state is put
+        back as it was before the first one, so a half-applied look can
+        never be left on the rig.
+        """
+        results: list[dict] = []
+        with self.lock:
+            pushed = self._push_undo(label) if calls else False
+            self._batching = True
+            try:
+                for call in calls:
+                    res = self.act(call["action"], **(call.get("params") or {}))
+                    results.append({"step": call.get("step"),
+                                    "action": call["action"],
+                                    "params": call.get("params") or {},
+                                    "ok": bool(res.get("ok")),
+                                    "summary": str(res.get("summary")
+                                                   or res.get("error") or "")})
+                    if not res.get("ok"):
+                        if pushed and self._undo:
+                            self._restore_state(self._undo.pop()["state"])
+                            self._undo_label = (self._undo[-1]["action"]
+                                                if self._undo else "")
+                        return {"ok": False, "executed": len(results) - 1,
+                                "steps_run": results, "rolled_back": True,
+                                "error": str(res.get("error") or "step failed")}
+            finally:
+                self._batching = False
+            self._autosave()
+        return {"ok": True, "executed": len(results), "steps_run": results}
 
     def _act_self_locked(self, name: str, params: dict) -> dict:
         """Run a two-phase action that locks only its own commit.
@@ -876,7 +936,7 @@ class Engine:
                 return res
         try:
             extra = handler(**params) or {}
-        except (ValueError, TypeError, KeyError, IndexError) as exc:
+        except Exception as exc:              # noqa: BLE001
             with self.lock:
                 res = self._result(name, False, str(exc))
                 self._log(name, False, res["error"])
@@ -886,6 +946,7 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
+            self.act_rev += 1
             if name != "status":
                 self._autosave()
             self._sync_follow_thread()
@@ -1365,6 +1426,16 @@ class Engine:
         if address not in (None, ""):
             entry["address"] = address
         plan = self.plan_addresses([entry])       # raises before state changes
+        if x is None and y is None and z is None and plan:
+            # No position given: hang it where that kind of light goes,
+            # beside the others of its kind, instead of on (0, 0, 0).
+            kind_now = fixture_kind.describe(plan[0])["type"]
+            spots = fixture_kind.place(
+                kind_now, len(plan), self.patch,
+                float(self.venue.get("width_m") or 0) or 10.0,
+                float(self.venue.get("depth_m") or 0) or 8.0)
+            for row, spot in zip(plan, spots):
+                row.update(spot)
         added = self._apply_plan(plan)
         return {"heads": added, "patched": len(self.patch),
                 "summary": f"added {len(added)} x {plan[0]['model']}"}
@@ -1580,6 +1651,14 @@ class Engine:
         name = None
         if path:
             target = Path(path)
+            if not target.is_absolute():
+                target = config.DATA / target
+            # Only inside the app's own data folder: this action is reachable
+            # over HTTP, and "write a file wherever the caller says" is not
+            # something a lighting desk should offer.
+            root = config.DATA.resolve()
+            if root not in target.resolve().parents and target.resolve() != root:
+                raise ValueError("patch sheets can only be written inside data/")
             if target.is_dir() or str(path).endswith(("/", "\\")):
                 # A directory gets the SHOW's name, not "patch.csv":
                 # `data/audition.mrk` and `data/show.mrk` are two different
@@ -1783,6 +1862,17 @@ class Engine:
             by_pos[p0] = h["head_no"]
 
     # --- groups -------------------------------------------------------
+    def _a_rename_head(self, head=None, name="", **_):
+        """Give one head a name of its own (e.g. "DS left spot")."""
+        h = self._head(int(head))
+        label = str(name or "").strip()[:60]
+        if not label:
+            raise ValueError("a name is required")
+        h["name"] = label
+        self.patch_rev += 1
+        return {"head": h["head_no"], "name": label,
+                "summary": f"#{h['head_no']} is now {label!r}"}
+
     def _a_group_create(self, name="", heads=None, **_):
         members = [int(n) for n in (heads if heads is not None
                                     else self.selected)]
@@ -2202,6 +2292,13 @@ class Engine:
             raise ValueError("level is required (0-100)")
         pct = _clamp(level, 0, 100)
         heads = self._require_selection()
+        try:
+            fade_s = max(0.0, min(600.0, float(fade or 0)))
+        except (TypeError, ValueError):
+            raise ValueError("fade must be a number of seconds")
+        now = self._clock()
+        start = self._programmer_now(now) if fade_s else {}
+        from_vals: dict[int, dict[str, int]] = {}
         no_dimmer, driven = [], 0
         for h in heads:
             values = self._level_values(h, pct)
@@ -2209,12 +2306,19 @@ class Engine:
                 no_dimmer.append(h["head_no"])
                 continue
             for role, value in values.items():
+                if fade_s:
+                    from_vals.setdefault(h["head_no"], {})[role] = \
+                        (start.get(h["head_no"]) or {}).get(role, 0)
                 self._set_programmer(h["head_no"], role, value)
             driven += 1
+        if fade_s and from_vals:
+            self._prog_fade = {"t0": now, "dur": fade_s, "from": from_vals}
         note = ""
         if no_dimmer:
             note = (f"; {len(no_dimmer)} head(s) have neither a dimmer nor a "
                     f"shutter channel")
+        if fade_s:
+            note += f" over {fade_s:g}s"
         return {"level": pct, "heads": driven, "no_dimmer": no_dimmer,
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
@@ -2421,7 +2525,7 @@ class Engine:
                         "summary": (f"nothing to aim: none of the "
                                     f"{len(rows)} head(s) has a "
                                     + " or ".join(wanted)
-                                    + f" channel (they have: "
+                                    + " channel (they have: "
                                     + (", ".join(have)
                                        or "nothing controllable"))}
             by_role: dict[str, list] = {}
@@ -2688,9 +2792,6 @@ class Engine:
     # write would mean the channel sheet and the encoder disagreed with
     # the desk's own history after a reload.
 
-    DEFAULT_LIMITS = {"dimmer": (0, 100), "red": (0, 255), "green": (0, 255),
-                      "blue": (0, 255), "white": (0, 255), "pan": (0, 255),
-                      "tilt": (0, 255)}
 
     def _a_set_limits(self, heads=None, head=None, role=None, attribute=None,
                       low=None, high=None, **_):
@@ -2764,65 +2865,6 @@ class Engine:
         return {"heads": n,
                 "summary": f"cleared limits on {n} head(s)"}
 
-    @staticmethod
-    def _orient(head: dict, values: dict) -> dict:
-        """Apply pan/tilt INVERT and SWAP to one head's values.
-
-        Done here, at the frame boundary, because that is the only place
-        where "the operator asked for pan 90" and "the wire needs the
-        other end" can both be true.  Inverting at the programmer would
-        store 165 where the operator typed 90, and every readout in the
-        console would then disagree with the console's own history.
-        """
-        flags = head.get("orient") or {}
-        swap = _truthy(flags.get("swap"))
-        inv_pan = _truthy(flags.get("invert_pan"))
-        inv_tilt = _truthy(flags.get("invert_tilt"))
-        if not (swap or inv_pan or inv_tilt):
-            return values
-        out = dict(values)
-        if swap:
-            # Swap FIRST, then invert.  Doing it the other way round makes
-            # `swap` + `invert pan` mean something different from
-            # `invert pan` + `swap`, which is not a distinction any
-            # operator can hold in their head while rigging a truss.
-            p, t = out.get("pan"), out.get("tilt")
-            if p is not None:
-                out["tilt"] = p
-            if t is not None:
-                out["pan"] = t
-        top_pan = attr_domain(head, "pan")
-        top_tilt = attr_domain(head, "tilt")
-        if inv_pan and "pan" in out:
-            out["pan"] = top_pan - _clamp(out["pan"], 0, top_pan)
-        if inv_tilt and "tilt" in out:
-            out["tilt"] = top_tilt - _clamp(out["tilt"], 0, top_tilt)
-        return out
-
-    @staticmethod
-    def _limit(head: dict, values: dict) -> dict:
-        """Clamp one head's values to that head's own limits.
-
-        `low` is where the lamp really goes out, so a value under it is
-        sent as `low` - which for a fixture with a floor is not zero, and
-        that is the point.  The STORED value is untouched: the encoder
-        still reads what the operator typed, and the channel sheet shows
-        what actually went out.
-        """
-        limits = head.get("limits")
-        if not limits:
-            return values
-        out = dict(values)
-        for role, (lo, hi) in limits.items():
-            if role not in out:
-                continue
-            v = out[role]
-            if lo is not None and v < lo:
-                v = lo
-            if hi is not None and v > hi:
-                v = hi
-            out[role] = v
-        return out
 
     def _a_set_orient(self, heads=None, head=None, invert_pan=None,
                       invert_tilt=None, swap=None, clear=False, **_):
@@ -2901,19 +2943,11 @@ class Engine:
     # just fails looks like a broken console and gets worked around by
     # turning the lock off.
 
-    LOCK_OPERATE = frozenset({
-        # running the show
-        "cue_go", "cue_back", "cue_forward", "blackout", "master",
-        "playback_level", "playback_activate", "playback_release",
-        "set_intensity", "set_attribute", "set_attr_range", "set_colour",
-        "set_position", "run_fx", "stop_fx", "locate", "undo", "redo",
-        "follow_set", "fan", "run_command", "align", "distribute", "mirror",
-        "set_venue", "set_place",
-    })
     LOCK_PATCH = frozenset({
         "add_heads", "remove_heads", "patch_clear", "auto_patch",
         "set_address", "patch_from_csv", "import_scan",
-        "remap_heads",
+        "remap_heads", "patch_list", "rename_head",
+        "set_limits", "clear_limits", "set_orient",
     })
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
@@ -3084,6 +3118,7 @@ class Engine:
                     f"{t['head']} ({len(t['roles'])})" for t in touched)}
 
     def _a_clear_programmer(self, **_):
+        self._prog_fade = None
         n = sum(len(v) for v in self.programmer.values())
         self.programmer.clear()
         fx_n = len(self.fx)
@@ -3438,14 +3473,25 @@ class Engine:
                 "roles": sorted(values),
                 "summary": f"recorded {key} palette {label}{note}"}
 
+    @staticmethod
+    def _by_number_or_name(rows: list[dict], ref) -> dict | None:
+        """A palette or preset by its number, or by its name (any case)."""
+        if ref is None or ref == "":
+            return None
+        if _is_int(ref):
+            return next((p for p in rows if p["n"] == int(ref)), None)
+        want = str(ref).strip().lower()
+        return next((p for p in rows
+                     if str(p.get("name", "")).strip().lower() == want), None)
+
     def _a_include_palette(self, kind=None, n=None, palette=None, **_):
         key = str(kind or "").strip().lower()
         if key not in PALETTE_KINDS:
             raise ValueError(f"kind must be one of {sorted(PALETTE_KINDS)}")
-        num = int(n if n is not None else palette or 0)
-        entry = next((p for p in self.palettes[key] if p["n"] == num), None)
+        ref = n if n is not None else palette
+        entry = self._by_number_or_name(self.palettes[key], ref)
         if entry is None:
-            raise ValueError(f"no {key} palette {num}")
+            raise ValueError(f"no {key} palette {ref!r}")
         # The SELECTION decides who gets it - there is no longer a list of
         # heads baked into the entry, so the bug this replaces (a disjoint
         # selection falling through and writing to the recorded heads) is
@@ -3464,7 +3510,7 @@ class Engine:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s) - "
                 f"they have none of: {', '.join(sorted(entry.get('values') or {}))}")
-        return {"kind": key, "n": num, "heads": applied,
+        return {"kind": key, "n": entry["n"], "heads": applied,
                 "skipped": skipped,
                 "summary": (f"included {key} {entry['name']} on {applied} head(s)"
                             + (f"; {len(skipped)} had no matching channel"
@@ -3522,10 +3568,10 @@ class Engine:
                            f"({len(used)} head(s), {len(collapsed)} attribute(s))"}
 
     def _a_include_preset(self, n=None, preset=None, **_):
-        num = int(n if n is not None else preset or 0)
-        entry = next((p for p in self.presets if p["n"] == num), None)
+        ref = n if n is not None else preset
+        entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
-            raise ValueError(f"no preset {num}")
+            raise ValueError(f"no preset {ref!r}")
         heads = self._require_selection()
         applied, skipped = 0, []
         for h in heads:
@@ -3539,7 +3585,7 @@ class Engine:
         if not applied:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s)")
-        return {"n": num, "name": entry["name"], "heads": applied,
+        return {"n": entry["n"], "name": entry["name"], "heads": applied,
                 "skipped": skipped,
                 "summary": f"applied preset {entry['name']} to {applied} head(s)"
                            + (f"; {len(skipped)} had no matching channel"
@@ -4120,7 +4166,6 @@ class Engine:
             try:
                 self._tick_follow()
             except Exception as exc:            # never die silently
-                self._follow_errors += 1
                 self.output["last_error"] = f"follow: {exc}"
 
     def _ensure_follow_thread(self) -> None:
@@ -4477,9 +4522,6 @@ class Engine:
             out[head_no] = row
         return out
 
-    def _htp_value(values: dict, role: str):
-        """Compatibility shim - the merge lives in app/merge.py."""
-        return merge.htp_value(values, role)
 
     def _resolve_head(self, head: dict, prog: dict,
                       pb_vals: list[tuple[int, dict]],
@@ -4493,6 +4535,24 @@ class Engine:
         return merge.resolve_head(head, prog, pb_vals, fx_row,
                                   self.master, self.blackout)
 
+    def _programmer_now(self, now: float) -> dict:
+        """The programmer as it is at `now`, mid-fade if one is running."""
+        fade = self._prog_fade
+        if not fade:
+            return self.programmer
+        t = (now - fade["t0"]) / fade["dur"] if fade["dur"] > 0 else 1.0
+        if t >= 1.0:
+            self._prog_fade = None
+            return self.programmer
+        t = max(0.0, t)
+        out = {h: dict(row) for h, row in self.programmer.items()}
+        for head_no, start in fade["from"].items():
+            row = out.setdefault(head_no, {})
+            for role, v0 in start.items():
+                v1 = row.get(role, 0)
+                row[role] = int(round(v0 + (v1 - v0) * t))
+        return out
+
     def build_frames(self, now: float | None = None) -> dict[int, bytearray]:
         """Merge programmer + playbacks + effects into 512-byte frames.
 
@@ -4503,7 +4563,7 @@ class Engine:
         snapshots the state it needs and hands it over.
         """
         now = time.monotonic() if now is None else now
-        return merge.build_frames(self.patch, self.programmer,
+        return merge.build_frames(self.patch, self._programmer_now(now),
                                   self._active_playbacks(now),
                                   self._fx_values(now),
                                   self.master, self.blackout)
@@ -4830,7 +4890,6 @@ class Engine:
         "blackout", "clear", "home", "record", "thru", "off", "help",
         "fan", "select", "store", "align", "distribute", "mirror",
     } | set(CMD_AIM))
-    CMD_KEYWORDS = ("all", "none", "off", "full", "on")
     # What may BEGIN a line.  A verb needs no selection of its own; a
     # selection keyword IS one.  Getting this wrong is why `all` answered
     # "nothing is selected" on an empty rig - it was skipped as a keyword
@@ -5209,8 +5268,15 @@ class Engine:
             plan.append(("clear_heads", {"heads": sorted(heads)}))
             return self._cmd_finish(line, plan, note_lines, dry)
 
+        # ---- a colour by name: `1-4 red`, `all deep blue`, `3 #ff8800` -
+        colour_text = " ".join(tokens[i:])
+        from app import showdesign as _sd
+        hexcode = _sd._to_hex(colour_text) if not _is_num(colour_text) else None
+        if hexcode and (len(tokens) == i + 1 or _attr_role(tok) is None):
+            plan.append(("set_colour", {"hex": hexcode}))
+            return self._cmd_finish(line, plan, note_lines, dry)
+
         # ---- attributes -------------------------------------------------
-        want = re.sub(r"[^a-z0-9]", "", tok)
         role = _attr_role(tok)
         if role is None:
             near = self._cmd_near(tok, list(_ATTRIBUTE_ALIAS))
@@ -5653,7 +5719,7 @@ class Engine:
         driven", and the visualiser keeps its geometric default.
         """
         now = time.monotonic() if now is None else now
-        prog = self.programmer
+        prog = self._programmer_now(now)
         pb_vals = self._active_playbacks(now)
         fx_vals = self._fx_values(now)
         out = []
@@ -5701,6 +5767,13 @@ class Engine:
                     span[role] = [r["min"], r["max"]]
             if span:
                 row["deg"] = span
+            # Beam shaping for the visualiser, 0..1 per driven channel, so
+            # zoom, iris, frost, gobo, prism and strobe change the beam on
+            # screen exactly as they will on stage.
+            beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
+                    for r in _BEAM_LOOK_ROLES if r in values}
+            if beam:
+                row["beam"] = beam
             out.append(row)
         return out
 
@@ -5751,6 +5824,11 @@ class Engine:
                     "full": since is None or since != seq - 1,
                     "heads": lit, "count": len(looks),
                     "lit": len(lit)}
+
+    def look_rows(self) -> list[dict]:
+        """The lit heads' looks, for the live stream (no sequence bump)."""
+        with self.lock:
+            return [row for row in self._looks() if row["a"] > 0]
 
     def _look(self, now: float | None = None) -> list[dict]:
         """Lite-feed look rows: {n, look:{hex, a, on}} (patch-revisioned)."""
@@ -5855,7 +5933,12 @@ class Engine:
             return False
         now = time.monotonic()
         if not force and (now - self._autosave_at) < self.AUTOSAVE_MIN_INTERVAL:
+            # Throttled, not dropped: the writer thread saves the trailing
+            # edit once the interval has passed, so a crash a moment after
+            # the last change cannot lose it.
+            self._autosave_dirty = True
             return False
+        self._autosave_dirty = False
         with self.lock:
             try:
                 text = self._autosave_payload()
@@ -5905,6 +5988,9 @@ class Engine:
         while not self._writer_stop.is_set():
             self._writer_event.wait(0.25)
             self._writer_event.clear()
+            if (self._autosave_dirty and time.monotonic() - self._autosave_at
+                    >= self.AUTOSAVE_MIN_INTERVAL):
+                self._autosave()
             while not self._writer_stop.is_set():
                 with self._writer_lock:
                     text, path = self._writer_pending, self._writer_path
@@ -6197,13 +6283,13 @@ class Engine:
         # {"dimmer": 0} and playback would look broken.  So fall back to
         # "every head participates" (and take the level/colour from
         # whichever role the concept did specify).
-        patch_roles = {str(h.get("role") or "generic") for h in self.patch}
+        patch_roles = {fixture_kind.design_role(h) for h in self.patch}
         # role -> the head numbers it would drive, so the UI can offer
         # "assign heads 2-5 to wash" instead of leaving the operator to
         # guess why the spots came up the wrong colour.
         role_heads: dict[str, list[int]] = {}
         for head in self.patch:
-            role_heads.setdefault(str(head.get("role") or "generic"),
+            role_heads.setdefault(fixture_kind.design_role(head),
                                   []).append(head["head_no"])
         role_mismatch = False
         used_roles: set[str] = set()
@@ -6244,7 +6330,7 @@ class Engine:
             cue_intensity = cue.get("intensity") or intensity
             values = {}
             for head in self.patch:
-                role = str(head.get("role") or "generic")
+                role = fixture_kind.design_role(head)
                 on = roles_on is None or role in roles_on
                 pct = level_for(cue_intensity, role) if on else 0
                 hexcol = colour_for(cue_colours, role)
@@ -6407,7 +6493,8 @@ class Engine:
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h) for h in self.patch],
+                "patch": [dict(h, body=fixture_kind.describe(h))
+                          for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
                             "heads": list(g["heads"])} for g in self.groups],

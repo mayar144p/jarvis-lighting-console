@@ -63,8 +63,6 @@ that needed the care.
 from __future__ import annotations
 
 import hashlib
-import json
-import math
 import os
 import re
 import shutil
@@ -149,13 +147,6 @@ def mat_mul(a: list[float], b: list[float]) -> list[float]:
             out[r * 4 + c] = sum(a[k * 4 + c] * b[r * 4 + k] for k in range(4))
     return out
 
-
-def mat_mul_many(*mats: list[float]) -> list[float]:
-    out = identity()
-    for m in mats:
-        if m:
-            out = mat_mul(out, m)
-    return out
 
 
 # --- parsing --------------------------------------------------------------

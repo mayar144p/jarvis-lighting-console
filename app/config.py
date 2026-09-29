@@ -93,9 +93,12 @@ def _lan_ip() -> str:
         if got and got not in candidates:
             candidates.append(got)
 
-    # A private address first: a rig lives on 10/8, 172.16/12 or
-    # 192.168/16, and if the machine also has a VPN or container adapter
-    # up, that is the one the lights are NOT on.
+    return _pick_lan(candidates)
+
+
+def _pick_lan(candidates: list[str]) -> str:
+    """A private address first: a rig lives on 10/8, 172.16/12 or
+    192.168/16, and a VPN or container adapter is the one it is NOT on."""
     for ip in candidates:
         if _is_private(ip):
             return ip
@@ -131,7 +134,7 @@ LLM_API_KEY = _get("LLM_API_KEY", "")
 LLM_BASE_URL = _get("LLM_BASE_URL",
                     "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
 LLM_MODEL = _get("LLM_MODEL", "gemini-3.5-flash-lite")
-LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "120"))
+LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "45"))
 
 # --- Jarvis console engine ---------------------------------------------
 # The Jarvis engine is the console: patch, programmer, cues and direct
@@ -146,25 +149,40 @@ CONSOLE_DRY_RUN = _bool("CONSOLE_DRY_RUN", "true")
 DMX_TRANSPORT = _get("DMX_TRANSPORT", "artnet").strip().lower()
 if DMX_TRANSPORT not in ("artnet", "sacn"):
     DMX_TRANSPORT = "artnet"
-# WHERE THE FRAMES GO.  The default is THIS MACHINE'S OWN LAN ADDRESS,
-# not 255.255.255.255 and not 127.0.0.1:
+# WHERE THE FRAMES GO.
 #
-#   127.0.0.1          reaches nothing.  It is this machine, and a node
-#                      plugged into the rig is a different machine.
-#   255.255.255.255    broadcast, which many nodes ignore and which a
-#                      switched network routinely drops.
-#   the LAN address    what a node answers a subnet-directed ArtPoll
-#                      from - the same network the lights are on.
+# The frames have to reach the NODES, which are other machines on the
+# lighting network - so the default can never be this machine's own
+# address (unicast to yourself reaches nothing) nor loopback.
 #
-# An Art-Net node will only reply to a poll that arrives on the subnet it
-# is configured for, so the SOURCE address matters as much as the
-# destination.  Sending from 255.255.255.255 is the classic reason a rig
-# that scanned yesterday scans blank today.
+#   artnet  directed broadcast of the lighting subnet, e.g. 192.168.1.255
+#           (2.255.255.255 on the Art-Net 2.x.x.x convention).  Every node
+#           on that subnet receives it, and unlike 255.255.255.255 it is
+#           routed out of the interface that actually faces the rig.
+#   sacn    "multicast": each universe goes to its E1.31 group
+#           239.255.<hi>.<lo>, which is what every sACN receiver listens on.
 #
-# Set DMX_HOST in .env to override - to a specific node's IP, or to
-# broadcast on a network where that genuinely works.  `jarvis_net.py`
-# reports the detected address and what the console is actually using.
-DMX_HOST = _get("DMX_HOST", LOCAL_IP or "127.0.0.1")
+# Set DMX_HOST to a node's IP for unicast (best on a busy network).
+def directed_broadcast(ip: str) -> str:
+    """The broadcast address of the /24 (or Art-Net 2.x /8) holding `ip`."""
+    try:
+        parts = [int(x) for x in ip.split(".")]
+    except (ValueError, AttributeError):
+        return "255.255.255.255"
+    if len(parts) != 4 or not ip or parts[0] in (0, 127):
+        return "255.255.255.255"
+    if parts[0] == 2:
+        return "2.255.255.255"
+    return "%d.%d.%d.255" % tuple(parts[:3])
+
+
+def _default_dmx_host() -> str:
+    if DMX_TRANSPORT == "sacn":
+        return "multicast"
+    return directed_broadcast(LOCAL_IP) if LOCAL_IP else "255.255.255.255"
+
+
+DMX_HOST = _get("DMX_HOST", "").strip() or _default_dmx_host()
 DMX_HOST_IS_DEFAULT = not os.environ.get("DMX_HOST")
 # Port follows the transport unless explicitly overridden:
 # Art-Net 6454, sACN/E1.31 5568.
@@ -200,9 +218,6 @@ MIDI_MAP = _get("MIDI_MAP", "")                   # empty = data/midi_map.json i
 CONSOLE_SHOW_DIR = Path(_get("CONSOLE_SHOW_DIR", str(DATA / "shows")))
 if not CONSOLE_SHOW_DIR.is_absolute():          # anchor to jarvis/, not the CWD
     CONSOLE_SHOW_DIR = ROOT / CONSOLE_SHOW_DIR
-# Optional extra folder every exported head-list CSV is also copied into
-# (relative paths are anchored to jarvis/).  Empty = only data/patch.
-SHOW_FOLDER = _get("SHOW_FOLDER", "")
 # Autosave the engine state (patch, programmer, playbacks, mode, FX) after
 # every successful change to data/autosave.json, and restore it on the
 # next start.  Saved shows (SAVE SHOW / LOAD) stay separate and explicit.
@@ -287,7 +302,9 @@ def status() -> dict:
             # says whether that is what is actually in use.
             "local_ip": LOCAL_IP,
             "host_is_default": DMX_HOST_IS_DEFAULT,
-            "broadcast": DMX_HOST == "255.255.255.255",
+            "broadcast": DMX_HOST == "255.255.255.255"
+                         or DMX_HOST.endswith(".255"),
+            "multicast": DMX_HOST == "multicast",
             "port": DMX_PORT,
             "hz": DMX_HZ,
             "net": DMX_NET,

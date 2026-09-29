@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Jarvis</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e14'/%3E%3Cpath d='M16 5 L23 24 L16 20 L9 24 Z' fill='%2338bdf8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/app/app.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/three.module.js",
+               "three/addons/": "/vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<div id="app" class="app" data-view="stage">
+
+  <!-- ============================================================ top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 L24 25 L16 20.5 L8 25 Z"/></svg>
+      <span class="brand-name">JARVIS</span>
+    </div>
+
+    <div class="show-menu">
+      <button class="tb-btn" id="show-btn" aria-haspopup="menu" title="Shows: save, load">
+        <span class="show-name" id="show-name">Untitled show</span>
+        <svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+    </div>
+
+    <div class="output" id="output" role="group" aria-label="DMX output">
+      <span class="out-state" id="out-state" role="status" aria-live="polite">
+        <i class="dot"></i><b id="out-label">BLIND</b><small id="out-sub">nothing leaves this computer</small>
+      </span>
+      <button class="tb-btn arm" id="out-arm">Go live…</button>
+    </div>
+
+    <div class="tb-spacer"></div>
+
+    <button class="tb-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>
+      <svg viewBox="0 0 16 16"><path d="M6 4L2 8l4 4M2.5 8H10a4 4 0 010 8"/></svg>
+      <span id="undo-label">Undo</span>
+    </button>
+    <button class="tb-btn icon" id="redo-btn" title="Redo (Ctrl+Shift+Z)" disabled>
+      <svg viewBox="0 0 16 16"><path d="M10 4l4 4-4 4M13.5 8H6a4 4 0 000 8"/></svg>
+    </button>
+
+    <button class="tb-btn palette-btn" id="palette-btn" title="Command bar - type a command or ask in plain English (/ or Ctrl+K)">
+      <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      <span>Type a command or ask…</span><kbd>/</kbd>
+    </button>
+
+    <button class="tb-btn ai" id="ai-btn" title="AI copilot">
+      <svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></svg>
+      <span>Copilot</span>
+    </button>
+    <button class="tb-btn lock" id="lock-btn" data-state="design" title="Design: edit anything">
+      <svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg>
+      <span id="lock-label">Design</span>
+    </button>
+    <button class="tb-btn icon" id="settings-btn" title="Settings: stage, network, MIDI">
+      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>
+    </button>
+    <button class="tb-btn icon" id="help-btn" title="Help and shortcuts (?)">?</button>
+  </header>
+
+  <div class="banner hidden" id="banner" role="alert"></div>
+
+  <!-- ========================================================== workspace -->
+  <main class="workspace">
+
+    <!-- ------------------------------------------------------- fixtures -->
+    <section class="panel fixtures" id="fixtures-panel" aria-label="Fixtures">
+      <div class="panel-head">
+        <h2>Fixtures <span class="count" id="fx-count">0</span></h2>
+        <button class="btn primary small" id="add-btn">+ Add</button>
+      </div>
+      <div class="fx-toolbar">
+        <input type="search" id="fx-filter" placeholder="Filter: name, type, brand, U1…" autocomplete="off" spellcheck="false">
+        <button class="btn ghost small icon" id="fx-more" title="Patch tools" aria-haspopup="menu">⋯</button>
+      </div>
+      <div class="group-chips" id="group-chips"></div>
+      <div class="fx-table-wrap">
+        <table class="fx-table" id="fx-table">
+          <thead><tr><th class="c-no">#</th><th>Fixture</th><th class="c-addr">DMX</th></tr></thead>
+          <tbody id="fx-rows"></tbody>
+        </table>
+        <div class="empty" id="fx-empty">
+          <p><b>No fixtures yet.</b></p>
+          <p>Add lights from the library - they appear on the stage straight away, modelled for their type and brand.</p>
+          <button class="btn primary" id="add-btn-2">Add fixtures</button>
+        </div>
+      </div>
+      <div class="sel-bar" id="sel-bar">
+        <span id="sel-count">Nothing selected</span>
+        <span class="sel-actions">
+          <button class="btn ghost small" data-act="select_all">All</button>
+          <button class="btn ghost small" data-act="clear_selection">None</button>
+          <button class="btn ghost small" id="group-btn" title="Make a group from the selection (G)">Group</button>
+        </span>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- stage -->
+    <section class="stage-wrap" id="stage-wrap" aria-label="3D stage">
+      <div class="stage" id="stage"></div>
+      <div class="stage-hud top-left">
+        <div class="seg" id="views">
+          <button data-view="front" title="Front (1)">Front</button>
+          <button data-view="left" title="House left (2)">Left</button>
+          <button data-view="right" title="House right (3)">Right</button>
+          <button data-view="back" title="Back (4)">Back</button>
+          <button data-view="top" title="Plan (5)">Plan</button>
+        </div>
+        <button class="hud-btn" id="frame-btn" title="Frame the selection (F)">Frame</button>
+      </div>
+      <div class="stage-hud top-right">
+        <label class="hud-slider" title="Haze in the room">
+          <span>Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
+        </label>
+        <button class="hud-btn toggle on" id="people-btn" title="Performers on stage, for scale">People</button>
+        <button class="hud-btn icon" id="fullscreen-btn" title="Stage full screen (Esc to leave)">
+          <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+        </button>
+      </div>
+      <div class="stage-hud bottom-left hint" id="stage-hint">
+        Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · drag it to move (Shift = height)
+      </div>
+      <div class="now-playing" id="now-playing" hidden></div>
+    </section>
+
+    <!-- ----------------------------------------------------- programmer -->
+    <section class="panel programmer" id="programmer" aria-label="Programmer">
+      <div class="panel-head">
+        <h2>Programmer</h2>
+        <span class="prog-sel" id="prog-sel">Select fixtures</span>
+      </div>
+      <nav class="tabs" id="prog-tabs" role="tablist">
+        <button role="tab" data-tab="intensity" aria-selected="true" title="Intensity">Level</button>
+        <button role="tab" data-tab="colour">Colour</button>
+        <button role="tab" data-tab="position">Position</button>
+        <button role="tab" data-tab="beam">Beam</button>
+        <button role="tab" data-tab="fx" title="Effects">FX</button>
+        <button role="tab" data-tab="looks">Looks</button>
+        <button role="tab" data-tab="tools">Tools</button>
+      </nav>
+      <div class="prog-body" id="prog-body">
+
+        <div class="tab-pane" data-pane="intensity">
+          <div class="big-fader-row">
+            <div class="vfader big" id="int-fader" data-min="0" data-max="100" aria-label="Intensity"></div>
+            <div class="int-side">
+              <output class="big-num" id="int-num">–</output>
+              <div class="quick" id="int-quick">
+                <button data-level="100">Full</button><button data-level="75">75</button>
+                <button data-level="50">50</button><button data-level="25">25</button>
+                <button data-level="0">Out</button>
+              </div>
+              <label class="field inline"><span>Fade</span><input type="number" id="int-fade" min="0" max="600" step="0.5" value="0"><em>s</em></label>
+            </div>
+          </div>
+          <div class="row-btns">
+            <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
+            <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
+            <button class="btn" id="highlight-btn" title="Flash the selection">Flash</button>
+          </div>
+        </div>
+
+        <div class="tab-pane" data-pane="colour" hidden>
+          <div class="picker" id="picker">
+            <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
+          </div>
+          <div class="swatches" id="swatches"></div>
+          <div class="colour-row">
+            <label class="field inline"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
+            <span class="reach" id="colour-reach"></span>
+          </div>
+        </div>
+
+        <div class="tab-pane" data-pane="position" hidden>
+          <div class="pad" id="pad" aria-label="Pan and tilt pad">
+            <div class="pad-grid"></div>
+            <div class="pad-dot" id="pad-dot"></div>
+          </div>
+          <div class="pad-read" id="pad-read">pan – · tilt –</div>
+          <div class="aim-row">
+            <label class="field inline"><span>Pan °</span><input type="number" id="aim-pan" step="1"></label>
+            <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
+            <button class="btn" id="aim-btn">Aim</button>
+          </div>
+          <div class="palette-strip" data-kind="position"></div>
+        </div>
+
+        <div class="tab-pane" data-pane="beam" hidden>
+          <div class="attr-list" id="attr-list"></div>
+        </div>
+
+        <div class="tab-pane" data-pane="fx" hidden>
+          <h3>Effect library</h3>
+          <p class="muted small" id="fxlib-note">Only effects the selection can actually run are shown.</p>
+          <div class="fx-grid" id="fx-grid"></div>
+          <div class="fx-params" id="fx-params"></div>
+          <h3>Running</h3>
+          <div class="fx-running" id="fx-running"><p class="muted small">No effects running.</p></div>
+          <details class="more">
+            <summary>Custom wave on one attribute</summary>
+            <div class="lfo">
+              <label class="field"><span>Attribute</span><select id="lfo-attr"></select></label>
+              <label class="field"><span>Wave</span><select id="lfo-wave"><option>sine</option><option>saw</option><option>square</option><option>triangle</option><option>random</option></select></label>
+              <label class="field"><span>Speed Hz</span><input type="number" id="lfo-speed" value="1" min="0.01" max="20" step="0.1"></label>
+              <label class="field"><span>Spread °</span><input type="number" id="lfo-spread" value="0" min="0" max="720" step="15"></label>
+              <button class="btn" id="lfo-run">Run</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="tab-pane" data-pane="looks" hidden>
+          <h3>Palettes</h3>
+          <div class="pal-kinds" id="pal-kinds"></div>
+          <h3>Presets <small class="muted">complete looks</small></h3>
+          <div class="preset-list" id="preset-list"></div>
+          <button class="btn" id="preset-rec">Record preset from programmer</button>
+        </div>
+
+        <div class="tab-pane" data-pane="tools" hidden>
+          <h3>Arrange on stage</h3>
+          <div class="row-btns">
+            <select id="arr-axis" class="select"><option value="x">left–right</option><option value="z">up–downstage</option><option value="y">height</option></select>
+            <button class="btn" data-arr="align">Align</button>
+            <button class="btn" data-arr="distribute">Spread</button>
+            <button class="btn" data-arr="mirror">Mirror</button>
+          </div>
+          <h3>Fan a value across the selection</h3>
+          <div class="fan-row">
+            <select id="fan-attr" class="select"></select>
+            <input type="number" id="fan-lo" placeholder="from" class="num">
+            <input type="number" id="fan-hi" placeholder="to" class="num">
+            <select id="fan-mode" class="select"><option value="normal">ramp</option><option value="center">centre out</option><option value="mirror">mirror</option></select>
+            <button class="btn" id="fan-btn">Fan</button>
+          </div>
+          <h3>Limits and orientation</h3>
+          <div class="fan-row">
+            <select id="lim-role" class="select"></select>
+            <input type="number" id="lim-lo" placeholder="low" class="num">
+            <input type="number" id="lim-hi" placeholder="high" class="num">
+            <button class="btn" id="lim-set">Limit</button>
+            <button class="btn ghost" id="lim-clear">Clear</button>
+          </div>
+          <div class="row-btns">
+            <button class="btn" data-orient="invert_pan">Invert pan</button>
+            <button class="btn" data-orient="invert_tilt">Invert tilt</button>
+            <button class="btn" data-orient="swap">Swap pan/tilt</button>
+            <button class="btn ghost" data-orient="clear">Normal</button>
+          </div>
+          <p class="muted small" id="lim-note"></p>
+          <h3>Select</h3>
+          <div class="row-btns">
+            <button class="btn" id="sel-similar">Same type as first</button>
+            <button class="btn" data-query="pan">Movers</button>
+            <button class="btn" data-query="gobo">With gobos</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ playbacks -->
+    <section class="playbacks" id="playbacks" aria-label="Playbacks">
+      <div class="pb-strip" id="pb-strip"></div>
+      <div class="masters">
+        <div class="master">
+          <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
+          <span class="m-label">GM <output id="gm-num">100</output></span>
+        </div>
+        <button class="blackout" id="bo-btn" title="Blackout (X)">BLACK<br>OUT</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- =========================================================== status -->
+  <footer class="statusbar" id="statusbar">
+    <span id="st-out"></span>
+    <span id="st-net"></span>
+    <span id="st-feed"></span>
+    <span class="st-grow" id="st-last"></span>
+    <span id="st-save"></span>
+  </footer>
+
+  <!-- mobile section switcher -->
+  <nav class="mobile-tabs" id="mobile-tabs">
+    <button data-mview="stage" aria-selected="true">Stage</button>
+    <button data-mview="fixtures">Fixtures</button>
+    <button data-mview="programmer">Program</button>
+    <button data-mview="playbacks">Playback</button>
+  </nav>
+</div>
+
+<!-- =========================================================== overlays -->
+<div class="cmdbar-scrim hidden" id="cmdbar-scrim">
+  <div class="cmdbar" id="cmdbar" role="dialog" aria-label="Command bar">
+    <div class="cmd-input-row">
+      <span class="cmd-mode" id="cmd-mode">CMD</span>
+      <input id="cmd-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="1-4 red · all at 70 · cue 3 go · or ask: “warm wash on the movers”">
+      <kbd>Enter</kbd>
+    </div>
+    <div class="cmd-results" id="cmd-results"></div>
+    <div class="cmd-foot muted small">Console syntax runs straight away. Anything else goes to the copilot, which shows you the plan before it touches the rig.</div>
+  </div>
+</div>
+
+<aside class="drawer copilot hidden" id="copilot" aria-label="AI copilot">
+  <div class="drawer-head">
+    <h2>Copilot</h2>
+    <span class="ai-status" id="ai-status"></span>
+    <button class="icon-x" id="copilot-close" aria-label="Close">×</button>
+  </div>
+  <nav class="tabs small" id="copilot-tabs">
+    <button data-ctab="chat" aria-selected="true">Program</button>
+    <button data-ctab="design">Design a show</button>
+    <button data-ctab="doctor">Diagnose</button>
+  </nav>
+  <div class="ctab" data-cpane="chat">
+    <div class="ai-log" id="ai-log"></div>
+    <div class="ai-suggest" id="ai-suggest"></div>
+    <form class="ai-input" id="ai-form">
+      <textarea id="ai-text" rows="2" placeholder="Describe the look… e.g. slow blue wash, movers circle the drummer" spellcheck="false"></textarea>
+      <button class="btn primary" id="ai-send">Plan</button>
+    </form>
+    <label class="check small"><input type="checkbox" id="ai-offline"> Offline compiler (no AI service)</label>
+  </div>
+  <div class="ctab" data-cpane="design" hidden>
+    <p class="muted small">Describe the event. You get two or three different concepts - palettes, cues and timings - staged on your own rig. Nothing plays until you load one and press GO.</p>
+    <textarea id="design-text" rows="3" placeholder="A winter wedding, slow and elegant, warm whites, avoid red" spellcheck="false"></textarea>
+    <button class="btn primary" id="design-btn">Design concepts</button>
+    <div class="concepts" id="concepts"></div>
+  </div>
+  <div class="ctab" data-cpane="doctor" hidden>
+    <p class="muted small">Checks the rig and the show for problems a tech would look for: addressing overlaps, cues pointing at missing fixtures, output that cannot reach the rig.</p>
+    <button class="btn primary" id="doctor-btn">Run checks</button>
+    <div class="doctor" id="doctor"></div>
+  </div>
+</aside>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="modal-root" id="modal-root"></div>
+
+<script type="module" src="/app/main.js"></script>
+</body>
+</html>

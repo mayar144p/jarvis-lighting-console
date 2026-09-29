@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 
@@ -56,7 +55,6 @@ def run(check) -> int:
         "map": ["red", "green", "blue", "dimmer"], "mapped": True}]
 
     def stack(pb=4):
-        r = ((S.lookups if False else None),)
         return eng.snapshot()["playbacks"][pb - 1]
 
     def cues(pb=4):
