@@ -67,7 +67,22 @@ export function openAddDialog(query = "") {
       meta.textContent = `${item.library} · ${modes.length} DMX mode(s) · community-made: check the mode against the light's manual`;
       addBtn.textContent = "Install and add";
     } else {
-      meta.textContent = `${modes.length} DMX mode(s)` + (item.source ? ` · from ${item.source}` : "");
+      meta.replaceChildren(`${modes.length} DMX mode(s)` + (item.source ? ` · from ${item.source}` : "") + " · ",
+        h("button.linkish", {
+          title: "Remove this fixture from your installed library (e.g. a bad read of a manual)",
+          onclick: async () => {
+            if (!item.id || !await confirmBox("Delete from library",
+              `Remove "${item.manufacturer} ${item.model}" from your installed fixtures? Lights already on stage keep working until you remove them.`,
+              { ok: "Delete", danger: true })) return;
+            const r = await post("/api/fixtures/delete", { id: item.id }).catch((e) => ({ error: e.message }));
+            if (r.error) { toast(r.error, "bad"); return; }
+            toast(`Deleted ${r.manufacturer} ${r.model}` + ((r.patched || []).length
+              ? ` - remove #${r.patched.join(", #")} from the stage and add the right one` : ""), "ok");
+            chosen = null;
+            addBtn.disabled = true;
+            if (source === "all") searchAll(); else searchLib();
+          },
+        }, "Delete from library"));
       addBtn.textContent = "Add to stage";
     }
     addBtn.disabled = false;
@@ -161,6 +176,12 @@ export function openAddDialog(query = "") {
     if (!chosen) showPick(list.firstChild._item);
   }
 
+  // "13 ch" / "6 or 12 ch": the channel counts tell two versions apart
+  const chCounts = (modes) => {
+    const n = [...new Set((modes || []).map((m) => m.channel_count ?? m.dmxfootprint).filter((x) => x))];
+    return n.length ? `${n.join(" or ")} ch` : `${(modes || []).length} mode(s)`;
+  };
+
   // One box, every source: installed first, then the Jarvis library,
   // OFL and QLC+ (offline), then GDTF Share when signed in.
   async function searchAll() {
@@ -182,11 +203,11 @@ export function openAddDialog(query = "") {
     const rows = [];
     for (const r of inst.results || []) {
       rows.push(row({ ...r, _origin: "lib" }, `${r.manufacturer} ${r.model}`,
-        [(r.body && r.body.label) || "", `${(r.modes || []).length} mode(s)`], "installed"));
+        [(r.body && r.body.label) || "", chCounts(r.modes)], "installed"));
     }
     for (const r of lib.results || []) {
       const item = { ...r, _origin: "open", modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
-      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.close ? "close match" : "", r.type || "", `${(r.modes || []).length} mode(s)`],
+      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.close ? "close match" : "", r.type || "", chCounts(item.modes)],
         r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Jarvis"));
     }
     list.replaceChildren(...rows);
@@ -800,7 +821,7 @@ const FIXTURE_FUNCTIONS = ["dimmer", "red", "green", "blue", "white", "amber", "
   "pan", "pan fine", "tilt", "tilt fine", "pan/tilt speed", "shutter", "strobe", "colour wheel", "colour macro",
   "gobo wheel", "gobo rotation", "prism", "zoom", "focus", "frost", "iris",
   "fx fire", "fx arm", "fx fan", "fog output", "fx height", "fx mode",
-  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour",
+  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour", "laser beam",
   "setting", "unused"];
 const FIXTURE_TYPES = [["light", "Light"], ["laser", "Laser"], ["confetti", "Confetti"], ["co2", "CO2 jet"],
   ["flame", "Flame"], ["spark", "Spark fountain"], ["fog", "Fog"], ["haze", "Haze"], ["bubble", "Bubbles"],

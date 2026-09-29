@@ -363,6 +363,17 @@ class Handler(BaseHTTPRequestHandler):
                 fixtures.invalidate_cache()
                 remapped = self._engine().remap_heads()
                 return self._json({**done, "remapped": remapped})
+            if route == "/api/fixtures/delete":
+                try:
+                    gone = fixtures.delete(config.DB_PATH, int(body.get("id")))
+                except (TypeError, ValueError):
+                    return self._json({"error": "id is required"}, 400)
+                if gone is None:
+                    return self._json({"error": "no such fixture"}, 404)
+                fixtures.invalidate_cache()
+                patched = [h["head_no"] for h in self._engine().patch
+                           if (h.get("manufacturer"), h.get("model")) == (gone["manufacturer"], gone["model"])]
+                return self._json({**gone, "patched": patched})
             if route == "/api/fixtures/create":
                 try:
                     made = fixtures.create_profile(

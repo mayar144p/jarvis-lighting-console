@@ -238,6 +238,18 @@ def get(db_path: Path, fixture_id: int) -> dict | None:
         return _with_modes(conn, row) if row else None
 
 
+def delete(db_path: Path, fixture_id: int) -> dict | None:
+    """Remove one installed fixture (and its modes) - e.g. a bad read of a
+    manual.  Heads already patched keep their channel map until re-added."""
+    with db(db_path) as conn:
+        row = conn.execute("SELECT * FROM fixtures WHERE id = ?", (int(fixture_id),)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM modes WHERE fixture_id = ?", (int(fixture_id),))
+        conn.execute("DELETE FROM fixtures WHERE id = ?", (int(fixture_id),))
+        return {"id": int(fixture_id), "manufacturer": row["manufacturer"], "model": row["model"]}
+
+
 def count(db_path: Path) -> int:
     try:
         with db(db_path) as conn:

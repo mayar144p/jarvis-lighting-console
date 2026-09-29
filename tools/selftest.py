@@ -8708,7 +8708,7 @@ def test_beam_bar() -> None:
     from app import manual
     chart = ["1 0-49 laser off", "50-99 sound mode", "100-149 automatic mode",
              "150-199 DMX mode (Channel 2 --> Channel 3 valid)", "200-255 DMX mode (Channel 4 --> Channel 13 valid)",
-             "2 0-255 program / effect selection", "3 0-255 Speed (slow to fast, 21 levels)",
+             "2 0-255 program / effect selection", "3 0-255 Speed (slow to fast, 21 levels) WEEE-Reg.-No. (G",
              "Each of the following channels corresponds with one laser output (from left to right, front view)"] + \
         [f"{k} 0-255 brightness adjustment (weak to bright)" for k in range(4, 14)]
     german = ["1 0-49 Laser aus", "50-99 Sound-Modus", "100-149 Automatik-Modus", "150-199 DMX-Modus (Kanal 2-3)",
@@ -8726,6 +8726,10 @@ def test_beam_bar() -> None:
               ch[0]["function"] == "laser output" and len(ch[0]["ranges"]) == 5, str(ch[0]))
         check("the ten 'brightness' rows become Laser 1..10",
               [c["name"] for c in ch[3:]] == [f"Laser {k}" for k in range(1, 11)], str([c["name"] for c in ch[3:]]))
+        check("...and say 'laser beam' in the review table",
+              {c["function"] for c in ch[3:]} == {"laser beam"}, str({c["function"] for c in ch[3:]}))
+        check("a page footer glued onto a row is not part of the name",
+              ch[2]["name"] == "Speed (slow to fast, 21 levels)", ch[2]["name"])
         it = fixlib.apply_fx(manual.to_parsed(d)[0])
         det = it["modes"][0]["detail"]
         check("saved: output fires in its DMX beam mode, each beam its own control",
@@ -8842,7 +8846,14 @@ def test_fixture_search() -> None:
         got = fixtures.search(db, "chauvet intimdator 110", fuzzy=True)
         check("installed search forgives a typo in the Add dialog", len(got) == 1, str(len(got)))
         check("but the engine's own lookups stay strict", fixtures.search(db, "chauvet intimdator 110") == [], "")
+        bad = fixtures.search(db, "chauvet intimidator 110", fuzzy=True)[0]
+        gone = fixtures.delete(db, bad["id"])
+        check("a bad installed fixture can be deleted", gone and fixtures.search(db, "intimidator 110", fuzzy=True) == []
+              and fixtures.get(db, bad["id"]) is None, str(gone))
+        check("deleting one that isn't there says so", fixtures.delete(db, 99999) is None, "")
     js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the Add dialog can delete an installed fixture and shows channel counts",
+          "/api/fixtures/delete" in js and "chCounts(" in js, "")
     check("only the newest search may fill the list", js.count("if (my !== seq) return;") >= 5, str(js.count("if (my !== seq) return;")))
 
 

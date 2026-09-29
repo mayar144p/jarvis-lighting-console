@@ -38,11 +38,13 @@ FUNCTIONS: dict[str, str] = {
     "laser size": "Laser Size", "laser rotation": "Laser Rotation",
     "laser x": "Laser X", "laser y": "Laser Y", "laser speed": "Laser Speed",
     "laser colour": "Laser Colour",
+    "laser beam": "",                     # numbered in order: Laser Beam 1, 2...
     "setting": "", "unused": "Unused",
 }
 _ROLE_FUNCTION = {channel_role(label): fn for fn, label in FUNCTIONS.items() if label}
 _ROLE_FUNCTION.update({"raw": "setting", "fx_param": "setting", "macro": "colour macro",
-                       "speed": "pan/tilt speed", "gobo": "gobo wheel", "wheel": "colour wheel"})
+                       "speed": "pan/tilt speed", "gobo": "gobo wheel", "wheel": "colour wheel",
+                       **{f"laser_beam{i}": "laser beam" for i in range(1, 17)}})
 TYPES = ("light", "laser", "confetti", "co2", "flame", "spark", "fog", "haze",
          "bubble", "snow", "other")
 _COLOUR_HEX = {"red": "#ff2020", "green": "#20ff40", "blue": "#2040ff", "yellow": "#ffe020",
@@ -130,8 +132,12 @@ def to_parsed(draft: dict) -> list[dict]:
             k += 1
         names.add(m["name"])
         rows = []
+        beam = 0
         for c in m["channels"]:
             label = _label_for(c["function"], c["name"])
+            if c["function"] == "laser beam":
+                beam += 1
+                label = f"Laser Beam {min(beam, 16)}"      # one output each, in order
             role = channel_role(label)
             uses_laser |= role.startswith("laser_")
             uses_sfx |= role in fx_roles
@@ -196,6 +202,15 @@ _RUN_RE = re.compile(r"^\s*(\d{3})\s?(\d{3})\s+(.+?)\s*$")        # "000009 Off"
 _CHAN_RE = re.compile(r"^\s*(\d{1,3})\s*[.):]?\s+([A-Za-z][^\n]{0,60}?)\s*$")
 # a chart with no name column: "1  0-49  laser off" - channel, range, meaning
 _CHAN_RANGE_RE = re.compile(rf"^\s*(\d{{1,3}})\s*[.):]?\s+(\d{{1,3}})\s*{_SEP}\s*(\d{{1,3}})\s+(\S.*?)\s*$", re.I)
+# a PDF page's footer glued onto a table line: "Speed (slow to fast) WEEE-Reg.-No. (G"
+_FOOTER = re.compile(r"\s+(WEEE|Reg\.?\s*-?\s*No|www\.|https?://|©|\(c\)\s*\d|Page\s+\d|Seite\s+\d|"
+                     r"Art\.?\s*-?\s*Nr|Tel\.|Fax\b|E-?mail).*$", re.I)
+
+
+def _unfoot(text: str) -> str:
+    return _FOOTER.sub("", str(text)).strip()
+
+
 _OFF_FIRST = re.compile(r"^\s*((laser|output|lamp|light)s?\s+off|off|blackout|no output)\b", re.I)
 
 
@@ -219,7 +234,7 @@ def read_offline(text: str) -> dict:
         cr = _CHAN_RANGE_RE.match(line)
         if cr and 1 <= int(cr.group(1)) <= 512 and int(cr.group(3)) <= 255:
             no, lo, hi, text = int(cr.group(1)), int(cr.group(2)), int(cr.group(3)), cr.group(4).strip()
-            text = re.split(r"\s{2,}", text)[0]
+            text = _unfoot(re.split(r"\s{2,}", text)[0])
             if mode is None or (no == 1 and mode["channels"]):
                 mode = {"name": "", "channels": []}
                 modes.append(mode)
@@ -233,7 +248,7 @@ def read_offline(text: str) -> dict:
                 continue
         r = _RANGE_RE.match(line) or _RUN_RE.match(line)
         if r:
-            row = [int(r.group(1)), int(r.group(2)), re.split(r"\s{2,}", r.group(3).strip())[0]]
+            row = [int(r.group(1)), int(r.group(2)), _unfoot(re.split(r"\s{2,}", r.group(3).strip())[0])]
             if chan is not None:
                 chan["ranges"].append(row)
             elif mode is not None:
@@ -257,7 +272,7 @@ def read_offline(text: str) -> dict:
                 lo, hi, rest = int(inline.group(1)), int(inline.group(2)), inline.group(3).strip()
                 if lo <= 255 and hi <= 255 and not (lo == 0 and hi == 255 and not rest):
                     ranges.append([lo, hi, re.split(r"\s{2,}", rest)[0] or name])
-            name = re.sub(r"\s{2,}.*$", "", name).strip()
+            name = _unfoot(re.sub(r"\s{2,}.*$", "", name).strip())
             if not name or name.endswith((".", ":", "!", "?")) or len(name.split()) > 6:
                 continue                           # an instruction, not a channel
             chan = {"name": name, "function": _guess(name), "ranges": pending + ranges}
@@ -410,7 +425,7 @@ def read(text: str, manufacturer: str = "", model: str = "", offline: bool = Fal
                 elif c.pop("_run", False):
                     beam += 1
                     c["name"] = f"Laser {beam}"          # one output each, in order
-                    c["function"] = "setting"
+                    c["function"] = "laser beam"
     for m in draft.get("modes") or []:
         for c in m.get("channels") or []:
             c.pop("_run", None)
