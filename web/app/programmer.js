@@ -367,7 +367,10 @@ function renderAttributes() {
     return;
   }
   const rows = [];
-  for (const page of attrState.pages) {
+  // a light's own extra channels (continuous pan, built-in programs...)
+  // first: at the bottom of a long list nobody found them
+  const pages = [...attrState.pages].sort((x, y) => (y.page === "other") - (x.page === "other"));
+  for (const page of pages) {
     if (page.page === "intensity") continue;
     const attrs = (page.attrs || []).filter((a) => !["red", "green", "blue", "pan", "tilt", "pan_fine", "tilt_fine"].includes(a.role));
     if (!attrs.length) continue;

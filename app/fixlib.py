@@ -736,7 +736,7 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     if role.endswith("_fine"):
         return None
     if role == "unused":
-        if not orig or re.search(r"maintenance|reset|no function|not used|unused|reserved|^function$", orig):
+        if not orig or re.search(r"maintenance|(?<!p)reset|no function|not used|unused|reserved|^function$", orig):
             return None
         name = orig                                   # judge it by its own name
         role = "raw"
@@ -779,12 +779,18 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     if re.search(r"safety|\barm\b|armed|ignit|enable|security|interlock", name) \
             or re.search(r"pre-?heat\s*on", caps_text):
         return "FX Arm"
+    # the channel that makes it GO is its output, whatever else it says: a
+    # MagicFX Psyco2Jet's preset mode fires from "GO" (200-249 continuous) -
+    # filed as a setting, it fired whenever a cue or another setting put it
+    # past 200, armed or not
+    if re.search(r"^go$|\bgo\b|\btrigger\b|\bfire\b|\bshoot\b", orig):
+        return "FX Fire"
     if re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name):
         return "FX Fan"
     if re.search(r"height|size|level of spark", name):
         return "FX Height"
-    if re.search(r"\bmode\b|program|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
-        return "FX Mode" if re.search(r"mode|program|auto|sound|control", name) else "FX Setting"
+    if re.search(r"\bmode\b|program|preset|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
+        return "FX Mode" if re.search(r"mode|program|preset|auto|sound|control", name) else "FX Setting"
     if role in ("pan", "tilt", "speed", "pan_fine", "tilt_fine"):
         return None                               # a CO2 jet's tilt stays tilt
     led = _is_led(row.get("name") or "")
@@ -810,7 +816,7 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
 # the channel, with its ranges as named steps.  Maintenance channels (reset,
 # settings) stay untouched on purpose.  Repeated per-head channels (4 tilts,
 # 4 x RGBW) still share one control until multi-head support.
-_MAINTENANCE = re.compile(r"reset|maintenance|settings?\b|no ?function|not used|unused|reserved|"
+_MAINTENANCE = re.compile(r"(?<!p)reset|maintenance|settings?\b|no ?function|not used|unused|reserved|"
                           r"calibrat|test|firmware|display|fan\b|mode select|dimmer (curve|mode|speed)", re.I)
 _ONE_PER_HEAD = {"speed", "shutter", "strobe", "wheel", "gobo", "gobo_rot", "prism", "focus",
                  "zoom", "frost", "iris", "macro"}

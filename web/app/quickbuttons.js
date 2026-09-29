@@ -39,10 +39,24 @@ const held = new Set();
 const quick = () => (state.snap && state.snap.quick) || { buttons: [], active: [], pages: 4, slots: 24 };
 const activeIds = () => new Set((state.lite && state.lite.quick_active) || quick().active || []);
 
+// press and release are separate requests to a threaded server: a release
+// is only sent once its press was answered, or a quick tap could be handled
+// release-first and leave the button (a flash, a CO2 hold) on
+const inflight = new Map();
 function press(btn, down) {
   if (down) held.add(btn.id); else held.delete(btn.id);
-  run("quick_press", { id: btn.id, down }, { silentError: false });
+  const before = inflight.get(btn.id) || Promise.resolve();
+  const next = before.then(() => run("quick_press", { id: btn.id, down }, { silentError: false })).catch(() => {});
+  inflight.set(btn.id, next);
 }
+// a release anywhere lets go of every held button, even if the grid was
+// re-drawn under the finger
+window.addEventListener("pointerup", () => {
+  for (const id of [...held]) {
+    const b = quick().buttons.find((x) => x.id === id);
+    if (b && b.mode === "hold") press(b, false); else held.delete(id);
+  }
+}, true);
 
 function render() {
   const box = $("#qb-grid");

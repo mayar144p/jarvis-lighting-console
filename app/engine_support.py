@@ -179,7 +179,7 @@ def channel_role(label) -> str:
     # so they stay at their NoFunction default (0).  "Dimmer Speed" and
     # "Dimmer Curve" are maintenance too - they must NOT read as dimmer
     # or intensity would write the curve/speed channel as well.
-    if ("function" in s or "maintenance" in s or "reset" in s
+    if ("function" in s or "maintenance" in s or re.search(r"(?<!p)reset", s)
             or (s.startswith("dimmer") and ("speed" in s or "curve" in s))):
         return "unused"
     if "dimmer" in s or "intensity" in s:

@@ -58,22 +58,33 @@ export function initFxPanel() {
 }
 
 // ------------------------------------------------------ hold-to-fire
+// A held button must ALWAYS let go when the finger does.  Two ways it
+// didn't: (1) the tab re-renders while it is held, the button under the
+// finger is replaced, and the browser sends the release to the page, not
+// the old button - so "stop" was never sent (a laser stayed on, a CO2 jet
+// kept firing to its cap); (2) "start" and "stop" are separate requests to
+// a threaded server and could be handled out of order, leaving it on.  So:
+// any pointer release anywhere stops every hold, and "stop" is only sent
+// once "start" has been answered.
 const holding = new Set();
+function releaseAll() { for (const stop of [...holding]) stop(); }
+window.addEventListener("pointerup", releaseAll, true);
+window.addEventListener("pointercancel", releaseAll, true);
+
 function holdButton(label, cls, start, stop, title) {
   const el = h("button.btn.fx-hold" + (cls ? "." + cls : ""), { title }, label);
-  let release = null;
   el.addEventListener("pointerdown", (e) => {
     e.preventDefault();
-    el.setPointerCapture(e.pointerId);
     el.classList.add("down");
-    start();
-    release = () => { el.classList.remove("down"); holding.delete(release); stop(); release = null; };
+    const started = Promise.resolve(start()).catch(() => {});
+    const release = () => {
+      if (!holding.has(release)) return;
+      holding.delete(release);
+      el.classList.remove("down");
+      started.then(() => stop());
+    };
     holding.add(release);
   });
-  const up = () => { if (release) release(); };
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointercancel", up);
-  el.addEventListener("lostpointercapture", up);
   return el;
 }
 
