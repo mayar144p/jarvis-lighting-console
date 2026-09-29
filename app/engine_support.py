@@ -12,6 +12,7 @@ import re
 
 __all__ = [
     "SLOTS", "ROLES", "HTP_ROLES", "COLOUR_ROLES", "BEAM_ROLES",
+    "FX_ROLES", "LASER_ROLES", "SFX_ROLES",
     "ATTRIBUTE_ALIAS", "ROLE_HEX", "channel_role", "is_fine_role",
     "split_16bit", "join_16bit", "logical16", "curve_pct",
     "pos", "pos_to_ua",
@@ -27,6 +28,10 @@ ROLES = ("dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber",
          "uv", "cyan", "magenta", "yellow", "pan", "pan_fine", "tilt",
          "tilt_fine", "speed", "shutter", "strobe", "gobo", "gobo_rot",
          "prism", "zoom", "focus", "frost", "iris", "wheel", "macro",
+         # special effects and lasers: never driven by a light action
+         "fx_fire", "fx_arm", "fx_fan", "fog", "fx_height", "fx_mode",
+         "fx_param", "laser_on", "laser_pattern", "laser_size", "laser_rot",
+         "laser_x", "laser_y", "laser_speed", "laser_colour",
          "unused", "raw")
 
 # Brightness roles: they combine by HTP (highest wins) and are 0-100.
@@ -35,6 +40,16 @@ HTP_ROLES = frozenset({"dimmer", "zone_dimmer"})
 # Colour roles: on a fixture with no dimmer these ARE the brightness.
 COLOUR_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv",
                           "cyan", "magenta", "yellow"})
+
+# Special-effect and laser roles.  A flash, a strobe, Full, Locate, an
+# effect, the auto show and the copilot never touch these: an SFX machine
+# fires only from its own armed buttons, and a laser's output likewise.
+SFX_ROLES = frozenset({"fx_fire", "fx_arm", "fx_fan", "fog", "fx_height",
+                       "fx_mode", "fx_param"})
+LASER_ROLES = frozenset({"laser_on", "laser_pattern", "laser_size",
+                         "laser_rot", "laser_x", "laser_y", "laser_speed",
+                         "laser_colour"})
+FX_ROLES = SFX_ROLES | LASER_ROLES
 
 # Beam-shape roles, used for the beam palette and the 3D body shapes.
 BEAM_ROLES = frozenset({"shutter", "strobe", "gobo", "gobo_rot", "prism",
@@ -52,6 +67,13 @@ _LABEL_ROLE = {
     "zoom": "zoom", "focus": "focus", "frost": "frost", "iris": "iris",
     "colour wheel": "wheel", "color wheel": "wheel", "wheel": "wheel",
     "unused": "unused", "empty": "unused",
+    # the effects vocabulary (labels written by the FX classifier)
+    "fx fire": "fx_fire", "fx arm": "fx_arm", "fx fan": "fx_fan",
+    "fog output": "fog", "fx height": "fx_height", "fx mode": "fx_mode",
+    "fx setting": "fx_param", "laser output": "laser_on",
+    "laser pattern": "laser_pattern", "laser size": "laser_size",
+    "laser rotation": "laser_rot", "laser x": "laser_x", "laser y": "laser_y",
+    "laser speed": "laser_speed", "laser colour": "laser_colour",
     # Vendor FUNCTION names, which is what a GDTF import actually stores:
     # parse_gdtf prefers ChannelFunction/@OriginalAttribute over the
     # generic LogicalChannel/@Attribute, because the vendor's own name is

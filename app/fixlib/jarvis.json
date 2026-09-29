@@ -1,0 +1,24 @@
+[
+  {
+    "key": "chauvet-dj/funfetti-shot",
+    "manufacturer": "Chauvet DJ",
+    "model": "Funfetti Shot",
+    "type": "Confetti",
+    "fx_kind": "confetti",
+    "source": "Chauvet DJ Funfetti Shot Quick Reference Guide, Rev. 4: DMX 1 channel, 000-009 Off, 010-255 On; one tank launches in 25 s (0.25 kg standard/UV, 0.45 kg mirror confetti), throw 9 m.",
+    "modes": [
+      {
+        "name": "1-channel",
+        "channel_count": 1,
+        "channels": ["FX Fire"],
+        "detail": [
+          {"n": 1, "label": "FX Fire", "role": "fx_fire", "name": "Off/On",
+           "attribute": "Confetti", "bits": 8, "coarse": true,
+           "caps": [[0, 9, "Off"], [10, 255, "On"]],
+           "on_value": 255, "off_value": 0,
+           "fx_kind": "confetti", "max_s": 25}
+        ]
+      }
+    ]
+  }
+]

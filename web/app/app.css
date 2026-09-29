@@ -798,3 +798,27 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .cal { display: flex; flex-direction: column; gap: 12px; }
 .cal-step { font-size: 14px; min-height: 40px; }
 .cal-big { height: 64px; font-size: 18px; }
+
+.src-tag { font-size: 10px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; }
+
+/* lasers and special effects */
+.fxctl { display: flex; gap: 6px; align-items: center; }
+.fx-arm { border-color: var(--blind); color: var(--blind); font-weight: 700; }
+.fx-arm.on { background: var(--live); border-color: var(--live); color: #fff; animation: fxpulse 1.2s ease-in-out infinite; }
+.fx-kill { border-color: var(--live); color: #fca5a5; font-weight: 700; }
+.fx-kill.hot { background: var(--live-bg); }
+@keyframes fxpulse { 50% { box-shadow: 0 0 0 4px var(--live-bg); } }
+.fx-armed { color: #fff; background: var(--live); border-radius: var(--radius-sm); padding: 6px 10px; font-weight: 600; font-size: 13px; }
+.fx-disarmed { color: var(--blind); background: var(--blind-bg); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px; }
+.fx-fire-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.fx-hold { min-height: 54px; min-width: 140px; font-weight: 700; touch-action: none; }
+.fx-hold.fire, .fx-hold.laser { border-color: var(--live); color: #fca5a5; }
+.fx-hold.down { background: var(--live); color: #fff; }
+.fx-row { display: grid; grid-template-columns: 96px 1fr auto; gap: 8px; align-items: center; margin: 6px 0; }
+.fx-row .chip-row { grid-column: 2 / -1; }
+.fx-row input[type=range] { width: 100%; }
+.fx-tanks { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.fx-tank { display: grid; grid-template-columns: 1fr 120px 56px; gap: 8px; align-items: center; }
+.fx-bar { height: 8px; background: rgba(255, 255, 255, 0.08); border-radius: 4px; overflow: hidden; }
+.fx-bar i { display: block; height: 100%; background: var(--accent); }
+@media (max-width: 1700px) { body.has-fx #out-sub { display: none; } }

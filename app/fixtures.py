@@ -67,10 +67,11 @@ CREATE TABLE IF NOT EXISTS modes (
 
 # Bump when parse_gdtf learns something new from a file (3: shutter open
 # values and colour/gobo wheel slots; 4: strobe ranges and the direction
-# of the pan/tilt speed channel, for the visualiser).  On start, fixtures imported by an
+# of the pan/tilt speed channel, for the visualiser; 5: special effects and
+# lasers get their own safe roles).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 4
+PARSER_VERSION = 5
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
@@ -366,6 +367,10 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "open_from": d.get("open_from"),
             "strobe_ranges": d.get("strobe_ranges") or None,
             "fast_first": d.get("fast_first"),
+            # special effects: what "fire / armed / on" and "off" are, and
+            # how long the device may run in one go
+            "on_value": d.get("on_value"), "off_value": d.get("off_value"),
+            "fx_kind": d.get("fx_kind"), "max_s": d.get("max_s"),
             "slots": d.get("slots") or None,
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
@@ -413,6 +418,34 @@ def _dmx_byte(text) -> int | None:
 
 
 _OPEN_WORDS = ("open", "on", "light")
+
+
+def _gdtf_caps(logical) -> list[list] | None:
+    """[[from, to, name]] for every ChannelSet (or function without
+    sets) - what each range of the channel does, by the maker's words."""
+    if logical is None:
+        return None
+    starts: list[tuple[int, str]] = []
+    for func in _children(logical, "ChannelFunction"):
+        f_from = _dmx_byte(func.get("DMXFrom"))
+        sets = _children(func, "ChannelSet")
+        if not sets and f_from is not None:
+            starts.append((f_from, (func.get("Name") or func.get("Attribute") or "")[:48]))
+        for cset in sets:
+            s_from = _dmx_byte(cset.get("DMXFrom"))
+            if s_from is None:
+                s_from = f_from
+            if s_from is not None:
+                starts.append((s_from, (cset.get("Name") or func.get("Name") or "")[:48]))
+    if not starts:
+        return None
+    starts.sort(key=lambda t: t[0])
+    out = []
+    for i, (lo, name) in enumerate(starts):
+        hi = (starts[i + 1][0] - 1) if i + 1 < len(starts) else 255
+        if hi >= lo:
+            out.append([lo, hi, name])
+    return out
 
 
 def _gdtf_strobe_ranges(logical) -> list[list[int]] | None:
@@ -673,6 +706,8 @@ def parse_gdtf(path: Path) -> list[dict]:
                         "open_from": _gdtf_open_value(dmx_ch, logical),
                         "strobe_ranges": _gdtf_strobe_ranges(logical),
                         "slots": _gdtf_slots(logical, wheels),
+                        "name": label,
+                        "caps": _gdtf_caps(logical),
                     })
 
             channel_count = max((s + w - 1 for s, w, _ in entries), default=0)
@@ -726,7 +761,13 @@ def import_file(db_path: Path, path: Path) -> dict:
 
 
 def store_parsed(db_path: Path, parsed: list[dict], source: str) -> dict:
-    """Upsert parsed fixtures (the parse_gdtf shape) under `source`."""
+    """Upsert parsed fixtures (the parse_gdtf shape) under `source`.
+
+    Every fixture passes through fixlib.apply_fx on the way in, whatever
+    its format: a fog machine's output or a laser's power is never stored
+    as a light's dimmer."""
+    from . import fixlib
+    parsed = [fixlib.apply_fx(item) for item in parsed]
     results = []
     with db(db_path) as conn:
         for item in parsed:
@@ -795,10 +836,11 @@ def refresh_imports(db_path: Path, folders) -> dict:
             return {"refreshed": 0, "missing": 0, "errors": []}
         sources = [r["source"] for r in conn.execute(
             "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'"
-            " OR lower(source) LIKE '%.qxf' OR lower(source) LIKE '%.json'")]
+            " OR lower(source) LIKE '%.qxf' OR lower(source) LIKE '%.json'"
+            " OR source LIKE 'jarvis:%'")]
     refreshed, missing, errors = 0, 0, []
     for name in sources:
-        if ":" in name and name.split(":", 1)[0] in ("ofl", "qlc"):
+        if ":" in name and name.split(":", 1)[0] in ("ofl", "qlc", "jarvis"):
             try:                          # a bundled library fixture
                 from . import fixlib
                 src, key = name.split(":", 1)

@@ -39,6 +39,8 @@ MAX_HISTORY = 8
 DENY_ACTIONS = frozenset({
     "set_output", "set_dmx_target", "set_dry_run", "save_show", "load_show",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
+    "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_status",
+    "quick_fx_defaults",
     "import_show",
     "import_scan", "patch_clear", "patch_from_csv", "remove_heads",
     "group_delete", "delete_preset", "delete_cue", "set_lock", "unlock",

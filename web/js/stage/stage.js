@@ -16,6 +16,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
+import { SfxSystem } from "./sfx.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap,
 } from "./materials.js";
@@ -33,7 +34,7 @@ function hexLinear(hex, out) {
   return out;
 }
 
-const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {}, hz: 0, mv: null };
+const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {}, hz: 0, mv: null, fx: null };
 
 function lookFrom(row, scratch) {
   if (!row) return { ...EMPTY_LOOK, beam: {} };
@@ -46,6 +47,7 @@ function lookFrom(row, scratch) {
     beam: row.beam || {},
     hz: +row.hz || 0,            // the real strobe rate, 0 = steady
     mv: row.mv || null,          // {p, t: full-travel seconds, s: speed 0..1}
+    fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
   };
 }
 
@@ -61,7 +63,7 @@ function mixLook(a, b, t) {
   return {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
-    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv,
+    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx,
   };
 }
 
@@ -153,6 +155,7 @@ export class Stage {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x040508);
     this.scene = scene;
+    this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
@@ -774,6 +777,7 @@ export class Stage {
       }
       if (inst.dur > 0 && now - inst.t0 < inst.dur) motion = true;
       if (inst.moving) motion = true;          // a head still travelling
+      if (this.sfxBusy) motion = true;          // confetti still falling
     }
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
@@ -795,6 +799,10 @@ export class Stage {
     this.anyLit = lit > 0;
     this.rigGroup.updateMatrixWorld(true);
     for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
+    const dtS = this._sfxLast ? Math.min(0.1, (now - this._sfxLast) / 1000) : 0;
+    this._sfxLast = now;
+    this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
+      (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
 
     this.dirty = false;

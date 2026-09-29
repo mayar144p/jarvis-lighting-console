@@ -11,17 +11,18 @@ let preview = null;
 
 export function openAddDialog(query = "") {
   let chosen = null;
-  let source = "lib";
+  let source = "all";
   const list = h("div.lib-list");
   const search = h("input", { type: "search", placeholder: "Search: brand, model, type…", value: query, autocomplete: "off" });
   const tabs = h("div.lib-tabs",
-    h("button", { "aria-selected": "true", dataset: { src: "lib" } }, "Installed"),
-    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"),
-    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"));
+    h("button", { "aria-selected": "true", dataset: { src: "all" }, title: "Installed, the Jarvis library, Open Fixture Library, QLC+ and GDTF Share at once" }, "All"),
+    h("button", { "aria-selected": "false", dataset: { src: "lib" } }, "Installed"),
+    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Jarvis library + Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"),
+    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"));
   const shareNote = h("div.muted.small", { style: { padding: "8px 12px" } });
   const pv = h("div.preview3d", h("div.cap"));
   const title = h("div.pick-title", "Pick a fixture");
-  const meta = h("div.pick-meta", "Everything installed is listed on the left. Libraries has thousands more, offline; GDTF Share has the manufacturers' own files.");
+  const meta = h("div.pick-meta", "One search covers everything: your installed fixtures, the Jarvis library, Open Fixture Library, QLC+ and (signed in) GDTF Share.");
   const mode = h("select.select", { style: { width: "100%" } });
   const qty = h("input", { type: "number", min: 1, max: 64, value: 1 });
   const uni = h("input", { type: "number", min: 1, placeholder: "auto" });
@@ -57,10 +58,11 @@ export function openAddDialog(query = "") {
     const modes = item.modes || [];
     mode.replaceChildren(...modes.map((m) => h("option", { value: m.name },
       `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)`)));
-    if (source === "share") {
+    const origin = item._origin || source;
+    if (origin === "share") {
       meta.textContent = `GDTF Share · revision ${item.revision || "?"} · downloads the manufacturer's file, then adds it`;
       addBtn.textContent = "Download and add";
-    } else if (source === "open") {
+    } else if (origin === "open") {
       meta.textContent = `${item.library} · ${modes.length} DMX mode(s) · community-made: check the mode against the light's manual`;
       addBtn.textContent = "Install and add";
     } else {
@@ -142,6 +144,48 @@ export function openAddDialog(query = "") {
     if (!chosen) showPick(list.firstChild._item);
   }
 
+  // One box, every source: installed first, then the Jarvis library,
+  // OFL and QLC+ (offline), then GDTF Share when signed in.
+  async function searchAll() {
+    const q = search.value.trim();
+    const tag = (text) => h("span.src-tag", text);
+    const row = (item, name, bits, label) => {
+      const b = h("button.lib-item", { onclick: () => showPick(item) },
+        h("div.li-t", h("b", name, " ", tag(label)), h("small", bits.filter(Boolean).join(" · "))));
+      b._item = item;
+      return b;
+    };
+    shareNote.textContent = "";
+    const [inst, lib] = await Promise.all([
+      get("/api/fixtures?q=" + encodeURIComponent(q)).catch(() => ({})),
+      q.length >= 2 ? get("/api/fixtures/library?limit=60&q=" + encodeURIComponent(q)).catch(() => ({})) : Promise.resolve({}),
+    ]);
+    const rows = [];
+    for (const r of inst.results || []) {
+      rows.push(row({ ...r, _origin: "lib" }, `${r.manufacturer} ${r.model}`,
+        [(r.body && r.body.label) || "", `${(r.modes || []).length} mode(s)`], "installed"));
+    }
+    for (const r of lib.results || []) {
+      const item = { ...r, _origin: "open", modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
+      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.type || "", `${(r.modes || []).length} mode(s)`],
+        r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Jarvis"));
+    }
+    list.replaceChildren(...rows);
+    if (!rows.length) {
+      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
+        q.length < 2 ? "Type a brand or model (e.g. \u201cfunfetti\u201d, \u201cwave 360\u201d)." : "Nothing matches in the installed fixtures or the libraries."));
+    } else if (!chosen) showPick(rows[0]._item);
+    if (q.length < 2) return;
+    const st = await get("/api/gdtf/status").catch(() => ({}));
+    if (!(st.signed_in || st.catalogue) || search.value.trim() !== q) return;
+    const d = await get("/api/gdtf/search?limit=30&q=" + encodeURIComponent(q)).catch(() => ({}));
+    if (search.value.trim() !== q || source !== "all") return;
+    for (const r of d.results || []) {
+      list.append(row({ ...r, model: r.fixture, _origin: "share" }, `${r.manufacturer} ${r.fixture}`,
+        [(r.body && r.body.label) || "", `rev ${r.revision || "?"}`], "GDTF Share"));
+    }
+  }
+
   function shareLogin() {
     const user = h("input", { type: "text", placeholder: "user", autocomplete: "username" });
     const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
@@ -158,7 +202,7 @@ export function openAddDialog(query = "") {
   let t = 0;
   search.addEventListener("input", () => {
     clearTimeout(t);
-    t = setTimeout(() => (source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "share" ? 350 : 120);
+    t = setTimeout(() => (source === "all" ? searchAll() : source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "lib" ? 120 : 300);
   });
   tabs.addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -168,7 +212,7 @@ export function openAddDialog(query = "") {
     chosen = null;
     addBtn.disabled = true;
     shareNote.replaceChildren();
-    if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
+    if (source === "all") searchAll(); else if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
   });
 
   addBtn.addEventListener("click", async () => {
@@ -176,14 +220,15 @@ export function openAddDialog(query = "") {
     addBtn.disabled = true;
     try {
       let item = chosen;
-      if (source === "share") {
+      const origin = chosen._origin || source;
+      if (origin === "share") {
         const d = await post("/api/gdtf/download", { rid: chosen.rid });
         if (d.error) throw new Error(d.error);
         toast(d.summary || "Downloaded", "ok");
         const found = await get("/api/fixtures?q=" + encodeURIComponent(`${d.manufacturer} ${d.model}`));
         item = (found.results || [])[0];
         if (!item) throw new Error("downloaded, but it did not appear in the library");
-      } else if (source === "open") {
+      } else if (origin === "open") {
         const d = await post("/api/fixtures/library/install", { src: chosen.src, key: chosen.key });
         if (d.error || !d.fixture) throw new Error(d.error || "the fixture could not be installed");
         toast(d.summary || "Installed", "ok");
@@ -203,7 +248,7 @@ export function openAddDialog(query = "") {
       addBtn.disabled = false;
     }
   });
-  searchLib();
+  searchAll();
   return close;
 }
 

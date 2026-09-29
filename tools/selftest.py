@@ -8422,7 +8422,12 @@ def test_open_libraries() -> None:
           all((fixlib.BUNDLE_DIR / f).is_file()
               for f in ("LICENSE-OFL.txt", "LICENSE-QLCPLUS.txt", "NOTICE.md")), "")
     bad = []
-    for src in fixlib.SOURCES:
+    for row in fixlib.index("jarvis"):          # the Jarvis library is plain JSON
+        try:
+            fixlib.apply_fx(fixlib.load("jarvis", row["key"])[0])
+        except Exception as exc:                 # noqa: BLE001 - collected
+            bad.append(f"jarvis {row['key']}: {exc}")
+    for src in ("ofl", "qlc"):
         with zipfile.ZipFile(fixlib.BUNDLE_DIR / fixlib.SOURCES[src]["file"]) as zf:
             for row in fixlib.index(src):
                 raw = zf.read("fixtures/" + row["key"])

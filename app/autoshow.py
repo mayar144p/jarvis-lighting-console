@@ -72,6 +72,8 @@ def analyse(eng) -> dict:
     front = (st["z"] + st["depth"]) if st else 4.0
     groups: dict[str, dict] = {}
     for h in eng.patch:
+        if fixture_kind.describe(h).get("class", "light") != "light":
+            continue                    # lasers and SFX are never auto-designed
         role = fixture_kind.design_role(h)
         where = _where(h, v, front)
         key = f"{role}@{_slug(where)}"
