@@ -687,20 +687,29 @@ def parse_gdtf(path: Path) -> list[dict]:
 
 
 def import_file(db_path: Path, path: Path) -> dict:
-    """Parse one .gdtf file and upsert it into the database."""
-    parsed = parse_gdtf(path)
+    """Parse one fixture file and upsert it into the database: a .gdtf,
+    a QLC+ .qxf or an Open Fixture Library .json."""
+    path = Path(path)
+    if path.suffix.lower() in (".qxf", ".json"):
+        from . import fixlib
+        return store_parsed(db_path, fixlib.parse_file(path), path.name)
+    return store_parsed(db_path, parse_gdtf(path), path.name)
+
+
+def store_parsed(db_path: Path, parsed: list[dict], source: str) -> dict:
+    """Upsert parsed fixtures (the parse_gdtf shape) under `source`."""
     results = []
     with db(db_path) as conn:
         for item in parsed:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO fixtures (manufacturer, model, source, imported_at)"
                 " VALUES (?,?,?,?)",
-                (item["manufacturer"], item["model"], path.name,
+                (item["manufacturer"], item["model"], source,
                  datetime.now(timezone.utc).isoformat()))
             if cur.rowcount == 0:
                 row = conn.execute(
                     "SELECT id FROM fixtures WHERE manufacturer = ? AND model = ? AND source = ?",
-                    (item["manufacturer"], item["model"], path.name)).fetchone()
+                    (item["manufacturer"], item["model"], source)).fetchone()
                 fid = row["id"] if row else None
                 # INSERT OR IGNORE leaves the ORIGINAL timestamp behind, so
                 # a profile that was just replaced still claimed the date
@@ -738,7 +747,7 @@ def import_file(db_path: Path, path: Path) -> dict:
             # says so in the export rather than looking hand-made.
             results.append({"fixture_id": fid, "manufacturer": item["manufacturer"],
                             "model": item["model"], "modes": len(item["modes"])})
-    return {"file": path.name, "imported": results}
+    return {"file": source, "imported": results}
 
 
 def refresh_imports(db_path: Path, folders) -> dict:
@@ -756,9 +765,19 @@ def refresh_imports(db_path: Path, folders) -> dict:
         if have >= PARSER_VERSION:
             return {"refreshed": 0, "missing": 0, "errors": []}
         sources = [r["source"] for r in conn.execute(
-            "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'")]
+            "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'"
+            " OR lower(source) LIKE '%.qxf' OR lower(source) LIKE '%.json'")]
     refreshed, missing, errors = 0, 0, []
     for name in sources:
+        if ":" in name and name.split(":", 1)[0] in ("ofl", "qlc"):
+            try:                          # a bundled library fixture
+                from . import fixlib
+                src, key = name.split(":", 1)
+                store_parsed(db_path, fixlib.load(src, key), name)
+                refreshed += 1
+            except Exception as exc:      # noqa: BLE001 - one bad fixture
+                errors.append(f"{name}: {exc}")
+            continue
         path = next((Path(f) / name for f in folders
                      if f and (Path(f) / name).is_file()), None)
         if path is None:
@@ -1253,7 +1272,7 @@ def remove_model(db_path: Path, manufacturer: str, model: str,
 
 
 def import_directory(db_path: Path, folder: Path) -> dict:
-    """Import every .gdtf/.zip in a folder.
+    """Import every .gdtf/.zip/.qxf/OFL .json in a folder.
 
     Returns {imported, errors, scanned} - always all three keys.  Errors
     are a FIRST-class part of the result rather than a pseudo-entry
@@ -1265,7 +1284,7 @@ def import_directory(db_path: Path, folder: Path) -> dict:
     errors: list[dict] = []
     scanned = 0
     for path in sorted(folder.rglob("*")):
-        if path.is_dir() or path.suffix.lower() not in (".gdtf", ".zip"):
+        if path.is_dir() or path.suffix.lower() not in (".gdtf", ".zip", ".qxf", ".json"):
             continue
         scanned += 1
         try:

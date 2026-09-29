@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, config, console_ai, dmxin, doctor,  # noqa: E402
+from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -389,6 +389,23 @@ class Handler(BaseHTTPRequestHandler):
                                        **client.status()}, 200)
             if route == "/api/gdtf/logout":
                 return self._json(gdtf_share().logout())
+            if route == "/api/fixtures/library/install":
+                # A bundled OFL / QLC+ fixture into the installed library.
+                src, key = str(body.get("src", "")), str(body.get("key", ""))
+                try:
+                    done = fixtures.store_parsed(config.DB_PATH, fixlib.load(src, key),
+                                                 f"{src}:{key}")
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                fixtures.invalidate_cache()
+                engine_mod._FIXTURE_CACHE.clear()
+                first = (done.get("imported") or [{}])[0]
+                item = fixtures.get(config.DB_PATH, int(first["fixture_id"])) \
+                    if first.get("fixture_id") else None
+                return self._json({"fixture": item, "summary":
+                                   f"installed {first.get('manufacturer', '')} "
+                                   f"{first.get('model', '')} from the "
+                                   f"{fixlib.SOURCES[src]['name']}"})
             if route == "/api/gdtf/download":
                 client = gdtf_share()
                 try:
@@ -858,6 +875,18 @@ class Handler(BaseHTTPRequestHandler):
                     "mode": mode.get("name", ""),
                     "map": [channel_role(c) for c in mode.get("channels") or []]})
             return self._json({"results": rows})
+        if route == "/api/fixtures/library":
+            # The bundled open libraries, searched offline.
+            try:
+                limit = max(1, min(200, int(query.get("limit", 60))))
+            except ValueError:
+                return self._json({"error": "limit must be a number"}, 400)
+            rows = fixlib.search(query.get("q", ""), limit)
+            for r in rows:
+                r["body"] = fixture_kind.describe({
+                    "manufacturer": r["manufacturer"], "model": r["model"],
+                    "mode": (r["modes"] or [["", 0]])[0][0], "map": []})
+            return self._json({"results": rows, "libraries": fixlib.libraries()})
         if route == "/api/gdtf/status":
             # Never raises; the status distinguishes signed-out, unreachable and empty.
             return self._json(gdtf_share().status())

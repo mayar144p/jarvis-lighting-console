@@ -16,11 +16,12 @@ export function openAddDialog(query = "") {
   const search = h("input", { type: "search", placeholder: "Search: brand, model, type…", value: query, autocomplete: "off" });
   const tabs = h("div.lib-tabs",
     h("button", { "aria-selected": "true", dataset: { src: "lib" } }, "Installed"),
-    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"));
+    h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"),
+    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"));
   const shareNote = h("div.muted.small", { style: { padding: "8px 12px" } });
   const pv = h("div.preview3d", h("div.cap"));
   const title = h("div.pick-title", "Pick a fixture");
-  const meta = h("div.pick-meta", "Everything installed is listed on the left; the GDTF Share tab has thousands more, straight from the manufacturers.");
+  const meta = h("div.pick-meta", "Everything installed is listed on the left. Libraries has thousands more, offline; GDTF Share has the manufacturers' own files.");
   const mode = h("select.select", { style: { width: "100%" } });
   const qty = h("input", { type: "number", min: 1, max: 64, value: 1 });
   const uni = h("input", { type: "number", min: 1, placeholder: "auto" });
@@ -59,6 +60,9 @@ export function openAddDialog(query = "") {
     if (source === "share") {
       meta.textContent = `GDTF Share · revision ${item.revision || "?"} · downloads the manufacturer's file, then adds it`;
       addBtn.textContent = "Download and add";
+    } else if (source === "open") {
+      meta.textContent = `${item.library} · ${modes.length} DMX mode(s) · community-made: check the mode against the light's manual`;
+      addBtn.textContent = "Install and add";
     } else {
       meta.textContent = `${modes.length} DMX mode(s)` + (item.source ? ` · from ${item.source}` : "");
       addBtn.textContent = "Add to stage";
@@ -80,7 +84,7 @@ export function openAddDialog(query = "") {
       }));
       if (!rows.length) {
         list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
-          q ? "Nothing installed matches. Try the GDTF Share tab." : "The library is empty. Use the GDTF Share tab to download fixtures, or drop .gdtf files into fixtures_inbox/ and import them from Settings."));
+          q ? "Nothing installed matches. Try the Libraries or GDTF Share tab." : "The library is empty. Search the Libraries tab (thousands of lights, offline) or GDTF Share, or drop .gdtf / .qxf files into fixtures_inbox/ and import them from Settings."));
       } else if (!chosen) showPick(rows[0]);
     } catch (err) {
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, err.message));
@@ -112,6 +116,32 @@ export function openAddDialog(query = "") {
     }));
   }
 
+  async function searchOpen() {
+    const q = search.value.trim();
+    if (q.length < 2) {
+      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Type a brand or model: the Open Fixture Library and QLC+ are searched offline."));
+      return;
+    }
+    const d = await get("/api/fixtures/library?limit=80&q=" + encodeURIComponent(q)).catch((e) => ({ error: e.message }));
+    if (d.error) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, d.error)); return; }
+    const libs = d.libraries || [];
+    shareNote.textContent = libs.map((l) => `${l.name}: ${l.fixtures} fixtures (${l.licence})`).join(" · ");
+    const rows = d.results || [];
+    if (!rows.length) {
+      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Nothing matches. Try fewer words, or the GDTF Share tab."));
+      return;
+    }
+    list.replaceChildren(...rows.map((r) => {
+      const item = { ...r, modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
+      const b = h("button.lib-item", { onclick: () => showPick(item) },
+        h("div.li-t", h("b", `${r.manufacturer} ${r.model}`),
+          h("small", [r.src === "ofl" ? "OFL" : "QLC+", r.type || "", `${(r.modes || []).length} mode(s)`].filter(Boolean).join(" · "))));
+      b._item = item;
+      return b;
+    }));
+    if (!chosen) showPick(list.firstChild._item);
+  }
+
   function shareLogin() {
     const user = h("input", { type: "text", placeholder: "user", autocomplete: "username" });
     const pass = h("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
@@ -128,7 +158,7 @@ export function openAddDialog(query = "") {
   let t = 0;
   search.addEventListener("input", () => {
     clearTimeout(t);
-    t = setTimeout(() => (source === "lib" ? searchLib() : searchShare()), source === "lib" ? 120 : 350);
+    t = setTimeout(() => (source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "share" ? 350 : 120);
   });
   tabs.addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -138,7 +168,7 @@ export function openAddDialog(query = "") {
     chosen = null;
     addBtn.disabled = true;
     shareNote.replaceChildren();
-    if (source === "lib") searchLib(); else searchShare();
+    if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
   });
 
   addBtn.addEventListener("click", async () => {
@@ -153,6 +183,11 @@ export function openAddDialog(query = "") {
         const found = await get("/api/fixtures?q=" + encodeURIComponent(`${d.manufacturer} ${d.model}`));
         item = (found.results || [])[0];
         if (!item) throw new Error("downloaded, but it did not appear in the library");
+      } else if (source === "open") {
+        const d = await post("/api/fixtures/library/install", { src: chosen.src, key: chosen.key });
+        if (d.error || !d.fixture) throw new Error(d.error || "the fixture could not be installed");
+        toast(d.summary || "Installed", "ok");
+        item = d.fixture;
       }
       const params = { qty: Math.max(1, Math.min(64, +qty.value || 1)) };
       if (item.id) params.fixture_id = item.id; else params.query = `${item.manufacturer} ${item.model}`;
@@ -528,7 +563,7 @@ export async function openSettings() {
           if (r.error) toast(r.error, "bad");
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
-      }, "Import .gdtf files from fixtures_inbox/")),
+      }, "Import fixture files from fixtures_inbox/ (.gdtf, .qxf, OFL .json)")),
     h("h3", "MIDI"),
     h("p.muted.small", midi.enabled ? (midi.open ? `Listening to ${midi.device}` : (midi.error || "No MIDI device found")) : "MIDI is off (MIDI_ENABLED=false)."),
     h("h3", "AI"),

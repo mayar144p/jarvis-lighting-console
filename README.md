@@ -299,16 +299,33 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
 
 ## Fixture library
 
-The [GDTF Share](https://gdtf-share.com) is the open, manufacturer-fed fixture
-database (free account). Either:
+**Add fixtures** has three tabs:
 
-* sign in from the add-fixtures dialog and search and download in the app, or
-* drop `.gdtf` files into `fixtures_inbox/` and press **Import**, or run
-  `python tools/import_gdtf.py`.
+* **Installed:** everything already in your library.
+* **Libraries:** the [Open Fixture Library](https://open-fixture-library.org)
+  (MIT) and the [QLC+](https://www.qlcplus.org) fixture definitions
+  (Apache 2.0). Together that's about 2,400 lights, including budget DJ
+  fixtures that aren't on GDTF Share (for example the Chauvet Intimidator
+  Wave 360). Both ship with Jarvis, so they're searchable offline at a
+  venue. **Install and add** puts the fixture in your library and patches
+  it.
+* **GDTF Share:** [GDTF Share](https://gdtf-share.com), the manufacturers'
+  own files (free account). You can search and download in the app.
 
-Files are parsed locally: every DMX mode, 16-bit channels, ranges and
-geometry. A corrupt file is reported by name. Downloaded files stay on your
+You can also drop `.gdtf`, QLC+ `.qxf` or Open Fixture Library `.json` files
+into `fixtures_inbox/` and press **Import** in Settings, or run
+`python tools/import_gdtf.py`.
+
+Every format is read into the same model: DMX modes, 16-bit channels, pan and
+tilt travel, the shutter's open value (so a light whose shutter reads 0 as
+closed still lights on **Full**), and the colour and gobo wheel slots with
+their names and colours. Community libraries are sometimes wrong, so check
+an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
+
+To refresh the bundled libraries from upstream, run
+`python tools/build_fixture_libraries.py`. `app/fixlib/NOTICE.md` has the
+licences and the exact upstream commits.
 
 ## Configuration (`.env`)
 
@@ -375,6 +392,8 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   ├── fixtures.py        SQLite fixture library and GDTF import
 │   ├── gdtf_geom.py       GDTF geometry and model extraction for the visualiser
 │   ├── gdtfshare.py       GDTF Share client
+│   ├── fixlib.py          Open Fixture Library + QLC+ parsers and search
+│   ├── fixlib/            the two libraries, bundled (zips + licences)
 │   ├── fixture_kind.py    physical type, brand and auto-placement of a fixture
 │   ├── venue.py           the room: templates, rigging, mounts, zones (pure)
 │   ├── timeline.py        the show timeline: tracks, clips, automation (pure)
@@ -395,8 +414,10 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   ├── selftest.py        the test suite
 │   ├── featurecheck.py    feature coverage report
 │   ├── artnet_loopback.py prove the UDP path locally
-│   └── import_gdtf.py     bulk fixture import
-├── fixtures_inbox/        drop .gdtf files here
+│   ├── import_gdtf.py     bulk fixture import
+│   ├── build_fixture_libraries.py  refresh the bundled OFL / QLC+ zips
+│   └── update.py          fast-forward update, run by the launchers
+├── fixtures_inbox/        drop .gdtf / .qxf / OFL .json files here
 └── data/                  runtime data (git-ignored): fixtures.db, shows, cache
 ```
 

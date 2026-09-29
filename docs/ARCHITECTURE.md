@@ -47,6 +47,13 @@ and rolls all of them back if any fails. The copilot uses it.
 
 * `fixtures.py` is the SQLite library. GDTF files are parsed locally into
   modes, channels, roles and ranges.
+* `fixlib.py` reads the Open Fixture Library (`.json`) and QLC+ (`.qxf`)
+  formats into the same shape as `parse_gdtf`: roles from capabilities or
+  presets, 16-bit pairs, pan/tilt travel, shutter open values and wheel
+  slots. Both libraries are bundled as zips in `app/fixlib/`, each with a
+  search index, and are parsed only on install (source `ofl:<key>` or
+  `qlc:<key>`). `refresh_imports` re-reads them, and any cached `.gdtf`
+  file, when `PARSER_VERSION` goes up.
 * `gdtf_geom.py` extracts the geometry tree and model files for the
   visualiser, cached per definition.
 * `fixture_kind.py` classifies a head from its channel roles and name into a
@@ -126,6 +133,8 @@ leaves by the default route only.
 | `/api/console/network` | GET | adapters, output target, reachability check |
 | `/api/console/autoshow` | POST | design a whole show for the rig, or build a previewed design |
 | `/api/fixtures/*` | POST | edit the library: channel labels, ranges, create, import |
+| `/api/fixtures/library` | GET | search the bundled OFL + QLC+ libraries |
+| `/api/fixtures/library/install` | POST | install one bundled fixture (`src`, `key`) |
 
 **Security.** Everything under `/api/` needs the token except the two
 public GETs, so a new endpoint is private by default. A token is required
