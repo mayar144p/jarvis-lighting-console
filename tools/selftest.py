@@ -6396,6 +6396,10 @@ def test_hardening(tmp: Path) -> None:
               call("/api/gdtf/search?limit=abc") == 400, "")
         check("the network check answers (Settings -> Output)",
               call("/api/console/network") == 200, "")
+        check("the open libraries are searchable over HTTP",
+              call("/api/fixtures/library?q=intimidator") == 200, "")
+        check("a bad library limit is a 400, not a crash",
+              call("/api/fixtures/library?q=x&limit=abc") == 400, "")
         # The live stream: one connection carries state and light.
         import http.client as _hc
         conn = _hc.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -7485,6 +7489,7 @@ def _standalone_suites():
     ("shutter rests open", test_shutter_rest),
     ("colour wheel slots", test_wheel_slots),
     ("update on launch", test_auto_update),
+    ("open fixture libraries", test_open_libraries),
     )
 
 
@@ -8397,6 +8402,121 @@ def test_auto_update() -> None:
               str(first))
         again = fixtures.refresh_imports(db, [cache])
         check("and only once", again["refreshed"] == 0, str(again))
+
+
+def test_open_libraries() -> None:
+    """The Open Fixture Library and QLC+ ship with Jarvis and install
+    through the same path as a GDTF file."""
+    print("open fixture libraries (OFL + QLC+, bundled offline)")
+    import json as _json
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    for src, least in (("ofl", 500), ("qlc", 1500)):
+        n = len(fixlib.index(src))
+        check(f"the {fixlib.SOURCES[src]['name']} is bundled ({n} fixtures)", n >= least, str(n))
+    check("both licences travel with the files",
+          all((fixlib.BUNDLE_DIR / f).is_file()
+              for f in ("LICENSE-OFL.txt", "LICENSE-QLCPLUS.txt", "NOTICE.md")), "")
+    bad = []
+    for src in fixlib.SOURCES:
+        with zipfile.ZipFile(fixlib.BUNDLE_DIR / fixlib.SOURCES[src]["file"]) as zf:
+            for row in fixlib.index(src):
+                raw = zf.read("fixtures/" + row["key"])
+                try:
+                    parsed = (fixlib.parse_ofl(_json.loads(raw), row["manufacturer"], row["key"])
+                              if src == "ofl" else fixlib.parse_qxf(raw))
+                    for m in parsed[0]["modes"]:
+                        assert len(m["channels"]) == len(m["detail"]) == m["channel_count"]
+                except Exception as exc:     # noqa: BLE001 - collected
+                    bad.append(f"{row['key']}: {exc}")
+    check("every bundled fixture parses, every mode consistent", not bad, "; ".join(bad[:3]))
+
+    top = fixlib.search("intimidator spot 260")
+    check("search finds the exact model first",
+          top and top[0]["model"] == "Intimidator Spot 260" and top[0]["src"] == "ofl",
+          str([(r["src"], r["model"]) for r in top[:3]]))
+    check("search matches squashed words (wave360)",
+          any("Wave 360" in r["model"] for r in fixlib.search("wave360")), "")
+    check("an empty search returns nothing, not everything", fixlib.search("  ") == [], "")
+
+    spot = fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json")[0]
+    m14 = next(m for m in spot["modes"] if m["channel_count"] == 14)
+    roles = [d["role"] for d in m14["detail"]]
+    check("OFL Spot 260: roles from capabilities, not guesses",
+          roles[:6] == ["pan", "pan_fine", "tilt", "tilt_fine", "speed", "wheel"]
+          and "gobo" in roles and "gobo_rot" in roles and roles.count("wheel") == 1, str(roles))
+    wheel = m14["detail"][5]["slots"]
+    check("its colour wheel lists the real slots and colours",
+          [x["name"] for x in wheel][:5] == ["Open", "Orange", "Lime Green", "Cyan", "Red"]
+          and wheel[4]["value"] == 31 and wheel[4]["hex"] == "#ff0000", str(wheel[:5]))
+    strobe = next(d for d in m14["detail"] if d["role"] == "strobe")
+    check("its strobe opens at 4 (0-3 is closed)", strobe["open_from"] == 4, str(strobe))
+    pan = m14["detail"][0]
+    check("pan travel is 540 degrees, centred", (pan["phys_from"], pan["phys_to"]) == (-270.0, 270.0), str(pan))
+
+    wave = fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")[0]
+    m17 = next(m for m in wave["modes"] if m["channel_count"] == 17)
+    r17 = [d["role"] for d in m17["detail"]]
+    check("QLC+ Wave 360: four tilts, pan with fine, a dimmer and a shutter",
+          r17.count("tilt") == 4 and r17[:2] == ["pan", "pan_fine"]
+          and "dimmer" in r17 and "shutter" in r17, str(r17))
+    shut = next(d for d in m17["detail"] if d["role"] == "shutter")
+    check("its 'Shutter Programs' channel opens at its 'On' value", shut["open_from"] == 20, str(shut))
+    check("a programme channel is never mistaken for the dimmer",
+          r17.count("dimmer") == 1, str(r17))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "lib.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                              "qlc:Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"),
+                              "ofl:chauvet-dj/intimidator-spot-260.json")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("add_heads", query="Intimidator Wave 360", mode="17 ch.", qty=1, universe=1, address=1)
+            check("an installed library fixture patches", r.get("ok"), str(r))
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1, universe=1, address=30)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("Full lights the Wave 360: dimmer up, shutter on",
+                  buf[14] == 255 and buf[15] == 20, str(list(buf[:17])))
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#ff2000")
+            buf = e.build_frames()[1]
+            check("red on the Spot 260 turns its wheel to the Red slot",
+                  buf[29 + 5] == 31 and buf[29 + 10] == 255 and buf[29 + 11] == 4,
+                  str(list(buf[29:43])))
+        finally:
+            e.shutdown()
+
+        inbox = tmp / "inbox"
+        (inbox / "chauvet-dj").mkdir(parents=True)
+        with zipfile.ZipFile(fixlib.BUNDLE_DIR / "qlcplus.zip") as zf:
+            (inbox / "wave.qxf").write_bytes(zf.read("fixtures/Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"))
+        with zipfile.ZipFile(fixlib.BUNDLE_DIR / "ofl.zip") as zf:
+            (inbox / "chauvet-dj" / "intimidator-spot-260.json").write_bytes(
+                zf.read("fixtures/chauvet-dj/intimidator-spot-260.json"))
+        (inbox / "notes.json").write_text("{}")
+        db2 = tmp / "inbox.db"
+        done = fixtures.import_directory(db2, inbox)
+        check("dropped .qxf and OFL .json files import from the inbox",
+              len(done["imported"]) == 2 and len(done["errors"]) == 1
+              and {r["model"] for r in fixtures.search(db2, "intimidator", 10)}
+              >= {"Intimidator Wave 360 IRC", "Intimidator Spot 260"}, str(done))
+        with fixtures.db(db) as conn:
+            conn.execute("UPDATE modes SET detail = '[]'")
+            conn.execute("DELETE FROM meta") if conn.execute(
+                "SELECT name FROM sqlite_master WHERE name='meta'").fetchone() else None
+        again = fixtures.refresh_imports(db, [])
+        check("library fixtures are re-read from the bundle after an update",
+              again["refreshed"] == 2 and fixtures.role_ranges(
+                  db, "Chauvet DJ", "Intimidator Spot 260", "14-channel").get("strobe", {}).get("open_from") == 4,
+              str(again))
 
 
 def _raises(fn) -> bool:
