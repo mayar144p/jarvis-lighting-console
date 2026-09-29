@@ -7476,6 +7476,7 @@ def _standalone_suites():
     ("fx library", test_fx_library),
     ("show building", test_show_building),
     ("venue", test_venue),
+    ("quick buttons", test_quick_buttons),
     )
 
 
@@ -7705,6 +7706,124 @@ def test_venue() -> None:
             check("a non-image is refused (PDFs are rendered in the browser)", refused, "")
         finally:
             main_mod.config.DATA = old_data
+
+
+def test_quick_buttons() -> None:
+    """Quick buttons (flash, strobe, colour, kill, fx, go) and aim_at."""
+    print("quick buttons and aim")
+    import math
+    import tempfile
+    from app import engine as eng
+    from app import fixtures, merge
+
+    # the override layer on its own
+    head = {"head_no": 1, "map": ["dimmer", "red", "green", "blue"]}
+    out = merge.resolve_head(head, {}, [], over={"level": 100})
+    check("flash lifts a dark head to full", out["dimmer"] == 100, str(out))
+    out = merge.resolve_head(head, {1: {"dimmer": 80}}, [], over={"kill": True})
+    check("kill takes it to nothing", out["dimmer"] == 0, str(out))
+    out = merge.resolve_head(head, {}, [], over={"level": 100}, blackout=True)
+    check("blackout still beats a flash", out["dimmer"] == 0, str(out))
+    out = merge.resolve_head(head, {}, [], over={"level": 100}, master=50)
+    check("and the grand master still scales it", out["dimmer"] == 50, str(out))
+    out = merge.resolve_head(head, {1: {"red": 255}}, [], over={"set": {"blue": 255, "red": 0}})
+    check("a colour bump replaces the colour", out["red"] == 0 and out["blue"] == 255, str(out))
+    lit = [merge.resolve_head(head, {}, [], over={"level": 100, "strobe": 10},
+                              now=100 + i / 400)["dimmer"] for i in range(400)]
+    frac = sum(1 for v in lit if v) / 400
+    check("a strobe gates the light in time on the wire", 0.2 < frac < 0.5, str(frac))
+    gate = {"head_no": 2, "map": ["pan", "tilt", "shutter", "red"]}
+    out = merge.resolve_head(gate, {2: {"shutter": 200, "red": 90}}, [], blackout=True, gate_closed=None)
+    check("a shutter that is open at 0 is not 'closed' to 0 (colour goes to 0 instead)",
+          out["shutter"] == 200 and out["red"] == 0, str(out))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "q.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.ensure_venue()
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=4)
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            r = e.act("quick_defaults")
+            check("suggested buttons fit the rig",
+                  r["ok"] and any(b["label"] == "Flash all" for b in e.quick)
+                  and any(b["target"].get("type") == "par" for b in e.quick), r.get("error") or "")
+            check("but never overwrite a page silently",
+                  e.act("quick_defaults")["ok"] is False, "")
+            check("setting buttons up is an undo step",
+                  e.act("undo")["ok"] and not e.quick, "")
+            e.act("quick_defaults")
+            flash = next(b for b in e.quick if b["label"] == "Flash all")
+            before = e._undo_public() if hasattr(e, "_undo_public") else None
+            e.act("quick_press", id=flash["id"], down=True)
+            looks = e._looks()
+            check("holding Flash all lights every head", all(r["a"] == 1.0 for r in looks),
+                  str([r["a"] for r in looks]))
+            check("pressing a button is not an undo step",
+                  (e._undo_public() if hasattr(e, "_undo_public") else None) == before, "")
+            e.act("quick_press", id=flash["id"], down=False)
+            check("releasing it lets go", not any(r["a"] > 0 for r in e._looks()), "")
+            red = next(b for b in e.quick if b["label"] == "All Red")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#0000ff")
+            e.act("quick_press", id=red["id"], down=True)
+            pars = [r for r in e._looks() if e._head(r["n"])["model"].startswith("LED PAR")]
+            check("a colour bump turns the PARs red while held",
+                  all(r["hex"].lower().startswith("#ff00") for r in pars), str([r["hex"] for r in pars]))
+            e.act("quick_press", id=red["id"], down=False)
+            fx_btn = next(b for b in e.quick if b["kind"] == "fx")
+            e.act("quick_press", id=fx_btn["id"], down=True)
+            n_fx = len(e.fx)
+            e.act("quick_press", id=fx_btn["id"], down=False)
+            check("an effect button latches (release does not stop it)", len(e.fx) == n_fx >= 1, "")
+            e.act("quick_press", id=fx_btn["id"], down=True)
+            check("and a second press stops it", len(e.fx) == n_fx - 1, str(len(e.fx)))
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "label": "x"})
+            check("a colour button without a colour is refused", r["ok"] is False, "")
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "strobe", "hz": 99, "target": {"group": 7}})
+            check("values are clamped (strobe rate <= 20 Hz)",
+                  r["ok"] and r["button"]["hz"] == 20, json.dumps(r.get("button")))
+            e.act("save_show", name="qb")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="qb")
+                check("buttons travel with the show file",
+                      any(b["label"] == "Flash all" for b in e2.quick) and not e2.quick_active, "")
+            finally:
+                e2.shutdown()
+
+            # aim_at: every mover's beam, recomputed the way the 3D view
+            # draws it, passes through the target
+            e.act("select_all")
+            r = e.act("aim_at", x=1.0, y=0.5, z=9.0)
+            check("aim_at aims the movers and skips the PARs",
+                  r["ok"] and len(r["heads"]) == 4 and len(r["skipped"]) == 4, r.get("summary"))
+            worst = 0.0
+            for row in e._looks():
+                if "pan" not in row:
+                    continue
+                h = e._head(row["n"])
+                rng = row.get("deg") or {}
+                pr, tr = rng.get("pan", [-270, 270]), rng.get("tilt", [-135, 135])
+                p = math.radians(pr[0] + row["pan"] * (pr[1] - pr[0]))
+                t = math.radians(tr[0] + row["tilt"] * (tr[1] - tr[0]))
+                d = [math.sin(t) * math.sin(p), math.cos(t), math.sin(t) * math.cos(p)]
+                hung = h.get("stance") == "hang"
+                if hung:
+                    d = [-d[0], -d[1], d[2]]
+                o = [h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]]
+                v = [(1.0, 0.5, 9.0)[i] - o[i] for i in range(3)]
+                along = sum(v[i] * d[i] for i in range(3))
+                worst = max(worst, math.sqrt(max(0.0, sum(x * x for x in v) - along * along)))
+            check("each beam passes within 10 cm of the target", worst < 0.1, f"{worst:.3f} m")
+            e.act("venue_add", item={"kind": "mark", "name": "Singer", "x": -2, "z": 2, "y": 0.8})
+            r = e.act("aim_at", mark="singer")
+            check("aim_at a performer mark by name", r["ok"] and r["target"][0] == -2, r.get("error") or "")
+        finally:
+            e.shutdown()
 
 
 def test_show_building() -> None:

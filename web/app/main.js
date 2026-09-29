@@ -7,6 +7,7 @@ import { initFixtures } from "./fixtures.js";
 import { initStage } from "./stagepanel.js";
 import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
+import { initQuickButtons } from "./quickbuttons.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initKeys } from "./keys.js";
@@ -32,6 +33,7 @@ async function boot() {
   initStage();
   initProgrammer();
   initPlaybacks();
+  initQuickButtons();
   initCmdbar();
   initCopilot();
   initKeys();

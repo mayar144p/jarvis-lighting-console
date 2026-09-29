@@ -91,6 +91,8 @@ UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
+    # quick buttons are played, not edited: a flash is not an undo step
+    "quick_press", "quick_release_all",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -558,6 +560,8 @@ ACTIONS = (
     "venue_template", "venue_room", "venue_stage", "venue_add",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
+    "quick_set", "quick_press", "quick_release_all", "quick_defaults",
+    "aim_at",
 )
 
 
@@ -586,6 +590,9 @@ class Engine:
         # The room the rig lives in (app/venue.py).  "auto" means nothing
         # was drawn and the visualiser sizes a room around the patch.
         self.venue: dict = venue_mod.empty()
+        # Quick buttons (see _a_quick_set) and the ones held right now.
+        self.quick: list[dict] = []
+        self.quick_active: dict[str, dict] = {}
 
         self.patch: list[dict] = []
         self.patch_rev = 0
@@ -698,6 +705,7 @@ class Engine:
             "presets": [dict(p) for p in self.presets],
             "playbacks": _copy_playbacks(self.playbacks),
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
+            "quick": [dict(b) for b in self.quick],
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
             # the way it was rigged.  A patch change is an EDIT like any
@@ -720,6 +728,9 @@ class Engine:
         self.presets = [dict(p) for p in (state.get("presets") or [])]
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
         self.venue = state.get("venue") or venue_mod.empty()
+        self.quick = [dict(b) for b in (state.get("quick") or [])]
+        self.quick_active = {k: v for k, v in self.quick_active.items()
+                             if any(b["id"] == k for b in self.quick)}
         self.mode = state.get("mode", self.mode)
         # Limits and orientation come back with the patch, so an undo
         # restores a fixture's rigging as well as its position.
@@ -3000,6 +3011,7 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "save_show", "load_show", "import_show",
+        "quick_set", "quick_defaults",
     })
 
     LOCK_STATES = ("design", "operate", "locked")
@@ -3273,6 +3285,300 @@ class Engine:
         return {"venue": venue_mod.describe(self.venue),
                 "templates": venue_mod.template_list(),
                 "summary": "venue " + (self.venue.get("name") or "(auto)")}
+
+    # ------------------------------------------------------------------
+    # quick buttons: instant, MagicQ-style executor buttons
+    # ------------------------------------------------------------------
+    QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
+                   "release", "preset", "blackout")
+    QUICK_PAGES = 4
+    QUICK_SLOTS = 24
+
+    def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
+        kind = str(raw.get("kind") or "flash").lower()
+        if kind not in self.QUICK_KINDS:
+            raise ValueError(f"button kind must be one of {', '.join(self.QUICK_KINDS)}")
+        mode = str(raw.get("mode") or ("hold" if kind in ("flash", "strobe", "kill", "blackout") else
+                                       "latch" if kind in ("colour", "fx") else "tap")).lower()
+        if mode not in ("hold", "latch", "tap"):
+            raise ValueError("mode is hold, latch or tap")
+        target = raw.get("target") if isinstance(raw.get("target"), dict) else {"all": True}
+        clean_t: dict = {}
+        if target.get("group") is not None:
+            clean_t["group"] = int(target["group"])
+        elif target.get("heads"):
+            clean_t["heads"] = sorted({int(h) for h in target["heads"]})[:512]
+        elif target.get("type"):
+            clean_t["type"] = str(target["type"])[:30]
+        else:
+            clean_t["all"] = True
+        btn = {"id": f"q{page}-{slot}", "page": page, "slot": slot,
+               "label": str(raw.get("label") or kind.title())[:24],
+               "kind": kind, "mode": mode, "target": clean_t,
+               "colour": str(raw.get("colour") or "")[:9] or None}
+        if kind == "flash":
+            btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
+        if kind == "strobe":
+            btn["hz"] = float(_clamp(raw.get("hz", 10), 1, 20))
+        if kind == "colour" and not btn["colour"]:
+            raise ValueError("a colour button needs a colour")
+        if kind == "fx":
+            name = str(raw.get("fx") or "")
+            if name not in fxlib_mod.FX:
+                raise ValueError(f"unknown effect {name!r}")
+            btn["fx"] = name
+        if kind in ("go", "release"):
+            btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
+            if raw.get("cue") not in (None, ""):
+                btn["cue"] = int(raw["cue"])
+        if kind == "preset":
+            btn["preset"] = int(raw.get("preset") or 0)
+        return btn
+
+    def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
+        """Create, change or remove the quick button at page/slot."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if slot is None:
+            raise ValueError("slot is required")
+        slot = int(_clamp(slot, 1, self.QUICK_SLOTS))
+        key = f"q{page}-{slot}"
+        self.quick = [b for b in self.quick if b["id"] != key]
+        self.quick_active.pop(key, None)
+        if _truthy(clear) or button is None:
+            return {"id": key, "summary": f"cleared button {page}.{slot}"}
+        btn = self._quick_clean(dict(button), page, slot)
+        self.quick.append(btn)
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    def _quick_heads(self, btn: dict) -> list[int]:
+        t = btn.get("target") or {}
+        patched = [h["head_no"] for h in self.patch]
+        if t.get("group") is not None:
+            for g in self.groups:
+                if g["n"] == t["group"]:
+                    return [h for h in g["heads"] if h in patched]
+            return []
+        if t.get("heads"):
+            return [h for h in t["heads"] if h in patched]
+        if t.get("type"):
+            want = t["type"]
+            return [h["head_no"] for h in self.patch
+                    if fixture_kind.describe(h)["type"] == want
+                    or fixture_kind.design_role(h) == want]
+        return patched
+
+    def _a_quick_press(self, id=None, page=None, slot=None, down=True, **_):
+        """Press (down=True) or release (down=False) a quick button."""
+        key = str(id) if id else f"q{int(page)}-{int(slot)}"
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if not btn:
+            raise ValueError(f"no button {key}")
+        down = _truthy(down)
+        kind, mode = btn["kind"], btn["mode"]
+        if kind in ("go", "release", "preset"):
+            if not down:
+                return {"id": key, "active": False}
+            if kind == "go":
+                params = {"playback": btn["playback"]}
+                if btn.get("cue"):
+                    params["cue"] = btn["cue"]
+                r = self._a_cue_go(**params)
+            elif kind == "release":
+                r = self._a_playback_release(playback=btn["playback"])
+            else:
+                r = self._a_include_preset(preset=btn["preset"])
+            return {"id": key, "active": False, "summary": r.get("summary") or btn["label"]}
+        active = key in self.quick_active
+        if mode == "latch":
+            if not down:
+                return {"id": key, "active": active}
+            turn_on = not active
+        else:                                   # hold (tap behaves as hold)
+            turn_on = down
+        if turn_on and not active:
+            run = {"since": time.monotonic(), "heads": self._quick_heads(btn)}
+            if kind == "fx":
+                r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
+                run["fx"] = r.get("fx")
+            self.quick_active[key] = run
+        elif not turn_on and active:
+            run = self.quick_active.pop(key)
+            if run.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        on = key in self.quick_active
+        return {"id": key, "active": on,
+                "summary": f"{btn['label']} {'on' if on else 'off'}"}
+
+    def _a_quick_release_all(self, **_):
+        for key in list(self.quick_active):
+            run = self.quick_active.pop(key)
+            if run.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        return {"summary": "all quick buttons released"}
+
+    def _a_quick_defaults(self, page=1, replace=False, **_):
+        """Fill a page with buttons that suit this rig: flash and strobe
+        per type of light, colour bumps, a kill, effects and GO."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if any(b["page"] == page for b in self.quick) and not _truthy(replace):
+            raise ValueError(f"page {page} already has buttons")
+        self.quick = [b for b in self.quick if b["page"] != page]
+        types: dict[str, int] = {}
+        for h in self.patch:
+            role = fixture_kind.design_role(h)
+            types[role] = types.get(role, 0) + 1
+        label = {"spot": "Movers", "beam": "Beams", "wash": "Washes", "par": "PARs",
+                 "bar": "Bars", "generic": "Lights"}
+        plan = [{"kind": "flash", "label": "Flash all", "colour": "#ffffff"},
+                {"kind": "strobe", "label": "Strobe all", "hz": 12},
+                {"kind": "kill", "label": "Kill all"},
+                {"kind": "strobe", "label": "Slow strobe", "hz": 4}]
+        for role in sorted(types, key=lambda r: -types[r])[:4]:
+            name = label.get(role, role.title())
+            plan.append({"kind": "flash", "label": f"Flash {name}", "target": {"type": role}})
+            plan.append({"kind": "strobe", "label": f"Strobe {name}", "target": {"type": role}, "hz": 10})
+        for hexc, nm in (("#ff0000", "Red"), ("#0033ff", "Blue"), ("#ffffff", "White"),
+                         ("#ff00cc", "Magenta"), ("#00ffaa", "Cyan"), ("#ffb000", "Amber")):
+            plan.append({"kind": "colour", "label": f"All {nm}", "colour": hexc, "mode": "hold"})
+        for fx_name in ("rainbow", "dimmer_chase", "sparks", "circle"):
+            if fx_name in fxlib_mod.FX:
+                plan.append({"kind": "fx", "label": fxlib_mod.FX[fx_name]["label"], "fx": fx_name})
+        plan.append({"kind": "go", "label": "GO PB1", "playback": 1})
+        plan.append({"kind": "blackout", "label": "Blackout (hold)"})
+        made = []
+        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+            btn = self._quick_clean(raw, page, slot)
+            self.quick.append(btn)
+            made.append(btn)
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"buttons": len(made), "summary": f"page {page}: {len(made)} buttons for this rig"}
+
+    def _override_vals(self) -> dict:
+        """Per-head overrides from the quick buttons that are held now."""
+        if not self.quick_active:
+            return {}
+        by_id = {b["id"]: b for b in self.quick}
+        out: dict[int, dict] = {}
+        heads = {h["head_no"]: h for h in self.patch}
+        for key, run in sorted(self.quick_active.items(), key=lambda kv: kv[1]["since"]):
+            btn = by_id.get(key)
+            if not btn:
+                continue
+            kind = btn["kind"]
+            for n in run["heads"]:
+                head = heads.get(n)
+                if head is None:
+                    continue
+                o = out.setdefault(n, {})
+                if kind in ("flash", "strobe"):
+                    o["level"] = max(o.get("level") or 0, btn.get("level", 100))
+                    gate = self._shutter_role(head)
+                    if gate and not any(r in HTP_ROLES for r in head["map"]):
+                        o.setdefault("set", {})[gate] = self._open_value(head, gate)
+                    if kind == "strobe":
+                        o["strobe"] = max(o.get("strobe") or 0, btn.get("hz", 10))
+                    if btn.get("colour"):
+                        o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
+                elif kind == "colour":
+                    o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
+                elif kind in ("kill", "blackout"):
+                    o["kill"] = True
+        return out
+
+    def _gates(self) -> dict:
+        """The value that closes each head's shutter, per the profile:
+        0 unless the profile says 0 is already open (then None)."""
+        cache = getattr(self, "_gate_cache", None)
+        if cache and cache[0] == self.patch_rev:
+            return cache[1]
+        gates = {}
+        for h in self.patch:
+            role = self._shutter_role(h)
+            if role is None:
+                continue
+            light_from = self._profile_levels(h)[1].get(role)
+            gates[h["head_no"]] = None if light_from == 0 else 0
+        self._gate_cache = (self.patch_rev, gates)
+        return gates
+
+    def _quick_public(self) -> dict:
+        return {"buttons": [dict(b) for b in self.quick],
+                "active": sorted(self.quick_active),
+                "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
+
+    def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
+                  **_):
+        """Point every selected moving head at one spot in the room.
+
+        Solved per head from where it hangs and which way up it is, through
+        its own pan/tilt travel, so twelve movers on three trusses all land
+        on the same mark - the thing you would otherwise do head by head.
+        """
+        import math
+        if mark:
+            found = next((o for o in (self.venue.get("objects") or [])
+                          if o.get("kind") == "mark"
+                          and str(o.get("name") or "").lower() == str(mark).lower()), None)
+            if not found:
+                raise ValueError(f"no mark named {mark!r}")
+            x, z = found["x"], found["z"]
+            y = float(found.get("y") or 0) + 1.2
+        if x is None or z is None:
+            raise ValueError("x and z (or a mark) are required")
+        tx, ty, tz = float(x), float(y if y is not None else 0.0), float(z)
+        rows = ([self._head(int(h)) for h in heads] if heads
+                else self._require_selection())
+        aimed, skipped = [], []
+        for h in rows:
+            if "pan" not in h["map"] or "tilt" not in h["map"]:
+                skipped.append(h["head_no"])
+                continue
+            hung = (h.get("stance") == "hang") if h.get("stance") else \
+                h.get("kind") == "truss"
+            ox, oy, oz = h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]
+            dx, dy, dz = tx - ox, ty - oy, tz - oz
+            n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+            dx, dy, dz = dx / n, dy / n, dz / n
+            lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
+            t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
+            p0 = math.degrees(math.atan2(lx, lz))
+            ranges = self.head_ranges(h)
+            pr = ranges.get("pan") or {}
+            tr = ranges.get("tilt") or {}
+            pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
+                          and pr.get("min") is not None else (-270.0, 270.0))
+            tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
+                          and tr.get("min") is not None else (-135.0, 135.0))
+            cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
+            cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
+            fits = [(p, t) for p, t in cands
+                    if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
+            if not fits:
+                skipped.append(h["head_no"])
+                continue
+            p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
+            fp = (p - pmin) / ((pmax - pmin) or 1)
+            ft = (t - tmin) / ((tmax - tmin) or 1)
+            flags = h.get("orient") or {}
+            if flags.get("invert_pan"):
+                fp = 1 - fp
+            if flags.get("invert_tilt"):
+                ft = 1 - ft
+            if flags.get("swap"):
+                fp, ft = ft, fp
+            top = 65535 if "pan_fine" in h["map"] else 255
+            self._a_set_position(pan=round(max(0, min(1, fp)) * top),
+                                 tilt=round(max(0, min(1, ft)) * top),
+                                 unit="logical", head=h["head_no"])
+            aimed.append(h["head_no"])
+        if not aimed:
+            raise ValueError("none of those lights can pan and tilt"
+                             if skipped else "nothing selected")
+        return {"heads": aimed, "skipped": skipped, "target": [tx, ty, tz],
+                "summary": f"aimed {len(aimed)} light(s) at "
+                           f"x{tx:.1f} z{tz:.1f}"
+                           + (f" ({len(skipped)} cannot move)" if skipped else "")}
 
     def _a_place_many(self, moves=None, rig=None, **_):
         """Move several heads at once (a dragged selection): one undo step.
@@ -4795,7 +5101,8 @@ class Engine:
 
     def _resolve_head(self, head: dict, prog: dict,
                       pb_vals: list[tuple[int, dict]],
-                      fx_row: dict[str, int] | None = None) -> dict:
+                      fx_row: dict[str, int] | None = None,
+                      over: dict | None = None) -> dict:
         """Final per-role values for one head, through the shared merge.
 
         Delegated to app/merge.py (see that module for the precedence
@@ -4803,7 +5110,8 @@ class Engine:
         both call the same function.
         """
         return merge.resolve_head(head, prog, pb_vals, fx_row,
-                                  self.master, self.blackout)
+                                  self.master, self.blackout, over, None,
+                                  self._gates().get(head["head_no"], 0))
 
     def _programmer_now(self, now: float) -> dict:
         """The programmer as it is at `now`, mid-fade if one is running."""
@@ -4836,7 +5144,9 @@ class Engine:
         return merge.build_frames(self.patch, self._programmer_now(now),
                                   self._active_playbacks(now),
                                   self._fx_values(now),
-                                  self.master, self.blackout)
+                                  self.master, self.blackout,
+                                  overrides=self._override_vals(), now=now,
+                                  gates=self._gates())
 
     def channel_report(self, heads: list[int] | None = None) -> dict:
         """Per-channel DMX truth: label, role, and the byte on the wire.
@@ -5097,6 +5407,9 @@ class Engine:
             "min": None, "max": None, "unit": "raw", "phys": None,
         }
         heads = [h for h in rows if h["head_no"] in set(capable)]
+        if role in ("shutter", "strobe") and heads:
+            # the value that means "open, not strobing" on this fixture
+            entry["open"] = self._open_value(heads[0], role)
         # The smallest domain on the capable heads, so a mixed selection
         # is not offered a number only some of them can take.
         full = min([attr_domain(h, role) for h in heads] or [255])
@@ -5992,10 +6305,12 @@ class Engine:
         prog = self._programmer_now(now)
         pb_vals = self._active_playbacks(now)
         fx_vals = self._fx_values(now)
+        overrides = self._override_vals()
         out = []
         for head in self.patch:
+            over = overrides.get(head["head_no"])
             values = self._resolve_head(head, prog, pb_vals,
-                                        fx_vals.get(head["head_no"]))
+                                        fx_vals.get(head["head_no"]), over)
             intensity = None
             for role in HTP_ROLES:
                 if role in values:
@@ -6042,6 +6357,8 @@ class Engine:
             # screen exactly as they will on stage.
             beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
                     for r in _BEAM_LOOK_ROLES if r in values}
+            if over and over.get("strobe") and row["a"] > 0:
+                beam["strobe"] = round(min(1.0, float(over["strobe"]) / 20.0), 3)
             if beam:
                 row["beam"] = beam
             out.append(row)
@@ -6184,6 +6501,7 @@ class Engine:
                            for k, v in self.programmer.items()},
             "selected": list(self.selected),
             "venue": self.venue,
+            "quick": self.quick,
             "meta": {"master": self.master,
                      "show_file": self.show_file},
         }
@@ -6333,6 +6651,11 @@ class Engine:
             meta = payload.get("meta") or {}
             self.master = _clamp(meta.get("master", 100), 0, 100)
             self.show_file = meta.get("show_file") or self.show_file
+            for b in payload.get("quick") or []:
+                try:
+                    self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
             venue = payload.get("venue")
             if isinstance(venue, dict):
                 try:
@@ -6361,6 +6684,7 @@ class Engine:
                 "presets": json.loads(json.dumps(self.presets, default=str)),
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
                 "venue": json.loads(json.dumps(self.venue, default=str)),
+                "quick": json.loads(json.dumps(self.quick, default=str)),
                 "meta": {"master": self.master},
             }
             text = json.dumps(payload, indent=2)
@@ -6509,6 +6833,12 @@ class Engine:
         master = _clamp((payload.get("meta") or {}).get("master", 100), 0, 100)
         venue = (venue_mod.normalise(payload["venue"])
                  if isinstance(payload.get("venue"), dict) else None)
+        quick = []
+        for b in payload.get("quick") or []:
+            try:
+                quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+            except (KeyError, TypeError, ValueError):
+                continue
 
         # Commit phase: swap the whole show in under the lock.  A bad patch
         # raises from _replace_patch, which rolls the patch back, and the
@@ -6522,6 +6852,8 @@ class Engine:
             self.playbacks = playbacks
             self.master = master
             self.show_file = label
+            self.quick = quick
+            self.quick_active = {}
             if venue is not None:           # older shows kept no room
                 self.venue = venue
                 self._reflow_mounts()
@@ -6785,6 +7117,7 @@ class Engine:
                 "shows": self._show_names(),
                 "show_file": self.show_file,
                 "venue": self.venue,
+                "quick": self._quick_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.
                 # Both feeds carry it so the warning survives a reload
@@ -6823,6 +7156,7 @@ class Engine:
                 "lock": self.lock_state,
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
+                "quick_active": sorted(self.quick_active),
                 "patch_rev": self.patch_rev,
                 "output": self._output_public(),
                 "programmer": self._programmer_public(),

@@ -613,6 +613,14 @@ export class Stage {
       down = null;
       if (d0.gizmo || (this.editor && this.editor.busy)) return;
       if (Math.hypot(ev.clientX - d0.x, ev.clientY - d0.y) > 5) return;   // that was an orbit
+      if (this.pickOnce) {
+        const cb = this.pickOnce;
+        this.pickOnce = null;
+        dom.classList.remove("picking");
+        const p = this.surfacePoint(ev);
+        if (p) cb(p);
+        return;
+      }
       if (this.editing && this.editor) { this.editor.click(ev); return; }
       const inst = this._hit(ev);
       if (inst && this.opts.onPick) {
@@ -635,6 +643,38 @@ export class Stage {
     const v = this.built.venue.underlay || {};
     u.visible = this.editing && v.show !== false;
     this.dirty = true;
+  }
+
+  /** The next click in the view reports the surface point under it. */
+  pickPoint(cb) {
+    this.pickOnce = cb;
+    const dom = this.renderer.domElement;
+    dom.classList.add("picking");
+    const esc = (e) => {
+      if (e.key !== "Escape") return;
+      this.pickOnce = null;
+      dom.classList.remove("picking");
+      window.removeEventListener("keydown", esc, true);
+    };
+    window.addEventListener("keydown", esc, true);
+  }
+
+  /** Where a ray from the pointer lands: stage, riser, object or floor. */
+  surfacePoint(ev) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const targets = [];
+    if (this.built) {
+      this.built.group.traverse((o) => {
+        if (!o.isMesh || !o.visible || o.userData.crowd || o.userData.performer || o.userData.zone) return;
+        const k = o.userData.venueKind;
+        if (k === "floor" || k === "stage" || (o.userData.venueId && k !== "underlay" && !["truss", "pipe", "tower", "ladder", "stand", "base"].includes(k))) targets.push(o);
+      });
+    }
+    const hit = this.raycaster.intersectObjects(targets, false)[0];
+    if (hit) return hit.point.clone();
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
   }
 
   /** Arrange mode: the editor owns clicks and shows its gizmo. */

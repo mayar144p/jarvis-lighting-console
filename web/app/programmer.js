@@ -24,6 +24,36 @@ let fxChosen = null;
 const sel = () => selected();
 const hasSel = () => sel().length > 0;
 
+// What the selection can physically do, so a PAR is never offered a
+// pan/tilt pad and a white strobe never a colour wheel.
+const COLOUR_ROLES = ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "lime", "wheel", "cto"];
+const BEAM_ROLES = ["zoom", "focus", "iris", "gobo", "gobo_rot", "prism", "frost", "shutter", "strobe", "prism_rot", "gobo2"];
+
+function capabilities() {
+  const roles = new Set();
+  for (const hd of selectionHeads()) for (const r of hd.map || []) roles.add(r);
+  return {
+    roles,
+    position: roles.has("pan") || roles.has("tilt"),
+    colour: COLOUR_ROLES.some((r) => roles.has(r)),
+    mixing: ["red", "cyan"].some((r) => roles.has(r)),
+    beam: BEAM_ROLES.some((r) => roles.has(r)),
+  };
+}
+
+function applyTabVisibility() {
+  const any = hasSel();
+  const cap = capabilities();
+  const show = { position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam };
+  $$("#prog-tabs button").forEach((b) => {
+    const t = b.dataset.tab;
+    const visible = show[t] === undefined ? true : show[t];
+    b.hidden = !visible;
+    b.title = visible ? (b.dataset.title || b.title) : "";
+  });
+  if (show[tab] === false) showTab("intensity");
+}
+
 // ------------------------------------------------------------- header
 function renderHeader() {
   const heads = selectionHeads();
@@ -37,6 +67,7 @@ function renderHeader() {
     box.classList.add("has");
   }
   $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx"].includes(tab));
+  applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
   const pages = {
     intensity: ["dimmer"], colour: ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "wheel"],
@@ -66,7 +97,27 @@ const sendIntensity = throttle((level) => {
   run("set_intensity", fade ? { level, fade } : { level }, { silentError: false });
 }, 60);
 
+function renderGate() {
+  const box = $("#int-gate");
+  const heads = selectionHeads().filter((x) => !(x.map || []).includes("dimmer")
+    && (x.map || []).some((r) => r === "shutter" || r === "strobe"));
+  box.hidden = !heads.length;
+  if (!heads.length) return;
+  const role = (heads[0].map || []).includes("shutter") ? "shutter" : "strobe";
+  const key = heads.map((x) => x.head_no).join(",");
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren(h("span.muted.small", `${heads.length} light${heads.length === 1 ? " has" : "s have"} no dimmer - open or close the ${role}:`),
+    h("button.chip", { onclick: async () => {
+      const a = await get("/api/console/attributes?heads=" + heads.map((x) => x.head_no).join(","));
+      const at = (a.pages || []).flatMap((p) => p.attrs || []).find((x) => x.role === role);
+      run("set_attribute", { attribute: role, value: at && at.open !== undefined ? at.open : 255, heads: heads.map((x) => x.head_no) });
+    } }, "Open"),
+    h("button.chip", { onclick: () => run("set_attribute", { attribute: role, value: 0, heads: heads.map((x) => x.head_no) }) }, "Closed"));
+}
+
 function renderIntensity() {
+  renderGate();
   const vals = progValue("dimmer");
   const num = $("#int-num");
   if (!vals.length) {
@@ -95,11 +146,34 @@ function renderColour() {
     if (document.activeElement !== $("#hex-in")) $("#hex-in").value = hex;
   }
   $$("#swatches button").forEach((b) => b.classList.toggle("on", !!hex && b.dataset.hex === hex));
+  renderWheel();
   const heads = selectionHeads();
   const colourable = heads.filter((x) => (x.map || []).some((r) => ["red", "wheel", "cyan", "white"].includes(r))).length;
   $("#colour-reach").textContent = heads.length
     ? (colourable === heads.length ? `reaches all ${heads.length}` : `reaches ${colourable} of ${heads.length} - the rest have no colour mixing`)
     : "";
+}
+
+// Black-body colour for a white temperature (Tanner Helland's fit).
+export function kelvinHex(k) {
+  const t = k / 100;
+  let r, g, b;
+  if (t <= 66) { r = 255; g = 99.47 * Math.log(t) - 161.12; b = t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04; }
+  else { r = 329.7 * Math.pow(t - 60, -0.1332); g = 288.12 * Math.pow(t - 60, -0.0755); b = 255; }
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  return rgbToHex(c(r), c(g), c(b));
+}
+
+function renderWheel() {
+  const cap = capabilities();
+  $("#kelvin-row").hidden = !cap.mixing && hasSel();
+  const box = $("#wheel-steps");
+  box.hidden = !cap.roles.has("wheel");
+  if (box.hidden || box.childElementCount) return;
+  box.replaceChildren(h("span.muted.small", "Colour wheel:"), ...Array.from({ length: 8 }, (_, i) => h("button.chip", {
+    title: `DMX ${i * 16 + 8} - slot positions vary by fixture`,
+    onclick: () => run("set_attribute", { attribute: "wheel", value: i * 16 + 8 }),
+  }, i === 0 ? "Open" : String(i))));
 }
 
 // ------------------------------------------------------------ position
@@ -119,7 +193,32 @@ function renderPad() {
   }
 }
 
+function renderMarks() {
+  const s = $("#aim-mark");
+  const marks = (((state.snap && state.snap.venue) || {}).objects || []).filter((o) => o.kind === "mark");
+  const key = marks.map((m) => m.name).join("|");
+  if (s.dataset.key === key) return;
+  s.dataset.key = key;
+  s.replaceChildren(h("option", { value: "" }, marks.length ? "Aim at a mark…" : "No marks (add one in Arrange)"),
+    ...marks.map((m) => h("option", { value: m.name }, m.name || "mark")));
+}
+
 function wirePad() {
+  $("#aim-spot").addEventListener("click", () => {
+    if (!hasSel()) { toast("Select the lights to aim first"); return; }
+    import("./stagepanel.js").then((m) => {
+      const st = m.getStage();
+      if (!st) return;
+      toast("Click a spot in the 3D view (Esc cancels)", "", 4000);
+      st.pickPoint((p) => run("aim_at", { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, { toast: true }));
+    });
+  });
+  $("#aim-mark").addEventListener("change", (e) => {
+    const name = e.target.value;
+    e.target.value = "";
+    if (name) run("aim_at", { mark: name }, { toast: true });
+  });
+  $("#aim-home").addEventListener("click", () => run("set_position", { pan: 128, tilt: 128, unit: "255" }, { toast: true }));
   const pad = $("#pad");
   let dragging = false;
   const at = (e) => {
@@ -156,7 +255,43 @@ async function loadAttributes() {
 
 const sendAttr = throttle((attribute, value) => run("set_attribute", { attribute, value }, { silentError: true }), 70);
 
+// One-press values for the beam: strobe speeds from the fixture's own
+// "open" value, numbered gobo/prism steps, and zoom/iris/frost extremes.
+function renderBeamQuick() {
+  const box = $("#beam-quick");
+  const attrs = attrState && attrState.pages ? attrState.pages.flatMap((p) => p.attrs || []) : [];
+  const by = Object.fromEntries(attrs.map((a) => [a.role, a]));
+  const rows = [];
+  const set = (role, value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
+  const strobe = by.strobe || by.shutter;
+  if (strobe) {
+    const open = strobe.open ?? 0;
+    const lo = Math.max(open + 8, 64);
+    rows.push(h("div.chip-row", h("span.k", "Strobe"),
+      h("button.chip", { title: `DMX ${open}`, onclick: set(strobe.role, open) }, "Off"),
+      h("button.chip", { title: `DMX ${lo}`, onclick: set(strobe.role, lo) }, "Slow"),
+      h("button.chip", { title: `DMX ${Math.round((lo + 255) / 2)}`, onclick: set(strobe.role, Math.round((lo + 255) / 2)) }, "Medium"),
+      h("button.chip", { title: "DMX 250", onclick: set(strobe.role, 250) }, "Fast")));
+  }
+  for (const role of ["gobo", "gobo2"]) {
+    if (!by[role]) continue;
+    rows.push(h("div.chip-row", h("span.k", role === "gobo" ? "Gobo" : "Gobo 2"),
+      ...Array.from({ length: 8 }, (_, i) => h("button.chip", {
+        title: `DMX ${i * 16 + 8} - slot positions vary by fixture`, onclick: set(role, i * 16 + 8),
+      }, i === 0 ? "Open" : String(i)))));
+  }
+  if (by.prism) rows.push(h("div.chip-row", h("span.k", "Prism"), h("button.chip", { onclick: set("prism", 0) }, "Out"), h("button.chip", { onclick: set("prism", 128) }, "In")));
+  for (const [role, label, a, b] of [["zoom", "Zoom", "Narrow", "Wide"], ["iris", "Iris", "Open", "Closed"], ["frost", "Frost", "Off", "Full"], ["focus", "Focus", "Near", "Far"]]) {
+    if (!by[role]) continue;
+    const full = by[role].full || 255;
+    rows.push(h("div.chip-row", h("span.k", label), h("button.chip", { onclick: set(role, 0) }, a),
+      h("button.chip", { onclick: set(role, Math.round(full / 2)) }, "Half"), h("button.chip", { onclick: set(role, full) }, b)));
+  }
+  box.replaceChildren(...rows);
+}
+
 function renderAttributes() {
+  renderBeamQuick();
   const box = $("#attr-list");
   if (!attrState || !attrState.pages) {
     box.replaceChildren(h("p.muted.small", "Select fixtures to see every attribute they have."));
@@ -345,7 +480,7 @@ function showTab(name) {
   if (name === "looks") renderLooks();
   if (name === "tools") renderTools();
   if (name === "colour") renderColour();
-  if (name === "position") renderPad();
+  if (name === "position") { renderPad(); renderMarks(); }
   try { localStorage.setItem("jarvis.progtab", name); } catch (e) { /* ignore */ }
 }
 
@@ -381,6 +516,14 @@ export function initProgrammer() {
   });
   wirePad();
   wireTools();
+  const kel = $("#kelvin");
+  kel.addEventListener("input", () => {
+    $("#kelvin-out").textContent = kel.value + " K";
+    if (!hasSel()) return;
+    const hex = kelvinHex(+kel.value);
+    picker.set(hex);
+    sendColour(hex);
+  });
   $("#lfo-run").addEventListener("click", () => run("run_fx", {
     attribute: $("#lfo-attr").value, kind: $("#lfo-wave").value,
     speed: +$("#lfo-speed").value || 1, spread: +$("#lfo-spread").value || 0, heads: sel(),

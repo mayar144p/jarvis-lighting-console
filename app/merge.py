@@ -41,7 +41,9 @@ def htp_value(values: dict, role: str):
 
 def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                  fx_row: dict[str, int] | None = None,
-                 master: int = 100, blackout: bool = False) -> dict:
+                 master: int = 100, blackout: bool = False,
+                 over: dict | None = None, now: float | None = None,
+                 gate_closed: int | None = 0) -> dict:
     """Final per-role values for one head.
 
     Intensity roles (dimmer / zone dimmer) are 0-100 after blackout and
@@ -55,7 +57,19 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     A running effect owns the roles it drives: it replaces the
     programmer/playback value, then still passes through blackout and the
     grand master like any other intensity.
+
+    `over` is a live override from a quick button, applied on top of all
+    of that and still under blackout and the master: {"level": HTP floor,
+    "kill": force intensity to 0, "set": {role: value} forced LTP values,
+    "strobe": Hz}.  Strobe gates the light in time when `now` is given
+    (the wire); without `now` (the visualiser feed) it is left to the
+    caller to show.  `gate_closed` is the value that shuts this head's
+    shutter/strobe channel, or None when the profile says 0 is open and
+    the gate cannot be used to black it out.
     """
+    strobe_off = False
+    if over and over.get("strobe") and now is not None:
+        strobe_off = (now * float(over["strobe"])) % 1.0 > 0.35
     n = head["head_no"]
     pvals = prog.get(n) or {}
     fx_row = fx_row or {}
@@ -73,6 +87,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                 if value is not None:
                     candidates.append(int(value) * level // 100)
             total = max(candidates) if candidates else 0
+        if over:
+            if over.get("kill"):
+                total = 0
+            elif over.get("level") is not None:
+                total = max(total, int(over["level"]))
+            if strobe_off:
+                total = 0
         if blackout:
             total = 0
         resolved[role] = total * master // 100
@@ -90,14 +111,21 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             if row and role in row:
                 resolved[role] = int(row[role])
                 break
+    if over and over.get("set"):
+        for role, value in over["set"].items():
+            if role in head["map"]:
+                resolved[role] = int(value)
     # A fixture with no dimmer still has to obey BLACKOUT and the master:
     # its shutter/strobe gate closes (0 is closed on every profile we
     # know), and its colour channels act as a virtual dimmer.
-    if (blackout or master < 100) and not any(r in HTP_ROLES for r in head["map"]):
-        scale = 0 if blackout else master
-        for role in ("shutter", "strobe"):
-            if role in head["map"] and scale == 0:
-                resolved[role] = 0
+    dimmerless = not any(r in HTP_ROLES for r in head["map"])
+    killed = bool(over and (over.get("kill") or strobe_off))
+    if dimmerless and (blackout or master < 100 or killed):
+        scale = 0 if (blackout or killed) else master
+        if scale == 0 and gate_closed is not None:
+            for role in ("shutter", "strobe"):
+                if role in head["map"]:
+                    resolved[role] = int(gate_closed)
         for role in COLOUR_ROLES:
             if role in resolved:
                 resolved[role] = resolved[role] * scale // 100
@@ -169,7 +197,9 @@ def build_frames(patch: list[dict], prog: dict,
                  pb_vals: list[tuple[int, dict]],
                  fx_vals: dict[int, dict] | None = None,
                  master: int = 100, blackout: bool = False,
-                 defaults=None) -> dict[int, bytearray]:
+                 defaults=None, overrides: dict | None = None,
+                 now: float | None = None,
+                 gates: dict | None = None) -> dict[int, bytearray]:
     """Merge programmer + playbacks + effects into 512-byte frames.
 
     `defaults` is an optional {role: value} map of what an UN-driven
@@ -178,6 +208,8 @@ def build_frames(patch: list[dict], prog: dict,
     the safe "nothing programmed = dark" default.
     """
     fx_vals = fx_vals or {}
+    overrides = overrides or {}
+    gates = gates or {}
     frames: dict[int, bytearray] = {}
     for head in patch:
         universe = head["universe"]
@@ -187,7 +219,9 @@ def build_frames(patch: list[dict], prog: dict,
         offset = head["address"] - 1        # index inside this universe
         values = resolve_head(head, prog, pb_vals,
                               fx_vals.get(head["head_no"]),
-                              master, blackout)
+                              master, blackout,
+                              overrides.get(head["head_no"]), now,
+                              gates.get(head["head_no"], 0))
         curve = head.get("curve", "linear")
         roles = head["map"]
         fine_of, base_of = pair_map(roles)

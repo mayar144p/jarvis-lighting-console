@@ -184,6 +184,7 @@
               <label class="field inline"><span>Fade</span><input type="number" id="int-fade" min="0" max="600" step="0.5" value="0"><em>s</em></label>
             </div>
           </div>
+          <div class="chip-row" id="int-gate" hidden></div>
           <div class="row-btns">
             <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
             <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
@@ -200,6 +201,9 @@
             <label class="field inline"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
             <span class="reach" id="colour-reach"></span>
           </div>
+          <label class="field kelvin-row" id="kelvin-row"><span>White temperature <output id="kelvin-out">5600 K</output></span>
+            <input type="range" id="kelvin" min="2000" max="10000" step="100" value="5600"></label>
+          <div class="chip-row" id="wheel-steps" hidden></div>
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>
@@ -213,10 +217,16 @@
             <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
             <button class="btn" id="aim-btn">Aim</button>
           </div>
+          <div class="row-btns aim-tools">
+            <button class="btn" id="aim-spot" title="Then click anywhere in the 3D view: every selected mover points there">Aim at a spot…</button>
+            <select class="select" id="aim-mark" title="Point the selection at a performer mark"><option value="">Aim at a mark…</option></select>
+            <button class="btn ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
+          </div>
           <div class="palette-strip" data-kind="position"></div>
         </div>
 
         <div class="tab-pane" data-pane="beam" hidden>
+          <div class="beam-quick" id="beam-quick"></div>
           <div class="attr-list" id="attr-list"></div>
         </div>
 
@@ -290,7 +300,21 @@
 
     <!-- ------------------------------------------------------ playbacks -->
     <section class="playbacks" id="playbacks" aria-label="Playbacks">
+      <nav class="pb-mode" id="pb-mode" aria-label="Bottom panel">
+        <button data-mode="faders" class="on" title="Playback faders">Faders</button>
+        <button data-mode="buttons" title="Quick buttons: flash, strobe, colour bumps, effects">Buttons</button>
+      </nav>
       <div class="pb-strip" id="pb-strip"></div>
+      <div class="qb" id="qb" hidden>
+        <div class="qb-bar">
+          <div class="seg" id="qb-pages"><button data-page="1" class="on">1</button><button data-page="2">2</button><button data-page="3">3</button><button data-page="4">4</button></div>
+          <button class="btn small" id="qb-suggest" hidden title="Fill this page with buttons that suit your rig">Suggest buttons for this rig</button>
+          <span class="grow"></span>
+          <button class="btn small ghost" id="qb-release" title="Let go of every latched button">Release all</button>
+          <button class="btn small" id="qb-edit" title="Set buttons up">Edit</button>
+        </div>
+        <div class="qb-grid" id="qb-grid"></div>
+      </div>
       <div class="masters">
         <div class="master">
           <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
