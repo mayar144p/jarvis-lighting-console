@@ -3701,6 +3701,12 @@ class Engine:
                 btn["rate"] = self._quick_rate_value(raw.get("rate"))
             if raw.get("free"):
                 btn["free"] = True
+        # a MIDI note (0-127) that plays it, from a pad or keyboard
+        if raw.get("midi") not in (None, ""):
+            note = int(_clamp(raw.get("midi"), -1, 128))
+            if not 0 <= note <= 127:
+                raise ValueError("a MIDI note is 0 to 127")
+            btn["midi"] = note
         # a bigger tile (2 wide, 2 tall or both) and an icon on it
         if raw.get("size") not in (None, "", "normal"):
             if raw["size"] not in self.QUICK_SIZES:

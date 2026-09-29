@@ -30,6 +30,7 @@ import json
 import queue
 import sys
 import threading
+import time
 from pathlib import Path
 
 from app.engine import ACTIONS
@@ -433,6 +434,25 @@ class MidiManager:
         """Resolve + execute one event against the engine (thread-safe:
         engine.act takes the engine lock itself)."""
         results = []
+        if event.get("kind") == "note":
+            # remembered for "Learn" in the button editor
+            self.status["last_note"] = {"number": event["number"], "channel": event.get("channel"),
+                                        "at": time.time()}
+            # a note given to a button plays it, ahead of the map file;
+            # letting go only matters to a hold button
+            buttons = [b for b in list(getattr(self.engine, "quick", []) or [])
+                       if b.get("midi") == event["number"]]
+            if buttons:
+                for b in buttons:
+                    if not event.get("on") and b.get("mode") != "hold":
+                        continue
+                    try:
+                        results.append(self.engine.act("quick_press", id=b["id"], down=bool(event.get("on"))))
+                    except Exception as exc:    # noqa: BLE001 - never die
+                        results.append({"ok": False, "action": "quick_press", "error": str(exc)})
+                self.status["events"] += 1
+                self.status["mapped"] += 1
+                return results
         steps = self.mapper.resolve(event)
         for action, params in steps:
             try:

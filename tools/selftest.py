@@ -7523,6 +7523,7 @@ def _standalone_suites():
     ("buttons: fade in / out and a keyboard key", test_button_fades),
     ("buttons: big tiles and icons", test_button_tiles),
     ("buttons: a speed of their own", test_button_speed),
+    ("buttons: a MIDI note per button", test_button_midi),
     )
 
 
@@ -9135,6 +9136,47 @@ def test_button_speed() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the tile changes speed by scroll and right-click", '"wheel"' in qb and '"contextmenu"' in qb
           and "quick_rate" in qb, "")
+
+
+def test_button_midi() -> None:
+    """A MIDI note given to a button plays it (ahead of the map file), a
+    hold button lets go on note off, and the last note is kept for Learn."""
+    print("button MIDI notes")
+    import tempfile
+    from app import engine as eng
+    from app import midi
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "flash", "mode": "hold", "midi": 36})
+            check("a button keeps its MIDI note", (r.get("button") or {}).get("midi") == 36, str(r.get("button")))
+            r = e.act("quick_set", page=1, slot=2, button={"kind": "flash", "midi": 200})
+            check("a note past 127 is refused", not r.get("ok"), str(r))
+            e.act("quick_set", page=1, slot=3, button={"kind": "fx", "fx": "rainbow", "mode": "latch", "midi": 40})
+            m = midi.MidiManager(e, mapper=midi.MidiMapper(), source=midi.FakeMidiSource(), devices=[])
+            m.handle(midi.parse_short(0x90, 36, 100))
+            check("the note plays the button, not the map's GO",
+                  "q1-1" in e.quick_active and not e.playbacks[0]["active"], str(list(e.quick_active)))
+            check("the last note is kept for Learn", (m.status.get("last_note") or {}).get("number") == 36,
+                  str(m.status.get("last_note")))
+            m.handle(midi.parse_short(0x80, 36, 0))
+            check("note off lets go of a hold button", "q1-1" not in e.quick_active, str(list(e.quick_active)))
+            m.handle(midi.parse_short(0x90, 40, 100))
+            m.handle(midi.parse_short(0x80, 40, 0))
+            check("an on / off button stays on after note off", "q1-3" in e.quick_active, "")
+            m.handle(midi.parse_short(0x90, 40, 100))
+            check("...and the next note turns it off", "q1-3" not in e.quick_active, "")
+            m.handle(midi.parse_short(0x90, 50, 100))
+            check("other notes still go to the map", (m.status.get("last_note") or {}).get("number") == 50, "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
 
 
 def test_cue_list_modes() -> None:
