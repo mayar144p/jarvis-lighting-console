@@ -171,18 +171,21 @@ function beamsBlock(e) {
 
 // What the laser does when fired: its own beams, its built-in programs,
 // auto or sound - its output channel's ranges, never the "off" one.
-function modeBlock(e, lasers) {
+// Programmable (recorded in cues); the output still only goes on from the
+// armed laser buttons.
+function modeBlock(e) {
   const out = e.laser_on;
   const slots = ((out && out.slots) || []).filter((sl) => !/\b(off|blackout|disabled?|stop)\b/i.test(sl.name));
   if (slots.length < 2) return [];
-  const cur = lasers[0].laser_mode;
-  const heads = lasers.map((x) => x.head_no);
+  const cur = out.value;
+  const set = cur !== null && cur !== undefined;
   return [h("div.fx-row", h("span.k", "Output mode"), h("div.chip-row",
-    ...slots.map((sl) => h("button.chip" + (cur !== undefined && cur >= sl.from && cur <= sl.to ? ".on" : ""), {
-      title: `${sl.name} - DMX ${sl.from}-${sl.to} on the output channel. Used when the laser is fired (armed).`,
-      onclick: () => run("laser_mode", { heads, value: sl.value }, { toast: true }),
+    ...slots.map((sl) => h("button.chip" + (set && cur >= sl.from && cur <= sl.to ? ".on" : ""), {
+      title: `${sl.name} - DMX ${sl.from}-${sl.to}. Recorded in cues; used when the laser is fired (armed).`,
+      onclick: () => setAttr("laser_on", sl.value),
     }, sl.name)),
-    cur !== undefined ? h("button.chip", { title: "Back to the fixture's default", onclick: () => run("laser_mode", { heads, value: "" }) }, "Default") : null))];
+    set ? h("button.chip", { title: "Back to the fixture's default mode",
+      onclick: () => run("set_attr_range", { attribute: "laser_on", clear: true }) }, "Default") : null))];
 }
 
 // Every other channel the laser has, whatever it is called: nothing it
@@ -215,7 +218,7 @@ function renderLaser(attrState) {
       h("button.btn" + (onNow ? ".on" : ""), {
         onclick: () => run("fx_laser", { heads, down: !onNow, owner: "prog-latch" }),
       }, onNow ? "Laser OFF" : "Laser ON (latch)")),
-    ...modeBlock(e, lasers),
+    ...modeBlock(e),
     ...beamsBlock(e),
     chooser("Pattern", e.laser_pattern),
     chooser("Colour", e.laser_colour),

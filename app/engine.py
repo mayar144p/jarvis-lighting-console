@@ -582,7 +582,6 @@ ACTIONS = (
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
-    "laser_mode",
 )
 
 
@@ -802,7 +801,7 @@ class Engine:
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient", "mount", "rot", "stance", "laser_mode")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
         }
 
     def _restore_state(self, state: dict) -> None:
@@ -828,7 +827,7 @@ class Engine:
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient", "mount", "rot", "stance", "laser_mode"):
+            for key in ("limits", "orient", "mount", "rot", "stance"):
                 if key in got:
                     head[key] = got[key]
                 else:
@@ -2450,6 +2449,21 @@ class Engine:
         role = _attr_role(attribute)
         if role is None:
             raise ValueError(f"unknown attribute {attribute!r}")
+        if role == "laser_on":
+            # a laser's output/mode channel: the programmer (and so a cue)
+            # may choose the MODE it runs in when fired - never "off", and
+            # never the output itself, which moves only from its armed buttons
+            heads = [h for h in self._require_selection() if "laser_on" in h["map"]]
+            if not heads:
+                raise ValueError("select a laser with an output/mode channel")
+            v = int(_clamp(value, 0, 255))
+            if any(v < self._laser_min(h) for h in heads):
+                raise ValueError("that value is the laser's OFF - the output only goes on "
+                                 "and off from its armed buttons; pick a mode it runs in")
+            for h in heads:
+                self._set_programmer(h["head_no"], "laser_on", v)
+            return {"attribute": role, "value": v, "heads": len(heads),
+                    "summary": f"laser mode {v} on {len(heads)} laser(s) - used when fired (armed)"}
         if role in FX_OUTPUT_ROLES:
             raise ValueError(f"{role} is an effect's output: it moves only from the "
                              f"armed FX buttons, never from the programmer")
@@ -3940,9 +3954,13 @@ class Engine:
                     off = int(self._sfx_detail(h, "fog").get("off_value") or 0)
                     sets["fog"] = off + round((255 - off) * run["level"] / 100)
                 else:
-                    on = int(self._sfx_detail(h, "laser_on").get("on_value") or 255)
-                    mode = run["values"].get("laser_on", h.get("laser_mode"))
-                    sets["laser_on"] = int(mode) if mode is not None else on
+                    # on = the button's own mode, else the programmed/cue mode
+                    # (the merge swaps it in), else the fixture's "on" value
+                    if "laser_on" in run["values"]:
+                        sets["laser_on"] = int(run["values"]["laser_on"])
+                    else:
+                        sets["laser_on"] = int(self._sfx_detail(h, "laser_on").get("on_value") or 255)
+                        sets["_laser_min"] = self._laser_min(h)
                     # a beam bar has no power channel: its diodes read this
                     sets["_laser_live"] = 1
                     beam = next((r for r in h["map"] if r.startswith("laser_beam")), None)
@@ -4039,28 +4057,15 @@ class Engine:
             raise ValueError("no laser selected")
         return {"summary": f"laser ON ({len(self.fx_runs[key]['heads'])})"}
 
-    def _a_laser_mode(self, heads=None, value=None, **_):
-        """What a laser does when its output is fired (armed): its own
-        beams under DMX, its built-in programs, auto or sound - a value on
-        its output channel's own ranges.  Never lights anything by itself."""
-        nums = [int(n) for n in (heads or self.selected)]
-        targets = [h for h in self.patch if h["head_no"] in nums and "laser_on" in h["map"]]
-        if not targets:
-            raise ValueError("select a laser with an output/mode channel")
-        for h in targets:
-            if value is None or value == "":
-                h.pop("laser_mode", None)
-                continue
-            v = int(_clamp(value, 0, 255))
-            off = int(self._sfx_detail(h, "laser_on").get("off_value") or 0)
-            slots = self._wheel_slots(h, "laser_on")
-            slot = next((s for s in slots if s["from"] <= v <= s["to"]), None)
-            if v == off or (slot and _OFFISH.search(slot["name"])):
-                raise ValueError("that value is the laser's OFF: pick a mode it runs in")
-            h["laser_mode"] = v
-        name = (slot or {}).get("name") if value not in (None, "") else "default"
-        return {"heads": [h["head_no"] for h in targets],
-                "summary": f"laser mode: {name or value} on {len(targets)} laser(s) - lights only when armed and fired"}
+    def _laser_min(self, h: dict) -> int:
+        """The lowest value on a laser's output channel that is not OFF:
+        a programmed mode below it is ignored (it would be "off", and the
+        output only ever goes off from its own buttons)."""
+        d = self._sfx_detail(h, "laser_on")
+        for lo, _hi, text in d.get("caps") or []:
+            if not _OFFISH.search(str(text)):
+                return int(lo)
+        return int(d.get("off_value") or 0) + 1
 
     def _a_fx_kill(self, **_):
         """Stop every effect and laser at once, and disarm."""
@@ -7494,7 +7499,7 @@ class Engine:
             asked = 0.0 if value is None else float(value)
         except (TypeError, ValueError):
             raise ValueError(f"not a number: {value!r}") from None
-        if resolved in FX_OUTPUT_ROLES:
+        if resolved in FX_OUTPUT_ROLES and not (resolved == "laser_on" and clear):
             raise ValueError(f"{resolved} is an effect's output: use the armed FX buttons")
         heads = self._require_selection()
         capable = [h for h in heads if resolved in (h.get("map") or [])]

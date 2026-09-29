@@ -127,12 +127,19 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # power is thrown away here; the FX layer's override is the only way
     # in, and anything not driven sits at its "off" value (the rest).
     fx_out = FX_OUTPUT_ROLES.intersection(head["map"])
+    # (a laser's output channel may carry a programmed MODE: kept aside and
+    # used only while the FX layer says the laser is on)
+    laser_mode = resolved.get("laser_on")
     for role in fx_out:
         resolved.pop(role, None)
     if over and over.get("set"):
         for role, value in over["set"].items():
             if role in head["map"]:
                 resolved[role] = int(value)
+        floor = over["set"].get("_laser_min")
+        if floor is not None and "laser_on" in resolved and laser_mode is not None \
+                and int(laser_mode) >= int(floor):
+            resolved["laser_on"] = int(laser_mode)
     if blackout:
         for role in fx_out:                   # blackout stops every effect
             resolved[role] = int((rest or {}).get(role, 0))
