@@ -43,7 +43,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                  fx_row: dict[str, int] | None = None,
                  master: int = 100, blackout: bool = False,
                  over: dict | None = None, now: float | None = None,
-                 gate_closed: int | None = 0) -> dict:
+                 gate_closed: int | None = 0,
+                 rest: dict | None = None) -> dict:
     """Final per-role values for one head.
 
     Intensity roles (dimmer / zone dimmer) are 0-100 after blackout and
@@ -115,6 +116,12 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
         for role, value in over["set"].items():
             if role in head["map"]:
                 resolved[role] = int(value)
+    # A head WITH a dimmer rests with its shutter open: the dimmer is the
+    # brightness, and a shutter left at 0 is CLOSED on many movers (a
+    # Chauvet Intimidator), which is "it moves but gives no light".
+    if rest:
+        for role, value in rest.items():
+            resolved.setdefault(role, int(value))
     # A fixture with no dimmer still has to obey BLACKOUT and the master:
     # its shutter/strobe gate closes (0 is closed on every profile we
     # know), and its colour channels act as a virtual dimmer.
@@ -199,7 +206,8 @@ def build_frames(patch: list[dict], prog: dict,
                  master: int = 100, blackout: bool = False,
                  defaults=None, overrides: dict | None = None,
                  now: float | None = None,
-                 gates: dict | None = None) -> dict[int, bytearray]:
+                 gates: dict | None = None,
+                 rests: dict | None = None) -> dict[int, bytearray]:
     """Merge programmer + playbacks + effects into 512-byte frames.
 
     `defaults` is an optional {role: value} map of what an UN-driven
@@ -210,6 +218,7 @@ def build_frames(patch: list[dict], prog: dict,
     fx_vals = fx_vals or {}
     overrides = overrides or {}
     gates = gates or {}
+    rests = rests or {}
     frames: dict[int, bytearray] = {}
     for head in patch:
         universe = head["universe"]
@@ -221,7 +230,8 @@ def build_frames(patch: list[dict], prog: dict,
                               fx_vals.get(head["head_no"]),
                               master, blackout,
                               overrides.get(head["head_no"]), now,
-                              gates.get(head["head_no"], 0))
+                              gates.get(head["head_no"], 0),
+                              rests.get(head["head_no"]))
         curve = head.get("curve", "linear")
         roles = head["map"]
         fine_of, base_of = pair_map(roles)

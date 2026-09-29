@@ -745,6 +745,7 @@ class Engine:
         # cached definitions, or a re-patch would resolve modes that no
         # longer exist.
         fixtures.on_cache_clear(_FIXTURE_CACHE.clear)
+        fixtures.on_cache_clear(self._drop_fixture_caches)
         if restore and self.autosave_path is not None:
             self._restore_autosave()
         self._sync_follow_thread()
@@ -2344,6 +2345,10 @@ class Engine:
         light_from = self._profile_levels(head)[1].get(role)
         if light_from:
             return int(light_from)
+        # a GDTF file's own Highlight / "Open" value
+        from_file = (self.head_ranges(head).get(role) or {}).get("open_from")
+        if from_file:
+            return int(from_file)
         return int(self._profile_defaults(head).get(role, 0))
 
     def _level_values(self, head: dict, pct: int) -> dict:
@@ -3598,6 +3603,33 @@ class Engine:
             gates[h["head_no"]] = None if light_from == 0 else 0
         self._gate_cache = (self.patch_rev, gates)
         return gates
+
+    def _rests(self) -> dict:
+        """{head_no: {gate role: open value}} for heads that HAVE a dimmer
+        and a shutter whose open value is not 0: the shutter rests open
+        unless something drives it, and the dimmer does the dark."""
+        cache = getattr(self, "_rest_cache", None)
+        if cache and cache[0] == self.patch_rev:
+            return cache[1]
+        rests = {}
+        for h in self.patch:
+            if not self._intensity_roles(h):
+                continue
+            role = self._shutter_role(h)
+            if role is None:
+                continue
+            value = self._open_value(h, role)
+            if value > 0:
+                rests[h["head_no"]] = {role: value}
+        self._rest_cache = (self.patch_rev, rests)
+        return rests
+
+    def _drop_fixture_caches(self) -> None:
+        """A profile was imported or edited: open values may have changed."""
+        self._range_cache.clear()
+        _LEVELS_CACHE.clear()
+        self._gate_cache = None
+        self._rest_cache = None
 
     def _quick_public(self) -> dict:
         return {"buttons": [dict(b) for b in self.quick],
@@ -5639,7 +5671,8 @@ class Engine:
         """
         return merge.resolve_head(head, prog, pb_vals, fx_row,
                                   self.master, self.blackout, over, None,
-                                  self._gates().get(head["head_no"], 0))
+                                  self._gates().get(head["head_no"], 0),
+                                  self._rests().get(head["head_no"]))
 
     def _programmer_now(self, now: float) -> dict:
         """The programmer as it is at `now`, mid-fade if one is running."""
@@ -5674,7 +5707,7 @@ class Engine:
                                   self._fx_values(now),
                                   self.master, self.blackout,
                                   overrides=self._override_vals(), now=now,
-                                  gates=self._gates())
+                                  gates=self._gates(), rests=self._rests())
 
     def channel_report(self, heads: list[int] | None = None) -> dict:
         """Per-channel DMX truth: label, role, and the byte on the wire.
@@ -7542,10 +7575,15 @@ class Engine:
         pub = dict(self.output)
         pub["target"] = dict(self.dmx_target)
         pub["dry_run"] = self.dry_run
-        pub["transport"] = getattr(self._sender, "transport",
-                                   config.DMX_TRANSPORT)
-        if self._sender is not None:
+        if self._sender is not None and self._sender_fixed:
+            pub["transport"] = getattr(self._sender, "transport", "artnet")
             pub["host"] = self._sender.host + ":" + str(self._sender.port)
+        else:
+            # Where the output goes (or will, once live), not where it
+            # went at startup: the sender is only rebuilt while running.
+            transport, host, port = self._dmx_resolved()
+            pub["transport"] = transport
+            pub["host"] = f"{host}:{port}"
         return pub
 
     def _fx_public(self) -> list[dict]:
