@@ -959,6 +959,12 @@ def main() -> None:
         autosave_path=(config.DATA / "autosave.json")
         if config.CONSOLE_AUTOSAVE else None,
         restore=config.CONSOLE_AUTORESTORE)
+    # the restored rig picks up anything the channel naming learned since
+    # (a role that was wrong before an update is right after it)
+    try:
+        engine_mod.ENGINE.remap_heads()
+    except Exception as exc:                # noqa: BLE001 - never block boot
+        print(f"* fixtures: re-map skipped ({exc})")
     # M6 peripherals: both degrade to a status entry when unavailable,
     # so a missing MIDI device or a busy UDP port never blocks boot.
     if config.DMX_INPUT:

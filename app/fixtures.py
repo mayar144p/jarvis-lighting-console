@@ -371,6 +371,7 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             # how long the device may run in one go
             "on_value": d.get("on_value"), "off_value": d.get("off_value"),
             "fx_kind": d.get("fx_kind"), "max_s": d.get("max_s"),
+            "caps": d.get("caps") or None,
             "slots": d.get("slots") or None,
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
