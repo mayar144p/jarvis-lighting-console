@@ -835,3 +835,7 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .open-find.unknown { border-color: var(--blind); background: var(--blind-bg); }
 #open-warn[hidden] { display: none; }
 .open-warn { background: var(--blind-bg); color: var(--blind); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* test this light */
+.lt { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
+.lt-q { font-size: 15px; }

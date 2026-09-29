@@ -7495,6 +7495,7 @@ def _standalone_suites():
     ("fixture from its manual", test_manual_fixture),
     ("gdtf share session expiry", test_share_relogin),
     ("shutter open value found and remembered", test_remember_open),
+    ("test this light", test_light_test),
     )
 
 
@@ -8671,6 +8672,94 @@ def test_remember_open() -> None:
     check("a QLC+ file tagging Tilt Fine as pan fine is read by its name",
           [d["role"] for d in cobra[:4]] == ["pan", "pan_fine", "tilt", "tilt_fine"],
           str([d["role"] for d in cobra[:4]]))
+
+
+def test_light_test() -> None:
+    """The 'Test this light' step after adding a model: lit white and
+    centred, then the operator walks the shutter's likely open values - and
+    if none lights it, every other channel - on the REAL light; what works
+    is saved for the model, and a model that passed is not asked again."""
+    print("test this light (walk the open values on the real light)")
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import console_ai, fixtures
+    from app.engine_support import channel_role
+
+    check("GDTF 'Gobo1Pos' is the gobo's index, not a second gobo wheel",
+          channel_role("Gobo1Pos") == "gobo_rot" and channel_role("Gobo1") == "gobo", "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "t.db"
+        with zipfile.ZipFile(tmp / "c.gdtf", "w") as zf:      # the BeamZ Cobra 100 Spot shape
+            zf.writestr("description.xml", (
+                '<GDTF DataVersion="1.1"><FixtureType Name="Cobra Hunt" Manufacturer="BeamZ">'
+                '<DMXModes><DMXMode Name="6ch"><DMXChannels>'
+                '<DMXChannel Offset="1"><LogicalChannel Attribute="Pan">'
+                '<ChannelFunction Name="Pan" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Tilt">'
+                '<ChannelFunction Name="Tilt" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="3"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="4"><LogicalChannel Attribute="Shutter1">'
+                '<ChannelFunction Name="Shutter1" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="5"><LogicalChannel Attribute="Color1">'
+                '<ChannelFunction Name="Color1" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="6"><LogicalChannel Attribute="Zoom">'
+                '<ChannelFunction Name="Zoom" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+        fixtures.import_file(db, tmp / "c.gdtf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Cobra Hunt", mode="6ch", qty=2, universe=1, address=1)
+            p = {x["head_no"]: x for x in e.snapshot()["patch"]}
+            check("a new model starts untested", not p[1]["tested"], str(p[1].get("tested")))
+            e.act("select_heads", heads=[1])
+            e.act("set_attribute", attribute="zoom", value=77)
+            r = e.act("light_test", head=1, step="start")
+            buf = e.build_frames()[1]
+            check("start: full, centred, shutter at its best guess",
+                  r.get("ok") and buf[2] == 255 and 120 <= buf[0] <= 135 and 120 <= buf[1] <= 135, str(list(buf[:6])))
+            cands = r.get("candidates") or []
+            check("a shutter the file says nothing about gets the common open values to try",
+                  len(cands) >= 6 and 0 in cands and 255 in cands and 32 in cands, str(cands))
+            check("and the other channels to hunt through, not pan/tilt/dimmer",
+                  [c["role"] for c in r.get("hunt") or []][:1] == ["wheel"]
+                  and not {"pan", "tilt", "dimmer"} & {c["role"] for c in r["hunt"]}, str(r.get("hunt")))
+            e.act("light_test", head=1, step="open", value=32)
+            check("each value tried goes out on the shutter", e.build_frames()[1][3] == 32, "")
+            e.act("light_test", head=1, step="channel", role="zoom", value=255)
+            e.act("light_test", head=1, step="channel", role="wheel", value=255)
+            buf = e.build_frames()[1]
+            check("the hunt puts back the channel it tried before", buf[5] == 0 and buf[4] == 255, str(list(buf[:6])))
+            e.act("light_test", head=1, step="pan", value=0.3)
+            check("pan check moves pan", 70 <= e.build_frames()[1][0] <= 80, "")
+            e.act("light_test", head=1, step="end")
+            check("end gives the head back what it was doing",
+                  e.programmer.get(1) == {"zoom": 77}, str(e.programmer.get(1)))
+            e.act("remember_open", head=1, value=32)
+            r = e.act("remember_open", head=1, role="zoom", value=200)
+            check("a channel found by the hunt is remembered too", r.get("ok"), str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=[2])
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("every head of the model then lights on Full (shutter + found channel)",
+                  buf[8] == 255 and buf[9] == 32 and buf[11] == 200, str(list(buf[6:12])))
+            r = e.act("light_tested", head=1, light=True, move=True, colour=False)
+            check("a wrong colour is not a pass, and says to check the mode",
+                  not r["tested"] and any("mode" in a for a in r["advice"]), str(r))
+            r = e.act("light_tested", head=1, light=True, move=True, colour=True)
+            p = {x["head_no"]: x for x in e.snapshot()["patch"]}
+            check("a pass is saved for the model: not asked again",
+                  r["tested"] and p[1]["tested"] and p[2]["tested"], str(r))
+            check("the copilot cannot drive the test", {"light_test", "light_tested"} <= set(console_ai.DENY_ACTIONS), "")
+            check("the test is not an undo step", "light_test" in eng.UNDO_EXCLUDED, "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the Add dialog offers the test for an untested model",
+          "openLightTest(first)" in js and "export async function openLightTest" in js, "")
 
 
 def test_share_relogin() -> None:

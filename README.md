@@ -324,6 +324,24 @@ their names and colours. Community libraries are sometimes wrong, so check
 an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
+**Test this light.** A fixture file can be wrong in ways Jarvis can't see: a
+shutter whose open value it never states, or a channel order that doesn't match
+the light's mode. So after you add a model Jarvis hasn't seen pass, it offers a
+30-second test (also on right-click → **Test this light…**, and on the Level
+tab's warning). Go live first, then:
+
+1. Jarvis lights it at full, white and centred, and asks whether the real light
+   is on.
+2. If it's dark, Jarvis tries the shutter's likely open values one at a time. Press
+   **It's on!** when the light comes on. If none work, it tries each of the light's
+   other channels the same way.
+3. It then moves pan and tilt, and shows red, green and blue, asking each time
+   whether the real light did the same. A wrong answer usually means the light's
+   DMX mode doesn't match the one you added, and Jarvis tells you which mode to set.
+
+What works is saved for that model, so every head of it lights on **Full** from
+then on, even after a re-download. A model that passed isn't asked about again.
+
 **Match the 3D view to the real lights.** The visualiser moves heads with a
 motor model: it speeds up, travels and brakes, and follows the Pan/Tilt Speed
 channel, instead of snapping into place. To match your light exactly,

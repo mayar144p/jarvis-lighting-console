@@ -276,7 +276,16 @@ export function openAddDialog(query = "") {
       if (addr.value) params.address = +addr.value;
       if (name.value.trim()) params.name = name.value.trim();
       const r = await run("add_heads", params);
-      if (r.ok) toast(r.summary || "Added", "ok");
+      if (r.ok) {
+        toast(r.summary || "Added", "ok");
+        // a model Jarvis has not seen pass the test yet: offer it now
+        setTimeout(async () => {
+          const added = patch().filter((x) => (r.heads || []).includes(x.head_no));
+          const first = added.find((x) => !x.tested && !(x.body && x.body.class && x.body.class !== "light"));
+          if (!first) return;
+          if (await confirmBox("Test this light?", `First time with ${first.model}: a 30-second test with the real light catches a wrong mode or a shutter that never opens, before the gig. Go live first so the light reacts.`, { ok: "Test it" })) openLightTest(first);
+        }, 600);
+      }
     } catch (err) {
       toast(err.message, "bad");
     } finally {
@@ -887,4 +896,106 @@ export function openManualFixture(onSaved) {
         },
       }, "Save to library")],
   });
+}
+
+// ====================================================== test this light
+// A fixture file can be wrong in ways no code can see: a shutter "open"
+// value it never states, a channel order that does not match the light's
+// mode.  So a new model gets a 30-second test with the operator watching
+// the REAL light: lit? (and if not, find the open value) - moving? - the
+// right colours?  A model that passes is not asked about again.
+export async function openLightTest(hd) {
+  const head = hd.head_no;
+  const st = await run("light_test", { head, step: "start" }, { silentError: true });
+  if (!st.ok) { toast(st.error || "This light cannot be tested", "bad"); return; }
+  const res = { light: null, move: true, colour: true };
+  const box = h("div.lt");
+  const live = outputState() === "live";
+  let closed = false;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const ask = (text, buttons) => new Promise((resolve) => {
+    box.replaceChildren(
+      live ? null : h("p.out-bad", "The output is not live: the real light will not react. Press Go live first."),
+      h("p.lt-q", text),
+      h("div.row-btns", ...buttons.map(([label, value, cls]) => h("button.btn" + (cls ? "." + cls : ""), { onclick: () => resolve(value) }, label))));
+  });
+
+  async function lightStep() {
+    if (await ask(`#${head} ${hd.name || hd.model} should now be ON: full, white, centred. Is the real light on?`,
+      [["Yes, it's on", true, "primary"], ["No, it's dark", false]])) return true;
+    if (!st.gate) return false;
+    const cands = st.candidates || [];
+    for (let i = 0; i < cands.length && !closed; i++) {
+      await run("light_test", { head, step: "open", value: cands[i] }, { silentError: true });
+      const a = await ask(`Trying shutter value ${cands[i]} (${i + 1} of ${cands.length}). Is the real light on now?`,
+        [["It's on!", "on", "primary"], ["Still dark", "next"], ["Stop", "stop"]]);
+      if (a === "on") {
+        await run("remember_open", { head, value: cands[i] }, { toast: true });
+        return true;
+      }
+      if (a === "stop") return false;
+    }
+    if (st.gate) await run("light_test", { head, step: "open", value: st.open }, { silentError: true });
+    // still dark: the file may not have named the channel that opens it
+    // (a lamp / "control" channel, or a mode whose channels sit elsewhere)
+    const hunt = st.hunt || [];
+    if (!hunt.length || closed) return false;
+    if (!await ask("None of the shutter values lit it. Try each of its other channels in turn? (Some lights need a control channel set before they light.)",
+      [["Try them", true, "primary"], ["Skip", false]])) return false;
+    for (let i = 0; i < hunt.length && !closed; i++) {
+      const c = hunt[i];
+      await run("light_test", { head, step: "channel", role: c.role, value: c.value }, { silentError: true });
+      const a = await ask(`Trying ${c.label} at ${c.value} (${i + 1} of ${hunt.length}). Is the real light on now?`,
+        [["It's on!", "on", "primary"], ["Still dark", "next"], ["Stop", "stop"]]);
+      if (a === "on") {
+        await run("remember_open", { head, role: c.role, value: c.value }, { toast: true });
+        return true;
+      }
+      if (a === "stop") break;
+    }
+    await run("light_test", { head, step: "channel" }, { silentError: true });
+    return false;
+  }
+
+  async function sweep(axis) {
+    await run("light_test", { head, step: axis, value: 0.3 }, { silentError: true });
+    await wait(1200);
+    await run("light_test", { head, step: axis, value: 0.7 }, { silentError: true });
+    const a = await ask(`It should ${axis === "pan" ? "turn left and right (pan)" : "tip down and up (tilt)"} now. Did the real head do that?`,
+      [["Yes", "yes", "primary"], ["Again", "again"], ["No / something else moved", "no"]]);
+    if (a === "again") return sweep(axis);
+    await run("light_test", { head, step: axis, value: 0.5 }, { silentError: true });
+    return a === "yes";
+  }
+
+  async function colours() {
+    for (const [hex, name] of [["#ff0000", "red"], ["#00ff00", "green"], ["#0000ff", "blue"]]) {
+      await run("light_test", { head, step: "colour", hex }, { silentError: true });
+      const a = await ask(`It should be ${name.toUpperCase()} now${st.mixing ? "" : " (or the closest colour on its wheel)"}. Is it?`,
+        [["Yes", true, "primary"], ["No", false]]);
+      if (!a) return false;
+    }
+    await run("light_test", { head, step: "colour", hex: "#ffffff" }, { silentError: true });
+    return true;
+  }
+
+  const close = modal({
+    title: `Test ${hd.model}`, body: box,
+    foot: [h("span.muted.small.grow", `Mode ${st.mode} (${st.channels} channels) at ${st.address}. The light gets back what it was doing afterwards.`),
+      h("button.btn", { onclick: () => close() }, "Close")],
+    onClose: () => { closed = true; run("light_test", { head, step: "end" }, { silentError: true }); },
+  });
+
+  res.light = await lightStep();
+  if (!closed && res.light && st.pan) res.move = await sweep("pan");
+  if (!closed && res.light && st.tilt && res.move) res.move = await sweep("tilt");
+  if (!closed && res.light && st.colour) res.colour = await colours();
+  if (closed) return;
+  const r = await run("light_tested", { head, light: !!res.light, move: res.move, colour: res.colour }, { silentError: true });
+  const ok = r.ok && r.tested;
+  box.replaceChildren(
+    h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves and changes colour as Jarvis expects. Every ${hd.model} is ready.`
+      : `⚠ ${hd.model} needs attention.`),
+    ...((r.advice || []).map((t) => h("p.small", t))),
+    ok ? null : h("div.row-btns", h("button.btn", { onclick: () => { close(); openChannels([head]); } }, "Show its DMX channels")));
 }

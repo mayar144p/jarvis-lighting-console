@@ -172,7 +172,9 @@ def channel_role(label) -> str:
     if "strobe" in s:
         return "strobe"
     if "gobo" in s:
-        return "gobo_rot" if "rotate" in s or "spin" in s or "rotation" in s \
+        # GDTF "Gobo1Pos" / "Gobo1PosRotate" is the gobo's index/spin, not
+        # a second gobo wheel (it took the wheel's role and hid it)
+        return "gobo_rot" if re.search(r"rotat|spin|pos|index|indx", s) \
             else "gobo"
     if "prism" in s:
         return "prism"

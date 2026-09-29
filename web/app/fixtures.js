@@ -2,7 +2,7 @@
 import { state, on, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, promptBox, confirmBox, toast } from "./ui.js";
-import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration } from "./dialogs.js";
+import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration, openLightTest } from "./dialogs.js";
 import { post, get } from "./api.js";
 
 let anchor = null;                 // last plain-clicked head, for shift ranges
@@ -170,6 +170,7 @@ function rowMenu(btn, head) {
       if (!m) { toast("Use universe.address, e.g. 2.1", "bad"); return; }
       run("set_address", { head, universe: +m[1], address: +m[2] }, { toast: true });
     } },
+    { label: "Test this light…", run: () => openLightTest(hd) },
     { label: "Show DMX channels", run: () => openChannels([head]) },
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")

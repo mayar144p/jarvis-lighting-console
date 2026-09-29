@@ -4,7 +4,7 @@ import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox } from "./ui.js";
 import { createPicker, rgbToHex } from "./picker.js";
-import { openCueDialog } from "./dialogs.js";
+import { openCueDialog, openLightTest } from "./dialogs.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -104,13 +104,14 @@ const sendIntensity = throttle((level) => {
 function renderOpenWarning() {
   const box = $("#open-warn");
   if (!box) return;
-  const bad = selectionHeads().filter((x) => x.gate && !x.gate.known);
+  const bad = selectionHeads().filter((x) => x.gate && !x.gate.known && !x.tested);
   box.hidden = !bad.length;
   if (!bad.length) { box.dataset.key = ""; return; }
   const models = [...new Set(bad.map((x) => x.model))];
   if (box.dataset.key === models.join("|")) return;     // unchanged: keep the button clickable
   box.dataset.key = models.join("|");
   box.replaceChildren(h("span", `${models.join(", ")}: Jarvis doesn't know which value opens the shutter, so Full may leave it dark. `),
+    h("button.btn.small.primary", { onclick: () => openLightTest(bad[0]) }, "Test this light"), " ",
     h("button.btn.small", { onclick: () => showTab("beam") }, "Find it in Beam"));
 }
 

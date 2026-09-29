@@ -104,7 +104,7 @@ UNDO_EXCLUDED = frozenset({
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "remember_open",
+    "fx_status", "remember_open", "light_test", "light_tested",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -581,7 +581,7 @@ ACTIONS = (
     "timeline_stop", "timeline_seek",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "quick_fx_defaults", "remember_open",
+    "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
 )
 
 
@@ -3803,6 +3803,16 @@ class Engine:
             value = self._open_value(h, role)
             if value > 0:
                 rests[h["head_no"]] = {role: value}
+        # a channel the operator found must sit at a value for the real light
+        # to light (a lamp / "open" control the file did not mark) rests there
+        for h in self.patch:
+            if self._head_class(h) != "light":
+                continue
+            gate = self._shutter_role(h)
+            for role, rng in self.head_ranges(h).items():
+                if (role != gate and role in h["map"] and rng.get("open_user")
+                        and rng.get("open_from") is not None):
+                    rests.setdefault(h["head_no"], {})[role] = int(rng["open_from"])
         # an effect's output rests at its own "off" value
         for h in self.patch:
             for role in FX_OUTPUT_ROLES.intersection(h["map"]):
@@ -4120,16 +4130,177 @@ class Engine:
         role = self._shutter_role(h)
         if role is None or self._head_class(h) != "light":
             return None
-        return {"role": role, "open": self._open_value(h, role), "known": self._open_known(h, role)}
+        return {"role": role, "open": self._open_value(h, role), "known": self._open_known(h, role),
+                "tested": self._tested(h)}
 
-    def _a_remember_open(self, head=None, value=None, **_):
+    # -- "Test this light": catch a bad fixture file at setup, not at the gig
+    def _open_candidates(self, h: dict, role: str) -> list[int]:
+        """Shutter values worth trying, most likely first: the file's own
+        'open' ranges, then its other steady ranges, then the values
+        manufacturers commonly use."""
+        caps = (self.head_ranges(h).get(role) or {}).get("caps") or []
+        out: list[int] = []
+        words_open = re.compile(r"\bopen\b|\bon\b|no strobe|strobe off|shutter open", re.I)
+        steady = re.compile(r"strobe|pulse|random|closed|\boff\b|blackout|reset|sound|effect", re.I)
+        for lo, hi, text in caps:
+            if words_open.search(str(text)) and not re.search(r"clos", str(text), re.I):
+                out.append((int(lo) + int(hi)) // 2)
+        for lo, hi, text in caps:
+            if not steady.search(str(text)):
+                out.append((int(lo) + int(hi)) // 2)
+        out += [0, 5, 8, 12, 20, 32, 255, 250, 128, 64]
+        seen, uniq = set(), []
+        for v in out:
+            v = int(_clamp(v, 0, 255))
+            if v not in seen:
+                seen.add(v)
+                uniq.append(v)
+        return uniq[:14]
+
+    _HUNT_SKIP = {"pan", "tilt", "speed", "red", "green", "blue", "white", "amber", "uv",
+                  "cyan", "magenta", "yellow", "cto", "lime", "indigo"}
+
+    def _hunt_list(self, h: dict) -> list[dict]:
+        """When the shutter values did not light it: every other channel,
+        one at a time, at the value most likely to mean lamp on / open
+        (from its own ranges) and at full - the operator watches the real
+        light.  Catches a shutter the file did not name as one, a lamp-on
+        control, and a mode whose channels sit elsewhere."""
+        gate = self._shutter_role(h)
+        ranges = self.head_ranges(h)
+        lit = set(self._intensity_roles(h))
+        out = []
+        for role in dict.fromkeys(h["map"]):
+            if (role in self._HUNT_SKIP or role in lit or role.endswith("_fine") or role == gate
+                    or role.startswith("_") or role in ("raw", "unused")):
+                continue
+            vals = []
+            for lo, hi, text in (ranges.get(role) or {}).get("caps") or []:
+                t = str(text).lower()
+                if re.search(r"\b(open|on|lamp on|no strobe|strobe off)\b", t) and "clos" not in t:
+                    vals.append((int(lo) + int(hi)) // 2)
+            vals.append(255)
+            for v in list(dict.fromkeys(vals))[:2]:
+                out.append({"role": role, "value": v, "label": (ranges.get(role) or {}).get("label") or role})
+        return out[:24]
+
+    def _tested(self, h: dict) -> bool:
+        return bool((self.head_ranges(h).get("_model") or {}).get("tested"))
+
+    def _a_light_test(self, head=None, step="start", value=None, hex=None, role=None, **_):
+        """Drive one head through the setup test: start (full, open,
+        white, centred), open (try a shutter value), pan / tilt (a
+        position 0..1), colour (a hex), end (give it back)."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        if self._head_class(h) != "light":
+            raise ValueError("lasers and effects are tested from their own tabs, armed")
+        n = h["head_no"]
+        saved = self.__dict__.setdefault("_test_saved", {})
+        step = str(step)
+        gate = self._shutter_role(h)
+        if step == "end":
+            self.__dict__.get("_test_hunt", {}).pop(n, None)
+            if n in saved:
+                before = saved.pop(n)
+                if before:
+                    self.programmer[n] = before
+                else:
+                    self.programmer.pop(n, None)
+            return {"summary": f"#{n} back to what it was doing"}
+        if n not in saved:
+            saved[n] = dict(self.programmer.get(n) or {})
+        if step == "start":
+            self.programmer[n] = {}
+            for role, v in {**self._level_values(h, 100), **self._white_values(h)}.items():
+                self._set_programmer(n, role, v)
+            for axis in ("pan", "tilt"):
+                if axis in h["map"]:
+                    self._set_programmer(n, axis, attr_domain(h, axis) // 2)
+            if "speed" in h["map"]:
+                fast_first = (self.head_ranges(h).get("speed") or {}).get("fast_first")
+                self._set_programmer(n, "speed", 0 if fast_first is not False else 255)
+            if gate:
+                self._set_programmer(n, gate, self._open_value(h, gate))
+            colour = [r for r in ("red", "green", "blue", "wheel", "cyan") if r in h["map"]]
+            return {"head": n, "model": h.get("model"), "gate": gate,
+                    "open": self._open_value(h, gate) if gate else None,
+                    "open_known": self._open_known(h, gate) if gate else True,
+                    "candidates": self._open_candidates(h, gate) if gate else [],
+                    "hunt": self._hunt_list(h),
+                    "pan": "pan" in h["map"], "tilt": "tilt" in h["map"],
+                    "colour": bool(colour), "mixing": "red" in h["map"] or "cyan" in h["map"],
+                    "channels": len(h["map"]), "mode": h.get("mode"),
+                    "address": f"{h['universe']}.{h['address']}",
+                    "summary": f"#{n} lit white and centred for the test"}
+        if step == "open":
+            if not gate:
+                raise ValueError("this light has no shutter channel")
+            self._set_programmer(n, gate, int(_clamp(value, 0, 255)))
+            return {"summary": f"shutter at {int(_clamp(value, 0, 255))}"}
+        if step in ("pan", "tilt"):
+            if step not in h["map"]:
+                raise ValueError(f"this light has no {step}")
+            frac = max(0.0, min(1.0, float(value if value is not None else 0.5)))
+            self._set_programmer(n, step, int(round(attr_domain(h, step) * frac)))
+            return {"summary": f"{step} to {round(frac * 100)}%"}
+        if step == "channel":
+            # one other channel at a value; the one tried before goes back
+            role = str(role or "")
+            if role and role not in h["map"]:
+                raise ValueError(f"this light has no {role} channel")
+            start = self.__dict__.setdefault("_test_hunt", {})
+            prev = start.pop(n, None)
+            if prev:
+                prole, pval = prev
+                if pval is None:
+                    (self.programmer.get(n) or {}).pop(prole, None)
+                else:
+                    self._set_programmer(n, prole, pval)
+            if not role or value is None:
+                return {"summary": "channels back"}
+            start[n] = (role, (self.programmer.get(n) or {}).get(role))
+            self._set_programmer(n, role, int(_clamp(value, 0, 255)))
+            return {"summary": f"{role} at {int(_clamp(value, 0, 255))}"}
+        if step == "colour":
+            for role, v in self._colour_values(h, str(hex or "#ffffff")).items():
+                self._set_programmer(n, role, v)
+            return {"summary": f"colour {hex}"}
+        raise ValueError("step is start, open, channel, pan, tilt, colour or end")
+
+    def _a_light_tested(self, head=None, light=True, move=True, colour=True, **_):
+        """Record the result: a model that passed is not asked about again."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        ok = _truthy(light) and _truthy(move) and _truthy(colour)
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
+                              "_model", "tested", bool(ok))
+        fixtures.invalidate_cache()
+        advice = []
+        if not _truthy(light):
+            advice.append("It never lit: check its DMX address and cable, that it is in DMX mode, "
+                          "and (on a discharge lamp) that the lamp is struck.")
+        if not _truthy(move) or not _truthy(colour):
+            advice.append(f"Moved or coloured wrongly: the light's channel mode must match Jarvis "
+                          f"({h.get('mode')}, {len(h['map'])} channels) - set it on the light's "
+                          f"menu, or re-add it in the mode the light shows.")
+        return {"tested": ok, "advice": advice,
+                "summary": f"{h.get('model')}: " + ("passed the test" if ok else "needs attention")}
+
+    def _a_remember_open(self, head=None, value=None, role=None, **_):
         """The value that opens this light's shutter, found on the real
         light: saved for every head of the same model and mode, so Full
         lights it from now on."""
         if head is None:
             raise ValueError("head is required")
         h = self._head(head)
-        role = self._shutter_role(h)
+        if role:
+            if role not in h["map"]:
+                raise ValueError(f"this light has no {role} channel")
+        else:
+            role = self._shutter_role(h)
         if role is None:
             raise ValueError("this light has no shutter or strobe channel")
         if value is None:
@@ -4140,6 +4311,7 @@ class Engine:
         fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"),
                               h.get("mode"), role, "open_from", v)
         fixtures.invalidate_cache()
+        self._drop_fixture_caches()
         return {"summary": f"{h.get('model')}: {role} opens at {v} - Full will light it"}
 
     def _a_motion_get(self, head=None, **_):
@@ -8329,7 +8501,7 @@ class Engine:
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h))
+                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
