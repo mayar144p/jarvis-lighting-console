@@ -276,16 +276,7 @@ export function openAddDialog(query = "") {
       if (addr.value) params.address = +addr.value;
       if (name.value.trim()) params.name = name.value.trim();
       const r = await run("add_heads", params);
-      if (r.ok) {
-        toast(r.summary || "Added", "ok");
-        // a model Jarvis has not seen pass the test yet: offer it now
-        setTimeout(async () => {
-          const added = patch().filter((x) => (r.heads || []).includes(x.head_no));
-          const first = added.find((x) => !x.tested && !(x.body && x.body.class && x.body.class !== "light"));
-          if (!first) return;
-          if (await confirmBox("Test this light?", `First time with ${first.model}: a 30-second test with the real light catches a wrong mode or a shutter that never opens, before the gig. Go live first so the light reacts.`, { ok: "Test it" })) openLightTest(first);
-        }, 600);
-      }
+      if (r.ok) toast(r.summary || "Added", "ok");
     } catch (err) {
       toast(err.message, "bad");
     } finally {

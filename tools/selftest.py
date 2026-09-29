@@ -8798,8 +8798,8 @@ def test_light_test() -> None:
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
-    check("the Add dialog offers the test for an untested model",
-          "openLightTest(first)" in js and "export async function openLightTest" in js, "")
+    check("adding a light no longer pops up the test (it stays on the right-click menu)",
+          "openLightTest(first)" not in js and "export async function openLightTest" in js, "")
 
 
 def test_share_relogin() -> None:
