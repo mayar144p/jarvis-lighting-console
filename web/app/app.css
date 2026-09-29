@@ -777,3 +777,15 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
   .pb-mode button span { display: none; }
   .pb-mode button { width: 34px; padding: 7px 4px; }
 }
+
+/* Settings -> Output */
+.out-box { display: flex; flex-direction: column; gap: 10px; }
+.out-status { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.out-ok { color: var(--ok); }
+.out-bad { color: var(--blind); font-size: 13px; }
+.out-list { display: flex; flex-direction: column; gap: 4px; }
+.out-list:empty { display: none; }
+.out-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03); font-size: 13px; }
+.out-row .btn { margin-left: auto; }
+.out-tag { font-size: 11px; color: var(--accent); background: var(--accent-bg); padding: 1px 6px; border-radius: 999px; }
+.mono { font-family: var(--mono); }

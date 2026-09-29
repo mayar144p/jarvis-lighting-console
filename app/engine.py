@@ -31,6 +31,7 @@ from app import profiles
 from app import timeline as tl_mod
 from app import venue as venue_mod
 from app import merge
+from app import netif
 from app.artnet import ArtNetSender
 from app.sacn import SacnSender
 
@@ -98,6 +99,8 @@ UNDO_EXCLUDED = frozenset({
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
+    # where the DMX goes is desk setup, not an edit to the show
+    "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
     # `cue go` line must cost no Ctrl+Z at all, while `1-4 pan 90` must
     # cost exactly one.  Letting `act` push unconditionally would charge
@@ -559,7 +562,7 @@ ACTIONS = (
     "set_limits", "clear_limits", "set_orient", "get_limits",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
-    "set_place", "set_position", "set_venue", "status", "stop_fx",
+    "set_dmx_target", "set_place", "set_position", "set_venue", "status", "stop_fx",
     "venue_template", "venue_room", "venue_stage", "venue_add",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
@@ -568,6 +571,48 @@ ACTIONS = (
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
 )
+
+
+DMX_TARGET_DEFAULT = {"mode": "auto", "host": "", "transport": ""}
+DMX_TARGET_MODES = ("auto", "node", "broadcast")
+
+
+def clean_dmx_target(raw) -> dict:
+    """A stored output target -> {mode, host, transport}; junk -> auto."""
+    import ipaddress
+    raw = raw if isinstance(raw, dict) else {}
+    mode = str(raw.get("mode") or "auto").lower()
+    mode = mode if mode in DMX_TARGET_MODES else "auto"
+    transport = str(raw.get("transport") or "").lower()
+    transport = transport if transport in ("artnet", "sacn") else ""
+    host = str(raw.get("host") or "").strip()
+    if host and host != "multicast":
+        try:
+            host = str(ipaddress.IPv4Address(host))
+        except ValueError:
+            host = ""
+    if mode == "node" and (not host or host == "multicast"):
+        mode = "auto"
+    return {"mode": mode, "host": host if mode != "auto" else "",
+            "transport": transport}
+
+
+def pick_auto_broadcast(ifaces: list[dict]) -> str:
+    """The broadcast of the adapter most likely to face the rig: the
+    Art-Net 2.x range first, then 10.x, then any private network."""
+    def rank(i):
+        ip = i["ip"]
+        if ip.startswith("2."):
+            return 0
+        if ip.startswith("10."):
+            return 1
+        if ip.startswith(("192.168.", "172.")):
+            return 2
+        return 3
+    if not ifaces:
+        return "255.255.255.255"
+    best = min(ifaces, key=rank)
+    return netif.broadcast_for(best["ip"], best.get("mask"))
 
 
 # A "not given" marker for action parameters that need to tell three states
@@ -592,6 +637,16 @@ class Engine:
         self.mode = "jarvis"
         self.show_dir = Path(show_dir or config.CONSOLE_SHOW_DIR)
         self._sender = sender
+        # A sender handed in (tests, tools) is used as given, never rebuilt.
+        self._sender_fixed = sender is not None
+        # Where the DMX goes at THIS venue (see _a_set_dmx_target).  Saved
+        # with the show, not in undo: undoing a venue edit must never
+        # quietly send the rig's data somewhere else.
+        self.dmx_target: dict = dict(DMX_TARGET_DEFAULT)
+        # The adapters' auto broadcast, refreshed off the output thread.
+        self._auto_host: str | None = None
+        self._auto_host_at = -1e9
+        self._auto_host_busy = False
         # The room the rig lives in (app/venue.py).  "auto" means nothing
         # was drawn and the visualiser sizes a room around the patch.
         self.venue: dict = venue_mod.empty()
@@ -3023,7 +3078,7 @@ class Engine:
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
-        "set_output", "save_show", "load_show", "import_show",
+        "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
         "quick_set", "quick_defaults", "timeline_set", "timeline_track",
         "timeline_clip", "timeline_from_playback",
     })
@@ -5311,17 +5366,140 @@ class Engine:
         never change with the wire protocol - only _dispatch's socket
         target does.
         """
-        if self._sender is None:
-            if config.DMX_TRANSPORT == "sacn":
-                self._sender = SacnSender(
-                    config.DMX_HOST, config.DMX_PORT, config.DMX_NET,
-                    self.dry_run, priority=config.SACN_PRIORITY,
-                    source_name=config.SACN_SOURCE_NAME,
-                    cid=config.SACN_CID or None)
+        if self._sender is not None and self._sender_fixed:
+            return self._sender
+        transport, host, port = self._dmx_resolved()
+        cur = self._sender
+        if cur is not None and (getattr(cur, "transport", "artnet"), cur.host,
+                                cur.port) == (transport, host, port):
+            return cur
+        # The target changed (Settings, a loaded show, a cable plugged in
+        # under auto): swap senders between two frames, no restart.
+        if transport == "sacn":
+            new = SacnSender(host, port, config.DMX_NET, self.dry_run,
+                             priority=config.SACN_PRIORITY,
+                             source_name=config.SACN_SOURCE_NAME,
+                             cid=config.SACN_CID or None)
+        else:
+            new = ArtNetSender(host, port, config.DMX_NET, self.dry_run)
+        self._sender = new
+        if cur is not None:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        return new
+
+    # -- where the DMX goes ----------------------------------------------
+    AUTO_HOST_TTL = 10.0
+
+    def _dmx_resolved(self) -> tuple[str, str, int]:
+        """(transport, host, port) the output should use right now.
+
+        Cheap enough for the output thread: the only slow part, asking the
+        OS for its adapters, runs on a helper thread and is cached.
+        """
+        t = self.dmx_target
+        transport = t.get("transport") or config.DMX_TRANSPORT
+        if transport == config.DMX_TRANSPORT:
+            port = config.DMX_PORT
+        else:
+            port = 5568 if transport == "sacn" else 6454
+        mode = t.get("mode") or "auto"
+        if mode in ("node", "broadcast") and t.get("host"):
+            return transport, t["host"], port
+        if transport == "sacn":
+            if transport == config.DMX_TRANSPORT and not config.DMX_HOST_IS_DEFAULT:
+                return transport, config.DMX_HOST, port
+            return transport, "multicast", port
+        if (mode == "auto" and config.DMX_TRANSPORT == "artnet"
+                and not config.DMX_HOST_IS_DEFAULT):
+            return transport, config.DMX_HOST, port     # .env wins in auto
+        return transport, self._auto_broadcast(), port
+
+    def _auto_broadcast(self) -> str:
+        now = time.monotonic()
+        if now - self._auto_host_at > self.AUTO_HOST_TTL and not self._auto_host_busy:
+            self._auto_host_busy = True
+            threading.Thread(target=self._refresh_auto_host, daemon=True,
+                             name="jarvis-netif").start()
+        if self._auto_host:
+            return self._auto_host
+        host = config.DMX_HOST if config.DMX_TRANSPORT == "artnet" else ""
+        return host if host and host != "multicast" else "255.255.255.255"
+
+    def _refresh_auto_host(self, ifaces: list[dict] | None = None) -> None:
+        try:
+            if ifaces is None:
+                ifaces = netif.interfaces()
+            self._auto_host = pick_auto_broadcast(ifaces)
+        except Exception:
+            pass
+        finally:
+            self._auto_host_at = time.monotonic()
+            self._auto_host_busy = False
+
+    def _a_set_dmx_target(self, mode=None, host=None, transport=None, **_):
+        """Where the DMX goes at this venue.  mode: auto (the adapters'
+        broadcast), node (one node's IP, unicast) or broadcast (a
+        broadcast address you give).  Saved with the show."""
+        import ipaddress
+        cur = dict(self.dmx_target)
+        if mode is not None:
+            cur["mode"] = str(mode).lower()
+        if host is not None:
+            cur["host"] = str(host).strip()
+        if transport is not None:
+            cur["transport"] = str(transport).lower()
+        if cur["mode"] not in DMX_TARGET_MODES:
+            raise ValueError("mode is auto, node or broadcast")
+        if cur["transport"] not in ("", "artnet", "sacn"):
+            raise ValueError("transport is artnet or sacn")
+        if cur["mode"] != "auto":
+            h = cur["host"]
+            if not h:
+                raise ValueError("give the node's IP address, e.g. 2.0.0.10")
+            if not (h == "multicast" and cur["transport"] == "sacn"):
+                try:
+                    ip = ipaddress.IPv4Address(h)
+                except ValueError:
+                    raise ValueError(f"{h!r} is not an IP address like 2.0.0.10")
+                if ip.is_loopback and cur["mode"] == "broadcast":
+                    raise ValueError("a broadcast address cannot be loopback")
+                if ip.is_multicast or ip.is_unspecified:
+                    raise ValueError(f"{h} cannot receive DMX")
+        self.dmx_target = clean_dmx_target(cur)
+        transport, host_, port = self._dmx_resolved()
+        what = {"auto": "auto", "node": "node", "broadcast": "broadcast"}[
+            self.dmx_target["mode"]]
+        return {"target": dict(self.dmx_target),
+                "resolved": {"transport": transport, "host": host_, "port": port},
+                "summary": f"DMX output: {what} -> {host_}:{port} ({transport})"}
+
+    def network_info(self) -> dict:
+        """The adapters, the output target and whether it can be reached
+        (the Settings -> Output page).  Runs the OS query: not for the
+        output thread."""
+        ifaces = netif.interfaces()
+        self._refresh_auto_host(ifaces)
+        with self.lock:
+            target = dict(self.dmx_target)
+            transport, host, port = self._dmx_resolved()
+        verdict = None
+        if host and host not in ("multicast", "255.255.255.255"):
+            if target["mode"] == "node" or not host.endswith(".255"):
+                verdict = netif.check(host, ifaces)
             else:
-                self._sender = ArtNetSender(config.DMX_HOST, config.DMX_PORT,
-                                            config.DMX_NET, self.dry_run)
-        return self._sender
+                verdict = {"ok": any(netif.broadcast_for(i["ip"], i.get("mask")) == host
+                                     for i in ifaces), "via": None, "suggest": None}
+                verdict["message"] = ("an adapter is on that network" if verdict["ok"] else
+                                      f"no adapter's broadcast is {host}")
+        return {"interfaces": [dict(i, broadcast=netif.broadcast_for(i["ip"], i.get("mask")))
+                               for i in ifaces],
+                "target": target,
+                "resolved": {"transport": transport, "host": host, "port": port},
+                "env_host": None if config.DMX_HOST_IS_DEFAULT else config.DMX_HOST,
+                "check": verdict}
 
     def _run(self) -> None:
         """Output thread: one frame per tick, deadline scheduled."""
@@ -6853,6 +7031,7 @@ class Engine:
             "venue": self.venue,
             "quick": self.quick,
             "timeline": self.timeline,
+            "output_target": self.dmx_target,
             "meta": {"master": self.master,
                      "show_file": self.show_file},
         }
@@ -7003,6 +7182,8 @@ class Engine:
             self.master = _clamp(meta.get("master", 100), 0, 100)
             self.show_file = meta.get("show_file") or self.show_file
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
+            if isinstance(payload.get("output_target"), dict):
+                self.dmx_target = clean_dmx_target(payload["output_target"])
             for b in payload.get("quick") or []:
                 try:
                     self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
@@ -7038,6 +7219,7 @@ class Engine:
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
+                "output_target": dict(self.dmx_target),
                 "meta": {"master": self.master},
             }
             text = json.dumps(payload, indent=2)
@@ -7211,6 +7393,9 @@ class Engine:
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             if venue is not None:           # older shows kept no room
                 self.venue = venue
+            if isinstance(payload.get("output_target"), dict):
+                # the show was saved at a venue: its node comes with it
+                self.dmx_target = clean_dmx_target(payload["output_target"])
                 self._reflow_mounts()
                 self.patch_rev += 1
         return {"file": label, "heads": len(heads), "show_file": label,
@@ -7355,6 +7540,7 @@ class Engine:
 
     def _output_public(self) -> dict:
         pub = dict(self.output)
+        pub["target"] = dict(self.dmx_target)
         pub["dry_run"] = self.dry_run
         pub["transport"] = getattr(self._sender, "transport",
                                    config.DMX_TRANSPORT)

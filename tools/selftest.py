@@ -6394,6 +6394,8 @@ def test_hardening(tmp: Path) -> None:
                    headers={"Host": "attacker.example:%d" % port}) == 403, "")
         check("a malformed GET answers 400 instead of dropping the connection",
               call("/api/gdtf/search?limit=abc") == 400, "")
+        check("the network check answers (Settings -> Output)",
+              call("/api/console/network") == 200, "")
         # The live stream: one connection carries state and light.
         import http.client as _hc
         conn = _hc.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -7479,6 +7481,7 @@ def _standalone_suites():
     ("quick buttons", test_quick_buttons),
     ("timeline", test_timeline),
     ("auto show", test_autoshow),
+    ("dmx target", test_dmx_target),
     )
 
 
@@ -8012,6 +8015,124 @@ def test_autoshow() -> None:
                   "RIGGING" in ctx and "TIMELINE" in ctx and "ROOM" in ctx, ctx[-400:])
             check("and may aim, attach and run the timeline",
                   {"aim_at", "attach_heads", "timeline_play"} <= set(console_ai.ALLOWED_ACTIONS), "")
+        finally:
+            e.shutdown()
+
+
+def test_dmx_target() -> None:
+    """Every venue's node has its own IP: pick it, check it, keep it."""
+    print("dmx target (node IP per venue, network check)")
+    import tempfile
+    from app import artnet, config, console_ai, netif
+    from app import engine as eng
+    from app import fixtures
+
+    ipconfig = """Windows IP Configuration
+
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . :
+   IPv4 Address. . . . . . . . . . . : 2.0.0.100
+   Subnet Mask . . . . . . . . . . . : 255.255.0.0
+   Default Gateway . . . . . . . . . :
+
+Wireless LAN adapter Wi-Fi:
+
+   IPv4 Address. . . . . . . . . . . : 192.168.1.23
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 192.168.1.1
+"""
+    rows = netif.parse_ipconfig(ipconfig)
+    check("Windows adapters are read with their masks",
+          [(r["ip"], r["mask"]) for r in rows] == [("2.0.0.100", "255.255.0.0"),
+                                                   ("192.168.1.23", "255.255.255.0")],
+          str(rows))
+    mac = netif.parse_ifconfig("en0: flags=8863<UP> mtu 1500\n\tinet 2.0.0.50 netmask "
+                               "0xffff0000 broadcast 2.0.255.255\n"
+                               "lo0: flags=8049<UP>\n\tinet 127.0.0.1 netmask 0xff000000\n")
+    check("macOS hex masks are decoded",
+          mac[0] == {"name": "en0", "ip": "2.0.0.50", "mask": "255.255.0.0"}, str(mac))
+    lin = netif.parse_ip_addr("2: eth0    inet 2.0.0.7/16 brd 2.0.255.255 scope global eth0\n")
+    check("Linux prefixes become masks",
+          lin == [{"name": "eth0", "ip": "2.0.0.7", "mask": "255.255.0.0"}], str(lin))
+    ok = netif.check("2.0.0.10", rows)
+    check("a node on the Ethernet network is reachable through it",
+          ok["ok"] and ok["via"]["ip"] == "2.0.0.100", str(ok))
+    bad = netif.check("2.0.0.10", rows[1:])
+    check("Wi-Fi only: the check says so and suggests an address on the node's network",
+          not bad["ok"] and bad["suggest"] == {"ip": "2.0.0.100", "mask": "255.255.0.0"},
+          str(bad))
+    check("a 2.x /16 broadcasts to 2.0.255.255, not the /8",
+          netif.broadcast_for("2.0.0.100", "255.255.0.0") == "2.0.255.255", "")
+    check("auto picks the Art-Net adapter over Wi-Fi",
+          eng.pick_auto_broadcast(list(reversed(rows))) == "2.0.255.255", "")
+    check("the startup guess prefers a 2.x address too",
+          config._pick_lan(["192.168.1.23", "2.0.0.100"]) == "2.0.0.100", "")
+    check("scan accepts extra poll targets",
+          "targets" in artnet.scan.__code__.co_varnames, "")
+    check("the copilot can never move the output",
+          "set_dmx_target" in console_ai.DENY_ACTIONS, "")
+    check("junk stored targets fall back to auto",
+          eng.clean_dmx_target({"mode": "node", "host": "nope"})["mode"] == "auto"
+          and eng.clean_dmx_target(None) == eng.DMX_TARGET_DEFAULT, "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "t.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s",
+                       autosave_path=tmp / "auto.json")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            depth = len(e._undo)
+            r = e.act("set_dmx_target", mode="node", host="2.0.0.10")
+            check("a node IP is taken", r["ok"] and r["resolved"]["host"] == "2.0.0.10", str(r))
+            check("and costs no undo step", len(e._undo) == depth, "")
+            s1 = e._get_sender()
+            check("the sender goes to the node", (s1.host, s1.port) == ("2.0.0.10", 6454), "")
+            e.act("set_dmx_target", host="2.0.0.11")
+            s2 = e._get_sender()
+            check("changing the IP swaps the sender live, no restart",
+                  s2 is not s1 and s2.host == "2.0.0.11", s2.host)
+            check("unchanged target keeps the same sender", e._get_sender() is s2, "")
+            for bad_ip in ("banana", "", "224.0.0.1", "2.0.0"):
+                r = e.act("set_dmx_target", mode="node", host=bad_ip)
+                check(f"{bad_ip!r} is refused with a reason", not r["ok"] and r["error"], str(r))
+            check("a refused IP leaves the target alone", e.dmx_target["host"] == "2.0.0.11", "")
+            r = e.act("set_dmx_target", mode="broadcast", host="2.0.255.255", transport="artnet")
+            check("a chosen broadcast address is taken", r["ok"] and e._get_sender().host == "2.0.255.255", str(r))
+            r = e.act("set_dmx_target", mode="node", host="10.0.0.5", transport="sacn")
+            snd = e._get_sender()
+            check("sACN unicast to a node uses port 5568",
+                  getattr(snd, "transport", "") == "sacn" and snd.port == 5568, str(r))
+            e.act("set_dmx_target", mode="node", host="2.0.0.10", transport="artnet")
+            e.act("save_show", name="club-a")
+            e.act("set_dmx_target", mode="auto")
+            check("auto clears the host", e.dmx_target["mode"] == "auto" and not e.dmx_target["host"], "")
+            e.act("load_show", name="club-a")
+            check("loading a venue's show brings its node back",
+                  e.dmx_target["host"] == "2.0.0.10" and e.dmx_target["mode"] == "node",
+                  str(e.dmx_target))
+            e.act("venue_template", name="warehouse")
+            check("swapping the room keeps the node", e.dmx_target["host"] == "2.0.0.10", "")
+            e.act("undo")
+            check("undo never moves the output", e.dmx_target["host"] == "2.0.0.10", "")
+            check("the output feed reports the target",
+                  e._output_public()["target"]["host"] == "2.0.0.10", "")
+            e.act("set_lock", state="operate")
+            r = e.act("set_dmx_target", mode="auto")
+            check("the lock protects the output target", not r["ok"], str(r))
+            e.act("set_lock", state="design")
+            e._autosave(force=True)
+            e._stop_writer()
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s",
+                            autosave_path=tmp / "auto.json", restore=True)
+            check("a restart keeps the node", e2.dmx_target["host"] == "2.0.0.10",
+                  str(e2.dmx_target))
+            e2.shutdown()
+            fixed = eng.Engine(db_path=db, dry_run=True, sender=s1)
+            fixed.dmx_target = {"mode": "node", "host": "9.9.9.9", "transport": ""}
+            check("a sender handed in by a tool is never replaced", fixed._get_sender() is s1, "")
         finally:
             e.shutdown()
 

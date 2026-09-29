@@ -495,12 +495,19 @@ class Handler(BaseHTTPRequestHandler):
                 scan_port = int(body["port"]) if body.get("port") else config.DMX_PORT
             except (TypeError, ValueError):
                 scan_port = config.DMX_PORT
+            # Poll every adapter's own broadcast too (255.255.255.255
+            # leaves by the default route only), and the node in use.
+            net = eng.network_info()
+            targets = [i["broadcast"] for i in net["interfaces"]]
+            if net["target"]["mode"] != "auto" and net["target"]["host"]:
+                targets.append(net["target"]["host"])
             found = artnet.scan(
                 timeout=_scan_num("timeout", 1.5),
                 port=scan_port,
                 net=config.DMX_NET,
                 sweep_subnets=body.get("sweep", True) is not False,
-                sweep_timeout=_scan_num("sweep_timeout", 1.5))
+                sweep_timeout=_scan_num("sweep_timeout", 1.5),
+                targets=targets)
             limit = int(getattr(engine_mod, "MAX_UNIVERSES", 4096))
             observed = [{"universe": row["universe"],
                          "channels": row["channels"]}
@@ -790,6 +797,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return None
+        if route == "/api/console/network":
+            # the adapters, the output target and whether it is reachable
+            return self._json(self._engine().network_info())
         if route == "/api/console/underlay":
             path = underlay_path(str(query.get("id", "")))
             if not path:

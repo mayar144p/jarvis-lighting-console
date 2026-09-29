@@ -74,6 +74,21 @@ and rolls all of them back if any fails. The copilot uses it.
   tick. A seek chases: last cue re-fired, spans re-held, levels applied.
   The transport is never an undo step; timeline edits are.
 
+### Output target
+
+Every venue's node has its own address, so where the DMX goes is desk
+state, not only `.env`. `Engine.dmx_target` is `{mode, host, transport}`:
+**auto** (the broadcast of the adapter facing the rig, the Art-Net 2.x
+range first, then 10.x, then any private network, using each adapter's real
+mask), **node** (unicast to one IP) or **broadcast** (an address you give).
+It is saved in show files and autosave but is never an undo step, and the
+copilot can't change it. `_get_sender` resolves the target on every frame
+from cached values and swaps the sender when it changes, so there's no
+restart. `netif.py` lists the adapters (`ipconfig`, `ifconfig` or `ip`) and
+checks whether a node is reachable, suggesting an address when it isn't.
+Scans poll each adapter's own broadcast as well as 255.255.255.255, which
+leaves by the default route only.
+
 ### AI
 
 * `llm.py` is a small OpenAI-compatible client. `structured()` gets one JSON
@@ -108,6 +123,7 @@ and rolls all of them back if any fails. The copilot uses it.
 | `/api/console/scan`, `/patch`, `/save`, `/load`, `/import_show`, `/midi`, `/look` | POST | rig and show operations |
 | `/api/gdtf/*` | GET/POST | GDTF Share login, search, download, geometry and models |
 | `/api/console/underlay`, `/api/console/audio` | POST/GET | floor-plan images and timeline audio, stored by content hash |
+| `/api/console/network` | GET | adapters, output target, reachability check |
 | `/api/console/autoshow` | POST | design a whole show for the rig, or build a previewed design |
 | `/api/fixtures/*` | POST | edit the library: channel labels, ranges, create, import |
 
