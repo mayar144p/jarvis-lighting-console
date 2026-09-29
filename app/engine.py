@@ -17,6 +17,7 @@ import csv as csvmod
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import threading
@@ -439,6 +440,12 @@ def _similar(a: str, b: str) -> float:
     return (0.5 * pre / max(len(a), len(b))) + (0.5 * common / max(len(a), len(b)))
 
 
+def _hex_or_none(value) -> str | None:
+    """A #rrggbb colour as typed, or None for none."""
+    text = str(value or "").strip()[:9]
+    return text or None
+
+
 def _truthy(value) -> bool:
     """Bool from true/1/"on"/"yes" or false/0/"off"/"no"."""
     if isinstance(value, str):
@@ -558,7 +565,7 @@ ACTIONS = (
     "add_heads", "auto_patch", "blackout", "clear_heads",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
-    "record_preset", "include_preset", "delete_preset",
+    "record_preset", "include_preset", "delete_preset", "rename_preset",
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
     "cue_info", "set_attr_range", "remap_heads",
     "follow_set", "group_create", "group_delete", "import_scan",
@@ -578,6 +585,8 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
+    "quick_page", "quick_move",
+    "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
@@ -671,6 +680,9 @@ class Engine:
         # Quick buttons (see _a_quick_set) and the ones held right now.
         self.quick: list[dict] = []
         self.quick_active: dict[str, dict] = {}
+        self.quick_names: dict[str, str] = {}
+        # "My moves": named movements (shape + knobs), played on any lights
+        self.moves: list[dict] = []
         # Special effects (see the FX layer): armed until (monotonic), the
         # runs firing now, and how much each confetti tank has left (s).
         # Never saved: a desk always starts DISARMED with nothing firing.
@@ -806,6 +818,8 @@ class Engine:
             "playbacks": _copy_playbacks(self.playbacks),
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
+            "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
@@ -830,6 +844,8 @@ class Engine:
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
+        self.quick_names = dict(state.get("quick_names") or {})
+        self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
                              if any(b["id"] == k for b in self.quick)}
@@ -3188,7 +3204,7 @@ class Engine:
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
-        "include_palette", "record_preset", "include_preset", "delete_preset",
+        "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
         "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
@@ -3472,10 +3488,18 @@ class Engine:
     # ------------------------------------------------------------------
     QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
                    "release", "preset", "blackout",
+                   # one of "My moves", by id (an edit to the move reaches it)
+                   "move",
+                   # anything at once: level / dim / colour / strobe /
+                   # captured values / attributes / effects, on any lights
+                   "custom",
                    # special effects: their own buttons, never a light's
                    "sfx", "fog", "laser", "fxkill", "arm")
     FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
-    QUICK_PAGES = 4
+    # buttons that do one thing and are done: no timer, no radio group
+    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill"})
+    SPLITS = ("odd", "even", "left", "right")
+    QUICK_PAGES = 8
     QUICK_SLOTS = 24
 
     def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
@@ -3497,10 +3521,28 @@ class Engine:
             clean_t["type"] = str(target["type"])[:30]
         else:
             clean_t["all"] = True
+        split = str(target.get("split") or "").lower()
+        if split:
+            if split not in self.SPLITS:
+                raise ValueError(f"split is one of {', '.join(self.SPLITS)}")
+            clean_t["split"] = split
         btn = {"id": f"q{page}-{slot}", "page": page, "slot": slot,
                "label": str(raw.get("label") or kind.title())[:24],
                "kind": kind, "mode": mode, "target": clean_t,
-               "colour": str(raw.get("colour") or "")[:9] or None}
+               "colour": _hex_or_none(raw.get("colour"))}
+        # how the button LOOKS and BEHAVES, for every kind that stays on
+        tint = _hex_or_none(raw.get("tint"))
+        if tint:
+            btn["tint"] = tint
+        if kind not in self.ONE_SHOT_BUTTONS:
+            if raw.get("exclusive") not in (None, ""):
+                btn["exclusive"] = str(raw["exclusive"]).strip()[:20] or None
+                if not btn["exclusive"]:
+                    btn.pop("exclusive")
+            if kind not in self.FX_BUTTONS and raw.get("seconds") not in (None, "", 0, "0"):
+                btn["seconds"] = float(_clamp(raw.get("seconds"), 0.1, 3600))
+        if kind == "custom":
+            self._quick_clean_custom(raw, btn)
         if kind == "flash":
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
@@ -3512,12 +3554,20 @@ class Engine:
             if name not in fxlib_mod.FX:
                 raise ValueError(f"unknown effect {name!r}")
             btn["fx"] = name
+            params = self._quick_fx_params(name, raw.get("params"))
+            if params:
+                btn["params"] = params
         if kind in ("go", "release"):
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
             if raw.get("cue") not in (None, ""):
                 btn["cue"] = int(raw["cue"])
         if kind == "preset":
             btn["preset"] = int(raw.get("preset") or 0)
+        if kind == "move":
+            mid = str(raw.get("move") or "")
+            if not mid:
+                raise ValueError("a move button needs one of My moves")
+            btn["move"] = mid
         if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
             btn["seconds"] = float(_clamp(raw.get("seconds"), 0.2, 600))
         if kind == "fog":
@@ -3527,6 +3577,209 @@ class Engine:
             btn["values"] = {str(k): int(_clamp(v, 0, 255)) for k, v in raw["values"].items()
                              if str(k) in LASER_ROLES}
         return btn
+
+    # ------------------------------------------------------------------
+    # My moves: named movements, not cues - play one on any lights
+    # ------------------------------------------------------------------
+    MOVE_MAX = 64
+
+    def _move_clean(self, raw: dict) -> dict:
+        lib = str(raw.get("lib") or raw.get("fx") or "").lower()
+        if lib not in motion_mod.KINDS:
+            raise ValueError(f"a move is one of {', '.join(motion_mod.KINDS)}")
+        name = str(raw.get("name") or "").strip()[:32]
+        if not name:
+            raise ValueError("a move needs a name")
+        mid = str(raw.get("id") or "") or "m" + os.urandom(4).hex()
+        return {"id": mid[:16], "name": name, "lib": lib,
+                "params": self._quick_fx_params(lib, raw.get("params") or {})}
+
+    def _a_move_save(self, name="", lib=None, params=None, id=None, **_):
+        """Save a movement under a name.  Without `lib`, the movement running
+        on the selection now (shape and knobs) is what gets saved."""
+        if lib in (None, ""):
+            sel = set(self.selected)
+            row = next((f for f in reversed(self.fx) if f.get("lib") in motion_mod.KINDS
+                        and (not sel or sel & set(f.get("heads") or []))), None)
+            if row is None:
+                raise ValueError("start a movement first (or give its shape) - then save it")
+            lib, params = row["lib"], params if isinstance(params, dict) else row.get("params")
+        mv = self._move_clean({"name": name, "lib": lib, "params": params, "id": id})
+        old = next((i for i, m in enumerate(self.moves) if m["id"] == mv["id"]), None)
+        if old is not None:
+            self.moves[old] = mv
+        else:
+            if len(self.moves) >= self.MOVE_MAX:
+                raise ValueError(f"{self.MOVE_MAX} moves is the most - delete one first")
+            if any(m["name"].lower() == mv["name"].lower() for m in self.moves):
+                raise ValueError(f"there is already a move called {mv['name']!r}")
+            self.moves.append(mv)
+        return {"move": mv, "summary": f"saved move {mv['name']!r}"}
+
+    def _move_find(self, id=None, name=None) -> dict:
+        for m in self.moves:
+            if (id and m["id"] == str(id)) or (name and m["name"].lower() == str(name).lower()):
+                return m
+        raise ValueError(f"no move {id or name!r}")
+
+    def _a_move_play(self, id=None, name=None, heads=None, group=None, **_):
+        """Play a saved move on the selection (or heads / a group); a
+        movement already on those lights makes way for it."""
+        mv = self._move_find(id, name)
+        rows = self._fx_targets(heads, group)
+        nums = {h["head_no"] for h in rows}
+        if not nums:
+            raise ValueError("select the lights to move first")
+        self.fx = [f for f in self.fx if not (f.get("lib") in motion_mod.KINDS
+                                              and nums & set(f.get("heads") or []))]
+        r = self._a_run_fx_named(mv["lib"], mv["params"], None, sorted(nums), None)
+        for f in self.fx:
+            if f["id"] == r["fx"]:
+                f["move"] = mv["id"]
+        return {**r, "move": mv["id"], "summary": f"{mv['name']} on {r['heads']} light(s)"}
+
+    def _a_move_delete(self, id=None, name=None, **_):
+        mv = self._move_find(id, name)
+        self.moves = [m for m in self.moves if m is not mv]
+        return {"summary": f"deleted move {mv['name']!r}"}
+
+    def _a_move_rename(self, id=None, name="", **_):
+        mv = self._move_find(id)
+        new = str(name or "").strip()[:32]
+        if not new:
+            raise ValueError("a move needs a name")
+        mv["name"] = new
+        return {"move": mv, "summary": f"renamed to {new!r}"}
+
+    def _quick_fx_params(self, name: str, params) -> dict:
+        """The effect's own knobs a button keeps (speed, size, arc...)."""
+        if not isinstance(params, dict):
+            return {}
+        known = fxlib_mod.defaults(name)
+        out = {}
+        for k, v in params.items():
+            if k in known and v not in (None, ""):
+                try:
+                    out[k] = float(v)
+                except (TypeError, ValueError):
+                    raise ValueError(f"not a number for {k}: {v!r}") from None
+        return out
+
+    def _quick_clean_custom(self, raw: dict, btn: dict) -> None:
+        """A custom button: any mix of level, dim, colour, strobe, blackout,
+        the same value on an attribute of every light, values captured
+        per light, and up to four running effects."""
+        if raw.get("level") not in (None, ""):
+            btn["level"] = int(_clamp(raw["level"], 0, 100))
+        if raw.get("dim") not in (None, ""):
+            btn["dim"] = int(_clamp(raw["dim"], 0, 100))
+        if raw.get("hz") not in (None, "", 0, "0"):
+            btn["hz"] = float(_clamp(raw["hz"], 0.5, 25))
+        if _truthy(raw.get("kill")):
+            btn["kill"] = True
+        keep = lambda r: r in ROLES and r not in FX_OUTPUT_ROLES \
+            and r not in ("unused", "raw") and not r.startswith(("laser_", "fx_"))
+        attrs = raw.get("attrs") if isinstance(raw.get("attrs"), dict) else {}
+        clean_a = {}
+        for k, v in attrs.items():
+            role = _attr_role(k) or str(k)
+            if keep(role):
+                clean_a[role] = int(_clamp(v, 0, 65535))
+        if clean_a:
+            btn["attrs"] = clean_a
+        values = raw.get("values") if isinstance(raw.get("values"), dict) else {}
+        clean_v: dict = {}
+        for n, row in list(values.items())[:512]:
+            if not isinstance(row, dict):
+                continue
+            r = {str(k): int(_clamp(v, 0, 65535)) for k, v in row.items() if keep(str(k))}
+            if r:
+                clean_v[str(int(n))] = r
+        if clean_v:
+            btn["values"] = clean_v
+        fx_list = []
+        for item in (raw.get("fx_list") or [])[:4]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").lower()
+            if name not in fxlib_mod.FX:
+                raise ValueError(f"unknown effect {name!r}")
+            fx_list.append({"name": name, "params": self._quick_fx_params(name, item.get("params"))})
+        if fx_list:
+            btn["fx_list"] = fx_list
+        if not any(k in btn for k in ("level", "dim", "hz", "kill", "attrs", "values", "fx_list")) \
+                and not btn.get("colour"):
+            raise ValueError("a custom button needs something to do: a level, a colour, "
+                             "a strobe, a look captured from the programmer or an effect")
+
+    def _quick_capture(self, raw: dict) -> dict:
+        """Fill a custom button from what the programmer holds now for its
+        lights: every value (colour, position, gobo...) and the effects
+        running on them (circles, chases...) - make it on stage, then
+        make it a button."""
+        t = raw.get("target") if isinstance(raw.get("target"), dict) else {}
+        if not t or t.get("all"):
+            heads = [n for n in self.programmer if self.programmer.get(n)] or \
+                [n for f in self.fx for n in f.get("heads", [])]
+        else:
+            heads = self._target_heads(t)
+        heads = sorted(set(heads))
+        values = {}
+        for n in heads:
+            row = {k: v for k, v in (self.programmer.get(n) or {}).items()}
+            if row:
+                values[str(n)] = row
+        fx_list = []
+        for f in self.fx:
+            if f.get("lib") and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
+                fx_list.append({"name": f["lib"], "params": dict(f.get("params") or {})})
+        if not values and not fx_list:
+            raise ValueError("nothing to capture - set a look or start an effect on the lights first")
+        out = dict(raw, kind="custom", values=values, fx_list=fx_list)
+        out.pop("capture", None)
+        if not t or t.get("all"):
+            out["target"] = {"heads": heads}
+        return out
+
+    def _a_quick_page(self, page=1, name="", **_):
+        """Name a page of buttons ("Main", "Movers", "Drops")."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        name = str(name or "").strip()[:16]
+        names = dict(getattr(self, "quick_names", {}) or {})
+        if name:
+            names[str(page)] = name
+        else:
+            names.pop(str(page), None)
+        self.quick_names = names
+        return {"page": page, "name": name, "summary": f"page {page}: {name or 'unnamed'}"}
+
+    def _a_quick_move(self, page=1, slot=None, to_page=None, to_slot=None, copy=False, **_):
+        """Move (or copy) a button to another slot; a button already there
+        swaps places with it."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        to_page = int(_clamp(to_page if to_page not in (None, "") else page, 1, self.QUICK_PAGES))
+        slot, to_slot = int(_clamp(slot, 1, self.QUICK_SLOTS)), int(_clamp(to_slot, 1, self.QUICK_SLOTS))
+        src = next((b for b in self.quick if b["page"] == page and b["slot"] == slot), None)
+        if not src:
+            raise ValueError(f"no button at {page}.{slot}")
+        if (page, slot) == (to_page, to_slot):
+            return {"summary": "same place"}
+        dst = next((b for b in self.quick if b["page"] == to_page and b["slot"] == to_slot), None)
+        keep = [b for b in self.quick if b is not src and b is not dst]
+        for key in (src["id"], dst and dst["id"]):
+            if key:
+                self._quick_off(key, force=True)
+        moved = self._quick_clean(dict(src), to_page, to_slot)
+        keep.append(moved)
+        if _truthy(copy):
+            keep.append(src)
+            if dst:
+                pass                                   # a copy over a button replaces it
+        elif dst:
+            keep.append(self._quick_clean(dict(dst), page, slot))
+        self.quick = sorted(keep, key=lambda b: (b["page"], b["slot"]))
+        return {"id": moved["id"], "summary": f"button {'copied' if _truthy(copy) else 'moved'} "
+                                             f"to {to_page}.{to_slot}"}
 
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
         """Create, change or remove the quick button at page/slot."""
@@ -3539,14 +3792,26 @@ class Engine:
         self.quick_active.pop(key, None)
         if _truthy(clear) or button is None:
             return {"id": key, "summary": f"cleared button {page}.{slot}"}
-        btn = self._quick_clean(dict(button), page, slot)
+        raw = dict(button)
+        if _truthy(raw.get("capture")):
+            raw = self._quick_capture(raw)
+        btn = self._quick_clean(raw, page, slot)
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
 
     def _quick_heads(self, btn: dict) -> list[int]:
-        return self._heads_for_target(btn.get("target") or {},
-                                      fx=btn["kind"] in self.FX_BUTTONS)
+        t = btn.get("target") or {}
+        heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
+        split = t.get("split")
+        if split in ("odd", "even"):
+            heads = heads[0::2] if split == "odd" else heads[1::2]
+        elif split in ("left", "right"):
+            by = {h["head_no"]: h for h in self.patch}
+            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
+            half = (len(order) + 1) // 2
+            heads = sorted(order[:half] if split == "left" else order[half:])
+        return heads
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
@@ -3619,6 +3884,12 @@ class Engine:
                 r = self._a_include_preset(preset=btn["preset"])
             return {"id": key, "active": False, "summary": r.get("summary") or btn["label"]}
         active = key in self.quick_active
+        if mode == "tap" and btn.get("seconds"):
+            # a timed shot: on for its seconds, whatever the finger does
+            if down:
+                self._quick_on(key, owner="timer")
+            return {"id": key, "active": key in self.quick_active,
+                    "summary": f"{btn['label']} for {btn['seconds']:g} s"}
         if mode == "latch":
             if not down:
                 return {"id": key, "active": active}
@@ -3650,15 +3921,30 @@ class Engine:
                 self.quick_active[key]["owners"].add(owner)
             return
         if run is None:
+            if btn.get("exclusive"):
+                # a radio group: turning this one on turns the others off
+                for other in [b for b in self.quick if b.get("exclusive") == btn["exclusive"]
+                              and b["id"] != key and b["id"] in self.quick_active]:
+                    self._quick_off(other["id"], force=True)
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
-                   "owners": set()}
-            if btn["kind"] == "fx":
+                   "owners": set(), "fx_ids": []}
+            if btn["kind"] == "move":
+                mv = next((m for m in self.moves if m["id"] == btn.get("move")), None)
+                wanted = [{"name": mv["lib"], "params": mv["params"]}] if mv else []
+            elif btn["kind"] == "fx":
+                wanted = [{"name": btn["fx"], "params": btn.get("params") or {}}]
+            else:
+                wanted = btn.get("fx_list") or []
+            for item in wanted:
                 try:
-                    r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
-                    run["fx"] = r.get("fx")
+                    r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                             run["heads"], None)
+                    run["fx_ids"].append(r.get("fx"))
                 except ValueError:
                     pass
             self.quick_active[key] = run
+        if btn.get("seconds"):
+            run["until"] = time.monotonic() + float(btn["seconds"])
         run.setdefault("owners", set()).add(owner)
 
     def _quick_off(self, key: str, owner: str = "hand", force: bool = False) -> None:
@@ -3673,16 +3959,26 @@ class Engine:
         if owners and not force:
             return
         self.quick_active.pop(key, None)
-        if run.get("fx"):
-            self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        self._quick_stop_fx(run)
+
+    def _quick_stop_fx(self, run: dict) -> None:
+        ids = set(run.get("fx_ids") or []) | ({run["fx"]} if run.get("fx") else set())
+        if ids:
+            self.fx = [f for f in self.fx if f["id"] not in ids]
+
+    def _quick_expire(self) -> None:
+        """Buttons on a timer let go by themselves."""
+        now = time.monotonic()
+        for key, run in list(self.quick_active.items()):
+            if run.get("until") and now >= run["until"] and not run.get("fx_layer"):
+                self._quick_off(key, owner="timer", force=True)
 
     def _a_quick_release_all(self, **_):
         for key in list(self.quick_active):
             run = self.quick_active.pop(key)
             if run.get("fx_layer"):
                 self._sfx_stop(key, "hand", force=True)
-            if run.get("fx"):
-                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+            self._quick_stop_fx(run)
         return {"summary": "all quick buttons released"}
 
     def _a_quick_fx_defaults(self, page=2, replace=False, **_):
@@ -3782,6 +4078,7 @@ class Engine:
     def _quick_override_vals(self) -> dict:
         if not self.quick_active:
             return {}
+        self._quick_expire()
         by_id = {b["id"]: b for b in self.quick}
         out: dict[int, dict] = {}
         heads = {h["head_no"]: h for h in self.patch}
@@ -3808,7 +4105,39 @@ class Engine:
                     o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
                 elif kind in ("kill", "blackout"):
                     o["kill"] = True
+                elif kind == "custom":
+                    self._quick_custom_over(btn, head, o)
         return out
+
+    def _quick_custom_over(self, btn: dict, head: dict, o: dict) -> None:
+        """One custom button's part of a light's override.  Brightness never
+        goes in as a forced value (that would skip blackout and the master):
+        it becomes the button's level floor instead."""
+        n = head["head_no"]
+        sets = o.setdefault("set", {})
+        level = btn.get("level")
+        for src in (btn.get("attrs") or {}, (btn.get("values") or {}).get(str(n)) or {}):
+            for role, v in src.items():
+                if role in HTP_ROLES:
+                    level = max(level or 0, int(v))
+                elif role in head["map"]:
+                    sets[role] = int(v)
+        if btn.get("colour"):
+            sets.update(self._colour_values(head, btn["colour"]))
+        if level is not None or btn.get("hz"):
+            if level is not None:
+                o["level"] = max(o.get("level") or 0, int(level))
+            gate = self._shutter_role(head)
+            if gate and not any(r in HTP_ROLES for r in head["map"]) and (level or btn.get("hz")):
+                sets[gate] = self._open_value(head, gate)
+        if btn.get("hz"):
+            o["strobe"] = max(o.get("strobe") or 0, btn["hz"])
+        if btn.get("dim") is not None:
+            o["cap"] = min(o["cap"], btn["dim"]) if o.get("cap") is not None else btn["dim"]
+        if btn.get("kill"):
+            o["kill"] = True
+        if not sets:
+            o.pop("set", None)
 
     def _gates(self) -> dict:
         """The value that closes each head's shutter, per the profile:
@@ -3904,7 +4233,12 @@ class Engine:
     def _sfx_limit(self, h: dict, kind: str) -> float:
         role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
         d = self._sfx_detail(h, role)
-        cap = float(d.get("max_s") or {"fire": 3.0, "fog": 20.0, "laser": 600.0}[kind])
+        if kind == "laser":
+            # a laser has no time limit of its own (the library's 600 s made
+            # lasers go dark mid-set): ARM is its safety - it goes dark the
+            # moment effects are disarmed or killed
+            return math.inf
+        cap = float(d.get("max_s") or {"fire": 3.0, "fog": 20.0}[kind])
         if d.get("fx_kind") == "confetti":
             cap = min(cap, self.fx_loads.get(h["head_no"], cap))
         return max(0.0, cap)
@@ -4018,10 +4352,12 @@ class Engine:
                     if r["kind"] == "fire" and h["head_no"] in r["heads"]:
                         left -= max(0.0, min(now, r["until"]) - r["since"])
                 loads[h["head_no"]] = {"left": round(max(0.0, left), 1), "full": full}
+        forever = math.isinf(self.fx_armed_until)
         return {"armed": self._sfx_armed(now),
-                "armed_left": max(0, round(self.fx_armed_until - now)),
+                "armed_left": 0 if forever else max(0, round(self.fx_armed_until - now)),
+                "armed_forever": forever,
                 "runs": [{"key": k, "kind": r["kind"], "heads": r["heads"],
-                          "left": round(max(0.0, r["until"] - now), 1)}
+                          "left": None if math.isinf(r["until"]) else round(max(0.0, r["until"] - now), 1)}
                          for k, r in self.fx_runs.items()],
                 "loads": loads,
                 "heads": {h["head_no"]: self._head_class(h) for h in self.patch
@@ -4040,9 +4376,14 @@ class Engine:
     def _a_fx_arm(self, state=True, minutes=None, **_):
         """ARM (or disarm) special effects and lasers.  Fire and laser
         output only work while armed; it switches itself off after
-        `minutes` (10 by default)."""
+        `minutes` (10 by default), or never with minutes="until" - then
+        only a disarm or KILL FX ends it (a laser stays on for the set)."""
         if _truthy(state):
-            secs = self.FX_ARM_S if minutes in (None, "") else max(30.0, min(3600.0, float(minutes) * 60))
+            if str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
+                # armed for the whole set: only a disarm or KILL FX ends it
+                self.fx_armed_until = math.inf
+                return {"armed": True, "summary": "effects ARMED until you disarm"}
+            secs = self.FX_ARM_S if minutes in (None, "") else max(30.0, min(12 * 3600.0, float(minutes) * 60))
             self.fx_armed_until = time.monotonic() + secs
             return {"armed": True, "summary": f"effects ARMED for {secs / 60:g} min"}
         self.fx_armed_until = 0.0
@@ -4506,6 +4847,7 @@ class Engine:
     def _quick_public(self) -> dict:
         return {"buttons": [dict(b) for b in self.quick],
                 "active": sorted(self.quick_active),
+                "names": dict(getattr(self, "quick_names", {}) or {}),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
 
     def _aim_solve(self, h: dict, tx: float, ty: float, tz: float,
@@ -5810,25 +6152,52 @@ class Engine:
                                if skipped else ""))}
 
     # --- presets ----------------------------------------------------------
-    def _a_record_preset(self, name="", preset=None, **_):
-        """Store the SELECTION's whole programmer as a named look.
+    LOOK_PARTS = ("intensity", "colour", "position", "beam", "other", "fx")
 
-        A palette is one attribute family; a preset is a complete look -
-        colour and beam and position and level together - which is what
-        you actually build with, and which the app could not express at
-        all.  Re-recording an existing number overwrites it, so a look can
-        be revised in place.
-        """
-        heads = self._require_selection()
-        attrs: dict[str, int] = {}
+    def _look_hexes(self, heads: list[dict], values_of) -> list[str]:
+        """Up to three colours a look shows, for its tile."""
+        out: list[str] = []
         for h in heads:
-            for role in (h.get("map") or []):
-                attrs[role] = attrs.get(role, 0) + 1
+            v = values_of(h) or {}
+            hexc = None
+            if any(r in v for r in ("red", "green", "blue")):
+                hexc = "#%02x%02x%02x" % tuple(max(0, min(255, int(v.get(c, 0)))) for c in ("red", "green", "blue"))
+            elif "wheel" in v:
+                for slot in (self.head_ranges(h).get("wheel") or {}).get("slots") or []:
+                    if slot["from"] <= int(v["wheel"]) <= slot["to"] and slot.get("hex"):
+                        hexc = slot["hex"]
+                        break
+            if hexc and hexc not in out:
+                out.append(hexc)
+            if len(out) >= 3:
+                break
+        return out
+
+    def _a_record_preset(self, name="", preset=None, include=None, **_):
+        """Save a LOOK: the selection's programmer (or every light the
+        programmer holds, with nothing selected) under a name - colour,
+        position, beam, level and the effects running on those lights,
+        or just the parts in `include`.  One tap on it brings the whole
+        thing back.  Re-recording an existing number overwrites it."""
+        parts = set(self.LOOK_PARTS if not include else
+                    [str(x).lower() for x in (include if isinstance(include, (list, tuple)) else [include])])
+        bad = parts - set(self.LOOK_PARTS)
+        if bad:
+            raise ValueError(f"include is any of {', '.join(self.LOOK_PARTS)}")
+        if self.selected:
+            heads = self._require_selection()
+        else:
+            nums = {n for n, row in self.programmer.items() if row} | \
+                {n for f in self.fx if f.get("lib") for n in f.get("heads") or []}
+            heads = [h for h in self.patch if h["head_no"] in nums]
+            if not heads:
+                raise ValueError("programmer is empty - set something first")
+        nums = {h["head_no"] for h in heads}
         values: dict[str, object] = {}
         used: list[int] = []
         for h in heads:
             row = {r: v for r, v in (self.programmer.get(h["head_no"]) or {}).items()
-                   if r in PRESET_ROLES}
+                   if r in PRESET_ROLES and self.attr_group(r) in parts}
             if not row:
                 continue
             used.append(h["head_no"])
@@ -5836,7 +6205,13 @@ class Engine:
                 votes = values.setdefault(role, {})
                 votes.setdefault(repr(value), 0)
                 votes[repr(value)] += 1
-        if not values:
+        fx = []
+        if "fx" in parts:
+            for f in self.fx:
+                if f.get("lib") and nums & set(f.get("heads") or []) and len(fx) < 6:
+                    fx.append({"name": f["lib"], "params": dict(f.get("params") or {})})
+                    used.extend(n for n in f["heads"] if n in nums and n not in used)
+        if not values and not fx:
             raise ValueError("programmer is empty - set something first")
         collapsed: dict[str, object] = {}
         for role, tally in values.items():
@@ -5845,44 +6220,83 @@ class Engine:
                     max(tally.items(), key=lambda kv: kv[1])[0])
             except (TypeError, ValueError):
                 continue
-        n = int(preset) if preset else len(self.presets) + 1
-        label = str(name).strip() or f"Preset {n}"
+        n = int(preset) if preset else max([p["n"] for p in self.presets] or [0]) + 1
+        label = str(name).strip()[:32] or f"Look {n}"
+        groups = sorted({self.attr_group(r) for r in collapsed})
+        tags = [{"intensity": "Level", "colour": "Colour", "position": "Position", "beam": "Beam",
+                 "other": "Other"}[g] for g in groups]
+        tags += [fxlib_mod.FX[f["name"]]["label"] for f in fx]
         entry = {"n": n, "name": label, "values": collapsed,
-                 "heads": len(used)}
+                 "heads": len(used), "head_list": sorted(set(used)), "fx": fx,
+                 "hexes": self._look_hexes([h for h in heads if h["head_no"] in used],
+                                           lambda h: self.programmer.get(h["head_no"])),
+                 "tags": tags}
         for i, old in enumerate(self.presets):
             if old["n"] == n:
                 self.presets[i] = entry
                 break
         else:
             self.presets.append(entry)
-        return {"n": n, "name": label, "heads": len(used),
+        return {"n": n, "name": label, "heads": len(used), "fx": len(fx),
                 "roles": sorted(collapsed),
-                "summary": f"recorded preset {label} "
-                           f"({len(used)} head(s), {len(collapsed)} attribute(s))"}
+                "summary": f"saved look {label} ({len(used)} light(s)"
+                           + (f", {len(fx)} effect(s)" if fx else "") + ")"}
 
     def _a_include_preset(self, n=None, preset=None, **_):
+        """Play a look: on the selection, or - with nothing selected - on the
+        lights it was saved from.  Its effects start too, taking over from
+        effects of the same kind already on those lights."""
         ref = n if n is not None else preset
         entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
             raise ValueError(f"no preset {ref!r}")
-        heads = self._require_selection()
+        if self.selected:
+            heads = self._require_selection()
+        else:
+            want = set(entry.get("head_list") or [])
+            heads = [h for h in self.patch if h["head_no"] in want]
+            if not heads:
+                raise ValueError(f"select the lights for {entry['name']} first")
         applied, skipped = 0, []
         for h in heads:
             row = {r: v for r, v in (entry.get("values") or {}).items()
                    if r in (h.get("map") or [])}
             if not row:
-                skipped.append(h["head_no"])
                 continue
             self.programmer.setdefault(h["head_no"], {}).update(row)
             applied += 1
-        if not applied:
+        nums = sorted(h["head_no"] for h in heads)
+        started = 0
+        for item in entry.get("fx") or []:
+            group = (fxlib_mod.FX.get(item["name"]) or {}).get("group")
+            self.fx = [f for f in self.fx if not (f.get("lib") and set(f.get("heads") or []) & set(nums)
+                                                  and (fxlib_mod.FX.get(f["lib"]) or {}).get("group") == group)]
+            try:
+                self._a_run_fx_named(item["name"], item.get("params") or {}, None, nums, None)
+                started += 1
+            except ValueError:
+                pass
+        for h in heads:
+            if not any(r in (h.get("map") or []) for r in (entry.get("values") or {})):
+                skipped.append(h["head_no"])
+        if not applied and not started:
             raise ValueError(
                 f"{entry['name']} has nothing for the selected head(s)")
-        return {"n": entry["n"], "name": entry["name"], "heads": applied,
-                "skipped": skipped,
-                "summary": f"applied preset {entry['name']} to {applied} head(s)"
-                           + (f"; {len(skipped)} had no matching channel"
-                              if skipped else "")}
+        return {"n": entry["n"], "name": entry["name"], "heads": applied or len(nums),
+                "skipped": skipped, "fx": started,
+                "summary": f"look {entry['name']} on {applied or len(nums)} light(s)"
+                           + (f" + {started} effect(s)" if started else "")
+                           + (f"; {len(skipped)} had no matching channel" if skipped and applied else "")}
+
+    def _a_rename_preset(self, n=None, preset=None, name="", **_):
+        entry = self._by_number_or_name(self.presets, n if n is not None else preset)
+        if entry is None:
+            raise ValueError(f"no look {n or preset!r}")
+        new = str(name or "").strip()[:32]
+        if not new:
+            raise ValueError("a look needs a name")
+        entry["name"] = new
+        return {"n": entry["n"], "summary": f"renamed to {new}"}
 
     def _a_delete_preset(self, n=None, preset=None, **_):
         num = int(n if n is not None else preset or 0)
@@ -8492,6 +8906,7 @@ class Engine:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
             "meta": {"master": self.master,
@@ -8680,6 +9095,8 @@ class Engine:
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
+                "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
                 "meta": {"master": self.master},
@@ -8850,6 +9267,15 @@ class Engine:
             self.master = master
             self.show_file = label
             self.quick = quick
+            self.quick_names = {str(k): str(v)[:16] for k, v in
+                                (payload.get("quick_names") or {}).items()} \
+                if isinstance(payload.get("quick_names"), dict) else {}
+            self.moves = []
+            for m in payload.get("moves") or []:
+                try:
+                    self.moves.append(self._move_clean(m))
+                except (KeyError, TypeError, ValueError):
+                    continue
             self.quick_active = {}
             self._a_fx_kill()                  # a new show starts disarmed
             self._a_timeline_stop()
@@ -9050,6 +9476,8 @@ class Engine:
                        "duration": dur,
                        "remaining": (round(dur - elapsed, 1)
                                      if dur is not None else None)}
+                if row.get("move"):
+                    pub["move"] = row["move"]         # which of My moves it is
                 out.append(pub)
                 continue
             pub = {"id": row["id"], "role": row["role"], "kind": row["kind"],
@@ -9132,6 +9560,7 @@ class Engine:
                 "venue": self.venue,
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
+                "moves": [dict(m) for m in self.moves],
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.

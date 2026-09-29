@@ -70,6 +70,7 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
 
     `over` is a live override from a quick button, applied on top of all
     of that and still under blackout and the master: {"level": HTP floor,
+    "cap": HTP ceiling (a dim button),
     "kill": force intensity to 0, "set": {role: value} forced LTP values,
     "strobe": Hz}.  Strobe gates the light in time when `now` is given
     (the wire); without `now` (the visualiser feed) it is left to the
@@ -102,6 +103,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                 total = 0
             elif over.get("level") is not None:
                 total = max(total, int(over["level"]))
+            if over.get("cap") is not None:      # a "dim to 30%" button
+                total = min(total, int(over["cap"]))
             if strobe_off:
                 total = 0
         if blackout:

@@ -6,7 +6,7 @@
 // a CO2 jet's tilt, fan speed...) is programmable like any attribute.
 import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, confirmBox } from "./ui.js";
+import { $, h, modal } from "./ui.js";
 
 const sfxState = () => (state.lite && state.lite.sfx) || (state.snap && state.snap.sfx) || { armed: false, runs: [], loads: {}, heads: {} };
 const selected = () => new Set(((state.snap && state.snap.selected) || []).map(Number));
@@ -30,19 +30,41 @@ function renderBar() {
   if (!any) return;
   const arm = $("#fx-arm");
   arm.classList.toggle("on", !!st.armed);
-  arm.textContent = st.armed ? `ARMED ${mmss(st.armed_left || 0)}` : "ARM FX";
+  arm.textContent = !st.armed ? "ARM FX" : st.armed_forever ? "ARMED · on" : `ARMED ${mmss(st.armed_left || 0)}`;
   $("#fx-kill").classList.toggle("hot", (st.runs || []).length > 0);
 }
 
-async function toggleArm() {
+// how long ARM lasts: remembered for the next time
+let armFor = (() => { try { return localStorage.getItem("jarvis.armfor") || "10"; } catch { return "10"; } })();
+
+function toggleArm() {
   const st = sfxState();
   if (st.armed) { run("fx_arm", { state: false }, { toast: true }); return; }
-  const ok = await confirmBox("Arm lasers and special effects",
-    "Fire, CO2, confetti, sparks and laser output can now be triggered from their FX buttons.\n\n"
-    + "Check that the area in front of every effect is clear, and never aim lasers into the audience "
-    + "unless the show is licensed for it. Arming switches itself off after 10 minutes; KILL FX stops everything.",
-    { ok: "ARM", danger: true });
-  if (ok) run("fx_arm", { state: true }, { toast: true });
+  const choices = [["10", "10 minutes"], ["60", "1 hour"], ["until", "Until I disarm"]];
+  const pick = h("div.chip-row", ...choices.map(([v, label]) => h("button.chip" + (armFor === v ? ".on" : ""), {
+    type: "button",
+    onclick: (e) => {
+      armFor = v;
+      pick.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === e.currentTarget));
+    },
+  }, label)));
+  const close = modal({
+    title: "Arm lasers and special effects",
+    body: h("div",
+      h("p", { style: { marginTop: 0 } }, "Fire, CO2, confetti, sparks and laser output can now be triggered from their FX buttons. "
+        + "Check that the area in front of every effect is clear, and never aim lasers into the audience "
+        + "unless the show is licensed for it."),
+      h("p.muted.small", "Stay armed for:"), pick,
+      h("p.muted.small", "A laser you switch on stays on while effects are armed. Disarm or KILL FX stops everything at once.")),
+    foot: [
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.danger", { onclick: () => {
+        try { localStorage.setItem("jarvis.armfor", armFor); } catch { /* ignore */ }
+        run("fx_arm", { state: true, minutes: armFor }, { toast: true });
+        close();
+      } }, "ARM"),
+    ],
+  });
 }
 
 export function initFxPanel() {
@@ -126,7 +148,9 @@ function slider(title, e) {
 
 function armedLine(st) {
   return h(st.armed ? "div.fx-armed" : "div.fx-disarmed",
-    st.armed ? `ARMED · switches off in ${mmss(st.armed_left || 0)}` : "Disarmed: fire and laser output need ARM FX (top bar).");
+    !st.armed ? "Disarmed: fire and laser output need ARM FX (top bar)."
+      : st.armed_forever ? "ARMED until you disarm - lasers stay on until you stop them"
+        : `ARMED · switches off in ${mmss(st.armed_left || 0)}`);
 }
 
 // A beam bar's diodes: tap one to switch it in the look, or lay a

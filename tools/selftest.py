@@ -7511,6 +7511,10 @@ def _standalone_suites():
     ("every channel gets a control", test_aux_channels),
     ("CO2 preset mode never fires on its own", test_co2_preset),
     ("movement stays where it is aimed", test_motion),
+    ("buttons as customisable as possible", test_custom_buttons),
+    ("ARM for the whole set; lasers stay on", test_arm_for_set),
+    ("My moves: named movements, not cues", test_my_moves),
+    ("Looks: named, one tap brings it all back", test_looks),
     )
 
 
@@ -8889,6 +8893,276 @@ def test_motion() -> None:
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
           and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")
+
+
+def test_custom_buttons() -> None:
+    """A button picks its lights (and odd / even / left / right of them),
+    does any mix of level, dim, colour, strobe, blackout and effects - or the
+    look on stage, captured - and behaves as hold, on/off or a timed shot,
+    with an off-timer and radio groups; pages have names and buttons move."""
+    print("custom buttons (mix, capture, dim, split, timer, radio, pages)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "q.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            m = e.patch[0]["map"]
+            di = m.index("dimmer")
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "custom", "label": "Dim 30", "dim": 30, "mode": "latch"})
+            check("a Dim button is a custom button with a ceiling", r.get("ok") and r["button"]["dim"] == 30, str(r))
+            e.act("quick_press", id="q1-1")
+            check("...and holds the lights DOWN to its level (80% -> 30%)",
+                  e.build_frames()[1][di] == 76,
+                  str(e.build_frames()[1][di]))
+            e.act("quick_press", id="q1-1")
+            check("...and lets go on the second press", e.build_frames()[1][di] == 204, str(e.build_frames()[1][di]))
+
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle", params={"size": 30, "arc": 180, "direction": -1})
+            r = e.act("quick_set", page=1, slot=2, button={"label": "Red half turn", "capture": True, "mode": "latch",
+                                                           "target": {"heads": [1, 2, 3, 4]}})
+            b = r.get("button") or {}
+            check("'From the stage' captures the programmer and the running effect",
+                  r.get("ok") and b.get("kind") == "custom" and b.get("values", {}).get("1", {}).get("wheel") is not None
+                  and b.get("fx_list", [{}])[0].get("name") == "circle"
+                  and b["fx_list"][0]["params"].get("arc") == 180, str(b)[:300])
+            e.act("clear_programmer")
+            e.act("quick_press", id="q1-2")
+            check("...pressing it brings the colour and the half turn back",
+                  [f.get("lib") for f in e.fx] == ["circle"] and e.build_frames()[1][m.index("wheel")] > 0,
+                  str([f.get("lib") for f in e.fx]))
+            e.act("quick_press", id="q1-2")
+            check("...and switching it off stops its effect", not e.fx, str(e.fx))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "custom", "label": "nothing"})
+            check("a custom button that does nothing is refused", not r.get("ok"), str(r))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "custom", "label": "Mix", "colour": "#0033ff",
+                                                           "hz": 8, "fx_list": [{"name": "pan_sweep",
+                                                                                 "params": {"arc": 90}}]})
+            check("a Mix button combines colour, strobe and an effect", r.get("ok") and r["button"]["hz"] == 8
+                  and r["button"]["fx_list"][0]["params"] == {"arc": 90.0}, str(r.get("button")))
+
+            e.act("quick_set", page=1, slot=4, button={"kind": "flash", "label": "Odd", "mode": "tap", "seconds": 0.3,
+                                                       "target": {"all": True, "split": "odd"}})
+            e.act("quick_press", id="q1-4")
+            check("split: odd lights only", e.quick_active["q1-4"]["heads"] == [1, 3], str(e.quick_active.get("q1-4")))
+            e.act("quick_press", id="q1-4", down=False)
+            check("a timed shot stays on after the finger lifts", "q1-4" in e.quick_active, "")
+            _t.sleep(0.35)
+            e.build_frames()
+            check("...and lets go by itself when its time is up", "q1-4" not in e.quick_active, "")
+            e.act("quick_set", page=1, slot=5, button={"kind": "flash", "target": {"all": True, "split": "left"}})
+            e.act("quick_press", id="q1-5")
+            check("split: the left half by where they hang", len(e.quick_active["q1-5"]["heads"]) == 2, "")
+            e.act("quick_press", id="q1-5", down=False)
+
+            for slot, hexc in ((6, "#00ff00"), (7, "#0000ff")):
+                e.act("quick_set", page=1, slot=slot, button={"kind": "colour", "colour": hexc, "mode": "latch",
+                                                              "exclusive": "colours"})
+            e.act("quick_press", id="q1-6")
+            e.act("quick_press", id="q1-7")
+            check("a radio group: one colour at a time", "q1-7" in e.quick_active and "q1-6" not in e.quick_active,
+                  str(sorted(e.quick_active)))
+            r = e.act("quick_set", page=1, slot=8, button={"kind": "flash", "tint": "#ec4899", "label": "Pink tile"})
+            check("a button has its own tile colour", r["button"].get("tint") == "#ec4899", "")
+            r = e.act("quick_set", page=1, slot=9, button={"kind": "fx", "fx": "circle", "params": {"arc": 180, "size": 40}})
+            check("an Effect button keeps its knobs (arc, size)", r["button"].get("params") == {"arc": 180.0, "size": 40.0}, "")
+
+            e.act("quick_page", page=5, name="Drops")
+            check("pages have names, and there are 8", e.snapshot()["quick"]["names"].get("5") == "Drops"
+                  and e.snapshot()["quick"]["pages"] == 8, str(e.snapshot()["quick"].get("names")))
+            e.act("quick_move", page=1, slot=8, to_page=5, to_slot=1)
+            check("a button moves to another page", any(b["id"] == "q5-1" for b in e.quick)
+                  and not any(b["id"] == "q1-8" for b in e.quick), "")
+            e.act("quick_move", page=5, slot=1, to_slot=2, copy=True)
+            check("...or is copied", {"q5-1", "q5-2"} <= {b["id"] for b in e.quick}, "")
+            e.act("quick_move", page=1, slot=6, to_slot=7)
+            b6 = next(b for b in e.quick if b["id"] == "q1-6")
+            check("moving onto a button swaps them", b6["colour"] == "#0000ff", str(b6))
+            e.act("save_show", name="btns")
+            e.act("quick_page", page=5, name="")
+            e.act("load_show", name="btns")
+            check("page names are saved with the show", (e.quick_names or {}).get("5") == "Drops", str(e.quick_names))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the editor offers every option as a tap",
+          all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
+                                "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_looks() -> None:
+    """A look is saved under a name with its colours, positions and the
+    effects running (a movement too), and one tap brings all of it back -
+    on the selection, or with nothing selected on the lights it came from.
+    Parts can be left out; it can be renamed, updated, made a button."""
+    print("Looks (named; values + effects; one tap; parts; rename; button)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "l.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=70)
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle", params={"arc": 180, "direction": -1})
+            r = e.act("record_preset", name="Opening sweep")
+            look = e.presets[-1]
+            check("a look saves colours, level and the running movement",
+                  r.get("ok") and look["fx"] and look["fx"][0]["name"] == "circle"
+                  and look["fx"][0]["params"]["arc"] == 180 and "wheel" in look["values"]
+                  and look["head_list"] == [1, 2], str(look)[:300])
+            check("...with a colour preview and tags for its tile",
+                  look.get("hexes") and "Colour" in look.get("tags", []) and "Circle" in look.get("tags", []),
+                  str((look.get("hexes"), look.get("tags"))))
+            e.act("clear_programmer")
+            e.act("clear_selection")
+            r = e.act("include_preset", preset="Opening sweep")
+            check("one tap with nothing selected plays it on its own lights - values AND the movement",
+                  r.get("ok") and e.programmer.get(1, {}).get("dimmer") == 70
+                  and [f["lib"] for f in e.fx] == ["circle"] and e.fx[0]["heads"] == [1, 2], str(r))
+            e.act("include_preset", preset="Opening sweep")
+            check("...playing it again doesn't stack a second movement", len(e.fx) == 1, str(len(e.fx)))
+            e.act("select_heads", heads=[3, 4])
+            e.act("clear_programmer")
+            e.act("include_preset", preset="Opening sweep")
+            check("...on a selection it plays on those lights", e.fx and e.fx[-1]["heads"] == [3, 4]
+                  and e.programmer.get(3, {}).get("dimmer") == 70, str(e.fx))
+            e.act("set_intensity", level=40)
+            r = e.act("record_preset", name="Only colour", include=["colour"])
+            check("a look can leave parts out (just the colour)",
+                  r.get("ok") and set(e.presets[-1]["values"]) <= {"wheel", "red", "green", "blue", "white", "macro"}
+                  and not e.presets[-1]["fx"], str(e.presets[-1]))
+            check("...an unknown part is refused", not e.act("record_preset", name="x", include=["smell"]).get("ok"), "")
+            e.act("rename_preset", preset="Only colour", name="Red")
+            check("rename a look", any(p["name"] == "Red" for p in e.presets), "")
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "preset", "preset": look["n"], "label": "Opening"})
+            e.act("stop_fx")
+            e.act("clear_selection")
+            e.act("quick_press", id="q1-1")
+            check("a button plays a look in one tap", [f["lib"] for f in e.fx] == ["circle"], str(e.fx))
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Looks tab shows named look tiles with Save look",
+          "+ Save look" in html and 'id="preset-list"' in html and "lookTile" in js and '"rename_preset"' in js, "")
+
+
+def test_my_moves() -> None:
+    """A movement you made ("slow half turn, counter-clockwise") saved under
+    a name, played on any lights from a list or a button, looping until
+    stopped - not a cue, and not tied to the lights it was made on."""
+    print("My moves (save, play, rename, delete, on a button, saved with the show)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("run_fx", name="circle", params={"arc": 180, "direction": -1, "speed": 1 / 12})
+            r = e.act("move_save", name="Slow half-turn CCW")
+            mv = r.get("move") or {}
+            check("save the movement running now under a name", r.get("ok") and mv.get("lib") == "circle"
+                  and mv["params"].get("arc") == 180 and mv["params"].get("direction") == -1, str(r))
+            check("...a second move with the same name is refused",
+                  not e.act("move_save", name="slow half-turn ccw").get("ok"), "")
+            r = e.act("move_save", name="Wide sweep", lib="pan_sweep", params={"arc": 90, "size": 40})
+            check("...or save one from its shape and knobs", r.get("ok") and r["move"]["params"]["size"] == 40.0, str(r))
+            e.act("stop_fx")
+            r = e.act("move_play", id=mv["id"], heads=[3, 4])
+            check("play it on OTHER lights (not tied to where it was made)",
+                  r.get("ok") and e.fx[-1]["lib"] == "circle" and e.fx[-1]["heads"] == [3, 4]
+                  and e.fx[-1]["params"]["arc"] == 180, str(e.fx))
+            check("...and the live feed says which move is playing",
+                  any(f.get("move") == mv["id"] for f in e.snapshot().get("fx") or []), str(e.snapshot().get("fx")))
+            e.act("move_play", name="Wide sweep", heads=[3, 4])
+            check("...another move on the same lights takes over (one movement at a time)",
+                  [f["lib"] for f in e.fx] == ["pan_sweep"], str([f["lib"] for f in e.fx]))
+            e.act("stop_fx")
+            e.act("quick_set", page=1, slot=1, button={"kind": "move", "move": mv["id"], "mode": "latch",
+                                                       "target": {"heads": [1, 2]}})
+            e.act("quick_press", id="q1-1")
+            check("a button plays one of My moves", [f["lib"] for f in e.fx] == ["circle"], str(e.fx))
+            e.act("move_rename", id=mv["id"], name="Half turn")
+            e.act("move_save", name="Half turn", id=mv["id"], lib="circle", params={"arc": 270, "direction": -1})
+            e.act("quick_press", id="q1-1")
+            e.act("quick_press", id="q1-1")
+            check("...and follows the move when it is updated", e.fx and e.fx[-1]["params"]["arc"] == 270, str(e.fx))
+            e.act("save_show", name="mv")
+            e.act("move_delete", id=mv["id"])
+            check("delete a move", all(m["id"] != mv["id"] for m in e.moves), "")
+            e.act("load_show", name="mv")
+            check("My moves are saved with the show", [m["name"] for m in e.moves] == ["Half turn", "Wide sweep"],
+                  str([m["name"] for m in e.moves]))
+            check("the Move tab gets them in the snapshot", len(e.snapshot().get("moves") or []) == 2, "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("the Move tab lists My moves with save / rename / delete",
+          all(k in js for k in ('"move_save"', '"move_play"', '"move_rename"', '"move_delete"', "Save this as my move")), "")
+
+
+def test_arm_for_set() -> None:
+    """ARM used to switch itself off after 10 minutes, and a laser had a
+    600 s cap of its own: at a gig the lasers went dark mid-set.  Now ARM
+    can last until you disarm, and a laser stays on while armed."""
+    print("ARM until disarmed, lasers without a time cap")
+    import math
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
+            r = e.act("fx_arm", state=True, minutes="until")
+            st = e._sfx_public()
+            check("ARM can last until you disarm", r.get("ok") and st["armed"] and st["armed_forever"]
+                  and math.isinf(e.fx_armed_until), str(st))
+            e.act("fx_arm", state=True, minutes=60)
+            check("...or an hour", 3500 < e._sfx_public()["armed_left"] <= 3600, str(e._sfx_public()["armed_left"]))
+            e.act("fx_arm", state=True, minutes="until")
+            e.act("fx_laser", heads=[1], down=True)
+            run = next(iter(e.fx_runs.values()))
+            check("a laser switched on has no time cap of its own", math.isinf(run["until"]), str(run["until"]))
+            check("...and the live feed still reads (no infinite numbers in JSON)",
+                  __import__("json").dumps(e._sfx_public()) and e._sfx_public()["runs"][0]["left"] is None, "")
+            e.act("fx_arm", state=False)
+            check("disarming still stops it at once", not e.fx_runs, str(e.fx_runs))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    check("the ARM dialog offers 10 min / 1 hour / until I disarm", "Until I disarm" in js and 'minutes: armFor' in js, "")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("tab dots use the same kinds as the programmer bar", "GROUP_OF[r.replace" in pj, "")
+    check("a light with no dimmer gets big On / Off, not a fader that does nothing",
+          "gateOnly" in pj and '$(".big-fader-row").hidden = gateOnly' in pj, "")
+    check("a colour-wheel light leads with its own wheel colours", "wheel-only" in pj and "pickerAnyway" in pj, "")
 
 
 def test_co2_preset() -> None:

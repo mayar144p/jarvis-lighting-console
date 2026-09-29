@@ -8,7 +8,7 @@
 import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, toast, promptBox } from "./ui.js";
+import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
 
 const MOVES = [
   ["circle", "Circle", "↻"], ["pan_sweep", "Sweep", "↔"], ["tilt_bounce", "Bounce", "↕"],
@@ -128,7 +128,10 @@ const params = () => ({
   direction: knobs.direction, spread: knobs.wave ? 360 : 0, lock: knobs.lock,
 });
 
+let lastLib = "circle";
+
 async function startMove(name) {
+  lastLib = name;
   const heads = movers().map((x) => x.head_no);
   if (!heads.length) { toast("Select a moving light first"); return; }
   for (const f of running()) {
@@ -266,13 +269,14 @@ function movementBlock() {
     t = setTimeout(reapply, 250);
   });
   return section("Movement",
+    myMoves(act),
     h("div.mv-tiles", ...MOVES.map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
       title: `${label} around where the lights point now`, onclick: () => startMove(name),
     }, h("b", icon), h("span", label)))),
     h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
       ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
     h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
-      ...chips([["90°", 90], ["180°", 180], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
+      ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
       ...chips(SIZES.map(([l, v]) => [l, v, `${v}° around the aim`]), (v) => knobs.size === v, (v) => { knobs.size = v; }))),
     h("div.mv-row", h("span.k", "Speed"), secs, secsOut, h("span.muted.small", "per turn")),
@@ -287,6 +291,62 @@ function movementBlock() {
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
+}
+
+// ------------------------------------------------------------- My moves
+// A movement you made and named ("Slow half-turn CCW"): tap to play it on
+// the selected lights, and it loops until stopped - not a cue.
+const moves = () => (state.snap && state.snap.moves) || [];
+
+function moveText(m) {
+  const p = m.params || {};
+  const shape = (MOVES.find((x) => x[0] === m.lib) || [0, m.lib])[1];
+  const bits = [shape];
+  if (p.arc && p.arc < 360) bits.push(`${Math.round(p.arc)}°`);
+  if (p.direction < 0) bits.push("CCW");
+  if (p.speed) bits.push(`${Math.round(1 / p.speed)} s`);
+  return bits.join(" · ");
+}
+
+async function saveMove(existing = null) {
+  const name = existing ? existing.name : await promptBox("Save as my move", "Name", "", { ok: "Save", placeholder: "e.g. Slow half-turn CCW" });
+  if (!name) return;
+  const heads = movers().map((x) => x.head_no);
+  const mine = running().find((f) => f.heads.some((n) => heads.includes(n)));
+  const lib = mine ? mine.lib : lastLib;
+  run("move_save", { name, lib, params: params(), id: existing ? existing.id : undefined }, { toast: true });
+}
+
+function myMoves(act) {
+  const list = moves();
+  const heads = movers().map((x) => x.head_no);
+  const playing = (m) => act.some((f) => f.move === m.id && f.heads.some((n) => heads.includes(n)));
+  return h("div.mv-mine",
+    h("div.mv-row", h("span.k", "My moves"),
+      h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move")),
+    list.length ? h("div.mv-mytiles", ...list.map((m) => {
+      const more = h("button.mv-more", { "aria-label": `${m.name} options`, title: "Rename, update, delete",
+        onclick: (e) => {
+          e.stopPropagation();
+          menu(e.currentTarget, [
+            { label: "Update to the knobs now", run: () => saveMove(m) },
+            { label: "Rename…", run: async () => {
+              const name = await promptBox("Rename move", "Name", m.name, { ok: "Rename" });
+              if (name) run("move_rename", { id: m.id, name });
+            } },
+            { label: "Delete", danger: true, run: async () => {
+              if (await confirmBox("Delete move", `Delete “${m.name}”?`, { ok: "Delete", danger: true })) run("move_delete", { id: m.id });
+            } },
+          ]);
+        } }, "⋯");
+      return h("div.mv-my" + (playing(m) ? ".on" : ""),
+        h("button.mv-play", { title: playing(m) ? `Stop ${m.name}` : `Play ${m.name} on the selected lights`,
+          onclick: () => {
+            if (playing(m)) { for (const f of act.filter((x) => x.move === m.id)) run("stop_fx", { id: f.id }); }
+            else run("move_play", { id: m.id, heads }, { toast: true });
+          } },
+        h("b", m.name), h("small", moveText(m))), more);
+    })) : h("p.muted.small", "Set a movement up below, then save it here with a name - it plays on any lights, any time."));
 }
 
 function rangeBlock(sel) {
@@ -374,7 +434,7 @@ function render(force = false) {
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib]), knobs, fine, own.key, own.attrs.length, own.rev,
+    running().map((f) => [f.id, f.lib, f.move]), moves(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers]]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);

@@ -70,6 +70,91 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 10. Quick fixes from the audit (DONE)
+
+- ARM lasts 10 min, 1 hour or **until you disarm** (remembered); a laser
+  switched on has no time cap of its own (the library's 600 s is ignored):
+  ARM / KILL FX is its safety.
+- Programmer tab dots use the same kinds as the "In the programmer" bar.
+- Programmer tabs wrap onto a second row; fixture names show on two lines.
+- Lights with no dimmer: the Level tab shows big On (open) / Off (closed)
+  instead of a fader that does nothing.
+- Colour-wheel-only lights: their wheel colours lead as big buttons; the
+  picker waits behind "Pick any colour".
+- (The laser hold sticking and FX Stop / Looks Record flicker were fixed
+  earlier; the button editor's cut-off dropdowns are gone with item 9.)
+
+## 9. Buttons as customisable as possible (first part DONE)
+
+Done: every option in the button editor is a tap.
+- **Lights:** all, the selection, a group or a type, or only the odd /
+  even / left / right half of them.
+- **Does:** flash (level, a colour or "keep their colour"), dim to a level
+  (a ceiling, `cap` in the merge), colour, strobe (rate + colour), blackout
+  these lights, an effect with its own knobs (arc / direction / size /
+  speed for movements), **Mix** (any of level, dim, colour, strobe,
+  blackout plus up to 4 effects), and **From the stage** (captures the
+  programmer's values and the effects running on those lights).  GO,
+  release, preset, SFX, fog, laser, ARM and KILL FX as before.
+- **Behaviour:** hold, on / off, a timed shot; "turn off after N s"; radio
+  groups ("one at a time with…").
+- **Looks and layout:** its own tile colour; 8 named pages; drag to move,
+  Alt-drag to copy, onto a button to swap; Duplicate.
+
+Still to do:
+- Fade in / out times per button.
+- Double-size tiles and icons on tiles.
+- A button that plays a saved Look (item 8).
+- A MIDI / keyboard key per button.
+- Per-button speed (a Speed master of its own).
+
+**My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
+to play it on the selected lights, tap again to stop; ⋯ to update it to
+the knobs now, rename or delete; "My move" on a button follows the move
+when it is updated; saved with the show.  As agreed: save a movement (shape, arc, direction, size,
+speed, wave, where it is centred) under a name and pick it from a list on
+the Move tab, next to a light's built-in programs.  It runs and loops on
+any selected lights until stopped: not a cue, and not tied to particular
+lights or a venue.  It can go on a button or into a Look.
+
+## 8. UI/UX overhaul (audited with a 21-light mixed rig; mock-ups agreed next)
+
+Found in the audit (same features kept, all of it re-laid out):
+
+- **Gig-readiness:** 64 of 96 visible controls are under 32 px (GO / back /
+  stop on faders, tabs, chips); 9 text sizes from 9.5 px; muted grey on
+  near-black.  Target 44 px, text >= 12 px, 4.5:1 contrast; Blackout / GO /
+  GM always on screen (the phone layout has no Blackout without a tab switch).
+- **Type-aware programmer:** Level shows a dead dimmer fader for lights
+  without a dimmer; Colour shows an RGB picker + 25 swatches on wheel-only
+  lights; tab dots disagree with the "In the programmer" bar (shutter is
+  Level in one, Beam in the other).  Lead with each type's own controls.
+- **Clutter:** 10 empty "Record a cue here" playbacks; fixture names and
+  button-dialog options truncated; programmer tabs cut off ("Setu");
+  status bar shows raw Art-Net addresses.
+- **Visualiser:** the crowd hides the rig and floor-level lights; head
+  labels overlap; lights are tiny at default zoom.  Truss / pipe / tower
+  (vertical when its ends differ in height) and a drawn room outline already
+  exist in the engine but are hidden behind Arrange -> Draw room: make
+  "Truss - horizontal / Pole - vertical / Pipe / Stand" first-class tools.
+- **Venues:** no save / load per venue (a venue lives only inside a show).
+  Add a venue library: room, rigging, positions and patch per venue.
+- **Custom buttons:** the button dialog works but hides its options in
+  truncated dropdowns; make "which lights" (selection, all, a group, a
+  type) and "what it does" (flash, dim, colour, flash red / blue, strobe,
+  movement, a saved look) tap choices.
+- **Looks (DONE):** the Looks tab is named look tiles (colour preview,
+  tags); "+ Save look" with a name and what to include (level, colour,
+  position, beam, effects & movements, other); a look keeps its effects
+  and its lights, so one tap with nothing selected brings the whole thing
+  back (on a selection, it plays there); update / rename / make a button /
+  delete from ⋯.  Palettes sit under a fold.  Still open: search and
+  "any light of these types" for another venue.
+- **Effects:** ARM switches itself off after 10 min (`_a_fx_arm` default)
+  and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
+  "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
+  Confetti (one load) wants hold-to-fire; CO2 quick 0.5 / 1 / 3 s shots.
+
 ## 7. Move tab: floor-safe movement for every light, simple speed (DONE)
 
 Built: one-tap spots and formations from the venue, nudge arrows, movement

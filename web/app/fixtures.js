@@ -63,7 +63,7 @@ function render() {
           h("i.lamp"),
           iconFor(b),
           h("div.f-text",
-            h("b", hd.name || hd.model),
+            h("b", { title: hd.name || hd.model }, hd.name || hd.model),
             h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
               .filter(Boolean).join(" · "))),
           hd.unverified ? h("span.warn-ic", { title: "Generic channel layout - check it matches the real fixture" }, "⚠") : null,

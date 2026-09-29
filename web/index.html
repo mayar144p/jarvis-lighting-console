@@ -266,11 +266,15 @@
         <div class="tab-pane" data-pane="sfx" hidden><div id="sfx-pane"></div></div>
 
         <div class="tab-pane" data-pane="looks" hidden>
-          <h3>Palettes</h3>
-          <div class="pal-kinds" id="pal-kinds"></div>
-          <h3>Presets <small class="muted">complete looks</small></h3>
-          <div class="preset-list" id="preset-list"></div>
-          <button class="btn" id="preset-rec">Record preset from programmer</button>
+          <div class="looks-head">
+            <h3>Looks <small class="muted">tap to play · colours, positions and effects together</small></h3>
+            <button class="btn primary" id="preset-rec" title="Save what is on the lights now as a named look">+ Save look</button>
+          </div>
+          <div class="look-grid" id="preset-list"></div>
+          <details class="more">
+            <summary>Palettes: just a colour, a position or a beam</summary>
+            <div class="pal-kinds" id="pal-kinds"></div>
+          </details>
         </div>
 
         <div class="tab-pane" data-pane="tools" hidden>

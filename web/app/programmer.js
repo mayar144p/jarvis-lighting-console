@@ -2,7 +2,7 @@
 import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox } from "./ui.js";
+import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 
@@ -71,13 +71,13 @@ function renderHeader() {
   $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx"].includes(tab));
   applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
-  const pages = {
-    intensity: ["dimmer"], colour: ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "wheel"],
-    position: ["pan", "tilt"], beam: ["zoom", "focus", "iris", "gobo", "gobo_rot", "prism", "frost", "shutter", "strobe"],
-  };
+  // the same kinds as the "In the programmer" bar (GROUP_OF): a shutter is
+  // Level in both, so the dot and the bar never disagree
+  const pages = { intensity: "intensity", colour: "colour", position: "position", beam: "beam" };
   $$("#prog-tabs button").forEach((b) => {
     const dot = b.querySelector(".dotmark");
-    const on = (pages[b.dataset.tab] || []).some((r) => attrs.has(r));
+    const want = pages[b.dataset.tab];
+    const on = !!want && [...attrs].some((r) => (GROUP_OF[r.replace(/_fine$/, "")] || "other") === want);
     if (on && !dot) b.append(h("span.dotmark"));
     if (!on && dot) dot.remove();
   });
@@ -118,21 +118,37 @@ function renderOpenWarning() {
 function renderGate() {
   renderOpenWarning();
   const box = $("#int-gate");
-  const heads = selectionHeads().filter((x) => !(x.map || []).includes("dimmer")
+  const sel = selectionHeads();
+  const heads = sel.filter((x) => !(x.map || []).includes("dimmer")
     && (x.map || []).some((r) => r === "shutter" || r === "strobe"));
+  // every selected light is one whose brightness is only its shutter (no
+  // dimmer, no colour mixing to dim with): the fader would do nothing, so
+  // the shutter leads, as big buttons
+  const gateOnly = heads.length > 0 && heads.length === sel.length
+    && sel.every((x) => !(x.map || []).some((r) => ["red", "green", "blue", "white", "zone_dimmer"].includes(r)));
+  $(".big-fader-row").hidden = gateOnly;
+  box.classList.toggle("gate-only", gateOnly);
   box.hidden = !heads.length;
-  if (!heads.length) return;
+  if (!heads.length) { box.dataset.key = ""; return; }
   const role = (heads[0].map || []).includes("shutter") ? "shutter" : "strobe";
-  const key = heads.map((x) => x.head_no).join(",");
+  const vals = heads.map((x) => (((state.snap && state.snap.programmer) || {}).values || {})[x.head_no]).map((r) => r && r[role]);
+  const now = vals.every((v) => v === undefined) ? "" : vals.every((v) => v === 0) ? "closed" : vals.every((v) => v > 0) ? "open" : "mixed";
+  const key = [heads.map((x) => x.head_no).join(","), gateOnly, now].join("|");
   if (box.dataset.key === key) return;
   box.dataset.key = key;
-  box.replaceChildren(h("span.muted.small", `${heads.length} light${heads.length === 1 ? " has" : "s have"} no dimmer - open or close the ${role}:`),
-    h("button.chip", { onclick: async () => {
-      const a = await get("/api/console/attributes?heads=" + heads.map((x) => x.head_no).join(","));
+  const nums = heads.map((x) => x.head_no);
+  const cls = gateOnly ? "button.btn.gate-btn" : "button.chip";
+  box.replaceChildren(h("span.muted.small", gateOnly
+    ? `${heads.length === 1 ? "This light has" : "These lights have"} no dimmer: the ${role} turns the light on and off.`
+    : `${heads.length} light${heads.length === 1 ? " has" : "s have"} no dimmer - open or close the ${role}:`),
+    h(cls + (now === "open" ? ".on" : ""), { onclick: async () => {
+      const a = await get("/api/console/attributes?heads=" + nums.join(","));
       const at = (a.pages || []).flatMap((p) => p.attrs || []).find((x) => x.role === role);
-      run("set_attribute", { attribute: role, value: at && at.open !== undefined ? at.open : 255, heads: heads.map((x) => x.head_no) });
-    } }, "Open"),
-    h("button.chip", { onclick: () => run("set_attribute", { attribute: role, value: 0, heads: heads.map((x) => x.head_no) }) }, "Closed"));
+      run("set_attribute", { attribute: role, value: at && at.open !== undefined ? at.open : 255, heads: nums });
+    } }, gateOnly ? "On (open)" : "Open"),
+    h(cls + (now === "closed" ? ".on" : ""), { onclick: () => run("set_attribute", { attribute: role, value: 0, heads: nums }) },
+      gateOnly ? "Off (closed)" : "Closed"),
+    gateOnly ? h("span.muted.small", "Strobe speeds and effects are on the Beam tab.") : null);
 }
 
 function renderIntensity() {
@@ -183,17 +199,31 @@ export function kelvinHex(k) {
   return rgbToHex(c(r), c(g), c(b));
 }
 
+// A light with only a colour wheel can't mix any colour: its own wheel
+// colours lead (big buttons), and the picker - which can only land on the
+// nearest wheel colour - waits behind "Pick any colour".
+let pickerAnyway = false;
+
 function renderWheel() {
   const cap = capabilities();
   $("#kelvin-row").hidden = !cap.mixing && hasSel();
   const box = $("#wheel-steps");
   box.hidden = !cap.roles.has("wheel");
+  const wheelOnly = hasSel() && !box.hidden && !cap.mixing;
+  const pane = $('[data-pane="colour"]');
+  pane.classList.toggle("wheel-only", wheelOnly && !pickerAnyway);
   if (box.hidden) return;
   const wheel = attrEntry("wheel");
-  const key = wheel && wheel.slots ? JSON.stringify(wheel.slots) : "guess";
+  const key = [wheel && wheel.slots ? JSON.stringify(wheel.slots) : "guess", wheelOnly, pickerAnyway].join("|");
   if (box.dataset.key === key) return;
   box.dataset.key = key;
-  box.replaceChildren(h("span.muted.small", wheel && wheel.slots ? "Colour wheel:" : "Colour wheel (guessed positions):"), ...slotButtons("wheel", wheel));
+  box.replaceChildren(
+    h("span.muted.small", wheelOnly
+      ? "These lights have a colour wheel: tap one of its colours."
+      : wheel && wheel.slots ? "Colour wheel:" : "Colour wheel (guessed positions):"),
+    ...slotButtons("wheel", wheel),
+    wheelOnly ? h("button.linkish.small", { onclick: () => { pickerAnyway = !pickerAnyway; box.dataset.key = ""; renderWheel(); } },
+      pickerAnyway ? "Hide the colour picker" : "Pick any colour (goes to the nearest wheel colour)") : null);
 }
 
 // The attribute entry for one role, from the last /attributes read.
@@ -602,14 +632,73 @@ function renderLooks(force = false) {
   const strip = $(".palette-strip[data-kind=position]");
   strip.replaceChildren(...(pals.position || []).map((p) => palButton("position", p)));
   const presets = (state.snap && state.snap.presets) || [];
-  $("#preset-list").replaceChildren(...(presets.length ? presets.map((p) => h("button.pal-item", {
-    title: `${p.heads} heads · click to apply, right-click to delete`,
-    onclick: () => run("include_preset", { preset: p.n }),
-    oncontextmenu: async (e) => {
-      e.preventDefault();
-      if (await confirmBox("Delete preset", `Delete preset “${p.name}”?`, { ok: "Delete", danger: true })) run("delete_preset", { preset: p.n });
-    },
-  }, p.name)) : [h("span.muted.small", "none yet")]));
+  $("#preset-list").replaceChildren(...(presets.length ? presets.map(lookTile)
+    : [h("p.muted.small", "No looks yet. Set colours, positions or a movement on some lights, then + Save look.")]));
+}
+
+// A look's tile: its colours, name and what it holds; tap plays it.
+function lookTile(p) {
+  const hexes = p.hexes && p.hexes.length ? p.hexes : [];
+  const more = h("button.look-more", { "aria-label": `${p.name} options`, title: "Update, rename, make a button, delete",
+    onclick: (e) => {
+      e.stopPropagation();
+      menu(e.currentTarget, [
+        { label: "Update to what is on the lights now", run: () => run("record_preset", { name: p.name, preset: p.n }, { toast: true }) },
+        { label: "Rename…", run: async () => {
+          const name = await promptBox("Rename look", "Name", p.name, { ok: "Rename" });
+          if (name) run("rename_preset", { preset: p.n, name });
+        } },
+        { label: "Make a button for it", run: () => makeLookButton(p) },
+        "-",
+        { label: "Delete", danger: true, run: async () => {
+          if (await confirmBox("Delete look", `Delete “${p.name}”?`, { ok: "Delete", danger: true })) run("delete_preset", { preset: p.n });
+        } },
+      ]);
+    } }, "⋯");
+  return h("div.look",
+    h("button.look-play", { title: `Play ${p.name}${hasSel() ? " on the selected lights" : ` on its ${p.heads} light(s)`}`,
+      onclick: () => run("include_preset", { preset: p.n }, { toast: true }) },
+    h("div.look-sw", ...(hexes.length ? hexes.map((c) => h("i", { style: { background: c } })) : [h("i.none")])),
+    h("b", p.name),
+    h("small", [...(p.tags || []), `${p.heads} light${p.heads === 1 ? "" : "s"}`].join(" · "))),
+    more);
+}
+
+async function makeLookButton(p) {
+  const q = (state.snap && state.snap.quick) || { buttons: [], slots: 24 };
+  const taken = new Set(q.buttons.filter((b) => b.page === 1).map((b) => b.slot));
+  let slot = 1;
+  while (taken.has(slot) && slot <= (q.slots || 24)) slot++;
+  if (slot > (q.slots || 24)) { toast("Buttons page 1 is full", "bad"); return; }
+  const r = await run("quick_set", { page: 1, slot, button: { kind: "preset", label: p.name.slice(0, 24), preset: p.n,
+    tint: (p.hexes && p.hexes[0]) || undefined } });
+  if (r.ok) toast(`Button 1.${slot}: ${p.name}`, "ok");
+}
+
+async function saveLook() {
+  const parts = [["intensity", "Level"], ["colour", "Colour"], ["position", "Position"], ["beam", "Beam"],
+    ["fx", "Effects & movements"], ["other", "Other"]];
+  const on = new Set(parts.map(([k]) => k));
+  const name = h("input", { type: "text", placeholder: "e.g. Opening sweep", maxlength: 32, style: { width: "100%" } });
+  const chipsBox = h("div.chip-row");
+  const draw = () => chipsBox.replaceChildren(...parts.map(([k, label]) => h("button.chip" + (on.has(k) ? ".on" : ""), {
+    type: "button", onclick: () => { if (on.has(k)) on.delete(k); else on.add(k); draw(); } }, label)));
+  draw();
+  const go = async () => {
+    const r = await run("record_preset", { name: name.value.trim(), include: [...on] }, { toast: true });
+    if (r.ok) close();
+  };
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  const close = modal({
+    title: "Save look",
+    body: h("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } },
+      h("label.field", h("span", "Name"), name),
+      h("div", h("span.muted.small", "Include:"), chipsBox),
+      h("p.muted.small", { style: { margin: 0 } }, hasSel()
+        ? "Saves what the selected lights are doing. Playing it later with nothing selected uses these same lights."
+        : "Saves every light the programmer holds and the effects running on them.")),
+    foot: [h("button.btn", { onclick: () => close() }, "Cancel"), h("button.btn.primary", { onclick: go }, "Save look")],
+  });
 }
 
 function palButton(kind, p) {
@@ -724,10 +813,7 @@ export function initProgrammer() {
     attribute: $("#lfo-attr").value, kind: $("#lfo-wave").value,
     speed: +$("#lfo-speed").value || 1, spread: +$("#lfo-spread").value || 0, heads: sel(),
   }, { toast: true }));
-  $("#preset-rec").addEventListener("click", async () => {
-    const name = await promptBox("Record preset", "Name for this look", "", { ok: "Record" });
-    if (name) run("record_preset", { name }, { toast: true });
-  });
+  $("#preset-rec").addEventListener("click", saveLook);
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   let saved = "intensity";
   try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }
