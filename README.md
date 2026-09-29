@@ -299,7 +299,8 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
 
 ## Fixture library
 
-**Add fixtures** has three tabs:
+**Add fixtures** searches everything at once in the **All** tab, and
+also has separate tabs:
 
 * **Installed:** everything already in your library.
 * **Libraries:** the [Open Fixture Library](https://open-fixture-library.org)
@@ -489,6 +490,11 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
   It says when the computer isn't on the node's network.
 * **A playback does nothing:** Diagnose lists cues that point at heads no
   longer patched.
+* **GDTF Share says "not signed in":** your session expired. The Add
+  dialog now shows **Sign in** whenever you're not signed in, even with the
+  catalogue saved, and a download that needs a session asks you to sign in
+  and then retries. With `GDTF_SHARE_USER` and `GDTF_SHARE_PASSWORD` in
+  `.env`, Jarvis signs in again by itself.
 
 ## Not built yet
 
