@@ -4807,15 +4807,22 @@ class Engine:
         """A light's own range: Set top / Set bottom (tilt) or Set left /
         Set right (pan) at where it points now; `clear` removes it.  Every
         cue, effect, spot and button then stays inside it, per light."""
-        role = "pan" if str(axis).lower().startswith("p") else "tilt"
+        a = str(axis or "").lower()
+        # a laser's safe zone: its beam height (Y) between two marked edges,
+        # and its pattern no bigger than a marked size - so beams stay above
+        # the audience's eyes whatever a cue or button asks for
+        role = ("laser_size" if "size" in a else "laser_y" if a.startswith(("laser", "beam", "height", "y"))
+                else "pan" if a.startswith("p") else "tilt")
         edge = str(edge or "").lower()
         rows = [h for h in self._require_selection() if role in h["map"]]
         if not rows:
-            raise ValueError(f"none of the selected lights has {role}")
+            raise ValueError(f"none of the selected lights has {role.replace('_', ' ')}")
         # One edge alone is ambiguous - a higher tilt value is "up" on one
         # head and "down" on another, depending on how it hangs - so each
         # edge is marked, and the range applies once BOTH are: between them.
-        first = {"tilt": ("top", "bottom"), "pan": ("left", "right")}[role]
+        # (A size is not: 0 is the smallest pattern, so "largest" is enough.)
+        first = {"tilt": ("top", "bottom"), "pan": ("left", "right"),
+                 "laser_y": ("low", "high"), "laser_size": ("max", "max")}[role]
         out, waiting = [], []
         for h in rows:
             cur = dict(h.get("limits") or {})
@@ -4823,8 +4830,11 @@ class Engine:
             if edge == "clear":
                 cur.pop(role, None)
                 marks = {}
+            elif role == "laser_size":
+                cur[role] = (0, self._move_now(h, role))
+                marks = {}
             else:
-                side = first[0] if edge in (first[0], "low", "min") else first[1]
+                side = first[0] if edge in (first[0], "low", "min", "top", "left") else first[1]
                 marks[side] = self._move_now(h, role)
                 if len(marks) == 2:
                     lo, hi = sorted(marks.values())
@@ -4841,11 +4851,12 @@ class Engine:
             h["range_marks"] = rm
             out.append({"head": h["head_no"], "range": cur.get(role), "marked": marks})
         self.patch_rev += 1
-        other = first[1] if edge in (first[0], "low", "min") else first[0]
+        other = first[1] if edge in (first[0], "low", "min", "top", "left") else first[0]
+        name = {"laser_y": "beam height", "laser_size": "laser size"}.get(role, role)
         return {"ranges": out, "summary": (
-            f"{role} range cleared" if edge == "clear" else
-            f"{role} {edge} marked - now point it at the {other} and set that" if waiting else
-            f"{role} range set on {len(out)} light(s)")}
+            f"{name} range cleared" if edge == "clear" else
+            f"{name} {edge} marked - now point it at the {other} and set that" if waiting else
+            f"{name} range set on {len(out)} light(s)")}
 
     # ------------------------------------------------------------------
     # the timeline (app/timeline.py): the engine owns the clock

@@ -909,3 +909,4 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .mv-run { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; }
 .mv-more { margin-top: 8px; }
 @media (max-width: 520px) { .mv-tiles { grid-template-columns: repeat(3, 1fr); } }
+.mv-warn { color: var(--warn, #f5a524); margin: 4px 0; }

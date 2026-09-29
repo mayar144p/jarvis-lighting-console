@@ -120,6 +120,8 @@ function ownBlock() {
 }
 
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
+const lasers = () => selectionHeads().filter((x) => (x.map || []).some((r) => r === "laser_on" || r === "laser_y" || r.startsWith("laser_beam")));
+const EYE_SAFE_M = 3;                      // beams stay at least this high over a crowd
 const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
 const params = () => ({
   speed: +(1 / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
@@ -317,6 +319,47 @@ function rangeButtons() {
     h("div.chip-row", h("span.k", "Pan"), b("Set left", "pan", "left"), b("Set right", "pan", "right"), b("Clear", "pan", "clear")));
 }
 
+// ------------------------------------------------------ laser safe zone
+// A laser has no pan/tilt: its beams go where its Y (height) and size say.
+// Mark the lowest and highest safe Y, and the largest safe size, with the
+// laser running and watched; every cue and button then stays inside them.
+function laserBlock(ls) {
+  if (!ls.length) return null;
+  const one = ls.length === 1 ? ls[0] : null;
+  const has = (r) => ls.some((x) => (x.map || []).includes(r));
+  const low = ls.filter((x) => x.y != null && +x.y < EYE_SAFE_M);
+  const warn = low.length ? h("p.mv-warn.small",
+    `${low.map((x) => `#${x.head_no} is at ${(+x.y).toFixed(1)} m`).join(", ")} in the venue. If it really hangs that low, ` +
+    `beams may reach eye level: hang lasers ${EYE_SAFE_M} m or more above the crowd, or aim them above it. ` +
+    `(Not placed yet? Set its height in the venue editor.)`) : null;
+  const state1 = (role) => {
+    if (!one) return "";
+    const m = (one.range_marks || {})[role];
+    if (m && Object.keys(m).length) return `${Object.keys(m)[0]} marked - now move it to the other edge and set that`;
+    const r = (one.limits || {})[role];
+    return r ? `${r[0]}-${r[1]}` : "not set";
+  };
+  const b = (label, axis, edge, title) => h("button.chip", { title, onclick: () => run("move_range", { axis, edge }, { toast: true }) }, label);
+  const rows = [];
+  if (has("laser_y")) {
+    rows.push(h("div.chip-row", h("span.k", "Beam height"),
+      b("Set lowest", "laser_y", "low", "The lowest the beams may go - above everyone's eyes"),
+      b("Set highest", "laser_y", "high", "The highest the beams may go"), b("Clear", "laser_y", "clear"),
+      one ? h("span.muted.small", state1("laser_y")) : null));
+  }
+  if (has("laser_size")) {
+    rows.push(h("div.chip-row", h("span.k", "Size"),
+      b("Set largest", "laser_size", "max", "The biggest the pattern may open"), b("Clear", "laser_size", "clear"),
+      one ? h("span.muted.small", state1("laser_size")) : null));
+  }
+  const fixed = !has("laser_y") && !has("laser_size");
+  return section("Laser safe zone", warn,
+    h("p.muted.small", fixed
+      ? "These beams are fixed: they go where the laser is hung and pointed. Keep them above the crowd by how it is rigged."
+      : "With the laser running, move its Y on the Laser tab until the beams just clear the tallest head, and Set lowest; then the top, Set highest. Cues and buttons then stay inside."),
+    ...rows);
+}
+
 export function renderMovePanel(force = false) {
   render(force);
 }
@@ -327,7 +370,9 @@ function render(force = false) {
   const sel = movers();
   // redraw only when what's shown changes: a panel rebuilt on every live
   // update swallows clicks and flickers
+  const ls = lasers();
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
+    ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
     running().map((f) => [f.id, f.lib]), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers]]);
@@ -347,10 +392,11 @@ function render(force = false) {
     return;
   }
   if (!sel.length) {
-    box.replaceChildren(h("p.muted.small", "The selected lights can't move (no pan or tilt). Colour, brightness and effects are on the other tabs."));
+    box.replaceChildren(...[ls.length ? null : h("p.muted.small", "The selected lights can't move (no pan or tilt). Colour, brightness and effects are on the other tabs."),
+      laserBlock(ls)].filter(Boolean));
     return;
   }
-  box.replaceChildren(...[spotsBlock(), floorBlock(), nudgeBlock(), movementBlock(), ownBlock(), rangeBlock(sel)].filter(Boolean));
+  box.replaceChildren(...[spotsBlock(), floorBlock(), nudgeBlock(), movementBlock(), ownBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
   loadOwn();
 }
 

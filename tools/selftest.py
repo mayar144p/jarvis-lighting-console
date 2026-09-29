@@ -8830,8 +8830,49 @@ def test_motion() -> None:
                   eng.Engine.__init__ and not e.floor_lock, "")
         finally:
             e.shutdown()
+
+    # ---- the laser safe zone: beam height and size stay where they were marked
+    from app.engine_support import channel_role
+    item = {"manufacturer": "Acme", "model": "Safe Laser", "type": "", "modes": [{"name": "4ch", "channel_count": 4, "channels": [], "detail": []}]}
+    for i, n in enumerate(["Laser output", "Laser pattern", "Laser Y", "Laser size"]):
+        item["modes"][0]["channels"].append(n)
+        item["modes"][0]["detail"].append({"n": i + 1, "label": n, "name": n, "role": channel_role(n)})
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "l.db"
+        fixtures.store_parsed(db, [item], "test")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Safe Laser", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            m = e.patch[0]["map"]
+            check("a laser patched with its height and size", "laser_y" in m and "laser_size" in m, str(m))
+            e.act("set_attribute", attribute="laser_y", value=120)
+            r1 = e.act("move_range", axis="laser_y", edge="low")
+            check("one beam-height edge is only marked", "laser_y" not in (e.patch[0].get("limits") or {}), str(r1))
+            e.act("set_attribute", attribute="laser_y", value=200)
+            e.act("move_range", axis="laser_y", edge="high")
+            e.act("set_attribute", attribute="laser_size", value=90)
+            e.act("move_range", axis="laser_size", edge="max")
+            lim = e.patch[0]["limits"]
+            check("laser safe zone: beam height between the marks, size up to the largest",
+                  tuple(lim["laser_y"]) == (120, 200) and tuple(lim["laser_size"]) == (0, 90), str(lim))
+            e.act("set_attribute", attribute="laser_y", value=10)
+            e.act("set_attribute", attribute="laser_size", value=255)
+            wire = e.build_frames()[1]
+            yi, si = m.index("laser_y"), m.index("laser_size")
+            check("...a cue asking for beams lower or bigger is held inside it",
+                  wire[yi] == 120 and wire[si] == 90, str(list(wire[:4])))
+            e.programmer.clear()
+            wire = e.build_frames()[1]
+            check("...and an unset height doesn't drop the beams to 0 (into the crowd)", wire[yi] == 120, str(list(wire[:4])))
+            e.act("move_range", axis="laser_y", edge="clear")
+            check("...Clear removes it", "laser_y" not in e.patch[0]["limits"], "")
+        finally:
+            e.shutdown()
     js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the Move tab has a laser safe zone", "Laser safe zone" in js and '"laser_size", "max"' in js, "")
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
           and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")

@@ -200,7 +200,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     if limits:
         for role, (lo, hi) in limits.items():
             if role not in resolved:
-                continue
+                # a laser's safe zone holds even when nothing sets the
+                # channel: an unset beam height goes out at 0, which may
+                # well be straight into the crowd
+                if role in _LASER_SAFE and role in head["map"]:
+                    resolved[role] = 0
+                else:
+                    continue
             v = resolved[role]
             if lo is not None and v < lo:
                 v = lo
@@ -223,6 +229,9 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                 top = 65535 if (role + "_fine") in head["map"] else 255
                 resolved[role] = top - max(0, min(top, resolved[role]))
     return resolved
+
+
+_LASER_SAFE = frozenset({"laser_y", "laser_size"})
 
 
 def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
