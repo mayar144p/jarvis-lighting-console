@@ -171,11 +171,17 @@ Done: every option in the button editor is a tap.
 - **Looks and layout:** its own tile colour; 8 named pages; drag to move,
   Alt-drag to copy, onto a button to swap; Duplicate.
 
+- **Fades (DONE):** Fade in / Fade out (0.5-5 s) on flash, dim, Mix,
+  From the stage and blackout buttons.  Brightness eases up on press and
+  down on release (effects and movement keep running under it); pressing
+  again mid-fade picks up from where it is.
+- **Keyboard key (DONE):** one letter or digit per button, shown on the
+  tile.  Holding the key holds a hold button; the console's own shortcut
+  keys (B, X, A, L, C, R, O, I, D, G, F, /, ?, Space) can't be taken.
+
 Still to do:
-- Fade in / out times per button.
 - Double-size tiles and icons on tiles.
-- A button that plays a saved Look (item 8).
-- A MIDI / keyboard key per button.
+- A MIDI note per button.
 - Per-button speed (a Speed master of its own).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move

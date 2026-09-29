@@ -51,6 +51,10 @@ const SPLITS = [["", "All of them"], ["odd", "Odd"], ["even", "Even"], ["left", 
 const FX_KINDS = new Set(["sfx", "fog", "laser", "arm", "fxkill"]);
 const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill"]);
 const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill"]);
+// kinds whose brightness can fade in / out
+const FADES = new Set(["flash", "dim", "custom", "capture", "kill"]);
+// the console's own keys a button may not take
+const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f", "/", "?", " "]);
 
 let page = 1;
 let editing = false;
@@ -162,7 +166,8 @@ function render(force = false) {
       title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy)" : ""}`,
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
-    }, h("b", b.label), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`));
+    }, h("b", b.label), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
+    b.key ? h("kbd.qkey", b.key.toUpperCase()) : null);
     el.style.setProperty("--tint", tint);
     if (editing) {
       el.addEventListener("click", () => editButton(slot, b));
@@ -231,6 +236,7 @@ function fromButton(b) {
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
     move: b ? b.move || "" : "",
+    fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
   };
@@ -260,6 +266,8 @@ function toButton(s) {
   if (d === "strobe") { b.hz = s.hz; if (s.colour) b.colour = s.colour; }
   if (d === "fx") { b.fx = s.fx; b.params = s.params; }
   if (d === "move") b.move = s.move;
+  if (FADES.has(d)) { if (s.fadeIn) b.fade_in = s.fadeIn; if (s.fadeOut) b.fade_out = s.fadeOut; }
+  if (s.key) b.key = s.key;
   if (d === "custom" || d === "capture") {
     if (s.mix.level) b.level = s.level;
     if (s.mix.dim) b.dim = s.dim;
@@ -382,6 +390,22 @@ function editButton(slot, btn) {
         : h("div.qe-note", "No presets yet - record one on the Looks tab.")));
     }
     if (d === "fog") kids.push(row("Output", slider(s.fogLevel, 5, 100, 5, (v) => { s.fogLevel = v; })));
+    if (FADES.has(d)) {
+      const fades = [[0, "None"], [0.5, "0.5 s"], [1, "1 s"], [2, "2 s"], [5, "5 s"]];
+      kids.push(row("Fade in", chips(fades, s.fadeIn, (v) => { s.fadeIn = v; draw(); })));
+      kids.push(row("Fade out", chips(fades, s.fadeOut, (v) => { s.fadeOut = v; draw(); })));
+    }
+    const taken = quick().buttons.filter((x) => x.key && !(btn && x.id === btn.id)).map((x) => x.key);
+    const keyIn = h("input.qe-num.qe-key", { type: "text", maxlength: 1, value: s.key, placeholder: "none",
+      oninput: (e) => {
+        const k = e.target.value.toLowerCase();
+        s.key = k && /^[a-z0-9]$/.test(k) && !RESERVED.has(k) ? k : "";
+        e.target.value = s.key;
+        keyNote.textContent = k && !s.key ? `“${k}” is one of the console's own keys` : s.key && taken.includes(s.key)
+          ? `“${s.key}” is already on another button (both will play)` : "Press the key to play this button (hold keys hold it).";
+      } });
+    const keyNote = h("span.qe-note", "A letter or digit on the keyboard that plays this button.");
+    kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));
     // behaviour
     if (!ONE_SHOT.has(d)) {
       const modes = [["hold", "Hold", "On while pressed"], ["latch", "On / off", "Press on, press again off"],
@@ -433,9 +457,39 @@ function editButton(slot, btn) {
   });
 }
 
+// A button's keyboard key: press plays it, and for a hold button letting
+// go of the key lets go of it.  Runs before the console's own keys.
+function keyTarget(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey || editing) return [];
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return [];
+  if (document.querySelector(".modal-scrim")) return [];
+  const k = (e.key || "").toLowerCase();
+  if (k.length !== 1) return [];
+  return quick().buttons.filter((b) => b.key === k);
+}
+
 export function initQuickButtons() {
   const box = $("#qb");
   if (!box) return;
+  const down = new Set();
+  document.addEventListener("keydown", (e) => {
+    const hits = keyTarget(e);
+    if (!hits.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.repeat || down.has(e.key.toLowerCase())) return;
+    down.add(e.key.toLowerCase());
+    for (const b of hits) press(b, true);
+  }, true);
+  document.addEventListener("keyup", (e) => {
+    const k = (e.key || "").toLowerCase();
+    if (!down.has(k)) return;
+    down.delete(k);
+    for (const b of quick().buttons.filter((x) => x.key === k)) {
+      if (b.mode === "hold") press(b, false); else held.delete(b.id);
+    }
+  }, true);
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-suggest").addEventListener("click", async () => {
     if (!patch().length) { toast("Add some lights first"); return; }

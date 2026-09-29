@@ -3701,6 +3701,19 @@ class Engine:
                 btn["seconds"] = float(_clamp(raw.get("seconds"), 0.1, 3600))
         if kind == "custom":
             self._quick_clean_custom(raw, btn)
+        # a key on the keyboard (one letter or digit) that plays it
+        key = str(raw.get("key") or "").strip().lower()[:1]
+        if key and key.isalnum():
+            btn["key"] = key
+        # brightness fades: in when pressed, out when let go
+        if kind in ("flash", "custom", "kill"):
+            for f in ("fade_in", "fade_out"):
+                if raw.get(f) not in (None, "", 0, "0"):
+                    try:
+                        v = float(raw.get(f))
+                    except (TypeError, ValueError):
+                        raise ValueError(f"not a number: {raw.get(f)!r}") from None
+                    btn[f] = round(min(30.0, max(0.05, v)), 2)
         if kind == "flash":
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
@@ -3926,7 +3939,7 @@ class Engine:
         keep = [b for b in self.quick if b is not src and b is not dst]
         for key in (src["id"], dst and dst["id"]):
             if key:
-                self._quick_off(key, force=True)
+                self._quick_off(key, force=True, fade=False)
         moved = self._quick_clean(dict(src), to_page, to_slot)
         keep.append(moved)
         if _truthy(copy):
@@ -4063,6 +4076,14 @@ class Engine:
         if not btn:
             return
         run = self.quick_active.get(key)
+        if run is not None and run.get("release_at"):
+            # pressed again while fading out: back up from where it is
+            now = time.monotonic()
+            f = self._quick_factor(btn, run, now)
+            run.pop("release_at", None)
+            run.pop("release_from", None)
+            fi = float(btn.get("fade_in") or 0)
+            run["since"] = now - f * fi
         if btn["kind"] in ("sfx", "fog", "laser"):
             heads = self._quick_heads(btn)
             started = self._sfx_start(key, {"sfx": "fire", "fog": "fog", "laser": "laser"}[btn["kind"]],
@@ -4100,8 +4121,9 @@ class Engine:
             run["until"] = time.monotonic() + float(btn["seconds"])
         run.setdefault("owners", set()).add(owner)
 
-    def _quick_off(self, key: str, owner: str = "hand", force: bool = False) -> None:
-        """Let go for `owner`; the button stays on while anyone holds it."""
+    def _quick_off(self, key: str, owner: str = "hand", force: bool = False, fade: bool = True) -> None:
+        """Let go for `owner`; the button stays on while anyone holds it.
+        A button with a fade-out dims away over its time, then lets go."""
         run = self.quick_active.get(key)
         if run is None:
             return
@@ -4111,8 +4133,23 @@ class Engine:
             self._sfx_stop(key, owner, force=force)
         if owners and not force:
             return
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if fade and btn and btn.get("fade_out") and not run.get("release_at"):
+            now = time.monotonic()
+            run["release_from"] = self._quick_factor(btn, run, now)
+            run["release_at"] = now
+            return
         self.quick_active.pop(key, None)
         self._quick_stop_fx(run)
+
+    def _quick_factor(self, btn: dict, run: dict, now: float) -> float:
+        """0..1: how far in (fade-in) or still on (fade-out) a button is."""
+        if run.get("release_at"):
+            fo = float(btn.get("fade_out") or 0)
+            left = 1.0 - (now - run["release_at"]) / fo if fo else 0.0
+            return max(0.0, min(1.0, run.get("release_from", 1.0) * left))
+        fi = float(btn.get("fade_in") or 0)
+        return 1.0 if not fi else max(0.0, min(1.0, (now - run["since"]) / fi))
 
     def _quick_stop_fx(self, run: dict) -> None:
         ids = set(run.get("fx_ids") or []) | ({run["fx"]} if run.get("fx") else set())
@@ -4120,11 +4157,16 @@ class Engine:
             self.fx = [f for f in self.fx if f["id"] not in ids]
 
     def _quick_expire(self) -> None:
-        """Buttons on a timer let go by themselves."""
+        """Buttons on a timer let go by themselves; faded-out ones finish."""
         now = time.monotonic()
+        by_id = {b["id"]: b for b in self.quick}
         for key, run in list(self.quick_active.items()):
-            if run.get("until") and now >= run["until"] and not run.get("fx_layer"):
+            if run.get("until") and now >= run["until"] and not run.get("fx_layer") and not run.get("release_at"):
                 self._quick_off(key, owner="timer", force=True)
+            elif run.get("release_at") and by_id.get(key) and \
+                    now - run["release_at"] >= float(by_id[key].get("fade_out") or 0):
+                self.quick_active.pop(key, None)
+                self._quick_stop_fx(run)
 
     def _a_quick_release_all(self, **_):
         for key in list(self.quick_active):
@@ -4240,13 +4282,14 @@ class Engine:
             if not btn:
                 continue
             kind = btn["kind"]
+            f = self._quick_factor(btn, run, time.monotonic())
             for n in run["heads"]:
                 head = heads.get(n)
                 if head is None:
                     continue
                 o = out.setdefault(n, {})
                 if kind in ("flash", "strobe"):
-                    o["level"] = max(o.get("level") or 0, btn.get("level", 100))
+                    o["level"] = max(o.get("level") or 0, round(btn.get("level", 100) * (f if kind == "flash" else 1.0)))
                     gate = self._shutter_role(head)
                     if gate and not any(r in HTP_ROLES for r in head["map"]):
                         o.setdefault("set", {})[gate] = self._open_value(head, gate)
@@ -4256,13 +4299,15 @@ class Engine:
                         o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
                 elif kind == "colour":
                     o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
+                elif kind == "kill" and f < 1.0:
+                    o["cap"] = round(100 * (1 - f)) if o.get("cap") is None else min(o["cap"], round(100 * (1 - f)))
                 elif kind in ("kill", "blackout"):
                     o["kill"] = True
                 elif kind == "custom":
-                    self._quick_custom_over(btn, head, o)
+                    self._quick_custom_over(btn, head, o, f)
         return out
 
-    def _quick_custom_over(self, btn: dict, head: dict, o: dict) -> None:
+    def _quick_custom_over(self, btn: dict, head: dict, o: dict, f: float = 1.0) -> None:
         """One custom button's part of a light's override.  Brightness never
         goes in as a forced value (that would skip blackout and the master):
         it becomes the button's level floor instead."""
@@ -4279,16 +4324,21 @@ class Engine:
             sets.update(self._colour_values(head, btn["colour"]))
         if level is not None or btn.get("hz"):
             if level is not None:
-                o["level"] = max(o.get("level") or 0, int(level))
+                o["level"] = max(o.get("level") or 0, round(int(level) * f))
             gate = self._shutter_role(head)
             if gate and not any(r in HTP_ROLES for r in head["map"]) and (level or btn.get("hz")):
                 sets[gate] = self._open_value(head, gate)
         if btn.get("hz"):
             o["strobe"] = max(o.get("strobe") or 0, btn["hz"])
         if btn.get("dim") is not None:
-            o["cap"] = min(o["cap"], btn["dim"]) if o.get("cap") is not None else btn["dim"]
+            dim = round(100 - (100 - btn["dim"]) * f)       # eases down to the dim level
+            o["cap"] = min(o["cap"], dim) if o.get("cap") is not None else dim
         if btn.get("kill"):
-            o["kill"] = True
+            if f >= 1.0:
+                o["kill"] = True
+            else:
+                cap = round(100 * (1 - f))
+                o["cap"] = min(o["cap"], cap) if o.get("cap") is not None else cap
         if not sets:
             o.pop("set", None)
 
