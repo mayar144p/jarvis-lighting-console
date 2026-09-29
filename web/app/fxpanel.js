@@ -279,15 +279,26 @@ function renderSfx(attrState) {
   const fire = fxs.filter((x) => (x.map || []).includes("fx_fire")).map((x) => x.head_no);
   const fog = fxs.filter((x) => (x.map || []).includes("fog")).map((x) => x.head_no);
   const parts = [armedLine(st)];
-  if (fire.length) {
-    parts.push(h("h3", "Fire"),
+  const loads = st.loads || {};
+  const confetti = fire.filter((n) => loads[n]);
+  const jets = fire.filter((n) => !loads[n]);
+  if (jets.length) {
+    // CO2, flames, sparks: hold to spray, or a quick shot of a set length
+    parts.push(h("h3", "CO2 / flames / sparks"),
       h("div.fx-fire-row",
-        holdButton("FIRE (hold)", "fire", () => run("fx_fire", { heads: fire, down: true, owner: "prog-hold" }),
-          () => run("fx_fire", { heads: fire, down: false, owner: "prog-hold" }, { silentError: true }),
-          "Fires while held, capped at each machine's safe maximum"),
-        h("button.btn", { onclick: () => run("fx_fire", { heads: fire, seconds: 1, owner: "prog-shot" }) }, "1 s shot")));
-    const loads = st.loads || {};
-    const conf = fire.filter((n) => loads[n]);
+        holdButton("HOLD TO FIRE", "fire.big", () => run("fx_fire", { heads: jets, down: true, owner: "prog-hold" }),
+          () => run("fx_fire", { heads: jets, down: false, owner: "prog-hold" }, { silentError: true }),
+          "Fires while held, capped at each machine's safe maximum")),
+      h("div.chip-row.fx-shots", h("span.k", "Quick shot"),
+        ...[0.5, 1, 3].map((sec) => h("button.chip", { title: `Fire for ${sec} s`,
+          onclick: () => run("fx_fire", { heads: jets, seconds: sec, owner: `prog-shot-${sec}` }) }, `${sec} s`))));
+  }
+  if (confetti.length) {
+    // one load, no second chance: fires only after a deliberate 1 s hold
+    parts.push(h("h3", "Confetti"), confettiButton(confetti));
+  }
+  if (fire.length) {
+    const conf = confetti;
     if (conf.length) {
       parts.push(h("div.fx-tanks", ...conf.map((n) => {
         const l = loads[n];
@@ -306,7 +317,16 @@ function renderSfx(attrState) {
     const lv = h("span.mono.small", "60%");
     level.addEventListener("input", () => { lv.textContent = level.value + "%"; });
     const fogOn = (st.runs || []).some((r) => r.kind === "fog" && r.heads.some((n) => fog.includes(n)));
+    const hazeRun = (st.runs || []).find((r) => r.kind === "fog" && r.heads.some((n) => fog.includes(n)) && r.key.includes("prog-haze"));
     parts.push(h("h3", "Fog / haze"),
+      h("div.chip-row.fx-shots", h("span.k", "Haze"),
+        ...[["Off", 0], ["Light", 20], ["Medium", 45], ["Thick", 80]].map(([label, lvl]) => h("button.chip" + ((!lvl && !hazeRun) ? ".on" : ""), {
+          title: lvl ? `Keep hazing at ${lvl}% (10 min, until you pick Off)` : "Stop the haze",
+          onclick: () => {
+            run("fx_fog", { heads: fog, down: false, owner: "prog-haze" }, { silentError: true });
+            if (lvl) run("fx_fog", { heads: fog, level: lvl, seconds: 600, owner: "prog-haze" }, { toast: true });
+          },
+        }, label))),
       h("div.fx-row", h("span.k", "Output"), level, lv),
       h("div.fx-fire-row",
         h("button.btn.primary", { onclick: () => run("fx_fog", { heads: fog, level: +level.value, seconds: +secs.value || 10, owner: "prog" }) }, "Run for"),
@@ -320,6 +340,28 @@ function renderSfx(attrState) {
   if (extra.length) parts.push(h("h3", "Settings"), ...extra);
   parts.push(h("p.muted.small", "Fire needs ARM FX and always stops at the machine's limit, even if a button sticks. Fog works without arming. Blackout and KILL FX stop everything."));
   box.replaceChildren(...parts.filter(Boolean));
+}
+
+// Confetti fires only after the button has been held for a full second
+// (a ring fills while you hold): a stray tap can't waste the only load.
+function confettiButton(heads) {
+  const el = h("button.btn.fx-hold.confetti", { title: "Hold for 1 second to fire" },
+    h("i.fill"), h("span", "HOLD 1 s TO FIRE CONFETTI"));
+  let timer = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; el.classList.remove("arming"); };
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.classList.add("arming");
+    timer = setTimeout(() => {
+      timer = 0;
+      el.classList.remove("arming");
+      el.classList.add("fired");
+      setTimeout(() => el.classList.remove("fired"), 800);
+      run("fx_fire", { heads, owner: "prog-confetti" }, { toast: true });
+    }, 1000);
+  });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) el.addEventListener(ev, cancel);
+  return h("div.fx-fire-row", el);
 }
 
 export function renderFxPane(tab, attrState) {

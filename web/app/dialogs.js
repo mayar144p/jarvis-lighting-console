@@ -654,6 +654,12 @@ export async function openSettings() {
     try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }
     import("./stagepanel.js").then((m) => { const st = m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
   });
+  const gigBox = h("input", { type: "checkbox" });
+  gigBox.checked = document.body.classList.contains("gig");
+  gigBox.addEventListener("change", () => {
+    document.body.classList.toggle("gig", gigBox.checked);
+    try { localStorage.setItem("jarvis.gig", gigBox.checked ? "1" : "0"); } catch (e) { /* ignore */ }
+  });
   const midi = status.midi || {};
   const body = h("div",
     h("h3", "Venue"),
@@ -672,6 +678,8 @@ export async function openSettings() {
       h("div.field", h("span", " "), h("button.btn", {
         onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
       }, "Resize room"))),
+    h("h3", "Screen"),
+    h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),

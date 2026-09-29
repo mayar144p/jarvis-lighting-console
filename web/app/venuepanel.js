@@ -5,16 +5,17 @@ import { VenueEditor } from "/js/stage/editor.js";
 import { post } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, h, menu, toast, promptBox, confirmBox, typingInField, anyModal } from "./ui.js";
+import { $, h, menu, toast, promptBox, confirmBox, typingInField, anyModal, modal } from "./ui.js";
 
 let stage = null;
 let editor = null;
 let arranging = false;
 
 const RIG_ADD = [
-  ["truss", "Truss", "A 6 m box truss, flown"],
-  ["pipe", "Pipe / bar", "A 4 m pipe near the ceiling"],
-  ["tower", "Tower", "A vertical truss tower on a base"],
+  ["truss", "Truss - horizontal", "A 6 m box truss, flown"],
+  ["pole", "Pole - vertical", "A 3 m upright pipe to hang lights on"],
+  ["pipe", "Pipe / bar - horizontal", "A 4 m pipe near the ceiling"],
+  ["tower", "Tower - vertical truss", "A vertical truss tower on a base"],
   ["ladder", "Ladder", "A flat ladder truss"],
   ["stand", "Stand", "A tripod stand with a T-bar"],
   ["base", "Floor base", "A plate for a light on the floor"],
@@ -45,6 +46,7 @@ function defaults(kind) {
     case "pipe": return { a: [x - 2, r2(H - 0.3), z], b: [x + 2, r2(H - 0.3), z] };
     case "tower": case "ladder": return { a: [x, 0, z], b: [x, r2(Math.min(4, H - 0.5)), z] };
     case "stand": return { a: [x, 0, z], b: [x, 2.6, z] };
+    case "pole": return { a: [x, 0, z], b: [x, r2(Math.min(3, H - 0.3)), z] };
     case "base": return { a: [x, 0, z], b: [x, 0, z] };
     case "dj_booth": return { x, z, w: 2.5, d: 0.9, h: 1.05 };
     case "bar": return { x, z, w: 6, d: 0.8, h: 1.1 };
@@ -62,7 +64,8 @@ function defaults(kind) {
 }
 
 async function addItem(kind, label) {
-  const item = { kind, name: label || "", ...defaults(kind) };
+  // a pole is a pipe standing up: its two ends differ in height
+  const item = { kind: kind === "pole" ? "pipe" : kind, name: (label || "").replace(/ - .*/, ""), ...defaults(kind) };
   const r = await run("venue_add", { item }, { toast: true });
   if (r.ok && r.id) setTimeout(() => editor.select({ type: "item", id: r.id }), 250);
 }
@@ -352,6 +355,55 @@ function openPlan(btn) {
   ]);
 }
 
+// ------------------------------------------------------------ My venues
+// A venue saved on its own - room, rigging, zones, objects and (if wanted)
+// the lights hung in it - to open again at the next gig there.
+const venues = () => (state.snap && state.snap.venues) || [];
+
+function openVenues(btn) {
+  const list = venues();
+  menu(btn, [
+    { label: "Save this venue…", hint: "room, rigging, zones and the lights", run: saveVenue },
+    ...(list.length ? ["-"] : []),
+    ...list.map((v) => ({
+      label: `Open ${v.name}`,
+      hint: `${v.shape === "custom" ? "custom shape" : "rectangle"} · ${v.rigging} rigging · ${v.lights} light(s)`,
+      run: () => openVenue(v),
+    })),
+    ...(list.length ? ["-", ...list.map((v) => ({ label: `Delete ${v.name}`, danger: true, run: async () => {
+      if (await confirmBox("Delete venue", `Delete the saved venue “${v.name}”? The show you have open is not changed.`, { ok: "Delete", danger: true })) {
+        run("venue_delete", { name: v.name }, { toast: true });
+      }
+    } }))] : []),
+  ]);
+}
+
+async function saveVenue() {
+  const cur = venue().name || "";
+  const name = await promptBox("Save venue", "Venue name", cur, { ok: "Save", placeholder: "e.g. Club Nova" });
+  if (!name) return;
+  const lights = (state.snap && state.snap.patch || []).length;
+  const withLights = lights ? await confirmBox("Save the lights too?",
+    `Keep the ${lights} light(s) hung in ${name} - their addresses and positions - with the venue? (Choose Cancel to save just the room and rigging.)`,
+    { ok: "Save with lights" }) : false;
+  run("venue_save", { name, lights: withLights }, { toast: true });
+}
+
+function openVenue(v) {
+  const close = modal({
+    title: `Open ${v.name}`,
+    body: h("p", { style: { margin: 0 } }, v.lights
+      ? `${v.name} was saved with ${v.lights} light(s). Open the room and its lights (replaces your patch), or just the room and rigging?`
+      : `Replace this room, rigging and zones with ${v.name}? Your lights stay as they are.`),
+    foot: [
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      v.lights ? h("button.btn", { onclick: () => { run("venue_open", { name: v.name, lights: false }, { toast: true }); close(); } }, "Room only") : null,
+      h("button.btn.primary", { onclick: () => { run("venue_open", { name: v.name, lights: true }, { toast: true }); close(); } },
+        v.lights ? "Room and lights" : "Open"),
+    ],
+  });
+}
+
 export function setArranging(on) {
   arranging = !!on;
   document.body.classList.toggle("arranging", arranging);
@@ -393,6 +445,10 @@ export function initVenuePanel(theStage) {
   $("#vt-move").addEventListener("click", () => { editor.setMode("translate"); modeButtons(); });
   $("#vt-rotate").addEventListener("click", () => { editor.setMode("rotate"); modeButtons(); });
   $("#vt-add").addEventListener("click", (e) => openAdd(e.currentTarget));
+  $("#vt-truss").addEventListener("click", () => addItem("truss", "Truss"));
+  $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
+  $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
+  $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
   $("#vt-room").addEventListener("click", drawRoom);
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));
   $("#vt-plan").addEventListener("click", (e) => openPlan(e.currentTarget));

@@ -48,6 +48,11 @@ function lookFrom(row, scratch) {
     hz: +row.hz || 0,            // the real strobe rate, 0 = steady
     mv: row.mv || null,          // {p, t: full-travel seconds, s: speed 0..1}
     fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
+    // each head of a multi-head light: its own colour and tilt
+    cells: Array.isArray(row.cells) ? row.cells.map((c) => {
+      const cc = hexLinear(c.hex, scratch);
+      return { r: cc.r, g: cc.g, b: cc.b, tilt: typeof c.tilt === "number" ? c.tilt : null };
+    }) : null,
   };
 }
 
@@ -64,6 +69,11 @@ function mixLook(a, b, t) {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
     deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx,
+    cells: b.cells ? b.cells.map((c, i) => {
+      const o = (a.cells && a.cells[i]) || c;
+      return { r: lerp(o.r, c.r, t), g: lerp(o.g, c.g, t), b: lerp(o.b, c.b, t),
+        tilt: c.tilt === null ? null : o.tilt === null ? c.tilt : lerp(o.tilt, c.tilt, t) };
+    }) : null,
   };
 }
 
@@ -264,7 +274,8 @@ export class Stage {
     const seen = new Set();
     for (const f of fixtures) {
       seen.add(f.head_no);
-      const sig = [f.body && f.body.type, f.body && f.body.brand, f.model, f.mode, (f.body && f.body.cells) || 1].join("|");
+      const sig = [f.body && f.body.type, f.body && f.body.brand, f.model, f.mode, (f.body && f.body.cells) || 1,
+        (f.body && f.body.heads) || 1].join("|");
       let inst = this.fixtures.get(f.head_no);
       if (inst && inst.sig !== sig) {
         this._remove(inst);
@@ -631,9 +642,60 @@ export class Stage {
     return hit ? this.fixtures.get(hit.object.userData.head) : null;
   }
 
+  /** Heads whose light sits inside a screen rectangle (client px). */
+  headsInRect(x0, y0, x1, y1) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const [lx, hx] = [Math.min(x0, x1), Math.max(x0, x1)];
+    const [ly, hy] = [Math.min(y0, y1), Math.max(y0, y1)];
+    const v = new THREE.Vector3();
+    const out = [];
+    for (const inst of this.fixtures.values()) {
+      if (!inst.pick) continue;
+      inst.pick.getWorldPosition(v);
+      v.project(this.camera);
+      if (v.z > 1) continue;                                  // behind the camera
+      const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
+      if (sx >= lx && sx <= hx && sy >= ly && sy <= hy) out.push(inst.head);
+    }
+    return out;
+  }
+
   _wirePointer() {
     const dom = this.renderer.domElement;
     let down = null;
+    // Shift-drag draws a box: every light inside it is selected (the
+    // orbit waits).  Captured first, so the orbit never starts.
+    let box = null;
+    dom.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0 || !ev.shiftKey || this.editing || this.pickOnce || !this.opts.onBox) return;
+      const wrap = dom.parentElement;
+      const el = document.createElement("div");
+      el.className = "stage-box";
+      wrap.append(el);
+      box = { x: ev.clientX, y: ev.clientY, el, moved: false };
+      this.controls.enabled = false;
+    }, true);
+    dom.addEventListener("pointermove", (ev) => {
+      if (!box) return;
+      const r = dom.parentElement.getBoundingClientRect();
+      box.moved = box.moved || Math.hypot(ev.clientX - box.x, ev.clientY - box.y) > 5;
+      Object.assign(box.el.style, {
+        left: `${Math.min(ev.clientX, box.x) - r.left}px`, top: `${Math.min(ev.clientY, box.y) - r.top}px`,
+        width: `${Math.abs(ev.clientX - box.x)}px`, height: `${Math.abs(ev.clientY - box.y)}px`,
+      });
+    });
+    const endBox = (ev) => {
+      if (!box) return false;
+      const b = box;
+      box = null;
+      b.el.remove();
+      this.controls.enabled = true;
+      if (!b.moved || !ev) return false;
+      this.opts.onBox(this.headsInRect(b.x, b.y, ev.clientX, ev.clientY), { add: ev.ctrlKey || ev.metaKey });
+      return true;
+    };
+    window.addEventListener("pointerup", (ev) => { if (endBox(ev)) down = null; }, true);
+    dom.addEventListener("pointercancel", () => endBox(null));
     dom.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
       const ed = this.editor;
@@ -871,6 +933,13 @@ export class Stage {
         sk.pan.rotation.y = pan;
         sk.tilt.rotation.x = tilt;
       }
+      if (sk.cells) {
+        // each head of a multi-head light tilts on its own (no motor model)
+        sk.cells.forEach((c, k) => {
+          const ct = L.cells && L.cells[k] && L.cells[k].tilt !== null ? L.cells[k].tilt : tx;
+          c.tilt.rotation.x = ct === null ? 0 : lerp(tr[0], tr[1], ct) * DEG;
+        });
+      }
     }
     let a = L.a;
     if (L.hz > 0 && (time * L.hz) % 1 > 0.3) a = 0;      // a real strobe only
@@ -878,6 +947,12 @@ export class Stage {
     const col = this._c.setRGB(L.r, L.g, L.b);
     for (const lens of sk.lenses) {
       lens.emissive.copy(col).multiplyScalar(a * 7);
+    }
+    if (sk.cells) {
+      sk.cells.forEach((c, k) => {
+        const cc = L.cells && L.cells[k];
+        c.lens.emissive.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(a * 7);
+      });
     }
     void lights;
     return a > 0.002;
@@ -916,7 +991,8 @@ export class Stage {
       u.uLen.value = len;
       u.uR0.value = r0;
       u.uR1.value = r1;
-      u.uColor.value.setRGB(L.r, L.g, L.b);
+      const cc = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
+      u.uColor.value.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b);
       const narrow = Math.min(3.2, Math.max(0.45, Math.sqrt(22 / Math.max(angle, 1))));
       u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
       u.uSoft.value = lerp(1.7, 0.55, frost);
@@ -930,7 +1006,7 @@ export class Stage {
       b.glow.position.copy(b.origin).addScaledVector(b.dir, 0.01);
       const g = r0 * (3 + 12 * Math.pow(facing, 6)) * (0.4 + a);
       b.glow.scale.setScalar(g);
-      b.glow.material.color.setRGB(L.r, L.g, L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
+      b.glow.material.color.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
 
       if (inst.head === this.povHead) {            // looking down this beam
         b.mesh.visible = false;
@@ -997,7 +1073,11 @@ export class Stage {
       if (!want.has(head) || !this.fixtures.has(head)) { tag.remove(); this.tags.delete(head); }
     }
     const p = this._v2;
-    for (const head of want) {
+    // tags that would sit on top of one another are dropped (the hovered
+    // light's always wins): a pile of overlapping names reads as nothing
+    const placed = [];
+    const order = [...want].sort((a, b) => (b === this.hover) - (a === this.hover) || a - b);
+    for (const head of order) {
       const inst = this.fixtures.get(head);
       if (!inst) continue;
       p.copy(inst.holder.position);
@@ -1011,13 +1091,19 @@ export class Stage {
       }
       const d = inst.data;
       const brand = d.body && d.body.brand !== "generic" ? d.body.brand_name + " " : "";
-      const text = want.size > 4 ? `#${head}` : `#${head}  ${brand}${d.model || ""}`.trim();
+      // the full name only where there is room for it: the light under the
+      // pointer, or a single selected light; otherwise just its number
+      const full = head === this.hover || want.size === 1;
+      const text = full ? `#${head}  ${brand}${d.model || ""}`.trim() : `#${head}`;
       const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "");
       if (tag.textContent !== text) tag.textContent = text;
       if (tag.className !== cls) tag.className = cls;
-      tag.style.display = p.z > 1 ? "none" : "";
-      tag.style.left = ((p.x + 1) / 2 * w).toFixed(1) + "px";
-      tag.style.top = ((1 - p.y) / 2 * h).toFixed(1) + "px";
+      const sx = (p.x + 1) / 2 * w, sy = (1 - p.y) / 2 * h;
+      const clash = placed.some(([x, y]) => Math.abs(x - sx) < (full ? 90 : 34) && Math.abs(y - sy) < 18);
+      tag.style.display = p.z > 1 || clash ? "none" : "";
+      if (!clash) placed.push([sx, sy]);
+      tag.style.left = sx.toFixed(1) + "px";
+      tag.style.top = sy.toFixed(1) + "px";
     }
     for (const inst of this.fixtures.values()) {
       const on = this.selected.has(inst.head);

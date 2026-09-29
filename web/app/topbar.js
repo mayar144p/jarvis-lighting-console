@@ -116,10 +116,15 @@ function renderStatus() {
   const st = outputState();
   const out = $("#st-out");
   out.className = st === "live" ? (o.errors ? "bad" : "ok") : "warn";
+  // plain words first; the numbers are one hover away
   out.textContent = st === "live"
-    ? `● ${o.frames_sent || 0} frames · ${o.hz || 0} Hz` + (o.errors ? ` · ${o.errors} errors` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "")
-    : st === "blind" ? `○ blind · ${o.simulated_frames || 0} simulated` : "○ stopped";
-  $("#st-net").textContent = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;
+    ? (o.errors ? `● LIVE - ${o.errors} send error(s)` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "● LIVE - the lights follow the console")
+    : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
+  out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
+    : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  const net = $("#st-net");
+  net.textContent = `to the DMX node at ${o.host || "?"}`;
+  net.title = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;
   $("#st-last").textContent = state.lastAction || "";
   const stale = s.stale_heads || [];
   if (stale.length) {

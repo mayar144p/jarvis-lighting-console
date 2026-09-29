@@ -7515,6 +7515,10 @@ def _standalone_suites():
     ("ARM for the whole set; lasers stay on", test_arm_for_set),
     ("My moves: named movements, not cues", test_my_moves),
     ("Looks: named, one tap brings it all back", test_looks),
+    ("grouping for big rigs", test_big_rig_groups),
+    ("My venues: saved per venue, any room shape, poles", test_my_venues),
+    ("DMX map: every address clash found and fixable", test_dmx_clashes),
+    ("multi-head lights: each head on its own", test_multi_head),
     )
 
 
@@ -8997,6 +9001,245 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_multi_head() -> None:
+    """A Wave 360 has four tilts and four RGBW cells on one address; they
+    used to share one value.  Each head can now be set on its own, cues and
+    looks keep it, and effects run across the heads as if each were a light."""
+    print("multi-head lights (Wave 360: per-head colour / tilt, effects across heads)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Wave 360", mode="33 ch.", qty=1, universe=1, address=1)
+            e.act("select_all")
+            e.act("set_colour", hex="#0000ff")
+            e.act("set_colour", hex="#ff0000", cell=2)
+            e.act("set_attribute", attribute="tilt", value=200, cell=[3])
+            w = e.build_frames()[1]
+            cells = [list(w[10 + 4 * k:14 + 4 * k]) for k in range(4)]
+            check("one head of the light gets its own colour", cells[1] == [255, 0, 0, 0]
+                  and cells[0] == cells[2] == cells[3] == [0, 0, 255, 0], str(cells))
+            check("...and its own tilt", list(w[4:8]) == [0, 0, 200, 0], str(list(w[4:8])))
+            r = e.act("set_attribute", attribute="pan", value=100, cell=[2])
+            check("a channel the light has once (pan) just sets the light", r.get("ok") and e.programmer[1].get("pan") == 100, str(r))
+            e.act("record_cue", playback=1)
+            e.act("clear_programmer")
+            e.act("playback_activate", playback=1)
+            e.act("cue_go", playback=1)
+            w = e.build_frames()[1]
+            check("a cue keeps each head's own values", list(w[14:18]) == [255, 0, 0, 0] and w[6] == 200,
+                  str((list(w[14:18]), w[6])))
+            e.act("playback_release", playback=1)
+            e.act("select_all")
+            e.act("set_colour", hex="#00ff00")
+            w = e.build_frames()[1]
+            check("setting the whole light again covers every head", all(list(w[10 + 4 * k:13 + 4 * k]) == [0, 255, 0] for k in range(4)),
+                  str([list(w[10 + 4 * k:13 + 4 * k]) for k in range(4)]))
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="colour_chase", params={"speed": 0.5}, across=True)
+            _t.sleep(0.1)
+            w = e.build_frames()[1]
+            heads = [tuple(w[10 + 4 * k:13 + 4 * k]) for k in range(4)]
+            check("an effect runs across the heads (a different colour on each)", r.get("ok") and len(set(heads)) == 4, str(heads))
+            e.act("stop_fx")
+            e.act("set_colour", hex="#ff0000", cell=[1])
+            e.act("record_preset", name="One red")
+            check("a look keeps a single head's colour", "red@1" in e.presets[-1]["values"], str(e.presets[-1]["values"]))
+            e.act("set_attribute", attribute="tilt", value=128)
+            e.act("run_fx", name="tilt_bounce", params={"size": 40, "speed": 0.5}, across=True)
+            _t.sleep(0.3)
+            w = e.build_frames()[1]
+            check("a tilt wave runs through the heads (four different tilts)", len(set(w[4:8])) >= 3, str(list(w[4:8])))
+            e.act("stop_fx")
+            e.act("set_colour", hex="#00ff00", cell=[4])
+            row = next(r for r in e._looks() if r["n"] == 1)
+            check("the 3D view gets each head's own colour", row.get("cells") and len(row["cells"]) == 4
+                  and row["cells"][3]["hex"] == "#00ff00" and row["cells"][0]["hex"] == "#ff0000", str(row.get("cells")))
+            check("...and draws the light as that many heads", e.snapshot()["patch"][0]["body"].get("heads") == 4, "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    ac = (ROOT / "web" / "app" / "actions.js").read_text(encoding="utf-8")
+    md = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a multi-head 3D model: heads on a bar, each tilting and coloured on its own",
+          "function multiHead" in md and "sk.cells" in sj and "L.cells" in sj, "")
+    check("the programmer offers Heads: All 1 2 3 4 and 'across each light's heads'",
+          "renderProgCells" in js and "Across each light's heads" in js and "state.cells" in ac, "")
+
+
+def test_dmx_clashes() -> None:
+    """Two lights on overlapping channels fight each other.  The load-time
+    check missed a light that started INSIDE an earlier one (laser A at 20
+    with 13 channels, laser B at 25): now every clash is listed, and one tap
+    moves a light to the first free block of addresses."""
+    print("DMX map (clashes found both ways; move to free)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "d.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=2)
+            a, b = e.patch
+            # the way a clash gets in: a show saved elsewhere / an older check
+            a["universe"], a["address"] = 1, 20
+            b["universe"], b["address"] = 1, 25
+            cl = e._patch_clashes()
+            check("a light starting inside another is a clash (20+13 ch vs 25)",
+                  len(cl) == 1 and {cl[0]["a"], cl[0]["b"]} == {a["head_no"], b["head_no"]}
+                  and cl[0]["from"] == 25 and cl[0]["to"] == 32, str(cl))
+            check("...and the console gets it in the snapshot", e.snapshot().get("clashes"), "")
+            r = e.act("set_address", head=a["head_no"], universe=1, address=30)
+            check("setting an address onto another light is refused", not r.get("ok") and "overlaps" in r.get("error", ""), str(r))
+            r = e.act("patch_move_free", head=b["head_no"])
+            nb = e._head(b["head_no"])
+            check("one tap moves it to the first free block (1-19 is free: 1.001)",
+                  r.get("ok") and not e._patch_clashes() and nb["address"] == 1, str((r, nb["address"])))
+            r = e.act("patch_move_free", head=a["head_no"])
+            check("...and the next one goes right after it", r.get("ok") and e._head(a["head_no"])["address"] == 14
+                  and not e._patch_clashes(), str(e._head(a["head_no"])["address"]))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the list warns about clashes and opens a DMX map", "openDmxMap" in fx and '"patch_move_free"' in fx
+          and "fx-clash" in fx, "")
+
+
+def test_my_venues() -> None:
+    """A venue is saved on its own - room (any shape), rigging (horizontal
+    truss, vertical poles), zones and, if wanted, the lights in it - and
+    opened again at the next gig there, with or without its lights."""
+    print("My venues (save / open / delete; room shape; poles; with or without lights)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "v.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", key="club")
+            e.act("venue_room", outline=[[-7, 0], [7, 0], [7, 6], [3, 6], [3, 12], [-7, 12]])
+            r = e.act("venue_add", item={"kind": "pipe", "name": "Pole", "a": [2, 0, 4], "b": [2, 3, 4]})
+            pole = next((x for x in e.venue["rigging"] if x["name"] == "Pole"), None)
+            check("a vertical pole is a pipe standing up", r.get("ok") and pole and pole["a"][1] == 0 and pole["b"][1] == 3,
+                  str(pole))
+            e.act("add_heads", query="LED PARty RGBW", qty=6)
+            r = e.act("venue_save", name="Tom's Bar")
+            check("save the venue with its lights", r.get("ok") and (tmp / "s" / "venues" / "Toms Bar.json").exists(), str(r))
+            lst = e.snapshot().get("venues") or []
+            check("...it is listed (name, shape, rigging, lights)",
+                  lst and lst[0]["name"] == "Tom's Bar" and lst[0]["lights"] == 6, str(lst))
+            check("...and a saved venue is not listed as a show", "venues" not in e._show_names(), str(e._show_names()))
+            e.act("venue_template", key="ballroom")
+            e.act("patch_clear")
+            r = e.act("venue_open", name="Tom's Bar", lights=False)
+            check("open it again: the room comes back (room only keeps the patch)",
+                  r.get("ok") and any(x["name"] == "Pole" for x in e.venue["rigging"]) and not e.patch, str(r))
+            e.act("venue_open", name="tom's bar")
+            check("...or with its lights (name in any case)", len(e.patch) == 6, str(len(e.patch)))
+            check("the room shape survives the round trip", len((e.venue.get("room") or {}).get("outline") or []) == 6,
+                  str((e.venue.get("room") or {}).get("outline")))
+            check("an unknown venue is refused", not e.act("venue_open", name="Nowhere").get("ok"), "")
+            e.act("venue_delete", name="Tom's Bar")
+            check("delete a saved venue", not (e.snapshot().get("venues") or []), "")
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pbj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    stj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    tbj = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    check("less clutter: used playbacks + one empty, short 3D labels, a plain-words status bar",
+          "firstEmpty" in pbj and "+ Record a cue" in pbj and "const clash = placed.some" in stj
+          and "safe to program, nothing reaches the lights" in tbj, "")
+    fxj = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    check("SFX: CO2 hold + 0.5 / 1 / 3 s shots, confetti only after a 1 s hold, haze levels",
+          "HOLD TO FIRE" in fxj and "[0.5, 1, 3]" in fxj and "confettiButton" in fxj
+          and "}, 1000);" in fxj and '"prog-haze"' in fxj, "")
+    check("Arrange has Venues, Draw room shape, + Truss / + Pole / + Pipe up front",
+          all(k in html for k in ('id="vt-venues"', 'id="vt-truss"', 'id="vt-pole"', 'id="vt-pipe"', "Draw room shape"))
+          and '"venue_save"' in vp and '"venue_open"' in vp, "")
+
+
+def test_big_rig_groups() -> None:
+    """With 20+ lights, groups Jarvis makes by itself (by kind of light and
+    by the truss they hang on), odd / even / left / right splits of any
+    selection, buttons aimed at those groups, a folded list and a box
+    select on the stage."""
+    print("grouping for big rigs (auto groups, splits, folded list, box select)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "g.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", key="club")
+            e.act("add_heads", query="Intimidator Spot 260", qty=6)
+            e.act("add_heads", query="LED PARty RGBW", qty=16)
+            groups = {g["key"]: g for g in e._auto_groups()}
+            check("automatic groups by kind of light", len(groups.get("type:par", {}).get("heads", [])) == 16
+                  and len(groups.get("type:moving_spot", {}).get("heads", [])) == 6, str(list(groups)))
+            rigs = [g for g in groups.values() if g["kind"] == "rig"]
+            check("...and by the truss (or floor) they hang on", rigs and sum(len(g["heads"]) for g in rigs) == 22,
+                  str([(g["name"], len(g["heads"])) for g in rigs]))
+            check("...and the console gets them in the snapshot", e.snapshot().get("auto_groups"), "")
+            r = e.act("select_group", key="type:par")
+            check("tap an automatic group to select it", r.get("ok") and len(e.selected) == 16, str(r))
+            e.act("select_group", key="type:moving_spot", add=True)
+            check("...Shift adds another", len(e.selected) == 22, str(len(e.selected)))
+            e.act("select_group", key="type:par")
+            e.act("select_split", split="even")
+            check("split the selection: even", e.selected == list(range(8, 23, 2)), str(e.selected))
+            e.act("select_group", key="type:par")
+            e.act("select_split", split="left")
+            check("...left half by where they hang", len(e.selected) == 8, str(e.selected))
+            check("...and choosing lights is not an undo step", "select_split" in eng.UNDO_EXCLUDED, "")
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "flash", "target": {"auto": "type:par", "split": "odd"}})
+            e.act("quick_press", id="q1-1")
+            check("a button aimed at an automatic group (and a split of it)",
+                  r.get("ok") and len(e.quick_active["q1-1"]["heads"]) == 8, str(e.quick_active.get("q1-1")))
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("quick_release_all")
+            e.act("quick_press", id="q1-1")
+            check("...which follows the rig: two more PARs, one more in its odd half",
+                  len(e.quick_active["q1-1"]["heads"]) == 9, str(len(e.quick_active["q1-1"]["heads"])))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the list folds lights of one model into one row, with automatic group chips and splits",
+          "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
+    check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("gig mode: 44 px controls, on by itself on touch screens, a switch in Settings",
+          "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" in mj
+          and "jarvis.gig" in (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8"), "")
+    check("a phone keeps Blackout in its bottom bar on every tab", 'id="mobile-bo"' in html
+          and "button[data-mview]" in mj, "")
 
 
 def test_looks() -> None:

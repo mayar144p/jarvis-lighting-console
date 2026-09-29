@@ -11,6 +11,12 @@ const LABELS = {
 };
 
 export async function run(action, params = {}, opts = {}) {
+  // heads of a multi-head light picked in the programmer (Heads: 1 3):
+  // colour and attribute changes go to just those heads
+  if ((action === "set_colour" || action === "set_attribute") && state.cells && state.cells.length
+      && params.cell === undefined && !params.heads) {
+    params = { ...params, cell: state.cells };
+  }
   let res;
   try {
     res = await act(action, params);

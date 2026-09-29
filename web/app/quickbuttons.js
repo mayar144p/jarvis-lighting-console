@@ -60,6 +60,7 @@ const held = new Set();
 const quick = () => (state.snap && state.snap.quick) || { buttons: [], active: [], names: {}, pages: 8, slots: 24 };
 const activeIds = () => new Set((state.lite && state.lite.quick_active) || quick().active || []);
 const groups = () => (state.snap && state.snap.groups) || [];
+const autoGroups = () => (state.snap && state.snap.auto_groups) || [];
 
 // press and release are separate requests to a threaded server: a release
 // is only sent once its press was answered, or a quick tap could be handled
@@ -84,6 +85,7 @@ window.addEventListener("pointerup", () => {
 function targetText(t = {}) {
   let who = "All";
   if (t.group !== undefined) who = (groups().find((g) => g.n === t.group) || {}).name || `Group ${t.group}`;
+  else if (t.auto) who = (autoGroups().find((g) => g.key === t.auto) || {}).name || t.auto;
   else if (t.type) who = ([...TYPES, ...FX_TYPES].find(([k]) => k === t.type) || [0, t.type])[1];
   else if (t.heads) who = `${t.heads.length} light${t.heads.length === 1 ? "" : "s"}`;
   return t.split ? `${who} · ${t.split}` : who;
@@ -124,7 +126,8 @@ function render(force = false) {
   const box = $("#qb-grid");
   if (!box) return;
   const q = quick();
-  const key = JSON.stringify([q.buttons, q.names, page, editing, groups().map((g) => [g.n, g.name])]);
+  const key = JSON.stringify([q.buttons, q.names, page, editing, groups().map((g) => [g.n, g.name]),
+    autoGroups().map((g) => [g.key, g.name])]);
   if (!force && key === lastKey) return;        // only redraw on a change: a click needs the same element
   lastKey = key;
   const active = activeIds();
@@ -287,11 +290,11 @@ function editButton(slot, btn) {
     const d = s.does;
     const fxKind = FX_KINDS.has(d);
     const t = s.target;
-    const tv = t.group !== undefined ? "g" + t.group : t.type ? "t" + t.type : t.heads ? "sel" : "all";
+    const tv = t.group !== undefined ? "g" + t.group : t.auto ? "a" + t.auto : t.type ? "t" + t.type : t.heads ? "sel" : "all";
     const setT = (v) => {
       const split = s.target.split;
       s.target = v === "all" ? { all: true } : v === "sel" ? { heads: [...selected] }
-        : v[0] === "g" ? { group: +v.slice(1) } : { type: v.slice(1) };
+        : v[0] === "g" ? { group: +v.slice(1) } : v[0] === "a" ? { auto: v.slice(1) } : { type: v.slice(1) };
       if (split) s.target.split = split;
       draw();
     };
@@ -305,7 +308,7 @@ function editButton(slot, btn) {
       const who = fxKind
         ? [["all", "All effects"], ["sel", `Selected (${selected.length})`], ...FX_TYPES.map(([k, l]) => ["t" + k, l])]
         : [["all", "All lights"], ["sel", `Selected (${selected.length})`], ...groups().map((g) => ["g" + g.n, g.name]),
-          ...TYPES.map(([k, l]) => ["t" + k, l])];
+          ...autoGroups().map((g) => ["a" + g.key, `${g.name} (${g.heads.length})`])];
       if (t.heads && tv === "sel") who[1][1] = `${t.heads.length} chosen light${t.heads.length === 1 ? "" : "s"}`;
       kids.push(row("Which lights", chips(who, tv, setT),
         fxKind ? null : chips(SPLITS, t.split || "", (v) => { if (v) s.target.split = v; else delete s.target.split; draw(); })));

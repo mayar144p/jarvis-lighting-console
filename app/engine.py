@@ -126,7 +126,7 @@ UNDO_EXCLUDED = frozenset({
     # Choosing WHICH lights to work on is not an edit to the show; on a
     # desk, undo walks back what you did to them, not what you clicked.
     "select_all", "select_group", "select_heads", "select_similar",
-    "select_query", "clear_selection",
+    "select_query", "clear_selection", "select_split",
 })
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
@@ -574,7 +574,7 @@ ACTIONS = (
     "playback_activate", "playback_level", "playback_release",
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
-    "select_all", "select_group", "select_heads", "select_similar",
+    "select_all", "select_group", "select_heads", "select_similar", "select_split",
     "select_query", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
     "set_limits", "clear_limits", "set_orient", "get_limits",
@@ -586,6 +586,8 @@ ACTIONS = (
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move",
+    "venue_save", "venue_open", "venue_delete",
+    "patch_move_free",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
@@ -1119,6 +1121,48 @@ class Engine:
             if pos < h0 + h["channels"] and h0 < end:
                 return h["head_no"]
         return None
+
+    def _patch_clashes(self) -> list[dict]:
+        """Every pair of lights whose DMX channels overlap (both sending on
+        the same channels: the second one silently fights the first).  The
+        load-time check only caught one direction of this."""
+        rows = sorted(((_pos(h["universe"], h["address"]), h) for h in self.patch), key=lambda t: t[0])
+        out = []
+        for i, (p0, a) in enumerate(rows):
+            for p1, b in rows[i + 1:]:
+                if p1 >= p0 + a["channels"]:
+                    break
+                lo, hi = p1, min(p0 + a["channels"], p1 + b["channels"]) - 1
+                out.append({"a": a["head_no"], "b": b["head_no"], "universe": b["universe"],
+                            "from": b["address"], "to": b["address"] + (hi - lo)})
+        return out
+
+    def _free_block(self, channels: int, skip=None, universe=1) -> tuple[int, int]:
+        """The first universe.address (from `universe` on) with `channels`
+        free channels in a row."""
+        for u in range(max(1, int(universe)), 65):
+            taken = sorted((h["address"], h["address"] + h["channels"] - 1) for h in self.patch
+                           if h["universe"] == u and h["head_no"] != skip)
+            a = 1
+            for lo, hi in taken:
+                if a + channels - 1 < lo:
+                    break
+                a = max(a, hi + 1)
+            if a + channels - 1 <= SLOTS:
+                return u, a
+        raise ValueError("no free DMX space left")
+
+    def _a_patch_move_free(self, head=None, **_):
+        """Move a light to the first free block of addresses (its own
+        universe first) - the one-tap fix for a clash."""
+        h = self._head(head)
+        u, a = self._free_block(h["channels"], skip=h["head_no"], universe=h["universe"])
+        old = (h["universe"], h["address"])
+        h["universe"], h["address"] = u, a
+        self.patch_rev += 1
+        return {"head_no": h["head_no"], "universe": u, "address": a,
+                "summary": f"#{h['head_no']} moved from {old[0]}.{old[1]:03d} to {u}.{a:03d} - "
+                           f"set the light's own address to match"}
 
     def _next_free_pos(self, universe=None, address=None, channels=1) -> int:
         if universe and address:
@@ -2073,7 +2117,77 @@ class Engine:
         self.selected = merged
         return {"selected": merged, "total": len(merged)}
 
-    def _a_select_group(self, n=None, group=None, **_):
+    def _auto_groups(self) -> list[dict]:
+        """Groups Jarvis makes by itself: one per kind of light ("Moving
+        spots · 6") and one per truss / pole / pipe the lights hang on
+        ("Front truss · 8"), plus the floor.  Worked out from the patch and
+        the venue, never stored, so they follow the rig as it changes."""
+        key = (self.patch_rev, json.dumps((self.venue or {}).get("rigging") or [], sort_keys=True, default=str))
+        cache = getattr(self, "_auto_group_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        by_type: dict[str, list[int]] = {}
+        labels: dict[str, str] = {}
+        by_rig: dict[str, list[int]] = {}
+        rigs = {r["id"]: r for r in (self.venue or {}).get("rigging") or []}
+        for h in self.patch:
+            d = fixture_kind.describe(h)
+            t = d.get("type") or "generic"
+            by_type.setdefault(t, []).append(h["head_no"])
+            labels[t] = d.get("label") or t.replace("_", " ").title()
+            rid = (h.get("mount") or {}).get("rig")
+            if rid not in rigs:
+                near = venue_mod.nearest_rig(self.venue, float(h.get("x") or 0), float(h.get("y") or 0),
+                                             float(h.get("z") or 0), reach=0.8) if rigs else None
+                rid = near[0]["id"] if near else None
+            if rid in rigs:
+                by_rig.setdefault(rid, []).append(h["head_no"])
+            elif float(h.get("y") or 0) < 1.5:
+                by_rig.setdefault("floor", []).append(h["head_no"])
+        out = []
+        for t, heads in sorted(by_type.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            name = labels[t]
+            out.append({"key": f"type:{t}", "kind": "type",
+                        "name": (name if name.endswith("s") else name + "s") if len(heads) > 1 else name,
+                        "heads": sorted(heads)})
+        if len(by_rig) > 1 or (by_rig and len(by_type) > 1):
+            for rid, heads in by_rig.items():
+                name = "Floor" if rid == "floor" else rigs[rid].get("name") or rid
+                out.append({"key": f"rig:{rid}", "kind": "rig", "name": name, "heads": sorted(heads)})
+        self._auto_group_cache = (key, out)
+        return out
+
+    def _split_heads(self, heads: list[int], split: str | None) -> list[int]:
+        """odd / even (in number order) or left / right half (by where
+        they hang) of some lights."""
+        if split in ("odd", "even"):
+            heads = sorted(heads)
+            return heads[0::2] if split == "odd" else heads[1::2]
+        if split in ("left", "right"):
+            by = {h["head_no"]: h for h in self.patch}
+            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
+            half = (len(order) + 1) // 2
+            return sorted(order[:half] if split == "left" else order[half:])
+        return list(heads)
+
+    def _a_select_split(self, split="odd", **_):
+        """Keep only the odd / even / left / right half of the selection."""
+        split = str(split or "").lower()
+        if split not in self.SPLITS:
+            raise ValueError(f"split is one of {', '.join(self.SPLITS)}")
+        if not self.selected:
+            raise ValueError("nothing selected")
+        self.selected = self._split_heads(self.selected, split)
+        return {"selected": list(self.selected), "summary": f"{split}: {len(self.selected)} light(s)"}
+
+    def _a_select_group(self, n=None, group=None, key=None, add=False, **_):
+        if key not in (None, ""):
+            g = next((g for g in self._auto_groups() if g["key"] == str(key)), None)
+            if g is None:
+                raise ValueError(f"no group {key!r}")
+            heads = g["heads"]
+            self.selected = list(dict.fromkeys((self.selected if _truthy(add) else []) + heads))
+            return {"selected": list(self.selected), "group": g["name"]}
         num = int(n if n is not None else group)
         for g in self.groups:
             if g["n"] == num:
@@ -2334,7 +2448,32 @@ class Engine:
 
     # --- programmer -----------------------------------------------------
     def _set_programmer(self, head_no: int, role: str, value: int) -> None:
-        self.programmer.setdefault(int(head_no), {})[role] = int(value)
+        row = self.programmer.setdefault(int(head_no), {})
+        row[role] = int(value)
+        if "@" not in role:
+            # the whole role on a multi-head light: every head, so a value
+            # set earlier for one head of it gives way
+            for key in [k for k in row if k.startswith(role + "@")]:
+                del row[key]
+
+    @staticmethod
+    def _cells(value) -> list[int]:
+        """Which heads of a multi-head light: 2, [1, 3], "1,3" or "all"."""
+        if value in (None, "", "all"):
+            return []
+        items = value if isinstance(value, (list, tuple)) else str(value).replace(" ", "").split(",")
+        return sorted({int(x) for x in items if str(x).strip()})
+
+    def _set_cells(self, h: dict, role: str, value: int, cells: list[int]) -> bool:
+        """Set a role on some heads of a multi-head light (red@2...)."""
+        copies = merge._repeated(h["map"]).get(role, 0)
+        if not copies:
+            return False
+        row = self.programmer.setdefault(h["head_no"], {})
+        for k in cells:
+            if 1 <= k <= copies:
+                row[f"{role}@{k}"] = int(value)
+        return True
 
     def _intensity_roles(self, head: dict) -> set[str]:
         """HTP (brightness) roles this head actually has - may be empty.
@@ -2471,9 +2610,10 @@ class Engine:
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
 
-    def _a_set_attribute(self, attribute=None, value=None, **_):
+    def _a_set_attribute(self, attribute=None, value=None, cell=None, **_):
         if attribute is None or value is None:
             raise ValueError("attribute and value are required")
+        cells = self._cells(cell)
         role = _attr_role(attribute)
         if role is None:
             raise ValueError(f"unknown attribute {attribute!r}")
@@ -2514,6 +2654,16 @@ class Engine:
         # (build_frames splits it over both bytes and clamps the wire
         # write for 8-bit fixtures, so old behaviour is preserved).
         raw = _clamp(value, 0, 65535)
+        if cells:
+            done = []
+            for h in heads:
+                if self._set_cells(h, role, int(_clamp(value, 0, 255)), cells):
+                    done.append(h)
+                else:
+                    self._set_programmer(h["head_no"], role, raw)   # a channel it has once
+            return {"attribute": role, "value": raw, "heads": len(heads), "cells": cells,
+                    "summary": (f"{role} on head(s) {', '.join(map(str, cells))} of {len(done)} light(s)"
+                                if done else f"{role} on {len(heads)} light(s) (one {role} each)")}
         for h in heads:
             self._set_programmer(h["head_no"], role, raw)
         return {"attribute": role, "value": raw, "heads": len(heads),
@@ -2599,19 +2749,24 @@ class Engine:
                             break
         return out
 
-    def _a_set_colour(self, hex=None, colour=None, value=None, **_):
+    def _a_set_colour(self, hex=None, colour=None, value=None, cell=None, **_):
         hexcol = hex or colour or value
         if not hexcol:
             raise ValueError("hex colour is required (#rrggbb)")
         _parse_hex(hexcol)                       # validate before selecting
+        cells = self._cells(cell)
         heads = self._require_selection(lights_only=True)
         touched = 0
         for h in heads:
             values = self._colour_values(h, str(hexcol))
             if not values:
                 continue                          # raw head: nothing to set
+            reps = merge._repeated(h["map"])
             for role, v in values.items():
-                self._set_programmer(h["head_no"], role, v)
+                if cells and role in reps:
+                    self._set_cells(h, role, v, cells)   # just these heads of it
+                else:
+                    self._set_programmer(h["head_no"], role, v)
             touched += 1
         if not touched:
             raise ValueError("selected heads have no colour channels")
@@ -3206,6 +3361,7 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
+        "venue_save", "venue_open", "venue_delete",
         "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
@@ -3515,6 +3671,8 @@ class Engine:
         clean_t: dict = {}
         if target.get("group") is not None:
             clean_t["group"] = int(target["group"])
+        elif target.get("auto"):
+            clean_t["auto"] = str(target["auto"])[:40]
         elif target.get("heads"):
             clean_t["heads"] = sorted({int(h) for h in target["heads"]})[:512]
         elif target.get("type"):
@@ -3803,15 +3961,7 @@ class Engine:
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
         heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
-        split = t.get("split")
-        if split in ("odd", "even"):
-            heads = heads[0::2] if split == "odd" else heads[1::2]
-        elif split in ("left", "right"):
-            by = {h["head_no"]: h for h in self.patch}
-            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
-            half = (len(order) + 1) // 2
-            heads = sorted(order[:half] if split == "left" else order[half:])
-        return heads
+        return self._split_heads(heads, t.get("split"))
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
@@ -3830,6 +3980,9 @@ class Engine:
 
     def _target_heads(self, t: dict) -> list[int]:
         patched = [h["head_no"] for h in self.patch]
+        if t.get("auto"):
+            g = next((g for g in self._auto_groups() if g["key"] == t["auto"]), None)
+            return list(g["heads"]) if g else []
         if t.get("group") is not None:
             for g in self.groups:
                 if g["n"] == t["group"]:
@@ -5629,7 +5782,8 @@ class Engine:
 
     @classmethod
     def attr_group(cls, role: str) -> str:
-        base = role[:-5] if role.endswith("_fine") else role
+        base = role.split("@", 1)[0]                  # one head of a multi-head light
+        base = base[:-5] if base.endswith("_fine") else base
         return next((g for g, rs in cls.ATTR_GROUPS.items() if base in rs), "other")
 
     def _a_clear_attrs(self, group="colour", heads=None, **_):
@@ -5755,7 +5909,8 @@ class Engine:
         """
         if name not in (None, ""):
             return self._a_run_fx_named(
-                str(name).lower(), params, duration, heads, group)
+                str(name).lower(), params, duration, heads, group,
+                across=_truthy(_.get("across")))
 
         def num(value, default=0.0) -> float:
             if value in (None, ""):
@@ -5823,7 +5978,7 @@ class Engine:
                 "summary": f"{name} {role} fx on {len(wanted)} head(s)"}
 
     def _a_run_fx_named(self, name: str, params, duration, heads,
-                         group) -> dict:
+                         group, across: bool = False) -> dict:
         """Start one of the `app/fxlib.py` effects.
 
         The capability decision is made HERE, with the same pure function
@@ -5878,6 +6033,15 @@ class Engine:
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
                "t0": time.monotonic(), "duration": dur}
+        if across and any(merge._repeated(h["map"]) for h in capable):
+            # run it ACROSS each light's own heads (a Wave 360's four cells
+            # and tilts) as if every head were a light of its own; with no
+            # phase given, each head is a step on from the last
+            row["across"] = True
+            if "phase" in p and not (isinstance(params, dict) and params.get("phase")):
+                p["phase"] = 100.0
+            if name in motion_mod.KINDS and not (isinstance(params, dict) and params.get("spread")):
+                p["spread"] = 360.0                       # the heads spread evenly round the shape
         self.fx.append(row)
         msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
                                    len(capable))
@@ -5925,12 +6089,20 @@ class Engine:
         rate = min(float(p.get("speed", 0.125)), cap[1])
         row["_turns"] = row.get("_turns", 0.0) + step * rate
         prog, pbs = base
+        # "across": every head of a multi-head light (a Wave 360's four
+        # tilts) is one step of the movement - a tilt wave through the light
+        units = []
         for i, h in enumerate(heads):
+            copies = merge._repeated(h["map"]).get("tilt", 0) if row.get("across") else 0
+            units += [(i, h, k) for k in range(1, copies + 1)] if copies else [(i, h, None)]
+        for u, (i, h, k) in enumerate(units):
             n = h["head_no"]
             centre, limits = [], []
             for role in ("pan", "tilt"):
                 dom = attr_domain(h, role) if role in h["map"] else 255
-                v = (prog.get(n) or {}).get(role)
+                v = (prog.get(n) or {}).get(f"{role}@{k}") if k and role == "tilt" else None
+                if v is None:
+                    v = (prog.get(n) or {}).get(role)
                 if v is None:
                     for _lvl, vals in pbs:
                         if role in (vals.get(n) or {}):
@@ -5945,10 +6117,16 @@ class Engine:
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))
             vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
-                                       cap[2][i], i, len(heads))
+                                       cap[2][i], u, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():
                 if role not in h["map"]:
+                    continue
+                if k is not None:
+                    if role == "tilt":
+                        dst[f"tilt@{k}"] = int(round(frac * 255))
+                    elif k == 1:                        # the light's one pan, once
+                        dst[role] = int(round(frac * 255)) if attr_domain(h, role) <= 255 else int(round(frac * 65535))
                     continue
                 if attr_domain(h, role) > 255:
                     v16 = int(round(frac * 65535))
@@ -6026,6 +6204,30 @@ class Engine:
                 # out of a mixed six spans those two, not every sixth of the
                 # original selection.
                 by_no = {h["head_no"]: h for h in self.patch}
+                if row.get("across"):
+                    # every head of a multi-head light is one step of it
+                    units = []
+                    for head_no in heads:
+                        reps = merge._repeated(by_no.get(head_no, {}).get("map") or [])
+                        n_cells = max(reps.values()) if reps else 0
+                        units += [(head_no, k) for k in range(1, n_cells + 1)] if n_cells else [(head_no, None)]
+                    for i, (head_no, k) in enumerate(units):
+                        roles = by_no.get(head_no, {}).get("map") or []
+                        reps = merge._repeated(roles)
+                        try:
+                            vals = fxlib_mod.apply(row["lib"], {}, roles, params=row.get("params"),
+                                                   elapsed=elapsed, index=i, count=len(units))
+                        except ValueError:
+                            continue
+                        dst = out.setdefault(head_no, {})
+                        for role, v in (vals or {}).items():
+                            if k is None:
+                                dst[role] = v
+                            elif role in reps and k <= reps[role]:
+                                dst[f"{role}@{k}"] = v
+                            elif role not in reps and k == 1:
+                                dst[role] = v          # the light's single channels, once
+                    continue
                 for i, head_no in enumerate(heads):
                     roles = by_no.get(head_no, {}).get("map") or []
                     try:
@@ -6197,7 +6399,7 @@ class Engine:
         used: list[int] = []
         for h in heads:
             row = {r: v for r, v in (self.programmer.get(h["head_no"]) or {}).items()
-                   if r in PRESET_ROLES and self.attr_group(r) in parts}
+                   if r.split("@", 1)[0] in PRESET_ROLES and self.attr_group(r) in parts}
             if not row:
                 continue
             used.append(h["head_no"])
@@ -6260,7 +6462,7 @@ class Engine:
         applied, skipped = 0, []
         for h in heads:
             row = {r: v for r, v in (entry.get("values") or {}).items()
-                   if r in (h.get("map") or [])}
+                   if r.split("@", 1)[0] in (h.get("map") or [])}
             if not row:
                 continue
             self.programmer.setdefault(h["head_no"], {}).update(row)
@@ -8659,6 +8861,20 @@ class Engine:
                 row["pan"] = pan
             if tilt is not None:
                 row["tilt"] = tilt
+            reps = merge._repeated(head["map"])
+            if reps.get("tilt", 0) > 1 or reps.get("red", 0) > 1:
+                # each head of a multi-head light: its own colour and tilt
+                n_cells = max(reps.get("tilt", 0), reps.get("red", 0))
+                cells = []
+                for k in range(1, n_cells + 1):
+                    cv = {r: values.get(f"{r}@{k}", values.get(r, 0)) for r in ("red", "green", "blue", "white")}
+                    cell = {"hex": self._hex_for(head, cv) if any(r in values or f"{r}@{k}" in values
+                                                                  for r in ("red", "green", "blue", "white")) else row["hex"]}
+                    t = values.get(f"tilt@{k}", values.get("tilt"))
+                    if t is not None and "tilt" in head["map"]:
+                        cell["tilt"] = round(max(0, min(255, int(t))) / 255.0, 4)
+                    cells.append(cell)
+                row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head
             # is actually pointing.  The visualiser used a hardcoded 270
             # degrees of tilt, which is a 540-degree-pan/270-degree-tilt
@@ -9075,6 +9291,109 @@ class Engine:
         except (ValueError, TypeError, KeyError):
             return False
         return True
+
+    # ------------------------------------------------------------------
+    # My venues: a venue saved on its own (room, rigging, zones, objects -
+    # and, if wanted, the lights hung in it), to open for the next gig there
+    # ------------------------------------------------------------------
+    def _venue_dir(self) -> Path:
+        return self.show_dir / "venues"
+
+    @staticmethod
+    def _venue_key(name) -> str:
+        """A file name for a venue name ("Tom's Bar" -> "Toms Bar")."""
+        key = re.sub(r"[^A-Za-z0-9 _-]+", "", str(name or "")).strip()[:40]
+        if not key:
+            raise ValueError("a venue name needs some letters or digits")
+        return key
+
+    def _venue_list(self) -> list[dict]:
+        d = self._venue_dir()
+        try:
+            stamp = d.stat().st_mtime_ns if d.exists() else 0
+        except OSError:
+            stamp = 0
+        cache = getattr(self, "_venue_list_cache", None)
+        if cache and cache[0] == stamp:
+            return cache[1]
+        out = []
+        for path in sorted(d.glob("*.json")) if d.exists() else []:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            v = data.get("venue") or {}
+            room = v.get("room") or {}
+            out.append({"key": path.stem, "name": data.get("name") or path.stem,
+                        "lights": len(data.get("patch") or []), "saved": data.get("saved"),
+                        "shape": "custom" if room.get("outline") else "rectangle",
+                        "size": [room.get("width"), room.get("depth")],
+                        "rigging": len(v.get("rigging") or [])})
+        self._venue_list_cache = (stamp, out)
+        return out
+
+    def _a_venue_save(self, name="", lights=True, **_):
+        """Save this venue under a name - its room, rigging, zones and
+        objects, and (lights=True) the lights hung in it with their
+        addresses and positions - to open again at the next gig there."""
+        label = str(name or self.venue.get("name") or "").strip()[:40]
+        if not label:
+            raise ValueError("a venue needs a name")
+        key = self._venue_key(label)
+        with self.lock:
+            payload = {"version": 1, "name": label,
+                       "saved": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                       "venue": json.loads(json.dumps(dict(self.venue, name=label), default=str))}
+            if _truthy(lights):
+                payload["patch"] = json.loads(json.dumps(self.patch, default=str))
+                payload["groups"] = json.loads(json.dumps(self.groups, default=str))
+            self.venue["name"] = label
+        d = self._venue_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"{key}.json"
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+        self._venue_list_cache = None
+        return {"key": key, "summary": f"venue {label!r} saved"
+                + (f" with {len(payload.get('patch') or [])} light(s)" if _truthy(lights) else "")}
+
+    def _a_venue_open(self, name="", lights=True, **_):
+        """Open a saved venue: its room, rigging and zones replace this one;
+        with lights=True (and lights saved in it) the patch too."""
+        key = self._venue_key(name)
+        path = self._venue_dir() / f"{key}.json"
+        if not path.exists():
+            hit = next((v for v in self._venue_list() if v["name"].lower() == str(name).strip().lower()), None)
+            if hit is None:
+                raise ValueError(f"no saved venue {name!r}")
+            path = self._venue_dir() / f"{hit['key']}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        venue = venue_mod.normalise(data.get("venue") or {})
+        heads = None
+        if _truthy(lights) and data.get("patch"):
+            heads = [self._head_from_layout(h) for h in data["patch"]]
+        with self.lock:
+            if heads is not None:
+                self._replace_patch(heads)
+                self.groups = [dict(g) for g in data.get("groups") or [] if isinstance(g, dict)]
+                self.programmer = {}
+                self.selected = []
+                self.fx = []
+            self.venue = venue
+            self.patch_rev += 1
+        return {"name": data.get("name"), "lights": len(heads) if heads is not None else None,
+                "summary": f"opened venue {data.get('name')!r}"
+                + (f" with {len(heads)} light(s)" if heads is not None else "")}
+
+    def _a_venue_delete(self, name="", **_):
+        key = self._venue_key(name)
+        path = self._venue_dir() / f"{key}.json"
+        if not path.exists():
+            raise ValueError(f"no saved venue {name!r}")
+        path.unlink()
+        self._venue_list_cache = None
+        return {"summary": f"deleted venue {name!r}"}
 
     def _a_save_show(self, name="", **_):
         label = self._safe_name(name or "show")
@@ -9561,6 +9880,9 @@ class Engine:
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "moves": [dict(m) for m in self.moves],
+                "auto_groups": self._auto_groups(),
+                "venues": self._venue_list(),
+                "clashes": self._patch_clashes(),
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.

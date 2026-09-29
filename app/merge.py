@@ -124,6 +124,26 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             if row and role in row:
                 resolved[role] = int(row[role])
                 break
+    # ONE HEAD OF A MULTI-HEAD LIGHT.  A Wave 360 has four tilts and four
+    # RGBW cells that all share a role name; a value for one of them is kept
+    # as "red@2" (the 2nd red channel).  LTP like any value: a running
+    # effect's cells win, then the programmer's, then the newest cue's - but
+    # an effect driving the WHOLE role (a rainbow on "red") beats a
+    # programmed cell, or the chase would skip that head.
+    reps = _repeated(head["map"])
+    if reps:
+        cells: dict[str, int] = {}
+        for key, v in fx_row.items():
+            if "@" in key and key.split("@", 1)[0] in reps:
+                cells[key] = int(v)
+        for src in [pvals] + [vals.get(n) or {} for _level, vals in pb_vals]:
+            for key, v in src.items():
+                if "@" not in key or key in cells:
+                    continue
+                base = key.split("@", 1)[0]
+                if base in reps and base not in HTP_ROLES and base not in fx_row:
+                    cells[key] = int(v)
+        resolved.update(cells)
     # AN EFFECT'S OUTPUT OBEYS ONLY ITS OWN ARMED BUTTONS.  Whatever a cue,
     # the programmer, an effect or a playback says about a fog machine's
     # output, a CO2 valve, a confetti fan, an arm channel or a laser's
@@ -138,6 +158,10 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     if over and over.get("set"):
         for role, value in over["set"].items():
             if role in head["map"]:
+                # a button setting the whole role (a colour flash) covers
+                # every head of the light, cells included
+                for key in [k for k in resolved if k.startswith(role + "@")]:
+                    del resolved[key]
                 resolved[role] = int(value)
         floor = over["set"].get("_laser_min")
         if floor is not None and "laser_on" in resolved and laser_mode is not None \
@@ -200,6 +224,14 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # about the value; orientation is a fact about the channel, and
     # clamping an inverted pan back to the limit would quietly undo it.
     limits = head.get("limits")
+    if limits and reps:
+        for key in [k for k in resolved if "@" in k]:
+            lh = limits.get(key.split("@", 1)[0])
+            if lh:
+                lo, hi = lh
+                v = resolved[key]
+                resolved[key] = max(lo, v) if lo is not None else v
+                resolved[key] = min(hi, resolved[key]) if hi is not None else resolved[key]
     if limits:
         for role, (lo, hi) in limits.items():
             if role not in resolved:
@@ -231,10 +263,32 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             if flags.get(key) and role in resolved:
                 top = 65535 if (role + "_fine") in head["map"] else 255
                 resolved[role] = top - max(0, min(top, resolved[role]))
+            if flags.get(key):
+                for k in [k for k in resolved if k.startswith(role + "@")]:
+                    resolved[k] = 255 - max(0, min(255, resolved[k]))
     return resolved
 
 
 _LASER_SAFE = frozenset({"laser_y", "laser_size"})
+
+
+_REP_CACHE: dict[tuple, dict] = {}
+
+
+def _repeated(roles) -> dict[str, int]:
+    """{role: copies} for roles a light has more than once (a multi-head
+    light's tilts and colour cells); fine / unused / raw never count."""
+    key = tuple(roles)
+    got = _REP_CACHE.get(key)
+    if got is None:
+        count: dict[str, int] = {}
+        for r in roles:
+            if r not in ("unused", "raw") and not r.endswith("_fine"):
+                count[r] = count.get(r, 0) + 1
+        got = {r: c for r, c in count.items() if c > 1}
+        if len(_REP_CACHE) < 512:
+            _REP_CACHE[key] = got
+    return got
 
 
 def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
@@ -302,10 +356,20 @@ def build_frames(patch: list[dict], prog: dict,
                                   curve) * 65535 // 100
             return _logical16(values.get(idx_role, 0))
 
+        reps = _repeated(roles)
+        seen: dict[str, int] = {}
         for i, role in enumerate(roles):
             pos = offset + i
             if pos < 0 or pos >= SLOTS:
                 continue
+            if role in reps:
+                # the k-th copy of a repeated channel: its own head's value
+                seen[role] = seen.get(role, 0) + 1
+                cell = f"{role}@{seen[role]}"
+                if cell in values and role not in HTP_ROLES:
+                    v = values[cell]
+                    buf[pos] = 0 if v < 0 else (255 if v > 255 else int(v))
+                    continue
             partner = fine_of.get(i)
             if partner is not None:
                 # one logical value -> two DMX bytes; an explicit operator

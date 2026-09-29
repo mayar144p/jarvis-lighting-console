@@ -38,7 +38,7 @@ ch 29 Auto Programs, ch 30 Program Speed.  Fix: expose every non-maintenance
 channel under its own name on the Beam tab, its capability ranges as chips,
 recorded in cues (needs unique per-channel roles for unnamed channels).
 
-## 3. Multi-head / multi-cell fixtures
+## 3. Multi-head / multi-cell fixtures (see 15: first part DONE)
 
 Channels that repeat per head collapse onto one role, so one control drives
 all heads.  Example: Wave 360 has 4 heads - ch 5-8 tilt x4, ch 11-26 RGBW x4,
@@ -69,6 +69,66 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - "Change fixture type" on a patched head, keeping position, groups and cues.
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
+
+## 15. Multi-head lights (DONE, first part)
+
+A Wave 360's four tilts and RGBW cells: a value for one head is kept as
+`red@2` / `tilt@3` (merge: LTP, a running effect wins; limits and invert
+apply; a button setting the whole role covers every head); the frame
+writer sends the k-th copy of a role its head's value.  set_colour /
+set_attribute take `cell`; the programmer shows "Heads: All 1 2 3 4"
+for such lights and sends only to the picked heads; cues and looks keep
+per-head values; effects run "across each light's heads" (colour chase /
+rainbow step head to head).  Still open: movement effects across heads (a
+tilt wave), per-head colours in the 3D view.  (DONE since: tilt wave
+across the heads on the Move tab; a multi-head 3D model - heads on a bar,
+each tilting and coloured on its own.)
+
+## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
+
+- Every overlap between two lights' channels is found (the load-time check
+  missed a light starting inside an earlier one: 20 + 13 ch vs 25), shown
+  as a red warning above the list with "Move #n" (first free block), and
+  in a DMX map (512 squares per universe, clashes red, per-light list).
+- The Colour tab adds White / Amber / UV / Lime sliders on top of a pure
+  picked colour, for the lights that have them.
+- Still open: change fixture type keeping position / groups / cues; RDM.
+
+## 13. My venues, room shapes, rigging up front (DONE)
+
+- "Venues ▾" in Arrange: save this venue (room, rigging, zones, objects,
+  and - if you say so - the lights with their addresses and positions),
+  open a saved one (room and lights, or room only), delete.  Stored under
+  shows/venues/, never listed as a show.
+- "Draw room shape" (any outline: L-shaped, custom) and "+ Truss",
+  "+ Pole" (a vertical pipe), "+ Pipe" up front; the rest under "+ More".
+- Still open: reshaping the room doesn't move rigging that ends up
+  outside it; a venue picker at start-up.
+
+## 12. Gig mode (DONE)
+
+Every control at least 44 px (40 for chips / small), text 12 px and up,
+row menus always shown: on by itself on phones and tablets (pointer:
+coarse), a "Gig mode" switch in Settings for a laptop.  Phones keep a
+Blackout button in the bottom bar on every tab.  Measured: 0 visible
+buttons under 40 px on a 390 px phone and a 1024 px tablet (was 64 of 96
+under 32 px on a laptop).  Also done: only the playbacks in use plus one
+"+ Record a cue" slot; 3D labels are "#7" (full name on hover or for one
+light) and never pile up; the status bar reads "BLIND - safe to program,
+nothing reaches the lights" / "LIVE - the lights follow the console", the
+numbers on hover.
+
+## 11. Grouping for big rigs (DONE)
+
+- Automatic groups (never stored, follow the rig): one per kind of light
+  ("LED PARs 12", "Moving spots 6") and one per truss / pole / pipe they
+  hang on (attached, else the nearest), plus "Floor".  Dashed chips above
+  the list; tap selects, Shift adds.
+- Lights of the same model patched in a row fold into one row
+  ("LED PARty RGBW × 12 · 1.049-1.115"): tap selects them all, ▸ opens.
+- Selection bar: "6 selected · Moving spots" and Odd / Even / Left / Right.
+- Buttons can aim at an automatic group (and a split of it) and follow it.
+- Shift-drag on the stage draws a box and selects the lights inside.
 
 ## 10. Quick fixes from the audit (DONE)
 
@@ -154,6 +214,9 @@ Found in the audit (same features kept, all of it re-laid out):
   and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
   "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
   Confetti (one load) wants hold-to-fire; CO2 quick 0.5 / 1 / 3 s shots.
+  (DONE: ARM until disarmed, lasers uncapped, CO2 / flame / sparks hold +
+  quick shots, confetti fires only after a 1 s hold, haze Off / Light /
+  Medium / Thick.)
 
 ## 7. Move tab: floor-safe movement for every light, simple speed (DONE)
 

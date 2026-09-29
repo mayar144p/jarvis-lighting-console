@@ -1,7 +1,7 @@
 // The fixture list: what is patched, where, and what is selected.
 import { state, on, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, h, menu, promptBox, confirmBox, toast } from "./ui.js";
+import { $, h, menu, promptBox, confirmBox, toast, modal } from "./ui.js";
 import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration, openLightTest } from "./dialogs.js";
 import { post, get } from "./api.js";
 
@@ -47,38 +47,105 @@ function visible() {
   return patch().filter((hd) => matches(hd, words));
 }
 
+// Lights of the same model patched one after another fold into ONE row
+// ("LED PARty RGBW × 8 · 1.001-1.043"): tap it to select them all, open it
+// to pick single lights.  Forty lights fit on one screen.
+const FOLD_MIN = 3;
+const expanded = new Set();          // first head of each opened fold
+
+function clusters(rows) {
+  const out = [];
+  for (const hd of rows) {
+    const last = out[out.length - 1];
+    const key = [hd.model, hd.mode, hd.manufacturer].join("|");
+    if (last && last.key === key) last.heads.push(hd);
+    else out.push({ key, heads: [hd] });
+  }
+  return out;
+}
+
+const addr = (hd) => `${hd.universe}.${String(hd.address).padStart(3, "0")}`;
+
+function headRow(hd, child = false) {
+  const b = hd.body || {};
+  return h("tr" + (child ? ".fold-child" : ""), { dataset: { head: hd.head_no } },
+    h("td.c-no", hd.head_no),
+    h("td", h("div.f-name",
+      h("i.lamp"),
+      iconFor(b),
+      h("div.f-text",
+        h("b", { title: hd.name || hd.model }, hd.name || hd.model),
+        h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
+          .filter(Boolean).join(" · "))),
+      hd.unverified ? h("span.warn-ic", { title: "Generic channel layout - check it matches the real fixture" }, "⚠") : null,
+      h("button.btn.ghost.small.icon.row-menu", { title: "Fixture actions", "aria-label": "Fixture actions" }, "⋯"))),
+    h("td.c-addr", addr(hd)));
+}
+
+function foldRow(c) {
+  const first = c.heads[0], lastHd = c.heads[c.heads.length - 1];
+  const b = first.body || {};
+  const open = expanded.has(first.head_no);
+  return h("tr.fold" + (open ? ".open" : ""), { dataset: { fold: c.heads.map((x) => x.head_no).join(","), head: first.head_no } },
+    h("td.c-no", `${first.head_no}–${lastHd.head_no}`),
+    h("td", h("div.f-name",
+      h("i.lamp"),
+      iconFor(b),
+      h("div.f-text",
+        h("b", { title: first.model }, `${first.model} × ${c.heads.length}`),
+        h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
+          .filter(Boolean).join(" · "))),
+      h("button.btn.ghost.small.icon.fold-btn", { title: open ? "Fold" : "Show each light", "aria-label": open ? "Fold" : "Show each light",
+        "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"))),
+    h("td.c-addr", h("span", addr(first)), h("small", "–" + addr(lastHd))));
+}
+
 function render() {
   const rows = visible();
   const sel = new Set(selected());
   const stale = new Set(((state.snap && state.snap.stale_heads) || []).map(Number));
   const tbody = $("#fx-rows");
-  const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.body && r.body.type, r.unverified]), [...stale]]);
+  const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.mode, r.body && r.body.type, r.unverified]),
+    [...stale], [...expanded]]);
   if (sig !== lastSig) {
     lastSig = sig;
-    tbody.replaceChildren(...rows.map((hd) => {
-      const b = hd.body || {};
-      const tr = h("tr", { dataset: { head: hd.head_no } },
-        h("td.c-no", hd.head_no),
-        h("td", h("div.f-name",
-          h("i.lamp"),
-          iconFor(b),
-          h("div.f-text",
-            h("b", { title: hd.name || hd.model }, hd.name || hd.model),
-            h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
-              .filter(Boolean).join(" · "))),
-          hd.unverified ? h("span.warn-ic", { title: "Generic channel layout - check it matches the real fixture" }, "⚠") : null,
-          h("button.btn.ghost.small.icon.row-menu", { title: "Fixture actions", "aria-label": "Fixture actions" }, "⋯"))),
-        h("td.c-addr", `${hd.universe}.${String(hd.address).padStart(3, "0")}`));
-      return tr;
-    }));
+    const out = [];
+    for (const c of clusters(rows)) {
+      if (c.heads.length < FOLD_MIN) { out.push(...c.heads.map((hd) => headRow(hd))); continue; }
+      out.push(foldRow(c));
+      if (expanded.has(c.heads[0].head_no)) out.push(...c.heads.map((hd) => headRow(hd, true)));
+    }
+    tbody.replaceChildren(...out);
   }
-  for (const tr of tbody.children) tr.classList.toggle("sel", sel.has(+tr.dataset.head));
+  for (const tr of tbody.children) {
+    if (tr.dataset.fold) {
+      const members = tr.dataset.fold.split(",").map(Number);
+      const n = members.filter((x) => sel.has(x)).length;
+      tr.classList.toggle("sel", n === members.length);
+      tr.classList.toggle("part", n > 0 && n < members.length);
+    } else tr.classList.toggle("sel", sel.has(+tr.dataset.head));
+  }
   const n = patch().length;
   $("#fx-count").textContent = n;
   $(".fx-table-wrap").classList.toggle("is-empty", n === 0);
-  const count = sel.size;
-  $("#sel-count").textContent = count ? `${count} selected` : "Nothing selected";
+  renderSelBar(sel);
   paintLamps();
+}
+
+// "6 selected · LED PARs" and, for two or more, the quick splits
+function renderSelBar(sel) {
+  const count = sel.size;
+  const autos = (state.snap && state.snap.auto_groups) || [];
+  const user = (state.snap && state.snap.groups) || [];
+  const same = (heads) => heads.length === count && heads.every((x) => sel.has(x));
+  const named = count ? ([...user].find((g) => same(g.heads)) || autos.find((g) => same(g.heads))) : null;
+  $("#sel-count").textContent = count ? `${count} selected${named ? " · " + named.name : ""}` : "Nothing selected";
+  const box = $("#sel-split");
+  const key = count >= 2 ? "on" : "";
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren(...(count >= 2 ? [["odd", "Odd"], ["even", "Even"], ["left", "Left"], ["right", "Right"]].map(([v, label]) =>
+    h("button.chip", { title: `Keep the ${v} half of the selection`, onclick: () => run("select_split", { split: v }) }, label)) : []));
 }
 
 // The row lamps follow the light feed (30 times a second), so only a
@@ -114,26 +181,54 @@ function paintLamps() {
 function renderGroups() {
   const box = $("#group-chips");
   const groups = (state.snap && state.snap.groups) || [];
-  box.replaceChildren(...groups.map((g) => h("button.chip", {
-    title: `Select ${g.name} (${g.heads.length})`,
-    onclick: (e) => {
-      if (e.target.classList.contains("x")) return;
-      select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
-    },
-  }, g.name, h("span.x", {
-    title: "Delete group",
-    onclick: async (e) => {
-      e.stopPropagation();
-      if (await confirmBox("Delete group", `Delete the group “${g.name}”? The fixtures stay patched.`, { ok: "Delete", danger: true })) {
-        run("group_delete", { group: g.n });
-      }
-    },
-  }, "×"))));
+  const autos = patch().length >= 4 ? ((state.snap && state.snap.auto_groups) || []) : [];
+  const sel = new Set(selected());
+  const same = (heads) => heads.length && heads.length === sel.size && heads.every((x) => sel.has(x));
+  const key = JSON.stringify([groups, autos, [...sel]]);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren(
+    ...autos.map((g) => h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection`,
+      onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
+    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`))),
+    ...groups.map((g) => h("button.chip" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length})`,
+      onclick: (e) => {
+        if (e.target.classList.contains("x")) return;
+        select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
+      },
+    }, g.name, h("small", ` ${g.heads.length}`), h("span.x", {
+      title: "Delete group",
+      onclick: async (e) => {
+        e.stopPropagation();
+        if (await confirmBox("Delete group", `Delete the group “${g.name}”? The fixtures stay patched.`, { ok: "Delete", danger: true })) {
+          run("group_delete", { group: g.n });
+        }
+      },
+    }, "×"))));
 }
 
 function rowClick(e) {
   const tr = e.target.closest("tr[data-head]");
   if (!tr) return;
+  if (tr.dataset.fold) {
+    const members = tr.dataset.fold.split(",").map(Number);
+    if (e.target.closest(".fold-btn")) {
+      const first = members[0];
+      if (expanded.has(first)) expanded.delete(first); else expanded.add(first);
+      render();
+      return;
+    }
+    const cur = new Set(selected());
+    const all = members.every((x) => cur.has(x));
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      if (all) select([...cur].filter((x) => !members.includes(x))); else select(members, { add: true });
+    } else {
+      select(all && cur.size === members.length ? [] : members);
+    }
+    return;
+  }
   const head = +tr.dataset.head;
   if (e.target.closest(".row-menu")) return rowMenu(e.target.closest(".row-menu"), head);
   const cur = new Set(selected());
@@ -186,10 +281,79 @@ function rowMenu(btn, head) {
   ]);
 }
 
+// ---------------------------------------------------------- DMX map
+// Who owns which channels, universe by universe; clashes in red, each with
+// a one-tap "move to the next free address".
+const clashes = () => (state.snap && state.snap.clashes) || [];
+const hue = (n) => `hsl(${(n * 67) % 360} 55% 42%)`;
+
+function renderClashes() {
+  const box = $("#fx-clash");
+  const list = clashes();
+  const key = JSON.stringify(list);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.hidden = !list.length;
+  box.replaceChildren(...(list.length ? [
+    h("b", `⚠ ${list.length} address clash${list.length > 1 ? "es" : ""}`),
+    ...list.slice(0, 3).map((c) => h("div.clash-row",
+      h("span", `#${c.a} and #${c.b} share ${c.universe}.${String(c.from).padStart(3, "0")}–${String(c.to).padStart(3, "0")}`),
+      h("button.btn.small", { title: `Move #${c.b} to the first free block of addresses`,
+        onclick: () => run("patch_move_free", { head: c.b }, { toast: true }) }, `Move #${c.b}`))),
+    h("button.btn.small.ghost", { onclick: openDmxMap }, "Open the DMX map"),
+  ] : []));
+}
+
+export function openDmxMap() {
+  const draw = () => {
+    const heads = patch();
+    const bad = new Set(clashes().flatMap((c) => [c.a, c.b]));
+    const unis = [...new Set(heads.map((x) => x.universe))].sort((a, b) => a - b);
+    if (!unis.length) unis.push(1);
+    const blocks = unis.map((u) => {
+      const own = new Array(513).fill(null);
+      const clash = new Array(513).fill(false);
+      for (const x of heads.filter((y) => y.universe === u)) {
+        for (let c = x.address; c < x.address + (x.channels || (x.map || []).length || 1) && c <= 512; c++) {
+          if (own[c] !== null) clash[c] = true;
+          own[c] = x.head_no;
+        }
+      }
+      const used = own.filter((x) => x !== null).length;
+      const cells = [];
+      for (let c = 1; c <= 512; c++) {
+        const n = own[c];
+        const hd = n !== null ? heads.find((y) => y.head_no === n) : null;
+        cells.push(h("i" + (clash[c] ? ".clash" : n !== null ? ".own" : ""), {
+          title: `${u}.${String(c).padStart(3, "0")}` + (hd ? ` · #${n} ${hd.name || hd.model}` : " · free")
+            + (clash[c] ? " · CLASH" : ""),
+          style: n !== null && !clash[c] ? { background: hue(n) } : null,
+        }));
+      }
+      return h("div.dmx-uni", h("h4", `Universe ${u}`, h("small", ` ${used} of 512 channels used`)), h("div.dmx-grid", ...cells));
+    });
+    const rows = heads.slice().sort((a, b) => a.universe - b.universe || a.address - b.address).map((x) => {
+      const n = x.channels || (x.map || []).length || 1;
+      return h("div.dmx-row" + (bad.has(x.head_no) ? ".bad" : ""),
+        h("i", { style: { background: bad.has(x.head_no) ? "var(--live)" : hue(x.head_no) } }),
+        h("span.mono", `${x.universe}.${String(x.address).padStart(3, "0")}–${String(x.address + n - 1).padStart(3, "0")}`),
+        h("span", `#${x.head_no} ${x.name || x.model}`), h("span.muted.small", `${n} ch`),
+        bad.has(x.head_no) ? h("button.btn.small", { onclick: () => run("patch_move_free", { head: x.head_no }, { toast: true }) }, "Move to free") : null);
+    });
+    return h("div.dmx-map", ...blocks, h("div.dmx-list", ...rows));
+  };
+  const body = h("div", draw());
+  const close = modal({ title: "DMX map", wide: true, body,
+    foot: [h("span.muted.small", "Each square is one DMX channel. Red: two lights on the same channels. After moving a light, set the same address on the light itself."),
+      h("span.grow"), h("button.btn", { onclick: () => close() }, "Close")] });
+  const off = on("snapshot", () => { if (!document.body.contains(body)) { off && off(); return; } body.replaceChildren(draw()); });
+}
+
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
     { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
+    { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Scan the network for nodes", run: () => scanRig() },
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
@@ -263,8 +427,8 @@ export function initFixtures() {
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }
-  on("snapshot", () => { render(); renderGroups(); });
-  on("selection", render);
+  on("snapshot", () => { render(); renderGroups(); renderClashes(); });
+  on("selection", () => { render(); renderGroups(); });
   on("lite", render);
   on("looks", paintLamps);
   void get;
