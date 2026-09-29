@@ -1048,3 +1048,12 @@ body.gig .pb-mode button { min-height: 44px; }
   .pb-strip { grid-auto-columns: minmax(130px, 190px); justify-content: start; background: transparent; gap: 0; }
   .pb-strip .pb { border-right: 1px solid var(--border); }
 }
+/* SFX: big hold, quick shots, confetti hold-to-fire */
+.fx-hold.fire.big { min-height: 64px; flex: 1; font-size: 16px; }
+.fx-shots { margin: 8px 0; }
+.fx-shots .k { width: 80px; }
+.fx-hold.confetti { position: relative; overflow: hidden; flex: 1; min-height: 64px; font-size: 15px; border-color: rgba(245, 158, 11, .6); color: #fde68a; }
+.fx-hold.confetti .fill { position: absolute; inset: 0; width: 0; background: rgba(245, 158, 11, .35); pointer-events: none; }
+.fx-hold.confetti span { position: relative; }
+.fx-hold.confetti.arming .fill { width: 100%; transition: width 1s linear; }
+.fx-hold.confetti.fired { background: rgba(245, 158, 11, .5); color: #fff; }

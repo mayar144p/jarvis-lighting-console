@@ -9051,6 +9051,10 @@ def test_my_venues() -> None:
     check("less clutter: used playbacks + one empty, short 3D labels, a plain-words status bar",
           "firstEmpty" in pbj and "+ Record a cue" in pbj and "const clash = placed.some" in stj
           and "safe to program, nothing reaches the lights" in tbj, "")
+    fxj = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    check("SFX: CO2 hold + 0.5 / 1 / 3 s shots, confetti only after a 1 s hold, haze levels",
+          "HOLD TO FIRE" in fxj and "[0.5, 1, 3]" in fxj and "confettiButton" in fxj
+          and "}, 1000);" in fxj and '"prog-haze"' in fxj, "")
     check("Arrange has Venues, Draw room shape, + Truss / + Pole / + Pipe up front",
           all(k in html for k in ('id="vt-venues"', 'id="vt-truss"', 'id="vt-pole"', 'id="vt-pipe"', "Draw room shape"))
           and '"venue_save"' in vp and '"venue_open"' in vp, "")

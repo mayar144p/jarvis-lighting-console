@@ -190,6 +190,9 @@ Found in the audit (same features kept, all of it re-laid out):
   and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
   "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
   Confetti (one load) wants hold-to-fire; CO2 quick 0.5 / 1 / 3 s shots.
+  (DONE: ARM until disarmed, lasers uncapped, CO2 / flame / sparks hold +
+  quick shots, confetti fires only after a 1 s hold, haze Off / Light /
+  Medium / Thick.)
 
 ## 7. Move tab: floor-safe movement for every light, simple speed (DONE)
 
