@@ -9,6 +9,7 @@
 // step); setting a button up is an edit, saved with the show.
 import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
+import { post } from "./api.js";
 import { $, $$, h, modal, toast, promptBox, menu } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
@@ -224,7 +225,7 @@ function render(force = false) {
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
     }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
-    b.key ? h("kbd.qkey", b.key.toUpperCase()) : null,
+    b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
     b.rate || b.free ? h("span.qrate", (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
     el.style.setProperty("--tint", tint);
     const sp = span.get(slot);
@@ -318,6 +319,7 @@ function fromButton(b) {
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
     move: b ? b.move || "" : "", rate: b && b.rate ? b.rate : 1, free: !!(b && b.free), size: b ? b.size || "" : "", icon: b ? b.icon || "" : "",
+    midi: b && b.midi !== undefined ? b.midi : "",
     fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
@@ -353,6 +355,7 @@ function toButton(s) {
   if (d === "move") b.move = s.move;
   if (FADES.has(d)) { if (s.fadeIn) b.fade_in = s.fadeIn; if (s.fadeOut) b.fade_out = s.fadeOut; }
   if (s.key) b.key = s.key;
+  if (s.midi !== "" && s.midi !== null) b.midi = +s.midi;
   if (d === "custom" || d === "capture") {
     if (s.mix.level) b.level = s.level;
     if (s.mix.dim) b.dim = s.dim;
@@ -508,6 +511,11 @@ function editButton(slot, btn) {
       } });
     const keyNote = h("span.qe-note", "A letter or digit on the keyboard that plays this button.");
     kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));
+    const midiIn = h("input.qe-num.qe-key", { type: "number", min: 0, max: 127, value: s.midi, placeholder: "—",
+      oninput: (e) => { const v = e.target.value; s.midi = v === "" ? "" : Math.max(0, Math.min(127, Math.round(+v))); } });
+    const midiNote = h("span.qe-note", "A pad or key on a MIDI controller. Press Learn, then hit the pad.");
+    const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
+    kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
     // behaviour
     if (!ONE_SHOT.has(d)) {
       const modes = [["hold", "Hold", "On while pressed"], ["latch", "On / off", "Press on, press again off"],
@@ -557,6 +565,37 @@ function editButton(slot, btn) {
       h("button.btn.primary", { onclick: async () => { if (await save()) close(); } }, "Save"),
     ],
   });
+}
+
+// MIDI learn: wait up to 10 s for a note on the desk's MIDI input.
+async function midiStatus() {
+  const d = await post("/api/console/midi", {});
+  return (d.result && d.result.midi) || d.midi || {};
+}
+async function learnMidi(btn, input, note, set) {
+  const st = await midiStatus().catch(() => ({}));
+  if (!st.enabled || !st.open) {
+    note.textContent = st.enabled ? `${st.error || "No MIDI device found"} - plug one in, then pick it in Settings.`
+      : "MIDI is off on this desk (MIDI_ENABLED in .env).";
+    note.classList.add("warn");
+    return;
+  }
+  const since = (st.last_note && st.last_note.at) || 0;
+  btn.textContent = "Hit a pad…";
+  btn.classList.add("on");
+  const end = Date.now() + 10000;
+  while (Date.now() < end && btn.isConnected) {
+    await new Promise((r) => setTimeout(r, 250));
+    const cur = await midiStatus().catch(() => ({}));
+    if (cur.last_note && cur.last_note.at > since) {
+      set(cur.last_note.number);
+      input.value = cur.last_note.number;
+      note.textContent = `Note ${cur.last_note.number} (channel ${cur.last_note.channel})`;
+      break;
+    }
+  }
+  btn.textContent = "Learn";
+  btn.classList.remove("on");
 }
 
 // A button's keyboard key: press plays it, and for a hold button letting

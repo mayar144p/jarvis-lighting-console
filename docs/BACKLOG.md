@@ -190,8 +190,14 @@ Done: every option in the button editor is a tap.
   the master).  Live: scroll on the tile or right-click it; the tile shows
   the speed when it isn't 1×.  Changing it live is not an undo step.
 
+- **MIDI note (DONE):** each button can take a note (0-127); "Learn"
+  in the editor waits for a pad hit on the desk's MIDI input.  A note given
+  to a button plays it ahead of the MIDI map file; note off lets go of a
+  hold button.  The tile shows it (♪36) next to its keyboard key.
+
 Still to do:
-- A MIDI note per button.
+- MIDI in the browser (Web MIDI), for controllers plugged into a tablet
+  rather than the desk computer (the desk's own MIDI input is Windows-only).
 - Live speed by touch (a long-press menu in gig mode).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
