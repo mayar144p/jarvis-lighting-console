@@ -10,13 +10,373 @@
       {
         "name": "1-channel",
         "channel_count": 1,
-        "channels": ["FX Fire"],
+        "channels": [
+          "FX Fire"
+        ],
         "detail": [
-          {"n": 1, "label": "FX Fire", "role": "fx_fire", "name": "Off/On",
-           "attribute": "Confetti", "bits": 8, "coarse": true,
-           "caps": [[0, 9, "Off"], [10, 255, "On"]],
-           "on_value": 255, "off_value": 0,
-           "fx_kind": "confetti", "max_s": 25}
+          {
+            "n": 1,
+            "label": "FX Fire",
+            "role": "fx_fire",
+            "name": "Off/On",
+            "attribute": "Confetti",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                9,
+                "Off"
+              ],
+              [
+                10,
+                255,
+                "On"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0,
+            "fx_kind": "confetti",
+            "max_s": 25
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "laserworld/beambar-10b-mk3",
+    "manufacturer": "Laserworld",
+    "model": "BeamBar 10B MK3",
+    "type": "Laser",
+    "fx_kind": "laser",
+    "source": "Laserworld BeamBar MK3 manual, DMX control chart (13 channels): ch1 0-49 laser off, 50-99 sound, 100-149 auto, 150-199 DMX program mode (ch2-3), 200-255 DMX beam mode (ch4-13); ch2 program / effect; ch3 speed (21 levels); ch4-13 one laser output each, left to right from the front, brightness 0-255.",
+    "modes": [
+      {
+        "name": "13-channel",
+        "channel_count": 13,
+        "channels": [
+          "Laser Output",
+          "Laser Pattern",
+          "Laser Speed",
+          "Laser Beam 1",
+          "Laser Beam 2",
+          "Laser Beam 3",
+          "Laser Beam 4",
+          "Laser Beam 5",
+          "Laser Beam 6",
+          "Laser Beam 7",
+          "Laser Beam 8",
+          "Laser Beam 9",
+          "Laser Beam 10"
+        ],
+        "detail": [
+          {
+            "n": 1,
+            "label": "Laser Output",
+            "fx_label": "Laser Output",
+            "role": "laser_on",
+            "name": "Mode / output",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                49,
+                "Off"
+              ],
+              [
+                50,
+                99,
+                "Sound mode"
+              ],
+              [
+                100,
+                149,
+                "Automatic mode"
+              ],
+              [
+                150,
+                199,
+                "Built-in programs"
+              ],
+              [
+                200,
+                255,
+                "Beam control"
+              ]
+            ],
+            "slots": [
+              {
+                "name": "Off",
+                "hex": null,
+                "slot": 1,
+                "from": 0,
+                "to": 49,
+                "value": 24
+              },
+              {
+                "name": "Sound mode",
+                "hex": null,
+                "slot": 2,
+                "from": 50,
+                "to": 99,
+                "value": 74
+              },
+              {
+                "name": "Automatic mode",
+                "hex": null,
+                "slot": 3,
+                "from": 100,
+                "to": 149,
+                "value": 124
+              },
+              {
+                "name": "Built-in programs",
+                "hex": null,
+                "slot": 4,
+                "from": 150,
+                "to": 199,
+                "value": 174
+              },
+              {
+                "name": "Beam control",
+                "hex": null,
+                "slot": 5,
+                "from": 200,
+                "to": 255,
+                "value": 227
+              }
+            ],
+            "on_value": 227,
+            "off_value": 0,
+            "fx_kind": "laser",
+            "max_s": 600
+          },
+          {
+            "n": 2,
+            "label": "Laser Pattern",
+            "fx_label": "Laser Pattern",
+            "role": "laser_pattern",
+            "name": "Program / effect selection",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Program / effect (ch1 in program mode)"
+              ]
+            ]
+          },
+          {
+            "n": 3,
+            "label": "Laser Speed",
+            "fx_label": "Laser Speed",
+            "role": "laser_speed",
+            "name": "Speed (slow to fast, 21 levels)",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Slow to fast"
+              ]
+            ]
+          },
+          {
+            "n": 4,
+            "label": "Laser Beam 1",
+            "fx_label": "Laser Beam 1",
+            "role": "laser_beam1",
+            "name": "Laser 1 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 5,
+            "label": "Laser Beam 2",
+            "fx_label": "Laser Beam 2",
+            "role": "laser_beam2",
+            "name": "Laser 2 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 6,
+            "label": "Laser Beam 3",
+            "fx_label": "Laser Beam 3",
+            "role": "laser_beam3",
+            "name": "Laser 3 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 7,
+            "label": "Laser Beam 4",
+            "fx_label": "Laser Beam 4",
+            "role": "laser_beam4",
+            "name": "Laser 4 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 8,
+            "label": "Laser Beam 5",
+            "fx_label": "Laser Beam 5",
+            "role": "laser_beam5",
+            "name": "Laser 5 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 9,
+            "label": "Laser Beam 6",
+            "fx_label": "Laser Beam 6",
+            "role": "laser_beam6",
+            "name": "Laser 6 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 10,
+            "label": "Laser Beam 7",
+            "fx_label": "Laser Beam 7",
+            "role": "laser_beam7",
+            "name": "Laser 7 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 11,
+            "label": "Laser Beam 8",
+            "fx_label": "Laser Beam 8",
+            "role": "laser_beam8",
+            "name": "Laser 8 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 12,
+            "label": "Laser Beam 9",
+            "fx_label": "Laser Beam 9",
+            "role": "laser_beam9",
+            "name": "Laser 9 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          },
+          {
+            "n": 13,
+            "label": "Laser Beam 10",
+            "fx_label": "Laser Beam 10",
+            "role": "laser_beam10",
+            "name": "Laser 10 brightness",
+            "attribute": "Laser",
+            "bits": 8,
+            "coarse": true,
+            "caps": [
+              [
+                0,
+                255,
+                "Brightness (weak to bright)"
+              ]
+            ],
+            "on_value": 255,
+            "off_value": 0
+          }
         ]
       }
     ]

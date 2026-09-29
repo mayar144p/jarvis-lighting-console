@@ -32,6 +32,10 @@ ROLES = ("dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber",
          "fx_fire", "fx_arm", "fx_fan", "fog", "fx_height", "fx_mode",
          "fx_param", "laser_on", "laser_pattern", "laser_size", "laser_rot",
          "laser_x", "laser_y", "laser_speed", "laser_colour",
+         # a beam bar's diodes, one channel each; and the further settings
+         # channels an effect has (a laser's strobe, a machine's timer...)
+         *(f"laser_beam{i}" for i in range(1, 17)),
+         *(f"fx_param{i}" for i in range(2, 7)),
          "unused", "raw")
 
 # Brightness roles: they combine by HTP (highest wins) and are 0-100.
@@ -45,10 +49,13 @@ COLOUR_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv",
 # effect, the auto show and the copilot never touch these: an SFX machine
 # fires only from its own armed buttons, and a laser's output likewise.
 SFX_ROLES = frozenset({"fx_fire", "fx_arm", "fx_fan", "fog", "fx_height",
-                       "fx_mode", "fx_param"})
+                       "fx_mode", "fx_param", *(f"fx_param{i}" for i in range(2, 7))})
+# A beam bar's diodes: programmable (which beams, recorded in cues) but, like
+# a laser's power, dark unless the laser output is on from its armed buttons.
+LASER_BEAM_ROLES = frozenset(f"laser_beam{i}" for i in range(1, 17))
 LASER_ROLES = frozenset({"laser_on", "laser_pattern", "laser_size",
                          "laser_rot", "laser_x", "laser_y", "laser_speed",
-                         "laser_colour"})
+                         "laser_colour"}) | LASER_BEAM_ROLES
 FX_ROLES = SFX_ROLES | LASER_ROLES
 
 # Beam-shape roles, used for the beam palette and the 3D body shapes.
@@ -74,6 +81,8 @@ _LABEL_ROLE = {
     "laser pattern": "laser_pattern", "laser size": "laser_size",
     "laser rotation": "laser_rot", "laser x": "laser_x", "laser y": "laser_y",
     "laser speed": "laser_speed", "laser colour": "laser_colour",
+    **{f"laser beam {i}": f"laser_beam{i}" for i in range(1, 17)},
+    **{f"fx setting {i}": f"fx_param{i}" for i in range(2, 7)},
     # Vendor FUNCTION names, which is what a GDTF import actually stores:
     # parse_gdtf prefers ChannelFunction/@OriginalAttribute over the
     # generic LogicalChannel/@Attribute, because the vendor's own name is

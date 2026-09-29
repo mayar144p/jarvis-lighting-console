@@ -582,8 +582,12 @@ ACTIONS = (
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
+    "laser_mode",
 )
 
+
+# a slot name that means the laser is off (not a mode it runs in)
+_OFFISH = re.compile(r"\b(off|blackout|disabled?|stop)\b", re.I)
 
 DMX_TARGET_DEFAULT = {"mode": "auto", "host": "", "transport": ""}
 DMX_TARGET_MODES = ("auto", "node", "broadcast")
@@ -798,7 +802,7 @@ class Engine:
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance", "laser_mode")} for h in self.patch},
         }
 
     def _restore_state(self, state: dict) -> None:
@@ -824,7 +828,7 @@ class Engine:
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient", "mount", "rot", "stance"):
+            for key in ("limits", "orient", "mount", "rot", "stance", "laser_mode"):
                 if key in got:
                     head[key] = got[key]
                 else:
@@ -3485,7 +3489,7 @@ class Engine:
             btn.setdefault("seconds", 10.0)
         if kind == "laser" and isinstance(raw.get("values"), dict):
             btn["values"] = {str(k): int(_clamp(v, 0, 255)) for k, v in raw["values"].items()
-                             if str(k) in LASER_ROLES and str(k) != "laser_on"}
+                             if str(k) in LASER_ROLES}
         return btn
 
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
@@ -3841,7 +3845,13 @@ class Engine:
         """The patched heads among `heads` that can do `kind`."""
         role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
         by = {h["head_no"]: h for h in self.patch}
-        return [by[n] for n in heads or [] if n in by and role in by[n]["map"]]
+
+        def can(h):
+            if role in h["map"]:
+                return True
+            # a beam bar: no power channel, its diodes are the output
+            return kind == "laser" and any(r.startswith("laser_beam") for r in h["map"])
+        return [by[n] for n in heads or [] if n in by and can(by[n])]
 
     def _sfx_limit(self, h: dict, kind: str) -> float:
         role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
@@ -3930,7 +3940,14 @@ class Engine:
                     off = int(self._sfx_detail(h, "fog").get("off_value") or 0)
                     sets["fog"] = off + round((255 - off) * run["level"] / 100)
                 else:
-                    sets["laser_on"] = int(self._sfx_detail(h, "laser_on").get("on_value") or 255)
+                    on = int(self._sfx_detail(h, "laser_on").get("on_value") or 255)
+                    mode = run["values"].get("laser_on", h.get("laser_mode"))
+                    sets["laser_on"] = int(mode) if mode is not None else on
+                    # a beam bar has no power channel: its diodes read this
+                    sets["_laser_live"] = 1
+                    beam = next((r for r in h["map"] if r.startswith("laser_beam")), None)
+                    if beam:
+                        sets["_beam_on"] = int(self._sfx_detail(h, beam).get("on_value") or 255)
                     for role, v in run["values"].items():
                         if role in h["map"]:
                             sets[role] = int(v)
@@ -4017,10 +4034,33 @@ class Engine:
             raise ValueError("ARM the effects first")
         nums = self._sfx_targets(heads, group)
         vals = {str(k): int(_clamp(v, 0, 255)) for k, v in (values or {}).items()
-                if str(k) in LASER_ROLES and str(k) != "laser_on"}
+                if str(k) in LASER_ROLES}
         if not self._sfx_start(key, "laser", nums, owner, seconds=seconds, values=vals):
             raise ValueError("no laser selected")
         return {"summary": f"laser ON ({len(self.fx_runs[key]['heads'])})"}
+
+    def _a_laser_mode(self, heads=None, value=None, **_):
+        """What a laser does when its output is fired (armed): its own
+        beams under DMX, its built-in programs, auto or sound - a value on
+        its output channel's own ranges.  Never lights anything by itself."""
+        nums = [int(n) for n in (heads or self.selected)]
+        targets = [h for h in self.patch if h["head_no"] in nums and "laser_on" in h["map"]]
+        if not targets:
+            raise ValueError("select a laser with an output/mode channel")
+        for h in targets:
+            if value is None or value == "":
+                h.pop("laser_mode", None)
+                continue
+            v = int(_clamp(value, 0, 255))
+            off = int(self._sfx_detail(h, "laser_on").get("off_value") or 0)
+            slots = self._wheel_slots(h, "laser_on")
+            slot = next((s for s in slots if s["from"] <= v <= s["to"]), None)
+            if v == off or (slot and _OFFISH.search(slot["name"])):
+                raise ValueError("that value is the laser's OFF: pick a mode it runs in")
+            h["laser_mode"] = v
+        name = (slot or {}).get("name") if value not in (None, "") else "default"
+        return {"heads": [h["head_no"] for h in targets],
+                "summary": f"laser mode: {name or value} on {len(targets)} laser(s) - lights only when armed and fired"}
 
     def _a_fx_kill(self, **_):
         """Stop every effect and laser at once, and disarm."""
@@ -6817,7 +6857,10 @@ class Engine:
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
             entry["open_known"] = self._open_known(heads[0], role)
-        if role in ("wheel", "gobo", "gobo2", "laser_pattern", "laser_colour",
+        if role.startswith("laser_beam") and heads:
+            d = self.head_ranges(heads[0]).get(role) or {}
+            entry["on"] = int(d.get("on_value") or 255)
+        if role in ("wheel", "gobo", "gobo2", "laser_pattern", "laser_colour", "laser_on",
                     "fx_mode", "fx_fire") and heads:
             # the fixture's real slots, when every head is the same model
             kinds = {(h.get("manufacturer"), h.get("model"), h.get("mode")) for h in heads}
@@ -7824,8 +7867,13 @@ class Engine:
             v = int(values.get("fog", o))
             if v > o:
                 out["fog"] = round((v - o) / max(1, 255 - o), 2)
-        if "laser_on" in m and int(values.get("laser_on", off("laser_on"))) != off("laser_on"):
+        beams = sorted((r for r in m if r.startswith("laser_beam")), key=lambda r: int(r[10:]))
+        beam_on = [1 if int(values.get(r, 0) or 0) > off(r) else 0 for r in beams]
+        if ("laser_on" in m and int(values.get("laser_on", off("laser_on"))) != off("laser_on")) \
+                or any(beam_on):
             out["laser"] = True
+            if beams:
+                out["beams"] = beam_on
             for role, key in (("laser_pattern", "pattern"), ("laser_rot", "rot"),
                               ("laser_size", "size"), ("laser_speed", "speed"),
                               ("laser_x", "x"), ("laser_y", "y")):
@@ -7842,6 +7890,12 @@ class Engine:
             if hexc is None and any(r in values for r in ("red", "green", "blue")):
                 hexc = "#%02x%02x%02x" % tuple(max(0, min(255, int(values.get(c, 0))))
                                                for c in ("red", "green", "blue"))
+            if hexc is None:
+                # a single-colour laser says so in its name: BeamBar 10B / 10G / 10R
+                mm = re.search(r"\d\s*(rgb|r|g|b)\b|\b(red|green|blue)\b", str(head.get("model") or "").lower())
+                word = (mm.group(1) or mm.group(2)) if mm else ""
+                hexc = {"r": "#ff2020", "red": "#ff2020", "g": "#22ff44", "green": "#22ff44",
+                        "b": "#3355ff", "blue": "#3355ff"}.get(word)
             out["hex"] = hexc if hexc and hexc != "#000000" else "#22ff44"
         return out or None
 
