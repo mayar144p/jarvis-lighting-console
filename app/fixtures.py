@@ -131,12 +131,17 @@ def db(db_path: Path):
     a definition that has just been replaced by an import.
     """
     conn = connect(db_path)
+    changed = False
     try:
         yield conn
         conn.commit()
     finally:
+        # only a write invalidates: a pure read (the 40 Hz tick reads
+        # ranges and overrides) must not drop every cache it just filled
+        changed = conn.total_changes > 0
         conn.close()
-        invalidate_cache()
+        if changed:
+            invalidate_cache()
 
 
 # --------------------------------------------------------------------------
