@@ -487,6 +487,26 @@ function followCell(n, c, refresh) {
   return h("div.row-btns", sel, secs);
 }
 
+// A cue's own fade per part ("colour snaps, movers glide 4 s"): the chip
+// shows how many parts are timed, the menu sets one.
+const PARTS = [["intensity", "Level"], ["colour", "Colour"], ["position", "Position"], ["beam", "Beam"]];
+function partTimes(n, c, refresh) {
+  const t = c.times || {};
+  const set = Object.keys(t).length;
+  return h("button.chip.cue-parts" + (set ? ".on" : ""), {
+    title: set ? PARTS.filter(([k]) => k in t).map(([k, l]) => `${l} ${t[k]} s`).join(" · ")
+      : "Give level, colour, position or beam a fade of its own",
+    onclick: (e) => menu(e.currentTarget, PARTS.map(([k, l]) => ({
+      label: `${l}: ${k in t ? t[k] + " s" : `same as the cue (${c.fade_s ?? 0} s)`}`,
+      run: async () => {
+        const v = await promptBox(`${l} fade`, "Seconds (empty = same as the cue)", k in t ? String(t[k]) : "", { ok: "Set" });
+        if (v === null) return;
+        run("edit_cue", { playback: n, cue: c.n, times: { [k]: v.trim() === "" ? null : +v } }).then(refresh);
+      },
+    }))),
+  }, set ? `${set} part${set > 1 ? "s" : ""}` : "parts");
+}
+
 export function openCueList(n) {
   let close = null;
   const render = () => {
@@ -502,7 +522,10 @@ export function openCueList(n) {
       fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
       hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
       const tr = h("tr" + (i === pb.index ? ".sel" : ""), { draggable: "true", title: "Drag to reorder" },
-        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest)), h("td", fd), h("td", hd),
+        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest),
+          (c.fx || []).length ? h("div.cue-fx", { title: "Effects this cue runs (they stop at the next cue or on release)" },
+            "⚡ " + c.fx.join(", ")) : null),
+        h("td", fd, partTimes(n, c, () => refresh())), h("td", hd),
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),

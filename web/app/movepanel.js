@@ -9,6 +9,8 @@ import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
+import { openCueDialog } from "./dialogs.js";
+import { focusedPlayback } from "./playbacks.js";
 
 const MOVES = [
   ["circle", "Circle", "↻"], ["pan_sweep", "Sweep", "↔"], ["tilt_bounce", "Bounce", "↕"],
@@ -241,6 +243,22 @@ function nudgeBlock() {
         }, "Save spot"))));
 }
 
+let taps = [];
+function bpmText() {
+  if (taps.length < 2) return "Tap";
+  const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+  return `${Math.round(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length))} BPM`;
+}
+
+// A button that plays this (a saved move follows the move when it's updated)
+async function makeButton(button, label) {
+  const name = await promptBox("Make a button", "Name", label, { ok: "Make button" });
+  if (name === null) return;
+  const heads = movers().map((x) => x.head_no);
+  run("quick_set", { page: 1, slot: "free", button: { ...button, label: name || label, mode: "latch",
+    target: heads.length ? { heads } : { all: true } } }, { toast: true });
+}
+
 function speedMaster() {
   const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master) || 1;
   const input = h("input", { type: "range", min: 10, max: 200, step: 5, value: Math.round(cur * 100) });
@@ -255,9 +273,23 @@ function speedMaster() {
     t = setTimeout(() => run("speed_master", { pct }, { silentError: true }), 60);
   });
   const set = (pct) => () => { input.value = pct; input.dispatchEvent(new Event("input")); };
+  // Tap tempo: tap on the beat; 120 BPM is 1x, so 60 BPM halves and 240 doubles everything that moves
+  const tap = h("button.chip.mv-tap", { title: "Tap on the beat (4 taps). 120 BPM = 1×",
+    onpointerdown: (e) => {
+      e.preventDefault();
+      const now = performance.now();
+      if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+      taps.push(now);
+      taps = taps.slice(-5);
+      if (taps.length < 2) { tap.textContent = "Tap…"; return; }
+      const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+      const bpm = 60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length);
+      tap.textContent = `${Math.round(bpm)} BPM`;
+      set(Math.max(10, Math.min(200, Math.round(bpm / 120 * 100))))();
+    } }, bpmText());
   return h("div.mv-row", h("span.k", "Speed master"), input, out,
     h("span.chip-row", h("button.chip", { onclick: set(50) }, "½×"), h("button.chip", { onclick: set(100) }, "1×"),
-      h("button.chip", { onclick: set(200) }, "2×")));
+      h("button.chip", { onclick: set(200) }, "2×"), tap));
 }
 
 function movementBlock() {
@@ -329,13 +361,23 @@ function myMoves(act) {
   const playing = (m) => act.some((f) => f.move === m.id && f.heads.some((n) => heads.includes(n)));
   return h("div.mv-mine",
     h("div.mv-row", h("span.k", "My moves"),
-      h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move")),
+      h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move"),
+      h("button.btn.small", { title: "A quick button (on / off) that runs this movement on these lights",
+        onclick: () => {
+          const heads = movers().map((x) => x.head_no);
+          const mine = running().find((f) => f.heads.some((n) => heads.includes(n)));
+          const lib = mine ? mine.lib : lastLib;
+          makeButton({ kind: "fx", fx: lib, params: params() }, (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
+        } }, "Make a button"),
+      h("button.btn.small", { title: "Record the movement (and the rest of the programmer) as a cue",
+        onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…")),
     list.length ? h("div.mv-mytiles", ...list.map((m) => {
       const more = h("button.mv-more", { "aria-label": `${m.name} options`, title: "Rename, update, delete",
         onclick: (e) => {
           e.stopPropagation();
           menu(e.currentTarget, [
             { label: "Update to the knobs now", run: () => saveMove(m) },
+            { label: "Make a button", run: () => makeButton({ kind: "move", move: m.id }, m.name) },
             { label: "Rename…", run: async () => {
               const name = await promptBox("Rename move", "Name", m.name, { ok: "Rename" });
               if (name) run("move_rename", { id: m.id, name });

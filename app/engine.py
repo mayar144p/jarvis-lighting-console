@@ -3977,7 +3977,10 @@ class Engine:
                                              f"to {to_page}.{to_slot}"}
 
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
-        """Create, change or remove the quick button at page/slot."""
+        """Create, change or remove the quick button at page/slot.
+        slot="free": the first empty slot (from `page` on)."""
+        if slot == "free":
+            page, slot = self._quick_free_slot(page)
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         if slot is None:
             raise ValueError("slot is required")
@@ -3994,6 +3997,16 @@ class Engine:
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    def _quick_free_slot(self, page=None) -> tuple[int, int]:
+        """The first empty (page, slot), from `page` on (default page 1)."""
+        start = int(_clamp(page or 1, 1, self.QUICK_PAGES))
+        used = {(b["page"], b["slot"]) for b in self.quick}
+        for p in range(start, self.QUICK_PAGES + 1):
+            for sl in range(1, self.QUICK_SLOTS + 1):
+                if (p, sl) not in used:
+                    return p, sl
+        raise ValueError("no empty button left")
 
     def _a_group_flash(self, heads=None, group=None, auto=None, down=True, level=100, **_):
         """Flash some lights while held (a group chip held down): full up
@@ -4024,11 +4037,7 @@ class Engine:
             for role, v in (self.programmer.get(h["head_no"]) or {}).items():
                 if role in LASER_ROLES and isinstance(v, (int, float)):
                     values.setdefault(role, int(v))
-        pages = [int(page)] if page else list(range(1, self.QUICK_PAGES + 1))
-        used = {(b["page"], b["slot"]) for b in self.quick}
-        spot = next(((p, sl) for p in pages for sl in range(1, self.QUICK_SLOTS + 1) if (p, sl) not in used), None)
-        if spot is None:
-            raise ValueError("no empty button left" + (f" on page {page}" if page else ""))
+        spot = self._quick_free_slot(page)
         r = self._a_quick_set(page=spot[0], slot=spot[1], button={
             "kind": "laser", "mode": "latch", "label": str(label or "Laser look")[:24],
             "target": {"heads": [h["head_no"] for h in lasers]}, "values": values})
@@ -6672,8 +6681,43 @@ class Engine:
             raise ValueError(f"playback must be 1..{len(self.playbacks)}")
         return self.playbacks[num - 1]
 
+    def _cue_fx_capture(self, heads) -> tuple[list[dict], list[int]]:
+        """The effects running on `heads` from the programmer side (not a
+        button's, not another cue's): what a recorded cue plays again."""
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+        items, ids = [], []
+        for f in self.fx:
+            if not f.get("lib") or f["id"] in owned or f.get("cue_pb") or not set(f.get("heads") or []) & heads:
+                continue
+            item = {"name": f["lib"], "params": dict(f.get("params") or {}), "heads": list(f["heads"])}
+            if f.get("across"):
+                item["across"] = True
+            if f.get("move"):
+                item["move"] = f["move"]
+            items.append(item)
+            ids.append(f["id"])
+        return items[:12], ids
+
+    def _cue_fx_stop(self, pb: dict) -> None:
+        self.fx = [f for f in self.fx if f.get("cue_pb") != pb["n"]]
+
+    def _cue_fx_start(self, pb: dict, cue: dict) -> None:
+        """A cue's effects take over from the last cue's on this playback."""
+        self._cue_fx_stop(pb)
+        for item in cue.get("fx") or []:
+            try:
+                r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                         item.get("heads") or [], None, across=bool(item.get("across")))
+            except (ValueError, KeyError):
+                continue
+            for f in self.fx:
+                if f["id"] == r.get("fx"):
+                    f["cue_pb"] = pb["n"]
+                    if item.get("move"):
+                        f["move"] = item["move"]
+
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
-                      cue=None, follow=None, mode="replace", **_):
+                      cue=None, follow=None, mode="replace", effects=True, **_):
         """Record the programmer as a cue.  Over an existing cue, `mode`:
         "replace" (the cue becomes exactly the programmer), "merge" (the
         programmer's values are added into the cue, the rest of it kept) or
@@ -6684,10 +6728,12 @@ class Engine:
         mode = str(mode or "replace").lower()
         if mode not in ("replace", "merge", "insert"):
             raise ValueError("mode is replace, merge or insert")
-        if not self.programmer:
-            raise ValueError("programmer is empty - set something first")
         values = {h: dict(row) for h, row in self.programmer.items() if row}
-        if not values:
+        # the effects running on the lights in the programmer (or, with
+        # nothing set, on the selection) go into the cue too
+        fx_items, fx_ids = self._cue_fx_capture(set(values) or set(self.selected)) \
+            if _truthy(effects) else ([], [])
+        if not values and not fx_items:
             raise ValueError("programmer is empty - set something first")
         cue_n = int(cue) if cue else len(pb["stack"]) + 1
         if cue_n < 1:
@@ -6703,6 +6749,20 @@ class Engine:
                  "fade_s": float(fade if fade is not None else (old or {}).get("fade_s", 0.0)),
                  "hold_s": float(hold if hold is not None else (old or {}).get("hold_s", 0.0)),
                  "values": values}
+        if old is not None and old.get("times"):
+            entry["times"] = dict(old["times"])       # its part times stay
+        fx_list = list((old or {}).get("fx") or []) if old is not None and mode == "merge" else []
+        for item in fx_items:
+            # merge: a new effect replaces one of the same kind on the same lights
+            group = (fxlib_mod.FX.get(item["name"]) or {}).get("group")
+            fx_list = [x for x in fx_list if not ((fxlib_mod.FX.get(x["name"]) or {}).get("group") == group
+                                                  and set(x.get("heads") or []) & set(item["heads"]))]
+            fx_list.append(item)
+        if fx_list:
+            entry["fx"] = fx_list
+        # recorded effects now live in the cue, as the programmer does
+        if fx_ids:
+            self.fx = [f for f in self.fx if f["id"] not in fx_ids]
         if old is not None and follow is None and old.get("follow_s") is not None:
             entry["follow_s"] = old["follow_s"]
         if mode == "insert" and cue_n <= len(pb["stack"]):
@@ -6822,6 +6882,7 @@ class Engine:
         if not stack:
             pb["index"] = -1
             pb["active"] = False
+            self._cue_fx_stop(pb)
         return {"playback": pb["n"], "cues": len(stack),
                 "index": pb["index"], "name": gone.get("name"),
                 "summary": f"deleted cue {num} ({gone.get('name')}) "
@@ -6869,8 +6930,10 @@ class Engine:
         return {"playback": pb["n"], "cue": num, "name": label,
                 "summary": f"renamed cue {num} to {label!r}"}
 
+    CUE_PARTS = ("intensity", "colour", "position", "beam")
+
     def _a_edit_cue(self, playback=None, cue=None, fade=None, hold=None,
-                    name=None, follow=_UNSET, **_):
+                    name=None, follow=_UNSET, times=None, **_):
         """Change a cue's timing or name in place, without re-recording it."""
         pb = self._playback(playback if playback is not None else 1)
         stack = pb["stack"]
@@ -6888,6 +6951,21 @@ class Engine:
         if name is not None and str(name).strip():
             entry["name"] = str(name).strip()
             changed.append("name")
+        if isinstance(times, dict):
+            # a part's own fade; empty / None puts it back on the cue's fade
+            cur = dict(entry.get("times") or {})
+            for part, v in times.items():
+                if part not in self.CUE_PARTS:
+                    raise ValueError(f"a cue part is one of {', '.join(self.CUE_PARTS)}")
+                if v in (None, ""):
+                    cur.pop(part, None)
+                else:
+                    cur[part] = max(0.0, min(600.0, float(v)))
+            if cur:
+                entry["times"] = cur
+            else:
+                entry.pop("times", None)
+            changed.append("part times")
         # A SENTINEL, not a None default, and that is the whole trick.
         #
         # `follow` has to be able to say three things: set a number, set
@@ -6998,7 +7076,9 @@ class Engine:
         cue = stack[index]
         target = self._scaled_cue(cue, at)
         pb["fade"] = {"t0": now,
-                      "dur": float(cue.get("fade_s") or 0.0), "from": was}
+                      "dur": float(cue.get("fade_s") or 0.0), "from": was,
+                      # its own fade per kind of value (position 4 s, colour 0...)
+                      "parts": dict(cue.get("times") or {})}
         # The target is kept, not re-derived: after the fade has finished
         # `_pb_values` used to return `cue["values"]` directly, which would
         # have snapped the rig back to full the instant the fade ended.
@@ -7006,6 +7086,7 @@ class Engine:
         pb["at"] = at
         pb["index"] = index
         pb["active"] = True
+        self._cue_fx_start(pb, cue)
         self._order += 1
         pb["order"] = self._order
         self._arm_follow(pb, now)              # manual steps re-arm here
@@ -7127,6 +7208,7 @@ class Engine:
     def _a_playback_release(self, playback=None, **_):
         pb = self._playback(playback if playback is not None else 1)
         pb["active"] = False
+        self._cue_fx_stop(pb)
         pb["fade"] = None
         pb["follow"]["at"] = None               # no auto-advance while off
         return {"playback": pb["n"], "active": False,
@@ -7141,6 +7223,7 @@ class Engine:
         pb["active"] = True
         self._order += 1
         pb["order"] = self._order
+        self._cue_fx_start(pb, pb["stack"][pb["index"]])
         self._arm_follow(pb, self._clock())     # resume auto-advance
         return {"playback": pb["n"], "active": True, "cue":
                 pb["stack"][pb["index"]]["n"]}
@@ -7725,12 +7808,14 @@ class Engine:
         if not fade:
             return target
         dur = float(fade.get("dur") or 0.0)
-        if dur <= 0:
+        parts = fade.get("parts") or {}
+        longest = max([dur, *[float(v) for v in parts.values()]])
+        if longest <= 0:
             return target
-        t = (now - float(fade["t0"])) / dur
-        if t >= 1.0:
+        el = now - float(fade["t0"])
+        if el >= longest:
             return target
-        if t <= 0:
+        if el <= 0:
             return fade["from"]
         src, dst = fade["from"], target
         out = {}
@@ -7738,6 +7823,8 @@ class Engine:
             a, b = src.get(head_no) or {}, dst.get(head_no) or {}
             row = {}
             for attr in set(a) | set(b):
+                d = float(parts.get(self.attr_group(attr), dur)) if parts else dur
+                t = 1.0 if d <= 0 else min(1.0, el / d)
                 v0, v1 = a.get(attr, 0), b.get(attr, 0)
                 row[attr] = int(round(v0 + (v1 - v0) * t))
             out[head_no] = row
@@ -10022,7 +10109,10 @@ class Engine:
                 "stack": [{"n": c["n"], "name": c["name"],
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
-                           "empty": not (c.get("values") or {})}
+                           "times": c.get("times") or None,
+                           "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f["name"])
+                                  for f in c.get("fx") or []],
+                           "empty": not (c.get("values") or {}) and not c.get("fx")}
                           for c in pb["stack"]],
                 "cue": self._pb_cue(pb),
                 "follow": self._follow_public(pb)}

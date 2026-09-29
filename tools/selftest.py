@@ -7525,6 +7525,7 @@ def _standalone_suites():
     ("buttons: a speed of their own", test_button_speed),
     ("buttons: a MIDI note per button", test_button_midi),
     ("group chips flash when held; laser looks make buttons", test_group_flash_laser_button),
+    ("cues keep their effects and part times; movements make buttons", test_cue_fx_parts),
     )
 
 
@@ -9230,6 +9231,87 @@ def test_group_flash_laser_button() -> None:
     fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("the Laser tab records a cue and makes a button", "quick_from_laser" in fx and "openCueDialog" in fx, "")
     check("group chips flash while held", "holdToFlash" in fj and "group_flash" in fj, "")
+
+
+def test_cue_fx_parts() -> None:
+    """Effects running when a cue is recorded go into the cue: GO starts
+    them, the next cue replaces them, release stops them, and they survive
+    a save.  A cue part (colour, position...) can have a fade of its own."""
+    print("effects in cues, cue part times, buttons from movements")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="rainbow")
+            check("an effect runs", r.get("ok"), str(r))
+            r = e.act("record_cue", playback=1, name="Rainbow")
+            cue = e.playbacks[0]["stack"][0]
+            check("recording keeps the effect in the cue", r.get("ok") and [f["name"] for f in cue.get("fx") or []] == ["rainbow"],
+                  str(cue.get("fx")))
+            check("...and takes it off the programmer", not any(f.get("lib") == "rainbow" for f in e.fx), str(e.fx))
+            e.act("select_all")
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1, name="Blue")
+            e.act("cue_go", playback=1)
+            check("GO starts the cue's effect", [f.get("cue_pb") for f in e.fx if f.get("lib") == "rainbow"] == [1], str(e.fx))
+            e.act("cue_go", playback=1)
+            check("the next cue (no effects) stops it", not any(f.get("lib") == "rainbow" for f in e.fx), str(e.fx))
+            e.act("cue_go", playback=1, cue=1)
+            e.act("playback_release", playback=1)
+            check("releasing the playback stops its effects", not any(f.get("cue_pb") for f in e.fx), str(e.fx))
+            snap = e.snapshot()
+            pub = next(p for p in snap["playbacks"] if p["n"] == 1)["stack"][0]
+            check("the cue list shows the cue's effects", pub.get("fx") == ["Rainbow"], str(pub))
+            e.act("save_show", name="cuefx")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="cuefx")
+                check("a cue's effects survive save and load",
+                      [f["name"] for f in e2.playbacks[0]["stack"][0].get("fx") or []] == ["rainbow"], "")
+            finally:
+                e2.shutdown()
+            # part times: colour snaps, level keeps the cue's 4 s fade
+            r = e.act("edit_cue", playback=1, cue=2, fade=4, times={"colour": 0})
+            check("a cue part gets its own fade", r.get("ok") and e.playbacks[0]["stack"][1].get("times") == {"colour": 0.0}, str(r))
+            r = e.act("edit_cue", playback=1, cue=2, times={"gobo": 1})
+            check("an unknown part is refused", not r.get("ok"), str(r))
+            t = [1000.0]
+            e._clock = lambda: t[0]
+            pb = e.playbacks[0]
+            pb["index"] = 0
+            pb["active"] = True
+            pb["fade"] = None
+            pb["target"] = None
+            e.act("cue_go", playback=1, cue=2)
+            t[0] += 2.0
+            vals = e._pb_values(pb, t[0])[1]
+            full = pb["stack"][1]["values"][1]
+            colour_role = next(r for r in full if r in ("blue", "red", "green"))
+            check("mid-fade: colour already there, level still on its way",
+                  vals.get(colour_role) == full.get(colour_role), str((vals, full)))
+            r = e.act("edit_cue", playback=1, cue=2, times={"colour": None})
+            check("clearing the part puts it back on the cue's fade", "times" not in e.playbacks[0]["stack"][1], "")
+            # a movement becomes a button in the first free slot
+            r = e.act("quick_set", page=1, slot="free", button={"kind": "fx", "fx": "rainbow", "label": "Rainbow", "mode": "latch"})
+            check("a button can go on the first free slot", r.get("ok") and r.get("id") == "q1-1", str(r))
+            r = e.act("quick_set", page=1, slot="free", button={"kind": "flash"})
+            check("...and the next one after it", r.get("id") == "q1-2", str(r))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("the Move tab: tap tempo, make a button, record a cue", "BPM" in mv and '"Make a button"' in mv
+          and "openCueDialog" in mv, "")
+    dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the cue list shows effects and part times", "cue-fx" in dl and "partTimes" in dl, "")
 
 
 def test_cue_list_modes() -> None:

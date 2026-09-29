@@ -80,7 +80,14 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - Record dialog: "Where" (new cue at the end, or over cue N) + the mode.
 - Cue list: drag a row by its ⋮⋮ to reorder, "Update ▾" (merge / replace
   / record before), live refresh (not while typing).
-- Still open: effects stored in cues, cue part timing per attribute.
+- **Effects in cues (DONE):** the effects running on the programmer's
+  lights (or the selection) are recorded into the cue and leave the
+  programmer; GO starts them, the next cue replaces them, release stops
+  them; merge swaps an effect of the same kind; saved with the show.  The
+  cue list shows them (⚡ Circle).
+- **Part times (DONE):** a cue's level, colour, position or beam can have
+  a fade of its own ("parts" in the cue list), e.g. colour snaps while the
+  movers glide 4 s.
 
 ## 15. Multi-head lights (DONE, first part)
 
@@ -262,9 +269,10 @@ tiles with direction / arc / size / speed / wave / lock, Speed master,
 per-light range (Set top / bottom / left / right), dance-floor safe zones
 for every mover + Check the floor, a light's own spin / program speeds,
 laser safe zone (beam height / size), FX tab without movements, Tools ->
-Setup, "In the programmer" bar with per-kind clear.  Still open: Tap tempo
-on the Speed master, a live preview on a floor map, Record as cue / Make
-button straight from a movement.
+Setup, "In the programmer" bar with per-kind clear.  Since: Tap tempo on
+the Speed master (120 BPM = 1×), "Make a button" and "Record as a cue…"
+straight from a movement, "Make a button" on a saved move.  (The live
+preview is the 3D view; no separate floor-map preview.)
 
 Replaces movement spread over Position / FX / Tools with ONE "Move" tab.
 
