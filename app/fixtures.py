@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS modes (
 );
 """
 
+# Bump when parse_gdtf learns something new from a file (3: shutter open
+# values and colour/gobo wheel slots).  On start, fixtures imported by an
+# older parser are re-read from their .gdtf files (refresh_imports), so an
+# update reaches the lights you already have without downloading again.
+PARSER_VERSION = 3
+
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
 # needing a rebuild - the operator's library is real work, not a cache.
@@ -733,6 +739,40 @@ def import_file(db_path: Path, path: Path) -> dict:
             results.append({"fixture_id": fid, "manufacturer": item["manufacturer"],
                             "model": item["model"], "modes": len(item["modes"])})
     return {"file": path.name, "imported": results}
+
+
+def refresh_imports(db_path: Path, folders) -> dict:
+    """Re-read installed GDTF fixtures when the parser has improved.
+
+    Each fixture remembers its source file name; the file is looked for
+    in `folders` (the GDTF Share cache, the inbox).  Patched heads keep
+    working because a re-import replaces modes by name.  Cheap when there
+    is nothing to do: one read of the stored version.
+    """
+    with db(db_path) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM meta WHERE key = 'parser_version'").fetchone()
+        have = int(row["value"]) if row and str(row["value"]).isdigit() else 0
+        if have >= PARSER_VERSION:
+            return {"refreshed": 0, "missing": 0, "errors": []}
+        sources = [r["source"] for r in conn.execute(
+            "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'")]
+    refreshed, missing, errors = 0, 0, []
+    for name in sources:
+        path = next((Path(f) / name for f in folders
+                     if f and (Path(f) / name).is_file()), None)
+        if path is None:
+            missing += 1
+            continue
+        try:
+            import_file(db_path, path)
+            refreshed += 1
+        except Exception as exc:          # noqa: BLE001 - one bad file
+            errors.append(f"{name}: {exc}")
+    with db(db_path) as conn:
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)",
+                     (str(PARSER_VERSION),))
+    return {"refreshed": refreshed, "missing": missing, "errors": errors}
 
 
 def list_modes(db_path: Path, fixture_id: int) -> list[dict]:

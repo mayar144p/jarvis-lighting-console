@@ -7484,6 +7484,7 @@ def _standalone_suites():
     ("dmx target", test_dmx_target),
     ("shutter rests open", test_shutter_rest),
     ("colour wheel slots", test_wheel_slots),
+    ("update on launch", test_auto_update),
     )
 
 
@@ -8296,6 +8297,106 @@ def test_wheel_slots() -> None:
             check("white is the open slot", e.build_frames()[1][1] == 2, str(e.build_frames()[1][1]))
         finally:
             e.shutdown()
+
+
+def test_auto_update() -> None:
+    """run.bat/run.sh fast-forward to the latest version, and never
+    anything riskier; old fixture imports are re-read after an update."""
+    print("update on launch (fast-forward only, fixture refresh)")
+    import os as _os
+    import shutil
+    import subprocess as sp
+    import tempfile
+    import zipfile
+    sys.path.insert(0, str(ROOT / "tools"))
+    import update as upd
+    from app import fixtures
+
+    if shutil.which("git") is None:
+        check("git is available for the update test", True, "skipped: no git")
+        return
+    env = dict(_os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(cwd, *args):
+        return sp.run(["git", *args], cwd=cwd, env=env, capture_output=True,
+                      text=True, check=True).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        origin, dev, user = tmp / "origin.git", tmp / "dev", tmp / "user"
+        git(tmp, "init", "-q", "--bare", "-b", "main", str(origin))
+        git(tmp, "clone", "-q", str(origin), str(dev))
+        (dev / "app.txt").write_text("v1\n")
+        git(dev, "add", "."); git(dev, "commit", "-qm", "v1"); git(dev, "push", "-q", "origin", "HEAD:main")
+        git(tmp, "clone", "-q", str(origin), str(user))
+        check("an up-to-date desk says so", upd.update(user) == "up to date", upd.update(user))
+        (dev / "app.txt").write_text("v2\n")
+        git(dev, "commit", "-qam", "v2 shutter fix"); git(dev, "push", "-q", "origin", "HEAD:main")
+        (user / "data").mkdir()
+        (user / "data" / "show.json").write_text("mine")          # untracked data
+        msg = upd.update(user)
+        check("a new version is pulled on launch",
+              msg.startswith("updated") and (user / "app.txt").read_text() == "v2\n", msg)
+        check("it lists what changed", "v2 shutter fix" in msg, msg)
+        check("the operator's own data is untouched",
+              (user / "data" / "show.json").read_text() == "mine", "")
+        (dev / "app.txt").write_text("v3\n")
+        git(dev, "commit", "-qam", "v3"); git(dev, "push", "-q", "origin", "HEAD:main")
+        (user / "app.txt").write_text("my edit\n")
+        msg = upd.update(user)
+        check("local edits to Jarvis's files are never overwritten",
+              "local edits" in msg and (user / "app.txt").read_text() == "my edit\n", msg)
+        git(user, "checkout", "-q", "--", "app.txt")
+        (user / "mine.txt").write_text("x")
+        git(user, "add", "mine.txt"); git(user, "commit", "-qm", "my own change")
+        msg = upd.update(user)
+        check("a desk with its own commits is not merged into",
+              "of your own" in msg, msg)
+        git(user, "reset", "-q", "--hard", "HEAD~1")
+        (user / ".env").write_text("AUTO_UPDATE=false\n")
+        check("AUTO_UPDATE=false turns it off", "off" in upd.update(user), upd.update(user))
+        (user / ".env").unlink()
+        git(user, "remote", "set-url", "origin", str(tmp / "nowhere.git"))
+        msg = upd.update(user)
+        check("offline at a venue: it starts the version it has",
+              "no connection" in msg and (user / "app.txt").read_text() == "v2\n", msg)
+        check("a folder that is not a git checkout is skipped",
+              "not a git checkout" in upd.update(tmp), upd.update(tmp))
+        real = upd.update
+
+        def boom(*_a):
+            raise RuntimeError("disk on fire")
+        upd.update = boom
+        try:
+            check("even a crashing update never stops the desk starting", upd.main() == 0, "")
+        finally:
+            upd.update = real
+
+        # -- an update re-reads old fixture imports ---------------------------
+        db = tmp / "f.db"
+        cache = tmp / "cache"
+        cache.mkdir()
+        gd = cache / "rev1.gdtf"
+        with zipfile.ZipFile(gd, "w") as zf:
+            zf.writestr("description.xml", (
+                '<GDTF DataVersion="1.1"><FixtureType Name="OldSpot" Manufacturer="T">'
+                '<DMXModes><DMXMode Name="2ch"><DMXChannels>'
+                '<DMXChannel Offset="1" Highlight="4/1"><LogicalChannel Attribute="Shutter1">'
+                '<ChannelFunction Name="Shutter" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+        fixtures.import_file(db, gd)
+        with fixtures.db(db) as conn:          # as an older importer left it
+            conn.execute("UPDATE modes SET detail = '[]'")
+        first = fixtures.refresh_imports(db, [cache])
+        check("fixtures from an older importer are re-read on start",
+              first["refreshed"] == 1
+              and fixtures.role_ranges(db, "T", "OldSpot", "2ch").get("shutter", {}).get("open_from") == 4,
+              str(first))
+        again = fixtures.refresh_imports(db, [cache])
+        check("and only once", again["refreshed"] == 0, str(again))
 
 
 def _raises(fn) -> bool:
