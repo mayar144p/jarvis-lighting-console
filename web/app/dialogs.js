@@ -73,10 +73,17 @@ export function openAddDialog(query = "") {
     addBtn.disabled = false;
   }
 
+  // Every keystroke starts a search and they finish in any order: only the
+  // newest may write the list, or a slow reply for "cobr" lands after the
+  // one for "cobra 120" and the right results vanish.
+  let seq = 0;
+
   async function searchLib() {
+    const my = ++seq;
     const q = search.value.trim();
     try {
       const d = await get("/api/fixtures?q=" + encodeURIComponent(q));
+      if (my !== seq) return;
       const rows = d.results || [];
       list.replaceChildren(...rows.map((r) => {
         const b = h("button.lib-item", { onclick: () => showPick(r) },
@@ -95,7 +102,9 @@ export function openAddDialog(query = "") {
   }
 
   async function searchShare() {
+    const my = ++seq;
     const st = await get("/api/gdtf/status").catch(() => ({}));
+    if (my !== seq) return;
     if (!st.signed_in && !st.configured) {
       // Sign-in is offered whenever there is no live session - even with
       // a saved catalogue to browse, a download needs one.
@@ -112,6 +121,7 @@ export function openAddDialog(query = "") {
     if (q.length < 2) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Type at least two letters to search the Share.")); return; }
     list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Searching…"));
     const d = await get("/api/gdtf/search?limit=80&q=" + encodeURIComponent(q)).catch((e) => ({ error: e.message }));
+    if (my !== seq) return;
     if (d.error) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, d.error)); return; }
     list.replaceChildren(...(d.results || []).map((r) => {
       const item = { ...r, model: r.fixture };
@@ -124,12 +134,14 @@ export function openAddDialog(query = "") {
   }
 
   async function searchOpen() {
+    const my = ++seq;
     const q = search.value.trim();
     if (q.length < 2) {
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Type a brand or model: the Open Fixture Library and QLC+ are searched offline."));
       return;
     }
     const d = await get("/api/fixtures/library?limit=80&q=" + encodeURIComponent(q)).catch((e) => ({ error: e.message }));
+    if (my !== seq) return;
     if (d.error) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, d.error)); return; }
     const libs = d.libraries || [];
     shareNote.textContent = libs.map((l) => `${l.name}: ${l.fixtures} fixtures (${l.licence})`).join(" · ");
@@ -142,7 +154,7 @@ export function openAddDialog(query = "") {
       const item = { ...r, modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
       const b = h("button.lib-item", { onclick: () => showPick(item) },
         h("div.li-t", h("b", `${r.manufacturer} ${r.model}`),
-          h("small", [r.src === "ofl" ? "OFL" : "QLC+", r.type || "", `${(r.modes || []).length} mode(s)`].filter(Boolean).join(" · "))));
+          h("small", [r.close ? "close match" : "", r.src === "ofl" ? "OFL" : "QLC+", r.type || "", `${(r.modes || []).length} mode(s)`].filter(Boolean).join(" · "))));
       b._item = item;
       return b;
     }));
@@ -152,6 +164,7 @@ export function openAddDialog(query = "") {
   // One box, every source: installed first, then the Jarvis library,
   // OFL and QLC+ (offline), then GDTF Share when signed in.
   async function searchAll() {
+    const my = ++seq;
     const q = search.value.trim();
     const tag = (text) => h("span.src-tag", text);
     const row = (item, name, bits, label) => {
@@ -165,6 +178,7 @@ export function openAddDialog(query = "") {
       get("/api/fixtures?q=" + encodeURIComponent(q)).catch(() => ({})),
       q.length >= 2 ? get("/api/fixtures/library?limit=60&q=" + encodeURIComponent(q)).catch(() => ({})) : Promise.resolve({}),
     ]);
+    if (my !== seq) return;
     const rows = [];
     for (const r of inst.results || []) {
       rows.push(row({ ...r, _origin: "lib" }, `${r.manufacturer} ${r.model}`,
@@ -172,7 +186,7 @@ export function openAddDialog(query = "") {
     }
     for (const r of lib.results || []) {
       const item = { ...r, _origin: "open", modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
-      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.type || "", `${(r.modes || []).length} mode(s)`],
+      rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.close ? "close match" : "", r.type || "", `${(r.modes || []).length} mode(s)`],
         r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Jarvis"));
     }
     list.replaceChildren(...rows);
@@ -182,9 +196,11 @@ export function openAddDialog(query = "") {
     } else if (!chosen) showPick(rows[0]._item);
     if (q.length < 2) return;
     const st = await get("/api/gdtf/status").catch(() => ({}));
-    if (!(st.signed_in || st.catalogue) || search.value.trim() !== q) return;
+    if (!(st.signed_in || st.catalogue) || my !== seq) return;
     const d = await get("/api/gdtf/search?limit=30&q=" + encodeURIComponent(q)).catch(() => ({}));
-    if (search.value.trim() !== q || source !== "all") return;
+    if (my !== seq || source !== "all") return;
+    // nothing found offline: say so above the Share results, not "nothing matches"
+    if (!rows.length && (d.results || []).length) list.replaceChildren();
     for (const r of d.results || []) {
       list.append(row({ ...r, model: r.fixture, _origin: "share" }, `${r.manufacturer} ${r.fixture}`,
         [(r.body && r.body.label) || "", `rev ${r.revision || "?"}`], "GDTF Share"));
@@ -231,6 +247,11 @@ export function openAddDialog(query = "") {
   }
 
   let t = 0;
+  search.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    clearTimeout(t);
+    if (source === "all") searchAll(); else if (source === "lib") searchLib(); else if (source === "open") searchOpen(); else searchShare();
+  });
   search.addEventListener("input", () => {
     clearTimeout(t);
     t = setTimeout(() => (source === "all" ? searchAll() : source === "lib" ? searchLib() : source === "open" ? searchOpen() : searchShare()), source === "lib" ? 120 : 300);

@@ -892,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(eng.lite(rev))
             return self._json(eng.snapshot())
         if route == "/api/fixtures":
-            rows = fixtures.search(config.DB_PATH, query.get("q", ""))
+            rows = fixtures.search(config.DB_PATH, query.get("q", ""), limit=20, fuzzy=True)
             for r in rows:
                 # What the light physically is, so the picker can show the
                 # 3D model before anything is patched.

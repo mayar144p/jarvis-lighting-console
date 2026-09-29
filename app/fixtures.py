@@ -201,7 +201,10 @@ def seed_generics(db_path: Path) -> int:
     return added
 
 
-def search(db_path: Path, query: str, limit: int = 8) -> list[dict]:
+def search(db_path: Path, query: str, limit: int = 8, fuzzy: bool = False) -> list[dict]:
+    """Installed fixtures matching `query`.  `fuzzy` (the Add dialog) also
+    forgives typos, short brand names and extra words; the engine's own
+    lookups stay strict so a loose match never patches the wrong light."""
     query = (query or "").strip().lower()
     with db(db_path) as conn:
         if query:
@@ -213,8 +216,15 @@ def search(db_path: Path, query: str, limit: int = 8) -> list[dict]:
                 words = [w for w in query.split() if w]
                 rows = conn.execute(
                     "SELECT * FROM fixtures ORDER BY manufacturer, model").fetchall()
-                rows = [r for r in rows
-                        if all(w in (r["manufacturer"] + " " + r["model"]).lower() for w in words)][:limit]
+                if fuzzy:
+                    from . import searchmatch
+                    scored = [(searchmatch.score(query, r["manufacturer"], r["model"]), i, r)
+                              for i, r in enumerate(rows)]
+                    rows = [r for s, _, r in sorted((t for t in scored if t[0] is not None),
+                                                    key=lambda t: (t[0], t[1]))][:limit]
+                else:
+                    rows = [r for r in rows
+                            if all(w in (r["manufacturer"] + " " + r["model"]).lower() for w in words)][:limit]
         else:
             rows = conn.execute(
                 "SELECT * FROM fixtures ORDER BY manufacturer, model LIMIT ?", (limit,)).fetchall()
