@@ -66,7 +66,8 @@ def _detail(label: str, **extra) -> dict:
     row = {"role": channel_role(label), "attribute": extra.pop("attribute", ""),
            "label": label, "bits": 8, "dmx_from": None, "dmx_to": None,
            "phys_from": None, "phys_to": None, "wheel": None,
-           "open_from": None, "slots": None, "coarse": True}
+           "open_from": None, "slots": None, "coarse": True,
+           "strobe_ranges": None, "fast_first": None}
     row.update(extra)
     return row
 
@@ -184,6 +185,18 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
              and c.get("dmxRange")]
     if opens:
         row["open_from"] = min(opens)
+    strobes = [[byte(c["dmxRange"][0]), byte(c["dmxRange"][1])] for c in caps
+               if c.get("type") == "ShutterStrobe" and c.get("dmxRange")
+               and c.get("shutterEffect") not in ("Open", "Closed", None)]
+    row["strobe_ranges"] = strobes or None
+    for c in caps:
+        if c.get("type") == "PanTiltSpeed":
+            first = str(c.get("speedStart") or c.get("duration") or "").lower()
+            if "fast" in first:
+                row["fast_first"] = True
+            elif "slow" in first:
+                row["fast_first"] = False
+            break
     found = []
     for c in caps:
         if c.get("type") != "WheelSlot" or not c.get("dmxRange"):
@@ -393,7 +406,24 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
     elif role == "tilt":
         row["phys_from"], row["phys_to"] = _centred(tilt_max)
     caps = _kids(ch, "Capability")
+    preset = ch.get("Preset") or ""
+    low_name = (ch.get("Name") or "").lower()
+    if role == "speed":
+        if "FastSlow" in preset or "fast to slow" in low_name or "fast-slow" in low_name:
+            row["fast_first"] = True
+        elif "SlowFast" in preset or "slow to fast" in low_name or "slow-fast" in low_name:
+            row["fast_first"] = False
     if role in ("shutter", "strobe"):
+        ranges = []
+        for c in caps:
+            text = (c.text or "").strip().lower()
+            if re.search(r"strobe|pulse|random|lightning|flash|^shutter \d", text) and not re.search(
+                    r"^(no strobe|strobe off|off|open|closed|shutter open|shutter closed)\b", text):
+                try:
+                    ranges.append([int(c.get("Min") or 0), int(c.get("Max") or 0)])
+                except ValueError:
+                    pass
+        row["strobe_ranges"] = ranges or None
         for c in caps:
             text = (c.text or "").strip()
             if c.get("Preset") == "ShutterOpen" or (_OPEN_TEXT.match(text) and "close" not in text.lower()):

@@ -38,6 +38,7 @@ MAX_HISTORY = 8
 # Actions deliberately NOT in the AI's reach (see module docstring).
 DENY_ACTIONS = frozenset({
     "set_output", "set_dmx_target", "set_dry_run", "save_show", "load_show",
+    "motion_set", "motion_test", "motion_test_end", "motion_get",
     "import_show",
     "import_scan", "patch_clear", "patch_from_csv", "remove_heads",
     "group_delete", "delete_preset", "delete_cue", "set_lock", "unlock",

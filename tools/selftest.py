@@ -7490,6 +7490,7 @@ def _standalone_suites():
     ("colour wheel slots", test_wheel_slots),
     ("update on launch", test_auto_update),
     ("open fixture libraries", test_open_libraries),
+    ("visual matches the rig", test_visual_motion),
     )
 
 
@@ -8517,6 +8518,82 @@ def test_open_libraries() -> None:
               again["refreshed"] == 2 and fixtures.role_ranges(
                   db, "Chauvet DJ", "Intimidator Spot 260", "14-channel").get("strobe", {}).get("open_from") == 4,
               str(again))
+
+
+def test_visual_motion() -> None:
+    """The 3D view strobes only when the light does, and moves at the
+    real light's measured speed."""
+    print("visual matches the rig (strobe, movement speed)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    detail = fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json")[0]["modes"][0]["detail"]
+    strobe = next(d for d in detail if d["role"] == "strobe")
+    speed = next(d for d in detail if d["role"] == "speed")
+    check("OFL strobe ranges are read (8-215, not the open ranges)",
+          strobe["strobe_ranges"] == [[8, 76], [77, 145], [146, 215]], str(strobe["strobe_ranges"]))
+    check("the pan/tilt speed channel runs fast to slow", speed["fast_first"] is True, str(speed))
+    wave = fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")[0]["modes"][1]["detail"]
+    shut = next(d for d in wave if d["role"] == "shutter")
+    check("QLC+ shutter patterns are strobe ranges, 'On' is not",
+          shut["strobe_ranges"] and all(not lo <= 20 <= hi for lo, hi in shut["strobe_ranges"]),
+          str(shut["strobe_ranges"]))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "v.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"),
+                              "ofl:chauvet-dj/intimidator-spot-260.json")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1)
+            e.act("quick_defaults")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+
+            def row():
+                return e.look_rows()[0]
+            check("a lit head with its shutter open does not strobe on screen", "hz" not in row(), str(row()))
+            e.act("set_attribute", attribute="strobe", value=230)
+            check("230 is 'open' on this light: steady", "hz" not in row(), str(row()))
+            e.act("set_attribute", attribute="strobe", value=100)
+            check("100 is in a strobe range: it flickers", 1 < row().get("hz", 0) < 20, str(row()))
+            e.act("set_attribute", attribute="strobe", value=4)
+            e.act("quick_press", id="q1-2", down=True)
+            check("Strobe all shows its own 12 Hz", row().get("hz") == 12.0, str(row()))
+            e.act("quick_press", id="q1-2", down=False)
+            check("and stops the moment it is released", "hz" not in row(), str(row()))
+            check("the beam look never carries raw strobe bytes",
+                  "strobe" not in (row().get("beam") or {}), str(row()))
+            check("uncalibrated: the speed channel still reaches the view",
+                  row()["mv"] == {"s": 0.0}, str(row()))
+            e.act("set_attribute", attribute="speed", value=255)
+            check("speed channel at slowest reads as 1.0", row()["mv"]["s"] == 1.0, str(row()))
+            r = e.act("motion_set", head=1, pan_s=2.6, tilt_s=1.4)
+            check("a measured speed is saved for the model",
+                  r.get("ok") and row()["mv"]["p"] == 2.6 and row()["mv"]["t"] == 1.4, str(r))
+            check("and survives the cache (read back from the library)",
+                  fixtures.get_motion(db, "Chauvet DJ", "Intimidator Spot 260") == {"pan_s": 2.6, "tilt_s": 1.4}, "")
+            check("nonsense times are refused", not e.act("motion_set", head=1, pan_s=0.01).get("ok"), "")
+            before = {k: v for k, v in e.programmer[1].items()}
+            depth = len(e._undo)
+            e.act("motion_test", head=1, axis="pan", to="end")
+            prog = e.programmer[1]
+            check("the test move sends pan to its end at top speed, lamp open and steady",
+                  prog["pan"] == 65535 and prog["tilt"] == 32767 and prog["speed"] == 0
+                  and prog["strobe"] == 4, str(prog))
+            e.act("motion_test_end", head=1)
+            check("and the head gets back exactly what it was doing",
+                  e.programmer[1] == before and len(e._undo) == depth, str(e.programmer[1]))
+            e.act("set_intensity", level=0)
+            e.act("set_attribute", attribute="pan", value=20000)
+            check("a dark head that is being aimed still moves on screen",
+                  any("pan" in r for r in e.look_rows()), str(e.look_rows()))
+            e.act("motion_set", head=1, clear=True)
+            check("back to type defaults", "p" not in row()["mv"], str(row()))
+        finally:
+            e.shutdown()
 
 
 def _raises(fn) -> bool:

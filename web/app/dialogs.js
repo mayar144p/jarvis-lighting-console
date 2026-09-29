@@ -2,7 +2,7 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
-import { state, patch, selected } from "./store.js";
+import { state, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox } from "./ui.js";
 
@@ -604,3 +604,90 @@ export function openHelp() {
 }
 
 export { patch, selected };
+
+// ===================================================== movement speed
+// Time the REAL light, so the visualiser moves it at the same pace: the
+// light sweeps pan (then tilt) end to end at top speed and you tap when
+// it stops.  Saved per fixture model, so every head of it matches.
+const REACTION_S = 0.2;          // a tap lands about this late
+export async function openMotionCalibration(hd) {
+  const head = hd.head_no;
+  const got = await run("motion_get", { head }, { silentError: true });
+  if (!got.ok) { toast(got.error || "This fixture cannot be calibrated", "bad"); return; }
+  const axes = got.axes || [];
+  if (!axes.length) { toast("This fixture has no pan or tilt", "bad"); return; }
+  const taps = { pan: [], tilt: [] };
+  const inputs = {};
+  let t0 = 0;
+  let axis = axes[0];
+  let phase = "idle";                       // idle -> ready -> timing
+  const live = outputState() === "live";
+  const stepText = h("div.cal-step");
+  const big = h("button.btn.primary.cal-big");
+  const result = h("div.muted.small");
+  const fields = h("div.form-grid", ...axes.map((ax) => {
+    inputs[ax] = h("input", { type: "number", min: 0.2, max: 60, step: 0.1,
+      value: got.motion && got.motion[ax + "_s"] ? got.motion[ax + "_s"] : "", placeholder: "default" });
+    return h("label.field", h("span", `Full ${ax}, seconds`), inputs[ax]);
+  }));
+  const axisPick = h("div.row-btns", ...axes.map((ax) => h("button.btn.small", {
+    dataset: { ax }, onclick: () => { axis = ax; reset(); },
+  }, `Time ${ax}`)));
+
+  const avg = (list) => list.reduce((a, b) => a + b, 0) / list.length;
+  function render() {
+    [...axisPick.children].forEach((b) => b.classList.toggle("on", b.dataset.ax === axis));
+    if (phase === "idle") {
+      stepText.textContent = `1. Send the head to the start of its ${axis}. Wait until the REAL light has stopped moving.`;
+      big.textContent = `Move to ${axis} start`;
+    } else if (phase === "ready") {
+      stepText.textContent = `2. Press Go and watch the real light: it sweeps the whole ${axis} at top speed.`;
+      big.textContent = "Go";
+    } else {
+      stepText.textContent = "3. Tap the moment the real light STOPS.";
+      big.textContent = "It stopped!";
+    }
+    const n = taps[axis].length;
+    result.textContent = n ? `${axis}: ${taps[axis].map((x) => x.toFixed(2)).join(" s, ")} s → using ${avg(taps[axis]).toFixed(2)} s` +
+      (n < 2 ? " (time it twice for a better average)" : "") : "";
+  }
+  function reset() { phase = "idle"; render(); }
+  big.addEventListener("click", async () => {
+    if (phase === "idle") {
+      const r = await run("motion_test", { head, axis, to: "start" });
+      if (r.ok) { phase = "ready"; render(); }
+    } else if (phase === "ready") {
+      phase = "timing";
+      render();
+      t0 = performance.now();
+      const r = await run("motion_test", { head, axis, to: "end" });
+      if (!r.ok) reset();
+    } else {
+      const s = Math.max(0.2, (performance.now() - t0) / 1000 - REACTION_S);
+      taps[axis].push(s);
+      inputs[axis].value = avg(taps[axis]).toFixed(2);
+      reset();
+    }
+  });
+  const body = h("div.cal",
+    h("p", `Make the 3D view move #${head} ${hd.name || hd.model} as fast as the real light. The result is saved for every ${hd.model}.`),
+    live ? null : h("p.out-bad", "The output is not live, so the real light will not move. Press Go live first, or type the times below from a stopwatch."),
+    axisPick, stepText, big, result, fields,
+    h("p.muted.small", "Tip: time each axis twice. The speed channel is set to fastest for the test, and the head gets back exactly what it was doing when you close this."));
+  const close = modal({
+    title: "Calibrate movement speed", body,
+    foot: [
+      h("button.btn", { onclick: async () => { await run("motion_set", { head, clear: true }, { toast: true }); close(); } }, "Back to defaults"),
+      h("span.grow"),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const params = { head };
+        for (const ax of axes) if (inputs[ax].value) params[ax + "_s"] = +inputs[ax].value;
+        const r = await run("motion_set", params, { toast: true });
+        if (r.ok) close();
+      } }, "Save"),
+    ],
+    onClose: () => run("motion_test_end", { head }, { silentError: true }),
+  });
+  render();
+}

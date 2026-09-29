@@ -323,6 +323,15 @@ their names and colours. Community libraries are sometimes wrong, so check
 an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
+**Match the 3D view to the real lights.** The visualiser moves heads with a
+motor model: it speeds up, travels and brakes, and follows the Pan/Tilt Speed
+channel, instead of snapping into place. To match your light exactly,
+right-click it → **Calibrate movement speed…**. The real head sweeps pan (then
+tilt) at top speed and you tap when it stops. The time is saved for that
+fixture model. Strobes show on screen only when the light really strobes: a
+strobe button, or the strobe channel inside a range its fixture file marks as
+strobe, never an "open" value.
+
 To refresh the bundled libraries from upstream, run
 `python tools/build_fixture_libraries.py`. `app/fixlib/NOTICE.md` has the
 licences and the exact upstream commits.

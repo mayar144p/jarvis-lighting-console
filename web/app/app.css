@@ -793,3 +793,8 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 /* wheel slots named by the fixture file */
 .chip.slot { display: inline-flex; align-items: center; gap: 6px; }
 .slot-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); display: inline-block; }
+
+/* movement speed calibration */
+.cal { display: flex; flex-direction: column; gap: 12px; }
+.cal-step { font-size: 14px; min-height: 40px; }
+.cal-big { height: 64px; font-size: 18px; }

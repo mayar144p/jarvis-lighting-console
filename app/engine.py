@@ -99,6 +99,9 @@ UNDO_EXCLUDED = frozenset({
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
+    # calibrating a fixture model's speed is library setup, and the test
+    # moves restore themselves
+    "motion_set", "motion_test", "motion_test_end", "motion_get",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -126,7 +129,7 @@ UNDO_EXCLUDED = frozenset({
 # throw the first away.
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
-                        "export_patch", "venue_info"})
+                        "export_patch", "venue_info", "motion_get"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -570,6 +573,7 @@ ACTIONS = (
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
+    "motion_set", "motion_test", "motion_test_end", "motion_get",
 )
 
 
@@ -3118,7 +3122,7 @@ class Engine:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
-        "quick_set", "quick_defaults", "timeline_set", "timeline_track",
+        "quick_set", "quick_defaults", "timeline_set", "timeline_track", "motion_set",
         "timeline_clip", "timeline_from_playback",
     })
 
@@ -3664,6 +3668,131 @@ class Engine:
         _LEVELS_CACHE.clear()
         self._gate_cache = None
         self._rest_cache = None
+        self._motion_cache = {}
+
+    # -- movement speed, for the visualiser ------------------------------
+    def _motion_of(self, head: dict) -> dict:
+        """{pan_s, tilt_s} measured for this model, or {} (type defaults)."""
+        cache = getattr(self, "_motion_cache", None)
+        if cache is None:
+            cache = self._motion_cache = {}
+        key = (head.get("manufacturer") or "", head.get("model") or "")
+        if key not in cache:
+            try:
+                cache[key] = fixtures.get_motion(self.db_path, *key) or {}
+            except Exception:                # the visual is an enhancement
+                cache[key] = {}
+        return cache[key]
+
+    def _speed_frac(self, head: dict, values: dict) -> float:
+        """The pan/tilt speed channel as 0 (fastest) .. 1 (slowest)."""
+        if "speed" not in head["map"]:
+            return 0.0
+        v = max(0, min(255, int(values.get("speed", 0)))) / 255.0
+        fast_first = (self.head_ranges(head).get("speed") or {}).get("fast_first")
+        return round(v if fast_first is not False else 1.0 - v, 3)
+
+    def _strobe_hz(self, head: dict, values: dict, over: dict | None) -> float:
+        """How fast the light is really strobing, 0 for steady.  From a
+        strobe button, else the strobe channel inside a range the
+        fixture's file marks as strobe (never an 'open' value)."""
+        if over and over.get("strobe"):
+            return round(float(over["strobe"]), 2)
+        role = self._shutter_role(head)
+        if role is None or role not in values:
+            return 0.0
+        v = max(0, min(255, int(values[role])))
+        ranges = (self.head_ranges(head).get(role) or {}).get("strobe_ranges")
+        if ranges:
+            for lo, hi in ranges:
+                if lo <= v <= hi:
+                    return round(1 + 19 * (v - lo) / max(1, hi - lo), 2)
+            return 0.0
+        opened = self._open_value(head, role)
+        if v > opened + 8 and v < 248:        # no ranges known: a guess
+            return round(1 + 19 * (v - opened) / max(1, 255 - opened), 2)
+        return 0.0
+
+    def _a_motion_set(self, head=None, pan_s=None, tilt_s=None, clear=False, **_):
+        """Store how long this fixture model takes for a full pan and a
+        full tilt at top speed (seconds), so the visualiser moves it at
+        the real speed.  Applies to every head of the same model."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        if _truthy(clear):
+            fixtures.set_motion(self.db_path, h.get("manufacturer"), h.get("model"), None, None)
+            self._motion_cache = {}
+            return {"summary": f"{h.get('model')}: movement back to defaults"}
+        vals = {}
+        for key, v in (("pan_s", pan_s), ("tilt_s", tilt_s)):
+            if v is None or v == "":
+                vals[key] = self._motion_of(h).get(key)
+                continue
+            f = float(v)
+            if not 0.2 <= f <= 60:
+                raise ValueError(f"{key.split('_')[0]} time must be 0.2 to 60 seconds")
+            vals[key] = round(f, 2)
+        fixtures.set_motion(self.db_path, h.get("manufacturer"), h.get("model"),
+                            vals["pan_s"], vals["tilt_s"])
+        self._motion_cache = {}
+        parts = [f"{k.split('_')[0]} {v:g} s" for k, v in vals.items() if v]
+        return {"motion": vals, "summary": f"{h.get('model')}: full " + ", ".join(parts)}
+
+    def _a_motion_get(self, head=None, **_):
+        """This model's measured full pan/tilt times (null = type default)."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        m = self._motion_of(h)
+        return {"motion": {"pan_s": m.get("pan_s"), "tilt_s": m.get("tilt_s")},
+                "axes": [a for a in ("pan", "tilt") if a in h["map"]],
+                "summary": f"{h.get('model')}: " + (", ".join(
+                    f"{k[:-2]} {v:g} s" for k, v in m.items() if v) or "not calibrated")}
+
+    def _a_motion_test(self, head=None, axis="pan", to="start", **_):
+        """Calibration move: one head's pan (or tilt) to one end of its
+        travel at top speed, the other axis centred and the lamp open.
+        The head's own programmer values are restored by motion_test_end."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        axis = str(axis)
+        if axis not in ("pan", "tilt") or axis not in h["map"]:
+            raise ValueError(f"this fixture has no {axis}")
+        n = h["head_no"]
+        saved = self.__dict__.setdefault("_motion_saved", {})
+        if n not in saved:
+            saved[n] = dict(self.programmer.get(n) or {})
+        other = "tilt" if axis == "pan" else "pan"
+        full = attr_domain(h, axis)
+        self._set_programmer(n, axis, 0 if str(to) == "start" else full)
+        if other in h["map"]:
+            self._set_programmer(n, other, attr_domain(h, other) // 2)
+        if "speed" in h["map"]:
+            fast_first = (self.head_ranges(h).get("speed") or {}).get("fast_first")
+            self._set_programmer(n, "speed", 0 if fast_first is not False else 255)
+        for role, v in self._level_values(h, 100).items():
+            self._set_programmer(n, role, v)
+        gate = self._shutter_role(h)
+        if gate:                              # lit and steady, never strobing
+            self._set_programmer(n, gate, self._open_value(h, gate))
+        return {"summary": f"#{n} {axis} to the {'start' if str(to) == 'start' else 'end'}"}
+
+    def _a_motion_test_end(self, head=None, **_):
+        """Give the head back exactly what it had before the test."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        n = h["head_no"]
+        saved = self.__dict__.setdefault("_motion_saved", {})
+        if n in saved:
+            before = saved.pop(n)
+            if before:
+                self.programmer[n] = before
+            else:
+                self.programmer.pop(n, None)
+        return {"summary": f"#{n} back to what it was doing"}
 
     def _quick_public(self) -> dict:
         return {"buttons": [dict(b) for b in self.quick],
@@ -6958,11 +7087,26 @@ class Engine:
             # zoom, iris, frost, gobo, prism and strobe change the beam on
             # screen exactly as they will on stage.
             beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
-                    for r in _BEAM_LOOK_ROLES if r in values}
-            if over and over.get("strobe") and row["a"] > 0:
-                beam["strobe"] = round(min(1.0, float(over["strobe"]) / 20.0), 3)
+                    for r in _BEAM_LOOK_ROLES if r in values
+                    and r not in ("strobe", "shutter")}
             if beam:
                 row["beam"] = beam
+            # How fast it REALLY strobes (0 = steady): a raw strobe byte
+            # is not a speed - 4 or 20 is "open" on many lights.
+            hz = self._strobe_hz(head, values, over) if row["a"] > 0 else 0.0
+            if hz:
+                row["hz"] = hz
+            # How it moves: measured full-travel times for this model (if
+            # calibrated) and the speed channel, so the visualiser's head
+            # turns at the real light's pace instead of snapping.
+            if "pan" in head["map"] or "tilt" in head["map"]:
+                m = self._motion_of(head)
+                mv = {"s": self._speed_frac(head, values)}
+                if m.get("pan_s"):
+                    mv["p"] = m["pan_s"]
+                if m.get("tilt_s"):
+                    mv["t"] = m["tilt_s"]
+                row["mv"] = mv
             out.append(row)
         return out
 
@@ -7015,9 +7159,11 @@ class Engine:
                     "lit": len(lit)}
 
     def look_rows(self) -> list[dict]:
-        """The lit heads' looks, for the live stream (no sequence bump)."""
+        """The lit heads' looks, and dark heads whose aim is driven (a head
+        moves in the dark too), for the live stream (no sequence bump)."""
         with self.lock:
-            return [row for row in self._looks() if row["a"] > 0]
+            return [row for row in self._looks()
+                    if row["a"] > 0 or "pan" in row or "tilt" in row]
 
     def _look(self, now: float | None = None) -> list[dict]:
         """Lite-feed look rows: {n, look:{hex, a, on}} (patch-revisioned)."""
