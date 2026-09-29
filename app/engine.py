@@ -439,6 +439,12 @@ def _similar(a: str, b: str) -> float:
     return (0.5 * pre / max(len(a), len(b))) + (0.5 * common / max(len(a), len(b)))
 
 
+def _hex_or_none(value) -> str | None:
+    """A #rrggbb colour as typed, or None for none."""
+    text = str(value or "").strip()[:9]
+    return text or None
+
+
 def _truthy(value) -> bool:
     """Bool from true/1/"on"/"yes" or false/0/"off"/"no"."""
     if isinstance(value, str):
@@ -578,6 +584,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
+    "quick_page", "quick_move",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
@@ -671,6 +678,7 @@ class Engine:
         # Quick buttons (see _a_quick_set) and the ones held right now.
         self.quick: list[dict] = []
         self.quick_active: dict[str, dict] = {}
+        self.quick_names: dict[str, str] = {}
         # Special effects (see the FX layer): armed until (monotonic), the
         # runs firing now, and how much each confetti tank has left (s).
         # Never saved: a desk always starts DISARMED with nothing firing.
@@ -806,6 +814,7 @@ class Engine:
             "playbacks": _copy_playbacks(self.playbacks),
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
+            "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
@@ -830,6 +839,7 @@ class Engine:
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
+        self.quick_names = dict(state.get("quick_names") or {})
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
                              if any(b["id"] == k for b in self.quick)}
@@ -3472,10 +3482,16 @@ class Engine:
     # ------------------------------------------------------------------
     QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
                    "release", "preset", "blackout",
+                   # anything at once: level / dim / colour / strobe /
+                   # captured values / attributes / effects, on any lights
+                   "custom",
                    # special effects: their own buttons, never a light's
                    "sfx", "fog", "laser", "fxkill", "arm")
     FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
-    QUICK_PAGES = 4
+    # buttons that do one thing and are done: no timer, no radio group
+    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill"})
+    SPLITS = ("odd", "even", "left", "right")
+    QUICK_PAGES = 8
     QUICK_SLOTS = 24
 
     def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
@@ -3497,10 +3513,28 @@ class Engine:
             clean_t["type"] = str(target["type"])[:30]
         else:
             clean_t["all"] = True
+        split = str(target.get("split") or "").lower()
+        if split:
+            if split not in self.SPLITS:
+                raise ValueError(f"split is one of {', '.join(self.SPLITS)}")
+            clean_t["split"] = split
         btn = {"id": f"q{page}-{slot}", "page": page, "slot": slot,
                "label": str(raw.get("label") or kind.title())[:24],
                "kind": kind, "mode": mode, "target": clean_t,
-               "colour": str(raw.get("colour") or "")[:9] or None}
+               "colour": _hex_or_none(raw.get("colour"))}
+        # how the button LOOKS and BEHAVES, for every kind that stays on
+        tint = _hex_or_none(raw.get("tint"))
+        if tint:
+            btn["tint"] = tint
+        if kind not in self.ONE_SHOT_BUTTONS:
+            if raw.get("exclusive") not in (None, ""):
+                btn["exclusive"] = str(raw["exclusive"]).strip()[:20] or None
+                if not btn["exclusive"]:
+                    btn.pop("exclusive")
+            if kind not in self.FX_BUTTONS and raw.get("seconds") not in (None, "", 0, "0"):
+                btn["seconds"] = float(_clamp(raw.get("seconds"), 0.1, 3600))
+        if kind == "custom":
+            self._quick_clean_custom(raw, btn)
         if kind == "flash":
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
@@ -3512,6 +3546,9 @@ class Engine:
             if name not in fxlib_mod.FX:
                 raise ValueError(f"unknown effect {name!r}")
             btn["fx"] = name
+            params = self._quick_fx_params(name, raw.get("params"))
+            if params:
+                btn["params"] = params
         if kind in ("go", "release"):
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
             if raw.get("cue") not in (None, ""):
@@ -3528,6 +3565,136 @@ class Engine:
                              if str(k) in LASER_ROLES}
         return btn
 
+    def _quick_fx_params(self, name: str, params) -> dict:
+        """The effect's own knobs a button keeps (speed, size, arc...)."""
+        if not isinstance(params, dict):
+            return {}
+        known = fxlib_mod.defaults(name)
+        out = {}
+        for k, v in params.items():
+            if k in known and v not in (None, ""):
+                try:
+                    out[k] = float(v)
+                except (TypeError, ValueError):
+                    raise ValueError(f"not a number for {k}: {v!r}") from None
+        return out
+
+    def _quick_clean_custom(self, raw: dict, btn: dict) -> None:
+        """A custom button: any mix of level, dim, colour, strobe, blackout,
+        the same value on an attribute of every light, values captured
+        per light, and up to four running effects."""
+        if raw.get("level") not in (None, ""):
+            btn["level"] = int(_clamp(raw["level"], 0, 100))
+        if raw.get("dim") not in (None, ""):
+            btn["dim"] = int(_clamp(raw["dim"], 0, 100))
+        if raw.get("hz") not in (None, "", 0, "0"):
+            btn["hz"] = float(_clamp(raw["hz"], 0.5, 25))
+        if _truthy(raw.get("kill")):
+            btn["kill"] = True
+        keep = lambda r: r in ROLES and r not in FX_OUTPUT_ROLES \
+            and r not in ("unused", "raw") and not r.startswith(("laser_", "fx_"))
+        attrs = raw.get("attrs") if isinstance(raw.get("attrs"), dict) else {}
+        clean_a = {}
+        for k, v in attrs.items():
+            role = _attr_role(k) or str(k)
+            if keep(role):
+                clean_a[role] = int(_clamp(v, 0, 65535))
+        if clean_a:
+            btn["attrs"] = clean_a
+        values = raw.get("values") if isinstance(raw.get("values"), dict) else {}
+        clean_v: dict = {}
+        for n, row in list(values.items())[:512]:
+            if not isinstance(row, dict):
+                continue
+            r = {str(k): int(_clamp(v, 0, 65535)) for k, v in row.items() if keep(str(k))}
+            if r:
+                clean_v[str(int(n))] = r
+        if clean_v:
+            btn["values"] = clean_v
+        fx_list = []
+        for item in (raw.get("fx_list") or [])[:4]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").lower()
+            if name not in fxlib_mod.FX:
+                raise ValueError(f"unknown effect {name!r}")
+            fx_list.append({"name": name, "params": self._quick_fx_params(name, item.get("params"))})
+        if fx_list:
+            btn["fx_list"] = fx_list
+        if not any(k in btn for k in ("level", "dim", "hz", "kill", "attrs", "values", "fx_list")) \
+                and not btn.get("colour"):
+            raise ValueError("a custom button needs something to do: a level, a colour, "
+                             "a strobe, a look captured from the programmer or an effect")
+
+    def _quick_capture(self, raw: dict) -> dict:
+        """Fill a custom button from what the programmer holds now for its
+        lights: every value (colour, position, gobo...) and the effects
+        running on them (circles, chases...) - make it on stage, then
+        make it a button."""
+        t = raw.get("target") if isinstance(raw.get("target"), dict) else {}
+        if not t or t.get("all"):
+            heads = [n for n in self.programmer if self.programmer.get(n)] or \
+                [n for f in self.fx for n in f.get("heads", [])]
+        else:
+            heads = self._target_heads(t)
+        heads = sorted(set(heads))
+        values = {}
+        for n in heads:
+            row = {k: v for k, v in (self.programmer.get(n) or {}).items()}
+            if row:
+                values[str(n)] = row
+        fx_list = []
+        for f in self.fx:
+            if f.get("lib") and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
+                fx_list.append({"name": f["lib"], "params": dict(f.get("params") or {})})
+        if not values and not fx_list:
+            raise ValueError("nothing to capture - set a look or start an effect on the lights first")
+        out = dict(raw, kind="custom", values=values, fx_list=fx_list)
+        out.pop("capture", None)
+        if not t or t.get("all"):
+            out["target"] = {"heads": heads}
+        return out
+
+    def _a_quick_page(self, page=1, name="", **_):
+        """Name a page of buttons ("Main", "Movers", "Drops")."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        name = str(name or "").strip()[:16]
+        names = dict(getattr(self, "quick_names", {}) or {})
+        if name:
+            names[str(page)] = name
+        else:
+            names.pop(str(page), None)
+        self.quick_names = names
+        return {"page": page, "name": name, "summary": f"page {page}: {name or 'unnamed'}"}
+
+    def _a_quick_move(self, page=1, slot=None, to_page=None, to_slot=None, copy=False, **_):
+        """Move (or copy) a button to another slot; a button already there
+        swaps places with it."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        to_page = int(_clamp(to_page if to_page not in (None, "") else page, 1, self.QUICK_PAGES))
+        slot, to_slot = int(_clamp(slot, 1, self.QUICK_SLOTS)), int(_clamp(to_slot, 1, self.QUICK_SLOTS))
+        src = next((b for b in self.quick if b["page"] == page and b["slot"] == slot), None)
+        if not src:
+            raise ValueError(f"no button at {page}.{slot}")
+        if (page, slot) == (to_page, to_slot):
+            return {"summary": "same place"}
+        dst = next((b for b in self.quick if b["page"] == to_page and b["slot"] == to_slot), None)
+        keep = [b for b in self.quick if b is not src and b is not dst]
+        for key in (src["id"], dst and dst["id"]):
+            if key:
+                self._quick_off(key, force=True)
+        moved = self._quick_clean(dict(src), to_page, to_slot)
+        keep.append(moved)
+        if _truthy(copy):
+            keep.append(src)
+            if dst:
+                pass                                   # a copy over a button replaces it
+        elif dst:
+            keep.append(self._quick_clean(dict(dst), page, slot))
+        self.quick = sorted(keep, key=lambda b: (b["page"], b["slot"]))
+        return {"id": moved["id"], "summary": f"button {'copied' if _truthy(copy) else 'moved'} "
+                                             f"to {to_page}.{to_slot}"}
+
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
         """Create, change or remove the quick button at page/slot."""
         page = int(_clamp(page, 1, self.QUICK_PAGES))
@@ -3539,14 +3706,26 @@ class Engine:
         self.quick_active.pop(key, None)
         if _truthy(clear) or button is None:
             return {"id": key, "summary": f"cleared button {page}.{slot}"}
-        btn = self._quick_clean(dict(button), page, slot)
+        raw = dict(button)
+        if _truthy(raw.get("capture")):
+            raw = self._quick_capture(raw)
+        btn = self._quick_clean(raw, page, slot)
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
 
     def _quick_heads(self, btn: dict) -> list[int]:
-        return self._heads_for_target(btn.get("target") or {},
-                                      fx=btn["kind"] in self.FX_BUTTONS)
+        t = btn.get("target") or {}
+        heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
+        split = t.get("split")
+        if split in ("odd", "even"):
+            heads = heads[0::2] if split == "odd" else heads[1::2]
+        elif split in ("left", "right"):
+            by = {h["head_no"]: h for h in self.patch}
+            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
+            half = (len(order) + 1) // 2
+            heads = sorted(order[:half] if split == "left" else order[half:])
+        return heads
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
@@ -3619,6 +3798,12 @@ class Engine:
                 r = self._a_include_preset(preset=btn["preset"])
             return {"id": key, "active": False, "summary": r.get("summary") or btn["label"]}
         active = key in self.quick_active
+        if mode == "tap" and btn.get("seconds"):
+            # a timed shot: on for its seconds, whatever the finger does
+            if down:
+                self._quick_on(key, owner="timer")
+            return {"id": key, "active": key in self.quick_active,
+                    "summary": f"{btn['label']} for {btn['seconds']:g} s"}
         if mode == "latch":
             if not down:
                 return {"id": key, "active": active}
@@ -3650,15 +3835,25 @@ class Engine:
                 self.quick_active[key]["owners"].add(owner)
             return
         if run is None:
+            if btn.get("exclusive"):
+                # a radio group: turning this one on turns the others off
+                for other in [b for b in self.quick if b.get("exclusive") == btn["exclusive"]
+                              and b["id"] != key and b["id"] in self.quick_active]:
+                    self._quick_off(other["id"], force=True)
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
-                   "owners": set()}
-            if btn["kind"] == "fx":
+                   "owners": set(), "fx_ids": []}
+            wanted = [{"name": btn["fx"], "params": btn.get("params") or {}}] if btn["kind"] == "fx" \
+                else btn.get("fx_list") or []
+            for item in wanted:
                 try:
-                    r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
-                    run["fx"] = r.get("fx")
+                    r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                             run["heads"], None)
+                    run["fx_ids"].append(r.get("fx"))
                 except ValueError:
                     pass
             self.quick_active[key] = run
+        if btn.get("seconds"):
+            run["until"] = time.monotonic() + float(btn["seconds"])
         run.setdefault("owners", set()).add(owner)
 
     def _quick_off(self, key: str, owner: str = "hand", force: bool = False) -> None:
@@ -3673,16 +3868,26 @@ class Engine:
         if owners and not force:
             return
         self.quick_active.pop(key, None)
-        if run.get("fx"):
-            self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        self._quick_stop_fx(run)
+
+    def _quick_stop_fx(self, run: dict) -> None:
+        ids = set(run.get("fx_ids") or []) | ({run["fx"]} if run.get("fx") else set())
+        if ids:
+            self.fx = [f for f in self.fx if f["id"] not in ids]
+
+    def _quick_expire(self) -> None:
+        """Buttons on a timer let go by themselves."""
+        now = time.monotonic()
+        for key, run in list(self.quick_active.items()):
+            if run.get("until") and now >= run["until"] and not run.get("fx_layer"):
+                self._quick_off(key, owner="timer", force=True)
 
     def _a_quick_release_all(self, **_):
         for key in list(self.quick_active):
             run = self.quick_active.pop(key)
             if run.get("fx_layer"):
                 self._sfx_stop(key, "hand", force=True)
-            if run.get("fx"):
-                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+            self._quick_stop_fx(run)
         return {"summary": "all quick buttons released"}
 
     def _a_quick_fx_defaults(self, page=2, replace=False, **_):
@@ -3782,6 +3987,7 @@ class Engine:
     def _quick_override_vals(self) -> dict:
         if not self.quick_active:
             return {}
+        self._quick_expire()
         by_id = {b["id"]: b for b in self.quick}
         out: dict[int, dict] = {}
         heads = {h["head_no"]: h for h in self.patch}
@@ -3808,7 +4014,39 @@ class Engine:
                     o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
                 elif kind in ("kill", "blackout"):
                     o["kill"] = True
+                elif kind == "custom":
+                    self._quick_custom_over(btn, head, o)
         return out
+
+    def _quick_custom_over(self, btn: dict, head: dict, o: dict) -> None:
+        """One custom button's part of a light's override.  Brightness never
+        goes in as a forced value (that would skip blackout and the master):
+        it becomes the button's level floor instead."""
+        n = head["head_no"]
+        sets = o.setdefault("set", {})
+        level = btn.get("level")
+        for src in (btn.get("attrs") or {}, (btn.get("values") or {}).get(str(n)) or {}):
+            for role, v in src.items():
+                if role in HTP_ROLES:
+                    level = max(level or 0, int(v))
+                elif role in head["map"]:
+                    sets[role] = int(v)
+        if btn.get("colour"):
+            sets.update(self._colour_values(head, btn["colour"]))
+        if level is not None or btn.get("hz"):
+            if level is not None:
+                o["level"] = max(o.get("level") or 0, int(level))
+            gate = self._shutter_role(head)
+            if gate and not any(r in HTP_ROLES for r in head["map"]) and (level or btn.get("hz")):
+                sets[gate] = self._open_value(head, gate)
+        if btn.get("hz"):
+            o["strobe"] = max(o.get("strobe") or 0, btn["hz"])
+        if btn.get("dim") is not None:
+            o["cap"] = min(o["cap"], btn["dim"]) if o.get("cap") is not None else btn["dim"]
+        if btn.get("kill"):
+            o["kill"] = True
+        if not sets:
+            o.pop("set", None)
 
     def _gates(self) -> dict:
         """The value that closes each head's shutter, per the profile:
@@ -4506,6 +4744,7 @@ class Engine:
     def _quick_public(self) -> dict:
         return {"buttons": [dict(b) for b in self.quick],
                 "active": sorted(self.quick_active),
+                "names": dict(getattr(self, "quick_names", {}) or {}),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
 
     def _aim_solve(self, h: dict, tx: float, ty: float, tz: float,
@@ -8680,6 +8919,7 @@ class Engine:
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
+                "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
                 "meta": {"master": self.master},
@@ -8850,6 +9090,9 @@ class Engine:
             self.master = master
             self.show_file = label
             self.quick = quick
+            self.quick_names = {str(k): str(v)[:16] for k, v in
+                                (payload.get("quick_names") or {}).items()} \
+                if isinstance(payload.get("quick_names"), dict) else {}
             self.quick_active = {}
             self._a_fx_kill()                  # a new show starts disarmed
             self._a_timeline_stop()

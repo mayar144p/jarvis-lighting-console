@@ -70,6 +70,36 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 9. Buttons as customisable as possible (first part DONE)
+
+Done: every option in the button editor is a tap.
+- **Lights:** all, the selection, a group or a type, or only the odd /
+  even / left / right half of them.
+- **Does:** flash (level, a colour or "keep their colour"), dim to a level
+  (a ceiling, `cap` in the merge), colour, strobe (rate + colour), blackout
+  these lights, an effect with its own knobs (arc / direction / size /
+  speed for movements), **Mix** (any of level, dim, colour, strobe,
+  blackout plus up to 4 effects), and **From the stage** (captures the
+  programmer's values and the effects running on those lights).  GO,
+  release, preset, SFX, fog, laser, ARM and KILL FX as before.
+- **Behaviour:** hold, on / off, a timed shot; "turn off after N s"; radio
+  groups ("one at a time with…").
+- **Looks and layout:** its own tile colour; 8 named pages; drag to move,
+  Alt-drag to copy, onto a button to swap; Duplicate.
+
+Still to do:
+- Fade in / out times per button.
+- Double-size tiles and icons on tiles.
+- A button that plays a saved Look (item 8) or one of "My moves" (below).
+- A MIDI / keyboard key per button.
+- Per-button speed (a Speed master of its own).
+
+**My moves (agreed):** save a movement (shape, arc, direction, size,
+speed, wave, where it is centred) under a name and pick it from a list on
+the Move tab, next to a light's built-in programs.  It runs and loops on
+any selected lights until stopped: not a cue, and not tied to particular
+lights or a venue.  It can go on a button or into a Look.
+
 ## 8. UI/UX overhaul (audited with a 21-light mixed rig; mock-ups agreed next)
 
 Found in the audit (same features kept, all of it re-laid out):

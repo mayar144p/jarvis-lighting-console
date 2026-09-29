@@ -7511,6 +7511,7 @@ def _standalone_suites():
     ("every channel gets a control", test_aux_channels),
     ("CO2 preset mode never fires on its own", test_co2_preset),
     ("movement stays where it is aimed", test_motion),
+    ("buttons as customisable as possible", test_custom_buttons),
     )
 
 
@@ -8889,6 +8890,110 @@ def test_motion() -> None:
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
           and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")
+
+
+def test_custom_buttons() -> None:
+    """A button picks its lights (and odd / even / left / right of them),
+    does any mix of level, dim, colour, strobe, blackout and effects - or the
+    look on stage, captured - and behaves as hold, on/off or a timed shot,
+    with an off-timer and radio groups; pages have names and buttons move."""
+    print("custom buttons (mix, capture, dim, split, timer, radio, pages)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "q.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            m = e.patch[0]["map"]
+            di = m.index("dimmer")
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "custom", "label": "Dim 30", "dim": 30, "mode": "latch"})
+            check("a Dim button is a custom button with a ceiling", r.get("ok") and r["button"]["dim"] == 30, str(r))
+            e.act("quick_press", id="q1-1")
+            check("...and holds the lights DOWN to its level (80% -> 30%)",
+                  e.build_frames()[1][di] == 76,
+                  str(e.build_frames()[1][di]))
+            e.act("quick_press", id="q1-1")
+            check("...and lets go on the second press", e.build_frames()[1][di] == 204, str(e.build_frames()[1][di]))
+
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle", params={"size": 30, "arc": 180, "direction": -1})
+            r = e.act("quick_set", page=1, slot=2, button={"label": "Red half turn", "capture": True, "mode": "latch",
+                                                           "target": {"heads": [1, 2, 3, 4]}})
+            b = r.get("button") or {}
+            check("'From the stage' captures the programmer and the running effect",
+                  r.get("ok") and b.get("kind") == "custom" and b.get("values", {}).get("1", {}).get("wheel") is not None
+                  and b.get("fx_list", [{}])[0].get("name") == "circle"
+                  and b["fx_list"][0]["params"].get("arc") == 180, str(b)[:300])
+            e.act("clear_programmer")
+            e.act("quick_press", id="q1-2")
+            check("...pressing it brings the colour and the half turn back",
+                  [f.get("lib") for f in e.fx] == ["circle"] and e.build_frames()[1][m.index("wheel")] > 0,
+                  str([f.get("lib") for f in e.fx]))
+            e.act("quick_press", id="q1-2")
+            check("...and switching it off stops its effect", not e.fx, str(e.fx))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "custom", "label": "nothing"})
+            check("a custom button that does nothing is refused", not r.get("ok"), str(r))
+            r = e.act("quick_set", page=1, slot=3, button={"kind": "custom", "label": "Mix", "colour": "#0033ff",
+                                                           "hz": 8, "fx_list": [{"name": "pan_sweep",
+                                                                                 "params": {"arc": 90}}]})
+            check("a Mix button combines colour, strobe and an effect", r.get("ok") and r["button"]["hz"] == 8
+                  and r["button"]["fx_list"][0]["params"] == {"arc": 90.0}, str(r.get("button")))
+
+            e.act("quick_set", page=1, slot=4, button={"kind": "flash", "label": "Odd", "mode": "tap", "seconds": 0.3,
+                                                       "target": {"all": True, "split": "odd"}})
+            e.act("quick_press", id="q1-4")
+            check("split: odd lights only", e.quick_active["q1-4"]["heads"] == [1, 3], str(e.quick_active.get("q1-4")))
+            e.act("quick_press", id="q1-4", down=False)
+            check("a timed shot stays on after the finger lifts", "q1-4" in e.quick_active, "")
+            _t.sleep(0.35)
+            e.build_frames()
+            check("...and lets go by itself when its time is up", "q1-4" not in e.quick_active, "")
+            e.act("quick_set", page=1, slot=5, button={"kind": "flash", "target": {"all": True, "split": "left"}})
+            e.act("quick_press", id="q1-5")
+            check("split: the left half by where they hang", len(e.quick_active["q1-5"]["heads"]) == 2, "")
+            e.act("quick_press", id="q1-5", down=False)
+
+            for slot, hexc in ((6, "#00ff00"), (7, "#0000ff")):
+                e.act("quick_set", page=1, slot=slot, button={"kind": "colour", "colour": hexc, "mode": "latch",
+                                                              "exclusive": "colours"})
+            e.act("quick_press", id="q1-6")
+            e.act("quick_press", id="q1-7")
+            check("a radio group: one colour at a time", "q1-7" in e.quick_active and "q1-6" not in e.quick_active,
+                  str(sorted(e.quick_active)))
+            r = e.act("quick_set", page=1, slot=8, button={"kind": "flash", "tint": "#ec4899", "label": "Pink tile"})
+            check("a button has its own tile colour", r["button"].get("tint") == "#ec4899", "")
+            r = e.act("quick_set", page=1, slot=9, button={"kind": "fx", "fx": "circle", "params": {"arc": 180, "size": 40}})
+            check("an Effect button keeps its knobs (arc, size)", r["button"].get("params") == {"arc": 180.0, "size": 40.0}, "")
+
+            e.act("quick_page", page=5, name="Drops")
+            check("pages have names, and there are 8", e.snapshot()["quick"]["names"].get("5") == "Drops"
+                  and e.snapshot()["quick"]["pages"] == 8, str(e.snapshot()["quick"].get("names")))
+            e.act("quick_move", page=1, slot=8, to_page=5, to_slot=1)
+            check("a button moves to another page", any(b["id"] == "q5-1" for b in e.quick)
+                  and not any(b["id"] == "q1-8" for b in e.quick), "")
+            e.act("quick_move", page=5, slot=1, to_slot=2, copy=True)
+            check("...or is copied", {"q5-1", "q5-2"} <= {b["id"] for b in e.quick}, "")
+            e.act("quick_move", page=1, slot=6, to_slot=7)
+            b6 = next(b for b in e.quick if b["id"] == "q1-6")
+            check("moving onto a button swaps them", b6["colour"] == "#0000ff", str(b6))
+            e.act("save_show", name="btns")
+            e.act("quick_page", page=5, name="")
+            e.act("load_show", name="btns")
+            check("page names are saved with the show", (e.quick_names or {}).get("5") == "Drops", str(e.quick_names))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the editor offers every option as a tap",
+          all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
+                                "quick_page", "Timed shot", "Keep their colour")), "")
 
 
 def test_co2_preset() -> None:
