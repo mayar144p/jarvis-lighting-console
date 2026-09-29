@@ -8846,7 +8846,14 @@ def test_fixture_search() -> None:
         got = fixtures.search(db, "chauvet intimdator 110", fuzzy=True)
         check("installed search forgives a typo in the Add dialog", len(got) == 1, str(len(got)))
         check("but the engine's own lookups stay strict", fixtures.search(db, "chauvet intimdator 110") == [], "")
+        bad = fixtures.search(db, "chauvet intimidator 110", fuzzy=True)[0]
+        gone = fixtures.delete(db, bad["id"])
+        check("a bad installed fixture can be deleted", gone and fixtures.search(db, "intimidator 110", fuzzy=True) == []
+              and fixtures.get(db, bad["id"]) is None, str(gone))
+        check("deleting one that isn't there says so", fixtures.delete(db, 99999) is None, "")
     js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the Add dialog can delete an installed fixture and shows channel counts",
+          "/api/fixtures/delete" in js and "chCounts(" in js, "")
     check("only the newest search may fill the list", js.count("if (my !== seq) return;") >= 5, str(js.count("if (my !== seq) return;")))
 
 
