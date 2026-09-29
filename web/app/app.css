@@ -858,6 +858,14 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 /* test this light */
 .lt { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
 .lt-q { font-size: 15px; }
+.lt-chs { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow: auto; padding-right: 4px; }
+.lt-ch { display: grid; grid-template-columns: 24px minmax(90px, 160px) 1fr 34px auto; gap: 8px; align-items: center; min-height: 30px; }
+.lt-n { font: 600 11px var(--mono); color: var(--muted); text-align: right; }
+.lt-l { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt-v { text-align: right; }
+.lt-q2 { display: flex; gap: 3px; }
+.lt-q2 .chip { font-size: 10.5px; padding: 1px 6px; }
+@media (max-width: 560px) { .lt-q2 { display: none; } .lt-ch { grid-template-columns: 22px 90px 1fr 34px; } }
 
 /* A console, not a document: dragging a fader or slider never selects the
    words around it.  Text people may want to copy stays selectable. */
