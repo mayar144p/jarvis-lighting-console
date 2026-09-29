@@ -179,10 +179,20 @@ Done: every option in the button editor is a tap.
   tile.  Holding the key holds a hold button; the console's own shortcut
   keys (B, X, A, L, C, R, O, I, D, G, F, /, ?, Space) can't be taken.
 
+- **Tile size and icon (DONE):** Normal, Wide (2 across), Tall (2 down)
+  or Big (2 x 2), using the empty spaces next to / under it (the editor
+  says when they're taken; it then shows at normal size).  16 icons
+  (bolt, sun, moon, star, heart, fire, snow, drop, music, strobe, spin,
+  sparkle, eye, stop, up, down) drawn in the tile colour.
+
+- **Button speed (DONE):** effect, My move and Mix buttons have a speed
+  of their own (¼× to 4×, times the Speed master, or "Own speed" to ignore
+  the master).  Live: scroll on the tile or right-click it; the tile shows
+  the speed when it isn't 1×.  Changing it live is not an undo step.
+
 Still to do:
-- Double-size tiles and icons on tiles.
 - A MIDI note per button.
-- Per-button speed (a Speed master of its own).
+- Live speed by touch (a long-press menu in gig mode).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
 to play it on the selected lights, tap again to stop; ⋯ to update it to
