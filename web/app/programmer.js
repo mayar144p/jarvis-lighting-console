@@ -352,7 +352,12 @@ function renderBeamQuick() {
   box.replaceChildren(...rows);
 }
 
+// While a bar is held, a live update must not rebuild the list: the bar
+// under the pointer would be replaced and the drag would stop mid-way.
+let attrHeld = false;
+
 function renderAttributes() {
+  if (attrHeld) return;
   if (tab === "laser" || tab === "sfx") import("./fxpanel.js").then((m) => m.renderFxPane(tab, attrState));
   renderBeamQuick();
   renderWheel();
@@ -372,30 +377,93 @@ function renderAttributes() {
   box.replaceChildren(...(rows.length ? rows : [h("p.muted.small", "These fixtures have no beam attributes.")]));
 }
 
+// What an operator calls each role (the raw role name is the tooltip).
+const ATTR_NAMES = {
+  wheel: "Colour wheel", wheel2: "Colour wheel 2", gobo: "Gobo", gobo2: "Gobo 2", gobo_rot: "Gobo rotate",
+  gobo2_rot: "Gobo 2 rotate", prism: "Prism", prism_rot: "Prism rotate", focus: "Focus", zoom: "Zoom",
+  iris: "Iris", frost: "Frost", speed: "Move speed", shutter: "Shutter", strobe: "Strobe", cto: "Colour temp",
+  white: "White", amber: "Amber", uv: "UV", lime: "Lime", cyan: "Cyan", magenta: "Magenta", yellow: "Yellow",
+  control: "Control", fx_mode: "Mode", fx_param: "Setting", macro: "Macro", animation: "Animation",
+};
+const attrName = (role) => ATTR_NAMES[role] || role.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+const slotAt = (a, v) => (a.slots || []).find((s) => v >= s.from && v <= s.to) || null;
+
 function attrRow(a) {
   const full = a.full || 255;
   const val = a.value === null || a.value === undefined ? null : a.value;
-  const fill = h("div.fill", { style: { width: val === null ? "0%" : (val / full * 100) + "%" } });
-  const bar = h("div.hbar", { title: "Drag to set" }, fill);
-  const out = h("output", val === null ? "–" : a.mixed ? "mix" : String(Math.round(val)));
-  const row = h("div.attr" + (a.set ? ".set" : "") + (a.partial ? ".partial" : ""),
-    h("label", { title: a.partial ? `only ${a.heads} of the selection have ${a.role}` : a.role }, a.role.replace("_", " ")),
-    bar, out,
-    h("button.clr", { title: "Remove from the programmer", onclick: () => run("set_attr_range", { attribute: a.role, clear: true }).then(loadAttributes) }, "×"));
-  let dragging = false;
-  const set = (e) => {
-    const r = bar.getBoundingClientRect();
-    const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    const v = Math.round(t * full);
-    fill.style.width = t * 100 + "%";
-    out.textContent = v;
-    row.classList.add("set");
-    sendAttr(a.role, v);
+  const pct = (v) => (v / full * 100) + "%";
+  const fill = h("div.fill", { style: { width: val === null ? "0%" : pct(val) } });
+  const knob = h("div.knob", { style: { left: val === null ? "0%" : pct(val) }, hidden: val === null });
+  const bar = h("div.hbar", { tabindex: 0, role: "slider", "aria-label": attrName(a.role), "aria-valuemin": 0,
+    "aria-valuemax": full, "aria-valuenow": val ?? 0, title: "Drag, or use the arrow keys (Shift = 10). Double-click to clear." }, fill, knob);
+  const show = (v) => {
+    const slot = slotAt(a, v);
+    return slot ? slot.name : String(Math.round(v));
   };
-  bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); set(e); });
-  bar.addEventListener("pointermove", (e) => { if (dragging) set(e); });
-  bar.addEventListener("pointerup", () => { dragging = false; setTimeout(loadAttributes, 250); });
-  return row;
+  const out = h("output", { title: val === null ? "" : `DMX ${Math.round(val)}` },
+    val === null ? "–" : a.mixed ? "mix" : show(val));
+  const clear = () => run("set_attr_range", { attribute: a.role, clear: true }).then(loadAttributes);
+  const row = h("div.attr" + (a.set ? ".set" : "") + (a.partial ? ".partial" : ""),
+    h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role }, attrName(a.role)),
+    bar, out,
+    h("button.clr", { title: "Remove from the programmer", onclick: clear }, "×"));
+  let cur = val ?? 0;
+  const apply = (v) => {
+    cur = Math.max(0, Math.min(full, Math.round(v)));
+    fill.style.width = pct(cur);
+    knob.style.left = pct(cur);
+    knob.hidden = false;
+    out.textContent = show(cur);
+    out.title = `DMX ${cur}`;
+    bar.setAttribute("aria-valuenow", cur);
+    row.classList.add("set");
+    sendAttr(a.role, cur);
+  };
+  const fromPointer = (e) => {
+    const r = bar.getBoundingClientRect();
+    apply(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * full);
+  };
+  let dragging = false;
+  bar.addEventListener("pointerdown", (e) => {
+    e.preventDefault();                     // no text selection, and keep focus for the arrow keys
+    bar.focus({ preventScroll: true });
+    dragging = true;
+    attrHeld = true;
+    bar.setPointerCapture(e.pointerId);
+    row.classList.add("drag");
+    fromPointer(e);
+  });
+  bar.addEventListener("pointermove", (e) => { if (dragging) fromPointer(e); });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    attrHeld = false;
+    row.classList.remove("drag");
+    setTimeout(loadAttributes, 250);
+  };
+  bar.addEventListener("pointerup", end);
+  bar.addEventListener("pointercancel", end);
+  bar.addEventListener("lostpointercapture", end);
+  bar.addEventListener("dblclick", clear);
+  let keyT = 0;
+  bar.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 10 : 1;
+    const d = { ArrowRight: step, ArrowUp: step, ArrowLeft: -step, ArrowDown: -step }[e.key];
+    if (e.key === "Home") apply(0);
+    else if (e.key === "End") apply(full);
+    else if (d) apply(cur + d);
+    else return;
+    e.preventDefault();
+    clearTimeout(keyT);
+    keyT = setTimeout(loadAttributes, 600);
+  });
+  if (!a.slots || !a.slots.length || a.mixed) return row;
+  // a wheel / gobo: its named slots as one-tap chips under the bar
+  const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {
+    title: `${s.name} - DMX ${s.from}-${s.to}`,
+    onclick: () => { apply(s.value); setTimeout(loadAttributes, 150); },
+  }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name)));
+  return h("div.attr-wrap", row, chips);
 }
 
 // --------------------------------------------------------------- effects
