@@ -6874,6 +6874,12 @@ class Engine:
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
             entry["open_known"] = self._open_known(heads[0], role)
+        if role.startswith("aux") and heads:
+            d = self.head_ranges(heads[0]).get(role) or {}
+            entry["name"] = str(d.get("name") or role)
+            kinds = {(h.get("manufacturer"), h.get("model"), h.get("mode")) for h in heads}
+            if len(kinds) == 1 and d.get("slots"):
+                entry["slots"] = d["slots"]
         if role.startswith("laser_beam") and heads:
             d = self.head_ranges(heads[0]).get(role) or {}
             entry["on"] = int(d.get("on_value") or 255)

@@ -7501,6 +7501,7 @@ def _standalone_suites():
     ("test this light", test_light_test),
     ("forgiving fixture search", test_fixture_search),
     ("beam bar lasers", test_beam_bar),
+    ("every channel gets a control", test_aux_channels),
     )
 
 
@@ -8679,6 +8680,54 @@ def test_remember_open() -> None:
           str([d["role"] for d in cobra[:4]]))
 
 
+def test_aux_channels() -> None:
+    """A light's channels no role fits (Chauvet Intimidator Wave 360:
+    continuous pan rotation, built-in auto tilt, heads on/off, auto
+    programs) used to be `raw` - DMX with no control, held at 0.  Each now
+    has its own named control with its ranges as steps."""
+    print("every channel gets a control (Wave 360's missing movement)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    it = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")[0]))
+    det = {d["n"]: d for d in it["modes"][0]["detail"]}
+    check("continuous pan rotation and built-in tilt get their own controls",
+          det[4]["role"] == "aux1" and det[9]["role"] == "aux2", str((det[4]["role"], det[9]["role"])))
+    check("...named after the channel, with its ranges as steps",
+          "Continuous Pan Rotating" in det[4]["label"] and len(det[4]["slots"] or []) == 3
+          and len(det[9]["slots"] or []) >= 20, det[4]["label"])
+    check("a second speed channel no longer shares pan speed's fader",
+          det[3]["role"] == "speed" and det[10]["role"].startswith("aux"), str((det[3]["role"], det[10]["role"])))
+    check("heads on/off, auto programs and program speed are controllable",
+          all(det[n]["role"].startswith("aux") for n in (28, 29, 30)), "")
+    check("the maintenance channel (settings) stays untouched", det[33]["role"] == "unused", det[33]["role"])
+    laser = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("jarvis", "laserworld/beambar-10b-mk3")[0]))
+    check("effects and lasers are left to their own roles",
+          not any(d["role"].startswith("aux") for d in laser["modes"][0]["detail"]), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "q")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Wave 360", mode="33 ch.", qty=1, universe=1, address=98)
+            others = {x["role"]: x for p in e.attribute_state([1])["pages"] for x in p["attrs"]}
+            check("the programmer lists them by name with their steps",
+                  others.get("aux1", {}).get("name") == "Continuous Pan Rotating"
+                  and len(others["aux5"].get("slots") or []) >= 40, str(others.get("aux1")))
+            e.act("select_heads", heads=[1])
+            r = e.act("set_attribute", attribute="aux1", value=200)
+            check("setting one reaches its own DMX channel", r.get("ok") and e.build_frames()[1][100] == 200,
+                  str(e.build_frames()[1][100]))
+            e.act("record_cue", playback=1, fade=0)
+            check("and records into a cue", "aux1" in json.dumps(e.playbacks[0]["stack"]), "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Beam tab shows them under their own names", "a.name || attrName(a.role)" in js, "")
+
+
 def test_beam_bar() -> None:
     """A laser beam bar (Laserworld BeamBar 10B MK3, from its manual's
     chart): every beam is its own programmable channel, but nothing lights
@@ -8980,8 +9029,8 @@ def test_light_test() -> None:
                 '<DMXModes><DMXMode Name="3ch"><DMXChannels>'
                 '<DMXChannel Offset="1"><LogicalChannel Attribute="Dimmer">'
                 '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
-                '<DMXChannel Offset="2"><LogicalChannel Attribute="Control1">'
-                '<ChannelFunction Name="Control1" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Reserved1">'
+                '<ChannelFunction Name="Reserved1" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
                 '<DMXChannel Offset="3"><LogicalChannel Attribute="Tilt">'
                 '<ChannelFunction Name="Tilt" DMXFrom="0/1"/></LogicalChannel></DMXChannel>'
                 '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))

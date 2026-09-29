@@ -29,7 +29,7 @@ starts from the diagnosis, not from scratch.
   ~20% of travel), a slower default (~4 s per circle), and cap the rate by
   the model's calibrated motor time (`motion`).
 
-## 2. Every channel gets a control
+## 2. Every channel gets a control (DONE: aux1..aux24, PARSER_VERSION 7)
 
 Channels whose label maps to no role become `raw` and have NO programmer
 control (held at 0).  Example: Chauvet Intimidator Wave 360, 33 ch (QLC+):

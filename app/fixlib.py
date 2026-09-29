@@ -802,6 +802,55 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     return "FX Setting" if role == "raw" else None
 
 
+# A light's channels no role fits, or a second channel on a role that is
+# one-per-fixture (a second speed, shutter or wheel), used to become `raw`:
+# DMX with no control behind it, held at 0 - a Wave 360's continuous pan
+# rotation, built-in tilt programs, heads on/off and auto programs all sat
+# dead.  Each now gets its own numbered control (aux1..aux24), named after
+# the channel, with its ranges as named steps.  Maintenance channels (reset,
+# settings) stay untouched on purpose.  Repeated per-head channels (4 tilts,
+# 4 x RGBW) still share one control until multi-head support.
+_MAINTENANCE = re.compile(r"reset|maintenance|settings?\b|no ?function|not used|unused|reserved|"
+                          r"calibrat|test|firmware|display|fan\b|mode select|dimmer (curve|mode|speed)", re.I)
+_ONE_PER_HEAD = {"speed", "shutter", "strobe", "wheel", "gobo", "gobo_rot", "prism", "focus",
+                 "zoom", "frost", "iris", "macro"}
+
+
+def apply_aux(item: dict) -> dict:
+    """Give a light's otherwise uncontrollable channels their own controls
+    (in place; returns the item).  Effects and lasers are left to apply_fx."""
+    if item.get("fx_kind"):
+        return item
+    from .engine_support import channel_role as _role
+    for mode in item.get("modes") or []:
+        rows = mode.get("detail") or []
+        seen: set = set()
+        k = 0
+        for i, row in enumerate(rows):
+            role = row.get("role") or "raw"
+            name = str(row.get("name") or row.get("label") or "").strip()
+            base = role
+            want = False
+            if role == "raw" and name and not _MAINTENANCE.search(name):
+                want = True
+            elif role in _ONE_PER_HEAD and role in seen:
+                want = True                      # a second speed / shutter / wheel
+            seen.add(base)
+            if not want or k >= 24:
+                continue
+            k += 1
+            label = f"Aux {k} · {name or 'Channel ' + str(i + 1)}"[:60]
+            row["label"] = label
+            row["role"] = _role(label)
+            if i < len(mode.get("channels") or []):
+                mode["channels"][i] = label
+            caps = row.get("caps") or []
+            found = [(int(lo), int(hi), {"name": str(t)[:56], "hex": None, "slot": n})
+                     for n, (lo, hi, t) in enumerate(caps, start=1) if str(t).strip()]
+            row["slots"] = _slot_rows(found) if len(found) >= 2 else None
+    return item
+
+
 def apply_fx(item: dict) -> dict:
     """Classify one parsed fixture and give its effect channels their own
     roles and values (in place; returns the item)."""
