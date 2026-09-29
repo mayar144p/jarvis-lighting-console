@@ -379,7 +379,8 @@ one control per beam. On the **Laser** tab:
 - Beams record into cues like any attribute. Record a few patterns on one
   playback to make a beam chase.
 - **Output mode** picks what the laser does when fired: your own beams, its
-  built-in programs, auto or sound. A laser button can also carry its own mode.
+  built-in programs, auto or sound. It records into cues like the beams, so
+  each cue can switch mode. A laser button can also carry its own mode.
 - Any channel the tab doesn't know by name appears under **Other channels**, so
   every channel has a control.
 
