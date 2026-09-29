@@ -284,10 +284,16 @@ def _describe(manufacturer: str, model: str, mode: str,
 def describe(head: dict) -> dict:
     """The physical description of one patched head (cached per type)."""
     roles = tuple(str(r) for r in (head.get("map") or []))
-    return dict(_describe(str(head.get("manufacturer") or ""),
-                          str(head.get("model") or ""),
-                          str(head.get("mode") or ""),
-                          roles, int(head.get("channels") or len(roles))))
+    out = dict(_describe(str(head.get("manufacturer") or ""),
+                         str(head.get("model") or ""),
+                         str(head.get("mode") or ""),
+                         roles, int(head.get("channels") or len(roles))))
+    # a multi-head light (a Wave 360: four tilts on one address) is drawn
+    # as that many small heads on one bar
+    tilts = roles.count("tilt")
+    if tilts > 1 and out.get("moving"):
+        out["heads"] = tilts
+    return out
 
 
 # ---------------------------------------------------------------------------

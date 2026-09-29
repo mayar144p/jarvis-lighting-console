@@ -6040,6 +6040,8 @@ class Engine:
             row["across"] = True
             if "phase" in p and not (isinstance(params, dict) and params.get("phase")):
                 p["phase"] = 100.0
+            if name in motion_mod.KINDS and not (isinstance(params, dict) and params.get("spread")):
+                p["spread"] = 360.0                       # the heads spread evenly round the shape
         self.fx.append(row)
         msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
                                    len(capable))
@@ -6087,12 +6089,20 @@ class Engine:
         rate = min(float(p.get("speed", 0.125)), cap[1])
         row["_turns"] = row.get("_turns", 0.0) + step * rate
         prog, pbs = base
+        # "across": every head of a multi-head light (a Wave 360's four
+        # tilts) is one step of the movement - a tilt wave through the light
+        units = []
         for i, h in enumerate(heads):
+            copies = merge._repeated(h["map"]).get("tilt", 0) if row.get("across") else 0
+            units += [(i, h, k) for k in range(1, copies + 1)] if copies else [(i, h, None)]
+        for u, (i, h, k) in enumerate(units):
             n = h["head_no"]
             centre, limits = [], []
             for role in ("pan", "tilt"):
                 dom = attr_domain(h, role) if role in h["map"] else 255
-                v = (prog.get(n) or {}).get(role)
+                v = (prog.get(n) or {}).get(f"{role}@{k}") if k and role == "tilt" else None
+                if v is None:
+                    v = (prog.get(n) or {}).get(role)
                 if v is None:
                     for _lvl, vals in pbs:
                         if role in (vals.get(n) or {}):
@@ -6107,10 +6117,16 @@ class Engine:
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))
             vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
-                                       cap[2][i], i, len(heads))
+                                       cap[2][i], u, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():
                 if role not in h["map"]:
+                    continue
+                if k is not None:
+                    if role == "tilt":
+                        dst[f"tilt@{k}"] = int(round(frac * 255))
+                    elif k == 1:                        # the light's one pan, once
+                        dst[role] = int(round(frac * 255)) if attr_domain(h, role) <= 255 else int(round(frac * 65535))
                     continue
                 if attr_domain(h, role) > 255:
                     v16 = int(round(frac * 65535))
@@ -8845,6 +8861,20 @@ class Engine:
                 row["pan"] = pan
             if tilt is not None:
                 row["tilt"] = tilt
+            reps = merge._repeated(head["map"])
+            if reps.get("tilt", 0) > 1 or reps.get("red", 0) > 1:
+                # each head of a multi-head light: its own colour and tilt
+                n_cells = max(reps.get("tilt", 0), reps.get("red", 0))
+                cells = []
+                for k in range(1, n_cells + 1):
+                    cv = {r: values.get(f"{r}@{k}", values.get(r, 0)) for r in ("red", "green", "blue", "white")}
+                    cell = {"hex": self._hex_for(head, cv) if any(r in values or f"{r}@{k}" in values
+                                                                  for r in ("red", "green", "blue", "white")) else row["hex"]}
+                    t = values.get(f"tilt@{k}", values.get("tilt"))
+                    if t is not None and "tilt" in head["map"]:
+                        cell["tilt"] = round(max(0, min(255, int(t))) / 255.0, 4)
+                    cells.append(cell)
+                row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head
             # is actually pointing.  The visualiser used a hardcoded 270
             # degrees of tilt, which is a 540-degree-pan/270-degree-tilt

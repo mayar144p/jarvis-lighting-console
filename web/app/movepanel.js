@@ -18,7 +18,7 @@ const MOVE_KINDS = new Set(MOVES.map((m) => m[0]));
 const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 
 // the knobs, remembered while the page is open
-const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0 };
+const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0, across: false };
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -137,8 +137,11 @@ async function startMove(name) {
   for (const f of running()) {
     if (f.heads.some((n) => heads.includes(n))) await run("stop_fx", { id: f.id }, { silentError: true });
   }
-  run("run_fx", { name, params: params(), heads }, { toast: true });
+  run("run_fx", { name, params: params(), heads, across: knobs.across && multiTilt() }, { toast: true });
 }
+
+// a Wave 360 has four tilts: a movement can run across them (a tilt wave)
+const multiTilt = () => movers().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 
 // a knob changed while a movement runs on these lights: restart it with the new knobs
 async function reapply() {
@@ -146,7 +149,7 @@ async function reapply() {
   const mine = running().filter((f) => f.heads.some((n) => heads.includes(n)));
   for (const f of mine) {
     await run("stop_fx", { id: f.id }, { silentError: true });
-    await run("run_fx", { name: f.lib, params: params(), heads: f.heads }, { silentError: true });
+    await run("run_fx", { name: f.lib, params: params(), heads: f.heads, across: knobs.across && multiTilt() }, { silentError: true });
   }
 }
 
@@ -282,6 +285,9 @@ function movementBlock() {
     h("div.mv-row", h("span.k", "Speed"), secs, secsOut, h("span.muted.small", "per turn")),
     h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
       ...chips([["together", false], ["wave", true]], (v) => knobs.wave === v, (v) => { knobs.wave = v; }))),
+    multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
+      ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
+        (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null,
     h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
       ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
         (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),

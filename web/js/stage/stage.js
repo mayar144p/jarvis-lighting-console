@@ -48,6 +48,11 @@ function lookFrom(row, scratch) {
     hz: +row.hz || 0,            // the real strobe rate, 0 = steady
     mv: row.mv || null,          // {p, t: full-travel seconds, s: speed 0..1}
     fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
+    // each head of a multi-head light: its own colour and tilt
+    cells: Array.isArray(row.cells) ? row.cells.map((c) => {
+      const cc = hexLinear(c.hex, scratch);
+      return { r: cc.r, g: cc.g, b: cc.b, tilt: typeof c.tilt === "number" ? c.tilt : null };
+    }) : null,
   };
 }
 
@@ -64,6 +69,11 @@ function mixLook(a, b, t) {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
     deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx,
+    cells: b.cells ? b.cells.map((c, i) => {
+      const o = (a.cells && a.cells[i]) || c;
+      return { r: lerp(o.r, c.r, t), g: lerp(o.g, c.g, t), b: lerp(o.b, c.b, t),
+        tilt: c.tilt === null ? null : o.tilt === null ? c.tilt : lerp(o.tilt, c.tilt, t) };
+    }) : null,
   };
 }
 
@@ -264,7 +274,8 @@ export class Stage {
     const seen = new Set();
     for (const f of fixtures) {
       seen.add(f.head_no);
-      const sig = [f.body && f.body.type, f.body && f.body.brand, f.model, f.mode, (f.body && f.body.cells) || 1].join("|");
+      const sig = [f.body && f.body.type, f.body && f.body.brand, f.model, f.mode, (f.body && f.body.cells) || 1,
+        (f.body && f.body.heads) || 1].join("|");
       let inst = this.fixtures.get(f.head_no);
       if (inst && inst.sig !== sig) {
         this._remove(inst);
@@ -922,6 +933,13 @@ export class Stage {
         sk.pan.rotation.y = pan;
         sk.tilt.rotation.x = tilt;
       }
+      if (sk.cells) {
+        // each head of a multi-head light tilts on its own (no motor model)
+        sk.cells.forEach((c, k) => {
+          const ct = L.cells && L.cells[k] && L.cells[k].tilt !== null ? L.cells[k].tilt : tx;
+          c.tilt.rotation.x = ct === null ? 0 : lerp(tr[0], tr[1], ct) * DEG;
+        });
+      }
     }
     let a = L.a;
     if (L.hz > 0 && (time * L.hz) % 1 > 0.3) a = 0;      // a real strobe only
@@ -929,6 +947,12 @@ export class Stage {
     const col = this._c.setRGB(L.r, L.g, L.b);
     for (const lens of sk.lenses) {
       lens.emissive.copy(col).multiplyScalar(a * 7);
+    }
+    if (sk.cells) {
+      sk.cells.forEach((c, k) => {
+        const cc = L.cells && L.cells[k];
+        c.lens.emissive.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(a * 7);
+      });
     }
     void lights;
     return a > 0.002;
@@ -967,7 +991,8 @@ export class Stage {
       u.uLen.value = len;
       u.uR0.value = r0;
       u.uR1.value = r1;
-      u.uColor.value.setRGB(L.r, L.g, L.b);
+      const cc = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
+      u.uColor.value.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b);
       const narrow = Math.min(3.2, Math.max(0.45, Math.sqrt(22 / Math.max(angle, 1))));
       u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
       u.uSoft.value = lerp(1.7, 0.55, frost);
@@ -981,7 +1006,7 @@ export class Stage {
       b.glow.position.copy(b.origin).addScaledVector(b.dir, 0.01);
       const g = r0 * (3 + 12 * Math.pow(facing, 6)) * (0.4 + a);
       b.glow.scale.setScalar(g);
-      b.glow.material.color.setRGB(L.r, L.g, L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
+      b.glow.material.color.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
 
       if (inst.head === this.povHead) {            // looking down this beam
         b.mesh.visible = false;

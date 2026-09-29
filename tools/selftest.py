@@ -9054,10 +9054,25 @@ def test_multi_head() -> None:
             e.act("set_colour", hex="#ff0000", cell=[1])
             e.act("record_preset", name="One red")
             check("a look keeps a single head's colour", "red@1" in e.presets[-1]["values"], str(e.presets[-1]["values"]))
+            e.act("set_attribute", attribute="tilt", value=128)
+            e.act("run_fx", name="tilt_bounce", params={"size": 40, "speed": 0.5}, across=True)
+            _t.sleep(0.3)
+            w = e.build_frames()[1]
+            check("a tilt wave runs through the heads (four different tilts)", len(set(w[4:8])) >= 3, str(list(w[4:8])))
+            e.act("stop_fx")
+            e.act("set_colour", hex="#00ff00", cell=[4])
+            row = next(r for r in e._looks() if r["n"] == 1)
+            check("the 3D view gets each head's own colour", row.get("cells") and len(row["cells"]) == 4
+                  and row["cells"][3]["hex"] == "#00ff00" and row["cells"][0]["hex"] == "#ff0000", str(row.get("cells")))
+            check("...and draws the light as that many heads", e.snapshot()["patch"][0]["body"].get("heads") == 4, "")
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     ac = (ROOT / "web" / "app" / "actions.js").read_text(encoding="utf-8")
+    md = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a multi-head 3D model: heads on a bar, each tilting and coloured on its own",
+          "function multiHead" in md and "sk.cells" in sj and "L.cells" in sj, "")
     check("the programmer offers Heads: All 1 2 3 4 and 'across each light's heads'",
           "renderProgCells" in js and "Across each light's heads" in js and "state.cells" in ac, "")
 

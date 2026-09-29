@@ -80,7 +80,9 @@ set_attribute take `cell`; the programmer shows "Heads: All 1 2 3 4"
 for such lights and sends only to the picked heads; cues and looks keep
 per-head values; effects run "across each light's heads" (colour chase /
 rainbow step head to head).  Still open: movement effects across heads (a
-tilt wave), per-head colours in the 3D view.
+tilt wave), per-head colours in the 3D view.  (DONE since: tilt wave
+across the heads on the Move tab; a multi-head 3D model - heads on a bar,
+each tilting and coloured on its own.)
 
 ## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
 

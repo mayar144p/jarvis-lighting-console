@@ -285,6 +285,51 @@ function movingSpot(body, variant) {
   return sk;
 }
 
+/** A multi-head light (a Wave 360): N small heads on one bar that pans,
+ *  each head tilting and lit on its own.  `sk.cells[k]` = {tilt, lens}. */
+function multiHead(body, n) {
+  const sk = skeleton();
+  const count = Math.max(2, Math.min(8, n));
+  const pitch = 0.13;
+  const barW = count * pitch + 0.08;
+  movingBase(sk, body, Math.max(0.38, barW * 0.7), 0.14, 0.3);
+  const H = housing(body.style);
+  const armH = 0.2;
+  for (const s of [-1, 1]) {                          // short uprights to the bar
+    const arm = rbox(0.05, armH, 0.1, 0.02, H);
+    arm.position.set(s * (barW / 2 - 0.03), armH / 2 + 0.02, 0);
+    sk.pan.add(arm);
+  }
+  const bar = rbox(barW, 0.05, 0.12, 0.02, H);
+  bar.position.y = armH + 0.02;
+  sk.pan.add(bar);
+  const plate = logo(body, Math.min(0.3, barW * 0.5), 0.05);
+  if (plate) { plate.position.set(0, armH + 0.02, 0.061); sk.pan.add(plate); }
+  sk.tilt.position.y = armH + 0.02;                 // (kept for the generic code; empty)
+  sk.cells = [];
+  const R = 0.045, len = 0.15;
+  for (let k = 0; k < count; k++) {
+    const t = new THREE.Group();
+    t.position.set((k - (count - 1) / 2) * pitch, armH + 0.05, 0);
+    sk.pan.add(t);
+    const shell = lathe([[0.001, -len * 0.4], [R * 0.8, -len * 0.38], [R, -len * 0.2], [R, len * 0.5],
+      [R * 1.05, len * 0.6], [R * 0.8, len * 0.6]], H, 24);
+    t.add(shell);
+    const ring = cyl(R * 1.06, R * 1.06, 0.008, trim(body.style), 24);
+    ring.position.y = len * 0.55;
+    t.add(ring);
+    const lens = lensMaterial();
+    const l = disc(R * 0.78, lens, 24);
+    l.position.y = len * 0.6 - 0.003;
+    t.add(l);
+    sk.emitters.push(emitter(t, len * 0.6, R * 0.75, { cell: k }));
+    sk.cells.push({ tilt: t, lens });
+  }
+  sk.height = armH + 0.3;
+  sk.radius = Math.max(0.3, barW / 2);
+  return sk;
+}
+
 function movingWash(body, family) {
   const sk = skeleton();
   const R = 0.165;
@@ -862,7 +907,7 @@ function mergeStatic(sk) {
 /** Build the 3D model for one head from its physical description. */
 export function buildFixture(body, family = "") {
   const b = body || { type: "generic", style: { body: "#26282c", accent: "#9aa4b2", finish: "matte" }, cells: 1 };
-  const make = BUILDERS[b.type] || BUILDERS.generic;
+  const make = b.heads > 1 && b.moving ? (bb) => multiHead(bb, b.heads) : (BUILDERS[b.type] || BUILDERS.generic);
   const sk = make(b, family.toLowerCase());
   mergeStatic(sk);
   return sk;
