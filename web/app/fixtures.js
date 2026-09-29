@@ -276,6 +276,41 @@ function rowClick(e) {
   }
 }
 
+// the row's light, or the whole selection when the row is part of it
+function sameSelection(head) {
+  const sel = selected();
+  return sel.includes(head) ? sel : [head];
+}
+
+// Change the fixture type of patched lights: their number, place,
+// groups, cues and looks stay; the address stays if the new one fits.
+function openChangeType(heads) {
+  const search = h("input.input", { type: "search", placeholder: "Search your installed fixtures…" });
+  const list = h("div.ct-list");
+  const note = h("p.muted.small", heads.length > 1 ? `${heads.length} lights will change.` : "");
+  let close = null, seq = 0;
+  const pick = async (r, mode) => {
+    const res = await run("change_type", { heads, fixture_id: r.id, mode: mode ? mode.name : undefined }, { toast: true });
+    if (res.ok) close();
+  };
+  const find = async () => {
+    const my = ++seq;
+    const d = await get("/api/fixtures?q=" + encodeURIComponent(search.value.trim())).catch(() => ({}));
+    if (my !== seq) return;
+    const rows = (d.results || []).slice(0, 40);
+    list.replaceChildren(...(rows.length ? rows.map((r) => h("div.ct-item",
+      h("b", `${r.manufacturer} ${r.model}`),
+      h("div.chip-row", ...((r.modes || []).length ? r.modes : [null]).map((m) => h("button.chip", {
+        onclick: () => pick(r, m) }, m ? `${m.name} · ${m.channel_count} ch` : "Use this")))))
+      : [h("p.muted.small", "Nothing installed matches - add the fixture from + Add first.")]));
+  };
+  let t = 0;
+  search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(find, 150); });
+  close = modal({ title: "Change fixture type", body: h("div", note, search, list) });
+  find();
+  search.focus();
+}
+
 function rowMenu(btn, head) {
   const hd = patch().find((x) => x.head_no === head);
   if (!hd) return;
@@ -294,6 +329,7 @@ function rowMenu(btn, head) {
     { label: "Test this light…", run: () => openLightTest(hd) },
     { label: "Show DMX channels", run: () => openChannels([head]) },
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
+    { label: "Change fixture type…", run: () => openChangeType(sameSelection(head)) },
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },

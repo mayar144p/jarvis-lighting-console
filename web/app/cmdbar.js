@@ -10,7 +10,7 @@ import { post } from "./api.js";
 import { state, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, toast } from "./ui.js";
-import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog } from "./dialogs.js";
+import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openReadyCheck } from "./dialogs.js";
 import { askCopilot } from "./copilot.js";
 import { toggleFull } from "./stagepanel.js";
 
@@ -29,6 +29,7 @@ const ACTIONS = [
   { t: "Stop all effects", k: "stop effects fx", run: () => run("stop_fx", {}) },
   { t: "Undo", k: "undo oops", run: () => run("undo") },
   { t: "Stage full screen", k: "full screen stage view", run: () => toggleFull() },
+  { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
   { t: "Settings", k: "settings venue stage size midi network", run: () => openSettings() },
   { t: "Help", k: "help keys shortcuts", run: () => openHelp() },
 ];

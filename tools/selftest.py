@@ -7526,6 +7526,8 @@ def _standalone_suites():
     ("buttons: a MIDI note per button", test_button_midi),
     ("group chips flash when held; laser looks make buttons", test_group_flash_laser_button),
     ("cues keep their effects and part times; movements make buttons", test_cue_fx_parts),
+    ("change a light's fixture type, keeping everything else", test_change_type),
+    ("Ready? check, show versions and export", test_ready_versions),
     )
 
 
@@ -9312,6 +9314,104 @@ def test_cue_fx_parts() -> None:
           and "openCueDialog" in mv, "")
     dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
     check("the cue list shows effects and part times", "cue-fx" in dl and "partTimes" in dl, "")
+
+
+def test_change_type() -> None:
+    """A patched light swaps fixture type in place: its number, position,
+    groups and cues stay; the address stays when the new one fits."""
+    print("change fixture type")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3, universe=1, address=1)
+            e.act("set_place", head=2, x=1.5, y=3.0, z=-2.0)
+            e.act("rename_head", head=2, name="DJ left")
+            e.act("group_create", name="Front", heads=[2, 3])
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1, name="Red")
+            before = next(h for h in e.patch if h["head_no"] == 2)
+            r = e.act("change_type", heads=[2], query="LED PARty RGBW")
+            after = next(h for h in e.patch if h["head_no"] == 2)
+            check("the light is the new type", r.get("ok") and "PARty" in after["model"], str(r))
+            check("same number, place and name", (after["x"], after["y"], after["z"], after["name"])
+                  == (before["x"], before["y"], before["z"], "DJ left"), str(after))
+            check("still in its group", 2 in e.groups[0]["heads"], str(e.groups))
+            check("its cue still drives it", 2 in e.playbacks[0]["stack"][0]["values"], "")
+            check("moved to a free block when the new footprint doesn't fit",
+                  r.get("moved") and after["address"] != before["address"], str((r.get("moved"), after["address"])))
+            e.act("cue_go", playback=1)
+            red_ch = after["address"] - 1 + after["map"].index("red")
+            check("the cue plays on the new type", e.build_frames()[1][red_ch] > 0, "")
+            r = e.act("change_type", heads=[3], query="LED PAR 4ch")
+            h3 = next(h for h in e.patch if h["head_no"] == 3)
+            check("same footprint: the address stays", r.get("ok") and not r.get("moved") and h3["address"] == 9,
+                  str((r, h3["address"])))
+            r = e.act("change_type", heads=[1], query="no such light xyz")
+            check("an unknown type changes nothing", not r.get("ok") and e.patch[0]["model"] == "LED PAR 4ch", str(r))
+            r = e.act("undo")
+            check("undo puts the old type back", r.get("ok"), str(r))
+        finally:
+            e.shutdown()
+
+
+def test_ready_versions() -> None:
+    """The pre-gig check names what would bite; every save that changes a
+    show keeps the one before, and an earlier version can be opened."""
+    print("Ready? check and show versions")
+    import tempfile
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("ready_check")
+            check("an empty rig is not ready", r.get("ok") and r["worst"] == "bad"
+                  and any("No lights" in i["text"] for i in r["items"]), str(r))
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=20)
+            e.patch[2]["address"] = 3                 # a clash, as a bad CSV import would leave
+            r = e.act("ready_check")
+            check("a DMX clash is named", any("clash" in i["text"] for i in r["items"] if i["level"] == "bad"), str(r["items"]))
+            e.patch[2]["address"] = 20
+            r = e.act("ready_check")
+            texts = " ".join(i["text"] for i in r["items"])
+            check("unsaved show, no cues and blind output are flagged", "never been saved" in texts
+                  and "No cues" in texts and "BLIND" in texts, texts)
+            undo_n = len(e._undo)
+            check("the check changes nothing", len(e._undo) == undo_n, "")
+            e.act("save_show", name="gig")
+            r = e.act("show_versions", name="gig")
+            check("the first save keeps no version", r.get("ok") and r["versions"] == [], str(r))
+            e.act("save_show", name="gig")
+            check("saving the same show again keeps no copy", e.act("show_versions", name="gig")["versions"] == [], "")
+            e.act("rename_head", head=1, name="Changed")
+            r = e.act("save_show", name="gig")
+            vs = e.act("show_versions", name="gig")["versions"]
+            check("a save that changed something keeps the one before", r.get("version_kept") and len(vs) == 1, str(vs))
+            check("versions are not listed as shows", "versions" not in (e.snapshot().get("shows") or []), "")
+            r = e.act("restore_version", name="gig", id=vs[0]["id"])
+            check("an earlier version opens", r.get("ok") and e.patch[0]["name"] != "Changed", str(r))
+            vs2 = e.act("show_versions", name="gig")["versions"]
+            check("...and the newer one is kept as a version", len(vs2) == 2, str(vs2))
+            r = e.act("restore_version", name="gig", id="../../etc")
+            check("a bad version id is refused", not r.get("ok"), str(r))
+            r = e.act("show_export", name="gig")
+            check("export hands back the show file", r.get("ok") and r["filename"] == "gig.json"
+                  and '"patch"' in r["text"], str(r.get("error")))
+        finally:
+            e.shutdown()
 
 
 def test_cue_list_modes() -> None:

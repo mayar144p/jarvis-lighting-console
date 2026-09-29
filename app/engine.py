@@ -59,7 +59,8 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9 _-]{1,40}$")
 # The invariant this preserves: no MUTATION happens off-lock, and nothing
 # on the output thread's path (build_frames) does I/O.
 SELF_LOCKED_ACTIONS = frozenset({
-    "patch_from_csv", "save_show", "load_show",
+    "patch_from_csv", "save_show", "load_show", "restore_version",
+    "show_versions", "show_export",
 })
 
 # --- undo ------------------------------------------------------------------
@@ -96,6 +97,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
+    "ready_check", "show_versions", "show_export",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -136,7 +138,7 @@ UNDO_EXCLUDED = frozenset({
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
-                        "fx_status"})
+                        "fx_status", "ready_check", "show_versions", "show_export"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -587,7 +589,8 @@ ACTIONS = (
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
     "venue_save", "venue_open", "venue_delete",
-    "patch_move_free",
+    "patch_move_free", "change_type", "ready_check", "show_versions", "restore_version",
+    "show_export",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
@@ -1616,6 +1619,65 @@ class Engine:
         added = self._apply_plan(plan)
         return {"heads": added, "patched": len(self.patch),
                 "summary": f"added {len(added)} x {plan[0]['model']}"}
+
+    # what a new fixture type brings; everything else about a head stays
+    _TYPE_KEYS = frozenset({"manufacturer", "model", "mode", "channels", "map", "mapped",
+                            "unverified", "universe", "address", "name"})
+
+    def _a_change_type(self, heads=None, head=None, query="", fixture_id=None, mode=None, **_):
+        """Swap the fixture type of patched lights, keeping each one's
+        number, place, rigging, groups, cues and looks (they point at the
+        head number and at roles, so the new type plays them where it has
+        the channel).  The address stays when the new footprint fits there;
+        otherwise the light moves to the first free block and says so."""
+        nums = sorted({int(x) for x in (heads or ([head] if head is not None else []))})
+        if not nums:
+            raise ValueError("pick the light(s) to change")
+        by_no = {h["head_no"]: h for h in self.patch}
+        missing = [n for n in nums if n not in by_no]
+        if missing:
+            raise ValueError(f"no light #{missing[0]}")
+        old_patch = list(self.patch)
+        self.patch = [h for h in self.patch if h["head_no"] not in nums]
+        moved, lost = [], set()
+        try:
+            for n in nums:
+                was = by_no[n]
+                entry = {"query": query, "fixture_id": fixture_id, "mode": mode, "qty": 1}
+                free = self.plan_addresses([entry])[0]        # an unknown type fails here
+                try:
+                    row = self.plan_addresses([{**entry, "universe": was["universe"],
+                                                "address": was["address"]}])[0]
+                except ValueError:
+                    row = free                                # no room here: the first free block
+                    moved.append(f"#{n} -> {row['universe']}.{row['address']}")
+                new = self._build_head(row, n)
+                if was.get("name") and was["name"] != f"{was.get('model') or 'Head'} {n}":
+                    new["name"] = was["name"]                  # a name the operator gave it
+                for k, v in was.items():
+                    if k not in self._TYPE_KEYS and k not in ("kind", "role", "x", "y", "z"):
+                        new[k] = v
+                for k in ("kind", "role", "x", "y", "z"):
+                    new[k] = was.get(k, new.get(k))
+                used = {r for pb in self.playbacks for c in pb["stack"]
+                        for r in (c.get("values") or {}).get(n, {})}
+                lost |= {r.split("@", 1)[0] for r in used} - set(new["map"])
+                self.patch.append(new)
+            self.patch.sort(key=lambda h: h["head_no"])
+            self._validate_patch()
+        except (ValueError, TypeError):
+            self.patch = old_patch
+            raise
+        self.patch_rev += 1
+        for n in nums:
+            self.programmer.pop(n, None)
+        model = next(h for h in self.patch if h["head_no"] == nums[0])["model"]
+        msg = f"{len(nums)} light(s) are now {model}"
+        if moved:
+            msg += "; moved " + ", ".join(moved[:6])
+        if lost:
+            msg += f"; cues set {', '.join(sorted(lost)[:6])} it doesn't have"
+        return {"heads": nums, "moved": moved, "lost": sorted(lost), "summary": msg}
 
     def _a_remove_heads(self, heads=None, head=None, head_end=None, **_):
         wanted = set()
@@ -3348,7 +3410,7 @@ class Engine:
     # turning the lock off.
 
     LOCK_PATCH = frozenset({
-        "add_heads", "remove_heads", "patch_clear", "auto_patch",
+        "add_heads", "remove_heads", "patch_clear", "auto_patch", "change_type",
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
@@ -3360,7 +3422,7 @@ class Engine:
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
-        "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
+        "set_output", "set_dmx_target", "save_show", "load_show", "import_show", "restore_version",
         "venue_save", "venue_open", "venue_delete",
         "quick_set", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
@@ -9696,11 +9758,128 @@ class Engine:
             self.show_file = label
         self.show_dir.mkdir(parents=True, exist_ok=True)
         path = self.show_dir / f"{label}.json"
+        kept = self._keep_version(path, text)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
-        return {"file": label, "show_file": label,
+        return {"file": label, "show_file": label, "version_kept": kept,
                 "summary": f"saved show {label!r}"}
+
+    def _a_ready_check(self, **_):
+        """Before doors: everything that would bite during the show, each
+        with what to press.  Read-only."""
+        items: list[dict] = []
+
+        def add(level, text, fix=""):
+            items.append({"level": level, "text": text, "fix": fix})
+
+        if not self.patch:
+            add("bad", "No lights are patched.", "+ Add")
+        clashes = self._patch_clashes()
+        if clashes:
+            add("bad", f"{len(clashes)} DMX clash(es): two lights share channels.", "Fixtures → the red warning → Move")
+        raw = [h["head_no"] for h in self.patch if not h.get("mapped", True)]
+        if raw:
+            add("warn", f"{len(raw)} light(s) have channels Jarvis can't name ({', '.join(f'#{n}' for n in raw[:6])}).",
+                "Edit fixture profile")
+        gone = self._stale_heads(self.patch, self.playbacks)
+        if gone:
+            add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues")
+        if not any(pb["stack"] for pb in self.playbacks):
+            add("warn", "No cues recorded yet.", "Record a cue")
+        movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
+        if movers and not self.floor_safe:
+            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Move tab → Stay on the floor")
+        lasers = [h for h in self.patch if any(r in LASER_ROLES for r in h["map"])]
+        if lasers:
+            add("info", f"{len(lasers)} laser(s): output only while ARMED; KILL FX stops everything.", "")
+        if self.dry_run or not self.live:
+            add("warn", "BLIND / output stopped: nothing reaches the lights yet.", "Go live…")
+        if self.output.get("errors"):
+            add("bad", f"{self.output['errors']} DMX send error(s): {self.output.get('last_error') or ''}".strip(),
+                "Settings → Output")
+        if not self.show_file:
+            add("warn", "The show has never been saved.", "Show ▾ → Save")
+        if not items or all(i["level"] == "info" for i in items):
+            add("ok", "Ready: nothing to fix.")
+        worst = next((lv for lv in ("bad", "warn") if any(i["level"] == lv for i in items)), "ok")
+        return {"ready": worst == "ok", "worst": worst, "items": items,
+                "summary": "ready" if worst == "ok" else
+                f"{sum(i['level'] == worst for i in items)} thing(s) to check"}
+
+    SHOW_VERSIONS = 20
+
+    def _versions_dir(self, label: str) -> Path:
+        return self.show_dir / "versions" / label
+
+    def _keep_version(self, path: Path, new_text: str) -> bool:
+        """Before a save overwrites a show, keep the old file (when it is
+        different) as a dated version; the last SHOW_VERSIONS stay."""
+        if not path.is_file():
+            return False
+        try:
+            old_text = path.read_text(encoding="utf-8")
+            strip = lambda t: {k: v for k, v in json.loads(t).items() if k != "saved"}  # noqa: E731
+            if strip(old_text) == strip(new_text):
+                return False
+            stamp = str(json.loads(old_text).get("saved") or "")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            old_text, stamp = path.read_bytes().decode("utf-8", "replace"), ""
+        d = self._versions_dir(path.stem)
+        d.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^0-9T]", "", stamp)[:15] or datetime.now().strftime("%Y%m%dT%H%M%S")
+        dest = d / f"{name}.json"
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = d / f"{name}-{n}.json"
+        dest.write_text(old_text, encoding="utf-8")
+        for extra in sorted(d.glob("*.json"))[:-self.SHOW_VERSIONS]:
+            extra.unlink(missing_ok=True)
+        return True
+
+    def _a_show_versions(self, name="", **_):
+        """The kept versions of a show, newest first."""
+        label = self._safe_name(name or self.show_file or "show")
+        d = self._versions_dir(label)
+        rows = []
+        for p in sorted(d.glob("*.json"), reverse=True) if d.is_dir() else []:
+            try:
+                saved = json.loads(p.read_text(encoding="utf-8")).get("saved")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                saved = None
+            rows.append({"id": p.stem, "saved": saved, "bytes": p.stat().st_size})
+        return {"show": label, "versions": rows,
+                "summary": f"{len(rows)} earlier version(s) of {label!r}"}
+
+    def _a_restore_version(self, name="", id="", **_):
+        """Open an earlier version of a show.  The show as it is now is kept
+        as a version first, so restoring can itself be undone."""
+        label = self._safe_name(name or self.show_file or "show")
+        vid = str(id or "")
+        if not re.fullmatch(r"[0-9T]+(-\d+)?", vid):
+            raise ValueError("pick a version")
+        src = self._versions_dir(label) / f"{vid}.json"
+        if not src.is_file():
+            raise ValueError(f"no version {vid} of {label!r}")
+        path = self.show_dir / f"{label}.json"
+        text = src.read_text(encoding="utf-8")
+        self._keep_version(path, text)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+        r = self._a_load_show(name=label)
+        r["summary"] = f"opened the {vid[:8]} {vid[9:13]} version of {label!r} (the newer one is kept)"
+        return r
+
+    def _a_show_export(self, name="", **_):
+        """The show file's text, for a download / a USB stick."""
+        label = self._safe_name(name or self.show_file or "show")
+        path = self.show_dir / f"{label}.json"
+        if not path.is_file():
+            raise ValueError(f"save the show first (no file {label!r})")
+        return {"show": label, "filename": f"{label}.json", "text": path.read_text(encoding="utf-8"),
+                "summary": f"exported {label!r}"}
 
     @staticmethod
     def _normalize_rows(values) -> dict[int, dict]:

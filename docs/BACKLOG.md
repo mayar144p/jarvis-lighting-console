@@ -66,11 +66,20 @@ alone or together, per-head values, and effects that run ACROSS the heads
 
 ## 6. Patch safety
 
-- DMX map per universe (who owns which channels, clashes in red) with
-  one-click "move to next free block".
-- "Change fixture type" on a patched head, keeping position, groups and cues.
+- (DONE, item 14) DMX map per universe with clashes in red and "Move #n".
+- **(DONE) Change fixture type** (a light's ⋯ menu, or the selection):
+  number, place, rigging, name, groups, cues and looks stay; the address
+  stays when the new footprint fits, else the first free block (and it
+  says so, and which cue values the new type has no channel for).
 - RDM discovery (model / mode / address from the light) if the node supports it.
-- Pre-gig "Ready?" check and versioned show backups / export.
+- **(DONE) Ready? check** (Show ▾, or the command bar): no lights, DMX
+  clashes, unnamed channels, cues pointing at unpatched lights, no cues,
+  stay-on-the-floor off, lasers, blind output, send errors, never saved -
+  each with what to press.
+- **(DONE) Show versions and export:** every save that changes a show
+  keeps the one before (last 20, shows/versions/<show>/); Show ▾ →
+  Earlier versions… opens one (the current show is kept as a version
+  too); Export downloads the show file.
 
 ## 16. Cue list (DONE, first part)
 
@@ -111,7 +120,7 @@ each tilting and coloured on its own.)
   in a DMX map (512 squares per universe, clashes red, per-light list).
 - The Colour tab adds White / Amber / UV / Lime sliders on top of a pure
   picked colour, for the lights that have them.
-- Still open: change fixture type keeping position / groups / cues; RDM.
+- Still open: RDM (change fixture type is DONE, item 6).
 
 ## 13. My venues, room shapes, rigging up front (DONE)
 

@@ -595,7 +595,52 @@ export async function openShowMenu(anchor, menuFn) {
       },
     })),
     shows.length ? null : { label: "No saved shows yet", disabled: true, run() {} },
+    "-",
+    { label: "Ready? check…", hint: "before doors", run: openReadyCheck },
+    current ? { label: "Earlier versions…", run: () => openVersions(current) } : null,
+    current ? { label: "Export (download)", run: () => exportShow(current) } : null,
   ]);
+}
+
+// Before doors: what would bite during the show, each with what to press.
+export async function openReadyCheck() {
+  const r = await run("ready_check", {});
+  if (!r.ok) return;
+  const ICON = { ok: "✓", info: "i", warn: "!", bad: "✕" };
+  const body = h("div.ready",
+    h("p.ready-head." + r.worst, r.ready ? "Ready for doors." : r.worst === "bad" ? "Fix these before the show." : "Worth a look before the show."),
+    ...r.items.map((i) => h("div.ready-row." + i.level, h("span.ready-ic", ICON[i.level] || "·"),
+      h("div", h("div", i.text), i.fix ? h("small.muted", "→ " + i.fix) : null))));
+  modal({ title: "Ready?", body });
+}
+
+async function openVersions(name) {
+  const r = await run("show_versions", { name });
+  if (!r.ok) return;
+  let close = null;
+  const when = (v) => (v.saved ? new Date(v.saved).toLocaleString() : v.id);
+  const body = h("div",
+    h("p.muted.small", "Every save that changed the show keeps the one before (the last 20). Opening one keeps the current show as a version too."),
+    r.versions.length ? h("div.ver-list", ...r.versions.map((v) => h("div.ver-row",
+      h("span", when(v)), h("small.muted", `${Math.max(1, Math.round(v.bytes / 1024))} KB`),
+      h("button.btn.small", { onclick: async () => {
+        if (!(await confirmBox("Open this version", `Open the version saved ${when(v)}? The show as it is now is kept as a version.`, { ok: "Open" }))) return;
+        const res = await run("restore_version", { name, id: v.id }, { toast: true });
+        if (res.ok && close) close();
+      } }, "Open"))))
+      : h("p.muted", "No earlier versions yet: they appear after the next save that changes something."));
+  close = modal({ title: `Versions of “${name}”`, body });
+}
+
+async function exportShow(name) {
+  const r = await run("show_export", { name });
+  if (!r.ok) return;
+  const url = URL.createObjectURL(new Blob([r.text], { type: "application/json" }));
+  const a = h("a", { href: url, download: r.filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function saveShow(name) {
