@@ -997,3 +997,46 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .sel-split { margin: 0; gap: 4px; }
 .sel-split .chip { min-height: 26px; padding: 0 8px; font-size: 11px; }
 .stage-box { position: absolute; border: 1px dashed var(--accent); background: rgba(56, 189, 248, .08); pointer-events: none; z-index: 5; }
+
+/* ------------------------------------------------------------- gig mode
+   Big targets for a finger in a dark room: every control at least 44 px,
+   no text under 12 px, row menus always shown (a finger has no hover).
+   On by itself on phones and tablets; a switch in Settings otherwise. */
+body.gig { font-size: 14px; }
+body.gig .btn { height: auto; min-height: 44px; padding: 0 14px; font-size: 14px; }
+body.gig .btn.small { min-height: 40px; }
+body.gig .btn.icon { min-width: 44px; }
+body.gig .chip { height: auto; min-height: 40px; padding: 0 14px; font-size: 13px; border-radius: 20px; }
+body.gig .tabs button { height: 44px; padding: 0 12px; font-size: 14px; }
+body.gig .mobile-tabs button { height: 52px; font-size: 14px; }
+body.gig .qbtn { min-height: 64px; }
+body.gig .qbtn small { font-size: 11px; }
+body.gig .quick button { height: 44px; font-size: 14px; }
+body.gig .row-menu { opacity: 1; }
+body.gig .fx-table td { height: 48px; }
+body.gig .fx-table .f-sub, body.gig .muted.small, body.gig small { font-size: 12px; }
+body.gig .mv-tile { min-height: 64px; }
+body.gig .mv-play, body.gig .look-play { min-height: 56px; }
+body.gig .sel-split .chip { min-height: 36px; padding: 0 12px; font-size: 13px; }
+body.gig .group-chips .chip { min-height: 36px; }
+body.gig input[type=range] { height: 32px; }
+body.gig .pb .go, body.gig .pb button { min-height: 40px; min-width: 40px; }
+/* Blackout in the phone's bottom bar, on every tab */
+.mobile-bo { display: none; }
+@media (max-width: 820px) {
+  .mobile-tabs .mobile-bo { display: block !important; flex: 0 0 auto; padding: 0 14px; margin: 6px; border-radius: 10px;
+    border: 2px solid rgba(239, 68, 68, .55); background: var(--live-bg); color: #fecaca; font-weight: 800; letter-spacing: .06em; height: auto; }
+  .mobile-tabs .mobile-bo.on { background: var(--live); color: #fff; }
+}
+body.gig .tb-btn { height: 42px; }
+body.gig .tb-btn.icon { width: 44px; }
+body.gig .palette-btn { height: 42px; }
+body.gig .stage-hud button { min-height: 42px; }
+body.gig .seg button { min-height: 40px; }
+body.gig .pb-mode button { min-height: 44px; }
+@media (max-width: 820px) {
+  body.gig .mobile-tabs button[data-mview] { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 13px; }
+  .mobile-tabs .mobile-bo { padding: 0 10px; font-size: 12px; }
+  .int-side { min-width: 0; }
+  body.gig .quick button { min-width: 0; padding: 0; font-size: 13px; }
+}

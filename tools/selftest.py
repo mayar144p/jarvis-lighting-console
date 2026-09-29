@@ -9054,6 +9054,14 @@ def test_big_rig_groups() -> None:
     check("the list folds lights of one model into one row, with automatic group chips and splits",
           "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
     check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("gig mode: 44 px controls, on by itself on touch screens, a switch in Settings",
+          "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" in mj
+          and "jarvis.gig" in (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8"), "")
+    check("a phone keeps Blackout in its bottom bar on every tab", 'id="mobile-bo"' in html
+          and "button[data-mview]" in mj, "")
 
 
 def test_looks() -> None:

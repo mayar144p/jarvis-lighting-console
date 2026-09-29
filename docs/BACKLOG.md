@@ -70,6 +70,16 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 12. Gig mode (DONE)
+
+Every control at least 44 px (40 for chips / small), text 12 px and up,
+row menus always shown: on by itself on phones and tablets (pointer:
+coarse), a "Gig mode" switch in Settings for a laptop.  Phones keep a
+Blackout button in the bottom bar on every tab.  Measured: 0 visible
+buttons under 40 px on a 390 px phone and a 1024 px tablet (was 64 of 96
+under 32 px on a laptop).  Still open: fewer playbacks shown when empty,
+plain-words status bar, short 3D labels.
+
 ## 11. Grouping for big rigs (DONE)
 
 - Automatic groups (never stored, follow the rig): one per kind of light

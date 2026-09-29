@@ -104,6 +104,7 @@ function render() {
   gm.set(s.master ?? 100);
   $("#gm-num").textContent = s.master ?? 100;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
+  $("#mobile-bo").classList.toggle("on", !!s.blackout);
 }
 
 function wireModes() {
@@ -131,6 +132,8 @@ export function initPlaybacks() {
     onInput: throttle((v) => { $("#gm-num").textContent = v; run("master", { level: v }, { silentError: true }); }, 60),
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
+  // on a phone the faders are one tab away: Blackout stays in the bottom bar
+  $("#mobile-bo").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
   on("snapshot", render);
   on("lite", render);
 }

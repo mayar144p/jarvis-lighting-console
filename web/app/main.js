@@ -17,9 +17,15 @@ import { initKeys } from "./keys.js";
 
 function wireMobile() {
   const app = $("#app");
-  $$("#mobile-tabs button").forEach((b) => b.addEventListener("click", () => {
+  // gig mode (big buttons and text): saved per device; touch screens get it
+  // from their own CSS rules anyway
+  let gig = null;
+  try { gig = localStorage.getItem("jarvis.gig"); } catch (e) { /* ignore */ }
+  const touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  if (gig === "1" || (gig === null && touch)) document.body.classList.add("gig");
+  $$("#mobile-tabs button[data-mview]").forEach((b) => b.addEventListener("click", () => {
     app.dataset.view = b.dataset.mview;
-    $$("#mobile-tabs button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    $$("#mobile-tabs button[data-mview]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
     const st = window.jarvisStage;
     if (st) setTimeout(() => st.resize(), 20);
   }));
