@@ -130,8 +130,11 @@ each tilting and coloured on its own.)
   shows/venues/, never listed as a show.
 - "Draw room shape" (any outline: L-shaped, custom) and "+ Truss",
   "+ Pole" (a vertical pipe), "+ Pipe" up front; the rest under "+ More".
-- Still open: reshaping the room doesn't move rigging that ends up
-  outside it; a venue picker at start-up.
+- **(DONE)** Reshaping or shrinking the room brings rigging (and the
+  lights hung on it) and objects back inside the new walls; a truss slides
+  in whole, keeping its length, when it fits.
+- **(DONE)** At start-up, an empty desk with saved venues asks "Where are
+  you playing tonight?" (once per browser session).
 
 ## 12. Gig mode (DONE)
 

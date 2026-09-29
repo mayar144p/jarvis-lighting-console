@@ -1123,3 +1123,7 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .ready-row.bad .ready-ic { background: #dc2626; color: #fff; } .ready-row.info .ready-ic { background: #2563eb; color: #fff; }
 .ver-list { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .ver-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--border-2); border-radius: 8px; }
+.vp-list { display: grid; gap: 8px; min-width: min(460px, 86vw); }
+.vp-item { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border-2); background: transparent; color: var(--text); cursor: pointer; }
+.vp-item:hover { border-color: var(--accent); }
+.vp-item small { color: var(--muted); }

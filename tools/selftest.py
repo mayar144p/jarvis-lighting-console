@@ -7528,6 +7528,7 @@ def _standalone_suites():
     ("cues keep their effects and part times; movements make buttons", test_cue_fx_parts),
     ("change a light's fixture type, keeping everything else", test_change_type),
     ("Ready? check, show versions and export", test_ready_versions),
+    ("a smaller room brings its rigging back inside", test_room_fit),
     )
 
 
@@ -9412,6 +9413,46 @@ def test_ready_versions() -> None:
                   and '"patch"' in r["text"], str(r.get("error")))
         finally:
             e.shutdown()
+
+
+def test_room_fit() -> None:
+    """Shrinking or reshaping the room pulls rigging (and the lights hung
+    on it) back inside; a truss keeps its length when it fits."""
+    print("room reshape keeps rigging inside")
+    import tempfile
+    from app import engine as eng
+    from app import venue as venue_mod
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_room", width=20, depth=20, height=8)
+            r = e.act("venue_add", item={"type": "rigging", "kind": "truss", "a": [4, 6, 15], "b": [8, 6, 15]})
+            check("a truss near the back", r.get("ok"), str(r))
+            rid = e.venue["rigging"][-1]["id"]
+            e.act("add_heads", query="LED PAR 4ch", qty=1)
+            r = e.act("attach_heads", heads=[1], rig=rid)
+            check("a light hangs on it", r.get("ok"), str(r))
+            r = e.act("venue_room", width=10, depth=10, height=5)
+            rig = next(x for x in e.venue["rigging"] if x["id"] == rid)
+            b = venue_mod.bounds(e.venue)
+            ok_in = all(b["x0"] <= p[0] <= b["x1"] and b["z0"] <= p[2] <= b["z1"] and p[1] <= b["h"]
+                        for p in (rig["a"], rig["b"]))
+            check("the truss is back inside the smaller room", r.get("ok") and ok_in, str((rig, b)))
+            check("...still 4 m long", abs(abs(rig["b"][0] - rig["a"][0]) - 4.0) < 0.01, str(rig))
+            check("...and the summary says so", "rigging back inside" in r.get("summary", ""), r.get("summary"))
+            h = e.patch[0]
+            check("the light came with it", b["z0"] <= h["z"] <= b["z1"] and h["y"] <= b["h"], str((h["x"], h["y"], h["z"])))
+            r = e.act("venue_room", width=10, depth=10)
+            check("a resize that leaves it inside moves nothing", "rigging" not in r.get("summary", ""), r.get("summary"))
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("an empty desk asks which venue at start-up", "Where are you playing tonight?" in vp
+          and "jarvis.venuepick" in vp, "")
 
 
 def test_cue_list_modes() -> None:

@@ -3586,9 +3586,12 @@ class Engine:
         v = venue_mod.normalise(v)
         if not (v["room"]["width"] and v["room"]["depth"]):
             raise ValueError("the room needs a width and a depth")
+        # rigging left outside the new walls comes back in (its lights with it)
+        pulled = venue_mod.fit_inside(v)
         self._set_venue_doc(v)
         w, d, h = venue_mod.dims(v)
-        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m")
+        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m"
+                                  + (f"; moved {pulled} piece(s) of rigging back inside" if pulled else ""))
 
     def _a_venue_stage(self, x=None, z=None, width=None, depth=None,
                        height=None, remove=False, **_):
