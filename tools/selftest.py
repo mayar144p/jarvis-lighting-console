@@ -7482,6 +7482,7 @@ def _standalone_suites():
     ("timeline", test_timeline),
     ("auto show", test_autoshow),
     ("dmx target", test_dmx_target),
+    ("shutter rests open", test_shutter_rest),
     )
 
 
@@ -8139,6 +8140,89 @@ Wireless LAN adapter Wi-Fi:
             fixed = eng.Engine(db_path=db, dry_run=True, sender=s1)
             fixed.dmx_target = {"mode": "node", "host": "9.9.9.9", "transport": ""}
             check("a sender handed in by a tool is never replaced", fixed._get_sender() is s1, "")
+        finally:
+            e.shutdown()
+
+
+def test_shutter_rest() -> None:
+    """A mover whose shutter reads 0 as CLOSED still lights on Full."""
+    print("shutter rests open (moves but no light)")
+    import tempfile
+    import zipfile
+    from app import engine as eng
+    from app import fixtures
+
+    def gdtf(path, name, shutter_xml, highlight=""):
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("description.xml", (
+                f'<GDTF DataVersion="1.1"><FixtureType Name="{name}" '
+                'Manufacturer="TestCo"><DMXModes><DMXMode Name="4ch">'
+                '<DMXChannels>'
+                '<DMXChannel Offset="1"><LogicalChannel Attribute="Pan">'
+                '<ChannelFunction Name="Pan" DMXFrom="0/1"/>'
+                '</LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="2"><LogicalChannel Attribute="Tilt">'
+                '<ChannelFunction Name="Tilt" DMXFrom="0/1"/>'
+                '</LogicalChannel></DMXChannel>'
+                f'<DMXChannel Offset="3"{highlight}><LogicalChannel Attribute="Shutter1">'
+                f'{shutter_xml}</LogicalChannel></DMXChannel>'
+                '<DMXChannel Offset="4"><LogicalChannel Attribute="Dimmer">'
+                '<ChannelFunction Name="Dimmer" DMXFrom="0/1"/>'
+                '</LogicalChannel></DMXChannel>'
+                '</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'))
+
+    sets = ('<ChannelFunction Name="Shutter" DMXFrom="0/1">'
+            '<ChannelSet Name="Closed" DMXFrom="0/1"/>'
+            '<ChannelSet Name="Open" DMXFrom="4/1"/>'
+            '<ChannelSet Name="Strobe" DMXFrom="8/1"/></ChannelFunction>')
+    zero_open = ('<ChannelFunction Name="Shutter" DMXFrom="0/1">'
+                 '<ChannelSet Name="Open" DMXFrom="0/1"/>'
+                 '<ChannelSet Name="Strobe" DMXFrom="10/1"/></ChannelFunction>')
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "sh.db"
+        fixtures.seed_generics(db)
+        gdtf(tmp / "a.gdtf", "ClosedAtZero", sets)
+        gdtf(tmp / "b.gdtf", "HighlightSpot", '<ChannelFunction Name="Shutter" DMXFrom="0/1"/>',
+             highlight=' Highlight="32/1"')
+        gdtf(tmp / "c.gdtf", "OpenAtZero", zero_open)
+        parsed = fixtures.parse_gdtf(tmp / "a.gdtf")[0]["modes"][0]["detail"]
+        check("a ChannelSet named Open gives the shutter's open value",
+              parsed[2].get("open_from") == 4, str(parsed[2]))
+        parsed = fixtures.parse_gdtf(tmp / "b.gdtf")[0]["modes"][0]["detail"]
+        check("so does the channel's Highlight value",
+              parsed[2].get("open_from") == 32, str(parsed[2]))
+        for f in ("a", "b", "c"):
+            fixtures.import_file(db, tmp / f"{f}.gdtf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="ClosedAtZero", mode="4ch", qty=1, universe=1, address=1)
+            e.act("add_heads", query="HighlightSpot", mode="4ch", qty=1, universe=1, address=11)
+            e.act("add_heads", query="OpenAtZero", mode="4ch", qty=1, universe=1, address=21)
+            roles = e.patch[0]["map"]
+            check("the test fixture has a shutter and a dimmer",
+                  "shutter" in roles and "dimmer" in roles, str(roles))
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            buf = e.build_frames()[1]
+            check("Full opens a shutter that is closed at 0 (the Intimidator case)",
+                  buf[2] == 4 and buf[3] == 255, str(list(buf[:4])))
+            check("a Highlight value is used the same way", buf[12] == 32, str(list(buf[10:14])))
+            check("a fixture whose 0 is open is left at 0", buf[22] == 0, str(list(buf[20:24])))
+            e.act("blackout", state=1)
+            buf = e.build_frames()[1]
+            check("blackout still darkens it through the dimmer",
+                  buf[3] == 0 and buf[13] == 0, str(list(buf[:4])))
+            e.act("blackout", state=0)
+            e.act("select_heads", heads=[1])
+            r = e.act("set_attribute", attribute="shutter", value=0)
+            buf = e.build_frames()[1]
+            check("a shutter the operator drives is theirs (closed on request)",
+                  r.get("ok") and buf[2] == 0, str(r))
+            ent = [a for p in e.attribute_state()["pages"] for a in p.get("attrs", p.get("attributes", []))
+                   if isinstance(a, dict) and a.get("role") == "shutter"]
+            check("the Beam tab's Open button writes the real open value",
+                  bool(ent) and ent[0].get("open") == 4, str(ent[:1]))
         finally:
             e.shutdown()
 

@@ -356,6 +356,7 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "min": lo, "max": hi, "unit": unit,
             "bits": d.get("bits") or 8,
             "wheel": d.get("wheel") or "",
+            "open_from": d.get("open_from"),
             "dmx_from": d.get("dmx_from"), "dmx_to": d.get("dmx_to"),
             "inverted": bool(lo is not None and hi is not None and hi < lo),
         }
@@ -384,6 +385,54 @@ def _num_pair(low, high):
     if lo is None:
         return (None, None)
     return (lo, one(high))
+
+
+def _dmx_byte(text) -> int | None:
+    """A GDTF DMX value ("4/1", "1024/2") as the coarse byte, or None."""
+    if text is None or str(text).strip().lower() in ("", "none"):
+        return None
+    head, _, res = str(text).strip().partition("/")
+    try:
+        value = int(float(head))
+        width = int(res) if res else 1
+    except ValueError:
+        return None
+    if width > 1:
+        value >>= 8 * (width - 1)
+    return max(0, min(255, value))
+
+
+_OPEN_WORDS = ("open", "on", "light")
+
+
+def _gdtf_open_value(dmx_ch, logical) -> int | None:
+    """Where a shutter lets light through, from the file itself.
+
+    Fixtures disagree: most read 0 as open, but a Chauvet Intimidator
+    reads 0-3 as CLOSED.  GDTF says so in two ways: the channel's
+    `Highlight` value (full output), or a ChannelFunction / ChannelSet
+    named "Open".
+    """
+    found = _dmx_byte(dmx_ch.get("Highlight"))
+    if found is not None:
+        return found
+    if logical is None:
+        return None
+    for func in _children(logical, "ChannelFunction"):
+        name = (func.get("Name") or "").strip().lower()
+        if name in _OPEN_WORDS or name.startswith("open"):
+            got = _dmx_byte(func.get("DMXFrom"))
+            if got is not None:
+                return got
+        for cset in _children(func, "ChannelSet"):
+            name = (cset.get("Name") or "").strip().lower()
+            if (name in _OPEN_WORDS or name.startswith("open")) and "close" not in name:
+                got = _dmx_byte(cset.get("DMXFrom"))
+                if got is None:
+                    got = _dmx_byte(func.get("DMXFrom"))
+                if got is not None:
+                    return got
+    return None
 
 
 def parse_gdtf(path: Path) -> list[dict]:
@@ -503,6 +552,7 @@ def parse_gdtf(path: Path) -> list[dict]:
                         "dmx_from": dmx_from, "dmx_to": dmx_to,
                         "phys_from": phys_from, "phys_to": phys_to,
                         "wheel": wheel,
+                        "open_from": _gdtf_open_value(dmx_ch, logical),
                     })
 
             channel_count = max((s + w - 1 for s, w, _ in entries), default=0)
