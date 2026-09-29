@@ -800,7 +800,7 @@ const FIXTURE_FUNCTIONS = ["dimmer", "red", "green", "blue", "white", "amber", "
   "pan", "pan fine", "tilt", "tilt fine", "pan/tilt speed", "shutter", "strobe", "colour wheel", "colour macro",
   "gobo wheel", "gobo rotation", "prism", "zoom", "focus", "frost", "iris",
   "fx fire", "fx arm", "fx fan", "fog output", "fx height", "fx mode",
-  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour",
+  "laser output", "laser pattern", "laser size", "laser rotation", "laser x", "laser y", "laser speed", "laser colour", "laser beam",
   "setting", "unused"];
 const FIXTURE_TYPES = [["light", "Light"], ["laser", "Laser"], ["confetti", "Confetti"], ["co2", "CO2 jet"],
   ["flame", "Flame"], ["spark", "Spark fountain"], ["fog", "Fog"], ["haze", "Haze"], ["bubble", "Bubbles"],
