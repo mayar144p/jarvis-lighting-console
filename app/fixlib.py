@@ -827,7 +827,7 @@ def apply_aux(item: dict) -> dict:
         seen: set = set()
         k = 0
         for i, row in enumerate(rows):
-            role = row.get("role") or "raw"
+            role = row.get("role") or _role(row.get("label") or "")
             name = str(row.get("name") or row.get("label") or "").strip()
             base = role
             want = False

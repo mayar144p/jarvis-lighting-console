@@ -8724,6 +8724,32 @@ def test_aux_channels() -> None:
             check("and records into a cue", "aux1" in json.dumps(e.playbacks[0]["stack"]), "")
         finally:
             e.shutdown()
+        # a Wave stored by an older Jarvis, its original file gone (a GDTF
+        # Share download no longer cached): upgraded in the database on start
+        old = tmp / "old.db"
+        from app import fixlib as _fl
+        keep = _fl.apply_aux
+        _fl.apply_aux = lambda item: item                 # store it the old way
+        try:
+            fixtures.store_parsed(old, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                                  "gone-from-cache.gdtf")
+        finally:
+            _fl.apply_aux = keep
+        e = eng.Engine(db_path=old, dry_run=True, show_dir=tmp / "s2")
+        try:
+            e.act("add_heads", query="Intimidator Wave 360", mode="33 ch.", qty=1, universe=1, address=211)
+            check("(stored the old way: continuous pan had no control)", e.patch[0]["map"][3] == "raw",
+                  e.patch[0]["map"][3])
+            done = fixtures.refresh_imports(old, [tmp / "nowhere"])
+            e.remap_heads()
+            check("start-up upgrades it without the original file",
+                  done["refreshed"] >= 1 and e.patch[0]["map"][3] == "aux1" and e.patch[0]["map"][9] == "aux3",
+                  str((done, e.patch[0]["map"][:10])))
+            names = {x["role"]: x.get("name") for p in e.attribute_state([1])["pages"] for x in p["attrs"]}
+            check("...and the programmer shows its controls by name",
+                  names.get("aux1") == "Continuous Pan Rotating" and names.get("aux5") == "Auto Programs", str(names))
+        finally:
+            e.shutdown()
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Beam tab shows them under their own names", "a.name || attrName(a.role)" in js, "")
 

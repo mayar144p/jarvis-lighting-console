@@ -70,10 +70,11 @@ CREATE TABLE IF NOT EXISTS modes (
 # of the pan/tilt speed channel, for the visualiser; 5: special effects and
 # lasers get their own safe roles; 6: a beam bar's diodes get a beam each,
 # and channels no longer collapse onto one role; 7: a light's unnamed
-# channels get their own controls - aux1..aux24).  On start, fixtures imported by an
+# channels get their own controls - aux1..aux24; 8: also for fixtures whose
+# file is gone, upgraded in the database).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 7
+PARSER_VERSION = 8
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
@@ -860,6 +861,42 @@ def store_parsed(db_path: Path, parsed: list[dict], source: str) -> dict:
     return {"file": source, "imported": results}
 
 
+def reapply_aux(db_path: Path) -> int:
+    """Give the channels of fixtures ALREADY in the database their own
+    controls (fixlib.apply_aux), without needing the original file - a GDTF
+    Share download no longer in the cache, a manual read, a hand-made
+    profile.  Effect and laser modes are left alone.  Returns modes changed."""
+    from . import fixlib
+    changed = 0
+    with db(db_path) as conn:
+        rows = conn.execute("SELECT id, channels, detail FROM modes").fetchall()
+        for r in rows:
+            try:
+                channels = json.loads(r["channels"] or "[]")
+                detail = json.loads(r["detail"] or "[]")
+            except (TypeError, ValueError):
+                continue
+            if not channels:
+                continue
+            if not detail or len(detail) != len(channels):
+                detail = [{"n": i + 1, "label": c, "name": c, "role": channel_role(c)}
+                          for i, c in enumerate(channels)]
+            for d, c in zip(detail, channels):
+                d.setdefault("role", channel_role(d.get("label") or c))
+            if any(str(d.get("role") or "").startswith(("fx_", "laser_")) or d.get("role") == "fog"
+                   for d in detail):
+                continue                          # an effect / laser: its own roles
+            before = json.dumps([channels, detail])
+            item = {"fx_kind": "", "modes": [{"channels": list(channels), "detail": detail}]}
+            fixlib.apply_aux(item)
+            mode = item["modes"][0]
+            if json.dumps([mode["channels"], mode["detail"]]) != before:
+                conn.execute("UPDATE modes SET channels = ?, detail = ? WHERE id = ?",
+                             (json.dumps(mode["channels"]), json.dumps(mode["detail"]), r["id"]))
+                changed += 1
+    return changed
+
+
 def refresh_imports(db_path: Path, folders) -> dict:
     """Re-read installed GDTF fixtures when the parser has improved.
 
@@ -899,6 +936,11 @@ def refresh_imports(db_path: Path, folders) -> dict:
             refreshed += 1
         except Exception as exc:          # noqa: BLE001 - one bad file
             errors.append(f"{name}: {exc}")
+    # and every fixture whose file is gone gets the stored-data upgrades
+    try:
+        refreshed += reapply_aux(db_path)
+    except Exception as exc:              # noqa: BLE001 - never block boot
+        errors.append(f"channel controls: {exc}")
     with db(db_path) as conn:
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)",
                      (str(PARSER_VERSION),))
