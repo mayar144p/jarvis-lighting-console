@@ -70,6 +70,20 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 10. Quick fixes from the audit (DONE)
+
+- ARM lasts 10 min, 1 hour or **until you disarm** (remembered); a laser
+  switched on has no time cap of its own (the library's 600 s is ignored):
+  ARM / KILL FX is its safety.
+- Programmer tab dots use the same kinds as the "In the programmer" bar.
+- Programmer tabs wrap onto a second row; fixture names show on two lines.
+- Lights with no dimmer: the Level tab shows big On (open) / Off (closed)
+  instead of a fader that does nothing.
+- Colour-wheel-only lights: their wheel colours lead as big buttons; the
+  picker waits behind "Pick any colour".
+- (The laser hold sticking and FX Stop / Looks Record flicker were fixed
+  earlier; the button editor's cut-off dropdowns are gone with item 9.)
+
 ## 9. Buttons as customisable as possible (first part DONE)
 
 Done: every option in the button editor is a tap.

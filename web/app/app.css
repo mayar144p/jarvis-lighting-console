@@ -214,7 +214,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
   padding: 6px 8px; border-bottom: 1px solid var(--border);
 }
-.fx-table td { padding: 0 8px; height: 38px; border-bottom: 1px solid #161c26; vertical-align: middle; overflow: hidden; }
+.fx-table td { padding: 4px 8px; height: 38px; border-bottom: 1px solid #161c26; vertical-align: middle; overflow: hidden; }
 .fx-table .c-no { width: 44px; font-family: var(--mono); color: var(--muted); }
 .fx-table .c-addr { width: 72px; font-family: var(--mono); color: var(--text-2); text-align: right; }
 .fx-table tr { cursor: pointer; user-select: none; }
@@ -222,7 +222,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .fx-table tbody tr.sel { background: var(--accent-bg); }
 .fx-table tbody tr.sel .c-no { color: var(--accent); font-weight: 700; }
 .fx-table .f-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
-.fx-table .f-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-table .f-name b { font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; overflow-wrap: anywhere; }
 .fx-table .f-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-table .f-text { min-width: 0; flex: 1; }
 .lamp { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #1f2633; box-shadow: inset 0 0 0 1px #2f3a4b; }
@@ -936,3 +936,21 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .qbtn[draggable="true"] { cursor: grab; }
 .qbtn small { font-size: 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .qe-row { grid-template-columns: 1fr; gap: 4px; } .qe-label { padding-top: 0; } }
+
+/* programmer tabs wrap onto a second row instead of hiding off the edge */
+#prog-tabs { flex-wrap: wrap; overflow: visible; }
+#prog-tabs button { padding: 0 8px; }
+#int-gate.gate-only { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 14px; }
+#int-gate.gate-only[hidden] { display: none; }
+#int-gate.gate-only > span { grid-column: 1 / -1; font-size: 13px; }
+#int-gate .gate-btn { min-height: 72px; font-size: 17px; font-weight: 700; }
+#int-gate .gate-btn.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+/* a wheel-only light: its own colours lead, the picker waits */
+[data-pane="colour"].wheel-only #picker, [data-pane="colour"].wheel-only #swatches,
+[data-pane="colour"].wheel-only .colour-row { display: none; }
+[data-pane="colour"].wheel-only #wheel-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+[data-pane="colour"].wheel-only #wheel-steps[hidden] { display: none; }
+[data-pane="colour"].wheel-only #wheel-steps > span, [data-pane="colour"].wheel-only #wheel-steps > .linkish { grid-column: 1 / -1; }
+[data-pane="colour"].wheel-only #wheel-steps .chip { min-height: 52px; justify-content: flex-start; font-size: 14px; border-radius: var(--radius); }
+[data-pane="colour"].wheel-only #wheel-steps .slot-dot { width: 18px; height: 18px; }
+[data-pane="colour"].wheel-only #wheel-steps .slot-dot { flex: none; }

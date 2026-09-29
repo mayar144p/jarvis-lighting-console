@@ -7512,6 +7512,7 @@ def _standalone_suites():
     ("CO2 preset mode never fires on its own", test_co2_preset),
     ("movement stays where it is aimed", test_motion),
     ("buttons as customisable as possible", test_custom_buttons),
+    ("ARM for the whole set; lasers stay on", test_arm_for_set),
     )
 
 
@@ -8994,6 +8995,48 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_arm_for_set() -> None:
+    """ARM used to switch itself off after 10 minutes, and a laser had a
+    600 s cap of its own: at a gig the lasers went dark mid-set.  Now ARM
+    can last until you disarm, and a laser stays on while armed."""
+    print("ARM until disarmed, lasers without a time cap")
+    import math
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
+            r = e.act("fx_arm", state=True, minutes="until")
+            st = e._sfx_public()
+            check("ARM can last until you disarm", r.get("ok") and st["armed"] and st["armed_forever"]
+                  and math.isinf(e.fx_armed_until), str(st))
+            e.act("fx_arm", state=True, minutes=60)
+            check("...or an hour", 3500 < e._sfx_public()["armed_left"] <= 3600, str(e._sfx_public()["armed_left"]))
+            e.act("fx_arm", state=True, minutes="until")
+            e.act("fx_laser", heads=[1], down=True)
+            run = next(iter(e.fx_runs.values()))
+            check("a laser switched on has no time cap of its own", math.isinf(run["until"]), str(run["until"]))
+            check("...and the live feed still reads (no infinite numbers in JSON)",
+                  __import__("json").dumps(e._sfx_public()) and e._sfx_public()["runs"][0]["left"] is None, "")
+            e.act("fx_arm", state=False)
+            check("disarming still stops it at once", not e.fx_runs, str(e.fx_runs))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    check("the ARM dialog offers 10 min / 1 hour / until I disarm", "Until I disarm" in js and 'minutes: armFor' in js, "")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("tab dots use the same kinds as the programmer bar", "GROUP_OF[r.replace" in pj, "")
+    check("a light with no dimmer gets big On / Off, not a fader that does nothing",
+          "gateOnly" in pj and '$(".big-fader-row").hidden = gateOnly' in pj, "")
+    check("a colour-wheel light leads with its own wheel colours", "wheel-only" in pj and "pickerAnyway" in pj, "")
 
 
 def test_co2_preset() -> None:

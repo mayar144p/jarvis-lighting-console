@@ -17,6 +17,7 @@ import csv as csvmod
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import threading
@@ -4142,7 +4143,12 @@ class Engine:
     def _sfx_limit(self, h: dict, kind: str) -> float:
         role = {"fire": "fx_fire", "fog": "fog", "laser": "laser_on"}[kind]
         d = self._sfx_detail(h, role)
-        cap = float(d.get("max_s") or {"fire": 3.0, "fog": 20.0, "laser": 600.0}[kind])
+        if kind == "laser":
+            # a laser has no time limit of its own (the library's 600 s made
+            # lasers go dark mid-set): ARM is its safety - it goes dark the
+            # moment effects are disarmed or killed
+            return math.inf
+        cap = float(d.get("max_s") or {"fire": 3.0, "fog": 20.0}[kind])
         if d.get("fx_kind") == "confetti":
             cap = min(cap, self.fx_loads.get(h["head_no"], cap))
         return max(0.0, cap)
@@ -4256,10 +4262,12 @@ class Engine:
                     if r["kind"] == "fire" and h["head_no"] in r["heads"]:
                         left -= max(0.0, min(now, r["until"]) - r["since"])
                 loads[h["head_no"]] = {"left": round(max(0.0, left), 1), "full": full}
+        forever = math.isinf(self.fx_armed_until)
         return {"armed": self._sfx_armed(now),
-                "armed_left": max(0, round(self.fx_armed_until - now)),
+                "armed_left": 0 if forever else max(0, round(self.fx_armed_until - now)),
+                "armed_forever": forever,
                 "runs": [{"key": k, "kind": r["kind"], "heads": r["heads"],
-                          "left": round(max(0.0, r["until"] - now), 1)}
+                          "left": None if math.isinf(r["until"]) else round(max(0.0, r["until"] - now), 1)}
                          for k, r in self.fx_runs.items()],
                 "loads": loads,
                 "heads": {h["head_no"]: self._head_class(h) for h in self.patch
@@ -4278,9 +4286,14 @@ class Engine:
     def _a_fx_arm(self, state=True, minutes=None, **_):
         """ARM (or disarm) special effects and lasers.  Fire and laser
         output only work while armed; it switches itself off after
-        `minutes` (10 by default)."""
+        `minutes` (10 by default), or never with minutes="until" - then
+        only a disarm or KILL FX ends it (a laser stays on for the set)."""
         if _truthy(state):
-            secs = self.FX_ARM_S if minutes in (None, "") else max(30.0, min(3600.0, float(minutes) * 60))
+            if str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
+                # armed for the whole set: only a disarm or KILL FX ends it
+                self.fx_armed_until = math.inf
+                return {"armed": True, "summary": "effects ARMED until you disarm"}
+            secs = self.FX_ARM_S if minutes in (None, "") else max(30.0, min(12 * 3600.0, float(minutes) * 60))
             self.fx_armed_until = time.monotonic() + secs
             return {"armed": True, "summary": f"effects ARMED for {secs / 60:g} min"}
         self.fx_armed_until = 0.0
