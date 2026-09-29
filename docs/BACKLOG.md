@@ -38,7 +38,7 @@ ch 29 Auto Programs, ch 30 Program Speed.  Fix: expose every non-maintenance
 channel under its own name on the Beam tab, its capability ranges as chips,
 recorded in cues (needs unique per-channel roles for unnamed channels).
 
-## 3. Multi-head / multi-cell fixtures
+## 3. Multi-head / multi-cell fixtures (see 15: first part DONE)
 
 Channels that repeat per head collapse onto one role, so one control drives
 all heads.  Example: Wave 360 has 4 heads - ch 5-8 tilt x4, ch 11-26 RGBW x4,
@@ -69,6 +69,18 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - "Change fixture type" on a patched head, keeping position, groups and cues.
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
+
+## 15. Multi-head lights (DONE, first part)
+
+A Wave 360's four tilts and RGBW cells: a value for one head is kept as
+`red@2` / `tilt@3` (merge: LTP, a running effect wins; limits and invert
+apply; a button setting the whole role covers every head); the frame
+writer sends the k-th copy of a role its head's value.  set_colour /
+set_attribute take `cell`; the programmer shows "Heads: All 1 2 3 4"
+for such lights and sends only to the picked heads; cues and looks keep
+per-head values; effects run "across each light's heads" (colour chase /
+rainbow step head to head).  Still open: movement effects across heads (a
+tilt wave), per-head colours in the 3D view.
 
 ## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
 

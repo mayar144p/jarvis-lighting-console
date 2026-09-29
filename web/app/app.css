@@ -1076,3 +1076,8 @@ body.gig .pb-mode button { min-height: 44px; }
 .dmx-row i { width: 12px; height: 12px; border-radius: 3px; display: block; }
 .dmx-row.bad span:nth-child(3) { color: #fecaca; font-weight: 600; }
 .clash-row { flex-wrap: wrap; } .clash-row span { flex: 1 1 140px; }
+.prog-cells { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 10px 8px; }
+.prog-cells[hidden] { display: none; }
+.prog-cells .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.fx-across { grid-column: 1 / -1; justify-self: start; }
+.fx-across.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }

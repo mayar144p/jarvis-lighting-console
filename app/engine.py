@@ -2448,7 +2448,32 @@ class Engine:
 
     # --- programmer -----------------------------------------------------
     def _set_programmer(self, head_no: int, role: str, value: int) -> None:
-        self.programmer.setdefault(int(head_no), {})[role] = int(value)
+        row = self.programmer.setdefault(int(head_no), {})
+        row[role] = int(value)
+        if "@" not in role:
+            # the whole role on a multi-head light: every head, so a value
+            # set earlier for one head of it gives way
+            for key in [k for k in row if k.startswith(role + "@")]:
+                del row[key]
+
+    @staticmethod
+    def _cells(value) -> list[int]:
+        """Which heads of a multi-head light: 2, [1, 3], "1,3" or "all"."""
+        if value in (None, "", "all"):
+            return []
+        items = value if isinstance(value, (list, tuple)) else str(value).replace(" ", "").split(",")
+        return sorted({int(x) for x in items if str(x).strip()})
+
+    def _set_cells(self, h: dict, role: str, value: int, cells: list[int]) -> bool:
+        """Set a role on some heads of a multi-head light (red@2...)."""
+        copies = merge._repeated(h["map"]).get(role, 0)
+        if not copies:
+            return False
+        row = self.programmer.setdefault(h["head_no"], {})
+        for k in cells:
+            if 1 <= k <= copies:
+                row[f"{role}@{k}"] = int(value)
+        return True
 
     def _intensity_roles(self, head: dict) -> set[str]:
         """HTP (brightness) roles this head actually has - may be empty.
@@ -2585,9 +2610,10 @@ class Engine:
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
 
-    def _a_set_attribute(self, attribute=None, value=None, **_):
+    def _a_set_attribute(self, attribute=None, value=None, cell=None, **_):
         if attribute is None or value is None:
             raise ValueError("attribute and value are required")
+        cells = self._cells(cell)
         role = _attr_role(attribute)
         if role is None:
             raise ValueError(f"unknown attribute {attribute!r}")
@@ -2628,6 +2654,16 @@ class Engine:
         # (build_frames splits it over both bytes and clamps the wire
         # write for 8-bit fixtures, so old behaviour is preserved).
         raw = _clamp(value, 0, 65535)
+        if cells:
+            done = []
+            for h in heads:
+                if self._set_cells(h, role, int(_clamp(value, 0, 255)), cells):
+                    done.append(h)
+                else:
+                    self._set_programmer(h["head_no"], role, raw)   # a channel it has once
+            return {"attribute": role, "value": raw, "heads": len(heads), "cells": cells,
+                    "summary": (f"{role} on head(s) {', '.join(map(str, cells))} of {len(done)} light(s)"
+                                if done else f"{role} on {len(heads)} light(s) (one {role} each)")}
         for h in heads:
             self._set_programmer(h["head_no"], role, raw)
         return {"attribute": role, "value": raw, "heads": len(heads),
@@ -2713,19 +2749,24 @@ class Engine:
                             break
         return out
 
-    def _a_set_colour(self, hex=None, colour=None, value=None, **_):
+    def _a_set_colour(self, hex=None, colour=None, value=None, cell=None, **_):
         hexcol = hex or colour or value
         if not hexcol:
             raise ValueError("hex colour is required (#rrggbb)")
         _parse_hex(hexcol)                       # validate before selecting
+        cells = self._cells(cell)
         heads = self._require_selection(lights_only=True)
         touched = 0
         for h in heads:
             values = self._colour_values(h, str(hexcol))
             if not values:
                 continue                          # raw head: nothing to set
+            reps = merge._repeated(h["map"])
             for role, v in values.items():
-                self._set_programmer(h["head_no"], role, v)
+                if cells and role in reps:
+                    self._set_cells(h, role, v, cells)   # just these heads of it
+                else:
+                    self._set_programmer(h["head_no"], role, v)
             touched += 1
         if not touched:
             raise ValueError("selected heads have no colour channels")
@@ -5741,7 +5782,8 @@ class Engine:
 
     @classmethod
     def attr_group(cls, role: str) -> str:
-        base = role[:-5] if role.endswith("_fine") else role
+        base = role.split("@", 1)[0]                  # one head of a multi-head light
+        base = base[:-5] if base.endswith("_fine") else base
         return next((g for g, rs in cls.ATTR_GROUPS.items() if base in rs), "other")
 
     def _a_clear_attrs(self, group="colour", heads=None, **_):
@@ -5867,7 +5909,8 @@ class Engine:
         """
         if name not in (None, ""):
             return self._a_run_fx_named(
-                str(name).lower(), params, duration, heads, group)
+                str(name).lower(), params, duration, heads, group,
+                across=_truthy(_.get("across")))
 
         def num(value, default=0.0) -> float:
             if value in (None, ""):
@@ -5935,7 +5978,7 @@ class Engine:
                 "summary": f"{name} {role} fx on {len(wanted)} head(s)"}
 
     def _a_run_fx_named(self, name: str, params, duration, heads,
-                         group) -> dict:
+                         group, across: bool = False) -> dict:
         """Start one of the `app/fxlib.py` effects.
 
         The capability decision is made HERE, with the same pure function
@@ -5990,6 +6033,13 @@ class Engine:
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
                "t0": time.monotonic(), "duration": dur}
+        if across and any(merge._repeated(h["map"]) for h in capable):
+            # run it ACROSS each light's own heads (a Wave 360's four cells
+            # and tilts) as if every head were a light of its own; with no
+            # phase given, each head is a step on from the last
+            row["across"] = True
+            if "phase" in p and not (isinstance(params, dict) and params.get("phase")):
+                p["phase"] = 100.0
         self.fx.append(row)
         msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
                                    len(capable))
@@ -6138,6 +6188,30 @@ class Engine:
                 # out of a mixed six spans those two, not every sixth of the
                 # original selection.
                 by_no = {h["head_no"]: h for h in self.patch}
+                if row.get("across"):
+                    # every head of a multi-head light is one step of it
+                    units = []
+                    for head_no in heads:
+                        reps = merge._repeated(by_no.get(head_no, {}).get("map") or [])
+                        n_cells = max(reps.values()) if reps else 0
+                        units += [(head_no, k) for k in range(1, n_cells + 1)] if n_cells else [(head_no, None)]
+                    for i, (head_no, k) in enumerate(units):
+                        roles = by_no.get(head_no, {}).get("map") or []
+                        reps = merge._repeated(roles)
+                        try:
+                            vals = fxlib_mod.apply(row["lib"], {}, roles, params=row.get("params"),
+                                                   elapsed=elapsed, index=i, count=len(units))
+                        except ValueError:
+                            continue
+                        dst = out.setdefault(head_no, {})
+                        for role, v in (vals or {}).items():
+                            if k is None:
+                                dst[role] = v
+                            elif role in reps and k <= reps[role]:
+                                dst[f"{role}@{k}"] = v
+                            elif role not in reps and k == 1:
+                                dst[role] = v          # the light's single channels, once
+                    continue
                 for i, head_no in enumerate(heads):
                     roles = by_no.get(head_no, {}).get("map") or []
                     try:
@@ -6309,7 +6383,7 @@ class Engine:
         used: list[int] = []
         for h in heads:
             row = {r: v for r, v in (self.programmer.get(h["head_no"]) or {}).items()
-                   if r in PRESET_ROLES and self.attr_group(r) in parts}
+                   if r.split("@", 1)[0] in PRESET_ROLES and self.attr_group(r) in parts}
             if not row:
                 continue
             used.append(h["head_no"])
@@ -6372,7 +6446,7 @@ class Engine:
         applied, skipped = 0, []
         for h in heads:
             row = {r: v for r, v in (entry.get("values") or {}).items()
-                   if r in (h.get("map") or [])}
+                   if r.split("@", 1)[0] in (h.get("map") or [])}
             if not row:
                 continue
             self.programmer.setdefault(h["head_no"], {}).update(row)

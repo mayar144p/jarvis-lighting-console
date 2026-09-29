@@ -77,7 +77,7 @@ function renderHeader() {
   $$("#prog-tabs button").forEach((b) => {
     const dot = b.querySelector(".dotmark");
     const want = pages[b.dataset.tab];
-    const on = !!want && [...attrs].some((r) => (GROUP_OF[r.replace(/_fine$/, "")] || "other") === want);
+    const on = !!want && [...attrs].some((r) => (GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")] || "other") === want);
     if (on && !dot) b.append(h("span.dotmark"));
     if (!on && dot) dot.remove();
   });
@@ -534,6 +534,46 @@ function attrRow(a) {
   return h("div.attr-wrap", row, chips);
 }
 
+// ------------------------------------------------------- multi-head lights
+// A Wave 360 has four heads (four tilts, four colour cells) on one address.
+// Pick heads here and colour / attribute changes go to just those; "All"
+// is the whole light again.
+function headCount(hd) {
+  const n = {};
+  for (const r of hd.map || []) if (!/_fine$|^unused$|^raw$/.test(r)) n[r] = (n[r] || 0) + 1;
+  return Math.max(0, ...Object.values(n).filter((c) => c > 1));
+}
+let cellsKey = "";
+let cellsSel = "";
+
+function renderProgCells() {
+  const box = $("#prog-cells");
+  const heads = selectionHeads();
+  const sig = heads.map((x) => x.head_no).join(",");
+  if (sig !== cellsSel) { cellsSel = sig; state.cells = []; }       // a new selection starts on All
+  const n = Math.max(0, ...heads.map(headCount));
+  const key = JSON.stringify([n, state.cells || []]);
+  if (key === cellsKey) return;
+  cellsKey = key;
+  box.hidden = n < 2;
+  if (n < 2) { state.cells = []; return; }
+  const cur = new Set(state.cells || []);
+  const pick = (k) => {
+    if (k === 0) state.cells = [];
+    else {
+      if (cur.has(k)) cur.delete(k); else cur.add(k);
+      state.cells = [...cur].sort((a, b) => a - b);
+      if (state.cells.length === n) state.cells = [];
+    }
+    renderProgCells();
+  };
+  box.replaceChildren(...[h("span.muted.small", "Heads:"),
+    h("button.chip" + (!cur.size ? ".on" : ""), { title: "Every head of the light", onclick: () => pick(0) }, "All"),
+    ...Array.from({ length: n }, (_, i) => h("button.chip" + (cur.has(i + 1) ? ".on" : ""), {
+      title: `Colour, tilt… for head ${i + 1} only (tap more to add)`, onclick: () => pick(i + 1) }, String(i + 1))),
+    cur.size ? h("span.muted.small", "changes go to these heads only") : null].filter(Boolean));
+}
+
 // ------------------------------------------------------ in the programmer
 // What the programmer holds, by kind, each with its own x: clear just the
 // colour (or the position...) without losing the rest.
@@ -558,7 +598,7 @@ function renderProgIn() {
   const counts = {};
   for (const row of Object.values(vals)) {
     const seen = new Set();
-    for (const r of Object.keys(row)) seen.add(GROUP_OF[r.replace(/_fine$/, "")] || "other");
+    for (const r of Object.keys(row)) seen.add(GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")] || "other");
     for (const g of seen) counts[g] = (counts[g] || 0) + 1;
   }
   const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib));
@@ -592,13 +632,16 @@ function renderFx() {
     $("#fx-params").replaceChildren();
   } else {
     const list = (fxAvailable.available || []).filter((fx) => !MOVE_FX.has(fx.name));
-    const key = JSON.stringify([list.map((fx) => fx.name), fxChosen]);
+    const key = JSON.stringify([list.map((fx) => fx.name), fxChosen, fxAcross, selectionHeads().map((x) => x.head_no)]);
     if (key !== fxGridKey) {               // redraw only on change: keeps the cards clickable
       fxGridKey = key;
       grid.replaceChildren(...list.map((fx) => h("button.fx-card" + (fxChosen === fx.name ? ".on" : ""), {
         title: "Run " + fx.label,
         onclick: () => startFx(fx),
       }, h("b", fx.label), h("small", fx.group))),
+      selectionHeads().some((x) => headCount(x) > 1) ? h("button.chip.fx-across" + (fxAcross ? ".on" : ""), {
+        title: "Run the effect across each light's own heads (a Wave 360's four cells) as if each were a light",
+        onclick: () => { fxAcross = !fxAcross; fxGridKey = ""; renderFx(); } }, "Across each light's heads") : null,
       h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Move tab"), "."));
     }
   }
@@ -611,11 +654,13 @@ function renderFx() {
   if (cur && attrs.has(cur)) lfo.value = cur;
 }
 
+let fxAcross = false;
+
 function startFx(fx) {
   fxChosen = fx.name;
   const params = {};
   for (const p of fx.params || []) params[p.key] = p.default;
-  run("run_fx", { name: fx.name, params, heads: sel() }, { toast: true }).then(() => renderFx());
+  run("run_fx", { name: fx.name, params, heads: sel(), across: fxAcross }, { toast: true }).then(() => renderFx());
   $("#fx-params").replaceChildren(...(fx.params || []).filter((p) => p.key !== "phase").map((p) => {
     const input = h("input", { type: "range", min: p.min, max: p.max, step: (p.max - p.min) / 100, value: p.default });
     const out = h("output.muted.small", String(p.default));
@@ -857,6 +902,7 @@ export function initProgrammer() {
   const refresh = () => {
     renderHeader();
     renderProgIn();
+    renderProgCells();
     renderIntensity();
     if (tab === "colour") renderColour();
     if (tab === "fx") renderRunning();

@@ -7518,6 +7518,7 @@ def _standalone_suites():
     ("grouping for big rigs", test_big_rig_groups),
     ("My venues: saved per venue, any room shape, poles", test_my_venues),
     ("DMX map: every address clash found and fixable", test_dmx_clashes),
+    ("multi-head lights: each head on its own", test_multi_head),
     )
 
 
@@ -9000,6 +9001,65 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_multi_head() -> None:
+    """A Wave 360 has four tilts and four RGBW cells on one address; they
+    used to share one value.  Each head can now be set on its own, cues and
+    looks keep it, and effects run across the heads as if each were a light."""
+    print("multi-head lights (Wave 360: per-head colour / tilt, effects across heads)")
+    import tempfile
+    import time as _t
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Wave 360", mode="33 ch.", qty=1, universe=1, address=1)
+            e.act("select_all")
+            e.act("set_colour", hex="#0000ff")
+            e.act("set_colour", hex="#ff0000", cell=2)
+            e.act("set_attribute", attribute="tilt", value=200, cell=[3])
+            w = e.build_frames()[1]
+            cells = [list(w[10 + 4 * k:14 + 4 * k]) for k in range(4)]
+            check("one head of the light gets its own colour", cells[1] == [255, 0, 0, 0]
+                  and cells[0] == cells[2] == cells[3] == [0, 0, 255, 0], str(cells))
+            check("...and its own tilt", list(w[4:8]) == [0, 0, 200, 0], str(list(w[4:8])))
+            r = e.act("set_attribute", attribute="pan", value=100, cell=[2])
+            check("a channel the light has once (pan) just sets the light", r.get("ok") and e.programmer[1].get("pan") == 100, str(r))
+            e.act("record_cue", playback=1)
+            e.act("clear_programmer")
+            e.act("playback_activate", playback=1)
+            e.act("cue_go", playback=1)
+            w = e.build_frames()[1]
+            check("a cue keeps each head's own values", list(w[14:18]) == [255, 0, 0, 0] and w[6] == 200,
+                  str((list(w[14:18]), w[6])))
+            e.act("playback_release", playback=1)
+            e.act("select_all")
+            e.act("set_colour", hex="#00ff00")
+            w = e.build_frames()[1]
+            check("setting the whole light again covers every head", all(list(w[10 + 4 * k:13 + 4 * k]) == [0, 255, 0] for k in range(4)),
+                  str([list(w[10 + 4 * k:13 + 4 * k]) for k in range(4)]))
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="colour_chase", params={"speed": 0.5}, across=True)
+            _t.sleep(0.1)
+            w = e.build_frames()[1]
+            heads = [tuple(w[10 + 4 * k:13 + 4 * k]) for k in range(4)]
+            check("an effect runs across the heads (a different colour on each)", r.get("ok") and len(set(heads)) == 4, str(heads))
+            e.act("stop_fx")
+            e.act("set_colour", hex="#ff0000", cell=[1])
+            e.act("record_preset", name="One red")
+            check("a look keeps a single head's colour", "red@1" in e.presets[-1]["values"], str(e.presets[-1]["values"]))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    ac = (ROOT / "web" / "app" / "actions.js").read_text(encoding="utf-8")
+    check("the programmer offers Heads: All 1 2 3 4 and 'across each light's heads'",
+          "renderProgCells" in js and "Across each light's heads" in js and "state.cells" in ac, "")
 
 
 def test_dmx_clashes() -> None:
