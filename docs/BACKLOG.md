@@ -70,6 +70,18 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - RDM discovery (model / mode / address from the light) if the node supports it.
 - Pre-gig "Ready?" check and versioned show backups / export.
 
+## 11. Grouping for big rigs (DONE)
+
+- Automatic groups (never stored, follow the rig): one per kind of light
+  ("LED PARs 12", "Moving spots 6") and one per truss / pole / pipe they
+  hang on (attached, else the nearest), plus "Floor".  Dashed chips above
+  the list; tap selects, Shift adds.
+- Lights of the same model patched in a row fold into one row
+  ("LED PARty RGBW × 12 · 1.049-1.115"): tap selects them all, ▸ opens.
+- Selection bar: "6 selected · Moving spots" and Odd / Even / Left / Right.
+- Buttons can aim at an automatic group (and a split of it) and follow it.
+- Shift-drag on the stage draws a box and selects the lights inside.
+
 ## 10. Quick fixes from the audit (DONE)
 
 - ARM lasts 10 min, 1 hour or **until you disarm** (remembered); a laser

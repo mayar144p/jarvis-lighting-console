@@ -979,3 +979,21 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .look-play small { padding: 0 10px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .look-more { width: 32px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
 .look-more:hover { color: var(--text); }
+/* grouping for big rigs: automatic group chips, folded rows, splits */
+.group-chips .chip.auto { background: transparent; border-style: dashed; }
+.group-chips .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); border-style: solid; }
+.group-chips .chip small { color: var(--muted); font-weight: 600; }
+.group-chips .chip-ic { color: var(--muted); margin-right: 2px; }
+.fx-table tr.fold td { background: rgba(255, 255, 255, .02); }
+.fx-table tr.fold .c-no { font-size: 11px; }
+.fx-table tr.fold .c-addr { line-height: 1.1; }
+.fx-table tr.fold .c-addr small { display: block; font-size: 10px; color: var(--muted); }
+.fx-table tr.fold.part .c-no { color: var(--accent); }
+.fx-table tr.fold.part { box-shadow: inset 3px 0 0 var(--accent); }
+.fx-table tr.fold-child td:first-child { padding-left: 16px; }
+.fx-table tr.fold-child { background: rgba(0, 0, 0, .18); }
+.fold-btn { width: 28px; min-height: 28px; font-size: 13px; }
+.sel-bar { flex-wrap: wrap; }
+.sel-split { margin: 0; gap: 4px; }
+.sel-split .chip { min-height: 26px; padding: 0 8px; font-size: 11px; }
+.stage-box { position: absolute; border: 1px dashed var(--accent); background: rgba(56, 189, 248, .08); pointer-events: none; z-index: 5; }

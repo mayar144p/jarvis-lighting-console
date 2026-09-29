@@ -7515,6 +7515,7 @@ def _standalone_suites():
     ("ARM for the whole set; lasers stay on", test_arm_for_set),
     ("My moves: named movements, not cues", test_my_moves),
     ("Looks: named, one tap brings it all back", test_looks),
+    ("grouping for big rigs", test_big_rig_groups),
     )
 
 
@@ -8997,6 +8998,62 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_big_rig_groups() -> None:
+    """With 20+ lights, groups Jarvis makes by itself (by kind of light and
+    by the truss they hang on), odd / even / left / right splits of any
+    selection, buttons aimed at those groups, a folded list and a box
+    select on the stage."""
+    print("grouping for big rigs (auto groups, splits, folded list, box select)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "g.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", key="club")
+            e.act("add_heads", query="Intimidator Spot 260", qty=6)
+            e.act("add_heads", query="LED PARty RGBW", qty=16)
+            groups = {g["key"]: g for g in e._auto_groups()}
+            check("automatic groups by kind of light", len(groups.get("type:par", {}).get("heads", [])) == 16
+                  and len(groups.get("type:moving_spot", {}).get("heads", [])) == 6, str(list(groups)))
+            rigs = [g for g in groups.values() if g["kind"] == "rig"]
+            check("...and by the truss (or floor) they hang on", rigs and sum(len(g["heads"]) for g in rigs) == 22,
+                  str([(g["name"], len(g["heads"])) for g in rigs]))
+            check("...and the console gets them in the snapshot", e.snapshot().get("auto_groups"), "")
+            r = e.act("select_group", key="type:par")
+            check("tap an automatic group to select it", r.get("ok") and len(e.selected) == 16, str(r))
+            e.act("select_group", key="type:moving_spot", add=True)
+            check("...Shift adds another", len(e.selected) == 22, str(len(e.selected)))
+            e.act("select_group", key="type:par")
+            e.act("select_split", split="even")
+            check("split the selection: even", e.selected == list(range(8, 23, 2)), str(e.selected))
+            e.act("select_group", key="type:par")
+            e.act("select_split", split="left")
+            check("...left half by where they hang", len(e.selected) == 8, str(e.selected))
+            check("...and choosing lights is not an undo step", "select_split" in eng.UNDO_EXCLUDED, "")
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "flash", "target": {"auto": "type:par", "split": "odd"}})
+            e.act("quick_press", id="q1-1")
+            check("a button aimed at an automatic group (and a split of it)",
+                  r.get("ok") and len(e.quick_active["q1-1"]["heads"]) == 8, str(e.quick_active.get("q1-1")))
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("quick_release_all")
+            e.act("quick_press", id="q1-1")
+            check("...which follows the rig: two more PARs, one more in its odd half",
+                  len(e.quick_active["q1-1"]["heads"]) == 9, str(len(e.quick_active["q1-1"]["heads"])))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the list folds lights of one model into one row, with automatic group chips and splits",
+          "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
+    check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
 
 
 def test_looks() -> None:

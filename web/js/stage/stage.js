@@ -631,9 +631,60 @@ export class Stage {
     return hit ? this.fixtures.get(hit.object.userData.head) : null;
   }
 
+  /** Heads whose light sits inside a screen rectangle (client px). */
+  headsInRect(x0, y0, x1, y1) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const [lx, hx] = [Math.min(x0, x1), Math.max(x0, x1)];
+    const [ly, hy] = [Math.min(y0, y1), Math.max(y0, y1)];
+    const v = new THREE.Vector3();
+    const out = [];
+    for (const inst of this.fixtures.values()) {
+      if (!inst.pick) continue;
+      inst.pick.getWorldPosition(v);
+      v.project(this.camera);
+      if (v.z > 1) continue;                                  // behind the camera
+      const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
+      if (sx >= lx && sx <= hx && sy >= ly && sy <= hy) out.push(inst.head);
+    }
+    return out;
+  }
+
   _wirePointer() {
     const dom = this.renderer.domElement;
     let down = null;
+    // Shift-drag draws a box: every light inside it is selected (the
+    // orbit waits).  Captured first, so the orbit never starts.
+    let box = null;
+    dom.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0 || !ev.shiftKey || this.editing || this.pickOnce || !this.opts.onBox) return;
+      const wrap = dom.parentElement;
+      const el = document.createElement("div");
+      el.className = "stage-box";
+      wrap.append(el);
+      box = { x: ev.clientX, y: ev.clientY, el, moved: false };
+      this.controls.enabled = false;
+    }, true);
+    dom.addEventListener("pointermove", (ev) => {
+      if (!box) return;
+      const r = dom.parentElement.getBoundingClientRect();
+      box.moved = box.moved || Math.hypot(ev.clientX - box.x, ev.clientY - box.y) > 5;
+      Object.assign(box.el.style, {
+        left: `${Math.min(ev.clientX, box.x) - r.left}px`, top: `${Math.min(ev.clientY, box.y) - r.top}px`,
+        width: `${Math.abs(ev.clientX - box.x)}px`, height: `${Math.abs(ev.clientY - box.y)}px`,
+      });
+    });
+    const endBox = (ev) => {
+      if (!box) return false;
+      const b = box;
+      box = null;
+      b.el.remove();
+      this.controls.enabled = true;
+      if (!b.moved || !ev) return false;
+      this.opts.onBox(this.headsInRect(b.x, b.y, ev.clientX, ev.clientY), { add: ev.ctrlKey || ev.metaKey });
+      return true;
+    };
+    window.addEventListener("pointerup", (ev) => { if (endBox(ev)) down = null; }, true);
+    dom.addEventListener("pointercancel", () => endBox(null));
     dom.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
       const ed = this.editor;

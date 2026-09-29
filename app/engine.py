@@ -126,7 +126,7 @@ UNDO_EXCLUDED = frozenset({
     # Choosing WHICH lights to work on is not an edit to the show; on a
     # desk, undo walks back what you did to them, not what you clicked.
     "select_all", "select_group", "select_heads", "select_similar",
-    "select_query", "clear_selection",
+    "select_query", "clear_selection", "select_split",
 })
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
@@ -574,7 +574,7 @@ ACTIONS = (
     "playback_activate", "playback_level", "playback_release",
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
-    "select_all", "select_group", "select_heads", "select_similar",
+    "select_all", "select_group", "select_heads", "select_similar", "select_split",
     "select_query", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
     "set_limits", "clear_limits", "set_orient", "get_limits",
@@ -2073,7 +2073,77 @@ class Engine:
         self.selected = merged
         return {"selected": merged, "total": len(merged)}
 
-    def _a_select_group(self, n=None, group=None, **_):
+    def _auto_groups(self) -> list[dict]:
+        """Groups Jarvis makes by itself: one per kind of light ("Moving
+        spots · 6") and one per truss / pole / pipe the lights hang on
+        ("Front truss · 8"), plus the floor.  Worked out from the patch and
+        the venue, never stored, so they follow the rig as it changes."""
+        key = (self.patch_rev, json.dumps((self.venue or {}).get("rigging") or [], sort_keys=True, default=str))
+        cache = getattr(self, "_auto_group_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        by_type: dict[str, list[int]] = {}
+        labels: dict[str, str] = {}
+        by_rig: dict[str, list[int]] = {}
+        rigs = {r["id"]: r for r in (self.venue or {}).get("rigging") or []}
+        for h in self.patch:
+            d = fixture_kind.describe(h)
+            t = d.get("type") or "generic"
+            by_type.setdefault(t, []).append(h["head_no"])
+            labels[t] = d.get("label") or t.replace("_", " ").title()
+            rid = (h.get("mount") or {}).get("rig")
+            if rid not in rigs:
+                near = venue_mod.nearest_rig(self.venue, float(h.get("x") or 0), float(h.get("y") or 0),
+                                             float(h.get("z") or 0), reach=0.8) if rigs else None
+                rid = near[0]["id"] if near else None
+            if rid in rigs:
+                by_rig.setdefault(rid, []).append(h["head_no"])
+            elif float(h.get("y") or 0) < 1.5:
+                by_rig.setdefault("floor", []).append(h["head_no"])
+        out = []
+        for t, heads in sorted(by_type.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            name = labels[t]
+            out.append({"key": f"type:{t}", "kind": "type",
+                        "name": (name if name.endswith("s") else name + "s") if len(heads) > 1 else name,
+                        "heads": sorted(heads)})
+        if len(by_rig) > 1 or (by_rig and len(by_type) > 1):
+            for rid, heads in by_rig.items():
+                name = "Floor" if rid == "floor" else rigs[rid].get("name") or rid
+                out.append({"key": f"rig:{rid}", "kind": "rig", "name": name, "heads": sorted(heads)})
+        self._auto_group_cache = (key, out)
+        return out
+
+    def _split_heads(self, heads: list[int], split: str | None) -> list[int]:
+        """odd / even (in number order) or left / right half (by where
+        they hang) of some lights."""
+        if split in ("odd", "even"):
+            heads = sorted(heads)
+            return heads[0::2] if split == "odd" else heads[1::2]
+        if split in ("left", "right"):
+            by = {h["head_no"]: h for h in self.patch}
+            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
+            half = (len(order) + 1) // 2
+            return sorted(order[:half] if split == "left" else order[half:])
+        return list(heads)
+
+    def _a_select_split(self, split="odd", **_):
+        """Keep only the odd / even / left / right half of the selection."""
+        split = str(split or "").lower()
+        if split not in self.SPLITS:
+            raise ValueError(f"split is one of {', '.join(self.SPLITS)}")
+        if not self.selected:
+            raise ValueError("nothing selected")
+        self.selected = self._split_heads(self.selected, split)
+        return {"selected": list(self.selected), "summary": f"{split}: {len(self.selected)} light(s)"}
+
+    def _a_select_group(self, n=None, group=None, key=None, add=False, **_):
+        if key not in (None, ""):
+            g = next((g for g in self._auto_groups() if g["key"] == str(key)), None)
+            if g is None:
+                raise ValueError(f"no group {key!r}")
+            heads = g["heads"]
+            self.selected = list(dict.fromkeys((self.selected if _truthy(add) else []) + heads))
+            return {"selected": list(self.selected), "group": g["name"]}
         num = int(n if n is not None else group)
         for g in self.groups:
             if g["n"] == num:
@@ -3515,6 +3585,8 @@ class Engine:
         clean_t: dict = {}
         if target.get("group") is not None:
             clean_t["group"] = int(target["group"])
+        elif target.get("auto"):
+            clean_t["auto"] = str(target["auto"])[:40]
         elif target.get("heads"):
             clean_t["heads"] = sorted({int(h) for h in target["heads"]})[:512]
         elif target.get("type"):
@@ -3803,15 +3875,7 @@ class Engine:
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
         heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
-        split = t.get("split")
-        if split in ("odd", "even"):
-            heads = heads[0::2] if split == "odd" else heads[1::2]
-        elif split in ("left", "right"):
-            by = {h["head_no"]: h for h in self.patch}
-            order = sorted(heads, key=lambda n: (float(by[n].get("x") or 0), n))
-            half = (len(order) + 1) // 2
-            heads = sorted(order[:half] if split == "left" else order[half:])
-        return heads
+        return self._split_heads(heads, t.get("split"))
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
@@ -3830,6 +3894,9 @@ class Engine:
 
     def _target_heads(self, t: dict) -> list[int]:
         patched = [h["head_no"] for h in self.patch]
+        if t.get("auto"):
+            g = next((g for g in self._auto_groups() if g["key"] == t["auto"]), None)
+            return list(g["heads"]) if g else []
         if t.get("group") is not None:
             for g in self.groups:
                 if g["n"] == t["group"]:
@@ -9561,6 +9628,7 @@ class Engine:
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "moves": [dict(m) for m in self.moves],
+                "auto_groups": self._auto_groups(),
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.

@@ -44,7 +44,7 @@ function syncRig() {
     ? "The stage is empty - add fixtures and they appear here, modelled for their type and brand."
     : document.body.classList.contains("arranging")
       ? "Arrange: click a light, truss, object or zone to move it · W move · E rotate · Del delete · Esc done"
-      : "Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · Arrange to move things";
+      : "Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · Shift-drag to box-select · Arrange to move things";
 }
 
 async function loadUnderlay(id) {
@@ -58,6 +58,10 @@ async function loadUnderlay(id) {
 export function initStage() {
   const el = $("#stage");
   stage = new Stage(el, {
+    onBox: (heads, mods) => {
+      if (!heads.length) { if (!mods.add) select([]); return; }
+      select(heads, { add: mods.add });
+    },
     onPick: (head, mods) => {
       const cur = new Set((state.snap && state.snap.selected) || []);
       if (mods.toggle) {
