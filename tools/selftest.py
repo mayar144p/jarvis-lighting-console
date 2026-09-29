@@ -8703,6 +8703,35 @@ def test_beam_bar() -> None:
     r = [d["role"] for d in dup["modes"][0]["detail"]]
     check("channels that would share one role each get their own control",
           len(set(r)) == 3, str(r))
+    # the same bar from its manual: a chart with no name column ("1 0-49
+    # laser off"), a rear-panel list and a German copy of the chart around it
+    from app import manual
+    chart = ["1 0-49 laser off", "50-99 sound mode", "100-149 automatic mode",
+             "150-199 DMX mode (Channel 2 --> Channel 3 valid)", "200-255 DMX mode (Channel 4 --> Channel 13 valid)",
+             "2 0-255 program / effect selection", "3 0-255 Speed (slow to fast, 21 levels)",
+             "Each of the following channels corresponds with one laser output (from left to right, front view)"] + \
+        [f"{k} 0-255 brightness adjustment (weak to bright)" for k in range(4, 14)]
+    german = ["1 0-49 Laser aus", "50-99 Sound-Modus", "100-149 Automatik-Modus", "150-199 DMX-Modus (Kanal 2-3)",
+              "200-255 DMX-Modus (Kanal 4-13)", "2 0-255 Programmauswahl", "3 0-255 Geschwindigkeit"] + \
+        [f"{k} 0-255 Helligkeit" for k in range(4, 14)]
+    text = "\n".join(["Laserworld BeamBar MK3 laser", "1 Power", "2 Key Switch", "3 Modes / Functions",
+                      "DMX Control Chart", "Channel Value Function", *chart,
+                      "1 Stromversorgung", "2 Schlüsselschalter", "3 Modi / Funktionen", *german])
+    d = manual.read(text, "Laserworld", "BeamBar 10B MK3", offline=True)
+    check("a manual's chart with no name column is read as one 13-channel mode (not the rear-panel list)",
+          [len(m["channels"]) for m in d["modes"]] == [13], str([(m["name"], len(m["channels"])) for m in d["modes"]]))
+    if d["modes"]:
+        ch = d["modes"][0]["channels"]
+        check("channel 1 keeps all its modes as the laser output",
+              ch[0]["function"] == "laser output" and len(ch[0]["ranges"]) == 5, str(ch[0]))
+        check("the ten 'brightness' rows become Laser 1..10",
+              [c["name"] for c in ch[3:]] == [f"Laser {k}" for k in range(1, 11)], str([c["name"] for c in ch[3:]]))
+        it = fixlib.apply_fx(manual.to_parsed(d)[0])
+        det = it["modes"][0]["detail"]
+        check("saved: output fires in its DMX beam mode, each beam its own control",
+              det[0]["role"] == "laser_on" and det[0]["on_value"] == 227
+              and [r["role"] for r in det[3:]] == [f"laser_beam{k}" for k in range(1, 11)],
+              str([(r["role"], r.get("on_value")) for r in det[:4]]))
     hits = fixlib.search("laserworld beambar 10b")
     check("the BeamBar 10B MK3 is in the Jarvis library", hits and hits[0]["model"] == "BeamBar 10B MK3", str(hits[:1]))
     with tempfile.TemporaryDirectory() as td:

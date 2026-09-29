@@ -844,6 +844,13 @@ def apply_fx(item: dict) -> dict:
                 steps = [c for c in caps or [] if not _OFF_TEXT.search(str(c[2]))
                          and not _DANGER_TEXT.search(str(c[2]))]
                 fire = _pick(caps, _FIRE_TEXT, _DANGER_TEXT)
+                if fire is None and role == "laser_on":
+                    # a laser whose output channel is its mode switch ("0-49 off,
+                    # 50-99 sound, ... 200-255 DMX mode"): on = under DMX control,
+                    # the last DMX range (usually the one that frees every channel)
+                    dmx = [c for c in steps if re.search(r"\bdmx\b", str(c[2]), re.I)]
+                    if dmx:
+                        fire = (int(dmx[-1][0]) + int(dmx[-1][1])) // 2
                 if fire is None and len(steps) >= 2:  # graded (spark height): lowest step
                     fire = (int(steps[0][0]) + int(steps[0][1])) // 2
                 row.setdefault("on_value", fire if fire is not None else 255)
@@ -854,7 +861,7 @@ def apply_fx(item: dict) -> dict:
                 row.setdefault("off_value", _off_value(caps))
             elif role == "fog":
                 row.setdefault("off_value", _off_value(caps))
-            if role in ("laser_pattern", "laser_colour", "fx_mode", "fx_fire") and caps and not row.get("slots"):
+            if role in ("laser_pattern", "laser_colour", "fx_mode", "fx_fire", "laser_on") and caps and not row.get("slots"):
                 found = [(int(lo), int(hi), {"name": str(t)[:40], "hex": None, "slot": n})
                          for n, (lo, hi, t) in enumerate(caps, start=1)
                          if str(t).strip() and int(hi) - int(lo) <= 64

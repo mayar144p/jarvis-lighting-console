@@ -194,6 +194,9 @@ _RANGE_RE = re.compile(rf"^\s*(\d{{1,3}})\s*{_SEP}\s*(\d{{1,3}})\s+(.+?)\s*$", r
 _INLINE_RE = re.compile(rf"\s+(\d{{1,3}})\s*{_SEP}\s*(\d{{1,3}})\b\s*(.*)$", re.I)
 _RUN_RE = re.compile(r"^\s*(\d{3})\s?(\d{3})\s+(.+?)\s*$")        # "000009 Off" (a PDF table)
 _CHAN_RE = re.compile(r"^\s*(\d{1,3})\s*[.):]?\s+([A-Za-z][^\n]{0,60}?)\s*$")
+# a chart with no name column: "1  0-49  laser off" - channel, range, meaning
+_CHAN_RANGE_RE = re.compile(rf"^\s*(\d{{1,3}})\s*[.):]?\s+(\d{{1,3}})\s*{_SEP}\s*(\d{{1,3}})\s+(\S.*?)\s*$", re.I)
+_OFF_FIRST = re.compile(r"^\s*((laser|output|lamp|light)s?\s+off|off|blackout|no output)\b", re.I)
 
 
 def read_offline(text: str) -> dict:
@@ -213,6 +216,21 @@ def read_offline(text: str) -> dict:
             modes.append(mode)
             last_no, chan, pending = 0, None, []
             continue
+        cr = _CHAN_RANGE_RE.match(line)
+        if cr and 1 <= int(cr.group(1)) <= 512 and int(cr.group(3)) <= 255:
+            no, lo, hi, text = int(cr.group(1)), int(cr.group(2)), int(cr.group(3)), cr.group(4).strip()
+            text = re.split(r"\s{2,}", text)[0]
+            if mode is None or (no == 1 and mode["channels"]):
+                mode = {"name": "", "channels": []}
+                modes.append(mode)
+                last_no = 0
+            if no == last_no + 1:
+                chan = {"name": text, "function": _guess(text), "ranges": [[lo, hi, text]],
+                        "_from_range": True}
+                pending = []
+                mode["channels"].append(chan)
+                last_no = no
+                continue
         r = _RANGE_RE.match(line) or _RUN_RE.match(line)
         if r:
             row = [int(r.group(1)), int(r.group(2)), re.split(r"\s{2,}", r.group(3).strip())[0]]
@@ -247,6 +265,29 @@ def read_offline(text: str) -> dict:
             mode["channels"].append(chan)
             last_no = no
     modes = [m for m in modes if m["channels"]]
+    for m in modes:
+        for c in m["channels"]:
+            if not c.pop("_from_range", False):
+                continue
+            rng = c["ranges"]
+            if len(rng) == 1 and rng[0][0] == 0 and rng[0][1] == 255:
+                c["ranges"] = []                   # the whole range: a plain control
+            elif len(rng) >= 2:
+                # several meanings on one channel: name it for what it is
+                c["name"] = "Output / mode" if _OFF_FIRST.match(rng[0][2]) else "Mode"
+                c["function"] = _guess(c["name"])
+        # the same meaning on a run of channels ("brightness" x 10): number them
+        names = [c["name"].lower() for c in m["channels"]]
+        i = 0
+        while i < len(names):
+            j = i
+            while j + 1 < len(names) and names[j + 1] == names[i]:
+                j += 1
+            if j > i:
+                for k, c in enumerate(m["channels"][i:j + 1], start=1):
+                    c["name"] = f"{c['name']} {k}"
+                    c["_run"] = True
+            i = j + 1
     # A manual also has numbered steps; when some block carries value
     # ranges, the chart is the blocks that do.
     if any(c["ranges"] for m in modes for c in m["channels"]):
@@ -359,6 +400,20 @@ def read(text: str, manufacturer: str = "", model: str = "", offline: bool = Fal
     draft.setdefault("type", fixlib.fx_kind(manufacturer, model, "", []) or _kind_from_text(text))
     if draft["type"] in ("", "light"):
         draft["type"] = fixlib.fx_kind(manufacturer, model, "", []) or _kind_from_text(text)
+    if draft["type"] == "laser":
+        for m in draft.get("modes") or []:
+            beam = 0
+            for c in m.get("channels") or []:
+                rng = c.get("ranges") or []
+                if c.get("function") in ("setting", "unused", "dimmer") and rng and _OFF_FIRST.match(str(rng[0][2])):
+                    c["function"] = "laser output"     # "0-49 laser off": the laser's power / mode
+                elif c.pop("_run", False):
+                    beam += 1
+                    c["name"] = f"Laser {beam}"          # one output each, in order
+                    c["function"] = "setting"
+    for m in draft.get("modes") or []:
+        for c in m.get("channels") or []:
+            c.pop("_run", None)
     warnings = list(draft.get("warnings") or [])
     try:
         out = round_trip(draft)
