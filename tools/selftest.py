@@ -7522,6 +7522,7 @@ def _standalone_suites():
     ("cue list: merge / replace / insert, update keeps the name", test_cue_list_modes),
     ("buttons: fade in / out and a keyboard key", test_button_fades),
     ("buttons: big tiles and icons", test_button_tiles),
+    ("buttons: a speed of their own", test_button_speed),
     )
 
 
@@ -9088,6 +9089,52 @@ def test_button_tiles() -> None:
     check("the editor's icons are the engine's icons", ui == set(eng.Engine.QUICK_ICONS),
           str(ui ^ set(eng.Engine.QUICK_ICONS)))
     check("big tiles span the grid and cover the slots under them", "gridColumn" in qb and "covered" in qb, "")
+
+
+def test_button_speed() -> None:
+    """A button's effects run at its own speed, changeable live, and can
+    ignore the Speed master."""
+    print("button speed")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2, universe=1, address=1)
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "fx", "fx": "rainbow", "mode": "latch", "rate": 2})
+            check("a button keeps its speed", (r.get("button") or {}).get("rate") == 2.0, str(r.get("button")))
+            e.act("quick_press", id="q1-1")
+            row = next((f for f in e.fx if f["id"] in e.quick_active["q1-1"]["fx_ids"]), {})
+            check("its effect runs at that speed", row.get("rate") == 2.0, str(row.get("rate")))
+
+            def advance(secs):
+                t0 = row.get("_last", row["t0"])
+                v0 = row.get("_v", 0.0)
+                e._fx_values(t0 + secs)
+                return row["_v"] - v0
+
+            e.act("speed_master", value=0.5)
+            check("...times the Speed master", abs(advance(1.0) - 1.0) < 1e-6, "")
+            r = e.act("quick_rate", id="q1-1", rate=3, free=True)
+            check("the speed changes live, and it can ignore the master",
+                  r.get("ok") and abs(advance(1.0) - 3.0) < 1e-6, str(r))
+            r = e.act("quick_rate", id="q1-1", rate=1, free=False)
+            b = next(x for x in e.quick if x["id"] == "q1-1")
+            check("back to normal stores nothing", "rate" not in b and "free" not in b, str(b))
+            check("changing the speed is not an undo step", "quick_rate" in eng.UNDO_EXCLUDED, "")
+            e.act("quick_set", page=1, slot=2, button={"kind": "flash"})
+            r = e.act("quick_rate", id="q1-2", rate=2)
+            check("a button without effects has no speed", not r.get("ok"), str(r))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the tile changes speed by scroll and right-click", '"wheel"' in qb and '"contextmenu"' in qb
+          and "quick_rate" in qb, "")
 
 
 def test_cue_list_modes() -> None:

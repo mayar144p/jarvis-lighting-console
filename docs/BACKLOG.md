@@ -185,9 +185,14 @@ Done: every option in the button editor is a tap.
   (bolt, sun, moon, star, heart, fire, snow, drop, music, strobe, spin,
   sparkle, eye, stop, up, down) drawn in the tile colour.
 
+- **Button speed (DONE):** effect, My move and Mix buttons have a speed
+  of their own (¼× to 4×, times the Speed master, or "Own speed" to ignore
+  the master).  Live: scroll on the tile or right-click it; the tile shows
+  the speed when it isn't 1×.  Changing it live is not an undo step.
+
 Still to do:
 - A MIDI note per button.
-- Per-button speed (a Speed master of its own).
+- Live speed by touch (a long-press menu in gig mode).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
 to play it on the selected lights, tap again to stop; ⋯ to update it to

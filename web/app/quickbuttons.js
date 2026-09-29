@@ -9,7 +9,7 @@
 // step); setting a button up is an edit, saved with the show.
 import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
-import { $, $$, h, modal, toast, promptBox } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, menu } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -80,6 +80,11 @@ function icon(name) {
   svg.append(p);
   return svg;
 }
+
+// kinds that run effects, so have a speed of their own
+const PACED = new Set(["fx", "move", "custom", "capture"]);
+const RATES = [[0.25, "¼×"], [0.5, "½×"], [0.75, "¾×"], [1, "1×"], [1.5, "1½×"], [2, "2×"], [3, "3×"], [4, "4×"]];
+const rateText = (r) => (RATES.find(([v]) => v === r) || [0, `${r}×`])[1];
 
 // kinds whose brightness can fade in / out
 const FADES = new Set(["flash", "dim", "custom", "capture", "kill"]);
@@ -219,7 +224,8 @@ function render(force = false) {
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
     }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
-    b.key ? h("kbd.qkey", b.key.toUpperCase()) : null);
+    b.key ? h("kbd.qkey", b.key.toUpperCase()) : null,
+    b.rate || b.free ? h("span.qrate", (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
     el.style.setProperty("--tint", tint);
     const sp = span.get(slot);
     if (sp) {
@@ -232,7 +238,25 @@ function render(force = false) {
       el.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", JSON.stringify({ page, slot })));
       drop(el);
     } else {
+      if (PACED.has(b.kind)) {
+        // live speed: scroll on the tile steps through the speeds, right-click picks one
+        el.addEventListener("wheel", (e) => {
+          e.preventDefault();
+          const cur = b.rate || 1;
+          const i = RATES.findIndex(([v]) => v >= cur);
+          const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.length - 1 : i) + (e.deltaY < 0 ? 1 : -1)))][0];
+          if (next !== cur) run("quick_rate", { id: b.id, rate: next });
+        }, { passive: false });
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          menu(el, [...RATES.map(([v, t]) => ({ label: `${t} speed${(b.rate || 1) === v ? " ✓" : ""}`,
+            run: () => run("quick_rate", { id: b.id, rate: v }) })), "-",
+          { label: b.free ? "Follow the Speed master" : "Own speed (ignore the Speed master)",
+            run: () => run("quick_rate", { id: b.id, free: !b.free }) }]);
+        });
+      }
       el.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;             // right-click is the speed menu
         e.preventDefault();
         el.setPointerCapture(e.pointerId);
         el.classList.add("down");
@@ -293,7 +317,7 @@ function fromButton(b) {
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
-    move: b ? b.move || "" : "", size: b ? b.size || "" : "", icon: b ? b.icon || "" : "",
+    move: b ? b.move || "" : "", rate: b && b.rate ? b.rate : 1, free: !!(b && b.free), size: b ? b.size || "" : "", icon: b ? b.icon || "" : "",
     fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
@@ -314,6 +338,7 @@ function toButton(s) {
   const b = { kind, label, mode: ONE_SHOT.has(d) ? "tap" : s.mode };
   if (s.tint) b.tint = s.tint;
   if (s.size) b.size = s.size;
+  if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
   if (!NO_TARGET.has(d)) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
@@ -461,6 +486,12 @@ function editButton(slot, btn) {
         : h("div.qe-note", "No presets yet - record one on the Looks tab.")));
     }
     if (d === "fog") kids.push(row("Output", slider(s.fogLevel, 5, 100, 5, (v) => { s.fogLevel = v; })));
+    if (PACED.has(d)) {
+      kids.push(row("Button speed", h("div.chip-row", chips(RATES, s.rate, (v) => { s.rate = v; draw(); }),
+        h("button.chip" + (s.free ? ".on" : ""), { title: "Ignore the Speed master: this button keeps its own speed",
+          onclick: () => { s.free = !s.free; draw(); } }, "Own speed"),
+        h("span.qe-note", "Multiplies its effects' speed. Live: scroll on the tile, or right-click it."))));
+    }
     if (FADES.has(d)) {
       const fades = [[0, "None"], [0.5, "0.5 s"], [1, "1 s"], [2, "2 s"], [5, "5 s"]];
       kids.push(row("Fade in", chips(fades, s.fadeIn, (v) => { s.fadeIn = v; draw(); })));

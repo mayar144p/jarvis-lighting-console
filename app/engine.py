@@ -95,7 +95,7 @@ UNDO_COALESCE_S = 1.2
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
-    "quick_press", "quick_release_all",
+    "quick_press", "quick_release_all", "quick_rate",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -585,7 +585,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move",
+    "quick_page", "quick_move", "quick_rate",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free",
     "move_save", "move_play", "move_delete", "move_rename",
@@ -3695,6 +3695,12 @@ class Engine:
         tint = _hex_or_none(raw.get("tint"))
         if tint:
             btn["tint"] = tint
+        # its effects' own speed, and whether the Speed master moves them
+        if kind in ("fx", "move", "custom"):
+            if raw.get("rate") not in (None, "", 1, "1", 1.0):
+                btn["rate"] = self._quick_rate_value(raw.get("rate"))
+            if raw.get("free"):
+                btn["free"] = True
         # a bigger tile (2 wide, 2 tall or both) and an icon on it
         if raw.get("size") not in (None, "", "normal"):
             if raw["size"] not in self.QUICK_SIZES:
@@ -4128,6 +4134,7 @@ class Engine:
                     run["fx_ids"].append(r.get("fx"))
                 except ValueError:
                     pass
+            self._quick_pace(btn, run)
             self.quick_active[key] = run
         if btn.get("seconds"):
             run["until"] = time.monotonic() + float(btn["seconds"])
@@ -4153,6 +4160,47 @@ class Engine:
             return
         self.quick_active.pop(key, None)
         self._quick_stop_fx(run)
+
+    @staticmethod
+    def _quick_rate_value(value) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"not a speed: {value!r}") from None
+        return round(min(4.0, max(0.25, v)), 2)
+
+    def _quick_pace(self, btn: dict, run: dict) -> None:
+        """Give a button's running effects its own speed."""
+        ids = set(run.get("fx_ids") or [])
+        for row in self.fx:
+            if row.get("id") in ids:
+                row["rate"] = float(btn.get("rate") or 1.0)
+                row["free"] = bool(btn.get("free"))
+
+    def _a_quick_rate(self, id=None, rate=None, free=None, **_):
+        """Change a button's effect speed, live if it is running."""
+        btn = next((b for b in self.quick if b["id"] == id), None)
+        if btn is None:
+            raise ValueError(f"no button {id!r}")
+        if btn["kind"] not in ("fx", "move", "custom"):
+            raise ValueError("only buttons that run effects have a speed")
+        if rate is not None:
+            v = self._quick_rate_value(rate)
+            if v == 1.0:
+                btn.pop("rate", None)
+            else:
+                btn["rate"] = v
+        if free is not None:
+            if free:
+                btn["free"] = True
+            else:
+                btn.pop("free", None)
+        run = self.quick_active.get(btn["id"])
+        if run:
+            self._quick_pace(btn, run)
+        r = float(btn.get("rate") or 1.0)
+        return {"id": btn["id"], "rate": r, "free": bool(btn.get("free")),
+                "summary": f"{btn['label']} at {round(r * 100)}% speed" + (" (own speed)" if btn.get("free") else "")}
 
     def _quick_factor(self, btn: dict, run: dict, now: float) -> float:
         """0..1: how far in (fade-in) or still on (fade-out) a button is."""
@@ -6248,7 +6296,8 @@ class Engine:
             # the effect's own clock, run at the Speed master's rate: changing
             # the master changes the SPEED from here on, never jumps the shape
             last = row.get("_last", row["t0"])
-            step = max(0.0, now - last) * float(self.speed_master)
+            master = 1.0 if row.get("free") else float(self.speed_master)
+            step = max(0.0, now - last) * master * float(row.get("rate", 1.0))
             row["_last"] = max(last, now)
             row["_v"] = row.get("_v", 0.0) + step
             if row.get("lib") in motion_mod.KINDS:
