@@ -2,6 +2,7 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
+import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
@@ -746,10 +747,32 @@ export async function openSettings() {
         },
       }, "Import fixture files from fixtures_inbox/ (.gdtf, .qxf, OFL .json)")),
     h("h3", "MIDI"),
-    h("p.muted.small", midi.enabled ? (midi.open ? `Listening to ${midi.device}` : (midi.error || "No MIDI device found")) : "MIDI is off (MIDI_ENABLED=false)."),
+    h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
+    webMidiRow(),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
+}
+
+// MIDI on this device: a controller plugged into the tablet / laptop the
+// browser runs on plays the buttons given its notes.
+function webMidiRow() {
+  const box = h("input", { type: "checkbox" });
+  box.checked = webMidiOn();
+  const note = h("span.muted.small", "");
+  const show = () => {
+    const ins = webMidiInputs();
+    note.textContent = !webMidiSupported() ? "This browser has no MIDI (use Chrome or Edge)."
+      : !box.checked ? "" : webMidiError() || (ins.length ? `Listening to ${ins.join(", ")}` : "No controller plugged in yet.");
+  };
+  box.disabled = !webMidiSupported();
+  box.addEventListener("change", async () => {
+    const ok = await setWebMidi(box.checked);
+    if (!ok) box.checked = false;
+    show();
+  });
+  show();
+  return h("div", h("label.check", box, h("span", "MIDI on this device: a controller plugged into this computer or tablet plays the buttons")), note);
 }
 
 // ================================================================== help

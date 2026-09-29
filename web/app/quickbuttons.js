@@ -10,6 +10,7 @@
 import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
+import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
 import { $, $$, h, modal, toast, promptBox, menu } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
@@ -226,7 +227,8 @@ function render(force = false) {
       draggable: editing ? "true" : null,
     }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
     b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
-    b.rate || b.free ? h("span.qrate", (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
+    PACED.has(b.kind) ? h("span.qrate" + (b.rate || b.free ? "" : ".one"), { title: "Speed (tap to change)" },
+      (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
     el.style.setProperty("--tint", tint);
     const sp = span.get(slot);
     if (sp) {
@@ -248,17 +250,12 @@ function render(force = false) {
           const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.length - 1 : i) + (e.deltaY < 0 ? 1 : -1)))][0];
           if (next !== cur) run("quick_rate", { id: b.id, rate: next });
         }, { passive: false });
-        el.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          menu(el, [...RATES.map(([v, t]) => ({ label: `${t} speed${(b.rate || 1) === v ? " ✓" : ""}`,
-            run: () => run("quick_rate", { id: b.id, rate: v }) })), "-",
-          { label: b.free ? "Follow the Speed master" : "Own speed (ignore the Speed master)",
-            run: () => run("quick_rate", { id: b.id, free: !b.free }) }]);
-        });
+        el.addEventListener("contextmenu", (e) => { e.preventDefault(); speedMenu(el, b); });
       }
       el.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;             // right-click is the speed menu
         e.preventDefault();
+        if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
         el.setPointerCapture(e.pointerId);
         el.classList.add("down");
         press(b, true);
@@ -567,32 +564,51 @@ function editButton(slot, btn) {
   });
 }
 
-// MIDI learn: wait up to 10 s for a note on the desk's MIDI input.
+function speedMenu(el, b) {
+  menu(el, [...RATES.map(([v, t]) => ({ label: `${t} speed${(b.rate || 1) === v ? " ✓" : ""}`,
+    run: () => run("quick_rate", { id: b.id, rate: v }) })), "-",
+  { label: b.free ? "Follow the Speed master" : "Own speed (ignore the Speed master)",
+    run: () => run("quick_rate", { id: b.id, free: !b.free }) }]);
+}
+
+// MIDI learn: wait up to 10 s for a note, from the desk's MIDI input or
+// from a controller on this device (browser MIDI).
 async function midiStatus() {
   const d = await post("/api/console/midi", {});
   return (d.result && d.result.midi) || d.midi || {};
 }
 async function learnMidi(btn, input, note, set) {
   const st = await midiStatus().catch(() => ({}));
-  if (!st.enabled || !st.open) {
+  const desk = st.enabled && st.open;
+  if (!desk && !webMidiOn() && webMidiSupported()) await setWebMidi(true);   // a controller on this device
+  if (!desk && !webMidiOn()) {
     note.textContent = st.enabled ? `${st.error || "No MIDI device found"} - plug one in, then pick it in Settings.`
-      : "MIDI is off on this desk (MIDI_ENABLED in .env).";
+      : "MIDI is off on this desk (MIDI_ENABLED in .env), and this browser has no MIDI.";
     note.classList.add("warn");
     return;
   }
   const since = (st.last_note && st.last_note.at) || 0;
+  let heard = null;
+  const off = onNote((ev) => { if (ev.on) heard = ev; });
   btn.textContent = "Hit a pad…";
   btn.classList.add("on");
   const end = Date.now() + 10000;
-  while (Date.now() < end && btn.isConnected) {
+  while (Date.now() < end && btn.isConnected && !heard) {
     await new Promise((r) => setTimeout(r, 250));
-    const cur = await midiStatus().catch(() => ({}));
-    if (cur.last_note && cur.last_note.at > since) {
-      set(cur.last_note.number);
-      input.value = cur.last_note.number;
-      note.textContent = `Note ${cur.last_note.number} (channel ${cur.last_note.channel})`;
-      break;
+    if (desk && !heard) {
+      const cur = await midiStatus().catch(() => ({}));
+      if (cur.last_note && cur.last_note.at > since) heard = cur.last_note;
     }
+  }
+  off();
+  if (heard) {
+    set(heard.number);
+    input.value = heard.number;
+    note.textContent = `Note ${heard.number} (channel ${heard.channel})`;
+    note.classList.remove("warn");
+  } else if (!desk && !webMidiInputs().length) {
+    note.textContent = "No MIDI controller found on this device.";
+    note.classList.add("warn");
   }
   btn.textContent = "Learn";
   btn.classList.remove("on");
@@ -613,6 +629,15 @@ function keyTarget(e) {
 export function initQuickButtons() {
   const box = $("#qb");
   if (!box) return;
+  // a controller on this device plays the buttons given its notes
+  onNote((ev) => {
+    if (editing) return;
+    for (const b of quick().buttons.filter((x) => x.midi === ev.number)) {
+      if (ev.on) press(b, true);
+      else if (b.mode === "hold") press(b, false);
+      else held.delete(b.id);
+    }
+  });
   const down = new Set();
   document.addEventListener("keydown", (e) => {
     const hits = keyTarget(e);

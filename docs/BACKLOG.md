@@ -154,7 +154,7 @@ numbers on hover.
 - (The laser hold sticking and FX Stop / Looks Record flicker were fixed
   earlier; the button editor's cut-off dropdowns are gone with item 9.)
 
-## 9. Buttons as customisable as possible (first part DONE)
+## 9. Buttons as customisable as possible (DONE)
 
 Done: every option in the button editor is a tap.
 - **Lights:** all, the selection, a group or a type, or only the odd /
@@ -195,10 +195,13 @@ Done: every option in the button editor is a tap.
   to a button plays it ahead of the MIDI map file; note off lets go of a
   hold button.  The tile shows it (♪36) next to its keyboard key.
 
-Still to do:
-- MIDI in the browser (Web MIDI), for controllers plugged into a tablet
-  rather than the desk computer (the desk's own MIDI input is Windows-only).
-- Live speed by touch (a long-press menu in gig mode).
+- **MIDI on this device (DONE):** Settings -> "MIDI on this device" (Web
+  MIDI, Chrome / Edge): a controller plugged into the tablet or laptop the
+  browser runs on plays the buttons; off until switched on, so a controller
+  heard by the desk too never plays a button twice.  Learn listens to both.
+- **Speed by touch (DONE):** in gig mode effect tiles show their speed
+  badge; tapping it opens the speed menu (a long press would fight with
+  holding a hold button).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
 to play it on the selected lights, tap again to stop; ⋯ to update it to

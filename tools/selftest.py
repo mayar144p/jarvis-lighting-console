@@ -9177,6 +9177,10 @@ def test_button_midi() -> None:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
+    wm = (ROOT / "web" / "app" / "webmidi.js").read_text(encoding="utf-8")
+    check("a controller on the tablet plays buttons too (Web MIDI, off until switched on)",
+          "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
+    check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
 
 
 def test_cue_list_modes() -> None:
