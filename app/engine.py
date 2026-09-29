@@ -3821,6 +3821,18 @@ class Engine:
             value = self._open_value(h, role)
             if value > 0:
                 rests[h["head_no"]] = {role: value}
+        # An LED head WITH a dimmer rests at white: the dimmer is the
+        # brightness, and colour channels left at 0 make Full give no light at
+        # all (a Chauvet Intimidator Wave 360 at full dimmer and RGBW 0 is
+        # dark).  Anything that sets a colour - the picker, a look, a cue, an
+        # effect - still wins; this is only what an untouched head shows.
+        for h in self.patch:
+            if self._head_class(h) != "light" or not self._intensity_roles(h):
+                continue
+            mix = [r for r in ("red", "green", "blue") if r in h["map"]]
+            if len(mix) == 3:
+                # as a GROUP: once anything sets any colour, none of this applies
+                rests.setdefault(h["head_no"], {})["_mix"] = mix
         # a channel the operator found must sit at a value for the real light
         # to light (a lamp / "open" control the file did not mark) rests there
         for h in self.patch:
