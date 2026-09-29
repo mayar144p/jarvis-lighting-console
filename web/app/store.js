@@ -40,7 +40,7 @@ export function setLite(lite) {
   if (state.snap) {
     // keep the snapshot's fast fields current so a panel can read one place
     for (const k of ["master", "blackout", "selected", "live", "dry_run", "output",
-      "programmer", "undo", "fx", "lock"]) {
+      "programmer", "undo", "fx", "lock", "quick_active"]) {
       if (k in lite) state.snap[k] = lite[k];
     }
     if (Array.isArray(lite.playbacks) && Array.isArray(state.snap.playbacks)) {

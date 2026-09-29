@@ -28,6 +28,8 @@ from app import config, fixtures, fixture_kind
 from app import fx as fxmod
 from app import fxlib as fxlib_mod
 from app import profiles
+from app import timeline as tl_mod
+from app import venue as venue_mod
 from app import merge
 from app.artnet import ArtNetSender
 from app.sacn import SacnSender
@@ -90,6 +92,10 @@ UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
+    # quick buttons are played, not edited: a flash is not an undo step
+    "quick_press", "quick_release_all",
+    # the timeline's transport is playing the show, not editing it
+    "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
     "playback_release", "set_output", "follow_set", "locate",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -117,7 +123,7 @@ UNDO_EXCLUDED = frozenset({
 # throw the first away.
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
-                        "export_patch"})
+                        "export_patch", "venue_info"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -554,6 +560,13 @@ ACTIONS = (
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_place", "set_position", "set_venue", "status", "stop_fx",
+    "venue_template", "venue_room", "venue_stage", "venue_add",
+    "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
+    "venue_camera", "venue_info", "attach_heads", "place_many",
+    "quick_set", "quick_press", "quick_release_all", "quick_defaults",
+    "aim_at", "timeline_set", "timeline_track", "timeline_clip",
+    "timeline_from_playback", "timeline_play", "timeline_pause",
+    "timeline_stop", "timeline_seek",
 )
 
 
@@ -579,9 +592,18 @@ class Engine:
         self.mode = "jarvis"
         self.show_dir = Path(show_dir or config.CONSOLE_SHOW_DIR)
         self._sender = sender
-        # The room the operator drew; empty means "size it around the
-        # patch" (see _a_set_venue and the visualiser).
-        self.venue: dict = {}
+        # The room the rig lives in (app/venue.py).  "auto" means nothing
+        # was drawn and the visualiser sizes a room around the patch.
+        self.venue: dict = venue_mod.empty()
+        # Quick buttons (see _a_quick_set) and the ones held right now.
+        self.quick: list[dict] = []
+        self.quick_active: dict[str, dict] = {}
+        # The show timeline (app/timeline.py) and its transport.
+        self.timeline: dict = tl_mod.empty()
+        self.tl = {"playing": False, "pos": 0.0, "t0": 0.0, "pos0": 0.0,
+                   "last": 0.0, "spans": {}}
+        self._tl_stop = threading.Event()
+        self._tl_thread: threading.Thread | None = None
 
         self.patch: list[dict] = []
         self.patch_rev = 0
@@ -694,13 +716,15 @@ class Engine:
             "presets": [dict(p) for p in self.presets],
             "playbacks": _copy_playbacks(self.playbacks),
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
+            "quick": [dict(b) for b in self.quick],
+            "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
             # the way it was rigged.  A patch change is an EDIT like any
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
         }
 
     def _restore_state(self, state: dict) -> None:
@@ -715,14 +739,18 @@ class Engine:
                          for k, v in (state.get("palettes") or {}).items()}
         self.presets = [dict(p) for p in (state.get("presets") or [])]
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
-        self.venue = state.get("venue")
+        self.venue = state.get("venue") or venue_mod.empty()
+        self.quick = [dict(b) for b in (state.get("quick") or [])]
+        self.timeline = tl_mod.normalise(state.get("timeline") or {})
+        self.quick_active = {k: v for k, v in self.quick_active.items()
+                             if any(b["id"] == k for b in self.quick)}
         self.mode = state.get("mode", self.mode)
         # Limits and orientation come back with the patch, so an undo
         # restores a fixture's rigging as well as its position.
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient"):
+            for key in ("limits", "orient", "mount", "rot", "stance"):
                 if key in got:
                     head[key] = got[key]
                 else:
@@ -1377,6 +1405,8 @@ class Engine:
             "kind": row.get("kind") or ("truss" if y >= 2.0 else "floor"),
             "role": row.get("role") or "generic",
             "curve": "linear",
+            **({"mount": dict(row["mount"])} if isinstance(row.get("mount"), dict) else {}),
+            **({"stance": row["stance"]} if row.get("stance") in ("hang", "stand") else {}),
             "map": list(row.get("map") or ["raw"] * channels),
         }
         head["mapped"] = bool(row.get("mapped", not any(
@@ -1430,10 +1460,8 @@ class Engine:
             # No position given: hang it where that kind of light goes,
             # beside the others of its kind, instead of on (0, 0, 0).
             kind_now = fixture_kind.describe(plan[0])["type"]
-            spots = fixture_kind.place(
-                kind_now, len(plan), self.patch,
-                float(self.venue.get("width_m") or 0) or 10.0,
-                float(self.venue.get("depth_m") or 0) or 8.0)
+            spots = fixture_kind.place_in_venue(
+                kind_now, len(plan), self.patch, self.venue)
             for row, spot in zip(plan, spots):
                 row.update(spot)
         added = self._apply_plan(plan)
@@ -1665,7 +1693,7 @@ class Engine:
                 # sheets from one rig, and calling both `patch.csv` is how
                 # the wrong one gets handed to a house tech.
                 first = self.patch[0] if self.patch else {}
-                stem = (str(self.venue.get("name") or "").strip()
+                stem = (str((self.venue or {}).get("name") or "").strip()
                         or self._csv_name(first))
                 target = target / (stem + ".csv")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -2559,15 +2587,18 @@ class Engine:
             return out
 
     def _a_set_place(self, head=None, heads=None, x=None, y=None, z=None,
-                     kind=None, **_):
-        """Move a head on the stage (metres, floor = 0, truss from 2 m up).
+                     kind=None, rig=None, t=None, stance=None, snap=False,
+                     rot=None, **_):
+        """Put a head somewhere: free-standing at x/y/z, or on a rig.
 
-        This is the 3D view's drag handler: the operator drags a light to
-        where it actually hangs and the patch follows, because "head 17 is
-        at U1.113" is not what a lighting tech works with.  `kind` is
-        derived from the height when not given, so dragging a light above
-        2 m turns it into a truss fixture (which changes how it is drawn
-        and where its beam starts).
+        `rig` + `t` mounts it (t = 0..1 along the rig; when t is missing
+        the point nearest x/y/z is used).  `rig=""` lets go of a rig.
+        `snap` mounts to the nearest rig within reach of the new position.
+        `stance` is "hang" (under the bar) or "stand" (upright).  `rot` is
+        [yaw, pitch] in degrees for a light with no pan/tilt, or null to
+        let the visualiser aim it.  Positions are clamped to the room (plus
+        a margin), because a drag far from the camera turns a small mouse
+        move into a large jump and a light must never be lost off-screen.
         """
         targets: list[int] = []
         if head is not None:
@@ -2575,57 +2606,93 @@ class Engine:
         targets.extend(int(h) for h in (heads or []))
         if not targets:
             raise ValueError("head is required")
-        # Stage bounds.  A drag in the 3D view is a ray/plane intersection,
-        # so a light far from the camera amplifies a small screen movement
-        # into a large world jump - without a clamp, nudging a head
-        # repeatedly walks it off to x=28 in an 18 m room and the operator
-        # has no way to see it again.  Clamp to the drawn venue when there
-        # is one (plus a margin, so a light can sit just off the edge),
-        # otherwise to a generous default stage.
-        vw = float(self.venue.get("width_m") or 0.0)
-        vd = float(self.venue.get("depth_m") or 0.0)
-        half_w = (vw / 2.0 + 4.0) if vw > 0 else 40.0
-        max_z = (vd + 4.0) if vd > 0 else 60.0
-        max_y = (float(self.venue.get("height_m") or 0.0) + 4.0) \
-            if float(self.venue.get("height_m") or 0.0) > 0 else 20.0
+        b = venue_mod.bounds(self.venue)
+        half_w = max(abs(b["x0"]), abs(b["x1"])) + 4.0
+        min_z, max_z = b["z0"] - 4.0, b["z1"] + 4.0
+        max_y = b["h"] + 4.0
+        if stance not in (None, "hang", "stand"):
+            raise ValueError("stance is hang or stand")
         clamped = False
         moved = []
         for n in targets:
             h = self._head(n)                   # raises if unpatched
-            before = (h["x"], h["y"], h["z"])
-            if x is not None:
-                h["x"] = float(x)
-            if y is not None:
-                h["y"] = float(y)
-            if z is not None:
-                h["z"] = float(z)
-            cx = max(-half_w, min(half_w, h["x"]))
-            cy = max(0.0, min(max_y, h["y"]))
-            cz = max(0.0, min(max_z, h["z"]))
-            if (cx, cy, cz) != (h["x"], h["y"], h["z"]):
-                clamped = True
-            h["x"], h["y"], h["z"] = cx, cy, cz
-            h["kind"] = kind or ("truss" if h["y"] >= 2.0 else "floor")
-            if (h["x"], h["y"], h["z"]) != before or h["kind"] != kind:
+            before = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
+                      h.get("stance"), json.dumps(h.get("rot")))
+            px = float(x) if x is not None else h["x"]
+            py = float(y) if y is not None else h["y"]
+            pz = float(z) if z is not None else h["z"]
+            cx = max(-half_w, min(half_w, px))
+            cy = max(0.0, min(max_y, py))
+            cz = max(min_z, min(max_z, pz))
+            clamped = clamped or (cx, cy, cz) != (px, py, pz)
+            target_rig = None
+            tt = t
+            if rig:
+                target_rig = venue_mod.rig(self.venue, str(rig))
+                if not target_rig:
+                    raise ValueError(f"no rig {rig!r}")
+                if tt is None:
+                    near = venue_mod.nearest_rig(
+                        {"rigging": [target_rig]}, cx, cy, cz, reach=1e9)
+                    tt = near[1] if near else 0.5
+            elif rig is None and _truthy(snap):
+                near = venue_mod.nearest_rig(self.venue, cx, cy, cz, reach=0.6)
+                if near:
+                    target_rig, tt = near[0], near[1]
+            if stance is not None:
+                h["stance"] = stance
+            elif target_rig and (h.get("mount") or {}).get("rig") != target_rig["id"]:
+                h.pop("stance", None)        # a new rig: hang or stand as it does
+            if target_rig:
+                h["mount"] = {"rig": target_rig["id"],
+                              "t": round(max(0.0, min(1.0, float(tt))), 4)}
+                pos = venue_mod.mount_position(target_rig, h["mount"]["t"],
+                                               h.get("stance"))
+                h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]
+                h["stance"] = pos["orient"]
+            else:
+                if rig == "" or x is not None or y is not None or z is not None:
+                    was_mounted = bool(h.pop("mount", None))
+                    if was_mounted and stance is None:
+                        h.pop("stance", None)    # free again: height decides
+                h["x"], h["y"], h["z"] = cx, cy, cz
+            if rot is not None:
+                if isinstance(rot, (list, tuple)) and len(rot) == 2:
+                    h["rot"] = [round(float(rot[0]), 2) % 360,
+                                round(max(-180.0, min(180.0, float(rot[1]))), 2)]
+                else:
+                    h.pop("rot", None)
+            if kind in ("truss", "floor"):
+                h["kind"] = kind
+                if not h.get("mount"):
+                    h["stance"] = "hang" if kind == "truss" else "stand"
+            else:
+                side = h.get("stance")
+                h["kind"] = ("truss" if side == "hang" else "floor") if side \
+                    else ("truss" if h["y"] >= 2.0 else "floor")
+            after = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
+                     h.get("stance"), json.dumps(h.get("rot")))
+            if after != before:
                 moved.append(h["head_no"])
+        first = self._head(moved[0] if moved else targets[0])
         if not moved:
-            return {"head_no": targets[0], "heads": 0, "moved": False,
-                    "clamped": clamped,
-                    "x": self._head(targets[0])["x"],
-                    "y": self._head(targets[0])["y"],
-                    "z": self._head(targets[0])["z"],
-                    "kind": self._head(targets[0])["kind"]}
+            return {"head_no": first["head_no"], "heads": 0, "moved": False,
+                    "clamped": clamped, "x": first["x"], "y": first["y"],
+                    "z": first["z"], "kind": first["kind"],
+                    "mount": first.get("mount")}
         self.patch_rev += 1                 # the 3D view rebuilds on a rev
-        h = self._head(moved[0])
-        return {"head_no": h["head_no"], "heads": len(moved), "moved": True,
+        where = (f" on {first['mount']['rig']}" if first.get("mount") else "")
+        return {"head_no": first["head_no"], "heads": len(moved), "moved": True,
                 "moved_heads": moved, "clamped": clamped,
-                "x": h["x"], "y": h["y"], "z": h["z"],
-                "kind": h["kind"],
-                "bounds": {"half_width_m": half_w, "max_depth_m": max_z,
-                           "max_height_m": max_y},
+                "x": first["x"], "y": first["y"], "z": first["z"],
+                "kind": first["kind"], "mount": first.get("mount"),
+                "stance": first.get("stance"),
+                "bounds": {"half_width_m": half_w, "min_depth_m": min_z,
+                           "max_depth_m": max_z, "max_height_m": max_y},
                 "summary": f"moved {len(moved)} head(s) to "
-                           f"x{h['x']:.2f} y{h['y']:.2f} z{h['z']:.2f}"
-                           + (" (clamped to the stage)" if clamped else "")}
+                           f"x{first['x']:.2f} y{first['y']:.2f} "
+                           f"z{first['z']:.2f}{where}"
+                           + (" (clamped to the room)" if clamped else "")}
 
     # ------------------------------------------------------------------
     # -- arrange: align, distribute, mirror ----------------------------
@@ -2948,12 +3015,17 @@ class Engine:
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
+        "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
+        "venue_room", "venue_stage", "venue_add", "venue_update",
+        "venue_remove", "venue_underlay",
     })
     LOCK_LIBRARY = frozenset({
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset",
         "set_output", "save_show", "load_show", "import_show",
+        "quick_set", "quick_defaults", "timeline_set", "timeline_track",
+        "timeline_clip", "timeline_from_playback",
     })
 
     LOCK_STATES = ("design", "operate", "locked")
@@ -3021,47 +3093,899 @@ class Engine:
                 raise ValueError("wrong password")
         return self._a_set_lock(state="operate")
 
+    # ------------------------------------------------------------------
+    # the venue (app/venue.py): room, stage, zones, rigging, objects
+    # ------------------------------------------------------------------
+    def _set_venue_doc(self, v: dict) -> None:
+        """Store a new venue and carry mounted heads with their rigs."""
+        self.venue = v
+        self._reflow_mounts()
+        self.patch_rev += 1
+
+    def _reflow_mounts(self) -> list[int]:
+        """Put every mounted head back on its rig (after a rig moved), and
+        let go of mounts whose rig was removed."""
+        moved = []
+        for h in self.patch:
+            m = h.get("mount")
+            if not isinstance(m, dict):
+                continue
+            r = venue_mod.rig(self.venue, m.get("rig"))
+            if not r:
+                h.pop("mount", None)
+                continue
+            pos = venue_mod.mount_position(r, m.get("t", 0.5), h.get("stance"))
+            if (h["x"], h["y"], h["z"]) != (pos["x"], pos["y"], pos["z"]):
+                moved.append(h["head_no"])
+            h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]
+            h["stance"] = pos["orient"]
+            h["kind"] = "truss" if pos["orient"] == "hang" else "floor"
+        return moved
+
+    def ensure_venue(self, default: str = "club") -> bool:
+        """Give an empty desk a room to look at.  Not an undo step: it is
+        the starting point, not an edit."""
+        with self.lock:
+            if not self.venue.get("auto") or self.patch:
+                return False
+            self.venue = venue_mod.template(default)
+            self.patch_rev += 1
+            return True
+
+    def _venue_result(self, summary: str, **extra) -> dict:
+        return {"venue": self.venue, "summary": summary, **extra}
+
     def _a_set_venue(self, venue=None, width_m=None, depth_m=None,
                      height_m=None, name=None, surfaces=None, **_):
-        """Store the room the operator drew (metres).
+        """Replace the whole venue: a v2 document, or the old
+        {width_m, depth_m, height_m, surfaces} room."""
+        if isinstance(venue, dict) and int(venue.get("version") or 1) >= 2:
+            v = venue_mod.normalise(venue)
+        else:
+            raw = dict(venue) if isinstance(venue, dict) else {}
+            for key, val in (("width_m", width_m), ("depth_m", depth_m),
+                             ("height_m", height_m), ("name", name),
+                             ("surfaces", surfaces)):
+                if val is not None:
+                    raw[key] = val
+            v = venue_mod.normalise(raw)
+        self._set_venue_doc(v)
+        w, d, h = venue_mod.dims(v)
+        return self._venue_result(
+            f"venue {v.get('name') or 'room'} {w:g} x {d:g} m"
+            + (f" x {h:g} m high" if h else ""))
 
-        The visualiser reads it to draw the floor, the walls and any
-        truss lines, so the beams land on something real.  With nothing
-        stored it falls back to a stage sized around the patch, which is
-        why the view is never an empty void.
-        """
-        data = venue if isinstance(venue, dict) else {}
-        def num(value, key, fallback=0.0):
-            raw = value if value is not None else data.get(key, fallback)
-            try:
-                return float(raw)
-            except (TypeError, ValueError):
-                return fallback
-        w, d = num(width_m, "width_m"), num(depth_m, "depth_m")
-        hgt = num(height_m, "height_m")
-        rows = surfaces if surfaces is not None else data.get("surfaces")
-        clean_surfaces = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            try:
-                clean_surfaces.append({
-                    "kind": str(row.get("kind") or "wall")[:20],
-                    "x1": float(row["x1"]), "y1": float(row["y1"]),
-                    "z1": float(row["z1"]), "x2": float(row["x2"]),
-                    "y2": float(row["y2"]), "z2": float(row["z2"]),
-                    "color": str(row.get("color") or "#64748b")[:24],
-                })
-            except (KeyError, TypeError, ValueError):
-                continue                     # a malformed line, not a failure
-        self.venue = {"width_m": w, "depth_m": d, "height_m": hgt,
-                      "name": str(name or data.get("name") or "stage")[:60],
-                      "surfaces": clean_surfaces}
+    def _a_venue_template(self, name="club", width=None, depth=None,
+                          height=None, keep_mounts=False, **_):
+        """Start from a ready-made room: club, small_club, warehouse,
+        concert, theatre, ballroom or outdoor."""
+        v = venue_mod.template(name, width, depth, height)
+        if not _truthy(keep_mounts):
+            for h in self.patch:
+                h.pop("mount", None)
+        self._set_venue_doc(v)
+        w, d, hh = venue_mod.dims(v)
+        return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m",
+                                  templates=venue_mod.template_list())
+
+    def _a_venue_room(self, width=None, depth=None, height=None, back=None,
+                      ceiling=None, floor=None, wall_colour=None,
+                      outline=None, name=None, **_):
+        v = venue_mod.normalise(self.venue)
+        room = dict(v["room"])
+        for key, val in (("width", width), ("depth", depth), ("height", height),
+                         ("back", back), ("ceiling", ceiling), ("floor", floor),
+                         ("wall_colour", wall_colour), ("outline", outline)):
+            if val is not None:
+                room[key] = val
+        v["room"] = room
+        if name is not None:
+            v["name"] = str(name)
+        v["auto"] = False
+        v = venue_mod.normalise(v)
+        if not (v["room"]["width"] and v["room"]["depth"]):
+            raise ValueError("the room needs a width and a depth")
+        self._set_venue_doc(v)
+        w, d, h = venue_mod.dims(v)
+        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m")
+
+    def _a_venue_stage(self, x=None, z=None, width=None, depth=None,
+                       height=None, remove=False, **_):
+        v = venue_mod.normalise(self.venue)
+        if _truthy(remove):
+            v["stage"] = None
+            self._set_venue_doc(v)
+            return self._venue_result("stage removed")
+        cur = dict(v.get("stage") or {"x": 0, "z": 0, "width": 8, "depth": 4,
+                                       "height": 0.6})
+        for key, val in (("x", x), ("z", z), ("width", width),
+                         ("depth", depth), ("height", height)):
+            if val is not None:
+                cur[key] = val
+        v["stage"] = cur
+        v = venue_mod.normalise(v)
+        if not v["stage"]:
+            raise ValueError("a stage needs a width and a depth")
+        self._set_venue_doc(v)
+        s = v["stage"]
+        return self._venue_result(
+            f"stage {s['width']:g} x {s['depth']:g} m, {s['height']:g} m high")
+
+    def _a_venue_add(self, item=None, **params):
+        """Add rigging, an object or a zone: {kind, ...}.  Kinds are in
+        app/venue.py (truss, pipe, tower, stand, base; dj_booth, bar,
+        speaker, pillar, riser, mark...; dancefloor, standing, bar...)."""
+        raw = dict(item) if isinstance(item, dict) else {
+            k: v for k, v in params.items() if not k.startswith("_")}
+        v, made = venue_mod.add_item(self.venue, raw)
+        self._set_venue_doc(v)
+        return self._venue_result(f"added {made['kind']} {made['id']}",
+                                  item=made, id=made["id"])
+
+    def _a_venue_update(self, id=None, changes=None, **params):
+        """Change one venue item; a moved rig carries its lights."""
+        if not id:
+            raise ValueError("id is required")
+        raw = dict(changes) if isinstance(changes, dict) else {
+            k: v for k, v in params.items() if not k.startswith("_")}
+        v, item = venue_mod.update_item(self.venue, str(id), raw)
+        self._set_venue_doc(v)
+        return self._venue_result(f"updated {item['kind']} {item['id']}",
+                                  item=item)
+
+    def _a_venue_remove(self, id=None, **_):
+        if not id:
+            raise ValueError("id is required")
+        v = venue_mod.remove_item(self.venue, str(id))
+        freed = [h["head_no"] for h in self.patch
+                 if (h.get("mount") or {}).get("rig") == str(id)]
+        self._set_venue_doc(v)
+        return self._venue_result(
+            f"removed {id}" + (f"; {len(freed)} light(s) now free-standing"
+                               if freed else ""), freed=freed)
+
+    def _a_venue_underlay(self, id=None, x=None, z=None, width=None,
+                          aspect=None, rot=None, opacity=None, show=None,
+                          remove=False, **_):
+        """A floor plan (image or PDF page) laid on the floor to trace."""
+        v = venue_mod.normalise(self.venue)
+        if _truthy(remove):
+            v["underlay"] = None
+        else:
+            cur = dict(v.get("underlay") or {})
+            for key, val in (("id", id), ("x", x), ("z", z), ("width", width),
+                             ("aspect", aspect), ("rot", rot),
+                             ("opacity", opacity), ("show", show)):
+                if val is not None:
+                    cur[key] = val
+            v["underlay"] = venue_mod.clean_underlay(cur)
+            if not v["underlay"]:
+                raise ValueError("upload a floor plan first")
+        self.venue = v
         self.patch_rev += 1
-        return {"venue": self.venue,
-                "summary": f"venue {self.venue['name']!r} "
-                           f"{w:g}x{d:g} m" + (f" x {hgt:g} m high"
-                                                if hgt else "")}
+        return self._venue_result("floor plan " + ("removed" if remove else "placed"))
+
+    def _a_venue_crowd(self, style=None, density=None, show=None, **_):
+        v = venue_mod.normalise(self.venue)
+        crowd = dict(v["crowd"])
+        for key, val in (("style", style), ("density", density), ("show", show)):
+            if val is not None:
+                crowd[key] = _truthy(val) if key == "show" else val
+        v["crowd"] = crowd
+        self.venue = venue_mod.normalise(v)
+        self.patch_rev += 1
+        c = self.venue["crowd"]
+        return self._venue_result(
+            f"crowd {c['style']} at {round(c['density'] * 100)}%"
+            + ("" if c["show"] else " (hidden)"))
+
+    def _a_venue_camera(self, name=None, pos=None, target=None, remove=False,
+                        **_):
+        if not name:
+            raise ValueError("name the view")
+        v = venue_mod.normalise(self.venue)
+        cams = [c for c in v["cameras"] if c["name"] != str(name)]
+        if not _truthy(remove):
+            if pos is None or target is None:
+                raise ValueError("pos and target are required")
+            cams.append({"name": str(name), "pos": pos, "target": target})
+        v["cameras"] = cams
+        self.venue = venue_mod.normalise(v)
+        self.patch_rev += 1
+        return self._venue_result(("removed" if remove else "saved")
+                                  + f" view {name}")
+
+    def _a_venue_info(self, **_):
+        return {"venue": venue_mod.describe(self.venue),
+                "templates": venue_mod.template_list(),
+                "summary": "venue " + (self.venue.get("name") or "(auto)")}
+
+    # ------------------------------------------------------------------
+    # quick buttons: instant, MagicQ-style executor buttons
+    # ------------------------------------------------------------------
+    QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
+                   "release", "preset", "blackout")
+    QUICK_PAGES = 4
+    QUICK_SLOTS = 24
+
+    def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
+        kind = str(raw.get("kind") or "flash").lower()
+        if kind not in self.QUICK_KINDS:
+            raise ValueError(f"button kind must be one of {', '.join(self.QUICK_KINDS)}")
+        mode = str(raw.get("mode") or ("hold" if kind in ("flash", "strobe", "kill", "blackout") else
+                                       "latch" if kind in ("colour", "fx") else "tap")).lower()
+        if mode not in ("hold", "latch", "tap"):
+            raise ValueError("mode is hold, latch or tap")
+        target = raw.get("target") if isinstance(raw.get("target"), dict) else {"all": True}
+        clean_t: dict = {}
+        if target.get("group") is not None:
+            clean_t["group"] = int(target["group"])
+        elif target.get("heads"):
+            clean_t["heads"] = sorted({int(h) for h in target["heads"]})[:512]
+        elif target.get("type"):
+            clean_t["type"] = str(target["type"])[:30]
+        else:
+            clean_t["all"] = True
+        btn = {"id": f"q{page}-{slot}", "page": page, "slot": slot,
+               "label": str(raw.get("label") or kind.title())[:24],
+               "kind": kind, "mode": mode, "target": clean_t,
+               "colour": str(raw.get("colour") or "")[:9] or None}
+        if kind == "flash":
+            btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
+        if kind == "strobe":
+            btn["hz"] = float(_clamp(raw.get("hz", 10), 1, 20))
+        if kind == "colour" and not btn["colour"]:
+            raise ValueError("a colour button needs a colour")
+        if kind == "fx":
+            name = str(raw.get("fx") or "")
+            if name not in fxlib_mod.FX:
+                raise ValueError(f"unknown effect {name!r}")
+            btn["fx"] = name
+        if kind in ("go", "release"):
+            btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
+            if raw.get("cue") not in (None, ""):
+                btn["cue"] = int(raw["cue"])
+        if kind == "preset":
+            btn["preset"] = int(raw.get("preset") or 0)
+        return btn
+
+    def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
+        """Create, change or remove the quick button at page/slot."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if slot is None:
+            raise ValueError("slot is required")
+        slot = int(_clamp(slot, 1, self.QUICK_SLOTS))
+        key = f"q{page}-{slot}"
+        self.quick = [b for b in self.quick if b["id"] != key]
+        self.quick_active.pop(key, None)
+        if _truthy(clear) or button is None:
+            return {"id": key, "summary": f"cleared button {page}.{slot}"}
+        btn = self._quick_clean(dict(button), page, slot)
+        self.quick.append(btn)
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    def _quick_heads(self, btn: dict) -> list[int]:
+        return self._heads_for_target(btn.get("target") or {})
+
+    def _heads_for_target(self, t: dict) -> list[int]:
+        """Heads for a target: {group}, {heads}, {type} or all."""
+        patched = [h["head_no"] for h in self.patch]
+        if t.get("group") is not None:
+            for g in self.groups:
+                if g["n"] == t["group"]:
+                    return [h for h in g["heads"] if h in patched]
+            return []
+        if t.get("heads"):
+            return [h for h in t["heads"] if h in patched]
+        if t.get("type"):
+            want = t["type"]
+            return [h["head_no"] for h in self.patch
+                    if fixture_kind.describe(h)["type"] == want
+                    or fixture_kind.design_role(h) == want]
+        return patched
+
+    def _a_quick_press(self, id=None, page=None, slot=None, down=True, **_):
+        """Press (down=True) or release (down=False) a quick button."""
+        key = str(id) if id else f"q{int(page)}-{int(slot)}"
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if not btn:
+            raise ValueError(f"no button {key}")
+        down = _truthy(down)
+        kind, mode = btn["kind"], btn["mode"]
+        if kind in ("go", "release", "preset"):
+            if not down:
+                return {"id": key, "active": False}
+            if kind == "go":
+                params = {"playback": btn["playback"]}
+                if btn.get("cue"):
+                    params["cue"] = btn["cue"]
+                r = self._a_cue_go(**params)
+            elif kind == "release":
+                r = self._a_playback_release(playback=btn["playback"])
+            else:
+                r = self._a_include_preset(preset=btn["preset"])
+            return {"id": key, "active": False, "summary": r.get("summary") or btn["label"]}
+        active = key in self.quick_active
+        if mode == "latch":
+            if not down:
+                return {"id": key, "active": active}
+            turn_on = not active
+        else:                                   # hold (tap behaves as hold)
+            turn_on = down
+        if turn_on:
+            self._quick_on(key, owner="hand")
+        else:
+            self._quick_off(key, owner="hand", force=mode == "latch")
+        on = key in self.quick_active
+        return {"id": key, "active": on,
+                "summary": f"{btn['label']} {'on' if on else 'off'}"}
+
+    def _quick_on(self, key: str, owner: str = "hand") -> None:
+        """Hold a button on for `owner` (a hand, or a timeline clip)."""
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if not btn:
+            return
+        run = self.quick_active.get(key)
+        if run is None:
+            run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
+                   "owners": set()}
+            if btn["kind"] == "fx":
+                try:
+                    r = self._a_run_fx(name=btn["fx"], heads=run["heads"])
+                    run["fx"] = r.get("fx")
+                except ValueError:
+                    pass
+            self.quick_active[key] = run
+        run.setdefault("owners", set()).add(owner)
+
+    def _quick_off(self, key: str, owner: str = "hand", force: bool = False) -> None:
+        """Let go for `owner`; the button stays on while anyone holds it."""
+        run = self.quick_active.get(key)
+        if run is None:
+            return
+        owners = run.setdefault("owners", set())
+        owners.discard(owner)
+        if owners and not force:
+            return
+        self.quick_active.pop(key, None)
+        if run.get("fx"):
+            self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+
+    def _a_quick_release_all(self, **_):
+        for key in list(self.quick_active):
+            run = self.quick_active.pop(key)
+            if run.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != run["fx"]]
+        return {"summary": "all quick buttons released"}
+
+    def _a_quick_defaults(self, page=1, replace=False, **_):
+        """Fill a page with buttons that suit this rig: flash and strobe
+        per type of light, colour bumps, a kill, effects and GO."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if any(b["page"] == page for b in self.quick) and not _truthy(replace):
+            raise ValueError(f"page {page} already has buttons")
+        self.quick = [b for b in self.quick if b["page"] != page]
+        types: dict[str, int] = {}
+        for h in self.patch:
+            role = fixture_kind.design_role(h)
+            types[role] = types.get(role, 0) + 1
+        label = {"spot": "Movers", "beam": "Beams", "wash": "Washes", "par": "PARs",
+                 "bar": "Bars", "generic": "Lights"}
+        plan = [{"kind": "flash", "label": "Flash all", "colour": "#ffffff"},
+                {"kind": "strobe", "label": "Strobe all", "hz": 12},
+                {"kind": "kill", "label": "Kill all"},
+                {"kind": "strobe", "label": "Slow strobe", "hz": 4}]
+        for role in sorted(types, key=lambda r: -types[r])[:4]:
+            name = label.get(role, role.title())
+            plan.append({"kind": "flash", "label": f"Flash {name}", "target": {"type": role}})
+            plan.append({"kind": "strobe", "label": f"Strobe {name}", "target": {"type": role}, "hz": 10})
+        for hexc, nm in (("#ff0000", "Red"), ("#0033ff", "Blue"), ("#ffffff", "White"),
+                         ("#ff00cc", "Magenta"), ("#00ffaa", "Cyan"), ("#ffb000", "Amber")):
+            plan.append({"kind": "colour", "label": f"All {nm}", "colour": hexc, "mode": "hold"})
+        for fx_name in ("rainbow", "dimmer_chase", "sparks", "circle"):
+            if fx_name in fxlib_mod.FX:
+                plan.append({"kind": "fx", "label": fxlib_mod.FX[fx_name]["label"], "fx": fx_name})
+        plan.append({"kind": "go", "label": "GO PB1", "playback": 1})
+        plan.append({"kind": "blackout", "label": "Blackout (hold)"})
+        made = []
+        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+            btn = self._quick_clean(raw, page, slot)
+            self.quick.append(btn)
+            made.append(btn)
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"buttons": len(made), "summary": f"page {page}: {len(made)} buttons for this rig"}
+
+    def _override_vals(self) -> dict:
+        """Per-head overrides from the quick buttons that are held now."""
+        if not self.quick_active:
+            return {}
+        by_id = {b["id"]: b for b in self.quick}
+        out: dict[int, dict] = {}
+        heads = {h["head_no"]: h for h in self.patch}
+        for key, run in sorted(self.quick_active.items(), key=lambda kv: kv[1]["since"]):
+            btn = by_id.get(key)
+            if not btn:
+                continue
+            kind = btn["kind"]
+            for n in run["heads"]:
+                head = heads.get(n)
+                if head is None:
+                    continue
+                o = out.setdefault(n, {})
+                if kind in ("flash", "strobe"):
+                    o["level"] = max(o.get("level") or 0, btn.get("level", 100))
+                    gate = self._shutter_role(head)
+                    if gate and not any(r in HTP_ROLES for r in head["map"]):
+                        o.setdefault("set", {})[gate] = self._open_value(head, gate)
+                    if kind == "strobe":
+                        o["strobe"] = max(o.get("strobe") or 0, btn.get("hz", 10))
+                    if btn.get("colour"):
+                        o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
+                elif kind == "colour":
+                    o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
+                elif kind in ("kill", "blackout"):
+                    o["kill"] = True
+        return out
+
+    def _gates(self) -> dict:
+        """The value that closes each head's shutter, per the profile:
+        0 unless the profile says 0 is already open (then None)."""
+        cache = getattr(self, "_gate_cache", None)
+        if cache and cache[0] == self.patch_rev:
+            return cache[1]
+        gates = {}
+        for h in self.patch:
+            role = self._shutter_role(h)
+            if role is None:
+                continue
+            light_from = self._profile_levels(h)[1].get(role)
+            gates[h["head_no"]] = None if light_from == 0 else 0
+        self._gate_cache = (self.patch_rev, gates)
+        return gates
+
+    def _quick_public(self) -> dict:
+        return {"buttons": [dict(b) for b in self.quick],
+                "active": sorted(self.quick_active),
+                "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
+
+    def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
+                  **_):
+        """Point every selected moving head at one spot in the room.
+
+        Solved per head from where it hangs and which way up it is, through
+        its own pan/tilt travel, so twelve movers on three trusses all land
+        on the same mark - the thing you would otherwise do head by head.
+        """
+        import math
+        if mark:
+            found = next((o for o in (self.venue.get("objects") or [])
+                          if o.get("kind") == "mark"
+                          and str(o.get("name") or "").lower() == str(mark).lower()), None)
+            if not found:
+                raise ValueError(f"no mark named {mark!r}")
+            x, z = found["x"], found["z"]
+            y = float(found.get("y") or 0) + 1.2
+        if x is None or z is None:
+            raise ValueError("x and z (or a mark) are required")
+        tx, ty, tz = float(x), float(y if y is not None else 0.0), float(z)
+        rows = ([self._head(int(h)) for h in heads] if heads
+                else self._require_selection())
+        aimed, skipped = [], []
+        for h in rows:
+            if "pan" not in h["map"] or "tilt" not in h["map"]:
+                skipped.append(h["head_no"])
+                continue
+            hung = (h.get("stance") == "hang") if h.get("stance") else \
+                h.get("kind") == "truss"
+            ox, oy, oz = h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]
+            dx, dy, dz = tx - ox, ty - oy, tz - oz
+            n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+            dx, dy, dz = dx / n, dy / n, dz / n
+            lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
+            t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
+            p0 = math.degrees(math.atan2(lx, lz))
+            ranges = self.head_ranges(h)
+            pr = ranges.get("pan") or {}
+            tr = ranges.get("tilt") or {}
+            pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
+                          and pr.get("min") is not None else (-270.0, 270.0))
+            tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
+                          and tr.get("min") is not None else (-135.0, 135.0))
+            cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
+            cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
+            fits = [(p, t) for p, t in cands
+                    if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
+            if not fits:
+                skipped.append(h["head_no"])
+                continue
+            p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
+            fp = (p - pmin) / ((pmax - pmin) or 1)
+            ft = (t - tmin) / ((tmax - tmin) or 1)
+            flags = h.get("orient") or {}
+            if flags.get("invert_pan"):
+                fp = 1 - fp
+            if flags.get("invert_tilt"):
+                ft = 1 - ft
+            if flags.get("swap"):
+                fp, ft = ft, fp
+            top = 65535 if "pan_fine" in h["map"] else 255
+            self._a_set_position(pan=round(max(0, min(1, fp)) * top),
+                                 tilt=round(max(0, min(1, ft)) * top),
+                                 unit="logical", head=h["head_no"])
+            aimed.append(h["head_no"])
+        if not aimed:
+            raise ValueError("none of those lights can pan and tilt"
+                             if skipped else "nothing selected")
+        return {"heads": aimed, "skipped": skipped, "target": [tx, ty, tz],
+                "summary": f"aimed {len(aimed)} light(s) at "
+                           f"x{tx:.1f} z{tz:.1f}"
+                           + (f" ({len(skipped)} cannot move)" if skipped else "")}
+
+    # ------------------------------------------------------------------
+    # the timeline (app/timeline.py): the engine owns the clock
+    # ------------------------------------------------------------------
+    TIMELINE_TICK = 0.02
+
+    def _tl_now(self) -> float:
+        st = self.tl
+        if not st["playing"]:
+            return st["pos"]
+        return st["pos0"] + (self._clock() - st["t0"])
+
+    def _timeline_public(self) -> dict:
+        return {**self.timeline, "transport": self._tl_transport()}
+
+    def _tl_transport(self) -> dict:
+        return {"playing": self.tl["playing"],
+                "pos": round(min(self._tl_now(), self.timeline["length"]), 3),
+                "length": self.timeline["length"], "loop": self.timeline["loop"]}
+
+    def _tl_set_doc(self, doc: dict) -> None:
+        self.timeline = tl_mod.normalise(doc)
+
+    def _a_timeline_set(self, timeline=None, length=None, bpm=None, loop=None,
+                        audio=None, markers=None, clear_audio=False, **_):
+        """Replace the timeline, or change its length, tempo, loop, audio
+        or markers."""
+        doc = dict(timeline) if isinstance(timeline, dict) else dict(self.timeline)
+        for key, val in (("length", length), ("bpm", bpm), ("loop", loop),
+                         ("audio", audio), ("markers", markers)):
+            if val is not None:
+                doc[key] = _truthy(val) if key == "loop" else val
+        if _truthy(clear_audio):
+            doc["audio"] = None
+        self._tl_set_doc(doc)
+        t = self.timeline
+        return {"timeline": self._timeline_public(),
+                "summary": f"timeline {t['length']:g} s at {t['bpm']:g} BPM"
+                           + (", looping" if t["loop"] else "")}
+
+    def _a_timeline_track(self, id=None, remove=False, **fields):
+        """Add a track ({kind, name, playback|target}), change one, or
+        remove it (remove=true)."""
+        fields = {k: v for k, v in fields.items() if not k.startswith("_")}
+        if id and _truthy(remove):
+            before = len(self.timeline["tracks"])
+            self._tl_release_spans()
+            self.timeline["tracks"] = [t for t in self.timeline["tracks"] if t["id"] != id]
+            if len(self.timeline["tracks"]) == before:
+                raise ValueError(f"no track {id}")
+            return {"summary": f"removed track {id}"}
+        if id:
+            doc = tl_mod.normalise(json.loads(json.dumps(self.timeline)))
+            t = tl_mod.track(doc, id)
+            if not t:
+                raise ValueError(f"no track {id}")
+            merged = {**t, **{k: v for k, v in fields.items() if k not in ("id", "kind", "clips")}}
+            clean = tl_mod.clean_track(merged, doc)
+            doc["tracks"] = [clean if x["id"] == id else x for x in doc["tracks"]]
+            self._tl_set_doc(doc)
+            return {"track": clean, "summary": f"track {clean['name']}"}
+        doc, t = tl_mod.with_track(self.timeline, fields)
+        self._tl_set_doc(doc)
+        return {"track": t, "id": t["id"], "summary": f"added {t['kind']} track {t['name']}"}
+
+    def _a_timeline_clip(self, track=None, id=None, remove=False, **fields):
+        """Add a clip to a track, change one (move, resize, retarget) or
+        remove it."""
+        fields = {k: v for k, v in fields.items() if not k.startswith("_")}
+        doc = tl_mod.normalise(json.loads(json.dumps(self.timeline)))
+        if id:
+            found = tl_mod.find_clip(doc, str(id))
+            if not found:
+                raise ValueError(f"no clip {id}")
+            t, c = found
+            if _truthy(remove):
+                t["clips"] = [x for x in t["clips"] if x["id"] != c["id"]]
+                self._tl_release_spans()
+                self._tl_set_doc(doc)
+                return {"summary": "clip removed"}
+            clean = tl_mod.clean_clip(t["kind"], {**c, **fields, "id": c["id"]}, doc)
+            if not clean:
+                raise ValueError("that change would leave the clip invalid")
+            t["clips"] = sorted([clean if x["id"] == c["id"] else x for x in t["clips"]],
+                                key=lambda x: x["t"])
+            self._tl_set_doc(doc)
+            return {"clip": clean, "summary": f"clip at {clean['t']:.2f} s"}
+        t = tl_mod.track(doc, str(track or ""))
+        if not t:
+            raise ValueError(f"no track {track}")
+        fields.pop("id", None)
+        clean = tl_mod.clean_clip(t["kind"], fields, doc)
+        if not clean:
+            raise ValueError({"cue": "a cue clip needs a time",
+                              "button": "a button clip needs a button",
+                              "fx": "an effect clip needs an effect",
+                              "level": "a level key needs a time"}[t["kind"]])
+        t["clips"] = sorted(t["clips"] + [clean], key=lambda x: x["t"])
+        doc["length"] = max(doc["length"], clean["t"] + clean.get("dur", 0) + 1)
+        self._tl_set_doc(doc)
+        return {"clip": clean, "id": clean["id"],
+                "summary": f"added a clip at {clean['t']:.2f} s"}
+
+    def _a_timeline_from_playback(self, playback=1, start=0.0, **_):
+        """Lay a playback's cue list out on a new cue track, one clip per
+        cue, spaced by each cue's fade, hold and follow."""
+        pb = self._playback(playback)
+        if not pb["stack"]:
+            raise ValueError(f"playback {pb['n']} has no cues")
+        doc, t = tl_mod.with_track(self.timeline, {
+            "kind": "cue", "name": pb.get("name") or f"PB{pb['n']}",
+            "playback": pb["n"],
+            "clips": tl_mod.clips_from_stack(pb["stack"], float(start or 0))})
+        doc["length"] = max(doc["length"], tl_mod.end_time(doc) + 4)
+        self._tl_set_doc(doc)
+        return {"track": t, "id": t["id"],
+                "summary": f"{len(t['clips'])} cues from PB{pb['n']} on the timeline"}
+
+    # -- transport -------------------------------------------------------
+    def _a_timeline_play(self, at=None, **_):
+        st = self.tl
+        if at is not None:
+            self._a_timeline_seek(t=at)
+        if not st["playing"]:
+            now = self._clock()
+            if st["pos"] >= self.timeline["length"] - 1e-3:
+                st["pos"] = 0.0
+            st.update({"playing": True, "t0": now, "pos0": st["pos"],
+                       "last": st["pos"] - 1e-6})
+            self._ensure_tl_thread()
+        return {"transport": self._tl_transport(), "summary": "timeline playing"}
+
+    def _a_timeline_pause(self, **_):
+        st = self.tl
+        if st["playing"]:
+            st["pos"] = min(self._tl_now(), self.timeline["length"])
+            st["playing"] = False
+            self._tl_release_spans()
+        return {"transport": self._tl_transport(), "summary": "timeline paused"}
+
+    def _a_timeline_stop(self, **_):
+        self._a_timeline_pause()
+        self.tl["pos"] = 0.0
+        return {"transport": self._tl_transport(), "summary": "timeline stopped"}
+
+    def _a_timeline_seek(self, t=None, chase=True, **_):
+        """Jump the playhead; the rig is put where it would be at `t`."""
+        if t is None:
+            raise ValueError("t is required")
+        pos = max(0.0, min(float(t), self.timeline["length"]))
+        st = self.tl
+        now = self._clock()
+        self._tl_release_spans()
+        st.update({"pos": pos, "pos0": pos, "t0": now, "last": pos})
+        if _truthy(chase):
+            for tr in self.timeline["tracks"]:
+                if tr["kind"] == "cue" and not tr["mute"]:
+                    c = tl_mod.last_cue_before(tr, pos)
+                    if c and c["cue"] != "next":
+                        try:
+                            self._a_cue_go(playback=tr["playback"], cue=c["cue"])
+                        except ValueError:
+                            pass
+            self._tl_spans(pos)
+            self._tl_levels(pos)
+        return {"transport": self._tl_transport(), "summary": f"playhead at {pos:.2f} s"}
+
+    # -- firing ----------------------------------------------------------
+    def _tl_release_spans(self) -> None:
+        for cid, span in list(self.tl["spans"].items()):
+            if span.get("button"):
+                self._quick_off(span["button"], owner=cid)
+            if span.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != span["fx"]]
+            del self.tl["spans"][cid]
+
+    def _tl_fire(self, a: float, b: float) -> bool:
+        """Point events with a < t <= b: cue GOs and one-shot buttons."""
+        fired = False
+        by_id = {x["id"]: x for x in self.quick}
+        for tr in self.timeline["tracks"]:
+            if tr["mute"]:
+                continue
+            for c in tr["clips"]:
+                if not (a < c["t"] <= b):
+                    continue
+                if tr["kind"] == "cue":
+                    try:
+                        if c["cue"] == "next":
+                            self._a_cue_go(playback=tr["playback"])
+                        else:
+                            self._a_cue_go(playback=tr["playback"], cue=c["cue"])
+                        fired = True
+                    except ValueError:
+                        pass
+                elif tr["kind"] == "button":
+                    btn = by_id.get(c["button"])
+                    if btn and btn["kind"] in ("go", "release", "preset"):
+                        try:
+                            self._a_quick_press(id=btn["id"], down=True)
+                            fired = True
+                        except ValueError:
+                            pass
+        return fired
+
+    def _tl_spans(self, pos: float) -> bool:
+        """Start the button/effect clips the playhead is inside, stop the
+        ones it has left."""
+        want = {}
+        by_id = {x["id"]: x for x in self.quick}
+        for tr in self.timeline["tracks"]:
+            if tr["mute"] or tr["kind"] not in ("button", "fx"):
+                continue
+            for c in tl_mod.spans_at(tr, pos):
+                if tr["kind"] == "button":
+                    btn = by_id.get(c["button"])
+                    if btn and btn["kind"] not in ("go", "release", "preset"):
+                        want[c["id"]] = ("button", c)
+                else:
+                    want[c["id"]] = ("fx", c)
+        changed = False
+        for cid in [k for k in self.tl["spans"] if k not in want]:
+            span = self.tl["spans"].pop(cid)
+            if span.get("button"):
+                self._quick_off(span["button"], owner=cid)
+            if span.get("fx"):
+                self.fx = [f for f in self.fx if f["id"] != span["fx"]]
+            changed = True
+        for cid, (kind, c) in want.items():
+            if cid in self.tl["spans"]:
+                continue
+            if kind == "button":
+                self._quick_on(c["button"], owner=cid)
+                self.tl["spans"][cid] = {"button": c["button"]}
+            else:
+                heads = self._heads_for_target(c.get("target") or {"all": True})
+                try:
+                    r = self._a_run_fx(name=c["fx"], heads=heads) if heads else {}
+                except ValueError:
+                    r = {}
+                self.tl["spans"][cid] = {"fx": r.get("fx")}
+            changed = True
+        return changed
+
+    def _tl_levels(self, pos: float) -> None:
+        for tr in self.timeline["tracks"]:
+            if tr["mute"] or tr["kind"] != "level":
+                continue
+            v = tl_mod.level_at(tr, pos)
+            if v is None:
+                continue
+            v = int(round(v))
+            if tr["target"] == "master":
+                self.master = v
+            else:
+                try:
+                    pb = self._playback(int(tr["target"][2:]))
+                except (ValueError, TypeError):
+                    continue
+                pb["level"] = v
+
+    def _tick_timeline(self, now: float | None = None) -> None:
+        with self.lock:
+            st = self.tl
+            if not st["playing"]:
+                return
+            now = self._clock() if now is None else now
+            pos = st["pos0"] + (now - st["t0"])
+            length = self.timeline["length"]
+            fired = False
+            if pos >= length:
+                fired = self._tl_fire(st["last"], length)
+                self._tl_release_spans()
+                if self.timeline["loop"]:
+                    pos = (pos - length) % max(length, 1e-3)
+                    st.update({"pos0": pos, "t0": now, "last": -1e-6})
+                else:
+                    st.update({"playing": False, "pos": length, "last": length})
+                    self.act_rev += 1
+                    return
+            fired = self._tl_fire(st["last"], pos) or fired
+            spans = self._tl_spans(pos)
+            self._tl_levels(pos)
+            st["last"] = pos
+            st["pos"] = pos
+            if fired or spans:
+                self.act_rev += 1
+
+    def _tl_loop(self) -> None:
+        while not self._tl_stop.wait(self.TIMELINE_TICK):
+            if not self.tl["playing"]:
+                break
+            try:
+                self._tick_timeline()
+            except Exception as exc:            # never die silently
+                self.output["last_error"] = f"timeline: {exc}"
+        self._tl_thread = None
+
+    def _ensure_tl_thread(self) -> None:
+        if self._tl_thread is not None and self._tl_thread.is_alive():
+            return
+        self._tl_stop.clear()
+        thread = threading.Thread(target=self._tl_loop, name="jarvis-timeline",
+                                  daemon=True)
+        self._tl_thread = thread
+        thread.start()
+
+    def _a_place_many(self, moves=None, rig=None, **_):
+        """Move several heads at once (a dragged selection): one undo step.
+        With `rig`, each head mounts on it at the point nearest where it
+        was dropped - drop a row of lights on a truss and they hang there."""
+        if not isinstance(moves, list) or not moves:
+            raise ValueError("moves must be a list of {head, x, y, z}")
+        target = venue_mod.rig(self.venue, str(rig)) if rig else None
+        if rig and not target:
+            raise ValueError(f"no rig {rig!r}")
+        done = []
+        for m in moves[:512]:
+            if not isinstance(m, dict) or m.get("head") is None:
+                continue
+            if target:
+                near = venue_mod.nearest_rig({"rigging": [target]}, float(m.get("x", 0)),
+                                             float(m.get("y", 0)), float(m.get("z", 0)),
+                                             reach=1e9)
+                self._a_set_place(head=m["head"], rig=target["id"],
+                                  t=near[1] if near else 0.5)
+            else:
+                self._a_set_place(head=m["head"], x=m.get("x"), y=m.get("y"),
+                                  z=m.get("z"))
+            done.append(int(m["head"]))
+        return {"heads": done, "rig": target["id"] if target else None,
+                "summary": f"moved {len(done)} light(s)"
+                           + (f" onto {target['name'] or target['id']}" if target else "")}
+
+    def _a_attach_heads(self, heads=None, head=None, rig=None,
+                        spacing=None, stance=None, **_):
+        """Hang (or stand) heads along one rig, spread evenly from its
+        middle - the "put these on the front truss" gesture."""
+        r = venue_mod.rig(self.venue, str(rig or ""))
+        if not r:
+            raise ValueError(f"no rig {rig!r}")
+        rows = ([self._head(int(head))] if head is not None
+                else (self._cmd_rows(heads) if heads
+                      else self._require_selection()))
+        others = [float(h["mount"]["t"]) for h in self.patch
+                  if (h.get("mount") or {}).get("rig") == r["id"]
+                  and h not in rows]
+        gap = float(spacing) if spacing else (0.5 if r["kind"] == "pipe" else 0.7)
+        slots = venue_mod.free_slots(r, others, len(rows), gap)
+        if len(slots) < len(rows):
+            raise ValueError(f"{r['name'] or r['id']} has room for "
+                             f"{len(slots)} more at {gap:g} m spacing")
+        slots.sort()
+        rows = sorted(rows, key=lambda h: h["x"])
+        side = stance if stance in ("hang", "stand") else None
+        for h, t in zip(rows, slots):
+            h["mount"] = {"rig": r["id"], "t": t}
+            if side:
+                h["stance"] = side
+            else:
+                h.pop("stance", None)
+        self._reflow_mounts()
+        self.patch_rev += 1
+        return {"heads": [h["head_no"] for h in rows], "rig": r["id"],
+                "summary": f"{len(rows)} light(s) on {r['name'] or r['id']}"}
 
     def _a_locate(self, **_):
         """Show the selection: full light, white/open colour, open gobo.
@@ -4364,6 +5288,8 @@ class Engine:
             pass
         self._stop_output()
         self._stop_follow_thread()
+        self.tl["playing"] = False
+        self._tl_stop.set()
         self._stop_writer()               # flush any queued autosave
         if config.DMX_BLACKOUT_ON_EXIT and not self.dry_run:
             try:
@@ -4525,7 +5451,8 @@ class Engine:
 
     def _resolve_head(self, head: dict, prog: dict,
                       pb_vals: list[tuple[int, dict]],
-                      fx_row: dict[str, int] | None = None) -> dict:
+                      fx_row: dict[str, int] | None = None,
+                      over: dict | None = None) -> dict:
         """Final per-role values for one head, through the shared merge.
 
         Delegated to app/merge.py (see that module for the precedence
@@ -4533,7 +5460,8 @@ class Engine:
         both call the same function.
         """
         return merge.resolve_head(head, prog, pb_vals, fx_row,
-                                  self.master, self.blackout)
+                                  self.master, self.blackout, over, None,
+                                  self._gates().get(head["head_no"], 0))
 
     def _programmer_now(self, now: float) -> dict:
         """The programmer as it is at `now`, mid-fade if one is running."""
@@ -4566,7 +5494,9 @@ class Engine:
         return merge.build_frames(self.patch, self._programmer_now(now),
                                   self._active_playbacks(now),
                                   self._fx_values(now),
-                                  self.master, self.blackout)
+                                  self.master, self.blackout,
+                                  overrides=self._override_vals(), now=now,
+                                  gates=self._gates())
 
     def channel_report(self, heads: list[int] | None = None) -> dict:
         """Per-channel DMX truth: label, role, and the byte on the wire.
@@ -4827,6 +5757,9 @@ class Engine:
             "min": None, "max": None, "unit": "raw", "phys": None,
         }
         heads = [h for h in rows if h["head_no"] in set(capable)]
+        if role in ("shutter", "strobe") and heads:
+            # the value that means "open, not strobing" on this fixture
+            entry["open"] = self._open_value(heads[0], role)
         # The smallest domain on the capable heads, so a mixed selection
         # is not offered a number only some of them can take.
         full = min([attr_domain(h, role) for h in heads] or [255])
@@ -5722,10 +6655,12 @@ class Engine:
         prog = self._programmer_now(now)
         pb_vals = self._active_playbacks(now)
         fx_vals = self._fx_values(now)
+        overrides = self._override_vals()
         out = []
         for head in self.patch:
+            over = overrides.get(head["head_no"])
             values = self._resolve_head(head, prog, pb_vals,
-                                        fx_vals.get(head["head_no"]))
+                                        fx_vals.get(head["head_no"]), over)
             intensity = None
             for role in HTP_ROLES:
                 if role in values:
@@ -5772,6 +6707,8 @@ class Engine:
             # screen exactly as they will on stage.
             beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
                     for r in _BEAM_LOOK_ROLES if r in values}
+            if over and over.get("strobe") and row["a"] > 0:
+                beam["strobe"] = round(min(1.0, float(over["strobe"]) / 20.0), 3)
             if beam:
                 row["beam"] = beam
             out.append(row)
@@ -5914,6 +6851,8 @@ class Engine:
                            for k, v in self.programmer.items()},
             "selected": list(self.selected),
             "venue": self.venue,
+            "quick": self.quick,
+            "timeline": self.timeline,
             "meta": {"master": self.master,
                      "show_file": self.show_file},
         }
@@ -6063,12 +7002,18 @@ class Engine:
             meta = payload.get("meta") or {}
             self.master = _clamp(meta.get("master", 100), 0, 100)
             self.show_file = meta.get("show_file") or self.show_file
+            self.timeline = tl_mod.normalise(payload.get("timeline") or {})
+            for b in payload.get("quick") or []:
+                try:
+                    self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
             venue = payload.get("venue")
             if isinstance(venue, dict):
                 try:
-                    self.act("set_venue", venue=venue)
+                    self.venue = venue_mod.normalise(venue)
                 except (ValueError, TypeError):
-                    self.venue = {}       # a bad venue must not block boot
+                    self.venue = venue_mod.empty()  # never block boot
         except (ValueError, TypeError, KeyError):
             return False
         return True
@@ -6090,6 +7035,9 @@ class Engine:
                                                    default=str)),
                 "presets": json.loads(json.dumps(self.presets, default=str)),
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
+                "venue": json.loads(json.dumps(self.venue, default=str)),
+                "quick": json.loads(json.dumps(self.quick, default=str)),
+                "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "meta": {"master": self.master},
             }
             text = json.dumps(payload, indent=2)
@@ -6236,6 +7184,14 @@ class Engine:
                    if isinstance(q, dict)]
         playbacks = _normalize_playbacks(payload.get("playbacks") or [])
         master = _clamp((payload.get("meta") or {}).get("master", 100), 0, 100)
+        venue = (venue_mod.normalise(payload["venue"])
+                 if isinstance(payload.get("venue"), dict) else None)
+        quick = []
+        for b in payload.get("quick") or []:
+            try:
+                quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+            except (KeyError, TypeError, ValueError):
+                continue
 
         # Commit phase: swap the whole show in under the lock.  A bad patch
         # raises from _replace_patch, which rolls the patch back, and the
@@ -6249,6 +7205,14 @@ class Engine:
             self.playbacks = playbacks
             self.master = master
             self.show_file = label
+            self.quick = quick
+            self.quick_active = {}
+            self._a_timeline_stop()
+            self.timeline = tl_mod.normalise(payload.get("timeline") or {})
+            if venue is not None:           # older shows kept no room
+                self.venue = venue
+                self._reflow_mounts()
+                self.patch_rev += 1
         return {"file": label, "heads": len(heads), "show_file": label,
                 "stale_heads": self._stale_heads(heads, playbacks),
                 "summary": f"loaded show {label!r} ({len(heads)} heads)"}
@@ -6508,6 +7472,8 @@ class Engine:
                 "shows": self._show_names(),
                 "show_file": self.show_file,
                 "venue": self.venue,
+                "quick": self._quick_public(),
+                "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.
                 # Both feeds carry it so the warning survives a reload
@@ -6546,7 +7512,8 @@ class Engine:
                 "lock": self.lock_state,
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
-                "venue": self.venue,
+                "quick_active": sorted(self.quick_active),
+                "timeline": self._tl_transport(),
                 "patch_rev": self.patch_rev,
                 "output": self._output_public(),
                 "programmer": self._programmer_public(),

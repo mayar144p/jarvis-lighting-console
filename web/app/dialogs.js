@@ -376,21 +376,48 @@ export async function saveShow(name) {
 }
 
 // ============================================================== settings
+const VENUE_TEMPLATES = [["club", "Club"], ["small_club", "Small club / bar"], ["warehouse", "Warehouse rave"],
+  ["concert", "Concert stage"], ["theatre", "Theatre"], ["ballroom", "Ballroom / event"], ["outdoor", "Outdoor stage"]];
 export async function openSettings() {
   const status = await get("/api/status").catch(() => ({}));
   const con = status.console || {};
   const v = (state.snap && state.snap.venue) || {};
-  const w = h("input", { type: "number", min: 2, step: 0.5, value: v.width_m || "" , placeholder: "auto" });
-  const d = h("input", { type: "number", min: 2, step: 0.5, value: v.depth_m || "", placeholder: "auto" });
-  const ht = h("input", { type: "number", min: 2, step: 0.5, value: v.height_m || "", placeholder: "auto" });
+  const room = v.room || {};
+  const auto = v.auto || !room.width;
+  const w = h("input", { type: "number", min: 4, step: 0.5, value: auto ? "" : room.width, placeholder: "auto" });
+  const d = h("input", { type: "number", min: 4, step: 0.5, value: auto ? "" : room.depth, placeholder: "auto" });
+  const ht = h("input", { type: "number", min: 2.2, step: 0.1, value: auto ? "" : room.height, placeholder: "auto" });
+  const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
+  tpl.value = v.template || "club";
+  const quality = h("select.select",
+    h("option", { value: "auto" }, "Auto (adapts to this computer)"),
+    h("option", { value: "high" }, "High (sharpest, needs a good GPU)"),
+    h("option", { value: "fast" }, "Fast (older laptops)"));
+  try { quality.value = localStorage.getItem("jarvis.quality") || "auto"; } catch (e) { /* ignore */ }
+  quality.addEventListener("change", () => {
+    try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }
+    import("./stagepanel.js").then((m) => { const st = m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
+  });
   const midi = status.midi || {};
   const body = h("div",
-    h("h3", "Stage"),
+    h("h3", "Venue"),
+    h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
+      : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
     h("div.form-grid",
-      h("label.field", h("span", "Width m"), w), h("label.field", h("span", "Depth m"), d), h("label.field", h("span", "Height m"), ht),
+      h("label.field", h("span", "Start from"), tpl),
       h("div.field", h("span", " "), h("button.btn", {
-        onclick: () => run("set_venue", { width_m: +w.value || 0, depth_m: +d.value || 0, height_m: +ht.value || 0, name: v.name || "stage" }, { toast: true }),
-      }, "Apply"))),
+        onclick: async () => {
+          if (!(await confirmBox("Replace the venue", "Start from this template? The room, rigging and zones are replaced; your lights stay where they are (Ctrl+Z undoes it).", { ok: "Replace" }))) return;
+          run("venue_template", { name: tpl.value, width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true });
+        },
+      }, "Use template"))),
+    h("div.form-grid",
+      h("label.field", h("span", "Width m"), w), h("label.field", h("span", "Depth m"), d), h("label.field", h("span", "Ceiling m"), ht),
+      h("div.field", h("span", " "), h("button.btn", {
+        onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
+      }, "Resize room"))),
+    h("h3", "3D view"),
+    h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
     h("dl.kv", { style: { display: "grid", gridTemplateColumns: "140px 1fr", gap: "6px 12px", margin: 0 } },
       h("dt.muted", "Protocol"), h("dd", { style: { margin: 0 } }, (con.transport || "artnet").toUpperCase()),

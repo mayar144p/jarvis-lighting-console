@@ -3,6 +3,7 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
+import { setTimelineVisible } from "./timeline.js";
 
 const cards = new Map();
 let gm = null;
@@ -105,7 +106,26 @@ function render() {
   $("#bo-btn").classList.toggle("on", !!s.blackout);
 }
 
+function wireModes() {
+  const modes = [...document.querySelectorAll("#pb-mode button")];
+  const set = (mode) => {
+    modes.forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+    $("#pb-strip").hidden = mode !== "faders";
+    $("#qb").hidden = mode !== "buttons";
+    $("#tl").hidden = mode !== "timeline";
+    setTimelineVisible(mode === "timeline");
+    document.body.dataset.bottom = mode;
+    try { localStorage.setItem("jarvis.bottom", mode); } catch (e) { /* ignore */ }
+    window.dispatchEvent(new Event("resize"));
+  };
+  modes.forEach((b) => b.addEventListener("click", () => set(b.dataset.mode)));
+  let saved = "faders";
+  try { saved = localStorage.getItem("jarvis.bottom") || saved; } catch (e) { /* ignore */ }
+  set(modes.some((b) => b.dataset.mode === saved) ? saved : "faders");
+}
+
 export function initPlaybacks() {
+  wireModes();
   gm = vfader($("#gm-fader"), {
     min: 0, max: 100,
     onInput: throttle((v) => { $("#gm-num").textContent = v; run("master", { level: v }, { silentError: true }); }, 60),

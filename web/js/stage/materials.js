@@ -18,6 +18,7 @@ export const LIGHTS = {
   uCone: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0.9, 0.95, 0, 0)) },
   uAmbient: { value: new THREE.Color(0x0b0d12) },
   uTime: { value: 0 },
+  uBounce: { value: 1 },                // crowd dancing, 0..1
 };
 
 // Gobo patterns, drawn analytically so no texture atlas is needed.  `uv`
@@ -90,11 +91,14 @@ void main() {
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= uCount) break;
     vec3 L = vWorldPos - uPos[i];
-    float d = length(L);
-    vec3 Ld = L / max(d, 1e-4);
-    float c = dot(Ld, uDir[i]);
+    float along = dot(L, uDir[i]);
+    if (along <= 0.0) continue;                 // behind the lens
+    float d2 = dot(L, L);
     vec4 cone = uCone[i];
-    if (c <= cone.x) continue;
+    if (along * along <= cone.x * cone.x * d2) continue;  // outside the cone
+    float d = sqrt(d2);
+    vec3 Ld = L / max(d, 1e-4);
+    float c = along / max(d, 1e-4);
     float spot = smoothstep(cone.x, cone.y, c);
     if (cone.z > 0.5) {
       vec3 dir = uDir[i];
@@ -137,6 +141,72 @@ export function surfaceMaterial(albedo, opts = {}) {
     uniforms, vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
     side: opts.side || THREE.FrontSide,
   });
+}
+
+// People: the same beam-lit surface, instanced, one colour per person, with
+// a small per-person bounce so a dance floor looks like one.
+const CROWD_VERT = /* glsl */ `
+#define MAX_LIGHTS ${MAX_LIGHTS}
+uniform float uTime;
+uniform float uBounce;
+uniform int uCount;
+uniform vec3 uPos[MAX_LIGHTS];
+uniform vec3 uDir[MAX_LIGHTS];
+uniform vec3 uCol[MAX_LIGHTS];
+uniform vec4 uCone[MAX_LIGHTS];
+uniform vec3 uAmbient;
+uniform vec3 uAlbedo;
+varying vec3 vColour;
+// People are lit per vertex: they are small on screen, and a dense dance
+// floor lit per pixel was the most expensive thing in the room.
+void main() {
+  mat4 im = mat4(1.0);
+#ifdef USE_INSTANCING
+  im = instanceMatrix;
+#endif
+  vec4 wp = modelMatrix * im * vec4(position, 1.0);
+  float ph = fract(sin(dot(im[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+  wp.y += uBounce * max(0.0, sin((uTime * (1.9 + ph * 0.4) + ph) * 6.2831)) * 0.05 * im[1][1];
+  vec3 N = normalize(mat3(modelMatrix) * mat3(im) * normal);
+  vec3 light = uAmbient * (0.6 + 0.4 * max(N.y, 0.0));
+  for (int i = 0; i < MAX_LIGHTS; i++) {
+    if (i >= uCount) break;
+    vec3 L = wp.xyz - uPos[i];
+    float along = dot(L, uDir[i]);
+    if (along <= 0.0) continue;
+    float d2 = dot(L, L);
+    vec4 cone = uCone[i];
+    if (along * along <= cone.x * cone.x * d2) continue;
+    float d = sqrt(d2);
+    float spot = smoothstep(cone.x, cone.y, along / d);
+    float lam = 0.35 + 0.65 * max(dot(N, -L / d), 0.0);
+    light += uCol[i] * spot * lam / (1.0 + 0.09 * d2);
+  }
+  vec3 tint = vec3(1.0);
+#ifdef USE_INSTANCING_COLOR
+  tint = instanceColor;
+#endif
+  vColour = uAlbedo * tint * light;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+
+const CROWD_FRAG = /* glsl */ `
+varying vec3 vColour;
+void main() { gl_FragColor = vec4(vColour, 1.0); }
+`;
+
+const crowdCache = new Map();
+
+export function crowdMaterial(albedo) {
+  const key = String(albedo);
+  if (crowdCache.has(key)) return crowdCache.get(key);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { ...LIGHTS, uAlbedo: { value: new THREE.Color(albedo) } },
+    vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
+  });
+  crowdCache.set(key, mat);
+  return mat;
 }
 
 // ---------------------------------------------------------------------------

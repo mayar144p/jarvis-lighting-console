@@ -5705,10 +5705,10 @@ def test_client_contracts() -> None:
                   f"{e.snapshot()['stale_heads']} vs {lit['stale_heads']}")
 
             # --- venue must reach the visualiser -------------------------
-            e.act("set_venue", width_m=20, depth_m=10, height_m=7)
-            check("venue is in both feeds",
-                  e.snapshot()["venue"]["width_m"] == 20
-                  and e.lite()["venue"]["width_m"] == 20, "")
+            e.act("venue_room", width=20, depth=10, height=7)
+            check("the venue is in the snapshot, not the 10 Hz feed",
+                  e.snapshot()["venue"]["room"]["width"] == 20
+                  and "venue" not in e.lite(), "")
 
             # --- a patch change must bump the rev the feeds key on -------
             rev = e.lite()["patch_rev"]
@@ -6038,6 +6038,11 @@ def test_web_app() -> None:
     mods = sorted((web / "app").glob("*.js")) + sorted((web / "js").rglob("*.js"))
     srcs = {m: m.read_text(encoding="utf-8") for m in mods}
 
+    check("pdf.js is vendored for PDF floor plans",
+          (web / "vendor" / "pdfjs" / "pdf.min.mjs").is_file()
+          and (web / "vendor" / "pdfjs" / "pdf.worker.min.mjs").is_file(), "")
+    check("the move gizmo is vendored",
+          (web / "vendor" / "three" / "addons" / "controls" / "TransformControls.js").is_file(), "")
     check("the page maps `three` and its addons to vendored files",
           '"three": "/vendor/three/three.module.js"' in html
           and (web / "vendor" / "three" / "three.module.js").is_file()
@@ -7470,6 +7475,10 @@ def _standalone_suites():
     ("gdtf geometry", test_gdtf_geometry),
     ("fx library", test_fx_library),
     ("show building", test_show_building),
+    ("venue", test_venue),
+    ("quick buttons", test_quick_buttons),
+    ("timeline", test_timeline),
+    ("auto show", test_autoshow),
     )
 
 
@@ -7498,6 +7507,521 @@ def test_fx_library() -> None:
     from tools import _fx_engine_check
 
     _fx_engine_check.run(check)
+
+
+def test_venue() -> None:
+    """The room: templates, rigging, mounting, placement and the feeds."""
+    print("venue (templates, rigging, mounts, placement)")
+    import base64
+    import tempfile
+    from app import engine as eng
+    from app import fixtures, merge
+    from app import venue as V
+
+    # --- the model on its own ------------------------------------------
+    junk = V.normalise({"version": 2, "room": {"width": "x", "depth": -3},
+                        "rigging": [{"kind": "nope"}, "junk", {"kind": "truss", "a": [0, 5, 1]}],
+                        "zones": [{"kind": "dancefloor", "points": [[0, 0]]}]})
+    check("junk normalises to a valid, auto venue",
+          junk["auto"] and junk["room"]["width"] == 0
+          and [r["kind"] for r in junk["rigging"]] == ["truss"] and junk["zones"] == [],
+          json.dumps(junk)[:200])
+    for key in V.TEMPLATES:
+        t = V.template(key)
+        w, d, h = V.dims(t)
+        ids = [x["id"] for k in ("rigging", "objects", "zones") for x in t[k]]
+        check(f"template {key} is a real room with unique ids",
+              w > 0 and d > 0 and h > 0 and not t["auto"] and len(ids) == len(set(ids))
+              and V.normalise(t) == t, f"{w}x{d}x{h} {len(ids)}")
+    club = V.template("club")
+    check("a club has trusses, a dance floor and a DJ booth",
+          sum(r["kind"] == "truss" for r in club["rigging"]) >= 3
+          and any(z["kind"] == "dancefloor" for z in club["zones"])
+          and any(o["kind"] == "dj_booth" for o in club["objects"]), "")
+    truss = {"id": "r1", "kind": "truss", "a": [-4, 5, 3], "b": [4, 5, 3], "size": 0.3}
+    hung = V.mount_position(truss, 0.5)
+    check("a light hangs under a horizontal truss",
+          hung["orient"] == "hang" and hung["y"] < 5 and hung["x"] == 0, json.dumps(hung))
+    over = V.mount_position(truss, 0.25, "stand")
+    check("or stands on top of it when asked", over["y"] > 5 and over["x"] == -2, json.dumps(over))
+    tower = {"id": "r2", "kind": "tower", "a": [2, 0, 3], "b": [2, 4, 3], "size": 0.3}
+    check("a tower's lights stand", V.mount_position(tower, 1)["orient"] == "stand", "")
+    slots = V.free_slots(truss, [0.5], 3, 1.0)
+    check("free slots keep their spacing and avoid a taken one",
+          len(slots) == 3 and all(abs(a - 0.5) * 8 >= 0.79 for a in slots)
+          and all(abs(a - b) * 8 >= 0.79 for a in slots for b in slots if a != b), str(slots))
+    near = V.nearest_rig({"rigging": [truss, tower]}, 1.0, 4.8, 3.2)
+    check("nearest rig finds the truss under a point",
+          near and near[0]["id"] == "r1" and abs(near[1] - 0.625) < 1e-6, str(near and near[1]))
+    check("nothing is near a point in mid-air",
+          V.nearest_rig({"rigging": [truss]}, 0, 1, 12) is None, "")
+    old = V.normalise({"width_m": 12, "depth_m": 8, "height_m": 6,
+                       "surfaces": [{"kind": "truss", "x1": -5, "y1": 5, "z1": 2,
+                                     "x2": 5, "y2": 5, "z2": 2}]})
+    check("an old show's room converts, keeping its truss",
+          old["version"] == 2 and old["stage"]["width"] == 12
+          and old["rigging"][0]["a"] == [-5.0, 5.0, 2.0], json.dumps(old)[:200])
+
+    # --- BLACKOUT reaches lights with no dimmer ---------------------------
+    head = {"head_no": 1, "map": ["pan", "tilt", "strobe", "red", "green", "blue"]}
+    prog = {1: {"strobe": 255, "red": 200, "green": 100}}
+    out = merge.resolve_head(head, prog, [], blackout=True)
+    check("blackout closes the gate of a dimmer-less head",
+          out["strobe"] == 0 and out["red"] == 0 and out["green"] == 0, str(out))
+    half = merge.resolve_head(head, prog, [], master=50)
+    check("the grand master scales its colour instead",
+          half["red"] == 100 and half["strobe"] == 255, str(half))
+
+    # --- the engine --------------------------------------------------------
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "v.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("a new engine has no drawn room", e.venue["auto"] is True, "")
+            check("ensure_venue gives an empty desk a club",
+                  e.ensure_venue() and e.venue["template"] == "club", "")
+            check("but never replaces one", e.ensure_venue() is False, "")
+            r = e.act("add_heads", query="Moving Head Spot 16ch", qty=6)
+            movers = [h for h in e.patch if h["model"].startswith("Moving")]
+            check("new moving heads are mounted on trusses",
+                  r["ok"] and all(h.get("mount") and h["stance"] == "hang" for h in movers),
+                  json.dumps([h.get("mount") for h in movers]))
+            check("spread apart, not piled up",
+                  len({(h["x"], h["z"]) for h in movers}) == 6, "")
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            pars = [h for h in e.patch if h["model"].startswith("LED PAR")]
+            stage = e.venue["stage"]
+            check("PARs stand on the stage deck",
+                  all(h["stance"] == "stand" and h["y"] == stage["height"] for h in pars),
+                  json.dumps([(h["y"], h.get("stance")) for h in pars]))
+            rig_id = movers[0]["mount"]["rig"]
+            riders = [h["head_no"] for h in e.patch if (h.get("mount") or {}).get("rig") == rig_id]
+            rig = V.rig(e.venue, rig_id)
+            before = {n: e._head(n)["z"] for n in riders}
+            r = e.act("venue_update", id=rig_id, changes={
+                "a": [rig["a"][0], rig["a"][1], rig["a"][2] + 1.5],
+                "b": [rig["b"][0], rig["b"][1], rig["b"][2] + 1.5]})
+            check("moving a truss carries its lights",
+                  r["ok"] and all(abs(e._head(n)["z"] - before[n] - 1.5) < 1e-6 for n in riders),
+                  r.get("error") or "")
+            e.act("undo")
+            check("and undo puts truss and lights back",
+                  all(abs(e._head(n)["z"] - before[n]) < 1e-6 for n in riders)
+                  and V.rig(e.venue, rig_id)["a"] == rig["a"], "")
+            n = riders[0]
+            e.act("set_place", head=n, x=0, y=0, z=9)
+            h = e._head(n)
+            check("dragging a light off its truss frees it and it stands",
+                  not h.get("mount") and h["kind"] == "floor", json.dumps(h.get("mount")))
+            pos = V.mount_position(V.rig(e.venue, rig_id), 0.5)
+            r = e.act("set_place", head=n, x=pos["x"] + 0.2, y=pos["y"] + 0.1,
+                      z=pos["z"], snap=True)
+            check("snap puts it back on the nearest truss",
+                  r["ok"] and (r["mount"] or {}).get("rig") == rig_id, json.dumps(r)[:200])
+            r = e.act("attach_heads", heads=[p["head_no"] for p in pars], rig=rig_id)
+            check("attach_heads hangs a set of lights along one rig",
+                  r["ok"] and all((e._head(p["head_no"]).get("mount") or {}).get("rig") == rig_id
+                                  for p in pars), r.get("error") or r.get("summary"))
+            r = e.act("venue_remove", id=rig_id)
+            check("removing a rig frees its lights in place",
+                  r["ok"] and len(r["freed"]) >= 4
+                  and not any((h.get("mount") or {}).get("rig") == rig_id for h in e.patch), "")
+            e.act("undo")
+            r = e.act("venue_add", item={"kind": "truss", "name": "Side",
+                                         "a": [-3, 4, 9], "b": [3, 4, 9]})
+            check("venue_add returns the new item's id",
+                  r["ok"] and V.rig(e.venue, r["id"]) is not None, json.dumps(r)[:200])
+            side = r["id"]
+            floor = [h for h in e.patch if h["model"].startswith("LED PAR")][:3]
+            for h in floor:                          # start them on the floor
+                e.act("set_place", head=h["head_no"], rig="", x=0, y=0, z=10)
+            r = e.act("place_many", rig=side, moves=[
+                {"head": h["head_no"], "x": -1 + i, "y": 3.7, "z": 9.1}
+                for i, h in enumerate(floor)])
+            placed = [e._head(h["head_no"]) for h in floor]
+            check("dropping a selection on a truss hangs every light on it",
+                  r["ok"] and all((h.get("mount") or {}).get("rig") == side for h in placed),
+                  r.get("error") or json.dumps([h.get("mount") for h in placed]))
+            check("floor lights dropped on a truss hang under it",
+                  all(h["stance"] == "hang" and h["y"] < 4 for h in placed),
+                  json.dumps([(h.get("stance"), h["y"]) for h in placed]))
+            check("each at the point nearest where it landed",
+                  sorted(round(h["x"]) for h in placed) == [-1, 0, 1],
+                  str([h["x"] for h in placed]))
+            e.act("undo")
+            check("the whole drop is one undo step",
+                  not any((e._head(h["head_no"]).get("mount") or {}).get("rig") == side
+                          for h in floor), "")
+            check("an unknown kind is refused",
+                  e.act("venue_add", item={"kind": "spaceship"})["ok"] is False, "")
+            r = e.act("venue_template", name="warehouse")
+            check("a template swap drops old mounts",
+                  r["ok"] and not any(h.get("mount") for h in e.patch), "")
+            check("an unknown template is refused, listing the real ones",
+                  "club" in (e.act("venue_template", name="moon")["error"] or ""), "")
+            r = e.act("venue_crowd", density=0.2, style="simple")
+            check("the crowd is a venue setting",
+                  e.venue["crowd"] == {"style": "simple", "density": 0.2, "show": True}, "")
+            r = e.act("venue_camera", name="FOH", pos=[0, 3, 20], target=[0, 2, 3])
+            check("a saved view is kept", e.venue["cameras"][0]["name"] == "FOH", "")
+            info = e.act("venue_info")
+            check("venue_info summarises for the AI",
+                  info["ok"] and info["venue"]["rigging"] and info["templates"], "")
+            check("venue_info is read-only (no undo step)",
+                  "venue_info" in eng._READ_ONLY, "")
+            e.act("set_lock", state="locked")
+            check("the patch lock also freezes the venue",
+                  e.act("venue_add", item={"kind": "pillar"})["ok"] is False, "")
+            e.act("set_lock", state="design")
+            e.act("save_show", name="room")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="room")
+                check("the venue travels with the show file",
+                      e2.venue["template"] == "warehouse"
+                      and e2.venue["cameras"][0]["name"] == "FOH", "")
+            finally:
+                e2.shutdown()
+        finally:
+            e.shutdown()
+
+    # --- floor plans ----------------------------------------------------------
+    from app import main as main_mod
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64).decode()
+    old_data = main_mod.config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        main_mod.config.DATA = Path(td)
+        try:
+            got = main_mod.save_underlay({"data": "data:image/png;base64," + png})
+            check("a PNG floor plan is stored by content",
+                  len(got["id"]) == 32 and main_mod.underlay_path(got["id"]) is not None, str(got))
+            check("a path in the id finds nothing",
+                  main_mod.underlay_path("../" + got["id"]) is not None
+                  and main_mod.underlay_path("../../etc/passwd") is None, "")
+            try:
+                main_mod.save_underlay({"data": base64.b64encode(b"%PDF-1.4 junk").decode()})
+                refused = False
+            except ValueError:
+                refused = True
+            check("a non-image is refused (PDFs are rendered in the browser)", refused, "")
+        finally:
+            main_mod.config.DATA = old_data
+
+
+def test_quick_buttons() -> None:
+    """Quick buttons (flash, strobe, colour, kill, fx, go) and aim_at."""
+    print("quick buttons and aim")
+    import math
+    import tempfile
+    from app import engine as eng
+    from app import fixtures, merge
+
+    # the override layer on its own
+    head = {"head_no": 1, "map": ["dimmer", "red", "green", "blue"]}
+    out = merge.resolve_head(head, {}, [], over={"level": 100})
+    check("flash lifts a dark head to full", out["dimmer"] == 100, str(out))
+    out = merge.resolve_head(head, {1: {"dimmer": 80}}, [], over={"kill": True})
+    check("kill takes it to nothing", out["dimmer"] == 0, str(out))
+    out = merge.resolve_head(head, {}, [], over={"level": 100}, blackout=True)
+    check("blackout still beats a flash", out["dimmer"] == 0, str(out))
+    out = merge.resolve_head(head, {}, [], over={"level": 100}, master=50)
+    check("and the grand master still scales it", out["dimmer"] == 50, str(out))
+    out = merge.resolve_head(head, {1: {"red": 255}}, [], over={"set": {"blue": 255, "red": 0}})
+    check("a colour bump replaces the colour", out["red"] == 0 and out["blue"] == 255, str(out))
+    lit = [merge.resolve_head(head, {}, [], over={"level": 100, "strobe": 10},
+                              now=100 + i / 400)["dimmer"] for i in range(400)]
+    frac = sum(1 for v in lit if v) / 400
+    check("a strobe gates the light in time on the wire", 0.2 < frac < 0.5, str(frac))
+    gate = {"head_no": 2, "map": ["pan", "tilt", "shutter", "red"]}
+    out = merge.resolve_head(gate, {2: {"shutter": 200, "red": 90}}, [], blackout=True, gate_closed=None)
+    check("a shutter that is open at 0 is not 'closed' to 0 (colour goes to 0 instead)",
+          out["shutter"] == 200 and out["red"] == 0, str(out))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "q.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.ensure_venue()
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=4)
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            r = e.act("quick_defaults")
+            check("suggested buttons fit the rig",
+                  r["ok"] and any(b["label"] == "Flash all" for b in e.quick)
+                  and any(b["target"].get("type") == "par" for b in e.quick), r.get("error") or "")
+            check("but never overwrite a page silently",
+                  e.act("quick_defaults")["ok"] is False, "")
+            check("setting buttons up is an undo step",
+                  e.act("undo")["ok"] and not e.quick, "")
+            e.act("quick_defaults")
+            flash = next(b for b in e.quick if b["label"] == "Flash all")
+            before = len(e._undo)
+            e.act("quick_press", id=flash["id"], down=True)
+            looks = e._looks()
+            check("holding Flash all lights every head", all(r["a"] == 1.0 for r in looks),
+                  str([r["a"] for r in looks]))
+            check("pressing a button is not an undo step", len(e._undo) == before, "")
+            e.act("quick_press", id=flash["id"], down=False)
+            check("releasing it lets go", not any(r["a"] > 0 for r in e._looks()), "")
+            red = next(b for b in e.quick if b["label"] == "All Red")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#0000ff")
+            e.act("quick_press", id=red["id"], down=True)
+            pars = [r for r in e._looks() if e._head(r["n"])["model"].startswith("LED PAR")]
+            check("a colour bump turns the PARs red while held",
+                  all(r["hex"].lower().startswith("#ff00") for r in pars), str([r["hex"] for r in pars]))
+            e.act("quick_press", id=red["id"], down=False)
+            fx_btn = next(b for b in e.quick if b["kind"] == "fx")
+            e.act("quick_press", id=fx_btn["id"], down=True)
+            n_fx = len(e.fx)
+            e.act("quick_press", id=fx_btn["id"], down=False)
+            check("an effect button latches (release does not stop it)", len(e.fx) == n_fx >= 1, "")
+            e.act("quick_press", id=fx_btn["id"], down=True)
+            check("and a second press stops it", len(e.fx) == n_fx - 1, str(len(e.fx)))
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "label": "x"})
+            check("a colour button without a colour is refused", r["ok"] is False, "")
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "strobe", "hz": 99, "target": {"group": 7}})
+            check("values are clamped (strobe rate <= 20 Hz)",
+                  r["ok"] and r["button"]["hz"] == 20, json.dumps(r.get("button")))
+            e.act("save_show", name="qb")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="qb")
+                check("buttons travel with the show file",
+                      any(b["label"] == "Flash all" for b in e2.quick) and not e2.quick_active, "")
+            finally:
+                e2.shutdown()
+
+            # aim_at: every mover's beam, recomputed the way the 3D view
+            # draws it, passes through the target
+            e.act("select_all")
+            r = e.act("aim_at", x=1.0, y=0.5, z=9.0)
+            check("aim_at aims the movers and skips the PARs",
+                  r["ok"] and len(r["heads"]) == 4 and len(r["skipped"]) == 4, r.get("summary"))
+            worst = 0.0
+            for row in e._looks():
+                if "pan" not in row:
+                    continue
+                h = e._head(row["n"])
+                rng = row.get("deg") or {}
+                pr, tr = rng.get("pan", [-270, 270]), rng.get("tilt", [-135, 135])
+                p = math.radians(pr[0] + row["pan"] * (pr[1] - pr[0]))
+                t = math.radians(tr[0] + row["tilt"] * (tr[1] - tr[0]))
+                d = [math.sin(t) * math.sin(p), math.cos(t), math.sin(t) * math.cos(p)]
+                hung = h.get("stance") == "hang"
+                if hung:
+                    d = [-d[0], -d[1], d[2]]
+                o = [h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]]
+                v = [(1.0, 0.5, 9.0)[i] - o[i] for i in range(3)]
+                along = sum(v[i] * d[i] for i in range(3))
+                worst = max(worst, math.sqrt(max(0.0, sum(x * x for x in v) - along * along)))
+            check("each beam passes within 10 cm of the target", worst < 0.1, f"{worst:.3f} m")
+            e.act("venue_add", item={"kind": "mark", "name": "Singer", "x": -2, "z": 2, "y": 0.8})
+            r = e.act("aim_at", mark="singer")
+            check("aim_at a performer mark by name", r["ok"] and r["target"][0] == -2, r.get("error") or "")
+        finally:
+            e.shutdown()
+
+
+def test_timeline() -> None:
+    """The show timeline: tracks, clips, the clock, seeking and saving."""
+    print("timeline (tracks, clips, clock, chase)")
+    import tempfile
+    from app import engine as eng
+    from app import fixtures
+    from app import timeline as T
+
+    junk = T.normalise({"length": -5, "bpm": 9999, "tracks": [
+        {"kind": "nope"}, {"kind": "button", "clips": [{"t": 1}]},
+        {"kind": "level", "target": "evil", "clips": [{"t": 2, "v": 500}, {"t": 1, "v": 10}]}]})
+    check("junk normalises safely",
+          junk["length"] == 1 and junk["bpm"] == 300
+          and [t["kind"] for t in junk["tracks"]] == ["button", "level"]
+          and junk["tracks"][0]["clips"] == [] and junk["tracks"][1]["target"] == "pb1"
+          and [c["t"] for c in junk["tracks"][1]["clips"]] == [1, 2]
+          and junk["tracks"][1]["clips"][1]["v"] == 100, json.dumps(junk)[:300])
+    lvl = {"clips": [{"t": 0, "v": 0}, {"t": 10, "v": 100}]}
+    check("level keys interpolate and hold at the ends",
+          T.level_at(lvl, 5) == 50 and T.level_at(lvl, -1) == 0 and T.level_at(lvl, 99) == 100, "")
+    laid = T.clips_from_stack([{"n": 1, "fade_s": 2, "hold_s": 1, "follow_s": 3},
+                               {"n": 2, "fade_s": 0, "hold_s": 0}, {"n": 3}], default_wait=4)
+    check("a cue list lays out by fade + hold + follow",
+          [c["t"] for c in laid] == [0, 6, 10], str([c["t"] for c in laid]))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "tl.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        clock = [1000.0]
+        e._clock = lambda: clock[0]
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            for hx in ("#ff0000", "#00ff00", "#0000ff"):
+                e.act("set_colour", hex=hx)
+                e.act("set_intensity", level=100)
+                e.act("record_cue", playback=1, fade=0, hold=1)
+            e.act("clear_programmer")
+            r = e.act("timeline_from_playback", playback=1)
+            check("a playback becomes a cue track", r["ok"] and len(r["track"]["clips"]) == 3,
+                  r.get("error") or "")
+            e.act("quick_defaults")
+            strobe = next(b for b in e.quick if b["label"] == "Strobe all")
+            bt = e.act("timeline_track", kind="button", name="Hits")["id"]
+            e.act("timeline_clip", track=bt, t=2.0, dur=1.0, button=strobe["id"])
+            lv = e.act("timeline_track", kind="level", target="master")["id"]
+            e.act("timeline_clip", track=lv, t=0, v=100)
+            e.act("timeline_clip", track=lv, t=10, v=0)
+            undo_before = len(e._undo)
+            e.act("timeline_play")
+            seen = {}
+            for step in (0.1, 2.5, 3.5, 5.0, 6.5):
+                clock[0] = 1000.0 + step
+                e._tick_timeline()
+                seen[step] = (e.playbacks[0]["index"] + 1, sorted(e.quick_active), e.master)
+            check("cue 1 fires at the start", seen[0.1][0] == 1, str(seen))
+            check("the hit holds its button for its length only",
+                  seen[2.5][1] == [strobe["id"]] and seen[3.5][1] == [], str(seen))
+            check("the next cue fires on time", seen[6.5][0] == 2, str(seen))
+            check("level automation drives the grand master",
+                  seen[5.0][2] == 50, str(seen))
+            e.act("timeline_seek", t=2.2)
+            check("seeking chases the rig (back to cue 1, hit held)",
+                  e.playbacks[0]["index"] == 0 and e.quick_active.get(strobe["id"]) is not None,
+                  str(e.playbacks[0]["index"]))
+            e.act("timeline_pause")
+            check("pausing lets go of held hits", not e.quick_active, "")
+            check("the transport never adds undo steps", len(e._undo) == undo_before,
+                  f"{undo_before} -> {len(e._undo)}")
+            r = e.act("timeline_clip", track=bt, t=1, dur=1, button="")
+            check("a button clip without a button is refused", r["ok"] is False, "")
+            e.act("save_show", name="tl")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="tl")
+                check("the timeline travels with the show file",
+                      [t["kind"] for t in e2.timeline["tracks"]] == ["cue", "button", "level"], "")
+            finally:
+                e2.shutdown()
+            e.act("timeline_set", loop=True, length=4)
+            e.act("timeline_play", at=3.9)
+            clock[0] += 0.3
+            e._tick_timeline()
+            check("a looping timeline wraps round",
+                  e.tl["playing"] and e.tl["pos"] < 1.0, str(e.tl["pos"]))
+        finally:
+            e.shutdown()
+
+
+def test_autoshow() -> None:
+    """A whole show designed from the rig and built onto the timeline."""
+    print("auto show (rig analysis, design, build)")
+    import tempfile
+    from app import autoshow, console_ai
+    from app import engine as eng
+    from app import fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "auto.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("an empty rig is refused, not guessed at",
+                  _raises(lambda: autoshow.design(e, "techno", offline=True)), "")
+            e.ensure_venue()
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=6)
+            e.act("add_heads", query="LED PAR 4ch", qty=6)
+            e.act("timeline_set", bpm=128, audio={"id": "x1", "name": "t.mp3", "duration": 180})
+            a = autoshow.analyse(e)
+            roles = {g["role"] for g in a["groups"].values()}
+            check("the analysis groups lights by type and where they are",
+                  {"spot", "par"} <= roles
+                  and any("Front truss" in g["name"] or "truss" in g["name"].lower()
+                          for g in a["groups"].values() if g["role"] == "spot"), json.dumps(
+                      {k: g["name"] for k, g in a["groups"].items()}))
+            check("it finds aim targets in the room",
+                  {"dj", "floor", "crowd"} <= set(a["targets"]), str(list(a["targets"])))
+            movers = next(g for g in a["groups"].values() if g["role"] == "spot")
+            pars = next(g for g in a["groups"].values() if g["role"] == "par")
+            check("capabilities are what every light in the group can do",
+                  movers["caps"]["pan_tilt"] and not pars["caps"]["pan_tilt"]
+                  and pars["caps"]["colour"] == "mix", json.dumps(movers["caps"]))
+            check("effects offered per group are ones it can run",
+                  "circle" in movers["fx"] and "circle" not in pars["fx"], "")
+            r = autoshow.design(e, "dark techno warehouse", offline=True)
+            d = r["design"]
+            check("an offline design has contrasting sections",
+                  r["source"] == "offline" and len(d["sections"]) >= 5
+                  and min(s["energy"] for s in d["sections"]) < 0.4
+                  and max(s["energy"] for s in d["sections"]) == 1.0, "")
+            check("it never aims or colours a light that cannot",
+                  all(not (lk.get("aim") and not a["groups"][lk["group"]]["caps"]["pan_tilt"])
+                      and not (lk.get("colour") and a["groups"][lk["group"]]["caps"]["colour"] != "mix")
+                      for s in d["sections"] for lk in s["looks"]), "")
+            bad = {"name": "x", "sections": [{"name": "S", "bars": 8, "energy": 2, "looks": [
+                {"group": "nope", "intensity": 50},
+                {"group": [k for k, g in a["groups"].items() if g["role"] == "par"][0],
+                 "intensity": 500, "aim": "floor", "fx": "circle", "colour": "red"}]}]}
+            v = autoshow.validate(bad, a)
+            lk = v["sections"][0]["looks"][0]
+            check("validation drops unknown groups and impossible choices",
+                  len(v["sections"][0]["looks"]) == 1 and lk["intensity"] == 100
+                  and "aim" not in lk and "fx" not in lk and "colour" not in lk
+                  and v["sections"][0]["energy"] == 1.0, json.dumps(v))
+            e.act("record_cue", playback=1, name="old") if e.act("select_all") and e.act("set_intensity", level=50) else None
+            undo_before = len(e._undo)
+            out = autoshow.build(e, d, playback=1)
+            check("building makes one cue per section",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == [s["name"] for s in d["sections"]],
+                  str([c["name"] for c in e.playbacks[0]["stack"]]))
+            kinds = {t["kind"] for t in e.timeline["tracks"] if t["name"].startswith(autoshow.AUTO_PREFIX)}
+            check("and the timeline: cues, effects, hits and master",
+                  kinds == {"cue", "fx", "button", "level"}, str(kinds))
+            cue_t = [c["t"] for t in e.timeline["tracks"] if t["kind"] == "cue" for c in t["clips"]]
+            check("sections are laid out to fill the song",
+                  cue_t[0] == 0 and 150 < cue_t[-1] < 180 and e.timeline["length"] >= 180, str(cue_t))
+            beat = 60 / 128
+            hits = [c["t"] for t in e.timeline["tracks"] if t["kind"] == "button" for c in t["clips"]]
+            check("hits land on the beat grid",
+                  hits and all(abs((t / beat) - round(t / beat)) < 0.02 for t in hits), str(hits[:6]))
+            check("the whole build is ONE undo step",
+                  len(e._undo) == undo_before + 1 and e._undo[-1]["action"] == "auto show",
+                  out["summary"])
+            e.act("timeline_play")
+            clock = [e._clock()]
+            e._clock = lambda: clock[0]
+            e.tl["t0"] = clock[0]
+            clock[0] += 0.05
+            e._tick_timeline()
+            check("playing it fires the first section's cue",
+                  e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
+            e.act("timeline_stop")
+            again = autoshow.build(e, d, playback=1)
+            check("building again replaces the auto tracks rather than stacking them",
+                  sum(1 for t in e.timeline["tracks"] if t["kind"] == "cue") == 1
+                  and sum(1 for g in e.groups if g["name"].startswith(autoshow.AUTO_PREFIX))
+                  == len({lk["group"] for s in d["sections"] for lk in s["looks"]}), again["summary"])
+            ctx = console_ai.rig_context(e)
+            check("the copilot sees the room, its rigging and the timeline",
+                  "RIGGING" in ctx and "TIMELINE" in ctx and "ROOM" in ctx, ctx[-400:])
+            check("and may aim, attach and run the timeline",
+                  {"aim_at", "attach_heads", "timeline_play"} <= set(console_ai.ALLOWED_ACTIONS), "")
+        finally:
+            e.shutdown()
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
 
 
 def test_show_building() -> None:
@@ -7997,11 +8521,11 @@ def test_engine_api() -> None:
             check("a head inside the bounds is not clamped",
                   e.act("set_place", head=1, x=1.0, y=3.0, z=2.0)["clamped"]
                   is False, "")
-            # once a venue exists the bounds follow it
-            e.act("set_venue", width_m=18, depth_m=12, height_m=6)
+            # once a venue exists the bounds follow it (room back at -1)
+            e.act("venue_room", width=18, depth=12, height=6, back=-1)
             r = e.act("set_place", head=1, x=500, z=500)
             check("the venue tightens the bounds",
-                  abs(r["x"]) <= 13.0 and r["z"] <= 16.0, json.dumps(r)[:200])
+                  abs(r["x"]) <= 13.0 and r["z"] <= 15.0, json.dumps(r)[:200])
             check("the venue also caps the height",
                   e.act("set_place", head=1, y=999)["y"] <= 10.0,
                   str(e.act("set_place", head=1, y=999)["y"]))
@@ -8013,16 +8537,20 @@ def test_engine_api() -> None:
                                  "x2": 9, "y2": 0, "z2": 12},
                                 {"kind": "truss", "x1": -8, "y1": 5, "z1": 3,
                                  "x2": 8, "y2": 5, "z2": 3}])
-            check("set_venue stores the room",
-                  r["ok"] and r["venue"]["width_m"] == 18
+            check("an old-style room converts to a v2 venue",
+                  r["ok"] and r["venue"]["version"] == 2
                   and r["venue"]["name"] == "Main Hall"
-                  and len(r["venue"]["surfaces"]) == 2, json.dumps(r))
-            check("venue reaches the state feed",
-                  e.snapshot()["venue"]["depth_m"] == 12, "")
+                  and r["venue"]["stage"]["width"] == 18
+                  and r["venue"]["room"]["height"] == 6, json.dumps(r)[:300])
+            check("its truss line becomes rigging and its wall an object",
+                  [x["kind"] for x in r["venue"]["rigging"]] == ["truss"]
+                  and [x["kind"] for x in r["venue"]["objects"]] == ["wall"],
+                  json.dumps(r["venue"])[:300])
             r = e.act("set_venue", width_m=10, surfaces=[{"kind": "x"},
                                                          "not a dict", 7])
             check("a malformed surface is dropped, not fatal",
-                  r["ok"] and r["venue"]["surfaces"] == [], json.dumps(r))
+                  r["ok"] and r["venue"]["rigging"] == []
+                  and r["venue"]["objects"] == [], json.dumps(r)[:300])
 
             # --- look_feed: the per-tick light feed ---------------------
             e.act("select_all")

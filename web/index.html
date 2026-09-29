@@ -112,18 +112,42 @@
           <button data-view="right" title="House right (3)">Right</button>
           <button data-view="back" title="Back (4)">Back</button>
           <button data-view="top" title="Plan (5)">Plan</button>
+          <button data-view="overview" title="Whole room from above (6)">3D</button>
         </div>
+        <button class="hud-btn" id="views-more" title="More views: from the crowd, the DJ, through a light; saved views">Views ▾</button>
         <button class="hud-btn" id="frame-btn" title="Frame the selection (F)">Frame</button>
       </div>
       <div class="stage-hud top-right">
-        <label class="hud-slider" title="Haze in the room">
-          <span>Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
-        </label>
-        <button class="hud-btn toggle on" id="people-btn" title="Performers on stage, for scale">People</button>
+        <button class="hud-btn toggle on" id="people-btn" title="The crowd and performers (click for options)">Crowd ▾</button>
+        <button class="hud-btn toggle" id="zones-btn" title="Show the room's zones (dance floor, bar...)">Zones</button>
+        <button class="hud-btn toggle arrange" id="arrange-btn" title="Arrange the venue: move lights, truss and objects, draw the room">
+          <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14M8 1 6 3M8 1l2 2M8 15l-2-2M8 15l2-2M1 8l2-2M1 8l2 2M15 8l-2-2M15 8l-2 2"/></svg>Arrange</button>
         <button class="hud-btn icon" id="fullscreen-btn" title="Stage full screen (Esc to leave)">
           <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
         </button>
       </div>
+      <div class="venue-tools" id="venue-tools" hidden>
+        <div class="seg vertical">
+          <button id="vt-move" title="Move (W)">Move</button>
+          <button id="vt-rotate" title="Rotate / aim (E)">Rotate</button>
+        </div>
+        <button class="hud-btn" id="vt-add" title="Add truss, pipes, stands, objects">+ Add</button>
+        <button class="hud-btn" id="vt-room" title="Trace the room's walls by clicking its corners">Draw room</button>
+        <button class="hud-btn" id="vt-zone" title="Draw a zone: dance floor, bar, seating...">Draw zone</button>
+        <button class="hud-btn" id="vt-plan" title="Upload a floor plan (image or PDF) and trace it">Floor plan</button>
+        <button class="hud-btn primary" id="vt-done" title="Leave arrange mode (Esc)">Done</button>
+        <input type="file" id="plan-file" accept="image/*,.pdf,application/pdf" hidden>
+      </div>
+      <div class="stage-hud bottom-right">
+        <label class="hud-slider" title="House lights: see the room with the rig dark">
+          <span>House</span><input type="range" id="house" min="0" max="1" step="0.01" value="0.35">
+        </label>
+        <label class="hud-slider" title="Haze in the room">
+          <span>Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
+        </label>
+      </div>
+      <div class="draw-hint" id="draw-hint" hidden></div>
+      <aside class="venue-inspector" id="venue-inspector" hidden aria-label="Selected item"></aside>
       <div class="stage-hud bottom-left hint" id="stage-hint">
         Drag to orbit · right-drag to pan · scroll to zoom · click a light to select · drag it to move (Shift = height)
       </div>
@@ -160,6 +184,7 @@
               <label class="field inline"><span>Fade</span><input type="number" id="int-fade" min="0" max="600" step="0.5" value="0"><em>s</em></label>
             </div>
           </div>
+          <div class="chip-row" id="int-gate" hidden></div>
           <div class="row-btns">
             <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
             <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
@@ -176,6 +201,9 @@
             <label class="field inline"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
             <span class="reach" id="colour-reach"></span>
           </div>
+          <label class="field kelvin-row" id="kelvin-row"><span>White temperature <output id="kelvin-out">5600 K</output></span>
+            <input type="range" id="kelvin" min="2000" max="10000" step="100" value="5600"></label>
+          <div class="chip-row" id="wheel-steps" hidden></div>
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>
@@ -189,10 +217,16 @@
             <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
             <button class="btn" id="aim-btn">Aim</button>
           </div>
+          <div class="row-btns aim-tools">
+            <button class="btn" id="aim-spot" title="Then click anywhere in the 3D view: every selected mover points there">Aim at a spot…</button>
+            <select class="select" id="aim-mark" title="Point the selection at a performer mark"><option value="">Aim at a mark…</option></select>
+            <button class="btn ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
+          </div>
           <div class="palette-strip" data-kind="position"></div>
         </div>
 
         <div class="tab-pane" data-pane="beam" hidden>
+          <div class="beam-quick" id="beam-quick"></div>
           <div class="attr-list" id="attr-list"></div>
         </div>
 
@@ -266,7 +300,53 @@
 
     <!-- ------------------------------------------------------ playbacks -->
     <section class="playbacks" id="playbacks" aria-label="Playbacks">
+      <nav class="pb-mode" id="pb-mode" aria-label="Bottom panel">
+        <button data-mode="faders" class="on" title="Playback faders" aria-label="Faders">
+          <svg viewBox="0 0 16 16"><path d="M4 2v12M8 2v12M12 2v12"/><rect x="2.5" y="8" width="3" height="2.4" rx=".6"/><rect x="6.5" y="4" width="3" height="2.4" rx=".6"/><rect x="10.5" y="10" width="3" height="2.4" rx=".6"/></svg><span>Faders</span></button>
+        <button data-mode="buttons" title="Quick buttons: flash, strobe, colour bumps, effects" aria-label="Buttons">
+          <svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span>Buttons</span></button>
+        <button data-mode="timeline" title="The show timeline: cues, hits, effects and levels against the music" aria-label="Timeline">
+          <svg viewBox="0 0 16 16"><path d="M1 4h7M4 8h9M2 12h6M11 2v12"/></svg><span>Timeline</span></button>
+      </nav>
       <div class="pb-strip" id="pb-strip"></div>
+      <div class="qb" id="qb" hidden>
+        <div class="qb-bar">
+          <div class="seg" id="qb-pages"><button data-page="1" class="on">1</button><button data-page="2">2</button><button data-page="3">3</button><button data-page="4">4</button></div>
+          <button class="btn small" id="qb-suggest" hidden title="Fill this page with buttons that suit your rig">Suggest buttons for this rig</button>
+          <span class="grow"></span>
+          <button class="btn small ghost" id="qb-release" title="Let go of every latched button">Release all</button>
+          <button class="btn small" id="qb-edit" title="Set buttons up">Edit</button>
+        </div>
+        <div class="qb-grid" id="qb-grid"></div>
+      </div>
+      <div class="tl" id="tl" hidden>
+        <div class="tl-bar">
+          <button class="btn small" id="tl-stop" title="Stop and go back to the start">Stop</button>
+          <button class="btn small primary" id="tl-play" title="Play / pause (Shift+Space)">Play</button>
+          <output class="tl-time"><span id="tl-pos">0:00.0</span> / <button class="link" id="tl-length" title="Change the length"><span id="tl-len">2:00</span></button></output>
+          <button class="btn small ghost" id="tl-loop" title="Loop the timeline">Loop</button>
+          <label class="tl-bpm">BPM <input type="number" id="tl-bpm" min="20" max="300" step="0.1" value="120"></label>
+          <button class="btn small ghost" id="tl-tap" title="Tap along to set the tempo">Tap</button>
+          <label class="tl-snap">Snap <select class="select small" id="tl-snap">
+            <option value="beat" selected>Beat</option><option value="bar">Bar</option><option value="1">1 s</option><option value="0.5">½ s</option><option value="off">Off</option></select></label>
+          <span class="grow"></span>
+          <button class="btn small ghost" id="tl-zoom-out" title="Zoom out (Ctrl+wheel)">−</button>
+          <button class="btn small ghost" id="tl-zoom-in" title="Zoom in (Ctrl+wheel)">+</button>
+          <button class="btn small" id="tl-audio" title="Music, tempo and markers">♪ Audio</button>
+          <input type="file" id="tl-audio-file" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a" hidden>
+        </div>
+        <div class="tl-body">
+          <div class="tl-heads" id="tl-heads"></div>
+          <div class="tl-scroll" id="tl-scroll">
+            <div class="tl-canvas" id="tl-canvas">
+              <canvas class="tl-ruler" id="tl-ruler" height="22"></canvas>
+              <div class="tl-lanes" id="tl-lanes"></div>
+              <div class="tl-playhead" id="tl-playhead"></div>
+            </div>
+          </div>
+        </div>
+        <p class="tl-hint">Double-click a lane to add · drag clips to move, their edge to resize · right-click to edit · Alt = no snap</p>
+      </div>
       <div class="masters">
         <div class="master">
           <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
@@ -330,9 +410,22 @@
     <label class="check small"><input type="checkbox" id="ai-offline"> Offline compiler (no AI service)</label>
   </div>
   <div class="ctab" data-cpane="design" hidden>
+    <section class="autoshow">
+      <h4>Build the whole show</h4>
+      <p class="muted small">Jarvis reads your rig in the 3D view - what each light is, where it hangs, what it can do - and the song on the timeline, then programs every section: a cue per section, effects, strobe hits on the beat and master fades, on the timeline. You preview it first; building it is one Ctrl+Z.</p>
+      <textarea id="auto-text" rows="2" placeholder="Dark techno in a warehouse, red and white, hard drops" spellcheck="false"></textarea>
+      <div class="chip-row" id="auto-styles"></div>
+      <div class="row-btns">
+        <button class="btn primary" id="auto-btn">Design the show</button>
+        <label class="field inline small"><span>Playback</span><input type="number" id="auto-pb" min="1" max="10" value="1"></label>
+      </div>
+      <div class="auto-plan" id="auto-plan"></div>
+    </section>
+    <hr>
+    <h4>Or: concepts for one playback</h4>
     <p class="muted small">Describe the event. You get two or three different concepts - palettes, cues and timings - staged on your own rig. Nothing plays until you load one and press GO.</p>
     <textarea id="design-text" rows="3" placeholder="A winter wedding, slow and elegant, warm whites, avoid red" spellcheck="false"></textarea>
-    <button class="btn primary" id="design-btn">Design concepts</button>
+    <button class="btn" id="design-btn">Design concepts</button>
     <div class="concepts" id="concepts"></div>
   </div>
   <div class="ctab" data-cpane="doctor" hidden>

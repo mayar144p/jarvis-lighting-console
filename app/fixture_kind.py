@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+from app import venue as venue_mod
+
 # ---------------------------------------------------------------------------
 # Physical types.  `beam` is the (min, max) field angle in degrees the type
 # typically has - a zoom channel sweeps it, a fixed-lens fixture uses min.
@@ -305,6 +307,88 @@ def place(kind: str, count: int, existing: list[dict],
             out.append({"x": round(x, 2), "y": height, "z": z, "kind": mount})
     while len(out) < count:                     # an absurdly full stage
         out.append({"x": 0.0, "y": height, "z": base_z, "kind": mount})
+    return out
+
+
+# Types that stand on the deck rather than hang, and how far apart.
+_FLOOR_TYPES = {"par", "bar", "cyc", "tube", "laser", "atmos"}
+_SPACING = {"moving_bar": 1.1, "matrix": 1.0, "bar": 1.1, "cyc": 1.0,
+            "blinder": 0.8, "strobe": 0.9, "par": 0.6, "par_can": 0.6,
+            "tube": 0.9, "laser": 1.5, "atmos": 2.0}
+
+
+def _rig_order(kind: str, rigs: list[dict], front: float) -> list[dict]:
+    """Horizontal rigs, best first, for a type of light."""
+    def z_of(r):
+        return (r["a"][2] + r["b"][2]) / 2
+
+    flat = [r for r in rigs if not venue_mod.is_vertical(r)
+            and r["kind"] in ("truss", "pipe")]
+    if kind in ("blinder", "profile", "strobe", "followspot"):
+        key = lambda r: abs(z_of(r) - (front + 0.6))          # front of house
+    elif kind in ("moving_wash", "wash_panel", "par_can", "fresnel", "matrix"):
+        key = lambda r: -z_of(r)                              # out over the floor
+    else:
+        key = lambda r: abs(z_of(r) - front * 0.8)            # around the stage
+    return sorted(flat, key=key)
+
+
+def place_in_venue(kind: str, count: int, existing: list[dict],
+                   venue: dict) -> list[dict]:
+    """Positions for new heads in a drawn venue: overhead types onto the
+    rigging (mounted, so they move with it), floor types along the stage
+    lip.  Falls back to plain rows when there is no venue."""
+    v = venue or {}
+    w, d, _ = venue_mod.dims(v)
+    rigs = v.get("rigging") or []
+    if v.get("auto") or not (w and d):
+        return place(kind, count, existing, w or 10.0, d or 8.0)
+    stage = v.get("stage")
+    front = (stage["z"] + stage["depth"]) if stage else 0.0
+    out: list[dict] = []
+    spacing = _SPACING.get(kind, 0.8)
+    if kind in _FLOOR_TYPES or not rigs:
+        deck = stage["height"] if stage else 0.0
+        width = (stage["width"] if stage else w * 0.6) - 0.6
+        cx = stage["x"] if stage else 0.0
+        row_z = [front - 0.35, front - 1.2, 0.6] if stage else [
+            float((v.get("room") or {}).get("back") or 0) + 1.0]
+        if kind == "atmos":
+            row_z = [0.5]
+        taken = [(float(h.get("x", 0)), float(h.get("z", 0))) for h in existing]
+        for z in row_z:
+            k = 0
+            while len(out) < count:
+                step = (k + 1) // 2
+                x = cx + (step * spacing * (1 if k % 2 else -1) if k else 0.0)
+                k += 1
+                if abs(x - cx) > width / 2:
+                    break
+                if any(abs(x - tx) < spacing * 0.6 and abs(z - tz) < 0.4
+                       for tx, tz in taken):
+                    continue
+                taken.append((x, z))
+                out.append({"x": round(x, 2), "y": deck, "z": round(z, 2),
+                            "kind": "floor", "stance": "stand"})
+            if len(out) >= count:
+                break
+        if len(out) >= count:
+            return out
+    for r in _rig_order(kind, rigs, front):
+        if len(out) >= count:
+            break
+        on_rig = [float(h["mount"]["t"]) for h in existing
+                  if (h.get("mount") or {}).get("rig") == r["id"]]
+        on_rig += [o["mount"]["t"] for o in out
+                   if (o.get("mount") or {}).get("rig") == r["id"]]
+        for t in venue_mod.free_slots(r, on_rig, count - len(out), spacing):
+            pos = venue_mod.mount_position(r, t)
+            out.append({"x": pos["x"], "y": pos["y"], "z": pos["z"],
+                        "kind": "truss" if pos["orient"] == "hang" else "floor",
+                        "stance": pos["orient"],
+                        "mount": {"rig": r["id"], "t": t}})
+    if len(out) < count:
+        out += place(kind, count - len(out), existing + out, w, d)
     return out
 
 

@@ -5,6 +5,8 @@ Then: http://localhost:8787
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import mimetypes
@@ -17,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, config, console_ai, dmxin, doctor,  # noqa: E402
+from app import (artnet, autoshow, config, console_ai, dmxin, doctor,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -50,6 +52,98 @@ def gdtf_share() -> gdtfshare.GdtfShare:
             password=config.GDTF_SHARE_PASSWORD,
             timeout=config.GDTF_SHARE_TIMEOUT)
     return _SHARE
+
+
+# Floor plans (an image, or a PDF page the browser rendered to PNG) are
+# stored content-addressed beside the show data; the venue keeps only the id.
+_UNDERLAY_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
+_UNDERLAY_MAX = 15 * 1024 * 1024
+
+
+def _underlay_dir() -> Path:
+    return config.DATA / "underlays"
+
+
+def save_underlay(body: dict) -> dict:
+    raw = str(body.get("data") or "")
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[-1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"floor plan is not valid base64: {exc}") from exc
+    if not data or len(data) > _UNDERLAY_MAX:
+        raise ValueError("floor plan must be an image under 15 MB")
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        ext = ".png"
+    elif data[:3] == b"\xff\xd8\xff":
+        ext = ".jpg"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    else:
+        raise ValueError("floor plan must be PNG, JPEG or WebP "
+                         "(a PDF is rendered to an image in the browser)")
+    ident = hashlib.sha256(data).hexdigest()[:32]
+    folder = _underlay_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / (ident + ext)).write_bytes(data)
+    return {"id": ident, "bytes": len(data), "type": ext[1:]}
+
+
+# Show audio for the timeline, stored the same way.
+_AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
+                ".m4a": "audio/mp4", ".flac": "audio/flac"}
+
+
+def save_audio(body: dict) -> dict:
+    raw = str(body.get("data") or "")
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[-1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"audio is not valid base64: {exc}") from exc
+    if not data or len(data) > MAX_BODY:
+        raise ValueError("audio must be under 22 MB")
+    if data[:3] == b"ID3" or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        ext = ".mp3"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        ext = ".wav"
+    elif data[:4] == b"OggS":
+        ext = ".ogg"
+    elif data[:4] == b"fLaC":
+        ext = ".flac"
+    elif data[4:8] == b"ftyp":
+        ext = ".m4a"
+    else:
+        raise ValueError("audio must be MP3, WAV, OGG, FLAC or M4A")
+    ident = hashlib.sha256(data).hexdigest()[:32]
+    folder = config.DATA / "audio"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / (ident + ext)).write_bytes(data)
+    return {"id": ident, "bytes": len(data), "type": ext[1:]}
+
+
+def audio_path(ident: str) -> Path | None:
+    ident = "".join(ch for ch in ident if ch.isalnum())[:64]
+    if not ident:
+        return None
+    for ext in _AUDIO_TYPES:
+        p = config.DATA / "audio" / (ident + ext)
+        if p.is_file():
+            return p
+    return None
+
+
+def underlay_path(ident: str) -> Path | None:
+    ident = "".join(ch for ch in ident if ch.isalnum())[:64]
+    if not ident:
+        return None
+    for ext in _UNDERLAY_TYPES:
+        p = _underlay_dir() / (ident + ext)
+        if p.is_file():
+            return p
+    return None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -312,6 +406,8 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/save", "/api/console/load",
                          "/api/console/scan", "/api/console/ai",
                          "/api/console/generate", "/api/console/midi",
+                         "/api/console/underlay", "/api/console/audio",
+                         "/api/console/autoshow",
                          "/api/console/look"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
@@ -341,6 +437,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("params must be an object")
             return self._console_result(
                 eng, eng.act(str(body.get("action", "")), **params))
+        if route == "/api/console/underlay":
+            return self._json(save_underlay(body))
+        if route == "/api/console/audio":
+            return self._json(save_audio(body))
         if route == "/api/console/look":
             # /api/console/look is a GET (it is a feed, polled at 20 Hz);
             # accept POST too so a caller that posts every console route
@@ -482,6 +582,14 @@ class Handler(BaseHTTPRequestHandler):
                         f"{result['reply']} [failed: "
                         f"{result['run'].get('error')}]")
             return self._console_result(eng, result)
+        if route == "/api/console/autoshow":
+            # Preview a whole-show design for this rig, or build a design
+            # the operator has already seen (never a second model call).
+            playback = int(body.get("playback") or 1)
+            if body.get("apply") and isinstance(body.get("design"), dict):
+                return self._console_result(eng, autoshow.build(eng, body["design"], playback))
+            return self._console_result(eng, autoshow.design(
+                eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
             # operator confirms via /api/console/import_show.
@@ -669,6 +777,32 @@ class Handler(BaseHTTPRequestHandler):
                 defs.append(pub)
             return self._json({"definitions": defs, "count": len(defs)})
 
+        if route == "/api/console/audio":
+            path = audio_path(str(query.get("id", "")))
+            if not path:
+                return self._json({"error": "no such audio"}, 404)
+            data = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", _AUDIO_TYPES[path.suffix])
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        if route == "/api/console/underlay":
+            path = underlay_path(str(query.get("id", "")))
+            if not path:
+                return self._json({"error": "no such floor plan"}, 404)
+            data = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", _UNDERLAY_TYPES[path.suffix])
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
         if route == "/api/console/model":
             # One model file, fetched once per definition and cached by the browser.
             did = str(query.get("id", "")).strip()
@@ -753,6 +887,7 @@ def main() -> None:
     if config.DMX_INPUT:
         dmxin.start_from_config(config)
     midi.start_from_config(engine_mod.ENGINE, config)
+    engine_mod.ENGINE.ensure_venue("club")      # a fresh desk opens in a club
 
     try:
         server = ThreadingHTTPServer((config.HOST, config.PORT), Handler)

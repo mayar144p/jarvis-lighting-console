@@ -1,10 +1,13 @@
 # Jarvis — Lighting Console
 
 A lighting desk in a browser window. It patches the rig from a real fixture
-library, shows it in a live 3D visualiser with a model of every light, programs
-cues with real fades, and puts the show on the wire over Art-Net or sACN. An
-AI copilot sits inside it: plain English in, a previewed plan of desk actions
-out, applied as one undoable step. The desk never needs the AI.
+library and shows it in a live 3D model of your venue: the room, the stage,
+the truss the lights hang on, and a crowd. It programs cues with real fades,
+plays instant quick buttons, runs a timeline against your music, and puts the
+show on the wire over Art-Net or sACN. An AI copilot sits inside it. It can
+program from plain English, or read the whole rig and build a show onto the
+timeline. Every AI change is previewed first and is one undoable step. The
+desk never needs the AI.
 
 No pip installs and no build step: a Python standard-library engine and a
 vanilla ES-module front end, with three.js vendored so it runs fully offline.
@@ -52,12 +55,56 @@ Python 3.10+ is required. Node is only needed to run the full test suite.
 |---|---|
 | **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
 | **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar |
-| **Stage** (centre) | the 3D visualiser; named views, frame selection, haze, performers, full screen, and a *now playing* strip |
-| **Programmer** (right) | tabs for Level, Colour (HSV picker, swatches, hex, and how many selected heads the colour can reach), Position (pan/tilt pad and aim in degrees), Beam, FX, Looks (palettes and presets), Tools (fan, arrange, limits) |
-| **Playbacks** (bottom) | cue stacks with GO / back / release, faders with crossfade time, grand master, BLACKOUT. The cue list shows each cue as a fade / hold / follow timeline, and each cue can inherit the stack's auto-follow, wait for GO, or run the next cue after its own delay |
+| **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
+| **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits) |
+| **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
 | **Status bar** | output target and rate, network, feed health, last save |
 
 It adapts to a 1024 px tablet and to a phone, where the regions become tabs.
+
+### The venue
+
+The stage sits in a real room: floor, walls, ceiling or an open roof, a stage
+deck, zones (dance floor, bar, seating, VIP, DJ, FOH) and the rigging lights
+go on. A fresh desk opens in a **club**. **Settings → Venue** swaps in a
+template (club, small club, warehouse, concert stage, theatre, ballroom,
+outdoor stage) and resizes the room.
+
+* **House lights** (bottom right of the stage) make the room visible with the
+  rig dark. Walls between you and the stage are cut away automatically.
+* **Rigging**: truss, pipes, towers, ladders, tripod stands and floor bases.
+  New lights place themselves by type: movers and washes on the trusses,
+  PARs and bars on the stage lip. A light on a truss is *mounted*, so moving
+  the truss moves its lights.
+* **Crowd ▾**: show or hide the crowd, simple or varied figures, how packed
+  it is, dancing or still. People stand in the zones and are lit by the rig.
+* **Views ▾**: front, sides, back, plan and whole room. There's also eye level
+  from the crowd, the DJ's view, and **through the selected light** along its
+  beam, the way you would check a focus. Save any view by name.
+
+### Arrange mode
+
+**Arrange** (stage toolbar) turns the stage into an editor:
+
+* Click a light, truss, object, zone, the stage or the floor plan to get a
+  **3D gizmo**. Drag its arrows to move in X, Y and Z (5 cm snap). **E**
+  rotates, which is also how a fixed light is aimed. Truss ends and zone
+  corners have their own yellow handles.
+* Drop a light near a truss and it **snaps on** and hangs from it. Drag a
+  whole selection and drop it on a truss to hang the whole row.
+* An inspector gives exact numbers: position, which rig and where along it,
+  hang or stand, aim; truss ends and height; object size and rotation.
+* **+ Add** puts in rigging (truss, pipe, tower, ladder, stand, floor base)
+  and objects (DJ booth, bar, speakers, subs, pillars, LED screen, risers,
+  tables, balcony, walls, performer marks).
+* **Draw room** traces the walls by clicking corners, any shape.
+  **Draw zone** draws a dance floor, bar, seating area and so on.
+* **Floor plan** uploads an image or a **PDF** of the venue's plan. Set its
+  scale by clicking two points and typing the real distance, then trace over
+  it.
+
+Outside Arrange mode a click only selects, so nothing moves by accident
+during a show.
 
 ### The visualiser
 
@@ -78,10 +125,53 @@ physically is and who made it:
   intensity, zoom, pan/tilt, gobo and strobe, lighting the floor, the flown
   truss and the performers, with bloom and optional haze.
 * The fixture picker shows the same 3D model before you patch anything.
+* **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
+  draw calls, and the crowd is lit per vertex. The view only redraws when
+  something changes. **Settings → 3D view → Quality: Auto** lowers the
+  resolution when frames run long and wins it back when there is headroom.
 
-Drag a light to reposition it (shift-drag for height). Views:
-<kbd>1</kbd>–<kbd>5</kbd> (front, house left, house right, back, plan),
-<kbd>F</kbd> to frame the selection.
+Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
+whole room), <kbd>F</kbd> to frame the selection.
+
+### Quick buttons
+
+**Buttons** in the bottom panel is a grid of instant buttons, 4 pages of 24,
+like a MagicQ execute window. Each one is **hold** (on while pressed),
+**latch** (press on, press off) or **tap**:
+
+| kind | does |
+|---|---|
+| Flash | the target to full, optionally in a colour |
+| Strobe | the target strobes, 1–20 flashes a second |
+| Colour bump | overrides the target's colour |
+| Kill / Blackout | the target, or everything, off while held |
+| Effect | runs an effect on the target |
+| GO / Release | a playback (GO can jump to a cue) |
+| Preset | applies a recorded preset |
+
+Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
+a fixed set of lights. **Suggest buttons for this rig** fills a page from what
+is patched. Blackout and the grand master still win over a flash. Pressing a
+button is never an undo step; setting one up is. Buttons save with the show.
+
+### Timeline
+
+**Timeline** in the bottom panel runs the show against the music:
+
+* **Tracks.** *Cue* tracks GO a playback to a cue at a time. *Button* tracks
+  hold a quick button for a clip's length, such as strobe hits on the beat.
+  *Effect* tracks run an effect on a group or type. *Level* tracks automate a
+  playback fader or the grand master with keyframes.
+* **Audio.** Add an MP3, WAV, OGG, FLAC or M4A; its waveform is drawn under the
+  tracks. Set BPM by typing, tapping, or **detect** it from the audio. There
+  is a beat and bar grid, snap (beat, bar, seconds, off; Alt for free),
+  markers, zoom (Ctrl+wheel) and loop.
+* **Editing.** Double-click a lane to add a clip. Drag a clip to move it and
+  its edge to resize it; right-click to edit, duplicate or delete. **+ Track →
+  Cue list from PB1** lays an existing cue list out in time.
+* The **engine owns the clock**, so the lights stay in time even if the browser
+  stutters, and the audio follows it. Seeking puts the rig where it would be
+  at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
 ### Keyboard
 
@@ -96,6 +186,7 @@ Drag a light to reposition it (shift-drag for height). Views:
 | <kbd>F</kbd> | frame the selection | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | command bar |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | undo / redo | <kbd>Ctrl</kbd>+<kbd>S</kbd> | save show |
 | <kbd>?</kbd> | help | <kbd>Esc</kbd> | close the top panel |
+| <kbd>Shift</kbd>+<kbd>Space</kbd> | play / pause the timeline | <kbd>W</kbd> / <kbd>E</kbd> | Arrange: move / rotate |
 
 Typing in a field never fires the rig.
 
@@ -116,10 +207,29 @@ Typing in a field never fires the rig.
   rolls back. Without a key (or with *offline* ticked) a keyword compiler
   handles common requests: levels, colours, named effects (rainbow, circle,
   figure eight, pan sweep, breathe, dimmer chase, sparks), aim, beam, fades,
-  and targets like *movers* or *pars*.
-* **Design a show.** A brief (*winter wedding, slow and elegant, warm whites, avoid
-  red*) returns two or three different concepts, each with a palette and cue
-  list, staged on your patched rig. Nothing changes until you load one.
+  and targets like *movers* or *pars*. The copilot also knows the room: it can
+  aim at a spot or mark, hang lights on a named truss, pick a venue template
+  and play the timeline.
+* **Design a show → Build the whole show.** The copilot reads the rig in the
+  3D view and the song on the timeline, then designs and builds the whole
+  show:
+  * **What it reads:** what each light is, where it hangs (front truss movers,
+    stage-lip PARs, tower strobes…), what it can do, and the room's aim
+    targets (DJ, dance floor, crowd, back wall).
+  * **The design:** song sections (intro, build, drop, breakdown…), with a look
+    per group, effects the group can actually run, strobe and flash hits on
+    the beat, and master fades.
+  * **What it builds:** a cue per section, a track per group of effects, the
+    hits on the beat grid and the master automation, all laid out on bars
+    and stretched to fit the song.
+
+  You see the plan first. Building it is one <kbd>Ctrl</kbd>+<kbd>Z</kbd>, and
+  your own timeline tracks are kept. It works offline too, with a style-aware
+  designer; pick a style chip (techno, house, EDM, hip hop, lounge, wedding,
+  latin) or describe it.
+* **Design a show → concepts.** A brief (*winter wedding, slow and elegant,
+  warm whites, avoid red*) returns two or three concepts, each with a
+  palette and cue list, for one playback.
 * **Diagnose.** The show doctor reads the show and reports problems with a fix where one exists:
   nothing patched, universes seen on the network but not patched, guessed
   profiles, channels with no control, cues pointing at removed heads, lights
@@ -207,10 +317,14 @@ machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 python tools/selftest.py
 ```
 
-About 1,600 checks: GDTF parsing and geometry, the fixture database, the
+About 1,700 checks: GDTF parsing and geometry, the fixture database, the
 auto-patcher, the merge core (HTP/LTP, master and blackout order, 16-bit,
-curves), the engine (patch, programmer, fades, cues, undo, batches, show files,
-autosave), 40 Hz performance ceilings, Art-Net and sACN packet bytes, discovery
+curves, quick-button overrides, blackout of dimmer-less lights), the engine
+(patch, programmer, fades, cues, undo, batches, show files, autosave), the
+venue (templates, rigging, mounting, placement, floor plans), quick buttons,
+aim-at-a-spot (each beam recomputed as the 3D view draws it and checked
+against the target), the timeline (clock, spans, automation, seek), the
+whole-show builder, 40 Hz performance ceilings, Art-Net and sACN packet bytes, discovery
 against a real socket, HTTP security (token, origin, content type, host), the
 live stream, fixture type and brand recognition, the doctor, the copilot
 (allowlist, validation, offline compiler, atomic apply), and the web app (every
@@ -237,6 +351,9 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   ├── gdtf_geom.py       GDTF geometry and model extraction for the visualiser
 │   ├── gdtfshare.py       GDTF Share client
 │   ├── fixture_kind.py    physical type, brand and auto-placement of a fixture
+│   ├── venue.py           the room: templates, rigging, mounts, zones (pure)
+│   ├── timeline.py        the show timeline: tracks, clips, automation (pure)
+│   ├── autoshow.py        rig analysis → show design → cues + timeline
 │   ├── profiles.py        built-in generic profiles
 │   ├── llm.py             OpenAI-compatible client (tool-call structured output)
 │   ├── console_ai.py      copilot: rig context, allowlist, plans, offline compiler
@@ -245,9 +362,10 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   └── config.py          .env loading and defaults
 ├── web/
 │   ├── index.html         the app shell
-│   ├── app/               UI modules (store, actions, panels, copilot, keys)
-│   ├── js/stage/          visualiser (models, materials, venue, GDTF meshes)
-│   └── vendor/three/      three.js, vendored for offline use
+│   ├── app/               UI modules (store, actions, panels, copilot, keys,
+│   │                      venue panel, quick buttons, timeline)
+│   ├── js/stage/          visualiser (models, materials, venue, editor, GDTF meshes)
+│   └── vendor/            three.js and pdf.js, vendored for offline use
 ├── tools/
 │   ├── selftest.py        the test suite
 │   ├── featurecheck.py    feature coverage report
@@ -272,6 +390,9 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
   longer patched.
 
 ## Not built yet
+
+* A per-fixture colour-wheel map (the AI and the colour buttons only colour
+  lights that mix colour; wheel slots are offered as numbered steps).
 
 * Validation against physical nodes and fixtures.
 * Show file management (rename, duplicate, delete) beyond save and load.

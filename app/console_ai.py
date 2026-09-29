@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 
 from . import fixture_kind, fxlib, llm, showdesign
+from . import venue as venue_mod
 from .engine import ACTIONS as ENGINE_ACTIONS
 
 MAX_STEPS = 16
@@ -86,8 +87,19 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "auto_patch": (),
     "patch_list": ("fixtures", "start"),
     "set_address": ("head", "universe", "address"),
-    "set_place": ("head", "heads", "x", "y", "z"),
+    "set_place": ("head", "heads", "x", "y", "z", "rig", "t", "stance", "snap"),
     "run_command": ("text",),
+    # the room, the buttons and the timeline
+    "aim_at": ("x", "y", "z", "mark", "heads"),
+    "attach_heads": ("heads", "head", "rig", "spacing", "stance"),
+    "venue_template": ("name", "width", "depth", "height"),
+    "venue_crowd": ("style", "density", "show"),
+    "quick_defaults": ("page",),
+    "timeline_play": ("at",),
+    "timeline_pause": (),
+    "timeline_stop": (),
+    "timeline_seek": ("t",),
+    "timeline_from_playback": ("playback", "start"),
 }
 
 _UNKNOWN = [a for a in PARAMS if a not in ENGINE_ACTIONS]
@@ -104,7 +116,7 @@ SELECTION_ACTIONS = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "locate", "record_palette", "include_palette", "include_preset",
     "run_fx", "fan", "align", "distribute", "mirror", "set_attr_range",
-    "record_preset",
+    "record_preset", "aim_at", "attach_heads",
 })
 
 
@@ -140,6 +152,9 @@ def rig_context(eng) -> str:
                 pb.get("index", -1), pb.get("active")) for pb in eng.playbacks]
         fx = eng._fx_public()
         master, blackout = eng.master, eng.blackout
+        room = venue_mod.describe(eng.venue) if not eng.venue.get("auto") else None
+        tl = eng.timeline
+        tl_state = eng._tl_transport()
     lines = []
     if not patch:
         lines.append("RIG: nothing is patched yet.")
@@ -180,6 +195,23 @@ def rig_context(eng) -> str:
             f"#{f['id']} {f.get('label') or f.get('kind')} on "
             f"{len(f.get('heads') or [])} heads" for f in fx))
     lines.append(f"MASTER: {master}%{' - BLACKOUT is ON' if blackout else ''}")
+    if room:
+        w, d, hh = room["room"]
+        lines.append(f"ROOM: {room['name'] or 'venue'} {w:g} x {d:g} m, {hh:g} m high.")
+        if room["rigging"]:
+            lines.append("RIGGING (attach_heads rig=id): " + "; ".join(
+                f"{r['id']} {r['name'] or r['kind']} ({r['kind']}, {r['height']:g} m high)"
+                for r in room["rigging"]))
+        if room["marks"]:
+            lines.append("MARKS (aim_at mark=name): " + ", ".join(m["name"] for m in room["marks"]))
+        if room["zones"]:
+            lines.append("ZONES (aim_at x/z of the centre): " + "; ".join(
+                f"{z['name'] or z['kind']} at x {z['centre'][0]:g} z {z['centre'][1]:g}"
+                for z in room["zones"]))
+    if tl.get("tracks"):
+        lines.append(f"TIMELINE: {len(tl['tracks'])} tracks, {tl['length']:g} s at "
+                     f"{tl['bpm']:g} BPM, {'playing' if tl_state['playing'] else 'stopped'} "
+                     f"at {tl_state['pos']:.1f} s")
     named = [f"{k} ({v['label']}, {v['group']})" for k, v in fxlib.FX.items()]
     lines.append("NAMED EFFECTS (run_fx name=...): " + ", ".join(named))
     return "\n".join(lines)
