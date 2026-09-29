@@ -954,3 +954,13 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 [data-pane="colour"].wheel-only #wheel-steps .chip { min-height: 52px; justify-content: flex-start; font-size: 14px; border-radius: var(--radius); }
 [data-pane="colour"].wheel-only #wheel-steps .slot-dot { width: 18px; height: 18px; }
 [data-pane="colour"].wheel-only #wheel-steps .slot-dot { flex: none; }
+/* My moves */
+.mv-mine { margin-bottom: 12px; }
+.mv-mytiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mv-my { display: flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2, #151b24); }
+.mv-my.on { border-color: var(--accent); background: var(--accent-bg); }
+.mv-play { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; background: none; border: 0; color: var(--text); cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-height: 48px; }
+.mv-play b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-play small { font-size: 11px; color: var(--muted); }
+.mv-more { width: 36px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
+.mv-more:hover { color: var(--text); }

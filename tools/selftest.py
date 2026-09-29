@@ -7513,6 +7513,7 @@ def _standalone_suites():
     ("movement stays where it is aimed", test_motion),
     ("buttons as customisable as possible", test_custom_buttons),
     ("ARM for the whole set; lasers stay on", test_arm_for_set),
+    ("My moves: named movements, not cues", test_my_moves),
     )
 
 
@@ -8995,6 +8996,66 @@ def test_custom_buttons() -> None:
     check("the editor offers every option as a tap",
           all(k in js for k in ('"capture"', '"dim"', "SPLITS", "exclusive", "quick_move",
                                 "quick_page", "Timed shot", "Keep their colour")), "")
+
+
+def test_my_moves() -> None:
+    """A movement you made ("slow half turn, counter-clockwise") saved under
+    a name, played on any lights from a list or a button, looping until
+    stopped - not a cue, and not tied to the lights it was made on."""
+    print("My moves (save, play, rename, delete, on a button, saved with the show)")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib, fixtures
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=4, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("run_fx", name="circle", params={"arc": 180, "direction": -1, "speed": 1 / 12})
+            r = e.act("move_save", name="Slow half-turn CCW")
+            mv = r.get("move") or {}
+            check("save the movement running now under a name", r.get("ok") and mv.get("lib") == "circle"
+                  and mv["params"].get("arc") == 180 and mv["params"].get("direction") == -1, str(r))
+            check("...a second move with the same name is refused",
+                  not e.act("move_save", name="slow half-turn ccw").get("ok"), "")
+            r = e.act("move_save", name="Wide sweep", lib="pan_sweep", params={"arc": 90, "size": 40})
+            check("...or save one from its shape and knobs", r.get("ok") and r["move"]["params"]["size"] == 40.0, str(r))
+            e.act("stop_fx")
+            r = e.act("move_play", id=mv["id"], heads=[3, 4])
+            check("play it on OTHER lights (not tied to where it was made)",
+                  r.get("ok") and e.fx[-1]["lib"] == "circle" and e.fx[-1]["heads"] == [3, 4]
+                  and e.fx[-1]["params"]["arc"] == 180, str(e.fx))
+            check("...and the live feed says which move is playing",
+                  any(f.get("move") == mv["id"] for f in e.snapshot().get("fx") or []), str(e.snapshot().get("fx")))
+            e.act("move_play", name="Wide sweep", heads=[3, 4])
+            check("...another move on the same lights takes over (one movement at a time)",
+                  [f["lib"] for f in e.fx] == ["pan_sweep"], str([f["lib"] for f in e.fx]))
+            e.act("stop_fx")
+            e.act("quick_set", page=1, slot=1, button={"kind": "move", "move": mv["id"], "mode": "latch",
+                                                       "target": {"heads": [1, 2]}})
+            e.act("quick_press", id="q1-1")
+            check("a button plays one of My moves", [f["lib"] for f in e.fx] == ["circle"], str(e.fx))
+            e.act("move_rename", id=mv["id"], name="Half turn")
+            e.act("move_save", name="Half turn", id=mv["id"], lib="circle", params={"arc": 270, "direction": -1})
+            e.act("quick_press", id="q1-1")
+            e.act("quick_press", id="q1-1")
+            check("...and follows the move when it is updated", e.fx and e.fx[-1]["params"]["arc"] == 270, str(e.fx))
+            e.act("save_show", name="mv")
+            e.act("move_delete", id=mv["id"])
+            check("delete a move", all(m["id"] != mv["id"] for m in e.moves), "")
+            e.act("load_show", name="mv")
+            check("My moves are saved with the show", [m["name"] for m in e.moves] == ["Half turn", "Wide sweep"],
+                  str([m["name"] for m in e.moves]))
+            check("the Move tab gets them in the snapshot", len(e.snapshot().get("moves") or []) == 2, "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("the Move tab lists My moves with save / rename / delete",
+          all(k in js for k in ('"move_save"', '"move_play"', '"move_rename"', '"move_delete"', "Save this as my move")), "")
 
 
 def test_arm_for_set() -> None:

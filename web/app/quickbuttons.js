@@ -20,6 +20,7 @@ const DOES = [
   ["strobe", "Strobe", "Strobes them"],
   ["kill", "Blackout lights", "Turns these lights off"],
   ["fx", "Effect", "Runs one effect (circle, rainbow, chase…)"],
+  ["move", "My move", "Plays one of your saved moves (Move tab)"],
   ["custom", "Mix", "Any mix of level, dim, colour, strobe and effects"],
   ["capture", "From the stage", "Whatever is on stage now: colours, positions, effects"],
   ["go", "GO", "GO on a playback"],
@@ -33,7 +34,7 @@ const DOES = [
   ["fxkill", "KILL FX", "Stops every effect, disarms"],
 ];
 const KIND_COLOUR = { flash: "#f8fafc", strobe: "#fde047", colour: null, kill: "#64748b", fx: "#a78bfa",
-  custom: "#38bdf8", go: "#22c55e", release: "#f97316", preset: "#38bdf8", blackout: "#ef4444",
+  custom: "#38bdf8", move: "#a78bfa", go: "#22c55e", release: "#f97316", preset: "#38bdf8", blackout: "#ef4444",
   sfx: "#f97316", fog: "#cbd5e1", laser: "#22d3ee", arm: "#ef4444", fxkill: "#ef4444" };
 const FX = [["rainbow", "Rainbow"], ["colour_chase", "Colour chase"], ["alternate", "Alternate"], ["breathe", "Breathe"],
   ["pulse", "Pulse"], ["dimmer_chase", "Dimmer chase"], ["sparks", "Sparks"], ["circle", "Circle"],
@@ -226,6 +227,7 @@ function fromButton(b) {
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
+    move: b ? b.move || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
   };
@@ -254,6 +256,7 @@ function toButton(s) {
   if (d === "colour") b.colour = s.colour || "#ffffff";
   if (d === "strobe") { b.hz = s.hz; if (s.colour) b.colour = s.colour; }
   if (d === "fx") { b.fx = s.fx; b.params = s.params; }
+  if (d === "move") b.move = s.move;
   if (d === "custom" || d === "capture") {
     if (s.mix.level) b.level = s.level;
     if (s.mix.dim) b.dim = s.dim;
@@ -332,6 +335,12 @@ function editButton(slot, btn) {
       } else {
         kids.push(row("Speed", slider(s.params.speed ?? 1, 0.1, 4, 0.1, (v) => { s.params.speed = v; }, "×")));
       }
+    }
+    if (d === "move") {
+      const mv = (state.snap && state.snap.moves) || [];
+      if (!s.move && mv.length) s.move = mv[0].id;
+      kids.push(row("Move", mv.length ? chips(mv.map((m) => [m.id, m.name]), s.move, (v) => { s.move = v; draw(); })
+        : h("div.qe-note", "No saved moves yet - make one on the Move tab and press “Save this as my move”.")));
     }
     if (d === "custom" || d === "capture") {
       if (d === "capture") {

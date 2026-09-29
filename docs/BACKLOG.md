@@ -104,11 +104,14 @@ Done: every option in the button editor is a tap.
 Still to do:
 - Fade in / out times per button.
 - Double-size tiles and icons on tiles.
-- A button that plays a saved Look (item 8) or one of "My moves" (below).
+- A button that plays a saved Look (item 8).
 - A MIDI / keyboard key per button.
 - Per-button speed (a Speed master of its own).
 
-**My moves (agreed):** save a movement (shape, arc, direction, size,
+**My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
+to play it on the selected lights, tap again to stop; ⋯ to update it to
+the knobs now, rename or delete; "My move" on a button follows the move
+when it is updated; saved with the show.  As agreed: save a movement (shape, arc, direction, size,
 speed, wave, where it is centred) under a name and pick it from a list on
 the Move tab, next to a light's built-in programs.  It runs and loops on
 any selected lights until stopped: not a cue, and not tied to particular

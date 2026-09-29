@@ -586,6 +586,7 @@ ACTIONS = (
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move",
+    "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
@@ -680,6 +681,8 @@ class Engine:
         self.quick: list[dict] = []
         self.quick_active: dict[str, dict] = {}
         self.quick_names: dict[str, str] = {}
+        # "My moves": named movements (shape + knobs), played on any lights
+        self.moves: list[dict] = []
         # Special effects (see the FX layer): armed until (monotonic), the
         # runs firing now, and how much each confetti tank has left (s).
         # Never saved: a desk always starts DISARMED with nothing firing.
@@ -816,6 +819,7 @@ class Engine:
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
             # Per-head limits and orientation, so undo puts a fixture back
@@ -841,6 +845,7 @@ class Engine:
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
+        self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
                              if any(b["id"] == k for b in self.quick)}
@@ -3483,6 +3488,8 @@ class Engine:
     # ------------------------------------------------------------------
     QUICK_KINDS = ("flash", "strobe", "colour", "kill", "fx", "go",
                    "release", "preset", "blackout",
+                   # one of "My moves", by id (an edit to the move reaches it)
+                   "move",
                    # anything at once: level / dim / colour / strobe /
                    # captured values / attributes / effects, on any lights
                    "custom",
@@ -3556,6 +3563,11 @@ class Engine:
                 btn["cue"] = int(raw["cue"])
         if kind == "preset":
             btn["preset"] = int(raw.get("preset") or 0)
+        if kind == "move":
+            mid = str(raw.get("move") or "")
+            if not mid:
+                raise ValueError("a move button needs one of My moves")
+            btn["move"] = mid
         if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
             btn["seconds"] = float(_clamp(raw.get("seconds"), 0.2, 600))
         if kind == "fog":
@@ -3565,6 +3577,79 @@ class Engine:
             btn["values"] = {str(k): int(_clamp(v, 0, 255)) for k, v in raw["values"].items()
                              if str(k) in LASER_ROLES}
         return btn
+
+    # ------------------------------------------------------------------
+    # My moves: named movements, not cues - play one on any lights
+    # ------------------------------------------------------------------
+    MOVE_MAX = 64
+
+    def _move_clean(self, raw: dict) -> dict:
+        lib = str(raw.get("lib") or raw.get("fx") or "").lower()
+        if lib not in motion_mod.KINDS:
+            raise ValueError(f"a move is one of {', '.join(motion_mod.KINDS)}")
+        name = str(raw.get("name") or "").strip()[:32]
+        if not name:
+            raise ValueError("a move needs a name")
+        mid = str(raw.get("id") or "") or "m" + os.urandom(4).hex()
+        return {"id": mid[:16], "name": name, "lib": lib,
+                "params": self._quick_fx_params(lib, raw.get("params") or {})}
+
+    def _a_move_save(self, name="", lib=None, params=None, id=None, **_):
+        """Save a movement under a name.  Without `lib`, the movement running
+        on the selection now (shape and knobs) is what gets saved."""
+        if lib in (None, ""):
+            sel = set(self.selected)
+            row = next((f for f in reversed(self.fx) if f.get("lib") in motion_mod.KINDS
+                        and (not sel or sel & set(f.get("heads") or []))), None)
+            if row is None:
+                raise ValueError("start a movement first (or give its shape) - then save it")
+            lib, params = row["lib"], params if isinstance(params, dict) else row.get("params")
+        mv = self._move_clean({"name": name, "lib": lib, "params": params, "id": id})
+        old = next((i for i, m in enumerate(self.moves) if m["id"] == mv["id"]), None)
+        if old is not None:
+            self.moves[old] = mv
+        else:
+            if len(self.moves) >= self.MOVE_MAX:
+                raise ValueError(f"{self.MOVE_MAX} moves is the most - delete one first")
+            if any(m["name"].lower() == mv["name"].lower() for m in self.moves):
+                raise ValueError(f"there is already a move called {mv['name']!r}")
+            self.moves.append(mv)
+        return {"move": mv, "summary": f"saved move {mv['name']!r}"}
+
+    def _move_find(self, id=None, name=None) -> dict:
+        for m in self.moves:
+            if (id and m["id"] == str(id)) or (name and m["name"].lower() == str(name).lower()):
+                return m
+        raise ValueError(f"no move {id or name!r}")
+
+    def _a_move_play(self, id=None, name=None, heads=None, group=None, **_):
+        """Play a saved move on the selection (or heads / a group); a
+        movement already on those lights makes way for it."""
+        mv = self._move_find(id, name)
+        rows = self._fx_targets(heads, group)
+        nums = {h["head_no"] for h in rows}
+        if not nums:
+            raise ValueError("select the lights to move first")
+        self.fx = [f for f in self.fx if not (f.get("lib") in motion_mod.KINDS
+                                              and nums & set(f.get("heads") or []))]
+        r = self._a_run_fx_named(mv["lib"], mv["params"], None, sorted(nums), None)
+        for f in self.fx:
+            if f["id"] == r["fx"]:
+                f["move"] = mv["id"]
+        return {**r, "move": mv["id"], "summary": f"{mv['name']} on {r['heads']} light(s)"}
+
+    def _a_move_delete(self, id=None, name=None, **_):
+        mv = self._move_find(id, name)
+        self.moves = [m for m in self.moves if m is not mv]
+        return {"summary": f"deleted move {mv['name']!r}"}
+
+    def _a_move_rename(self, id=None, name="", **_):
+        mv = self._move_find(id)
+        new = str(name or "").strip()[:32]
+        if not new:
+            raise ValueError("a move needs a name")
+        mv["name"] = new
+        return {"move": mv, "summary": f"renamed to {new!r}"}
 
     def _quick_fx_params(self, name: str, params) -> dict:
         """The effect's own knobs a button keeps (speed, size, arc...)."""
@@ -3843,8 +3928,13 @@ class Engine:
                     self._quick_off(other["id"], force=True)
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
                    "owners": set(), "fx_ids": []}
-            wanted = [{"name": btn["fx"], "params": btn.get("params") or {}}] if btn["kind"] == "fx" \
-                else btn.get("fx_list") or []
+            if btn["kind"] == "move":
+                mv = next((m for m in self.moves if m["id"] == btn.get("move")), None)
+                wanted = [{"name": mv["lib"], "params": mv["params"]}] if mv else []
+            elif btn["kind"] == "fx":
+                wanted = [{"name": btn["fx"], "params": btn.get("params") or {}}]
+            else:
+                wanted = btn.get("fx_list") or []
             for item in wanted:
                 try:
                     r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
@@ -8744,6 +8834,7 @@ class Engine:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
             "meta": {"master": self.master,
@@ -8933,6 +9024,7 @@ class Engine:
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
                 "meta": {"master": self.master},
@@ -9106,6 +9198,12 @@ class Engine:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
+            self.moves = []
+            for m in payload.get("moves") or []:
+                try:
+                    self.moves.append(self._move_clean(m))
+                except (KeyError, TypeError, ValueError):
+                    continue
             self.quick_active = {}
             self._a_fx_kill()                  # a new show starts disarmed
             self._a_timeline_stop()
@@ -9306,6 +9404,8 @@ class Engine:
                        "duration": dur,
                        "remaining": (round(dur - elapsed, 1)
                                      if dur is not None else None)}
+                if row.get("move"):
+                    pub["move"] = row["move"]         # which of My moves it is
                 out.append(pub)
                 continue
             pub = {"id": row["id"], "role": row["role"], "kind": row["kind"],
@@ -9388,6 +9488,7 @@ class Engine:
                 "venue": self.venue,
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
+                "moves": [dict(m) for m in self.moves],
                 "timeline": self._timeline_public(),
                 # Heads a saved cue still points at that the patch no
                 # longer has - the "playback does nothing" diagnosis.
