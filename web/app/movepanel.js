@@ -185,6 +185,29 @@ function spotsBlock() {
       h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split" }, { toast: true }) }, "Split")) : null);
 }
 
+// Roam: the selected movers wander inside the zones picked (each light on
+// its own path, aimed from where it hangs) - "hover round the dance floor
+// and the DJ booth".  Several zones share the lights out.
+const roamPick = new Set(["dancefloor"]);
+let roamSpeed = 1;
+function roamBlock() {
+  const zones = (((state.snap && state.snap.venue) || {}).zones || []);
+  if (!zones.length) return null;
+  const kinds = [...new Map(zones.map((z) => [z.kind, z.name || z.kind])).entries()];
+  for (const k of [...roamPick]) if (!kinds.some(([x]) => x === k)) roamPick.delete(k);
+  if (!roamPick.size) roamPick.add(kinds[0][0]);
+  const roaming = ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam");
+  return h("div.mv-row.mv-roam", h("span.k", "Roam"),
+    h("span.chip-row", ...kinds.map(([k, name]) => h("button.chip" + (roamPick.has(k) ? ".on" : ""), {
+      title: `Wander inside the ${name}`, onclick: () => { if (roamPick.has(k) && roamPick.size > 1) roamPick.delete(k); else roamPick.add(k); render(true); },
+    }, name))),
+    h("span.chip-row", ...[[0.5, "Slow"], [1, "Medium"], [2.5, "Fast"]].map(([v, l]) => h("button.chip" + (roamSpeed === v ? ".on" : ""), {
+      onclick: () => { roamSpeed = v; render(true); } }, l))),
+    h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
+      onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
+    roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
+}
+
 // Stay on the dance floor: every mover's own pan/tilt range for the floor,
 // worked out from where it hangs.  Movement always fits inside it (on by
 // default); the second switch holds cues and aims to it too.
@@ -477,7 +500,8 @@ function render(force = false) {
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib, f.move]), moves(), knobs, fine, own.key, own.attrs.length, own.rev,
+    running().map((f) => [f.id, f.lib, f.move]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
+    moves(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
     state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],
     ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z])]);
@@ -506,7 +530,7 @@ function render(force = false) {
     return;
   }
   show(true);
-  if (aim) aim.replaceChildren(aimBlock(spotsBlock()));
+  if (aim) aim.replaceChildren(aimBlock(spotsBlock(), roamBlock()));
   if (nudge) nudge.replaceChildren(nudgeBlock());
   box.replaceChildren(...[movementBlock(), ownBlock(), floorBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
   loadOwn();

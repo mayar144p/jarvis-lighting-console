@@ -236,14 +236,20 @@ The pass walked every tab for one light of each type (see A0).  Next:
     disarmed); with the existing ARM / hold-to-fire SFX buttons, sizes,
     colours, icons, pages and in-place editing.  **Lock** (per device)
     hides Edit so nothing can be moved.
-23. **AI that programs, not only commands.** "These lights should only
-    hover around the dance floor and the DJ booth" becomes a program:
-    a new *roam* movement that wanders smoothly inside venue zones (the
-    aim solver per frame, so every light - hung, standing, on a pole -
-    stays on the zone), assigned per group, saved as a look, a button or
-    a cue, with a preview in 3D before it is applied.  Same for "the
-    back truss chases red and white on the beat during the drop", "build
-    me 8 buttons for this rig", "make a 32-bar build-up".
+23. **AI that programs.  DONE (roam):** "These lights should only hover
+    around the dance floor and the DJ booth" becomes a program - the new
+    *roam* movement: every mover on its own smooth path inside the zones
+    (several zones share the lights out; "the crowd" = standing / seating
+    / dance floor), aimed each frame by the aim solver from where it hangs
+    (truss, pole, floor: 96 of 96 sampled beams on the zones), Speed
+    master and beat lock, recorded in cues; Move tab -> Roam (zones,
+    slow / medium / fast); the copilot knows it, offline too ("hover /
+    wander / roam / move around the …").  Fixed on the way: the 3D view
+    eased pan / tilt from a standstill on every update, so heads following
+    a moving target (roam, the floor map, an XY tile) hardly moved.
+    **Left:** a 3D preview before applying (Preview covers the programmer,
+    not effects); "the back truss chases red and white on the beat
+    during the drop", "build me 8 buttons", "a 32-bar build-up".
 
 # Part B - done
 

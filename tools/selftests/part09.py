@@ -1169,3 +1169,77 @@ def test_control_tiles() -> None:
             check("moving a fader is not an undo step", "quick_fader" not in [u["action"] for u in e._undo], "")
         finally:
             e.shutdown()
+
+
+def test_roam() -> None:
+    """Roam: movers wander inside zones, aimed from where they hang (truss,
+    pole, floor) - every aim lands on its zone; the lights share the zones
+    out; a cue keeps it; the AI turns a sentence into it."""
+    print("Roam inside zones; AI that programs")
+    import math
+
+    from app import console_ai
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            tr = [r for r in e.venue["rigging"] if r["kind"] == "truss"]
+            a = e.act("add_heads", query="Moving Head", qty=4)["heads"]
+            e.act("attach_heads", heads=a, rig=tr[1]["id"], stance="hang")
+            b = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            e.act("set_place", head=b[0], x=-5, y=0.3, z=6)
+            e.act("set_place", head=b[1], x=5, y=0.3, z=6)
+            heads = a + b
+            e.act("select_heads", heads=heads)
+            r = e.act("roam", zones=["dancefloor", "dj"], speed=2)
+            check("roam starts on the movers", r.get("ok") and sorted(r["heads"]) == sorted(heads), str(r))
+            zones = {z["kind"]: z for z in e.venue["zones"]}
+            import time as _time
+            t0 = _time.monotonic() + 0.5
+            pts, bad, moved = {}, 0, set()
+            for k in range(8):
+                vals = e._fx_values(t0 + k * 0.8)
+                for n in heads:
+                    p = (vals[n]["pan"], vals[n]["tilt"])
+                    if n in pts and pts[n] != p:
+                        moved.add(n)
+                    pts[n] = p
+            check("every light keeps moving", moved == set(heads), str(set(heads) - moved))
+            # the zone points it aims at are inside the zones: re-derive them
+            row = next(f for f in e.fx if f.get("roam"))
+            for k in range(20):
+                t = k * 0.9
+                for i, n in enumerate(row["heads"]):
+                    zi = i % len(row["roam"])
+                    x0, x1, z0, z1, cx, cz, diag = row["_zc"][zi]
+                    # the same path as _roam_values
+                    w = e._ROAM_W[i % len(e._ROAM_W)]
+                    s = t * 2.0 * 2.2 / diag
+                    u = 0.5 + 0.5 * (0.62 * math.sin(w[0] * s * 6.28 + i * 1.7) + 0.38 * math.sin(w[1] * s * 6.28 + 2 * i * 1.7))
+                    v = 0.5 + 0.5 * (0.62 * math.sin(w[2] * s * 6.28 + 3 * i * 1.7) + 0.38 * math.sin(w[3] * s * 6.28 + i * 1.7))
+                    x, z = x0 + u * (x1 - x0), z0 + v * (z1 - z0)
+                    if not (x0 - 0.01 <= x <= x1 + 0.01 and z0 - 0.01 <= z <= z1 + 0.01):
+                        bad += 1
+            check("every path stays in its zone's bounds", bad == 0, str(bad))
+            check("two zones share the lights out", {i % 2 for i in range(len(row["heads"]))} == {0, 1}
+                  and [z["name"] for z in row["roam"]] == ["Dance floor", "DJ"], "")
+            check("a light that can't pan / tilt is left out", not e.act("roam", heads=[999]).get("ok"), "")
+            check("an unknown zone says what there is", "Dance floor" in (e.act("roam", zones=["kitchen"]).get("error") or ""), "")
+            e.act("record_cue", playback=1, name="Roaming")
+            cue = e.playbacks[0]["stack"][0]
+            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["dj"]["id"]], str(cue.get("fx")))
+            e.act("cue_go", playback=1, cue=1)
+            check("...and plays it back", any(f.get("roam") for f in e.fx), "")
+            e.act("stop_fx")
+            e.act("select_heads", heads=heads)
+            p = console_ai.plan("these lights should only hover around the dance floor and the DJ booth", offline=True, eng=e)
+            out = console_ai.run(console_ai.resolve(p["steps"], e), e)
+            check("the AI turns the sentence into a roam", out.get("ok") and any(f.get("roam") for f in e.fx)
+                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "DJ"], str(p["steps"]))
+        finally:
+            e.shutdown()

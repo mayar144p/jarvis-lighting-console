@@ -33,6 +33,8 @@ class CueMixin:
                 item["across"] = True
             if f.get("move"):
                 item["move"] = f["move"]
+            if f.get("roam"):
+                item["roam"] = [z["id"] for z in f["roam"]]
             items.append(item)
             ids.append(f["id"])
         return items[:12], ids
@@ -60,8 +62,12 @@ class CueMixin:
             if not heads:
                 continue
             try:
-                r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
-                                         heads, None, across=bool(item.get("across")))
+                if item.get("roam"):
+                    r = self._a_roam(zones=item["roam"], heads=heads, **(item.get("params") or {}))
+                    r["fx"] = r["id"]
+                else:
+                    r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                             heads, None, across=bool(item.get("across")))
             except (ValueError, KeyError):
                 continue
             for f in self.fx:

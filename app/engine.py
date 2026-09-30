@@ -67,13 +67,14 @@ from app.engine_autopilot import AutopilotMixin
 from app.engine_steps import StepsMixin
 from app.engine_desk import DeskMixin
 from app.engine_cuemodes import CueModesMixin
+from app.engine_roam import RoamMixin
 from app.engine_osc import OscMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -1125,6 +1126,11 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             if row.get("steps"):
                 sfx = next((f for f in self._steps() if f["id"] == row["steps"]), {})
                 out.append({"id": row["id"], "steps": row["steps"], "label": sfx.get("name", "Steps"),
+                            "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
+                            "duration": dur, "remaining": None})
+                continue
+            if row.get("roam"):
+                out.append({"id": row["id"], "lib": "roam", "label": "Roam: " + " + ".join(z["name"] for z in row["roam"]),
                             "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
                             "duration": dur, "remaining": None})
                 continue

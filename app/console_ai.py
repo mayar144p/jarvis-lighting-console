@@ -96,6 +96,7 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "run_command": ("text",),
     # the room, the buttons and the timeline
     "aim_at": ("x", "y", "z", "mark", "heads"),
+    "roam": ("zones", "speed", "size", "beats", "heads", "group"),
     "attach_heads": ("heads", "head", "rig", "spacing", "stance"),
     "venue_template": ("name", "width", "depth", "height"),
     "venue_crowd": ("style", "density", "show"),
@@ -121,7 +122,7 @@ SELECTION_ACTIONS = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "locate", "record_palette", "include_palette", "include_preset",
     "run_fx", "fan", "align", "distribute", "mirror", "set_attr_range",
-    "record_preset", "aim_at", "attach_heads",
+    "record_preset", "aim_at", "attach_heads", "roam",
 })
 
 
@@ -251,6 +252,12 @@ fx: only for run_fx.  Prefer a NAMED effect: {{"name": "circle",
   attribute, kind (sine|saw|square|triangle|random), speed Hz, spread and
   phase in degrees, duration seconds.
 timing: {{"fade": seconds}} for set_intensity and record_cue.
+roam: moving lights wander smoothly INSIDE venue zones, each aimed from
+  where it hangs: attributes {{"zones": ["dancefloor", "dj"], "speed": 1}}
+  (zone kinds dancefloor / dj / bar / standing, or a zone's name; several
+  zones share the lights out).  Use it for "hover / wander / roam / move
+  around the dance floor (and the DJ booth)", "keep them searching the
+  crowd".
 
 Rules:
   * Use the rig below: real head numbers, groups and capabilities.  Target
@@ -646,7 +653,18 @@ def _fallback(text: str) -> dict:
             row["duration"] = duration
         add(target, "run_fx", {}, row)
 
-    if re.search(r"\brainbow\b|colou?r\s+(?:chase|cycle|wheel)", low):
+    roam_words = re.search(r"\b(roam\w*|hover\w*|wander\w*|drift\w*|float\w*|search\w*|sweep\w* around|mov\w* around)\b", low)
+    zone_words = []
+    for pat, zone in ((r"dance\s*floor|\bfloor\b", "dancefloor"), (r"\bdj\b|\bbooth\b|\bstage\b", "dj"),
+                      (r"\bbar\b(?!s)", "bar"), (r"\bcrowd\b|\baudience\b", "standing")):
+        if re.search(pat, low) and zone not in zone_words:
+            zone_words.append(zone)
+    if roam_words and (zone_words or re.search(r"\broam", low)):
+        attrs = {"zones": zone_words or ["dancefloor"]}
+        if speed is not None:
+            attrs["speed"] = 0.5 if speed < 1 else 2.5 if speed > 1 else 1.0
+        add(target, "roam", attrs)
+    elif re.search(r"\brainbow\b|colou?r\s+(?:chase|cycle|wheel)", low):
         named("rainbow")
     elif re.search(r"\bfigure\s?(?:8|eight)\b", low):
         named("figure_eight")
