@@ -891,7 +891,7 @@ const KEYS = [
   ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
   ["A / Shift+A", "select all / none"], ["1 … 9", "select fixture 1–9 (Shift adds)"], ["G", "group the selection"],
   ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O", "overwrite the current cue"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
-  ["F", "frame the selection on stage"], ["Esc", "close / leave full screen"], ["?", "this help"],
+  ["T / Shift+T", "tap the tempo / this is beat 1"], ["F", "frame the selection on stage"], ["Esc", "close / leave full screen"], ["?", "this help"],
 ];
 const SYNTAX = [
   ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["all warm white", "every fixture warm white"],

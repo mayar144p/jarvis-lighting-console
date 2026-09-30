@@ -206,3 +206,109 @@ def test_room_making() -> None:
           all(k in rd for k in ('"venue_preview"', '"/api/console/room"', '"venue_shape"', '"venue_template"', "startDrawRoom", "startPlanUpload")), "")
     check("walls are drawn like a plan: right angles, typed lengths",
           "_placeTyped" in ed and "d.typed" in ed and "openRoomDialog" in vp, "")
+
+
+def test_beat_clock() -> None:
+    """One beat clock for the desk: taps, a typed BPM, MIDI clock, the CDJs
+    (Pro DJ Link); the Speed master follows it; effects lock to the beat
+    and keep their place in the bar when the tempo changes."""
+    print("beat clock")
+    import time as _time
+    from app import engine as eng
+    from app import tempo
+
+    c = tempo.Clock(120, now=100.0)
+    for t in (100.0, 100.5, 101.0, 101.5):
+        bpm = c.tap(t)
+    check("four taps half a second apart: 120 BPM, the last on beat 4",
+          abs(bpm - 120) < 0.01 and c.beat_in_bar(101.5) == 4 and c.phase(101.5) < 1e-6, str((bpm, c.public(101.5))))
+    before = c.beats(103.0)
+    c.set_bpm(128, 103.0)
+    check("a new tempo doesn't jump the beat count", abs(c.beats(103.0) - before) < 1e-9
+          and abs(c.beats(104.0) - before - 128 / 60) < 1e-9, "")
+    c.align(110.0, 3)
+    check("'now is beat 3' moves the phase, not the tempo", c.beat_in_bar(110.0) == 3 and c.phase(110.0) < 1e-6
+          and c.bpm == 128, str(c.public(110.0)))
+    m = tempo.Clock(120, now=0.0)
+    for i in range(49):
+        m.midi_tick(10.0 + i * (60 / 128 / 24))
+    check("MIDI clock at 24 ticks a beat reads 128 BPM", abs(m.bpm - 128) < 0.2 and m.source == "midi"
+          and m.live(10.0 + 48 * 60 / 128 / 24), str(m.public(11.0)))
+    m.midi_start(20.0)
+    check("MIDI Start is the 1", m.beat_in_bar(20.0) == 1 and m.phase(20.0) == 0, "")
+    pkt = tempo.build_prodj_beat(2, 126.0, 3, pitch_pct=2.0)
+    got = tempo.parse_prodj_beat(pkt)
+    check("a CDJ beat packet: tempo with the pitch fader, the beat of the bar",
+          got and got["device"] == 2 and abs(got["bpm"] - 128.52) < 0.02 and got["beat"] == 3, str(got))
+    check("anything else on the port is ignored", tempo.parse_prodj_beat(b"Qspt1WmJOL" + bytes(90)) is None
+          and tempo.parse_prodj_beat(b"junk") is None, "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("speed_master", pct=50)
+            check("moving the Speed master by hand stops it following", e.tempo_follow is False, "")
+            e.act("tempo_tap")
+            _time.sleep(0.25)
+            r = e.act("tempo_tap")
+            check("tapping sets the tempo and the Speed master follows (120 BPM = 1x)",
+                  r.get("ok") and e.tempo_follow and abs(e.speed_master - r["tempo"]["bpm"] / 120) < 0.01, str(r))
+            undo_n = len(e._undo)
+            e.act("tempo_set", bpm=128)
+            check("the tempo is played, not edited: no undo step", len(e._undo) == undo_n, "")
+            check("it rides the live feed", e.lite()["tempo"]["bpm"] == 128, "")
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="rainbow", params={"beats": 4})
+            now = _time.monotonic()
+            e._fx_values(now)
+            row = e.fx[0]
+            check("an effect locked to 1 bar runs one cycle per 4 beats", r.get("ok")
+                  and abs(row["_beat_cycles"] - e.tempo.beats(now) / 4) < 1e-9, str(row.get("params")))
+            e.act("tempo_set", bpm=140)
+            e._fx_values()
+            c1 = row["_beat_cycles"]
+            e.act("fx_beats", id=row["id"], beats=0)
+            e._fx_values()
+            check("let go of the beat, it carries on from where it was",
+                  abs(row["_v"] * row["params"]["speed"] - c1) < 0.05 and "beats" not in row["params"], "")
+            r = e.act("fx_beats", id=row["id"], beats=100)
+            check("a silly lock is refused", not r.get("ok"), str(r))
+            e.act("fx_beats", id=row["id"], beats=2)
+            e.act("record_cue", playback=1, name="On the beat")
+            check("a cue keeps the effect's beat lock", e.playbacks[0]["stack"][0]["fx"][0]["params"].get("beats") == 2,
+                  str(e.playbacks[0]["stack"][0].get("fx")))
+            # the CDJs, over the network
+            port = _free_port()
+            check("listening to the CDJs", e._prodj_start(port) is None, "")
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.sendto(tempo.build_prodj_beat(1, 124.0, 2), ("127.0.0.1", port))
+            s.close()
+            deadline = _time.monotonic() + 2
+            while _time.monotonic() < deadline and e.tempo.source != "prodj":
+                _time.sleep(0.02)
+            pub = e.tempo_public()
+            check("a CDJ's beat sets the tempo and where we are in the bar",
+                  pub["source"] == "prodj" and pub["bpm"] == 124 and pub["beat"] == 2 and pub["live"], str(pub))
+            e._prodj_stop()
+            # the desk's own MIDI input: clock bytes go to the beat clock
+            e.tempo_midi(0xFA)
+            check("MIDI Start from the desk's controller is the 1", e.tempo.beat_in_bar(_time.monotonic()) == 1, "")
+        finally:
+            e.shutdown()
+    web = ROOT / "web"
+    tj = (web / "app" / "tempo.js").read_text(encoding="utf-8")
+    kj = (web / "app" / "keys.js").read_text(encoding="utf-8")
+    wm = (web / "app" / "webmidi.js").read_text(encoding="utf-8")
+    pj = (web / "app" / "programmer.js").read_text(encoding="utf-8")
+    html = (web / "index.html").read_text(encoding="utf-8")
+    check("the top bar has the tempo, a beat light, tap (T) and the 1 (Shift+T)",
+          'id="tempo"' in html and 'id="tempo-dot"' in html and '"tempo_tap"' in tj and "downbeat" in kj, "")
+    check("browser MIDI clock feeds the desk's tempo about once a second", '"tempo_set"' in wm and "0xf8" in wm, "")
+    check("running effects can be locked to the beat", '"fx_beats"' in pj and "beatSelect" in pj, "")
+    mj = (ROOT / "app" / "midi.py").read_text(encoding="utf-8")
+    check("the desk's MIDI input hands clock bytes to the beat clock", "tempo_midi" in mj and "0xF8" in mj, "")

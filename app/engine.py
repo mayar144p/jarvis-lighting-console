@@ -61,10 +61,11 @@ from app.engine_quick import QuickMixin
 from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
+from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -130,6 +131,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         # (0.1 = a tenth of the speed, 2 = double) - movement, colour chases,
         # everything, smoothly and without a jump when it changes
         self.speed_master = 1.0
+        self._tempo()                      # the beat clock (app/tempo.py)
         # The dance floor as a pan/tilt range per mover (see _floor_limits):
         # movement always fits inside it (floor_safe), and with floor_lock
         # EVERYTHING does - cues, aims, the programmer.
@@ -1110,6 +1112,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 continue
             pub = {"id": row["id"], "role": row["role"], "kind": row["kind"],
                    "speed": row["speed"], "spread": row["spread"],
+                   "beats": (row.get("params") or {}).get("beats"),
                    "base": row["base"], "depth": row["depth"],
                    "heads": list(row["heads"]),
                    "duration": dur,
@@ -1164,6 +1167,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "output": self._output_public(),
                 "master": self.master,
                 "speed_master": self.speed_master,
+                "tempo": self.tempo_public(),
                 "move_spots": self._move_spots(),
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
                 "floor_movers": len(self._floor_limits()),
@@ -1228,6 +1232,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "live": self.live,
                 "master": self.master,
                 "speed_master": self.speed_master,
+                "tempo": self.tempo_public(),
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out

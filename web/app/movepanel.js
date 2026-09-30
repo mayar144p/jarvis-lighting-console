@@ -5,6 +5,8 @@
 // Built from the venue (spots come from its dance floor and zones) and the
 // engine's movement effects (app/motion.py): a shape of a given size around
 // the aim, fitted inside each light's range, never faster than its motor.
+import { beatSelect } from "./programmer.js";
+import { tap as tapTempo, tempo } from "./tempo.js";
 import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
 import { run } from "./actions.js";
@@ -243,11 +245,9 @@ function nudgeBlock() {
         }, "Save spot"))));
 }
 
-let taps = [];
 function bpmText() {
-  if (taps.length < 2) return "Tap";
-  const gaps = taps.slice(1).map((t, i) => t - taps[i]);
-  return `${Math.round(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length))} BPM`;
+  const t = tempo();
+  return t && t.source !== "manual" ? `${Math.round(t.bpm)} BPM` : "Tap";
 }
 
 // A button that plays this (a saved move follows the move when it's updated)
@@ -273,19 +273,12 @@ function speedMaster() {
     t = setTimeout(() => run("speed_master", { pct }, { silentError: true }), 60);
   });
   const set = (pct) => () => { input.value = pct; input.dispatchEvent(new Event("input")); };
-  // Tap tempo: tap on the beat; 120 BPM is 1x, so 60 BPM halves and 240 doubles everything that moves
-  const tap = h("button.chip.mv-tap", { title: "Tap on the beat (4 taps). 120 BPM = 1×",
+  // Tap tempo: the desk's beat clock (the pill in the top bar); the Speed
+  // master follows it, 120 BPM = 1x, so 60 BPM halves and 240 doubles
+  const tap = h("button.chip.mv-tap", { title: "Tap on the beat (or T). 120 BPM = 1×",
     onpointerdown: (e) => {
       e.preventDefault();
-      const now = performance.now();
-      if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
-      taps.push(now);
-      taps = taps.slice(-5);
-      if (taps.length < 2) { tap.textContent = "Tap…"; return; }
-      const gaps = taps.slice(1).map((t, i) => t - taps[i]);
-      const bpm = 60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length);
-      tap.textContent = `${Math.round(bpm)} BPM`;
-      set(Math.max(10, Math.min(200, Math.round(bpm / 120 * 100))))();
+      tapTempo().then((r) => { if (r && r.tempo) tap.textContent = `${Math.round(r.tempo.bpm)} BPM`; });
     } }, bpmText());
   return h("div.mv-row", h("span.k", "Speed master"), input, out,
     h("span.chip-row", h("button.chip", { onclick: set(50) }, "½×"), h("button.chip", { onclick: set(100) }, "1×"),
@@ -326,6 +319,7 @@ function movementBlock() {
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
+      beatSelect(f),
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));

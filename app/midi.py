@@ -493,6 +493,16 @@ class MidiManager:
                 if self._stop.is_set():
                     break
                 continue
+            status = int(item[1]) & 0xFF
+            if status in (0xF8, 0xFA, 0xFB, 0xFC):
+                # MIDI clock / start: the desk's beat clock, not a mapping
+                feed = getattr(self.engine, "tempo_midi", None)
+                if feed is not None:
+                    try:
+                        feed(status)
+                    except Exception:           # noqa: BLE001 - never die
+                        pass
+                continue
             try:
                 event = parse_short(item[1], item[2], item[3])
             except Exception:                   # noqa: BLE001

@@ -284,6 +284,9 @@ class ProgrammerMixin:
                 raise ValueError("not a number: %r" % (duration,)) from None
             dur = min(d, 86400.0) if d > 0 else None
 
+        beats = params.get("beats") if isinstance(params, dict) else None
+        if beats not in (None, "", 0, "0", False):
+            p["beats"] = self._clean_beats(beats)
         self._fx_seq += 1
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
@@ -342,7 +345,12 @@ class ProgrammerMixin:
             cap = row["_cap"] = ((self.patch_rev, tuple(sorted(p.items()))),
                                  motion_mod.max_rate(amps, travel), spans)
         rate = min(float(p.get("speed", 0.125)), cap[1])
-        row["_turns"] = row.get("_turns", 0.0) + step * rate
+        beats = p.get("beats")
+        if beats and self._tempo().bpm / 60.0 / float(beats) <= cap[1]:
+            row["_turns"] = row.get("_beat_cycles", 0.0)   # locked to the beat
+        else:
+            # free, or the beat asks more than the slowest motor can do
+            row["_turns"] = row.get("_turns", 0.0) + step * rate
         prog, pbs = base
         # "across": every head of a multi-head light (a Wave 360's four
         # tilts) is one step of the movement - a tilt wave through the light
@@ -406,6 +414,41 @@ class ProgrammerMixin:
                                          motion_mod.DEFAULT_TRAVEL_S)
         return float(m.get("pan_s") or dp), float(m.get("tilt_s") or dt)
 
+    @staticmethod
+    def _clean_beats(value) -> float:
+        try:
+            b = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"beats: a number like 1, 2, 4 (or 0.5), not {value!r}") from None
+        if not 0.125 <= b <= 64:
+            raise ValueError("beats is 0.125 .. 64")
+        return b
+
+    def _a_fx_beats(self, id=None, beats=None, **_):
+        """Lock a running effect to the beat: one cycle per `beats` beats
+        (1, 2, 4, 8 ...); beats=0 lets it run free on its own speed."""
+        try:
+            tid = int(id)
+        except (TypeError, ValueError):
+            raise ValueError(f"bad effect id: {id!r}") from None
+        row = next((r for r in self.fx if r["id"] == tid), None)
+        if row is None:
+            raise ValueError(f"no effect {tid} running")
+        params = row.setdefault("params", {})
+        if beats in (None, "", 0, "0", False, "free"):
+            params.pop("beats", None)
+            # carry on from where the beat left it: no jump when it goes free
+            if "_beat_cycles" in row:
+                speed = float(params.get("speed") or row.get("speed") or 1.0)
+                row["_v"] = row["_beat_cycles"] / max(speed, 1e-6)
+                row["_turns"] = row["_beat_cycles"]
+                row["_last"] = time.monotonic()
+            return {"fx": tid, "beats": None, "summary": f"effect {tid} runs free"}
+        params["beats"] = self._clean_beats(beats)
+        row.pop("_cap", None)
+        b = params["beats"]
+        return {"fx": tid, "beats": b, "summary": f"effect {tid}: one cycle every {b:g} beat{'s' if b != 1 else ''}"}
+
     def _a_speed_master(self, value=None, pct=None, **_):
         """The Speed master: every running effect's speed x value (0.1 .. 4);
         pct=50 is half speed."""
@@ -414,6 +457,7 @@ class ProgrammerMixin:
         if value is None:
             raise ValueError("value is required (1 = normal, 0.5 = half, 2 = double)")
         self.speed_master = max(0.05, min(4.0, float(value)))
+        self.tempo_follow = False            # set by hand: it no longer follows the tempo
         return {"speed_master": self.speed_master,
                 "summary": f"effects at {round(self.speed_master * 100)}% speed"}
 
@@ -445,6 +489,15 @@ class ProgrammerMixin:
             step = max(0.0, now - last) * master * float(row.get("rate", 1.0))
             row["_last"] = max(last, now)
             row["_v"] = row.get("_v", 0.0) + step
+            beats = (row.get("params") or {}).get("beats")
+            if beats:
+                # locked to the beat clock: one cycle per `beats` beats, in
+                # phase with the downbeat - the clock, not the elapsed time
+                cyc = self._tempo().beats(now) / float(beats)
+                row["_beat_cycles"] = cyc
+                if row.get("lib") not in motion_mod.KINDS:
+                    speed = float((row.get("params") or {}).get("speed") or row.get("speed") or 1.0)
+                    row["_v"] = cyc / max(speed, 1e-6)
             if row.get("lib") in motion_mod.KINDS:
                 if base is None:
                     base = (self._programmer_now(now), self._active_playbacks(now))

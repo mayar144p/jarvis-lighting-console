@@ -1,0 +1,173 @@
+"""The beat clock: how fast the music is and where the beat is.
+
+One clock for the whole desk, fed by whichever source is there: taps, a
+typed BPM, MIDI clock (24 ticks a beat, Start = the downbeat), Pro DJ Link
+beat packets from CDJs (tempo with the pitch fader, and which beat of the
+bar), or the browser (Web MIDI clock, audio beat detection).  Effects that
+are locked to it run one cycle per N beats, in phase with the downbeat.
+
+`beats(now)` is the running beat count since the anchor; a tempo change
+re-anchors so the count never jumps - an effect locked to the beat keeps
+its place in the bar when the DJ nudges the pitch.
+
+Pure: time is passed in (monotonic seconds), so it is tested directly.
+"""
+from __future__ import annotations
+
+import math
+
+MIN_BPM, MAX_BPM = 30.0, 300.0
+SOURCES = ("manual", "tap", "midi", "prodj", "browser", "audio")
+# a source that has gone quiet this long no longer drives the clock
+QUIET_S = 4.0
+
+
+def _clamp_bpm(bpm: float) -> float:
+    return max(MIN_BPM, min(MAX_BPM, float(bpm)))
+
+
+class Clock:
+    def __init__(self, bpm: float = 120.0, now: float = 0.0):
+        self.bpm = _clamp_bpm(bpm)
+        self.anchor = float(now)          # when beat 0 was
+        self.source = "manual"
+        self.heard_at: float | None = None  # last word from a live source
+        self.bar = 4
+        self._taps: list[float] = []
+        self._ticks: list[float] = []
+
+    # -- reading --------------------------------------------------------------
+    def beats(self, now: float) -> float:
+        return (now - self.anchor) * self.bpm / 60.0
+
+    def beat_in_bar(self, now: float) -> int:
+        """1..4"""
+        return int(math.floor(self.beats(now))) % self.bar + 1
+
+    def phase(self, now: float) -> float:
+        """0..1 through the current beat."""
+        b = self.beats(now)
+        return b - math.floor(b)
+
+    def live(self, now: float) -> bool:
+        """A clock source (MIDI, CDJs, audio) is driving it right now."""
+        return self.source in ("midi", "prodj", "browser", "audio") and \
+            self.heard_at is not None and now - self.heard_at < QUIET_S
+
+    def public(self, now: float) -> dict:
+        b = self.beats(now)
+        return {"bpm": round(self.bpm, 2), "source": self.source, "live": self.live(now),
+                "beat": int(math.floor(b)) % self.bar + 1, "phase": round(b - math.floor(b), 3)}
+
+    # -- setting --------------------------------------------------------------
+    def set_bpm(self, bpm: float, now: float, source: str = "manual") -> None:
+        """A new tempo from here on: the beat count carries on from where it
+        is (no jump), only its rate changes."""
+        b = self.beats(now)
+        self.bpm = _clamp_bpm(bpm)
+        self.anchor = now - b * 60.0 / self.bpm
+        self.source = source if source in SOURCES else "manual"
+        if self.source not in ("manual", "tap"):
+            self.heard_at = now
+
+    def downbeat(self, now: float) -> None:
+        """Now is beat 1 of a bar."""
+        self.anchor = now
+
+    def align(self, now: float, beat_in_bar: int) -> None:
+        """Now is this beat of the bar (1..4): move the phase to the nearest
+        count that says so, without changing the tempo."""
+        b = self.beats(now)
+        want = (int(beat_in_bar) - 1) % self.bar
+        base = math.floor(b) - (math.floor(b) % self.bar) + want
+        best = min((base - self.bar, base, base + self.bar), key=lambda n: abs(n - b))
+        self.anchor = now - best * 60.0 / self.bpm
+
+    def tap(self, now: float) -> float | None:
+        """One tap on the beat.  The first tap of a run is beat 1; from the
+        second tap on (within 2 s of the last) the tempo is the average gap,
+        and each tap is a beat, so the phase follows the hand.  Returns the
+        BPM once there is one."""
+        if self._taps and now - self._taps[-1] > 2.0:
+            self._taps = []
+        self._taps.append(now)
+        self._taps = self._taps[-8:]
+        if len(self._taps) < 2:
+            self.downbeat(now)                 # the first tap of a run is "1"
+            return None
+        gaps = [b - a for a, b in zip(self._taps, self._taps[1:])]
+        bpm = 60.0 / (sum(gaps) / len(gaps))
+        self.set_bpm(bpm, now, "tap")
+        self.align_beat(now)
+        return self.bpm
+
+    def align_beat(self, now: float) -> None:
+        """Now is on a beat (whichever): snap the phase to the nearest beat."""
+        b = self.beats(now)
+        self.anchor = now - round(b) * 60.0 / self.bpm
+
+    # -- MIDI clock: 24 ticks a beat ------------------------------------------
+    def midi_tick(self, now: float) -> None:
+        if self._ticks and now - self._ticks[-1] > 1.0:
+            self._ticks = []                   # the clock stopped and came back
+        self._ticks.append(now)
+        self._ticks = self._ticks[-97:]        # four beats
+        self.heard_at = now
+        if len(self._ticks) >= 25:
+            span = self._ticks[-1] - self._ticks[0]
+            bpm = 60.0 / (span / (len(self._ticks) - 1) * 24)
+            # small wobble in tick timing is not a tempo change
+            if abs(bpm - self.bpm) > 0.15 or self.source != "midi":
+                self.set_bpm(round(bpm, 2), now, "midi")
+            self.source = "midi"
+
+    def midi_start(self, now: float) -> None:
+        self._ticks = []
+        self.downbeat(now)
+        self.source = "midi"
+        self.heard_at = now
+
+    # -- Pro DJ Link: a CDJ's beat packet -------------------------------------
+    def dj_beat(self, now: float, bpm: float, beat_in_bar: int) -> None:
+        if abs(bpm - self.bpm) > 0.05 or self.source != "prodj":
+            self.set_bpm(bpm, now, "prodj")
+        self.align(now, beat_in_bar)
+        self.source = "prodj"
+        self.heard_at = now
+
+
+# ---------------------------------------------------------------------------
+# Pro DJ Link beat packets (UDP 50001), as the CDJ / XDJ / DJM send them
+# ---------------------------------------------------------------------------
+PRODJ_PORT = 50001
+PRODJ_MAGIC = b"Qspt1WmJOL"
+PRODJ_BEAT = 0x28
+
+
+def parse_prodj_beat(pkt: bytes) -> dict | None:
+    """{device, name, bpm (with the pitch fader), beat (1..4)} or None."""
+    if len(pkt) < 0x60 or pkt[:10] != PRODJ_MAGIC or pkt[0x0A] != PRODJ_BEAT:
+        return None
+    name = pkt[0x0B:0x1F].split(b"\0", 1)[0].decode("ascii", "replace").strip()
+    device = pkt[0x21]
+    pitch = int.from_bytes(pkt[0x55:0x58], "big")          # 0x100000 = 0 %
+    track_bpm = int.from_bytes(pkt[0x5A:0x5C], "big") / 100.0
+    beat = pkt[0x5C]
+    if not track_bpm or not 1 <= beat <= 4:
+        return None
+    return {"device": device, "name": name, "bpm": round(track_bpm * pitch / 0x100000, 2), "beat": beat}
+
+
+def build_prodj_beat(device: int, bpm: float, beat: int, pitch_pct: float = 0.0, name: str = "CDJ-3000") -> bytes:
+    """A beat packet as a CDJ sends it (tests, and the virtual deck)."""
+    p = bytearray(0x60)
+    p[:10] = PRODJ_MAGIC
+    p[0x0A] = PRODJ_BEAT
+    p[0x0B:0x0B + len(name)] = name.encode("ascii")[:20]
+    p[0x1F] = 0x01
+    p[0x21] = device & 0xFF
+    p[0x55:0x58] = int(0x100000 * (1 + pitch_pct / 100.0)).to_bytes(3, "big")
+    p[0x5A:0x5C] = int(round(bpm * 100)).to_bytes(2, "big")
+    p[0x5C] = beat
+    p[0x5F] = device & 0xFF
+    return bytes(p)

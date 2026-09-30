@@ -1177,3 +1177,18 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
   border: 1px solid var(--border-2); background: var(--bg-2); text-align: left; }
 .tpl-card:hover { border-color: var(--accent); }
 .tpl-card small { color: var(--muted); }
+
+/* ------------------------------------------------------------ tempo */
+.tempo { display: inline-flex; align-items: stretch; border: 1px solid var(--border-2); border-radius: var(--radius-sm); background: var(--bg-2); height: 32px; }
+.tempo-tap { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0 10px; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.tempo-tap b { font: 600 14px var(--mono); min-width: 3ch; text-align: right; }
+.tempo-tap small { color: var(--muted); font-size: 10px; letter-spacing: .04em; }
+.tempo-tap em { font-style: normal; font-size: 10px; color: var(--accent); font-weight: 700; text-transform: uppercase; }
+.tempo.tapped .tempo-tap { background: var(--accent-bg); }
+.tempo-more { border: 0; border-left: 1px solid var(--border-2); background: transparent; color: var(--text-2); padding: 0 8px; }
+.tempo-dot { width: 9px; height: 9px; border-radius: 50%; background: #243044; transition: background .05s; }
+.tempo-dot.on { background: #7dd3fc; }
+.tempo-dot.one { background: #f472b6; box-shadow: 0 0 8px #f472b6; }
+.tempo.live { border-color: rgba(56, 189, 248, .5); }
+@media (max-width: 820px) { .tempo-tap small, .tempo-tap em { display: none; } }
+.fx-beats { width: auto; min-width: 0; height: 26px; padding: 0 6px; font-size: 12px; }

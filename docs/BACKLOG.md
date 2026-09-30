@@ -77,8 +77,16 @@ Fixed:
 
 ## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
 
-6. A live beat clock (tap, MIDI clock, Ableton Link, Pro DJ Link, audio in)
-   that effects, chases, strobes and buttons lock to.
+6. **(DONE) A live beat clock** (app/tempo.py): a tempo pill in the top
+   bar with a light on each beat (pink on the 1); tap it or press T,
+   Shift+T is the 1; a typed BPM and nudges; MIDI clock from the desk's
+   MIDI input or the browser's (Start = the 1); Pro DJ Link from the
+   CDJs (tempo with the pitch fader and the beat of the bar).  The Speed
+   master follows it (120 BPM = 1x) until moved by hand; any running
+   effect or movement can lock to it (one cycle per 1/4 beat .. 8 bars,
+   in phase with the bar, kept in cues and buttons).
+   Left: Ableton Link, audio in (with item 7), buttons and strobes that
+   fire on the next beat.
 7. Sound-reactive control: level / bass / mid / high driving brightness,
    effect speed or size, and firing buttons; drop detection.
 8. Autopilot for unprogrammed sets: rotate looks by energy, change on

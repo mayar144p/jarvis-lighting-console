@@ -1,5 +1,6 @@
 // Keyboard: a lighting desk is run from the keys.  Typing in a field never
 // fires the rig.
+import { tap, downbeat } from "./tempo.js";
 import { state, patch, selected } from "./store.js";
 import { run, select } from "./actions.js";
 import { typingInField, anyModal, closeTopModal, confirmBox, toast } from "./ui.js";
@@ -59,6 +60,7 @@ export function initKeys() {
     if (k === " " || k === "Enter") { e.preventDefault(); run("cue_go", { playback: focusedPlayback() }); return; }
     if (k === "?") { openHelp(); return; }
     const low = k.toLowerCase();
+    if (low === "t") return e.shiftKey ? downbeat() : tap();
     if (low === "b") return run("cue_back", { playback: focusedPlayback() });
     if (low === "x") return run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 });
     if (low === "a") return e.shiftKey ? select([]) : run("select_all");
