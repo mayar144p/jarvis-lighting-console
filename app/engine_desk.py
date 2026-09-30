@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from app.engine_base import _truthy
+from app.engine_base import UNDO_LIMIT, _truthy
 from app.engine_support import HTP_ROLES
 
 
@@ -137,3 +137,79 @@ class DeskMixin:
             o.pop("kill", None)
             o.pop("scale", None)
             o["set"] = {r: v for r, v in vals.items() if r not in HTP_ROLES}
+
+    # -- macros: command lines played in one go -----------------------------
+    def _macros(self) -> list[dict]:
+        lst = self.__dict__.get("macros")
+        if lst is None:
+            lst = self.macros = []
+        return lst
+
+    @staticmethod
+    def _clean_macro(raw: dict, ident: str) -> dict:
+        raw = raw if isinstance(raw, dict) else {}
+        lines = raw.get("lines")
+        if isinstance(lines, str):
+            lines = lines.splitlines()
+        lines = [str(x).strip()[:200] for x in (lines or []) if str(x).strip() and not str(x).strip().startswith("#")]
+        if not lines:
+            raise ValueError("a macro needs at least one command line")
+        return {"id": ident, "name": (str(raw.get("name") or "").strip() or f"Macro {ident[1:]}")[:30], "lines": lines[:50]}
+
+    def _clean_macro_list(self, raw) -> list[dict]:
+        out = []
+        for i, m in enumerate(raw or []):
+            try:
+                out.append(self._clean_macro(m, str((m or {}).get("id") or f"m{i + 1}")))
+            except (ValueError, TypeError, AttributeError):
+                continue
+        return out[:64]
+
+    def _a_macro_save(self, macro=None, id=None, **_):
+        """Save a macro: a name and command lines (as typed in the command
+        bar: `1-4 red`, `cue 3 go`, `master 60` ...)."""
+        lst = self._macros()
+        ident = str(id or (macro or {}).get("id") or "")
+        if not ident:
+            nums = [int(m["id"][1:]) for m in lst if m["id"][1:].isdigit()]
+            ident = f"m{max(nums, default=0) + 1}"
+            if len(lst) >= 64:
+                raise ValueError("at most 64 macros")
+        clean = self._clean_macro(macro or {}, ident)
+        # check every line parses before keeping it
+        for line in clean["lines"]:
+            self._a_run_command(text=line, dry=True)
+        self.macros = [m for m in lst if m["id"] != ident] + [clean]
+        return {"id": ident, "macros": self.macros, "summary": f"macro {clean['name']}: {len(clean['lines'])} line(s)"}
+
+    def _a_macro_delete(self, id=None, **_):
+        lst = self._macros()
+        if not any(m["id"] == str(id) for m in lst):
+            raise ValueError(f"no macro {id!r}")
+        self.macros = [m for m in lst if m["id"] != str(id)]
+        return {"macros": self.macros, "summary": "macro deleted"}
+
+    def _a_macro_run(self, id=None, **_):
+        """Play a macro's lines in order: all of them or none (one undo step)."""
+        m = next((x for x in self._macros() if x["id"] == str(id) or x["name"].lower() == str(id).lower()), None)
+        if m is None:
+            raise ValueError(f"no macro {id!r}")
+        before = self._undo_state()
+        n0 = len(self._undo)
+        said = []
+        try:
+            for line in m["lines"]:
+                r = self._a_run_command(text=line)
+                said += r.get("transcript") or []
+        except ValueError as exc:
+            self._restore_state(before)
+            del self._undo[n0:]
+            raise ValueError(f"{m['name']}: {exc}") from None
+        if len(self._undo) > n0:
+            # the lines' own steps become the macro's one
+            del self._undo[n0:]
+            self._undo.append({"action": "macro", "label": m["name"], "state": before, "at": self._clock()})
+            if len(self._undo) > UNDO_LIMIT:
+                del self._undo[0]
+            self._undo_label = m["name"]
+        return {"macro": m["id"], "transcript": said, "summary": f"{m['name']}: " + ("; ".join(said[:3]) or "done")}

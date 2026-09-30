@@ -718,3 +718,46 @@ def test_desk_tools() -> None:
     check("Highlight button (H), park in the fixtures menu, group master faders",
           'id="hl-btn"' in html and '"park"' in fj and '"unpark"' in fj and '"group_master"' in pj
           and 'id="grp-masters"' in html, "")
+
+
+def test_macros() -> None:
+    """Macros: command lines played in one go - all or nothing, one undo
+    step - from the command bar or a button; saved with the show."""
+    print("macros")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            r = e.act("macro_save", macro={"name": "Walk-in", "lines": "1-4 dimmer 40\n# a comment\n1-2 red\n"})
+            check("a macro is saved (comments dropped)", r.get("ok") and e.macros[0]["lines"] == ["1-4 dimmer 40", "1-2 red"], str(r))
+            r = e.act("macro_save", macro={"name": "Bad", "lines": "1-4 wibble 9"})
+            check("a line that doesn't parse is refused at save", not r.get("ok"), str(r))
+            n0 = len(e._undo)
+            r = e.act("macro_run", id="Walk-in")
+            check("it plays every line", r.get("ok") and e.programmer[3].get("dimmer") == 40 and e.programmer[1].get("red") == 255,
+                  str(e.programmer))
+            check("...as ONE undo step, named after it", len(e._undo) == n0 + 1 and e._undo[-1]["label"] == "Walk-in", str(e._undo[-1:]))
+            e.act("undo")
+            check("one undo takes all of it back", not e.programmer.get(3), str(e.programmer))
+            e.macros.append({"id": "m9", "name": "Half", "lines": ["1-4 dimmer 70", "9-12 dimmer 50"]})
+            n0 = len(e._undo)
+            r = e.act("macro_run", id="m9")
+            check("a line that fails undoes the lines before it", not r.get("ok") and not e.programmer.get(1)
+                  and len(e._undo) == n0, str(r))
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "macro", "macro": "m1", "label": "Walk-in"})
+            check("a macro button", r.get("ok"), str(r))
+            e.act("quick_press", id="q1-1", down=True)
+            check("...plays it", e.programmer[3].get("dimmer") == 40, "")
+            e.act("save_show", name="mac")
+            e.act("macro_delete", id="m1")
+            e.act("load_show", name="mac")
+            check("saved with the show", [m["name"] for m in e.macros] == ["Walk-in", "Half"], str(e.macros))
+        finally:
+            e.shutdown()
+    cj = (ROOT / "web" / "app" / "cmdbar.js").read_text(encoding="utf-8")
+    check("the command bar opens Macros and finds them by name", "openMacros" in cj and "macroCandidates" in cj, "")

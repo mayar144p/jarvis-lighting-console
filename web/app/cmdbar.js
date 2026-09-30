@@ -13,6 +13,7 @@ import { $, h, toast } from "./ui.js";
 import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openReadyCheck } from "./dialogs.js";
 import { askCopilot } from "./copilot.js";
 import { toggleFull } from "./stagepanel.js";
+import { openMacros, macroCandidates } from "./macros.js";
 
 const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|go\b|back\b|record\b|store\b|master\b|blackout\b|clear\b|palette\b|preset\b|align\b|distribute\b|mirror\b|home\b|select\b|fan\b|help\b|\?)/i;
 
@@ -27,6 +28,7 @@ const ACTIONS = [
   { t: "Blackout", k: "blackout dark kill panic", run: () => run("blackout", { state: 1 }) },
   { t: "Release blackout", k: "blackout off release lights back", run: () => run("blackout", { state: 0 }) },
   { t: "Stop all effects", k: "stop effects fx", run: () => run("stop_fx", {}) },
+  { t: "Macros…", k: "macros macro script sequence", run: () => openMacros() },
   { t: "Undo", k: "undo oops", run: () => run("undo") },
   { t: "Stage full screen", k: "full screen stage view", run: () => toggleFull() },
   { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
@@ -73,6 +75,7 @@ function candidates(text) {
       out.push({ kind: "action", title: a.t, run: a.run });
     }
   }
+  out.push(...macroCandidates(q));
   for (const g of (state.snap && state.snap.groups) || []) {
     if (g.name.toLowerCase().includes(q)) out.push({ kind: "group", title: `Select ${g.name}`, desc: `${g.heads.length} fixtures`, run: () => select(g.heads) });
   }

@@ -250,6 +250,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
             "step_fx": copy.deepcopy(self._steps()),
             "parked": copy.deepcopy(self.__dict__.get("parked") or {}),
+            "macros": copy.deepcopy(self.__dict__.get("macros") or []),
             "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
@@ -292,6 +293,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.quick_names = dict(state.get("quick_names") or {})
         if "sound_cfg" in state:
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
+        if "macros" in state:
+            self.macros = copy.deepcopy(state["macros"])
         if "parked" in state:
             self.parked = copy.deepcopy(state["parked"])
         if "step_fx" in state:
@@ -1221,6 +1224,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "step_fx": [dict(f) for f in self._steps()],
+                "macros": [dict(m) for m in self._macros()],
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),

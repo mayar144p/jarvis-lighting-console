@@ -28,12 +28,14 @@ class QuickMixin:
                    # captured values / attributes / effects, on any lights
                    "custom",
                    # special effects: their own buttons, never a light's
-                   "sfx", "fog", "laser", "fxkill", "arm")
+                   "sfx", "fog", "laser", "fxkill", "arm",
+                   # a macro: its command lines, played in one go
+                   "macro")
 
     FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
 
     # buttons that do one thing and are done: no timer, no radio group
-    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill"})
+    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro"})
 
     SPLITS = ("odd", "even", "left", "right")
 
@@ -143,6 +145,11 @@ class QuickMixin:
                 btn["cue"] = int(raw["cue"])
         if kind == "preset":
             btn["preset"] = int(raw.get("preset") or 0)
+        if kind == "macro":
+            if not raw.get("macro"):
+                raise ValueError("a macro button needs a macro")
+            btn["macro"] = str(raw["macro"])[:16]
+            btn["mode"] = "tap"
         if kind == "move":
             mid = str(raw.get("move") or "")
             if not mid:
@@ -494,6 +501,11 @@ class QuickMixin:
                 self._quick_on(key, owner=f"tap:{time.monotonic():.3f}")
             return {"id": key, "active": key in self.quick_active,
                     "summary": f"{btn['label']} fired"}
+        if kind == "macro":
+            if not down:
+                return {"id": key, "active": False}
+            r = self._a_macro_run(id=btn["macro"])
+            return {"id": key, "active": False, "summary": r["summary"]}
         if kind in ("go", "release", "preset"):
             if not down:
                 return {"id": key, "active": False}
