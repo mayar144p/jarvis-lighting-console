@@ -49,6 +49,8 @@ TYPES: dict[str, dict] = {
     "flame":         {"label": "Flame",         "moving": False, "beam": (0, 0)},
     "spark":         {"label": "Spark fountain", "moving": False, "beam": (0, 0)},
     "sfx":           {"label": "Effect",        "moving": False, "beam": (0, 0)},
+    "scanner":       {"label": "Scanner",       "moving": True,  "beam": (8, 16)},
+    "effect":        {"label": "Effect light",  "moving": False, "beam": (6, 12)},
     "generic":       {"label": "Fixture",       "moving": False, "beam": (20, 40)},
 }
 
@@ -122,6 +124,18 @@ BRANDS: dict[str, dict] = {
 # First match wins, so the more specific patterns come first.
 FAMILIES: list[tuple[str, str, str]] = [
     # (regex, type, family label)
+    (r"^(?!.*laser).*(\bscan(ner)?\b|\bmartin acrobat\b|\bdouble phase\b|\bcy-?\d+|\bspin master\b"
+     r"|\bnucleus\b|\bkls scan\b|\bmirror ?scan)", "scanner", ""),
+    (r"\bflower\b|\bderby\b|\bmoon ?flower\b|\bgem\b|\bjelly ?dome\b|\brevo\b|\bh2o\b"
+     r"|\btwister\b|\bcentre pro\b|\bastro\b|\bstarball\b|\bkaleido\b|\bmushroom\b",
+     "effect", ""),
+    (r"\blaserworld\b|\bgalaxian\b|\bioda\b|\bkub \d+|\bcs-\d+rgb|\bel-\d+rgb", "laser", ""),
+    (r"\bentour\b|\bentourage\b|\bfaze\b|\batme\b|\bcryofog\b|\bwgf-\d+|\bn-\d+\b"
+     r"|\batmospheric\b", "atmos", ""),
+    (r"\baputure\b|\bhive lighting\b|\bsereniled\b|\btwinled\b|\bkelvin epos\b|\bnova p\d+",
+     "fresnel", ""),
+    (r"\bd'?artagnan\b", "followspot", ""),
+    (r"\bsp-1500\b|\bexplo \d+|\bledstrob|\bled shadow\b", "strobe", ""),
     (r"\bsharpy\s*(plus|x)\b|\bpointe\b|\bmythos\b|\bmega[\s-]?pointe\b|\bmegapointe\b"
      r"|\bforza\b|\bbmfl\b.*blade|\bmac aura xb\b", "moving_hybrid", ""),
     (r"\bsharpy\b|\bbeam\s*\d+|\bb[\s-]?eye\b.*beam", "moving_beam", ""),
@@ -311,7 +325,7 @@ _ZONES = {
     "strobe": (6.0, 0.55), "blinder": (6.0, 0.9), "tube": (0.8, 0.12),
     "matrix": (6.0, 0.4), "laser": (0.4, 0.1), "atmos": (0.3, 0.02),
     "confetti": (0.3, 0.9), "co2": (0.3, 0.95), "flame": (0.3, 0.97),
-    "spark": (0.3, 0.97), "sfx": (0.3, 0.9),
+    "spark": (0.3, 0.97), "sfx": (0.3, 0.9), "scanner": (6.0, 0.4), "effect": (6.0, 0.5),
     "generic": (6.0, 0.55),
 }
 

@@ -2,6 +2,7 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
+import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
@@ -486,6 +487,26 @@ function followCell(n, c, refresh) {
   return h("div.row-btns", sel, secs);
 }
 
+// A cue's own fade per part ("colour snaps, movers glide 4 s"): the chip
+// shows how many parts are timed, the menu sets one.
+const PARTS = [["intensity", "Level"], ["colour", "Colour"], ["position", "Position"], ["beam", "Beam"]];
+function partTimes(n, c, refresh) {
+  const t = c.times || {};
+  const set = Object.keys(t).length;
+  return h("button.chip.cue-parts" + (set ? ".on" : ""), {
+    title: set ? PARTS.filter(([k]) => k in t).map(([k, l]) => `${l} ${t[k]} s`).join(" · ")
+      : "Give level, colour, position or beam a fade of its own",
+    onclick: (e) => menu(e.currentTarget, PARTS.map(([k, l]) => ({
+      label: `${l}: ${k in t ? t[k] + " s" : `same as the cue (${c.fade_s ?? 0} s)`}`,
+      run: async () => {
+        const v = await promptBox(`${l} fade`, "Seconds (empty = same as the cue)", k in t ? String(t[k]) : "", { ok: "Set" });
+        if (v === null) return;
+        run("edit_cue", { playback: n, cue: c.n, times: { [k]: v.trim() === "" ? null : +v } }).then(refresh);
+      },
+    }))),
+  }, set ? `${set} part${set > 1 ? "s" : ""}` : "parts");
+}
+
 export function openCueList(n) {
   let close = null;
   const render = () => {
@@ -501,7 +522,10 @@ export function openCueList(n) {
       fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
       hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
       const tr = h("tr" + (i === pb.index ? ".sel" : ""), { draggable: "true", title: "Drag to reorder" },
-        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest)), h("td", fd), h("td", hd),
+        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest),
+          (c.fx || []).length ? h("div.cue-fx", { title: "Effects this cue runs (they stop at the next cue or on release)" },
+            "⚡ " + c.fx.join(", ")) : null),
+        h("td", fd, partTimes(n, c, () => refresh())), h("td", hd),
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),
@@ -571,7 +595,52 @@ export async function openShowMenu(anchor, menuFn) {
       },
     })),
     shows.length ? null : { label: "No saved shows yet", disabled: true, run() {} },
+    "-",
+    { label: "Ready? check…", hint: "before doors", run: openReadyCheck },
+    current ? { label: "Earlier versions…", run: () => openVersions(current) } : null,
+    current ? { label: "Export (download)", run: () => exportShow(current) } : null,
   ]);
+}
+
+// Before doors: what would bite during the show, each with what to press.
+export async function openReadyCheck() {
+  const r = await run("ready_check", {});
+  if (!r.ok) return;
+  const ICON = { ok: "✓", info: "i", warn: "!", bad: "✕" };
+  const body = h("div.ready",
+    h("p.ready-head." + r.worst, r.ready ? "Ready for doors." : r.worst === "bad" ? "Fix these before the show." : "Worth a look before the show."),
+    ...r.items.map((i) => h("div.ready-row." + i.level, h("span.ready-ic", ICON[i.level] || "·"),
+      h("div", h("div", i.text), i.fix ? h("small.muted", "→ " + i.fix) : null))));
+  modal({ title: "Ready?", body });
+}
+
+async function openVersions(name) {
+  const r = await run("show_versions", { name });
+  if (!r.ok) return;
+  let close = null;
+  const when = (v) => (v.saved ? new Date(v.saved).toLocaleString() : v.id);
+  const body = h("div",
+    h("p.muted.small", "Every save that changed the show keeps the one before (the last 20). Opening one keeps the current show as a version too."),
+    r.versions.length ? h("div.ver-list", ...r.versions.map((v) => h("div.ver-row",
+      h("span", when(v)), h("small.muted", `${Math.max(1, Math.round(v.bytes / 1024))} KB`),
+      h("button.btn.small", { onclick: async () => {
+        if (!(await confirmBox("Open this version", `Open the version saved ${when(v)}? The show as it is now is kept as a version.`, { ok: "Open" }))) return;
+        const res = await run("restore_version", { name, id: v.id }, { toast: true });
+        if (res.ok && close) close();
+      } }, "Open"))))
+      : h("p.muted", "No earlier versions yet: they appear after the next save that changes something."));
+  close = modal({ title: `Versions of “${name}”`, body });
+}
+
+async function exportShow(name) {
+  const r = await run("show_export", { name });
+  if (!r.ok) return;
+  const url = URL.createObjectURL(new Blob([r.text], { type: "application/json" }));
+  const a = h("a", { href: url, download: r.filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function saveShow(name) {
@@ -746,10 +815,32 @@ export async function openSettings() {
         },
       }, "Import fixture files from fixtures_inbox/ (.gdtf, .qxf, OFL .json)")),
     h("h3", "MIDI"),
-    h("p.muted.small", midi.enabled ? (midi.open ? `Listening to ${midi.device}` : (midi.error || "No MIDI device found")) : "MIDI is off (MIDI_ENABLED=false)."),
+    h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
+    webMidiRow(),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
+}
+
+// MIDI on this device: a controller plugged into the tablet / laptop the
+// browser runs on plays the buttons given its notes.
+function webMidiRow() {
+  const box = h("input", { type: "checkbox" });
+  box.checked = webMidiOn();
+  const note = h("span.muted.small", "");
+  const show = () => {
+    const ins = webMidiInputs();
+    note.textContent = !webMidiSupported() ? "This browser has no MIDI (use Chrome or Edge)."
+      : !box.checked ? "" : webMidiError() || (ins.length ? `Listening to ${ins.join(", ")}` : "No controller plugged in yet.");
+  };
+  box.disabled = !webMidiSupported();
+  box.addEventListener("change", async () => {
+    const ok = await setWebMidi(box.checked);
+    if (!ok) box.checked = false;
+    show();
+  });
+  show();
+  return h("div", h("label.check", box, h("span", "MIDI on this device: a controller plugged into this computer or tablet plays the buttons")), note);
 }
 
 // ================================================================== help

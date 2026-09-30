@@ -694,7 +694,7 @@ function renderRunning(force = false) {
 // ----------------------------------------------------------------- looks
 function renderLooks(force = false) {
   const pals = (state.snap && state.snap.palettes) || {};
-  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || []]);
+  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || [], ($("#look-search") || {}).value]);
   if (!force && key === looksKey) return;  // (same: Record stays put under the pointer)
   looksKey = key;
   const kinds = ["colour", "position", "beam"];
@@ -712,8 +712,14 @@ function renderLooks(force = false) {
   const strip = $(".palette-strip[data-kind=position]");
   strip.replaceChildren(...(pals.position || []).map((p) => palButton("position", p)));
   const presets = (state.snap && state.snap.presets) || [];
-  $("#preset-list").replaceChildren(...(presets.length ? presets.map(lookTile)
-    : [h("p.muted.small", "No looks yet. Set colours, positions or a movement on some lights, then + Save look.")]));
+  // a search box once there are enough looks to need one
+  const search = $("#look-search");
+  search.hidden = presets.length < 7;
+  const q = search.hidden ? "" : search.value.trim().toLowerCase();
+  const shown = q ? presets.filter((p) => [p.name, ...(p.tags || []), ...(p.type_labels || p.types || [])].join(" ").toLowerCase().includes(q)) : presets;
+  $("#preset-list").replaceChildren(...(shown.length ? shown.map(lookTile)
+    : [h("p.muted.small", presets.length ? `No look matches “${q}”.`
+      : "No looks yet. Set colours, positions or a movement on some lights, then + Save look.")]));
 }
 
 // A look's tile: its colours, name and what it holds; tap plays it.
@@ -729,6 +735,8 @@ function lookTile(p) {
           if (name) run("rename_preset", { preset: p.n, name });
         } },
         { label: "Make a button for it", run: () => makeLookButton(p) },
+        (p.types || []).length ? { label: `Play on every ${(p.type_labels || p.types).join(" / ")}`, hint: "any light of these kinds",
+          run: () => run("include_preset", { preset: p.n, on: "types" }, { toast: true }) } : null,
         "-",
         { label: "Delete", danger: true, run: async () => {
           if (await confirmBox("Delete look", `Delete “${p.name}”?`, { ok: "Delete", danger: true })) run("delete_preset", { preset: p.n });
@@ -894,6 +902,7 @@ export function initProgrammer() {
     speed: +$("#lfo-speed").value || 1, spread: +$("#lfo-spread").value || 0, heads: sel(),
   }, { toast: true }));
   $("#preset-rec").addEventListener("click", saveLook);
+  $("#look-search").addEventListener("input", () => renderLooks(true));
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   let saved = "intensity";
   try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }

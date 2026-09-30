@@ -1,12 +1,14 @@
 # Backlog
 
-Work agreed with the operator but not started yet, in the suggested order.
+Work agreed with the operator, newest items first after the original list.
+Everything below is DONE (as of this update); each entry keeps the notes
+on how it was built, for whoever changes it next.
 Each item notes the cause already found in the code, so whoever picks it up
 starts from the diagnosis, not from scratch.
 
-## 1. Bug fixes (next)
+## 1. Bug fixes (DONE)
 
-- **Laser "hold" sticks on; needs a second click to stop.**
+- **(DONE) Laser "hold" sticks on; needs a second click to stop.**
   `web/app/fxpanel.js` `holdButton`: the Laser tab re-renders while the
   button is held (attribute reloads on every snapshot), the element under
   the finger is replaced, and the browser sends `lostpointercapture` to the
@@ -38,7 +40,7 @@ ch 29 Auto Programs, ch 30 Program Speed.  Fix: expose every non-maintenance
 channel under its own name on the Beam tab, its capability ranges as chips,
 recorded in cues (needs unique per-channel roles for unnamed channels).
 
-## 3. Multi-head / multi-cell fixtures (see 15: first part DONE)
+## 3. Multi-head / multi-cell fixtures (DONE, see 15)
 
 Channels that repeat per head collapse onto one role, so one control drives
 all heads.  Example: Wave 360 has 4 heads - ch 5-8 tilt x4, ch 11-26 RGBW x4,
@@ -46,14 +48,16 @@ and ch 3 + ch 10 share `speed`.  Fix: sub-fixtures (#9.1..#9.4) selectable
 alone or together, per-head values, and effects that run ACROSS the heads
 (colour chase, rainbow, tilt wave).  Also covers zoned LED bars.
 
-## 4. Group buttons and laser recording
+## 4. Group buttons and laser recording (DONE)
 
-- A Groups strip: tap = select the group, hold = flash that group.
-- Laser tab: **Record** (store the laser look - beams, mode, program,
-  speed - as a cue) and **Make a laser button** (a quick button from the
-  current laser look).  Output stays armed-only.
+- The group chips (yours and the automatic ones): tap = select the group,
+  hold = flash that group (`group_flash`, never stored or an undo step).
+- Laser tab: **Record as a cue…** (the cue dialog) and **Make a laser
+  button** (`quick_from_laser`: an on / off laser button from the laser
+  look in the programmer, on the first empty slot).  Output stays
+  armed-only.
 
-## 5. Programming and cues redesign (mock-up first)
+## 5. Programming and cues redesign (DONE: items 10, 16, 8 Looks)
 
 - Programmer: one attribute grid for every fixture type, plus a bar showing
   what is in the programmer, each with its own clear.
@@ -62,15 +66,42 @@ alone or together, per-head values, and effects that run ACROSS the heads
   when recording over a cue.
 - Looks: palette tiles with a live colour/position preview.
 
-## 6. Patch safety
+## 6. Patch safety (DONE)
 
-- DMX map per universe (who owns which channels, clashes in red) with
-  one-click "move to next free block".
-- "Change fixture type" on a patched head, keeping position, groups and cues.
-- RDM discovery (model / mode / address from the light) if the node supports it.
-- Pre-gig "Ready?" check and versioned show backups / export.
+- (DONE, item 14) DMX map per universe with clashes in red and "Move #n".
+- **(DONE) Change fixture type** (a light's ⋯ menu, or the selection):
+  number, place, rigging, name, groups, cues and looks stay; the address
+  stays when the new footprint fits, else the first free block (and it
+  says so, and which cue values the new type has no channel for).
+- **(DONE) RDM** (fixture list ⋯ → Ask the lights): over Art-Net
+  (ArtTodRequest / ArtTodData / ArtRdm, app/rdm.py) each RDM light says
+  its maker, model, DMX address, channel count and mode; the list shows
+  it against the patch - ok, "different" (→ Change type…), "new" (→ Add
+  it) and patched lights that didn't answer - and "Set address…" sends a
+  new start address to the light itself.  Tested against a fake node;
+  needs a node with RDM switched on.
+- **(DONE) Ready? check** (Show ▾, or the command bar): no lights, DMX
+  clashes, unnamed channels, cues pointing at unpatched lights, no cues,
+  stay-on-the-floor off, lasers, blind output, send errors, never saved -
+  each with what to press.
+- **(DONE) Show versions and export:** every save that changes a show
+  keeps the one before (last 20, shows/versions/<show>/); Show ▾ →
+  Earlier versions… opens one (the current show is kept as a version
+  too); Export downloads the show file.
 
-## 16. Cue list (DONE, first part)
+## 17. More 3D models (DONE)
+
+Of the ~2,400 fixtures in the bundled libraries, 102 (in their largest
+mode) fell back to the generic model.  Now 55: two new types with their
+own models - **Scanner** (a lamp housing with a pan / tilt mirror, the
+beam off the mirror, 44 fixtures) and **Effect light** (flower / derby /
+moonflower: a dome of lenses throwing four beams, turning while lit, 22) -
+and name matching for lasers, hazers, studio COB lights (fresnel model),
+strobes and follow spots that the channels alone didn't give away.  A
+selftest keeps every light type paired with a 3D builder.  The rest
+(dimmer packs, colour-changer accessories, "Other") stay generic.
+
+## 16. Cue list (DONE)
 
 - Recording over a cue: Replace / Merge (adds the programmer's changes,
   keeps the rest) / Insert before; the cue keeps its name and times unless
@@ -78,9 +109,16 @@ alone or together, per-head values, and effects that run ACROSS the heads
 - Record dialog: "Where" (new cue at the end, or over cue N) + the mode.
 - Cue list: drag a row by its ⋮⋮ to reorder, "Update ▾" (merge / replace
   / record before), live refresh (not while typing).
-- Still open: effects stored in cues, cue part timing per attribute.
+- **Effects in cues (DONE):** the effects running on the programmer's
+  lights (or the selection) are recorded into the cue and leave the
+  programmer; GO starts them, the next cue replaces them, release stops
+  them; merge swaps an effect of the same kind; saved with the show.  The
+  cue list shows them (⚡ Circle).
+- **Part times (DONE):** a cue's level, colour, position or beam can have
+  a fade of its own ("parts" in the cue list), e.g. colour snaps while the
+  movers glide 4 s.
 
-## 15. Multi-head lights (DONE, first part)
+## 15. Multi-head lights (DONE)
 
 A Wave 360's four tilts and RGBW cells: a value for one head is kept as
 `red@2` / `tilt@3` (merge: LTP, a running effect wins; limits and invert
@@ -89,10 +127,9 @@ writer sends the k-th copy of a role its head's value.  set_colour /
 set_attribute take `cell`; the programmer shows "Heads: All 1 2 3 4"
 for such lights and sends only to the picked heads; cues and looks keep
 per-head values; effects run "across each light's heads" (colour chase /
-rainbow step head to head).  Still open: movement effects across heads (a
-tilt wave), per-head colours in the 3D view.  (DONE since: tilt wave
-across the heads on the Move tab; a multi-head 3D model - heads on a bar,
-each tilting and coloured on its own.)
+rainbow step head to head); a tilt wave across the heads on the Move
+tab; a multi-head 3D model (heads on a bar, each tilting and coloured on
+its own).
 
 ## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
 
@@ -102,7 +139,7 @@ each tilting and coloured on its own.)
   in a DMX map (512 squares per universe, clashes red, per-light list).
 - The Colour tab adds White / Amber / UV / Lime sliders on top of a pure
   picked colour, for the lights that have them.
-- Still open: change fixture type keeping position / groups / cues; RDM.
+- (Change fixture type and RDM: DONE, item 6.)
 
 ## 13. My venues, room shapes, rigging up front (DONE)
 
@@ -112,8 +149,11 @@ each tilting and coloured on its own.)
   shows/venues/, never listed as a show.
 - "Draw room shape" (any outline: L-shaped, custom) and "+ Truss",
   "+ Pole" (a vertical pipe), "+ Pipe" up front; the rest under "+ More".
-- Still open: reshaping the room doesn't move rigging that ends up
-  outside it; a venue picker at start-up.
+- **(DONE)** Reshaping or shrinking the room brings rigging (and the
+  lights hung on it) and objects back inside the new walls; a truss slides
+  in whole, keeping its length, when it fits.
+- **(DONE)** At start-up, an empty desk with saved venues asks "Where are
+  you playing tonight?" (once per browser session).
 
 ## 12. Gig mode (DONE)
 
@@ -154,7 +194,7 @@ numbers on hover.
 - (The laser hold sticking and FX Stop / Looks Record flicker were fixed
   earlier; the button editor's cut-off dropdowns are gone with item 9.)
 
-## 9. Buttons as customisable as possible (first part DONE)
+## 9. Buttons as customisable as possible (DONE)
 
 Done: every option in the button editor is a tap.
 - **Lights:** all, the selection, a group or a type, or only the odd /
@@ -195,10 +235,13 @@ Done: every option in the button editor is a tap.
   to a button plays it ahead of the MIDI map file; note off lets go of a
   hold button.  The tile shows it (♪36) next to its keyboard key.
 
-Still to do:
-- MIDI in the browser (Web MIDI), for controllers plugged into a tablet
-  rather than the desk computer (the desk's own MIDI input is Windows-only).
-- Live speed by touch (a long-press menu in gig mode).
+- **MIDI on this device (DONE):** Settings -> "MIDI on this device" (Web
+  MIDI, Chrome / Edge): a controller plugged into the tablet or laptop the
+  browser runs on plays the buttons; off until switched on, so a controller
+  heard by the desk too never plays a button twice.  Learn listens to both.
+- **Speed by touch (DONE):** in gig mode effect tiles show their speed
+  badge; tapping it opens the speed menu (a long press would fight with
+  holding a hold button).
 
 **My moves (DONE):** "+ Save this as my move" on the Move tab; tap a move
 to play it on the selected lights, tap again to stop; ⋯ to update it to
@@ -209,7 +252,7 @@ the Move tab, next to a light's built-in programs.  It runs and loops on
 any selected lights until stopped: not a cue, and not tied to particular
 lights or a venue.  It can go on a button or into a Look.
 
-## 8. UI/UX overhaul (audited with a 21-light mixed rig; mock-ups agreed next)
+## 8. UI/UX overhaul (DONE: items 9-17; audited with a 21-light mixed rig)
 
 Found in the audit (same features kept, all of it re-laid out):
 
@@ -240,8 +283,11 @@ Found in the audit (same features kept, all of it re-laid out):
   position, beam, effects & movements, other); a look keeps its effects
   and its lights, so one tap with nothing selected brings the whole thing
   back (on a selection, it plays there); update / rename / make a button /
-  delete from ⋯.  Palettes sit under a fold.  Still open: search and
-  "any light of these types" for another venue.
+  delete from ⋯.  Palettes sit under a fold.  (DONE since: a search box
+  once there are 7+ looks - name, colours, effects, kinds of light; a look
+  keeps the kinds of light it was made on, so where its lights aren't
+  patched it plays on every light of those kinds, and ⋯ → "Play on every
+  LED PAR" does that on purpose.)
 - **Effects:** ARM switches itself off after 10 min (`_a_fx_arm` default)
   and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
   "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.
@@ -257,9 +303,10 @@ tiles with direction / arc / size / speed / wave / lock, Speed master,
 per-light range (Set top / bottom / left / right), dance-floor safe zones
 for every mover + Check the floor, a light's own spin / program speeds,
 laser safe zone (beam height / size), FX tab without movements, Tools ->
-Setup, "In the programmer" bar with per-kind clear.  Still open: Tap tempo
-on the Speed master, a live preview on a floor map, Record as cue / Make
-button straight from a movement.
+Setup, "In the programmer" bar with per-kind clear.  Since: Tap tempo on
+the Speed master (120 BPM = 1×), "Make a button" and "Record as a cue…"
+straight from a movement, "Make a button" on a saved move.  (The live
+preview is the 3D view; no separate floor-map preview.)
 
 Replaces movement spread over Position / FX / Tools with ONE "Move" tab.
 

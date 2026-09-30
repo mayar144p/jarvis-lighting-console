@@ -430,6 +430,72 @@ def zone_centroid(z: dict) -> tuple[float, float]:
     return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
 
 
+def _nearest_inside(x: float, z: float, pts: list, inset: float) -> tuple[float, float]:
+    """The point on a room outline nearest (x, z), pulled `inset` inwards."""
+    best, bx, bz = None, x, z
+    n = len(pts)
+    for i in range(n):
+        (x0, z0), (x1, z1) = pts[i], pts[(i + 1) % n]
+        dx, dz = x1 - x0, z1 - z0
+        t = max(0.0, min(1.0, ((x - x0) * dx + (z - z0) * dz) / ((dx * dx + dz * dz) or 1e-9)))
+        px, pz = x0 + dx * t, z0 + dz * t
+        d = (px - x) ** 2 + (pz - z) ** 2
+        if best is None or d < best:
+            best, bx, bz = d, px, pz
+    cx = sum(p[0] for p in pts) / n
+    cz = sum(p[1] for p in pts) / n
+    ln = ((cx - bx) ** 2 + (cz - bz) ** 2) ** 0.5 or 1.0
+    return bx + (cx - bx) / ln * inset, bz + (cz - bz) / ln * inset
+
+
+def fit_inside(v: dict, margin: float = 0.2) -> int:
+    """After the room is reshaped, bring rigging and objects that ended up
+    outside it (or above the ceiling) back in; a truss keeps its length
+    and slides in whole when it fits.  Returns how many were moved."""
+    w, d, _h = dims(v)
+    if not w or not d:
+        return 0
+    b = bounds(v)
+    top = b["h"] - 0.1
+    outline = [(float(p[0]), float(p[1])) for p in ((v.get("room") or {}).get("outline") or [])
+               if isinstance(p, (list, tuple)) and len(p) >= 2]
+    lo_x, hi_x, lo_z, hi_z = b["x0"] + margin, b["x1"] - margin, b["z0"] + margin, b["z1"] - margin
+
+    def inside(x, z):
+        if not (lo_x <= x <= hi_x and lo_z <= z <= hi_z):
+            return False
+        return point_in_polygon(x, z, outline) if len(outline) >= 3 else True
+
+    def pull(x, z):
+        x, z = min(hi_x, max(lo_x, x)), min(hi_z, max(lo_z, z))
+        if len(outline) >= 3 and not point_in_polygon(x, z, outline):
+            x, z = _nearest_inside(x, z, outline, margin)
+        return round(x, 3), round(z, 3)
+
+    moved = 0
+    for r in v.get("rigging") or []:
+        a, bb = list(r["a"]), list(r["b"])
+        if inside(a[0], a[2]) and inside(bb[0], bb[2]) and max(a[1], bb[1]) <= top:
+            continue
+        # slide the whole piece in first, so it keeps its length
+        sx = (lo_x - min(a[0], bb[0]) if min(a[0], bb[0]) < lo_x else 0) or \
+             (hi_x - max(a[0], bb[0]) if max(a[0], bb[0]) > hi_x else 0)
+        sz = (lo_z - min(a[2], bb[2]) if min(a[2], bb[2]) < lo_z else 0) or \
+             (hi_z - max(a[2], bb[2]) if max(a[2], bb[2]) > hi_z else 0)
+        for p in (a, bb):
+            p[0], p[2] = p[0] + sx, p[2] + sz
+            p[0], p[2] = pull(p[0], p[2])              # still out (too long, or an L-room corner)
+            p[1] = round(min(p[1], top), 3)
+        r["a"], r["b"] = a, bb
+        moved += 1
+    for o in v.get("objects") or []:
+        if inside(o["x"], o["z"]):
+            continue
+        o["x"], o["z"] = pull(o["x"], o["z"])
+        moved += 1
+    return moved
+
+
 def point_in_polygon(x: float, z: float, pts: list) -> bool:
     inside = False
     j = len(pts) - 1

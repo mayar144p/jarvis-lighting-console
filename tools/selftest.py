@@ -7524,6 +7524,14 @@ def _standalone_suites():
     ("buttons: big tiles and icons", test_button_tiles),
     ("buttons: a speed of their own", test_button_speed),
     ("buttons: a MIDI note per button", test_button_midi),
+    ("group chips flash when held; laser looks make buttons", test_group_flash_laser_button),
+    ("cues keep their effects and part times; movements make buttons", test_cue_fx_parts),
+    ("change a light's fixture type, keeping everything else", test_change_type),
+    ("Ready? check, show versions and export", test_ready_versions),
+    ("a smaller room brings its rigging back inside", test_room_fit),
+    ("looks: search, and any light of these types", test_look_types),
+    ("scanners, derbies and more get their own 3D model", test_more_models),
+    ("RDM: the lights say what they are (fake node)", test_rdm),
     )
 
 
@@ -9177,6 +9185,438 @@ def test_button_midi() -> None:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
+    wm = (ROOT / "web" / "app" / "webmidi.js").read_text(encoding="utf-8")
+    check("a controller on the tablet plays buttons too (Web MIDI, off until switched on)",
+          "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
+    check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
+
+
+def test_group_flash_laser_button() -> None:
+    """Holding a group chip flashes that group (never stored); the Laser
+    tab turns the laser look in the programmer into an on / off button."""
+    print("group flash and laser buttons")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2, universe=1, address=1)
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=40)
+            e.act("group_create", name="Left", heads=[1])
+            di = e.patch[0]["map"].index("dimmer")
+            dim2 = e.patch[1]["address"] - 1 + e.patch[1]["map"].index("dimmer")
+            undo_before = len(e._undo)
+            r = e.act("group_flash", group=1, down=True)
+            f = e.build_frames()[1]
+            check("holding a group chip flashes that group only", r.get("ok") and f[di] == 255 and f[dim2] == 0,
+                  str((r, f[di], f[dim2])))
+            e.act("group_flash", down=False)
+            check("...and letting go ends it", e.build_frames()[1][di] == 0 and "flash:chip" not in e.quick_active, "")
+            check("a group flash is not an undo step", len(e._undo) == undo_before, "")
+            r = e.act("group_flash", auto="kind:nothing", down=True)
+            check("a group with no lights says so", not r.get("ok"), str(r))
+            e.act("select_heads", heads=[3])
+            e.act("set_attribute", attribute="laser_beam1", value=255)
+            e.act("set_attribute", attribute="laser_beam3", value=200)
+            r = e.act("quick_from_laser", heads=[3], label="Beams 1+3")
+            b = r.get("button") or {}
+            check("the laser look becomes an on / off laser button", r.get("ok") and b.get("kind") == "laser"
+                  and b.get("mode") == "latch" and b.get("target") == {"heads": [3]}
+                  and b.get("values", {}).get("laser_beam1") == 255 and b["values"].get("laser_beam3") == 200, str(r))
+            r = e.act("quick_from_laser", heads=[1])
+            check("a PAR can't make a laser button", not r.get("ok"), str(r))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the Laser tab records a cue and makes a button", "quick_from_laser" in fx and "openCueDialog" in fx, "")
+    check("group chips flash while held", "holdToFlash" in fj and "group_flash" in fj, "")
+
+
+def test_cue_fx_parts() -> None:
+    """Effects running when a cue is recorded go into the cue: GO starts
+    them, the next cue replaces them, release stops them, and they survive
+    a save.  A cue part (colour, position...) can have a fade of its own."""
+    print("effects in cues, cue part times, buttons from movements")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="rainbow")
+            check("an effect runs", r.get("ok"), str(r))
+            r = e.act("record_cue", playback=1, name="Rainbow")
+            cue = e.playbacks[0]["stack"][0]
+            check("recording keeps the effect in the cue", r.get("ok") and [f["name"] for f in cue.get("fx") or []] == ["rainbow"],
+                  str(cue.get("fx")))
+            check("...and takes it off the programmer", not any(f.get("lib") == "rainbow" for f in e.fx), str(e.fx))
+            e.act("select_all")
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1, name="Blue")
+            e.act("cue_go", playback=1)
+            check("GO starts the cue's effect", [f.get("cue_pb") for f in e.fx if f.get("lib") == "rainbow"] == [1], str(e.fx))
+            e.act("cue_go", playback=1)
+            check("the next cue (no effects) stops it", not any(f.get("lib") == "rainbow" for f in e.fx), str(e.fx))
+            e.act("cue_go", playback=1, cue=1)
+            e.act("playback_release", playback=1)
+            check("releasing the playback stops its effects", not any(f.get("cue_pb") for f in e.fx), str(e.fx))
+            snap = e.snapshot()
+            pub = next(p for p in snap["playbacks"] if p["n"] == 1)["stack"][0]
+            check("the cue list shows the cue's effects", pub.get("fx") == ["Rainbow"], str(pub))
+            e.act("save_show", name="cuefx")
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e2.act("load_show", name="cuefx")
+                check("a cue's effects survive save and load",
+                      [f["name"] for f in e2.playbacks[0]["stack"][0].get("fx") or []] == ["rainbow"], "")
+            finally:
+                e2.shutdown()
+            # part times: colour snaps, level keeps the cue's 4 s fade
+            r = e.act("edit_cue", playback=1, cue=2, fade=4, times={"colour": 0})
+            check("a cue part gets its own fade", r.get("ok") and e.playbacks[0]["stack"][1].get("times") == {"colour": 0.0}, str(r))
+            r = e.act("edit_cue", playback=1, cue=2, times={"gobo": 1})
+            check("an unknown part is refused", not r.get("ok"), str(r))
+            t = [1000.0]
+            e._clock = lambda: t[0]
+            pb = e.playbacks[0]
+            pb["index"] = 0
+            pb["active"] = True
+            pb["fade"] = None
+            pb["target"] = None
+            e.act("cue_go", playback=1, cue=2)
+            t[0] += 2.0
+            vals = e._pb_values(pb, t[0])[1]
+            full = pb["stack"][1]["values"][1]
+            colour_role = next(r for r in full if r in ("blue", "red", "green"))
+            check("mid-fade: colour already there, level still on its way",
+                  vals.get(colour_role) == full.get(colour_role), str((vals, full)))
+            r = e.act("edit_cue", playback=1, cue=2, times={"colour": None})
+            check("clearing the part puts it back on the cue's fade", "times" not in e.playbacks[0]["stack"][1], "")
+            # a movement becomes a button in the first free slot
+            r = e.act("quick_set", page=1, slot="free", button={"kind": "fx", "fx": "rainbow", "label": "Rainbow", "mode": "latch"})
+            check("a button can go on the first free slot", r.get("ok") and r.get("id") == "q1-1", str(r))
+            r = e.act("quick_set", page=1, slot="free", button={"kind": "flash"})
+            check("...and the next one after it", r.get("id") == "q1-2", str(r))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("the Move tab: tap tempo, make a button, record a cue", "BPM" in mv and '"Make a button"' in mv
+          and "openCueDialog" in mv, "")
+    dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the cue list shows effects and part times", "cue-fx" in dl and "partTimes" in dl, "")
+
+
+def test_change_type() -> None:
+    """A patched light swaps fixture type in place: its number, position,
+    groups and cues stay; the address stays when the new one fits."""
+    print("change fixture type")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3, universe=1, address=1)
+            e.act("set_place", head=2, x=1.5, y=3.0, z=-2.0)
+            e.act("rename_head", head=2, name="DJ left")
+            e.act("group_create", name="Front", heads=[2, 3])
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1, name="Red")
+            before = next(h for h in e.patch if h["head_no"] == 2)
+            r = e.act("change_type", heads=[2], query="LED PARty RGBW")
+            after = next(h for h in e.patch if h["head_no"] == 2)
+            check("the light is the new type", r.get("ok") and "PARty" in after["model"], str(r))
+            check("same number, place and name", (after["x"], after["y"], after["z"], after["name"])
+                  == (before["x"], before["y"], before["z"], "DJ left"), str(after))
+            check("still in its group", 2 in e.groups[0]["heads"], str(e.groups))
+            check("its cue still drives it", 2 in e.playbacks[0]["stack"][0]["values"], "")
+            check("moved to a free block when the new footprint doesn't fit",
+                  r.get("moved") and after["address"] != before["address"], str((r.get("moved"), after["address"])))
+            e.act("cue_go", playback=1)
+            red_ch = after["address"] - 1 + after["map"].index("red")
+            check("the cue plays on the new type", e.build_frames()[1][red_ch] > 0, "")
+            r = e.act("change_type", heads=[3], query="LED PAR 4ch")
+            h3 = next(h for h in e.patch if h["head_no"] == 3)
+            check("same footprint: the address stays", r.get("ok") and not r.get("moved") and h3["address"] == 9,
+                  str((r, h3["address"])))
+            r = e.act("change_type", heads=[1], query="no such light xyz")
+            check("an unknown type changes nothing", not r.get("ok") and e.patch[0]["model"] == "LED PAR 4ch", str(r))
+            r = e.act("undo")
+            check("undo puts the old type back", r.get("ok"), str(r))
+        finally:
+            e.shutdown()
+
+
+def test_ready_versions() -> None:
+    """The pre-gig check names what would bite; every save that changes a
+    show keeps the one before, and an earlier version can be opened."""
+    print("Ready? check and show versions")
+    import tempfile
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("ready_check")
+            check("an empty rig is not ready", r.get("ok") and r["worst"] == "bad"
+                  and any("No lights" in i["text"] for i in r["items"]), str(r))
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=20)
+            e.patch[2]["address"] = 3                 # a clash, as a bad CSV import would leave
+            r = e.act("ready_check")
+            check("a DMX clash is named", any("clash" in i["text"] for i in r["items"] if i["level"] == "bad"), str(r["items"]))
+            e.patch[2]["address"] = 20
+            r = e.act("ready_check")
+            texts = " ".join(i["text"] for i in r["items"])
+            check("unsaved show, no cues and blind output are flagged", "never been saved" in texts
+                  and "No cues" in texts and "BLIND" in texts, texts)
+            undo_n = len(e._undo)
+            check("the check changes nothing", len(e._undo) == undo_n, "")
+            e.act("save_show", name="gig")
+            r = e.act("show_versions", name="gig")
+            check("the first save keeps no version", r.get("ok") and r["versions"] == [], str(r))
+            e.act("save_show", name="gig")
+            check("saving the same show again keeps no copy", e.act("show_versions", name="gig")["versions"] == [], "")
+            e.act("rename_head", head=1, name="Changed")
+            r = e.act("save_show", name="gig")
+            vs = e.act("show_versions", name="gig")["versions"]
+            check("a save that changed something keeps the one before", r.get("version_kept") and len(vs) == 1, str(vs))
+            check("versions are not listed as shows", "versions" not in (e.snapshot().get("shows") or []), "")
+            r = e.act("restore_version", name="gig", id=vs[0]["id"])
+            check("an earlier version opens", r.get("ok") and e.patch[0]["name"] != "Changed", str(r))
+            vs2 = e.act("show_versions", name="gig")["versions"]
+            check("...and the newer one is kept as a version", len(vs2) == 2, str(vs2))
+            r = e.act("restore_version", name="gig", id="../../etc")
+            check("a bad version id is refused", not r.get("ok"), str(r))
+            r = e.act("show_export", name="gig")
+            check("export hands back the show file", r.get("ok") and r["filename"] == "gig.json"
+                  and '"patch"' in r["text"], str(r.get("error")))
+        finally:
+            e.shutdown()
+
+
+def test_room_fit() -> None:
+    """Shrinking or reshaping the room pulls rigging (and the lights hung
+    on it) back inside; a truss keeps its length when it fits."""
+    print("room reshape keeps rigging inside")
+    import tempfile
+    from app import engine as eng
+    from app import venue as venue_mod
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_room", width=20, depth=20, height=8)
+            r = e.act("venue_add", item={"type": "rigging", "kind": "truss", "a": [4, 6, 15], "b": [8, 6, 15]})
+            check("a truss near the back", r.get("ok"), str(r))
+            rid = e.venue["rigging"][-1]["id"]
+            e.act("add_heads", query="LED PAR 4ch", qty=1)
+            r = e.act("attach_heads", heads=[1], rig=rid)
+            check("a light hangs on it", r.get("ok"), str(r))
+            r = e.act("venue_room", width=10, depth=10, height=5)
+            rig = next(x for x in e.venue["rigging"] if x["id"] == rid)
+            b = venue_mod.bounds(e.venue)
+            ok_in = all(b["x0"] <= p[0] <= b["x1"] and b["z0"] <= p[2] <= b["z1"] and p[1] <= b["h"]
+                        for p in (rig["a"], rig["b"]))
+            check("the truss is back inside the smaller room", r.get("ok") and ok_in, str((rig, b)))
+            check("...still 4 m long", abs(abs(rig["b"][0] - rig["a"][0]) - 4.0) < 0.01, str(rig))
+            check("...and the summary says so", "rigging back inside" in r.get("summary", ""), r.get("summary"))
+            h = e.patch[0]
+            check("the light came with it", b["z0"] <= h["z"] <= b["z1"] and h["y"] <= b["h"], str((h["x"], h["y"], h["z"])))
+            r = e.act("venue_room", width=10, depth=10)
+            check("a resize that leaves it inside moves nothing", "rigging" not in r.get("summary", ""), r.get("summary"))
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("an empty desk asks which venue at start-up", "Where are you playing tonight?" in vp
+          and "jarvis.venuepick" in vp, "")
+
+
+def test_look_types() -> None:
+    """A look keeps the kinds of light it was made on, so at another venue
+    (other head numbers) it plays on every light of those kinds."""
+    print("looks on any light of these types")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("select_all")
+            e.act("set_colour", hex="#ff0000")
+            r = e.act("record_preset", name="Red wash")
+            look = e.presets[0]
+            check("a look knows its kinds of light", r.get("ok") and look.get("types"), str(look.get("types")))
+            e.act("clear_programmer")
+            e.act("add_heads", query="LED PARty RGBW", qty=3)     # another venue: heads 3-5
+            e.act("remove_heads", heads=[1, 2])
+            e.act("clear_selection")
+            r = e.act("include_preset", preset=look["n"])
+            check("its lights aren't here: it plays on the same kind", r.get("ok") and r.get("heads") == 3, str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=[e.patch[0]["head_no"]])
+            r = e.act("include_preset", preset=look["n"], on="types")
+            check("'every light of these types' ignores the selection", r.get("ok") and r.get("heads") == 3, str(r))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Looks tab has a search and 'Play on every …'", "#look-search" in pj and 'on: "types"' in pj, "")
+
+
+def test_more_models() -> None:
+    """Lights that used to fall back to the generic model: mirror
+    scanners and flower / derby effects have models of their own, and
+    lasers, hazers and studio lights are recognised by name."""
+    print("more 3D models")
+    import re
+    from app import fixture_kind as fk
+
+    def kind(man, model, roles):
+        return fk.describe({"manufacturer": man, "model": model, "map": roles})["type"]
+    check("a mirror scanner", kind("Chauvet", "Intimidator Scan LED 300", ["pan", "tilt", "gobo", "shutter"]) == "scanner", "")
+    check("a derby / flower effect", kind("American DJ", "Quad Gem DMX", ["red", "green", "blue", "white", "raw"]) == "effect", "")
+    check("a laser by name", kind("Laserworld", "EL-400RGB MK2", ["raw", "raw", "raw"]) == "laser", "")
+    check("a hazer by name", kind("American DJ", "Entour Faze", ["raw", "raw"]) == "atmos", "")
+    check("a studio COB light", kind("Aputure", "LS 600D Pro", ["dimmer", "raw"]) == "fresnel", "")
+    check("a moving head called Acrobat is still a moving head",
+          kind("Showtec", "Acrobat", ["pan", "tilt", "gobo", "dimmer"]) == "moving_spot", "")
+    check("a scanning laser is a laser", kind("Shehds", "Constellaser 12W Scan Laser", ["raw"]) != "scanner", "")
+    js = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    block = js[js.index("const BUILDERS = {"):]
+    block = block[:block.index("};")]
+    keys = set(re.findall(r"^\s+([a-z_0-9]+)(?::|,)", block, re.M))
+    missing = sorted(set(fk.TYPES) - keys)
+    check("every light type has a 3D builder", not missing, str(missing))
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a derby turns while it is lit", "sk.spin" in st, "")
+
+
+def test_rdm() -> None:
+    """RDM over Art-Net against a fake node: the Table of Devices, each
+    light's model / address / footprint / mode, a readdress, and the
+    comparison with the patch."""
+    print("RDM discovery")
+    import socket
+    import struct
+    import tempfile
+    import threading
+    from app import engine as eng
+    from app import rdm
+
+    lights = {
+        bytes.fromhex("02A012345678"): {"man": b"Chauvet", "model": b"Intimidator Spot 360", "addr": 1, "fp": 14,
+                                         "pers": 2, "mode": b"14-Channel"},
+        bytes.fromhex("02A0DEADBEEF"): {"man": b"Eurolite", "model": b"LED PARty RGBW", "addr": 40, "fp": 6,
+                                         "pers": 1, "mode": b"6 Channel"},
+    }
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.settimeout(0.2)
+    stop = threading.Event()
+
+    def node():
+        while not stop.is_set():
+            try:
+                pkt, peer = sock.recvfrom(2048)
+            except (socket.timeout, OSError):
+                continue
+            if pkt[8:10] == struct.pack("<H", rdm.TODREQUEST_OP):
+                sock.sendto(rdm.build_tod_data(0, pkt[24], list(lights)), peer)
+                continue
+            got = rdm.parse_artrdm(pkt)
+            msg = rdm.parse_rdm(got[1]) if got else None
+            if not msg or msg["dest"] not in lights:
+                continue
+            L = lights[msg["dest"]]
+            if msg["cc"] == rdm.SET and msg["pid"] == rdm.PID_DMX_START_ADDRESS:
+                L["addr"] = struct.unpack(">H", msg["data"])[0]
+                reply = rdm.build_rdm(msg["src"], rdm.SET_RESPONSE, msg["pid"], b"", tn=msg["tn"],
+                                      src=msg["dest"], response_type=rdm.ACK)
+            else:
+                data = {rdm.PID_DEVICE_INFO: struct.pack(">HHHIHBBHHB", 0x0100, 7, 0x0101, 1, L["fp"], L["pers"],
+                                                         3, L["addr"], 0, 0),
+                        rdm.PID_MANUFACTURER_LABEL: L["man"], rdm.PID_DEVICE_MODEL_DESCRIPTION: L["model"],
+                        rdm.PID_DEVICE_LABEL: b"",
+                        rdm.PID_DMX_PERSONALITY_DESCRIPTION: bytes([L["pers"]]) + struct.pack(">H", L["fp"]) + L["mode"],
+                        }.get(msg["pid"])
+                if data is None:
+                    continue
+                reply = rdm.build_rdm(msg["src"], rdm.GET_RESPONSE, msg["pid"], data, tn=msg["tn"],
+                                      src=msg["dest"], response_type=rdm.ACK)
+            sock.sendto(rdm.build_artrdm(reply, got[0]), peer)
+
+    t = threading.Thread(target=node, daemon=True)
+    t.start()
+    try:
+        msg = rdm.build_rdm(bytes(6), rdm.GET, rdm.PID_DEVICE_INFO, b"\x01\x02", tn=9)
+        back = rdm.parse_rdm(msg)
+        check("an RDM message round-trips (checksum incl. the start code)", back and back["tn"] == 9
+              and back["data"] == b"\x01\x02", str(back))
+        check("a broken checksum is refused", rdm.parse_rdm(msg[:-1] + bytes([msg[-1] ^ 1])) is None, "")
+        found = rdm.discover([1], host="127.0.0.1", port=port, timeout=0.6, per_request=0.3)
+        devs = found["devices"]
+        check("both lights answer", len(devs) == 2, str(found))
+        spot = next((d for d in devs if d["uid"] == "02A0:12345678"), {})
+        check("model, address, footprint and mode come back",
+              spot.get("manufacturer") == "Chauvet" and spot.get("model") == "Intimidator Spot 360"
+              and spot.get("address") == 1 and spot.get("footprint") == 14 and spot.get("mode") == "14-Channel", str(spot))
+        r = rdm.set_address("02A0:DEADBEEF", 1, 101, host="127.0.0.1", port=port)
+        check("a light can be readdressed from the desk", r.get("ok") and lights[bytes.fromhex("02A0DEADBEEF")]["addr"] == 101, str(r))
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            db = tmp / "f.db"
+            fixtures.seed_generics(db)
+            e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=1)
+                e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=200)
+                devs = rdm.discover([1], host="127.0.0.1", port=port, timeout=0.6, per_request=0.3)["devices"]
+                r = e.act("rdm_compare", devices=devs, universes=[1])
+                st = {d["uid"]: d["status"] for d in r.get("devices") or []}
+                check("a patched light the RDM light disagrees with is flagged", st.get("02A0:12345678") == "different", str(r))
+                check("an unpatched RDM light is new", st.get("02A0:DEADBEEF") == "new", str(st))
+                check("a patched light nobody answered for is silent",
+                      [x["head"] for x in r.get("silent") or []] == [2], str(r.get("silent")))
+            finally:
+                e.shutdown()
+    finally:
+        stop.set()
+        t.join(1)
+        sock.close()
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the fixture menu asks the lights", "openRdm" in fj and "/api/console/rdm" in fj, "")
 
 
 def test_cue_list_modes() -> None:

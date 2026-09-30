@@ -404,6 +404,28 @@ function openVenue(v) {
   });
 }
 
+// At start-up, on an empty desk with saved venues: "Where are you playing
+// tonight?" - once per browser session, never over a show in progress.
+function venuePicker() {
+  const s = state.snap || {};
+  const list = venues();
+  if (!list.length || (s.patch || []).length || s.show_file || anyModal()) return false;
+  try {
+    if (sessionStorage.getItem("jarvis.venuepick")) return true;
+    sessionStorage.setItem("jarvis.venuepick", "1");
+  } catch (e) { /* ask anyway */ }
+  const close = modal({
+    title: "Where are you playing tonight?",
+    body: h("div.vp-list",
+      ...list.map((v) => h("button.vp-item", { onclick: () => { close(); openVenue(v); } },
+        h("b", v.name),
+        h("small", `${v.shape === "custom" ? "custom shape" : "rectangle"} · ${v.rigging} rigging · ${v.lights} light(s)`)))),
+    foot: [h("span.muted.small", "Or start fresh: Settings → Venue has room templates."), h("span.grow"),
+      h("button.btn", { onclick: () => close() }, "Start empty")],
+  });
+  return true;
+}
+
 export function setArranging(on) {
   arranging = !!on;
   document.body.classList.toggle("arranging", arranging);
@@ -419,6 +441,7 @@ export function setArranging(on) {
 export function isArranging() { return arranging; }
 
 export function initVenuePanel(theStage) {
+  const offPick = on("snapshot", () => { offPick(); venuePicker(); });   // the first snapshot only
   stage = theStage;
   editor = new VenueEditor(stage, {
     onSelect: (sel) => renderInspector(sel),

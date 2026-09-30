@@ -59,7 +59,8 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9 _-]{1,40}$")
 # The invariant this preserves: no MUTATION happens off-lock, and nothing
 # on the output thread's path (build_frames) does I/O.
 SELF_LOCKED_ACTIONS = frozenset({
-    "patch_from_csv", "save_show", "load_show",
+    "patch_from_csv", "save_show", "load_show", "restore_version",
+    "show_versions", "show_export",
 })
 
 # --- undo ------------------------------------------------------------------
@@ -95,7 +96,8 @@ UNDO_COALESCE_S = 1.2
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
-    "quick_press", "quick_release_all", "quick_rate",
+    "quick_press", "quick_release_all", "quick_rate", "group_flash",
+    "ready_check", "show_versions", "show_export", "rdm_compare",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -136,7 +138,7 @@ UNDO_EXCLUDED = frozenset({
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
-                        "fx_status"})
+                        "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -585,9 +587,10 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate",
+    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
     "venue_save", "venue_open", "venue_delete",
-    "patch_move_free",
+    "patch_move_free", "change_type", "ready_check", "show_versions", "restore_version", "rdm_compare",
+    "show_export",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
@@ -850,7 +853,7 @@ class Engine:
         self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
-                             if any(b["id"] == k for b in self.quick)}
+                             if v.get("btn") or any(b["id"] == k for b in self.quick)}
         self.mode = state.get("mode", self.mode)
         # Limits and orientation come back with the patch, so an undo
         # restores a fixture's rigging as well as its position.
@@ -1616,6 +1619,65 @@ class Engine:
         added = self._apply_plan(plan)
         return {"heads": added, "patched": len(self.patch),
                 "summary": f"added {len(added)} x {plan[0]['model']}"}
+
+    # what a new fixture type brings; everything else about a head stays
+    _TYPE_KEYS = frozenset({"manufacturer", "model", "mode", "channels", "map", "mapped",
+                            "unverified", "universe", "address", "name"})
+
+    def _a_change_type(self, heads=None, head=None, query="", fixture_id=None, mode=None, **_):
+        """Swap the fixture type of patched lights, keeping each one's
+        number, place, rigging, groups, cues and looks (they point at the
+        head number and at roles, so the new type plays them where it has
+        the channel).  The address stays when the new footprint fits there;
+        otherwise the light moves to the first free block and says so."""
+        nums = sorted({int(x) for x in (heads or ([head] if head is not None else []))})
+        if not nums:
+            raise ValueError("pick the light(s) to change")
+        by_no = {h["head_no"]: h for h in self.patch}
+        missing = [n for n in nums if n not in by_no]
+        if missing:
+            raise ValueError(f"no light #{missing[0]}")
+        old_patch = list(self.patch)
+        self.patch = [h for h in self.patch if h["head_no"] not in nums]
+        moved, lost = [], set()
+        try:
+            for n in nums:
+                was = by_no[n]
+                entry = {"query": query, "fixture_id": fixture_id, "mode": mode, "qty": 1}
+                free = self.plan_addresses([entry])[0]        # an unknown type fails here
+                try:
+                    row = self.plan_addresses([{**entry, "universe": was["universe"],
+                                                "address": was["address"]}])[0]
+                except ValueError:
+                    row = free                                # no room here: the first free block
+                    moved.append(f"#{n} -> {row['universe']}.{row['address']}")
+                new = self._build_head(row, n)
+                if was.get("name") and was["name"] != f"{was.get('model') or 'Head'} {n}":
+                    new["name"] = was["name"]                  # a name the operator gave it
+                for k, v in was.items():
+                    if k not in self._TYPE_KEYS and k not in ("kind", "role", "x", "y", "z"):
+                        new[k] = v
+                for k in ("kind", "role", "x", "y", "z"):
+                    new[k] = was.get(k, new.get(k))
+                used = {r for pb in self.playbacks for c in pb["stack"]
+                        for r in (c.get("values") or {}).get(n, {})}
+                lost |= {r.split("@", 1)[0] for r in used} - set(new["map"])
+                self.patch.append(new)
+            self.patch.sort(key=lambda h: h["head_no"])
+            self._validate_patch()
+        except (ValueError, TypeError):
+            self.patch = old_patch
+            raise
+        self.patch_rev += 1
+        for n in nums:
+            self.programmer.pop(n, None)
+        model = next(h for h in self.patch if h["head_no"] == nums[0])["model"]
+        msg = f"{len(nums)} light(s) are now {model}"
+        if moved:
+            msg += "; moved " + ", ".join(moved[:6])
+        if lost:
+            msg += f"; cues set {', '.join(sorted(lost)[:6])} it doesn't have"
+        return {"heads": nums, "moved": moved, "lost": sorted(lost), "summary": msg}
 
     def _a_remove_heads(self, heads=None, head=None, head_end=None, **_):
         wanted = set()
@@ -3348,7 +3410,7 @@ class Engine:
     # turning the lock off.
 
     LOCK_PATCH = frozenset({
-        "add_heads", "remove_heads", "patch_clear", "auto_patch",
+        "add_heads", "remove_heads", "patch_clear", "auto_patch", "change_type",
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
@@ -3360,9 +3422,9 @@ class Engine:
         "group_create", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
-        "set_output", "set_dmx_target", "save_show", "load_show", "import_show",
+        "set_output", "set_dmx_target", "save_show", "load_show", "import_show", "restore_version",
         "venue_save", "venue_open", "venue_delete",
-        "quick_set", "quick_defaults", "quick_fx_defaults", "timeline_set", "timeline_track",
+        "quick_set", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
     })
@@ -3524,9 +3586,12 @@ class Engine:
         v = venue_mod.normalise(v)
         if not (v["room"]["width"] and v["room"]["depth"]):
             raise ValueError("the room needs a width and a depth")
+        # rigging left outside the new walls comes back in (its lights with it)
+        pulled = venue_mod.fit_inside(v)
         self._set_venue_doc(v)
         w, d, h = venue_mod.dims(v)
-        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m")
+        return self._venue_result(f"room {w:g} x {d:g} x {h:g} m"
+                                  + (f"; moved {pulled} piece(s) of rigging back inside" if pulled else ""))
 
     def _a_venue_stage(self, x=None, z=None, width=None, depth=None,
                        height=None, remove=False, **_):
@@ -3977,7 +4042,10 @@ class Engine:
                                              f"to {to_page}.{to_slot}"}
 
     def _a_quick_set(self, page=1, slot=None, button=None, clear=False, **_):
-        """Create, change or remove the quick button at page/slot."""
+        """Create, change or remove the quick button at page/slot.
+        slot="free": the first empty slot (from `page` on)."""
+        if slot == "free":
+            page, slot = self._quick_free_slot(page)
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         if slot is None:
             raise ValueError("slot is required")
@@ -3994,6 +4062,52 @@ class Engine:
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    def _quick_free_slot(self, page=None) -> tuple[int, int]:
+        """The first empty (page, slot), from `page` on (default page 1)."""
+        start = int(_clamp(page or 1, 1, self.QUICK_PAGES))
+        used = {(b["page"], b["slot"]) for b in self.quick}
+        for p in range(start, self.QUICK_PAGES + 1):
+            for sl in range(1, self.QUICK_SLOTS + 1):
+                if (p, sl) not in used:
+                    return p, sl
+        raise ValueError("no empty button left")
+
+    def _a_group_flash(self, heads=None, group=None, auto=None, down=True, level=100, **_):
+        """Flash some lights while held (a group chip held down): full up
+        over everything else, the same as a flash button, never stored."""
+        key = "flash:chip"
+        if not _truthy(down):
+            self.quick_active.pop(key, None)
+            return {"active": False, "summary": "flash released"}
+        target = {"group": group} if group is not None else {"auto": auto} if auto else {"heads": heads or []}
+        nums = self._heads_for_target(target)
+        if not nums:
+            raise ValueError("no lights to flash")
+        btn = {"id": key, "kind": "flash", "mode": "hold", "level": int(_clamp(level, 0, 100)),
+               "label": "Flash", "target": target}
+        self.quick_active[key] = {"since": time.monotonic(), "heads": nums, "owners": {"hand"},
+                                  "fx_ids": [], "btn": btn}
+        return {"active": True, "heads": len(nums), "summary": f"flashing {len(nums)} light(s)"}
+
+    def _a_quick_from_laser(self, heads=None, label="", page=None, **_):
+        """A laser button from the laser look in the programmer (pattern,
+        colour, size, movement, beams): on / off, output only while armed."""
+        nums = [int(n) for n in (heads or [])]
+        lasers = [h for h in self.patch if h["head_no"] in nums and any(r in LASER_ROLES for r in h["map"])]
+        if not lasers:
+            raise ValueError("select a laser first")
+        values = {}
+        for h in lasers:
+            for role, v in (self.programmer.get(h["head_no"]) or {}).items():
+                if role in LASER_ROLES and isinstance(v, (int, float)):
+                    values.setdefault(role, int(v))
+        spot = self._quick_free_slot(page)
+        r = self._a_quick_set(page=spot[0], slot=spot[1], button={
+            "kind": "laser", "mode": "latch", "label": str(label or "Laser look")[:24],
+            "target": {"heads": [h["head_no"] for h in lasers]}, "values": values})
+        r["summary"] = f"laser button {spot[0]}.{spot[1]}: {r['button']['label']}"
+        return r
 
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
@@ -4344,7 +4458,7 @@ class Engine:
         out: dict[int, dict] = {}
         heads = {h["head_no"]: h for h in self.patch}
         for key, run in sorted(self.quick_active.items(), key=lambda kv: kv[1]["since"]):
-            btn = by_id.get(key)
+            btn = by_id.get(key) or run.get("btn")
             if not btn:
                 continue
             kind = btn["kind"]
@@ -6549,7 +6663,16 @@ class Engine:
                  "heads": len(used), "head_list": sorted(set(used)), "fx": fx,
                  "hexes": self._look_hexes([h for h in heads if h["head_no"] in used],
                                            lambda h: self.programmer.get(h["head_no"])),
-                 "tags": tags}
+                 "tags": tags,
+                 # what kinds of light it was made on: at another venue it can
+                 # play on "any light of these types"
+                 "types": sorted({fixture_kind.describe(h)["type"] for h in heads if h["head_no"] in used})}
+        kinds = {}
+        for h in heads:
+            if h["head_no"] in used:
+                d = fixture_kind.describe(h)
+                kinds[d["type"]] = d.get("label") or d["type"].replace("_", " ").title()
+        entry["type_labels"] = [kinds[t] for t in entry["types"]]
         for i, old in enumerate(self.presets):
             if old["n"] == n:
                 self.presets[i] = entry
@@ -6561,19 +6684,32 @@ class Engine:
                 "summary": f"saved look {label} ({len(used)} light(s)"
                            + (f", {len(fx)} effect(s)" if fx else "") + ")"}
 
-    def _a_include_preset(self, n=None, preset=None, **_):
+    def _look_type_heads(self, entry: dict) -> list[dict]:
+        """Every patched light of the kinds a look was made on."""
+        types = set(entry.get("types") or [])
+        if not types:
+            return []
+        return [h for h in self.patch if fixture_kind.describe(h)["type"] in types]
+
+    def _a_include_preset(self, n=None, preset=None, on=None, **_):
         """Play a look: on the selection, or - with nothing selected - on the
-        lights it was saved from.  Its effects start too, taking over from
-        effects of the same kind already on those lights."""
+        lights it was saved from (or, when those aren't patched here, on
+        every light of the same kinds).  on="types" plays it on every light
+        of those kinds.  Its effects start too, taking over from effects of
+        the same kind already on those lights."""
         ref = n if n is not None else preset
         entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
             raise ValueError(f"no preset {ref!r}")
-        if self.selected:
+        if on == "types":
+            heads = self._look_type_heads(entry)
+            if not heads:
+                raise ValueError(f"no lights of the kinds {entry['name']} was made on")
+        elif self.selected:
             heads = self._require_selection()
         else:
             want = set(entry.get("head_list") or [])
-            heads = [h for h in self.patch if h["head_no"] in want]
+            heads = [h for h in self.patch if h["head_no"] in want] or self._look_type_heads(entry)
             if not heads:
                 raise ValueError(f"select the lights for {entry['name']} first")
         applied, skipped = 0, []
@@ -6632,8 +6768,43 @@ class Engine:
             raise ValueError(f"playback must be 1..{len(self.playbacks)}")
         return self.playbacks[num - 1]
 
+    def _cue_fx_capture(self, heads) -> tuple[list[dict], list[int]]:
+        """The effects running on `heads` from the programmer side (not a
+        button's, not another cue's): what a recorded cue plays again."""
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+        items, ids = [], []
+        for f in self.fx:
+            if not f.get("lib") or f["id"] in owned or f.get("cue_pb") or not set(f.get("heads") or []) & heads:
+                continue
+            item = {"name": f["lib"], "params": dict(f.get("params") or {}), "heads": list(f["heads"])}
+            if f.get("across"):
+                item["across"] = True
+            if f.get("move"):
+                item["move"] = f["move"]
+            items.append(item)
+            ids.append(f["id"])
+        return items[:12], ids
+
+    def _cue_fx_stop(self, pb: dict) -> None:
+        self.fx = [f for f in self.fx if f.get("cue_pb") != pb["n"]]
+
+    def _cue_fx_start(self, pb: dict, cue: dict) -> None:
+        """A cue's effects take over from the last cue's on this playback."""
+        self._cue_fx_stop(pb)
+        for item in cue.get("fx") or []:
+            try:
+                r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                         item.get("heads") or [], None, across=bool(item.get("across")))
+            except (ValueError, KeyError):
+                continue
+            for f in self.fx:
+                if f["id"] == r.get("fx"):
+                    f["cue_pb"] = pb["n"]
+                    if item.get("move"):
+                        f["move"] = item["move"]
+
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
-                      cue=None, follow=None, mode="replace", **_):
+                      cue=None, follow=None, mode="replace", effects=True, **_):
         """Record the programmer as a cue.  Over an existing cue, `mode`:
         "replace" (the cue becomes exactly the programmer), "merge" (the
         programmer's values are added into the cue, the rest of it kept) or
@@ -6644,10 +6815,12 @@ class Engine:
         mode = str(mode or "replace").lower()
         if mode not in ("replace", "merge", "insert"):
             raise ValueError("mode is replace, merge or insert")
-        if not self.programmer:
-            raise ValueError("programmer is empty - set something first")
         values = {h: dict(row) for h, row in self.programmer.items() if row}
-        if not values:
+        # the effects running on the lights in the programmer (or, with
+        # nothing set, on the selection) go into the cue too
+        fx_items, fx_ids = self._cue_fx_capture(set(values) or set(self.selected)) \
+            if _truthy(effects) else ([], [])
+        if not values and not fx_items:
             raise ValueError("programmer is empty - set something first")
         cue_n = int(cue) if cue else len(pb["stack"]) + 1
         if cue_n < 1:
@@ -6663,6 +6836,20 @@ class Engine:
                  "fade_s": float(fade if fade is not None else (old or {}).get("fade_s", 0.0)),
                  "hold_s": float(hold if hold is not None else (old or {}).get("hold_s", 0.0)),
                  "values": values}
+        if old is not None and old.get("times"):
+            entry["times"] = dict(old["times"])       # its part times stay
+        fx_list = list((old or {}).get("fx") or []) if old is not None and mode == "merge" else []
+        for item in fx_items:
+            # merge: a new effect replaces one of the same kind on the same lights
+            group = (fxlib_mod.FX.get(item["name"]) or {}).get("group")
+            fx_list = [x for x in fx_list if not ((fxlib_mod.FX.get(x["name"]) or {}).get("group") == group
+                                                  and set(x.get("heads") or []) & set(item["heads"]))]
+            fx_list.append(item)
+        if fx_list:
+            entry["fx"] = fx_list
+        # recorded effects now live in the cue, as the programmer does
+        if fx_ids:
+            self.fx = [f for f in self.fx if f["id"] not in fx_ids]
         if old is not None and follow is None and old.get("follow_s") is not None:
             entry["follow_s"] = old["follow_s"]
         if mode == "insert" and cue_n <= len(pb["stack"]):
@@ -6782,6 +6969,7 @@ class Engine:
         if not stack:
             pb["index"] = -1
             pb["active"] = False
+            self._cue_fx_stop(pb)
         return {"playback": pb["n"], "cues": len(stack),
                 "index": pb["index"], "name": gone.get("name"),
                 "summary": f"deleted cue {num} ({gone.get('name')}) "
@@ -6829,8 +7017,10 @@ class Engine:
         return {"playback": pb["n"], "cue": num, "name": label,
                 "summary": f"renamed cue {num} to {label!r}"}
 
+    CUE_PARTS = ("intensity", "colour", "position", "beam")
+
     def _a_edit_cue(self, playback=None, cue=None, fade=None, hold=None,
-                    name=None, follow=_UNSET, **_):
+                    name=None, follow=_UNSET, times=None, **_):
         """Change a cue's timing or name in place, without re-recording it."""
         pb = self._playback(playback if playback is not None else 1)
         stack = pb["stack"]
@@ -6848,6 +7038,21 @@ class Engine:
         if name is not None and str(name).strip():
             entry["name"] = str(name).strip()
             changed.append("name")
+        if isinstance(times, dict):
+            # a part's own fade; empty / None puts it back on the cue's fade
+            cur = dict(entry.get("times") or {})
+            for part, v in times.items():
+                if part not in self.CUE_PARTS:
+                    raise ValueError(f"a cue part is one of {', '.join(self.CUE_PARTS)}")
+                if v in (None, ""):
+                    cur.pop(part, None)
+                else:
+                    cur[part] = max(0.0, min(600.0, float(v)))
+            if cur:
+                entry["times"] = cur
+            else:
+                entry.pop("times", None)
+            changed.append("part times")
         # A SENTINEL, not a None default, and that is the whole trick.
         #
         # `follow` has to be able to say three things: set a number, set
@@ -6958,7 +7163,9 @@ class Engine:
         cue = stack[index]
         target = self._scaled_cue(cue, at)
         pb["fade"] = {"t0": now,
-                      "dur": float(cue.get("fade_s") or 0.0), "from": was}
+                      "dur": float(cue.get("fade_s") or 0.0), "from": was,
+                      # its own fade per kind of value (position 4 s, colour 0...)
+                      "parts": dict(cue.get("times") or {})}
         # The target is kept, not re-derived: after the fade has finished
         # `_pb_values` used to return `cue["values"]` directly, which would
         # have snapped the rig back to full the instant the fade ended.
@@ -6966,6 +7173,7 @@ class Engine:
         pb["at"] = at
         pb["index"] = index
         pb["active"] = True
+        self._cue_fx_start(pb, cue)
         self._order += 1
         pb["order"] = self._order
         self._arm_follow(pb, now)              # manual steps re-arm here
@@ -7087,6 +7295,7 @@ class Engine:
     def _a_playback_release(self, playback=None, **_):
         pb = self._playback(playback if playback is not None else 1)
         pb["active"] = False
+        self._cue_fx_stop(pb)
         pb["fade"] = None
         pb["follow"]["at"] = None               # no auto-advance while off
         return {"playback": pb["n"], "active": False,
@@ -7101,6 +7310,7 @@ class Engine:
         pb["active"] = True
         self._order += 1
         pb["order"] = self._order
+        self._cue_fx_start(pb, pb["stack"][pb["index"]])
         self._arm_follow(pb, self._clock())     # resume auto-advance
         return {"playback": pb["n"], "active": True, "cue":
                 pb["stack"][pb["index"]]["n"]}
@@ -7685,12 +7895,14 @@ class Engine:
         if not fade:
             return target
         dur = float(fade.get("dur") or 0.0)
-        if dur <= 0:
+        parts = fade.get("parts") or {}
+        longest = max([dur, *[float(v) for v in parts.values()]])
+        if longest <= 0:
             return target
-        t = (now - float(fade["t0"])) / dur
-        if t >= 1.0:
+        el = now - float(fade["t0"])
+        if el >= longest:
             return target
-        if t <= 0:
+        if el <= 0:
             return fade["from"]
         src, dst = fade["from"], target
         out = {}
@@ -7698,6 +7910,8 @@ class Engine:
             a, b = src.get(head_no) or {}, dst.get(head_no) or {}
             row = {}
             for attr in set(a) | set(b):
+                d = float(parts.get(self.attr_group(attr), dur)) if parts else dur
+                t = 1.0 if d <= 0 else min(1.0, el / d)
                 v0, v1 = a.get(attr, 0), b.get(attr, 0)
                 row[attr] = int(round(v0 + (v1 - v0) * t))
             out[head_no] = row
@@ -9569,11 +9783,165 @@ class Engine:
             self.show_file = label
         self.show_dir.mkdir(parents=True, exist_ok=True)
         path = self.show_dir / f"{label}.json"
+        kept = self._keep_version(path, text)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
-        return {"file": label, "show_file": label,
+        return {"file": label, "show_file": label, "version_kept": kept,
                 "summary": f"saved show {label!r}"}
+
+    def _a_rdm_compare(self, devices=None, universes=None, **_):
+        """Line up what the lights said over RDM with the patch: each light
+        is "ok" (a patched light at that address, same channel count),
+        "different" (patched there, but the light says otherwise) or "new"
+        (nothing patched there: + Add it).  Patched lights on the scanned
+        universes that nobody answered for are listed as "silent"."""
+        rows = []
+        seen = set()
+        by_addr = {(h["universe"], h["address"]): h for h in self.patch}
+        for d in devices or []:
+            u, a = int(d.get("universe") or 1), d.get("address")
+            name = " ".join(x for x in (d.get("manufacturer"), d.get("model")) if x) or d.get("uid")
+            row = {**d, "name": name}
+            h = by_addr.get((u, a)) if a else None
+            if h is None:
+                row["status"] = "new"
+                row["note"] = "not in the patch" + (f" - {d.get('footprint')} ch at {u}.{a}" if a else "")
+            else:
+                seen.add(h["head_no"])
+                row["head"] = h["head_no"]
+                fp = d.get("footprint")
+                if fp and fp != h["channels"]:
+                    row["status"] = "different"
+                    row["note"] = f"#{h['head_no']} is patched as {h['model']} ({h['channels']} ch); the light says {fp} ch" \
+                                  + (f" ({d['mode']})" if d.get("mode") else "")
+                else:
+                    row["status"] = "ok"
+                    row["note"] = f"#{h['head_no']} {h['name']}"
+            rows.append(row)
+        scanned = {int(u) for u in universes or []}
+        silent = [{"head": h["head_no"], "name": h["name"], "universe": h["universe"], "address": h["address"],
+                   "status": "silent", "note": "didn't answer (no RDM, off, or a different address)"}
+                  for h in self.patch if h["universe"] in scanned and h["head_no"] not in seen]
+        n_bad = sum(r["status"] != "ok" for r in rows)
+        return {"devices": rows, "silent": silent,
+                "summary": f"{len(rows)} RDM light(s) answered" + (f", {n_bad} to check" if n_bad else "")}
+
+    def _a_ready_check(self, **_):
+        """Before doors: everything that would bite during the show, each
+        with what to press.  Read-only."""
+        items: list[dict] = []
+
+        def add(level, text, fix=""):
+            items.append({"level": level, "text": text, "fix": fix})
+
+        if not self.patch:
+            add("bad", "No lights are patched.", "+ Add")
+        clashes = self._patch_clashes()
+        if clashes:
+            add("bad", f"{len(clashes)} DMX clash(es): two lights share channels.", "Fixtures → the red warning → Move")
+        raw = [h["head_no"] for h in self.patch if not h.get("mapped", True)]
+        if raw:
+            add("warn", f"{len(raw)} light(s) have channels Jarvis can't name ({', '.join(f'#{n}' for n in raw[:6])}).",
+                "Edit fixture profile")
+        gone = self._stale_heads(self.patch, self.playbacks)
+        if gone:
+            add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues")
+        if not any(pb["stack"] for pb in self.playbacks):
+            add("warn", "No cues recorded yet.", "Record a cue")
+        movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
+        if movers and not self.floor_safe:
+            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Move tab → Stay on the floor")
+        lasers = [h for h in self.patch if any(r in LASER_ROLES for r in h["map"])]
+        if lasers:
+            add("info", f"{len(lasers)} laser(s): output only while ARMED; KILL FX stops everything.", "")
+        if self.dry_run or not self.live:
+            add("warn", "BLIND / output stopped: nothing reaches the lights yet.", "Go live…")
+        if self.output.get("errors"):
+            add("bad", f"{self.output['errors']} DMX send error(s): {self.output.get('last_error') or ''}".strip(),
+                "Settings → Output")
+        if not self.show_file:
+            add("warn", "The show has never been saved.", "Show ▾ → Save")
+        if not items or all(i["level"] == "info" for i in items):
+            add("ok", "Ready: nothing to fix.")
+        worst = next((lv for lv in ("bad", "warn") if any(i["level"] == lv for i in items)), "ok")
+        return {"ready": worst == "ok", "worst": worst, "items": items,
+                "summary": "ready" if worst == "ok" else
+                f"{sum(i['level'] == worst for i in items)} thing(s) to check"}
+
+    SHOW_VERSIONS = 20
+
+    def _versions_dir(self, label: str) -> Path:
+        return self.show_dir / "versions" / label
+
+    def _keep_version(self, path: Path, new_text: str) -> bool:
+        """Before a save overwrites a show, keep the old file (when it is
+        different) as a dated version; the last SHOW_VERSIONS stay."""
+        if not path.is_file():
+            return False
+        try:
+            old_text = path.read_text(encoding="utf-8")
+            strip = lambda t: {k: v for k, v in json.loads(t).items() if k != "saved"}  # noqa: E731
+            if strip(old_text) == strip(new_text):
+                return False
+            stamp = str(json.loads(old_text).get("saved") or "")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            old_text, stamp = path.read_bytes().decode("utf-8", "replace"), ""
+        d = self._versions_dir(path.stem)
+        d.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^0-9T]", "", stamp)[:15] or datetime.now().strftime("%Y%m%dT%H%M%S")
+        dest = d / f"{name}.json"
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = d / f"{name}-{n}.json"
+        dest.write_text(old_text, encoding="utf-8")
+        for extra in sorted(d.glob("*.json"))[:-self.SHOW_VERSIONS]:
+            extra.unlink(missing_ok=True)
+        return True
+
+    def _a_show_versions(self, name="", **_):
+        """The kept versions of a show, newest first."""
+        label = self._safe_name(name or self.show_file or "show")
+        d = self._versions_dir(label)
+        rows = []
+        for p in sorted(d.glob("*.json"), reverse=True) if d.is_dir() else []:
+            try:
+                saved = json.loads(p.read_text(encoding="utf-8")).get("saved")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                saved = None
+            rows.append({"id": p.stem, "saved": saved, "bytes": p.stat().st_size})
+        return {"show": label, "versions": rows,
+                "summary": f"{len(rows)} earlier version(s) of {label!r}"}
+
+    def _a_restore_version(self, name="", id="", **_):
+        """Open an earlier version of a show.  The show as it is now is kept
+        as a version first, so restoring can itself be undone."""
+        label = self._safe_name(name or self.show_file or "show")
+        vid = str(id or "")
+        if not re.fullmatch(r"[0-9T]+(-\d+)?", vid):
+            raise ValueError("pick a version")
+        src = self._versions_dir(label) / f"{vid}.json"
+        if not src.is_file():
+            raise ValueError(f"no version {vid} of {label!r}")
+        path = self.show_dir / f"{label}.json"
+        text = src.read_text(encoding="utf-8")
+        self._keep_version(path, text)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+        r = self._a_load_show(name=label)
+        r["summary"] = f"opened the {vid[:8]} {vid[9:13]} version of {label!r} (the newer one is kept)"
+        return r
+
+    def _a_show_export(self, name="", **_):
+        """The show file's text, for a download / a USB stick."""
+        label = self._safe_name(name or self.show_file or "show")
+        path = self.show_dir / f"{label}.json"
+        if not path.is_file():
+            raise ValueError(f"save the show first (no file {label!r})")
+        return {"show": label, "filename": f"{label}.json", "text": path.read_text(encoding="utf-8"),
+                "summary": f"exported {label!r}"}
 
     @staticmethod
     def _normalize_rows(values) -> dict[int, dict]:
@@ -9982,7 +10350,10 @@ class Engine:
                 "stack": [{"n": c["n"], "name": c["name"],
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
-                           "empty": not (c.get("values") or {})}
+                           "times": c.get("times") or None,
+                           "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f["name"])
+                                  for f in c.get("fx") or []],
+                           "empty": not (c.get("values") or {}) and not c.get("fx")}
                           for c in pb["stack"]],
                 "cue": self._pb_cue(pb),
                 "follow": self._follow_public(pb)}

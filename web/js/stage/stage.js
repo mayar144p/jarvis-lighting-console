@@ -82,6 +82,7 @@ function mixLook(a, b, t) {
 const TRAVEL = {
   moving_beam: [2.2, 1.3], moving_spot: [3.0, 1.8], moving_wash: [3.2, 1.9],
   moving_hybrid: [2.8, 1.7], moving_bar: [3.0, 1.5],
+  scanner: [0.35, 0.3],                      // a mirror, not a head: very quick
 };
 
 /**
@@ -954,6 +955,7 @@ export class Stage {
         c.lens.emissive.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(a * 7);
       });
     }
+    if (sk.spin && a > 0.002) sk.spin.rotation.y = time * 0.9;   // a derby turns while lit
     void lights;
     return a > 0.002;
   }

@@ -178,6 +178,32 @@ function paintLamps() {
   });
 }
 
+// Hold a group chip to flash that group (tap still selects it).
+function holdToFlash(el, params) {
+  let timer = 0, flashing = false;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.classList.contains("x")) return;
+    timer = setTimeout(() => {
+      flashing = true;
+      el.classList.add("flashing");
+      run("group_flash", { ...params, down: true }, { silentError: true });
+    }, 350);
+  });
+  const up = () => {
+    clearTimeout(timer);
+    if (!flashing) return;
+    el.classList.remove("flashing");
+    run("group_flash", { down: false }, { silentError: true });
+    // the click that follows a hold is not a tap
+    el.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); }, { capture: true, once: true });
+    setTimeout(() => { flashing = false; }, 0);
+  };
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  el.addEventListener("pointerleave", up);
+  return el;
+}
+
 function renderGroups() {
   const box = $("#group-chips");
   const groups = (state.snap && state.snap.groups) || [];
@@ -188,12 +214,12 @@ function renderGroups() {
   if (box.dataset.key === key) return;
   box.dataset.key = key;
   box.replaceChildren(
-    ...autos.map((g) => h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection`,
+    ...autos.map((g) => holdToFlash(h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection · hold to flash`,
       onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
-    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`))),
-    ...groups.map((g) => h("button.chip" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length})`,
+    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`)), { auto: g.key })),
+    ...groups.map((g) => holdToFlash(h("button.chip" + (same(g.heads) ? ".on" : ""), {
+      title: `Select ${g.name} (${g.heads.length}) · hold to flash`,
       onclick: (e) => {
         if (e.target.classList.contains("x")) return;
         select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
@@ -206,7 +232,7 @@ function renderGroups() {
           run("group_delete", { group: g.n });
         }
       },
-    }, "×"))));
+    }, "×")), { group: g.n })));
 }
 
 function rowClick(e) {
@@ -250,6 +276,41 @@ function rowClick(e) {
   }
 }
 
+// the row's light, or the whole selection when the row is part of it
+function sameSelection(head) {
+  const sel = selected();
+  return sel.includes(head) ? sel : [head];
+}
+
+// Change the fixture type of patched lights: their number, place,
+// groups, cues and looks stay; the address stays if the new one fits.
+function openChangeType(heads) {
+  const search = h("input.input", { type: "search", placeholder: "Search your installed fixtures…" });
+  const list = h("div.ct-list");
+  const note = h("p.muted.small", heads.length > 1 ? `${heads.length} lights will change.` : "");
+  let close = null, seq = 0;
+  const pick = async (r, mode) => {
+    const res = await run("change_type", { heads, fixture_id: r.id, mode: mode ? mode.name : undefined }, { toast: true });
+    if (res.ok) close();
+  };
+  const find = async () => {
+    const my = ++seq;
+    const d = await get("/api/fixtures?q=" + encodeURIComponent(search.value.trim())).catch(() => ({}));
+    if (my !== seq) return;
+    const rows = (d.results || []).slice(0, 40);
+    list.replaceChildren(...(rows.length ? rows.map((r) => h("div.ct-item",
+      h("b", `${r.manufacturer} ${r.model}`),
+      h("div.chip-row", ...((r.modes || []).length ? r.modes : [null]).map((m) => h("button.chip", {
+        onclick: () => pick(r, m) }, m ? `${m.name} · ${m.channel_count} ch` : "Use this")))))
+      : [h("p.muted.small", "Nothing installed matches - add the fixture from + Add first.")]));
+  };
+  let t = 0;
+  search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(find, 150); });
+  close = modal({ title: "Change fixture type", body: h("div", note, search, list) });
+  find();
+  search.focus();
+}
+
 function rowMenu(btn, head) {
   const hd = patch().find((x) => x.head_no === head);
   if (!hd) return;
@@ -268,6 +329,7 @@ function rowMenu(btn, head) {
     { label: "Test this light…", run: () => openLightTest(hd) },
     { label: "Show DMX channels", run: () => openChannels([head]) },
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
+    { label: "Change fixture type…", run: () => openChangeType(sameSelection(head)) },
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
@@ -349,12 +411,55 @@ export function openDmxMap() {
   const off = on("snapshot", () => { if (!document.body.contains(body)) { off && off(); return; } body.replaceChildren(draw()); });
 }
 
+// RDM: the lights say what they are, where they're addressed and in which
+// mode; the list compares that with the patch (needs an RDM node).
+async function openRdm() {
+  const body = h("div.rdm", h("p.muted", "Asking the lights… (a few seconds)"));
+  const close = modal({ title: "Ask the lights (RDM)", wide: true, body });
+  const d = await post("/api/console/rdm", {}).catch((e) => ({ error: e.message }));
+  const r = d.result || {};
+  if (d.error || !r.ok) {
+    body.replaceChildren(h("p.warn", d.error || r.error || "RDM failed"));
+    return;
+  }
+  const ICON = { ok: "✓", different: "!", new: "+", silent: "?" };
+  const setAddr = async (dev) => {
+    const v = await promptBox("Set the light's address", `DMX address on universe ${dev.universe} (1-512)`,
+      dev.address ? String(dev.address) : "", { ok: "Send to the light" });
+    if (!v) return;
+    const res = await post("/api/console/rdm", { set_address: { uid: dev.uid, universe: dev.universe, address: +v } })
+      .catch((e) => ({ error: e.message }));
+    const rr = res.result || {};
+    toast(res.error || rr.error || `The light is now at ${dev.universe}.${v}`, res.error || rr.error ? "bad" : "ok");
+  };
+  const row = (dev) => h("div.rdm-row." + dev.status,
+    h("span.ready-ic", ICON[dev.status] || "·"),
+    h("div", h("b", dev.name || `#${dev.head}`),
+      h("small.muted", [dev.uid, dev.universe && dev.address ? `${dev.universe}.${String(dev.address).padStart(3, "0")}` : "",
+        dev.footprint ? `${dev.footprint} ch` : "", dev.mode || ""].filter(Boolean).join(" · ")),
+      h("div.small", dev.note || "")),
+    h("div.row-btns",
+      dev.status === "new" ? h("button.btn.small", { onclick: () => {
+        close();
+        run("add_heads", { query: dev.name, universe: dev.universe, address: dev.address }, { toast: true });
+      } }, "Add it") : null,
+      dev.status === "different" ? h("button.btn.small", { onclick: () => { close(); openChangeType([dev.head]); } }, "Change type…") : null,
+      dev.uid ? h("button.btn.small.ghost", { onclick: () => setAddr(dev) }, "Set address…") : null));
+  const devs = r.devices || [];
+  body.replaceChildren(
+    devs.length ? h("p.muted.small", r.summary) : null,
+    ...(devs.length ? devs.map(row) : [h("p.muted", "No light answered. RDM needs a node with RDM switched on, and lights that support it"
+      + (r.tried && r.tried !== "255.255.255.255" ? ` (asked ${r.tried}).` : "."))]),
+    ...((r.silent || []).length ? [h("h3", "Patched, but no answer"), ...r.silent.map(row)] : []));
+}
+
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
     { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Scan the network for nodes", run: () => scanRig() },
+    { label: "Ask the lights (RDM)…", hint: "model, mode and address from each light", run: () => openRdm() },
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
     } },
