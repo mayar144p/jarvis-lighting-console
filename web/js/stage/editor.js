@@ -492,17 +492,34 @@ export class VenueEditor {
     this._drawMove = (ev) => {
       if (!this.draw) return;
       const p = this._snapPoint(ev);
-      if (p) this._updateLine(p);
+      if (p) { this.draw.hover = p; this._updateLine(p); }
     };
     this._drawKey = (ev) => {
-      if (!this.draw) return;
-      if (ev.key === "Escape") { ev.stopPropagation(); this.cancelDraw(); }
-      if (ev.key === "Enter") { ev.stopPropagation(); this.finishDraw(); }
-      if (ev.key === "Backspace" && this.draw.points.length) {
+      const d = this.draw;
+      if (!d) return;
+      // a typed length: the next wall exactly this long, towards the pointer
+      if (/^[0-9.,]$/.test(ev.key) && d.points.length && d.kind !== "measure") {
+        ev.preventDefault(); ev.stopPropagation();
+        d.typed = (d.typed || "") + (ev.key === "," ? "." : ev.key);
+        this._updateLine(d.hover);
+        return;
+      }
+      if (ev.key === "Escape") {
+        ev.stopPropagation();
+        if (d.typed) { d.typed = ""; this._updateLine(d.hover); } else this.cancelDraw();
+      }
+      if (ev.key === "Enter") {
+        ev.stopPropagation();
+        const len = parseFloat(d.typed || "");
+        if (d.typed && len > 0 && d.points.length) { d.typed = ""; this._placeTyped(len); } else this.finishDraw();
+      }
+      if (ev.key === "Backspace") {
         ev.preventDefault();
-        this.draw.points.pop();
-        this.draw.dots.remove(this.draw.dots.children[this.draw.dots.children.length - 1]);
-        this._updateLine();
+        if (d.typed) { d.typed = d.typed.slice(0, -1); this._updateLine(d.hover); return; }
+        if (!d.points.length) return;
+        d.points.pop();
+        d.dots.remove(d.dots.children[d.dots.children.length - 1]);
+        this._updateLine(d.hover);
       }
     };
     this.stage.renderer.domElement.addEventListener("pointermove", this._drawMove);
@@ -516,11 +533,44 @@ export class VenueEditor {
     p.x = Math.round(p.x / grid) * grid;
     p.z = Math.round(p.z / grid) * grid;
     const pts = this.draw ? this.draw.points : [];
-    if (ev.shiftKey && pts.length) {                // square to the last point
+    // Walls are drawn like a plan: square to the last corner unless Shift
+    // is held (a zone or a measurement the other way round: free unless
+    // Shift squares it).
+    const walls = this.draw && this.draw.kind === "outline";
+    if (pts.length && (walls ? !ev.shiftKey : ev.shiftKey)) {
       const last = pts[pts.length - 1];
       if (Math.abs(p.x - last.x) > Math.abs(p.z - last.z)) p.z = last.z; else p.x = last.x;
+      // line up with the first corner, so the last wall closes square
+      const first = pts[0];
+      if (pts.length >= 2) {
+        if (p.z === last.z && Math.abs(p.x - first.x) < 0.35) p.x = first.x;
+        if (p.x === last.x && Math.abs(p.z - first.z) < 0.35) p.z = first.z;
+      }
     }
     return p;
+  }
+
+  /** The next corner `len` m from the last one, towards the pointer. */
+  _placeTyped(len) {
+    const d = this.draw;
+    const last = d.points[d.points.length - 1];
+    const to = d.hover || { x: last.x + 1, z: last.z };
+    let dx = to.x - last.x, dz = to.z - last.z;
+    const n = Math.hypot(dx, dz) || 1;
+    dx /= n; dz /= n;
+    const p = new THREE.Vector3(Math.round((last.x + dx * len) * 1000) / 1000, 0, Math.round((last.z + dz * len) * 1000) / 1000);
+    this._addPoint(p);
+  }
+
+  _addPoint(p) {
+    const d = this.draw;
+    d.points.push(p);
+    const dot = new THREE.Mesh(this.handleGeo, this.handleMat);
+    dot.scale.setScalar(0.6);
+    dot.position.set(p.x, (d.opts.y || 0) + 0.03, p.z);
+    d.dots.add(dot);
+    this._updateLine(d.hover);
+    if (d.kind === "measure" && d.points.length === 2) this.finishDraw();
   }
 
   _updateLine(hover) {
@@ -533,7 +583,7 @@ export class VenueEditor {
     if (this.hooks.onDrawProgress) {
       const a = d.points[d.points.length - 1];
       const len = a && hover ? Math.hypot(hover.x - a.x, hover.z - a.z) : 0;
-      this.hooks.onDrawProgress(d.kind, d.points.length, len);
+      this.hooks.onDrawProgress(d.kind, d.points.length, len, d.typed || "");
     }
     this.stage.dirty = true;
   }
@@ -546,13 +596,7 @@ export class VenueEditor {
       const first = d.points[0];
       if (Math.hypot(p.x - first.x, p.z - first.z) < 0.3) return this.finishDraw();   // closed the shape
     }
-    d.points.push(p);
-    const dot = new THREE.Mesh(this.handleGeo, this.handleMat);
-    dot.scale.setScalar(0.6);
-    dot.position.set(p.x, (d.opts.y || 0) + 0.03, p.z);
-    d.dots.add(dot);
-    this._updateLine();
-    if (d.kind === "measure" && d.points.length === 2) this.finishDraw();
+    this._addPoint(p);
   }
 
   finishDraw() {

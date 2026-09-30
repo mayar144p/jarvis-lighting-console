@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
-                 fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles, rdm)
+                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, profiles, rdm, roomshape)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from tools import import_gdtf  # noqa: E402
@@ -464,7 +464,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm",
-                         "/api/console/look"):
+                         "/api/console/look", "/api/console/room"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             return self._json({"error": str(exc)}, 500)
@@ -677,6 +677,31 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.build(eng, body["design"], playback))
             return self._console_result(eng, autoshow.design(
                 eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+        if route == "/api/console/room":
+            # A room from words.  The AI (when there is a key) fills the
+            # same spec the offline reader does - off the engine lock -
+            # and the engine builds it; apply=false only answers.
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"error": "describe the room"}, 400)
+            offline = roomshape.parse(text)
+            spec, by, note, unsure = offline["spec"], "offline", None, offline["unsure"]
+            if llm.available() and not body.get("offline"):
+                try:
+                    got = llm.structured([{"role": "system", "content": roomshape.PROMPT},
+                                          {"role": "user", "content": text}],
+                                         "room_spec", "The room, its size and shape, and what is in it.",
+                                         roomshape.SPEC_SCHEMA)
+                    spec, by, unsure = roomshape.clean_spec(got), "ai", []
+                except llm.LLMError as exc:
+                    note = f"the AI didn't answer ({exc}); read it offline instead"
+            info = {"spec": spec, "understood": roomshape.explain(spec) if by == "ai" else offline["understood"],
+                    "unsure": unsure, "by": by, "note": note}
+            if body.get("apply") is False:
+                return self._json({"result": {"ok": True, **info}})
+            result = eng.act("venue_build", spec=spec, keep_mounts=bool(body.get("keep_mounts")))
+            result.update(info)
+            return self._console_result(eng, result)
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
             # operator confirms via /api/console/import_show.

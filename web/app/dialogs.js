@@ -791,6 +791,8 @@ export async function openSettings() {
     h("h3", "Venue"),
     h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
       : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
+    h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
+      h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
     h("div.form-grid",
       h("label.field", h("span", "Start from"), tpl),
       h("div.field", h("span", " "), h("button.btn", {

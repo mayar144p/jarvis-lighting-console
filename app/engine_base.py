@@ -91,7 +91,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "rdm_compare",
+    "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -124,19 +124,20 @@ UNDO_EXCLUDED = frozenset({
     "select_all", "select_group", "select_heads", "select_similar",
     "select_query", "clear_selection", "select_split",
 })
-# Actions where a run of calls is one intent, so they collapse into a
-# single step.  Only genuinely CONTINUOUS ones belong here: a value the
-# operator is dragging or typing into.  Discrete edits must not coalesce -
-# recording two cues 400 ms apart is two cues, and collapsing them would
-# throw the first away.
 # Ready? counts a DMX send error as a problem this long after it happened
 READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
-                        "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare"})
+                        "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare",
+                        "venue_preview"})
 
+# Actions where a run of calls is one intent, so they collapse into a
+# single step.  Only genuinely CONTINUOUS ones belong here: a value the
+# operator is dragging or typing into.  Discrete edits must not coalesce -
+# recording two cues 400 ms apart is two cues, and collapsing them would
+# throw the first away.
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "set_address", "set_place",
@@ -608,6 +609,7 @@ ACTIONS = (
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",
     "venue_template", "venue_room", "venue_stage", "venue_add",
+    "venue_shape", "venue_build", "venue_describe", "venue_array", "venue_preview",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",

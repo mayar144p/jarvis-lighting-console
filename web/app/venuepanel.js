@@ -1,6 +1,7 @@
 // Arrange mode's controls: the toolbar (add, draw, floor plan), the
 // inspector for whatever is selected, and the floor-plan upload with its
 // two-point scale.  Every change is one engine action, so Ctrl+Z undoes it.
+import { openRoomDialog } from "./roomdialog.js";
 import { VenueEditor } from "/js/stage/editor.js";
 import { post } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
@@ -172,13 +173,25 @@ async function onDrawn(kind, pts, opts) {
 function hint(text) {
   const box = $("#draw-hint");
   box.hidden = !text;
+  delete box.dataset.base;              // the live length is added to THIS text
   if (text) box.textContent = text;
 }
 
 function drawRoom() {
   stage.view("top");
-  hint("Draw the room: click each corner of the walls. Click the first corner (or press Enter) to close it. Shift squares the line; Backspace removes a point.");
+  hint("Draw the walls: click each corner; click the first corner (or Enter) to close. Right angles and a 10 cm grid (Shift: any angle); type a length + Enter for an exact wall; Backspace undoes a corner.");
   editor.startDraw("outline");
+}
+
+/** From the room dialog: draw the walls / upload a plan, in Arrange. */
+export function startDrawRoom() {
+  if (!arranging) setArranging(true);
+  drawRoom();
+}
+
+export function startPlanUpload() {
+  if (!arranging) setArranging(true);
+  $("#plan-file").click();
 }
 
 function drawZone(kind, label) {
@@ -438,7 +451,7 @@ function venuePicker() {
       ...list.map((v) => h("button.vp-item", { onclick: () => { close(); openVenue(v); } },
         h("b", v.name),
         h("small", `${v.shape === "custom" ? "custom shape" : "rectangle"} · ${v.rigging} rigging · ${v.lights} light(s)`)))),
-    foot: [h("span.muted.small", "Or start fresh: Settings → Venue has room templates."), h("span.grow"),
+    foot: [h("button.btn", { onclick: () => { close(); openRoomDialog(); } }, "Make a new room…"), h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Start empty")],
   });
   return true;
@@ -472,12 +485,12 @@ export function initVenuePanel(theStage) {
     updateUnderlay: (changes) => run("venue_underlay", changes),
     onMeasure,
     onDrawn,
-    onDrawProgress: (kind, n, len) => {
+    onDrawProgress: (kind, n, len, typed) => {
       if (!kind) return;
       const box = $("#draw-hint");
       const base = box.dataset.base || box.textContent;
       box.dataset.base = base;
-      box.textContent = base + (len ? `  ·  ${len.toFixed(2)} m` : "");
+      box.textContent = base + (typed ? `  ·  length: ${typed}▏ (Enter)` : len ? `  ·  ${len.toFixed(2)} m` : "");
     },
   });
   window.jarvisEditor = editor;
@@ -490,7 +503,7 @@ export function initVenuePanel(theStage) {
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
   $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
-  $("#vt-room").addEventListener("click", drawRoom);
+  $("#vt-room").addEventListener("click", () => openRoomDialog());
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));
   $("#vt-plan").addEventListener("click", (e) => openPlan(e.currentTarget));
   $("#vt-done").addEventListener("click", () => setArranging(false));

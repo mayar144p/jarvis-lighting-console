@@ -101,16 +101,23 @@ Spotlight (draw a truss by dragging a line to length; plots, legends,
 auto-numbering, paperwork from the drawing), Depence R4 (photoreal real-
 time beams, video mapping onto any surface, pixel-mapped lasers, motion
 blur, VR).
-12. **Many ways to make a room, drawing is only one:** pick a shape and
-    type its sizes (rectangle, L, T, U, round / octagon, with a stage end);
-    a template (club, warehouse, ...); trace a floor plan / photo; describe
-    it to the AI ("a 12 x 8 m club, bar on the left, DJ booth on a 40 cm
-    riser"); later a phone room scan.  **And draw rooms like a plan, not by
-    dragging a line:** a top-down drafting
-    mode with a grid, typed dimensions ("8 m" while drawing), click-corner
-    room outlines with right angles and closing, measured walls, doors,
-    pillars, balconies, a ceiling height per area; copy / array (4
-    trusses 2 m apart), align and distribute.
+12. **Many ways to make a room, drawing is only one.**  DONE: Arrange ->
+    Room... (also Settings -> Venue and the start-up venue picker) with
+    five ways: *Shape & size* (rectangle, L, T, U, octagon, round, fan /
+    wedge; typed width, depth, ceiling and the cut-out; optionally a
+    starter layout that fits the shape - DJ or stage at the stage end,
+    dance floor, bar, trusses wall to wall - or only the walls, keeping
+    the rigging); *Describe it* ("a 12 x 8 m club, bar on the left, DJ
+    booth on a 40 cm riser": read offline, or by the AI when there is a
+    key; it says what it read and what it guessed); *Template*; *Draw it*;
+    *Floor plan*.  Every way previews the room first, drawn from what the
+    engine will build.  Walls are drawn like a plan: right angles and a
+    10 cm grid by default (Shift: any angle), the last wall lines up with
+    the first corner, a typed length + Enter makes a wall exactly that
+    long.  Copies of a truss or object N m apart (venue_array).
+    Left: a phone room scan; doors, pillars and balconies drawn in the
+    drafting mode; a ceiling height per area; align / distribute for
+    rigging; the copy tool in the inspector.
 13. **Rigging library:** straight / corner / circle truss pieces, poles,
     stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
     snapping; fixtures snap along any tube; hanging from the ceiling with a

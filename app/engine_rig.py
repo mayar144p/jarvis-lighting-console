@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app import roomshape
 from app import venue as venue_mod
 from app.engine_base import _attr_role, _clamp, _secrets_equal, _truthy, attr_domain
 
@@ -338,6 +339,7 @@ class RigMixin:
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
         "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
+        "venue_shape", "venue_build", "venue_describe", "venue_array",
         "venue_room", "venue_stage", "venue_add", "venue_update", "venue_rig",
         "venue_remove", "venue_underlay",
     })
@@ -492,6 +494,110 @@ class RigMixin:
         w, d, hh = venue_mod.dims(v)
         return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m",
                                   templates=venue_mod.template_list())
+
+    # -- other ways to make a room than drawing it ------------------------
+    def _a_venue_shape(self, shape="rectangle", width=None, depth=None, height=None,
+                       cut_w=None, cut_d=None, corner=None, layout=False,
+                       kind=None, keep_mounts=False, **_):
+        """A room from a shape and its sizes: rectangle, l, t, u, octagon,
+        round or wedge.  layout: also a starter layout that fits the shape
+        (DJ / stage, dance floor, bar, trusses wall to wall); without it
+        only the walls change and the rigging you have moves inside."""
+        if _truthy(layout):
+            spec = {"shape": shape, "width": width, "depth": depth, "height": height,
+                    "cut_w": cut_w, "cut_d": cut_d, "corner": corner or "", "kind": kind or "club",
+                    "bar": {"side": "front"}}
+            return self._a_venue_build(spec=spec, keep_mounts=keep_mounts)
+        cur = venue_mod.normalise(self.venue)
+        w0, d0, h0 = venue_mod.dims(cur)
+        W = float(width or w0 or 16)
+        D = float(depth or d0 or 20)
+        pts = roomshape.outline(shape, W, D, float(cur["room"].get("back") or roomshape.BACK)
+                                if w0 else roomshape.BACK, cut_w, cut_d, corner or "front-right")
+        res = self._a_venue_room(outline=pts, height=height or h0 or 5.0)
+        res["summary"] = f"{roomshape.SHAPES[roomshape.normalise_shape(shape)].split(' (')[0]} room: " + res["summary"]
+        return res
+
+    def _a_venue_build(self, spec=None, keep_mounts=False, **_):
+        """A whole venue from a spec (see app/roomshape.py): what the room
+        is, its size and shape, and what is in it."""
+        if not isinstance(spec, dict):
+            raise ValueError("spec is a dict: shape, width, depth, height, dj, bar, stage, ...")
+        v = roomshape.build(spec)
+        if not _truthy(keep_mounts):
+            for h in self.patch:
+                h.pop("mount", None)
+        self._set_venue_doc(v)
+        w, d, hh = venue_mod.dims(v)
+        return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m, {len(v['rigging'])} rigging, "
+                                  f"{len(v['objects'])} objects, {len(v['zones'])} zones",
+                                  spec=roomshape.clean_spec(spec))
+
+    def _a_venue_preview(self, spec=None, text=None, **_):
+        """What venue_build / venue_describe would make, without making it
+        (the room dialog draws it as you type)."""
+        info = {}
+        if text:
+            got = roomshape.parse(str(text))
+            spec = got["spec"]
+            info = {"understood": got["understood"], "unsure": got["unsure"]}
+        if not isinstance(spec, dict):
+            raise ValueError("give a spec or a description")
+        v = roomshape.build(spec)
+        return {"preview": {"room": v["room"], "stage": v["stage"], "rigging": v["rigging"],
+                            "objects": v["objects"], "zones": v["zones"], "name": v["name"]},
+                "spec": roomshape.clean_spec(spec), **info}
+
+    def _a_venue_describe(self, text="", apply=True, keep_mounts=False, **_):
+        """A room from words: "a 12 x 8 m club, bar on the left, DJ booth on
+        a 40 cm riser".  Says what it understood and what it guessed;
+        apply=false only answers."""
+        text = str(text or "").strip()
+        if not text:
+            raise ValueError("describe the room: its size, shape, and what's in it")
+        got = roomshape.parse(text)
+        out = {"spec": got["spec"], "understood": got["understood"], "unsure": got["unsure"]}
+        if not _truthy(apply):
+            out["summary"] = "understood: " + (", ".join(got["understood"]) or "nothing yet")
+            return out
+        res = self._a_venue_build(spec=got["spec"], keep_mounts=keep_mounts)
+        res.update(out)
+        return res
+
+    def _a_venue_array(self, id=None, count=2, step=2.0, axis="z", **_):
+        """Copies of one truss, object or piece of rigging, `count` in all,
+        `step` m apart along x or z (e.g. 4 trusses 2 m apart)."""
+        v = venue_mod.normalise(self.venue)
+        where = venue_mod.find(v, str(id or ""))
+        if not where or where[0] == "zones":
+            raise ValueError("pick a truss, pipe or object to copy")
+        key, i = where
+        n = int(_clamp(count, 2, 24))
+        step = float(step)
+        axis = "x" if str(axis).lower() == "x" else "z"
+        src = v[key][i]
+        made = []
+        # copies carry on the numbering: Truss 3 -> Truss 4, 5, ... after the
+        # highest one already there, never a second "Truss 2"
+        base = re.sub(r"\s*\d+$", "", src.get("name") or src["kind"].replace("_", " ").title())
+        nums = [int(m.group(1)) for item in v[key]
+                for m in [re.match(re.escape(base) + r"\s*(\d+)$", item.get("name") or "")] if m]
+        top = max(nums or [1])
+        for k in range(1, n):
+            raw = {kk: (list(vv) if isinstance(vv, list) else vv) for kk, vv in src.items() if kk != "id"}
+            d = step * k
+            if key == "rigging":
+                for end in ("a", "b"):
+                    raw[end] = [raw[end][0] + (d if axis == "x" else 0), raw[end][1], raw[end][2] + (d if axis == "z" else 0)]
+            else:
+                raw[axis] = raw[axis] + d
+            raw["name"] = f"{base} {top + k}"
+            v, item = venue_mod.add_item(v, raw)
+            made.append(item["id"])
+        if not re.search(r"\d+$", src.get("name") or ""):
+            v, _ = venue_mod.update_item(v, src["id"], {"name": f"{base} 1"})
+        self._set_venue_doc(v)
+        return self._venue_result(f"{n - 1} copies, {abs(step):g} m apart along {axis}", ids=made)
 
     def _a_venue_room(self, width=None, depth=None, height=None, back=None,
                       ceiling=None, floor=None, wall_colour=None,
