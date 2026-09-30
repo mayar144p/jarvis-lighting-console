@@ -170,9 +170,10 @@ blur, VR).
     "photo" render; first-person walk; camera presets per venue.
 15. **Paperwork:** a light plot (top view with symbols, numbers,
     addresses) and a patch sheet as PDF, straight from the drawing.
-16. Fixes still open from the pass: the default camera can sit far from a
-    small room (24 m back from a 3 m room); crowd size doesn't follow the
-    room / dance floor size.
+16. **DONE:** the view goes to the front of the room it is showing (on
+    load and whenever the room's size changes; it was placed once for the
+    stand-in room - 24 m back from a 3 m room); the crowd follows each
+    zone's area and thins evenly past 2,500 people in a big hall.
 
 ## A4. Programmer, per light type and brand
 

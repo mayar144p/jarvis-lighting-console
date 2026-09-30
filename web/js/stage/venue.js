@@ -404,6 +404,7 @@ function scatter(points, perM2, rand, seated) {
   return out;
 }
 
+const MAX_PEOPLE = 2500;
 const ZONE_CROWD = { dancefloor: 2.2, standing: 2.0, seating: 1.5, bar: 1.2, vip: 1.0, foh: 0.3, dj: 0, backstage: 0, stage: 0 };
 
 function buildCrowd(v, stageFront) {
@@ -423,6 +424,15 @@ function buildCrowd(v, stageFront) {
       if (seated) seatedSpots.push(s);
       else spots[varied ? (z.kind === "dancefloor" ? Math.floor(rand() * 3) : (rand() < 0.15 ? 1 : 0)) : 0].push(s);
     }
+  }
+  // a hall holds thousands: past MAX_PEOPLE thin every zone evenly (the
+  // room still reads as full, the frame rate stays)
+  const total = spots.reduce((a, l) => a + l.length, 0) + seatedSpots.length;
+  if (total > MAX_PEOPLE) {
+    const keep = MAX_PEOPLE / total;
+    const thin = (l) => l.filter(() => rand() < keep);
+    for (let i = 0; i < spots.length; i++) spots[i] = thin(spots[i]);
+    seatedSpots.splice(0, seatedSpots.length, ...thin(seatedSpots));
   }
   const lookAt = new THREE.Vector3(0, 0, Math.max(0, stageFront - 2));
   const place = (list, geo, seated) => {

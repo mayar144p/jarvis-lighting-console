@@ -185,6 +185,7 @@ export class Stage {
     this.controls.maxPolarAngle = Math.PI * 0.495;
     this.controls.minDistance = 0.6;
     this.controls.maxDistance = 120;
+    this.controls.addEventListener("start", () => { this._userMoved = true; });
     this.controls.addEventListener("change", () => {
       this.dirty = true;
       this.camMoved = true;
@@ -252,6 +253,17 @@ export class Stage {
     this.venueGroup.add(built.group);
     this.room = { ...built.room };
     this.stageFront = built.stageFront;
+    // a new room size: the view goes back to the front of THIS room (the
+    // camera was placed once, for the default room - 24 m back from a 3 m
+    // room)
+    const R = this.room;
+    const rkey = [R.w, R.d, R.h, R.x0, R.z0].map((v) => Math.round(v * 10)).join(",");
+    const firstRoom = this._roomKey === undefined;
+    const roomChanged = !firstRoom && rkey !== this._roomKey;
+    // the page opened on the stand-in room: the real one is a jump, not a fly
+    const jump = firstRoom || this._roomAuto || document.hidden;
+    this._roomKey = rkey;
+    this._roomAuto = auto;
     this.planes = built.planes;
     this.boxes = built.boxes;
     this.segments = built.segments;
@@ -260,6 +272,7 @@ export class Stage {
     this._underlayVisibility();
     this.dirty = true;
     if (this.editor) this.editor.refresh();
+    if ((firstRoom && !this._userMoved) || roomChanged) this.view("front", jump);
     if (this.opts.onVenueBuilt) this.opts.onVenueBuilt(built);
   }
 
