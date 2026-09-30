@@ -91,7 +91,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview",
+    "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview", "step_capture",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -105,6 +105,7 @@ UNDO_EXCLUDED = frozenset({
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats", "fx_space",
+    "step_fx_run",
     "sound_tempo", "autopilot", "autopilot_next",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target", "virtual_node",
@@ -133,7 +134,7 @@ READY_ERROR_WINDOW_S = 60.0
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare",
-                        "venue_preview"})
+                        "venue_preview", "step_capture"})
 
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
@@ -629,6 +630,7 @@ ACTIONS = (
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats",
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
+    "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run",
 )
 
 

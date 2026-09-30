@@ -1213,3 +1213,12 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .ap { display: flex; flex-direction: column; gap: 10px; }
 .fx-run, .mv-run { flex-wrap: wrap; }
 .fx-run .fx-beats, .mv-run .fx-beats { max-width: 150px; }
+
+/* ------------------------------------------------------- step effects */
+.stepfx { display: flex; flex-direction: column; gap: 10px; }
+.step-list { display: flex; flex-direction: column; gap: 4px; }
+.step-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.step-row b { width: 1.5em; text-align: right; color: var(--muted); }
+.step-what { flex: 1; min-width: 140px; font-size: 12.5px; }
+.step-row input[type=number] { width: 64px; }
+.step-row input[type=range] { width: 90px; }

@@ -148,6 +148,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_sound_analysis,
     test_sound_reactive,
     test_spatial_fx,
+    test_step_fx,
     test_virtual_node,
 )
 
@@ -264,6 +265,7 @@ def _standalone_suites():
     ("sound analysis: beats, tempo and drops from a made-up track", test_sound_analysis),
     ("autopilot: a cue list plays itself on the phrase, by the room", test_autopilot),
     ("spatial effects: through the room by where the lights are", test_spatial_fx),
+    ("step effects: from your own looks and palettes", test_step_fx),
     )
 
 

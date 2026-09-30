@@ -579,6 +579,9 @@ class ProgrammerMixin:
                 self._move_values(row, step, base, out)
                 continue
             elapsed = row["_v"]
+            if row.get("steps"):
+                self._step_values(row, elapsed, out)          # elapsed: seconds at the Speed master
+                continue
             if row.get("lib"):
                 # A NAMED effect writes SEVERAL roles per head, so the
                 # per-head dict is UPDATED rather than assigned.  The

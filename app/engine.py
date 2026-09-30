@@ -63,12 +63,13 @@ from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
 from app.engine_autopilot import AutopilotMixin
+from app.engine_steps import StepsMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -246,6 +247,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
+            "step_fx": copy.deepcopy(self._steps()),
             "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
@@ -288,6 +290,9 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.quick_names = dict(state.get("quick_names") or {})
         if "sound_cfg" in state:
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
+        if "step_fx" in state:
+            self.step_fx = copy.deepcopy(state["step_fx"])
+            self.fx = [r for r in self.fx if not r.get("steps") or any(f["id"] == r["steps"] for f in self.step_fx)]
         self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
@@ -1097,6 +1102,12 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             if dur is not None and elapsed >= dur:
                 continue                              # expired - drop it
             keep.append(row)
+            if row.get("steps"):
+                sfx = next((f for f in self._steps() if f["id"] == row["steps"]), {})
+                out.append({"id": row["id"], "steps": row["steps"], "label": sfx.get("name", "Steps"),
+                            "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
+                            "duration": dur, "remaining": None})
+                continue
             if row.get("lib"):
                 # A NAMED effect has no single role/kind/speed - that is the
                 # point of it - so it publishes its name and knobs instead.
@@ -1203,6 +1214,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "venue": self.venue,
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
+                "step_fx": [dict(f) for f in self._steps()],
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),

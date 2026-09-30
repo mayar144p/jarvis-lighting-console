@@ -574,3 +574,77 @@ def test_spatial_fx() -> None:
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("running effects and movements can pick which way they run through the room",
           '"fx_space"' in pj and "spaceSelect" in (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8"), "")
+
+
+def test_step_fx() -> None:
+    """Effects made of your own looks: steps from the programmer or from
+    palettes, a time and a crossfade each, a curve, a spread; saved with
+    the show; a palette step follows the palette."""
+    print("step effects")
+    from app import engine as eng
+    from app import stepfx
+
+    fx = stepfx.clean({"name": "Warm cold", "curve": "linear", "steps": [
+        {"values": {"1": {"dimmer": 100, "red": 255, "blue": 0}}, "time": 2, "fade": 0.5},
+        {"values": {"1": {"dimmer": 0, "red": 0, "blue": 255, "gobo": 40}}, "time": 2, "fade": 0.5}]}, "x1")
+    roles = ["dimmer", "red", "blue", "gobo"]
+    at = lambda t: stepfx.values(fx, 1, roles, {}, t)       # noqa: E731
+    check("holding a step: its look", at(3.5) == {"dimmer": 0, "red": 0, "blue": 255, "gobo": 40}, str(at(3.5)))
+    check("half way through the fade in: half way between",
+          at(2.5)["dimmer"] == 50 and at(2.5)["blue"] == 128, str(at(2.5)))
+    check("a gobo doesn't slide through the wheel: it changes at the middle of the fade",
+          "gobo" not in at(2.2) and at(2.6)["gobo"] == 40, str((at(2.2), at(2.6))))
+    check("round again: back to the first step", at(4.0 + 1.5)["red"] == 255, str(at(5.5)))
+    try:
+        stepfx.clean({"steps": [{"values": {"1": {"dimmer": 1}}}]}, "x2")
+        one = True
+    except ValueError:
+        one = False
+    check("one step is not an effect", not one, "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            s1 = e.act("step_capture")["step"]
+            e.act("set_colour", hex="#0000ff")
+            s2 = e.act("step_capture")["step"]
+            check("taking a step changes nothing (no undo step)", not e._undo or e._undo[-1].get("action") != "step_capture", "")
+            e.act("set_colour", hex="#00ff00")
+            e.act("record_palette", kind="colour", name="Green")
+            r = e.act("step_fx_save", fx={"name": "RGB", "spread": 90, "steps": [
+                dict(s1, time=1, fade=0), dict(s2, time=1, fade=0), {"palette": {"kind": "colour", "n": 1}, "time": 1, "fade": 0}]})
+            check("a step effect is saved", r.get("ok") and len(e.step_fx) == 1, str(r.get("error")))
+            e.act("clear_programmer")
+            r = e.act("step_fx_run", id=r["id"])
+            check("...and runs on the lights it was made on", r.get("ok") and sorted(e.fx[-1]["heads"]) == [1, 2, 3, 4], str(r))
+            row = e.fx[-1]
+            row["_v"] = 0.5                                  # half way through step 1
+            vals = e._step_values(row, 0.5, out := {}) or out
+            reds = [vals[n].get("red") for n in (1, 2, 3, 4)]
+            check("spread 90: each light a quarter of the cycle behind the one before",
+                  reds[0] == 255 and len(set(map(str, [vals[n] for n in (1, 2, 3, 4)]))) > 1, str(vals))
+            check("it shows as running, by its name", any(f.get("label") == "RGB" for f in e._fx_public()), "")
+            # a palette step follows the palette
+            e.palettes["colour"][0]["values"] = {"red": 10, "green": 20, "blue": 30}
+            out2 = {}
+            e._step_values(row, 2.5, out2)
+            check("change the palette, the effect changes", out2[1].get("red") == 10 and out2[1].get("green") == 20, str(out2[1]))
+            e.act("save_show", name="steps")
+            e.act("step_fx_delete", id="x1")
+            check("deleting it stops it", not any(f.get("steps") for f in e.fx), "")
+            e.act("load_show", name="steps")
+            check("saved with the show", [f["name"] for f in e.step_fx] == ["RGB"], str(e.step_fx))
+            e.act("undo")
+        finally:
+            e.shutdown()
+    sj = (ROOT / "web" / "app" / "stepfx.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the FX tab lists step effects; the editor takes looks and palettes as steps",
+          'id="stepfx-list"' in html and '"step_capture"' in sj and '"step_fx_save"' in sj and "palette" in sj, "")

@@ -112,8 +112,15 @@ Fixed:
    in the wave (FX / Move tab -> the effect's "which way").
    Left: two-colour gradients across the room; bars / panels as pixels;
    images / video mapped onto the rig.
-10. Step effects from your own looks (key-frame shapes / phasers) with
-    per-step timing, curves and phase spread; palette-linked effects.
+10. **(DONE) Step effects from your own looks** (FX tab -> Step effects):
+    steps taken from the programmer (the look the selected lights have)
+    or from palettes (the effect follows the palette), a time and a
+    crossfade share per step, smooth / straight / snap, a spread round
+    the cycle (by light number or, with a direction, by where the lights
+    are), beat lock; saved with the show.  Gobos and other slot channels
+    change at the middle of a fade instead of sliding through the wheel.
+    Left: step effects inside cues and buttons; a key-frame shape editor
+    for movement (phasers).
 11. Desk tools: highlight / solo, park; group masters; tracking /
     cue-only; move-in-black; cue actions; macros; blind edit with 3D
     preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);

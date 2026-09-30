@@ -11,6 +11,7 @@ import { initQuickButtons } from "./quickbuttons.js";
 import { initWebMidi } from "./webmidi.js";
 import { initTablet } from "./tablet.js";
 import { initTempo } from "./tempo.js";
+import { initStepFx } from "./stepfx.js";
 import { initFxPanel } from "./fxpanel.js";
 import { initMovePanel } from "./movepanel.js";
 import { initTimeline } from "./timeline.js";
@@ -50,6 +51,7 @@ async function boot() {
   initWebMidi();
   initTablet();
   initTempo();
+  initStepFx();
   initFxPanel();
   initMovePanel();
   initCmdbar();
