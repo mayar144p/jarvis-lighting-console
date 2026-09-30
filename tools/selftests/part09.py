@@ -950,3 +950,173 @@ def test_cue_modes() -> None:
             check("tracking / MIB / block / actions are saved", e.playbacks[0]["tracking"] and e.playbacks[1]["stack"][1].get("actions"), "")
         finally:
             e.shutdown()
+
+
+def test_rigging_library() -> None:
+    """Rigging library: shapes from real pieces, lights round a shape, a
+    shape moves and trims as one, the report's loads and parts."""
+    print("Rigging library")
+    from app import engine as eng
+    from app import fixlib, riglib
+
+    check("a straight 7 m run is 4 + 3", riglib.sections(7) == [4.0, 3.0], str(riglib.sections(7)))
+    check("6.2 m rounds up to 6.5 (4 + 2.5)", riglib.sections(6.2) == [4.0, 2.5], str(riglib.sections(6.2)))
+    circ = riglib.build("circle", diameter=6)
+    check("a 6 m circle is 12 pieces, closed", len(circ) == 12 and circ[0]["a"] == circ[-1]["b"], str(len(circ)))
+    gp = riglib.build("goalpost", width=5, height=3)
+    check("a goal post: two poles and a truss on top", [x["kind"] for x in gp] == ["tower", "tower", "truss"], "")
+    ph = fixlib.physical("qlc:Chauvet/Chauvet-Intimidator-Scan-360.qxf")
+    check("a light's weight from its library file", ph.get("kg") == 5.7, str(ph))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=14, depth=16, height=6, layout=False)
+            r = e.act("rig_add", preset="circle", diameter=4, x=0, z=6, trim=4)
+            check("a circle truss added as one shape", r.get("ok") and len(r["ids"]) == 8 and r["group"], str(r.get("error")))
+            e.act("add_heads", query="Moving Head", qty=6)
+            a = e.act("attach_heads", heads=[1, 2, 3, 4, 5, 6], rig=r["ids"][0])
+            rigs = {h["mount"]["rig"] for h in e.patch}
+            check("six lights spread round the circle", a.get("ok") and len(rigs) == 6 and rigs <= set(r["ids"]), str(rigs))
+            first = dict(e.venue["rigging"][0])
+            before = [dict(x) for x in e.venue["rigging"]]
+            e.act("venue_update", id=first["id"], a=[first["a"][0] + 1, first["a"][1], first["a"][2]],
+                  b=[first["b"][0] + 1, first["b"][1], first["b"][2]])
+            check("moving one piece moves the shape", all(abs(n["a"][0] - o["a"][0] - 1) < 1e-6
+                                                          for n, o in zip(e.venue["rigging"], before)), "")
+            e.act("rig_trim", id=r["ids"][3], trim=3)
+            check("trim: the shape hangs at 3 m, its lights too",
+                  all(abs(x["a"][1] - 3.145) < 1e-3 for x in e.venue["rigging"]) and max(h["y"] for h in e.patch) < 3.2,
+                  str([h["y"] for h in e.patch]))
+            bad = e.act("rig_trim", id=r["ids"][0], trim=9)
+            check("a trim above the ceiling is refused", not bad.get("ok"), "")
+            e.act("rig_add", preset="straight", length=7, piece="box30", z=10, trim=4.5)
+            rep = e.act("rig_report", csv=True)
+            rows = {x["name"]: x for x in rep["report"]["rigs"]}
+            c = rows["Circle 4 m"]
+            check("circle: 8 pieces, 6 lights, 4 points, the load shared",
+                  c["pieces"] == 8 and len(c["lights"]) == 6 and c["points"] == 4
+                  and abs(c["per_point_kg"] - c["total_kg"] / 4) < 0.1, str(c))
+            s = rows["Box truss 29 cm (F34 type)"]
+            check("a 7 m truss: 35 kg, 3 points, at 4.5 m", s["self_kg"] == 35.0 and s["points"] == 3 and s["trim"] == 4.5, str(s))
+            parts = {(p["model"], str(p["length"])): p["count"] for p in rep["report"]["parts"]}
+            check("parts: 8 arcs, a 4 m and a 3 m", parts.get(("box30", "arc 1/8 of Ø4.0 m")) == 8
+                  and parts.get(("box30", "4.0")) == 1 and parts.get(("box30", "3.0")) == 1, str(parts))
+            check("the report as CSV", rep["csv"].startswith("piece,") and "Circle 4 m" in rep["csv"], "")
+            check("guessed weights are said", any("guessed" in w for w in c["warnings"]), str(c["warnings"]))
+            sc = e.act("venue_add", item={"kind": "screen", "x": 0, "z": 0, "w": 4, "h": 2, "d": 0.1})["item"]
+            check("an LED screen mirrors the lights by default", sc["content"] == "rig", str(sc))
+            e.act("venue_update", id=sc["id"], changes={"content": "clip:/media/loop.mp4"})
+            e.act("venue_update", id=[o for o in e.venue["objects"] if o["kind"] == "screen"][0]["id"], changes={"content": "javascript:x"})
+            check("a clip link is kept, anything else falls back to the lights",
+                  [o for o in e.venue["objects"] if o["kind"] == "screen"][0]["content"] == "rig", "")
+            js = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            check("the 3D view: photo, walk, live screens", "photo(longSide" in js and "walk(on" in js and "_drawScreens" in js, "")
+            pw = e.act("paperwork")
+            L = pw["lights"][0]
+            check("paperwork: every light with its address, kind, rig and weight",
+                  pw.get("ok") and len(pw["lights"]) == 6 and L["universe"] == 1 and L["address"] == 1
+                  and L["rig"] == "Circle 4 m" and L["kg"] > 0 and L["channels"] > 0, str(L))
+            page = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
+            check("the plot page prints the plot, the patch sheet and the rigging",
+                  '"paperwork"' in page and "function patchSheet" in page and "function rigSheet" in page
+                  and "window.print" in page, "")
+        finally:
+            e.shutdown()
+
+
+def test_mixed_selection_targets() -> None:
+    """One kind of light in a mixed selection: set_attribute and
+    set_attr_range take `heads` and touch only those."""
+    print("Mixed selection: per-kind controls")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            mv = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            par = e.act("add_heads", query="LED PAR", qty=2)["heads"]
+            e.act("select_all")
+            r = e.act("set_attribute", attribute="gobo", value=40, heads=mv)
+            check("the movers' section sets only the movers", r.get("ok") and set(e.programmer) == set(mv), str(e.programmer))
+            e.act("set_attr_range", attribute="gobo", clear=True, heads=mv[:1])
+            check("clear on one kind leaves the rest", "gobo" not in e.programmer.get(mv[0], {}) and e.programmer[mv[1]]["gobo"] == 40, "")
+            check("the selection is left as it was", sorted(e.selected) == sorted(mv + par), str(e.selected))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Beam tab: a section per kind of light; plain words",
+          "attr-kind" in js and "reaches all" not in js and "Own channels" in js, "")
+
+
+def test_colour_match() -> None:
+    """Colour matching: a model's gain per emitter scales what goes out on
+    the wire (not the 3D look), for every light of the model; reset."""
+    print("Colour matching across brands")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ffffff")
+            h = e.patch[0]
+            a = h["address"] - 1
+            ri, bi = h["map"].index("red"), h["map"].index("blue")
+            r = e.act("colour_cal", red=80, blue=50)
+            f = e.build_frames()
+            b = e.patch[1]["address"] - 1
+            check("red 80%, blue 50% on the wire - both lights of the model",
+                  r.get("ok") and f[1][a + ri] == 204 and f[1][a + bi] == 127 and f[1][b + ri] == 204,
+                  str([f[1][a + i] for i in range(len(h["map"]))]))
+            check("the 3D look still shows white", e._looks()[0]["hex"] == "#ffffff", e._looks()[0]["hex"])
+            check("read back", e.act("colour_cal_get", head=1)["cal"] == {"red": 80, "green": 100, "blue": 50}, "")
+            check("not an undo step (it is the fixture's)", "colour_cal" not in [u["action"] for u in e._undo], "")
+            e.act("colour_cal", head=1, reset=True)
+            f = e.build_frames()
+            check("reset: as it comes", f[1][a + ri] == 255 and f[1][a + bi] == 255, "")
+        finally:
+            e.shutdown()
+
+
+def test_teach_wheel() -> None:
+    """Teach the wheel: positions found on the real light become named
+    slots with ranges for every light of the model; forget; a spin
+    channel's named ranges become slots for ↺ ■ ↻."""
+    print("Teach the wheel; spin channels")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("select_all")
+            gobo = lambda n: next(a for p in e.attribute_state([n])["pages"] for a in p["attrs"] if a["role"] == "gobo")
+            check("no slots in the file", not gobo(1).get("slots"), "")
+            r = e.act("teach_slots", head=1, role="gobo", slots=[{"name": "Open", "value": 0}, {"name": "Stars", "value": 20},
+                                                                 {"name": "Dots", "value": 40}])
+            s2 = gobo(2)["slots"]
+            check("taught: named slots with ranges, on the other light of the model too",
+                  r.get("ok") and [(x["name"], x["from"], x["to"]) for x in s2] == [("Open", 0, 10), ("Stars", 11, 30), ("Dots", 31, 255)], str(s2))
+            check("one name is not a wheel", not e.act("teach_slots", head=1, role="gobo", slots=[{"name": "A", "value": 3}]).get("ok"), "")
+            check("a light without that wheel is refused", not e.act("teach_slots", head=1, role="wheel", slots=[]).get("ok"), "")
+            e.act("teach_slots", head=1, role="gobo", clear=True)
+            check("forget: back to the file", not gobo(1).get("slots"), "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the programmer: teach links, white presets, spin rows, an Advanced fold",
+          "openTeachWheel" in js and "White presets" in js and "rotateRow" in js and "attr-adv" in js, "")

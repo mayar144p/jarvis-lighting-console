@@ -1136,7 +1136,8 @@ class PatchMixin:
                                              float(h.get("z") or 0), reach=0.8) if rigs else None
                 rid = near[0]["id"] if near else None
             if rid in rigs:
-                by_rig.setdefault(rid, []).append(h["head_no"])
+                # the pieces of one shape (a circle, a frame) are one group
+                by_rig.setdefault(rigs[rid].get("group") or rid, []).append(h["head_no"])
             elif float(h.get("y") or 0) < 1.5:
                 by_rig.setdefault("floor", []).append(h["head_no"])
         out = []
@@ -1147,7 +1148,8 @@ class PatchMixin:
                         "heads": sorted(heads)})
         if len(by_rig) > 1 or (by_rig and len(by_type) > 1):
             for rid, heads in by_rig.items():
-                name = "Floor" if rid == "floor" else rigs[rid].get("name") or rid
+                piece = rigs.get(rid) or next((r for r in rigs.values() if r.get("group") == rid), {})
+                name = "Floor" if rid == "floor" else piece.get("name") or rid
                 out.append({"key": f"rig:{rid}", "kind": "rig", "name": name, "heads": sorted(heads)})
         self._auto_group_cache = (key, out)
         return out
@@ -1613,7 +1615,16 @@ class PatchMixin:
         return {"level": pct, "heads": driven, "no_dimmer": no_dimmer,
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
-    def _a_set_attribute(self, attribute=None, value=None, cell=None, **_):
+    def _given_heads(self, heads=None) -> list[dict]:
+        """`heads` (numbers) when given - one kind of light in a mixed
+        selection - else the selection."""
+        if heads:
+            if isinstance(heads, (int, str)):
+                heads = [heads]
+            return [self._head(int(x)) for x in heads]
+        return self._require_selection()
+
+    def _a_set_attribute(self, attribute=None, value=None, cell=None, heads=None, **_):
         if attribute is None or value is None:
             raise ValueError("attribute and value are required")
         cells = self._cells(cell)
@@ -1624,7 +1635,7 @@ class PatchMixin:
             # a laser's output/mode channel: the programmer (and so a cue)
             # may choose the MODE it runs in when fired - never "off", and
             # never the output itself, which moves only from its armed buttons
-            heads = [h for h in self._require_selection() if "laser_on" in h["map"]]
+            heads = [h for h in self._given_heads(heads) if "laser_on" in h["map"]]
             if not heads:
                 raise ValueError("select a laser with an output/mode channel")
             v = int(_clamp(value, 0, 255))
@@ -1638,7 +1649,7 @@ class PatchMixin:
         if role in FX_OUTPUT_ROLES:
             raise ValueError(f"{role} is an effect's output: it moves only from the "
                              f"armed FX buttons, never from the programmer")
-        heads = self._require_selection()
+        heads = self._given_heads(heads)
         if role in HTP_ROLES:
             pct = _clamp(value, 0, 100)
             driven, no_dimmer = 0, []

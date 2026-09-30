@@ -362,13 +362,42 @@ class TimelineMixin:
                   if (h.get("mount") or {}).get("rig") == r["id"]
                   and h not in rows]
         gap = float(spacing) if spacing else (0.5 if r["kind"] == "pipe" else 0.7)
+        side = stance if stance in ("hang", "stand") else None
+        members = [x for x in venue_mod.normalise(self.venue)["rigging"]
+                   if r.get("group") and x.get("group") == r["group"]]
+        if len(members) > 1 and len(rows) > 1:
+            # a shape (circle, frame...): the lights spread round all of it,
+            # starting at the piece named
+            k = next(i for i, x in enumerate(members) if x["id"] == r["id"])
+            members = members[k:] + members[:k]
+            n, m = len(rows), len(members)
+            spots = []
+            for i, mem in enumerate(members):
+                want = n // m + (1 if i < n % m else 0)
+                if not want:
+                    continue
+                taken = [float(h["mount"]["t"]) for h in self.patch
+                         if (h.get("mount") or {}).get("rig") == mem["id"] and h not in rows]
+                got = sorted(venue_mod.free_slots(mem, taken, want, gap))
+                if len(got) < want:
+                    raise ValueError(f"{r['name'] or r['id']} has no room for {n} more at {gap:g} m spacing")
+                spots += [(mem["id"], t) for t in got]
+            for h, (rid, t) in zip(rows, spots):
+                h["mount"] = {"rig": rid, "t": t}
+                if side:
+                    h["stance"] = side
+                else:
+                    h.pop("stance", None)
+            self._reflow_mounts()
+            self.patch_rev += 1
+            return {"heads": [h["head_no"] for h in rows], "rig": r["id"],
+                    "summary": f"{len(rows)} light(s) round {r['name'] or r['id']}"}
         slots = venue_mod.free_slots(r, others, len(rows), gap)
         if len(slots) < len(rows):
             raise ValueError(f"{r['name'] or r['id']} has room for "
                              f"{len(slots)} more at {gap:g} m spacing")
         slots.sort()
         rows = sorted(rows, key=lambda h: h["x"])
-        side = stance if stance in ("hang", "stand") else None
         for h, t in zip(rows, slots):
             h["mount"] = {"rig": r["id"], "t": t}
             if side:

@@ -607,7 +607,7 @@ class CommandMixin:
         }
 
     def _a_set_attr_range(self, attribute=None, role=None, value=None,
-                          unit=None, clear=False, relative=False, **_):
+                          unit=None, clear=False, relative=False, heads=None, **_):
         """Set one attribute across a selection, reporting partial writes.
 
         This is what an encoder row calls.  It exists rather than reusing
@@ -635,7 +635,7 @@ class CommandMixin:
             raise ValueError(f"not a number: {value!r}") from None
         if resolved in FX_OUTPUT_ROLES and not (resolved == "laser_on" and clear):
             raise ValueError(f"{resolved} is an effect's output: use the armed FX buttons")
-        heads = self._require_selection()
+        heads = self._given_heads(heads)
         capable = [h for h in heads if resolved in (h.get("map") or [])]
         if not capable:
             have = sorted({r for h in heads for r in (h.get("map") or [])

@@ -213,3 +213,135 @@ class DeskMixin:
                 del self._undo[0]
             self._undo_label = m["name"]
         return {"macro": m["id"], "transcript": said, "summary": f"{m['name']}: " + ("; ".join(said[:3]) or "done")}
+
+    # -- colour matching ----------------------------------------------------
+    # LEDs differ between brands: one maker's "red" is orange next to
+    # another's.  A model's own gain per emitter (red 88%, green 100%...)
+    # is kept with the fixture (every light of that model and mode) and
+    # applied as the frame is written, so cues, effects and buttons all
+    # come out matched - the 3D view keeps showing the colour asked for.
+    CAL_ROLES = ("red", "green", "blue", "white", "amber", "uv", "lime", "cyan", "magenta", "yellow")
+
+    def _colour_cal(self) -> dict:
+        """{head_no: {role: gain 0..1}} for the lights with a calibration."""
+        key = (self.patch_rev, self.__dict__.get("_cal_rev", 0))
+        cache = self.__dict__.get("_cal_cache")
+        if cache and cache[0] == key:
+            return cache[1]
+        out = {}
+        for h in self.patch:
+            cal = (self.head_ranges(h).get("_model") or {}).get("colour_cal") or {}
+            gains = {r: float(g) for r, g in cal.items() if r in self.CAL_ROLES and 0 <= float(g) < 0.999}
+            if gains:
+                out[h["head_no"]] = gains
+        self._cal_cache = (key, out)
+        return out
+
+    def _write_colour_cal(self, frames: dict) -> None:
+        cal = self._colour_cal()
+        if not cal:
+            return
+        for h in self.patch:
+            gains = cal.get(h["head_no"])
+            buf = frames.get(h["universe"]) if gains else None
+            if buf is None:
+                continue
+            roles = h["map"]
+            base = h["address"] - 1
+            for i, role in enumerate(roles):
+                g = gains.get(role)
+                pos = base + i
+                if g is None or not 0 <= pos < len(buf):
+                    continue
+                if i + 1 < len(roles) and roles[i + 1] == role + "_fine" and pos + 1 < len(buf):
+                    v = int(((buf[pos] << 8) | buf[pos + 1]) * g)
+                    buf[pos], buf[pos + 1] = v >> 8, v & 0xFF
+                else:
+                    buf[pos] = int(buf[pos] * g)
+
+    def _a_colour_cal(self, head=None, reset=False, **gains):
+        """Match this model's colours to the rest of the rig: a gain per
+        emitter, 0-100 (red=88 takes its red down to 88%).  Saved with the
+        fixture for every light of that model and mode; reset=true forgets it."""
+        if head is None:
+            sel = self._require_selection()
+            head = sel[0]["head_no"]
+        h = self._head(int(head))
+        have = [r for r in self.CAL_ROLES if r in h["map"]]
+        if not have:
+            raise ValueError("this light has no colour emitters to match")
+        cur = dict((self.head_ranges(h).get("_model") or {}).get("colour_cal") or {})
+        if _truthy(reset):
+            cur = {}
+        for r, v in gains.items():
+            if r in have and v is not None:
+                cur[r] = round(max(0.0, min(100.0, float(v))) / 100.0, 3)
+        cur = {r: g for r, g in cur.items() if g < 0.999}
+        from app import fixtures
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
+                              "_model", "colour_cal", cur or None)
+        fixtures.invalidate_cache()
+        self._drop_fixture_caches()
+        self._cal_rev = self.__dict__.get("_cal_rev", 0) + 1
+        same = sum(1 for x in self.patch if (x.get("manufacturer"), x.get("model"), x.get("mode"))
+                   == (h.get("manufacturer"), h.get("model"), h.get("mode")))
+        said = ", ".join(f"{r} {round(g * 100)}%" for r, g in cur.items()) or "as it comes"
+        return {"head": h["head_no"], "emitters": have, "cal": {r: round(cur.get(r, 1.0) * 100) for r in have},
+                "summary": f"{h.get('model')} ({same} light(s)): {said}"}
+
+    def _a_colour_cal_get(self, head=None, **_):
+        """A model's colour matching (percent per emitter)."""
+        if head is None:
+            head = self._require_selection()[0]["head_no"]
+        h = self._head(int(head))
+        have = [r for r in self.CAL_ROLES if r in h["map"]]
+        cur = (self.head_ranges(h).get("_model") or {}).get("colour_cal") or {}
+        return {"head": h["head_no"], "model": h.get("model"), "emitters": have,
+                "cal": {r: round(float(cur.get(r, 1.0)) * 100) for r in have}}
+
+    # -- teach a wheel ------------------------------------------------------
+    TEACH_ROLES = ("wheel", "wheel2", "gobo", "gobo2", "prism")
+
+    def _a_teach_slots(self, head=None, role="wheel", slots=None, clear=False, **_):
+        """A wheel the fixture file doesn't describe, taught on the real
+        light: `slots` [{name, value, hex?}] as found stepping through it.
+        Each slot gets the range up to the next one; saved with the fixture
+        for every light of that model and mode.  clear=true forgets it."""
+        if head is None:
+            head = self._require_selection()[0]["head_no"]
+        h = self._head(int(head))
+        role = str(role or "wheel")
+        if role not in self.TEACH_ROLES or role not in h["map"]:
+            raise ValueError(f"this light has no {role} to teach")
+        from app import fixtures
+        if _truthy(clear):
+            fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"), role, "slots", None)
+            fixtures.invalidate_cache()
+            self._drop_fixture_caches()
+            return {"slots": [], "summary": f"{h.get('model')}: {role} back to the file's"}
+        rows = []
+        for st in slots or []:
+            if not isinstance(st, dict) or st.get("value") is None:
+                continue
+            name = str(st.get("name") or "").strip()[:30]
+            if not name:
+                continue
+            row = {"name": name, "value": int(max(0, min(255, float(st["value"]))))}
+            hx = str(st.get("hex") or "")
+            if len(hx) == 7 and hx.startswith("#"):
+                row["hex"] = hx.lower()
+            rows.append(row)
+        rows.sort(key=lambda r: r["value"])
+        if len(rows) < 2:
+            raise ValueError("teach at least two positions")
+        if len({r["value"] for r in rows}) < len(rows):
+            raise ValueError("two names on the same value")
+        out = []
+        for i, r in enumerate(rows):
+            lo = 0 if i == 0 else (rows[i - 1]["value"] + r["value"]) // 2 + 1
+            hi = 255 if i == len(rows) - 1 else (r["value"] + rows[i + 1]["value"]) // 2
+            out.append({**r, "from": lo, "to": hi, "slot": i + 1, "taught": True})
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"), role, "slots", out)
+        fixtures.invalidate_cache()
+        self._drop_fixture_caches()
+        return {"slots": out, "summary": f"{h.get('model')}: {len(out)} {role} position(s) taught"}

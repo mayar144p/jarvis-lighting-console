@@ -160,38 +160,70 @@ blur, VR).
     Left: a phone room scan; doors, pillars and balconies drawn in the
     drafting mode; a ceiling height per area; align / distribute for
     rigging.
-13. **Rigging library:** straight / corner / circle truss pieces, poles,
-    stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
-    snapping; fixtures snap along any tube; hanging from the ceiling with a
-    trim height; rigging points and loads in a report.
-14. **Look:** better haze volumetrics and gobo projections on surfaces;
-    LED screens / video walls that play a clip or mirror a pixel map;
-    shadows from the crowd and stage; lens flares at low angles; a
-    "photo" render; first-person walk; camera presets per venue.
-15. **Paperwork:** a light plot (top view with symbols, numbers,
-    addresses) and a patch sheet as PDF, straight from the drawing.
-16. Fixes still open from the pass: the default camera can sit far from a
-    small room (24 m back from a 3 m room); crowd size doesn't follow the
-    room / dance floor size.
+13. **Rigging library.  DONE:** Arrange -> Rigging…: box (22 / 29 / 40
+    cm), triangle and ladder truss, 48 mm pipe, truss poles, wind-up stands
+    and base plates, each with a typical kg/m; shapes - straight, corner,
+    frame, circle (arc pieces), goal post, pole, stand - at typed sizes,
+    position, turn and **trim** (underside height).  A shape is one thing:
+    moving a piece moves it, Trim… (inspector) hangs all of it, lights put
+    on it spread round all of it, one automatic group.  Ends join when
+    dragged within 40 cm of another piece's end.  **Rigging report**: each
+    piece / shape, its own weight, the lights on it (their weight from
+    the library file, typical for the kind where the file doesn't say),
+    pick-up points and kg per point, warnings (point load, stand load,
+    hung at the ceiling), a parts list in standard lengths, CSV.
+14. **Look.**  Already there: haze beams, gobo projections on every
+    surface (the surface shader), a head-on lens glow, saved views per
+    venue (Views -> Save this view).  **DONE now:** LED screens show the
+    lights (a live mirror: every light's colour as a tile, cells of a bar
+    each their own), a clip or a picture by link, or nothing (inspector ->
+    Shows); Views -> Take a photo (the view re-rendered at 4K, PNG);
+    Views -> Walk around (eye height, W A S D / arrows, Shift runs, drag to
+    look, stays inside the walls, Esc).  **Left:** shadows from the crowd
+    and stage; real lens-flare streaks; a clip upload (a link for now).
+15. **Paperwork.  DONE:** Show ▾ -> Paperwork… (/plot.html): the light
+    plot (the room from above - walls, stage, zones, objects, marks,
+    rigging with names and trims - a symbol per kind of light with its
+    number and universe.address, a legend with the models, a 2 m scale,
+    a title block: show, venue, lights, rigging load, date, power; a
+    deep room turns on its side to fill the page), the patch sheet (by
+    universe and address: channels, name, maker / model / mode, kind,
+    what it hangs on, x y z, kg and W) and the rigging report with the
+    parts list.  A4 landscape; Print / Save as PDF.
+16. **DONE:** the view goes to the front of the room it is showing (on
+    load and whenever the room's size changes; it was placed once for the
+    stand-in room - 24 m back from a 3 m room); the crowd follows each
+    zone's area and thins evenly past 2,500 people in a big hall.
 
 ## A4. Programmer, per light type and brand
 
 The pass walked every tab for one light of each type (see A0).  Next:
-17. **Show only what the light can do**, everywhere: e.g. a wheel of whites
-    (ADB ALC4) is labelled "Colour wheel" - call it white presets; a light
-    whose file lists no wheel slots shows "guessed positions" - add
-    **Teach the wheel** (step through it, name each colour, saved to the
-    fixture); gobo wheels with pictures; prism / gobo rotation as
-    direction + speed; macros and auto programs as named buttons; lamp,
-    reset and fan under an "Advanced" fold.
-18. **Mixed selections:** one section per kind ("6 movers: position,
-    gobo; 12 PARs: colour") instead of the union of all controls.
-19. **Brand colour matching:** LED colours differ between brands - a
-    per-fixture colour calibration so "red" matches across the rig.
-20. Lights with an unknown shutter "open" value (Warp M, COB blinder):
-    Test this light learns it and stores it with the fixture.
-21. Wording: "reaches all 1", "Other" in the programmer bar, and the
-    strobe open / close row for dimmer-less lights.
+17. **Show only what the light can do.  DONE:** a wheel of whites is
+    "White presets"; a colour wheel / gobo / prism the file doesn't
+    describe has **Teach the…** (step through it on the real light, name
+    each position, a swatch for colours; saved with the fixture for every
+    light of the model; forget); gobo / prism / a light's own rotation
+    channels as ↺ ■ ↻ + slow-fast (from the file's named ranges);
+    lamp / reset / fan / display / control channels under an "Advanced"
+    fold; named ranges (macros, auto programs) were already one-tap chips.
+    **Left:** gobo pictures.
+18. **Mixed selections.  DONE:** the Beam tab shows one section per model
+    ("3 × Moving Head · colour, position, beam"; "4 × LED PARty · more
+    channels") with that model's controls, sent to those lights only
+    (set_attribute / set_attr_range take `heads`).
+19. **Brand colour matching.  DONE:** Colour tab -> Match colours across
+    brands…: show white / red / amber… on the selection next to a
+    reference light and take each emitter down (40-100%); kept with the
+    fixture (every light of that model and mode, not an undo step),
+    applied as the frame is written (cues, effects, buttons - 16-bit
+    too); the 3D view keeps the colour asked for; reset.
+20. **DONE (already there):** lights with an unknown shutter "open" value:
+    the Level / Beam warning and Test this light find it on the real
+    light and `remember_open` stores it for every light of that model.
+21. **DONE:** "this light mixes any colour" / "all 7 mix any colour";
+    the programmer bar's "Other" says what it is (Laser, Effects, Own
+    channels); dimmer-less lights: "the fader dims their colour. Their
+    strobe channel: Open - light on / Closed - dark".
 
 ## A5. A buttons screen (MagicQ execute-window style) and AI that programs
 

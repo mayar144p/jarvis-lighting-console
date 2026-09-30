@@ -25,6 +25,9 @@ function nearestOnRig(rigs, p) {
   return best;
 }
 
+// rig ends closer than this join end to end
+const JOIN_M = 0.4;
+
 export class VenueEditor {
   constructor(stage, hooks = {}) {
     this.stage = stage;
@@ -265,7 +268,36 @@ export class VenueEditor {
     const top = Math.max(...ys) + dd.y;
     if (top > hangY - 0.35) dd.y = hangY - Math.max(...ys);  // snap up to the ceiling
     dd.y = Math.max(dd.y, -Math.min(...ys));                // never through the floor
+    // end to end: an end near another piece's end joins it
+    const j = this._joint([it.a, it.b].map((e) => new THREE.Vector3(...e).add(dd)), it.id);
+    if (j) dd.add(j.shift);
+    this._showJoint(j);
     return dd;
+  }
+
+  /** The nearest other rig end within JOIN_M of any of `ends`:
+   *  {shift, point} - how far to move so they meet. */
+  _joint(ends, selfId) {
+    let best = null;
+    for (const r of this.venue.rigging || []) {
+      if (r.id === selfId) continue;
+      for (const e of [r.a, r.b]) {
+        const q = new THREE.Vector3(...e);
+        for (const p of ends) {
+          const dist = p.distanceTo(q);
+          if (dist < JOIN_M && (!best || dist < best.dist)) best = { dist, shift: q.clone().sub(p), point: q };
+        }
+      }
+    }
+    return best;
+  }
+
+  _showJoint(j) {
+    this.snapMark.visible = !!j;
+    if (j) {
+      this.snapMark.position.copy(j.point);
+      this.snapMark.lookAt(this.stage.camera.position);
+    }
   }
 
   // ------------------------------------------------------------ dragging
@@ -342,7 +374,9 @@ export class VenueEditor {
       s.group.rotation.y = s.groupRot0 + (this.proxy.rotation.y - s.startRot.y);
     } else if (s.type === "vertex") {
       const h = this.handles.children.find((m) => m.userData.handle === s.key);
-      if (h) h.position.copy(this.proxy.position);
+      s.joint = s.parent.type === "rig" ? this._joint([this.proxy.position.clone()], s.parent.id) : null;
+      this._showJoint(s.joint);
+      if (h) h.position.copy(s.joint ? s.joint.point : this.proxy.position);
     } else if (s.type === "zone") {
       this.handles.children.forEach((m, i) => {
         const q = s.item.points[i];
@@ -399,7 +433,8 @@ export class VenueEditor {
     } else if (s.type === "vertex") {
       const base = s.parent;
       if (base.type === "rig") {
-        const end = [r2(p.x), r2(Math.max(0, p.y)), r2(p.z)];
+        const q = s.joint ? s.joint.point : p;
+        const end = [r2(q.x), r2(Math.max(0, q.y)), r2(q.z)];
         H.updateItem && H.updateItem(base.id, s.key === "a" ? { a: end } : { b: end });
       } else {
         const pts = base.item.points.map((q) => [...q]);

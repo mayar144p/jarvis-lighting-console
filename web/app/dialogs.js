@@ -630,6 +630,7 @@ export async function openShowMenu(anchor, menuFn) {
   menuFn(anchor, [
     { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
+    { label: "Paperwork…", hint: "light plot, patch sheet, rigging - print / PDF", run: () => window.open("/plot.html", "_blank") },
     "-",
     ...shows.slice(0, 14).map((name) => ({
       label: "Open " + name + (name === current ? "  (open)" : ""),

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Light Plot</title>
+<link rel="icon" href="/icons/icon-192.png">
+<style>
+  :root { --ink: #111; --mute: #666; --line: #bbb; --paper: #fff; --desk: #2a2d33; --accent: #0b6fb8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--desk); color: var(--ink); font: 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: #15171b; color: #e8e8e8; }
+  .bar b { font-size: 14px; letter-spacing: .04em; margin-right: auto; }
+  .bar label { display: inline-flex; gap: 6px; align-items: center; }
+  .bar button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 6px; border: 1px solid #555; background: #22252b; color: #fff; cursor: pointer; }
+  .bar button.primary { background: var(--accent); border-color: var(--accent); }
+  .sheet { background: var(--paper); width: min(297mm, calc(100vw - 32px)); margin: 16px auto; padding: 12mm 12mm 10mm; box-shadow: 0 6px 30px rgba(0,0,0,.4); }
+  .sheet h1 { font-size: 18px; margin: 0 0 2px; }
+  .sheet h2 { font-size: 14px; margin: 0 0 8px; border-bottom: 2px solid var(--ink); padding-bottom: 3px; }
+  .meta { color: var(--mute); margin-bottom: 8px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .plotwrap { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 10px; align-items: start; }
+  svg.plot { width: 100%; height: auto; max-height: 150mm; display: block; border: 1px solid var(--line); }
+  .legend { border: 1px solid var(--line); padding: 8px; }
+  .legend h3 { margin: 0 0 6px; font-size: 12px; }
+  .lg { display: grid; grid-template-columns: 28px 1fr; gap: 4px 6px; align-items: center; margin-bottom: 6px; }
+  .lg svg { width: 26px; height: 26px; }
+  .lg small { color: var(--mute); display: block; }
+  .titleblock { margin-top: 8px; border: 1px solid var(--ink); display: grid; grid-template-columns: repeat(5, 1fr); }
+  .titleblock div { padding: 4px 6px; border-left: 1px solid var(--ink); }
+  .titleblock div:first-child { border-left: 0; }
+  .titleblock span { display: block; font-size: 9px; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 3px 5px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); border-bottom: 1.5px solid var(--ink); }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.uni td { background: #f1f1f1; font-weight: 700; }
+  .warn { color: #a15c00; }
+  .empty { color: var(--mute); padding: 20px 0; }
+  @media (max-width: 720px) { .plotwrap { grid-template-columns: 1fr; } .titleblock { grid-template-columns: 1fr 1fr; } }
+  @page { size: A4 landscape; margin: 8mm; }
+  @media print {
+    html, body { background: #fff; }
+    .bar { display: none; }
+    .sheet { box-shadow: none; margin: 0; width: auto; padding: 0; page-break-after: always; }
+    .sheet:last-child { page-break-after: auto; }
+    .sheet[hidden] { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <b>PAPERWORK</b>
+    <label><input type="checkbox" id="show-plot" checked> Light plot</label>
+    <label><input type="checkbox" id="show-patch" checked> Patch sheet</label>
+    <label><input type="checkbox" id="show-rig" checked> Rigging</label>
+    <label><input type="checkbox" id="show-addr" checked> Addresses on the plot</label>
+    <button id="reload">Refresh</button>
+    <button class="primary" id="print">Print / Save as PDF</button>
+  </div>
+  <main id="pages"><div class="sheet"><p class="empty">Loading…</p></div></main>
+  <script type="module" src="/plot/plot.js"></script>
+</body>
+</html>

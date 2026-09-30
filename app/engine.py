@@ -16,6 +16,7 @@ from __future__ import annotations
 import collections
 import copy
 import json
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -693,6 +694,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                                     gates=self._gates(), rests=self._rests())
         if not self.blackout:
             self._write_raw(frames)
+        self._write_colour_cal(frames)
         return frames
 
     def _raw_holds(self) -> dict:
@@ -1012,14 +1014,22 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         if role.startswith("laser_beam") and heads:
             d = self.head_ranges(heads[0]).get(role) or {}
             entry["on"] = int(d.get("on_value") or 255)
-        if role in ("wheel", "gobo", "gobo2", "laser_pattern", "laser_colour", "laser_on",
-                    "fx_mode", "fx_fire") and heads:
+        if role in ("wheel", "wheel2", "gobo", "gobo2", "prism", "gobo_rot", "gobo2_rot", "prism_rot",
+                    "laser_pattern", "laser_colour", "laser_on", "fx_mode", "fx_fire") and heads:
             # the fixture's real slots, when every head is the same model
             kinds = {(h.get("manufacturer"), h.get("model"), h.get("mode")) for h in heads}
             if len(kinds) == 1:
                 slots = self._wheel_slots(heads[0], role)
                 if slots:
                     entry["slots"] = slots
+                elif role.endswith("_rot"):
+                    # a spin channel's named ranges ("clockwise fast to
+                    # slow") are what its direction + speed control needs
+                    caps = (self.head_ranges(heads[0]).get(role) or {}).get("caps") or []
+                    named = [c for c in caps if len(c) >= 3 and isinstance(c[2], str)]
+                    if len(named) > 1 and any(re.search(r"clockwise|\bc?cw\b|left|right", c[2], re.I) for c in named):
+                        entry["slots"] = [{"name": c[2], "from": int(c[0]), "to": int(c[1]),
+                                           "value": (int(c[0]) + int(c[1])) // 2} for c in named]
         # The smallest domain on the capable heads, so a mixed selection
         # is not offered a number only some of them can take.
         full = min([attr_domain(h, role) for h in heads] or [255])
