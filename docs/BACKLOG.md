@@ -104,9 +104,14 @@ Fixed:
    the biggest straight away on a drop, round the list in order with no
    sound.  Next look now / Biggest now; AUTO on the tempo pill.
    Left: Pro DJ Link phrase data (verse / chorus) when a CDJ-3000 sends it.
-9. Spatial effects across the room from the 3D positions (waves L->R,
-   centre-out, circles; gradients; bars / panels as pixels; later
-   images / video).
+9. **(DONE, first part) Spatial effects:** any running effect or
+   movement can run through the room by where its lights are - left to
+   right, right to left, from the stage out, back to the stage, up,
+   down, centre out, outside in, round the room - instead of by light
+   number: lights side by side move together, a gap in the rig is a gap
+   in the wave (FX / Move tab -> the effect's "which way").
+   Left: two-colour gradients across the room; bars / panels as pixels;
+   images / video mapped onto the rig.
 10. Step effects from your own looks (key-frame shapes / phasers) with
     per-step timing, curves and phase spread; palette-linked effects.
 11. Desk tools: highlight / solo, park; group masters; tracking /

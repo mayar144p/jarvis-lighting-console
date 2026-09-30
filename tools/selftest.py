@@ -147,6 +147,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_room_making,
     test_sound_analysis,
     test_sound_reactive,
+    test_spatial_fx,
     test_virtual_node,
 )
 
@@ -262,6 +263,7 @@ def _standalone_suites():
     ("sound-reactive: links, triggers, the room's tempo, never dark without sound", test_sound_reactive),
     ("sound analysis: beats, tempo and drops from a made-up track", test_sound_analysis),
     ("autopilot: a cue list plays itself on the phrase, by the room", test_autopilot),
+    ("spatial effects: through the room by where the lights are", test_spatial_fx),
     )
 
 

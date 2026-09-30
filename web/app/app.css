@@ -1211,3 +1211,5 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .snd-k input[type=range] { width: 90px; }
 .tempo.auto .tempo-tap::after { content: "AUTO"; font-size: 9px; font-weight: 800; color: #04121c; background: #fbbf24; border-radius: 3px; padding: 1px 4px; }
 .ap { display: flex; flex-direction: column; gap: 10px; }
+.fx-run, .mv-run { flex-wrap: wrap; }
+.fx-run .fx-beats, .mv-run .fx-beats { max-width: 150px; }

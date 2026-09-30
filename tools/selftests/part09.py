@@ -532,3 +532,45 @@ def test_autopilot() -> None:
     aj = (ROOT / "web" / "app" / "autopilot.js").read_text(encoding="utf-8")
     check("the tempo menu opens the autopilot; it shows when it's flying",
           "openAutopilot" in tj and '"autopilot"' in aj and '"autopilot_next"' in aj and "auto" in tj, "")
+
+
+def test_spatial_fx() -> None:
+    """Effects through the room by where the lights are: a wave left to
+    right follows the lights' x, not their numbers; centre-out gives two
+    lights the same distance the same phase."""
+    print("spatial effects")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            # numbered 1..4, but hung right to left, with a gap
+            for n, x in ((1, 6.0), (2, 4.0), (3, -4.0), (4, -6.0)):
+                e.act("set_place", head=n, x=x, y=4.0, z=5.0)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="rainbow", params={"space": "left-right"})
+            row = e.fx[0]
+            idx = e._space_index(row, row["heads"])
+            check("left to right: the leftmost light (#4) is first, #1 last", r.get("ok")
+                  and idx[4] == 0 and abs(idx[1] - 3) < 1e-9, str(idx))
+            check("...and the gap in the rig is a gap in the wave", abs(idx[3] - 0.5) < 1e-9 and abs(idx[2] - 2.5) < 1e-9, str(idx))
+            e.act("fx_space", id=row["id"], space="centre-out")
+            idx = e._space_index(row, row["heads"])
+            check("centre out: the two inner lights together, then the outer two", abs(idx[2] - idx[3]) < 1e-9
+                  and abs(idx[1] - idx[4]) < 1e-9 and idx[2] < idx[1], str(idx))
+            e.act("fx_space", id=row["id"], space=None)
+            check("back to light order", e._space_index(row, row["heads"]) is None, "")
+            r = e.act("fx_space", id=row["id"], space="sideways")
+            check("a way that isn't one is refused", not r.get("ok"), str(r))
+            vals = e._fx_values()
+            check("it still runs", len(vals) == 4, str(vals))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("running effects and movements can pick which way they run through the room",
+          '"fx_space"' in pj and "spaceSelect" in (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8"), "")

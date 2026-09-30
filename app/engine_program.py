@@ -6,6 +6,7 @@ Engine and every other part is reachable through it.
 from __future__ import annotations
 
 import json
+import math
 import time
 
 from app import fixture_kind, merge
@@ -287,6 +288,9 @@ class ProgrammerMixin:
         beats = params.get("beats") if isinstance(params, dict) else None
         if beats not in (None, "", 0, "0", False):
             p["beats"] = self._clean_beats(beats)
+        space = params.get("space") if isinstance(params, dict) else None
+        if space:
+            p["space"] = self._clean_space(space)
         self._fx_seq += 1
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
@@ -358,6 +362,7 @@ class ProgrammerMixin:
         for i, h in enumerate(heads):
             copies = merge._repeated(h["map"]).get("tilt", 0) if row.get("across") else 0
             units += [(i, h, k) for k in range(1, copies + 1)] if copies else [(i, h, None)]
+        spatial = self._space_index(row, [h["head_no"] for h in heads])
         for u, (i, h, k) in enumerate(units):
             n = h["head_no"]
             centre, limits = [], []
@@ -379,8 +384,9 @@ class ProgrammerMixin:
             eff = self._eff_limits(h, self.floor_safe)
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))
+            where = spatial.get(h["head_no"], u) if spatial and k is None else u
             vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
-                                       cap[2][i], u, len(units))
+                                       cap[2][i], where, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():
                 if role not in h["map"]:
@@ -423,6 +429,75 @@ class ProgrammerMixin:
         if not 0.125 <= b <= 64:
             raise ValueError("beats is 0.125 .. 64")
         return b
+
+    # the way a spatial effect runs through the room (x: the audience's
+    # left -> right; z: the stage end -> the back of the room; y: up)
+    SPACES = {"left-right": "left to right", "right-left": "right to left",
+              "stage-out": "from the stage out", "back-in": "from the back to the stage",
+              "up": "bottom to top", "down": "top to bottom",
+              "centre-out": "centre out", "outside-in": "outside in", "around": "round the room"}
+
+    def _clean_space(self, value) -> str:
+        v = str(value).strip().lower()
+        if v not in self.SPACES:
+            raise ValueError(f"space is one of {', '.join(self.SPACES)}")
+        return v
+
+    def _space_index(self, row: dict, heads: list[int]) -> dict[int, float] | None:
+        """{head: its place 0..n-1 along the room} for a spatial effect: where
+        the light is, not its number, sets its phase - two lights side by
+        side move together, a gap in the rig is a gap in the wave."""
+        space = (row.get("params") or {}).get("space")
+        if not space:
+            return None
+        key = (self.patch_rev, space, tuple(heads))
+        cached = row.get("_space")
+        if cached and cached[0] == key:
+            return cached[1]
+        by_no = {h["head_no"]: h for h in self.patch}
+        pts = {n: (float(by_no[n].get("x") or 0), float(by_no[n].get("y") or 0), float(by_no[n].get("z") or 0))
+               for n in heads if n in by_no}
+        if not pts:
+            return None
+        cx = sum(p[0] for p in pts.values()) / len(pts)
+        cz = sum(p[2] for p in pts.values()) / len(pts)
+        metric = {
+            "left-right": lambda p: p[0], "right-left": lambda p: -p[0],
+            "stage-out": lambda p: p[2], "back-in": lambda p: -p[2],
+            "up": lambda p: p[1], "down": lambda p: -p[1],
+            "centre-out": lambda p: math.hypot(p[0] - cx, p[2] - cz),
+            "outside-in": lambda p: -math.hypot(p[0] - cx, p[2] - cz),
+            "around": lambda p: (math.atan2(p[2] - cz, p[0] - cx) + math.pi) % (2 * math.pi),
+        }[space]
+        vals = {n: metric(p) for n, p in pts.items()}
+        lo, hi = min(vals.values()), max(vals.values())
+        span = hi - lo
+        n = len(heads)
+        if span < 1e-6:
+            out = {h: float(i) for i, h in enumerate(heads)}
+        else:
+            out = {h: (vals[h] - lo) / span * max(1, n - 1) for h in vals}
+        row["_space"] = (key, out)
+        return out
+
+    def _a_fx_space(self, id=None, space=None, **_):
+        """Run a running effect through the room by where its lights are:
+        left-right, stage-out, up, centre-out, around ... (space=none: by
+        their numbers again)."""
+        try:
+            tid = int(id)
+        except (TypeError, ValueError):
+            raise ValueError(f"bad effect id: {id!r}") from None
+        row = next((r for r in self.fx if r["id"] == tid), None)
+        if row is None:
+            raise ValueError(f"no effect {tid} running")
+        params = row.setdefault("params", {})
+        row.pop("_space", None)
+        if space in (None, "", "none", "order", False):
+            params.pop("space", None)
+            return {"fx": tid, "space": None, "summary": f"effect {tid} runs in light order"}
+        params["space"] = self._clean_space(space)
+        return {"fx": tid, "space": params["space"], "summary": f"effect {tid} runs {self.SPACES[params['space']]}"}
 
     def _a_fx_beats(self, id=None, beats=None, **_):
         """Lock a running effect to the beat: one cycle per `beats` beats
@@ -537,12 +612,13 @@ class ProgrammerMixin:
                             elif role not in reps and k == 1:
                                 dst[role] = v          # the light's single channels, once
                     continue
+                spatial = self._space_index(row, heads)
                 for i, head_no in enumerate(heads):
                     roles = by_no.get(head_no, {}).get("map") or []
                     try:
                         vals = fxlib_mod.apply(
                             row["lib"], {}, roles, params=row.get("params"),
-                            elapsed=elapsed, index=i, count=count)
+                            elapsed=elapsed, index=spatial.get(head_no, i) if spatial else i, count=count)
                     except ValueError:
                         # The patch changed under a running effect - a mode
                         # was re-imported and the head lost the channel.  Drop

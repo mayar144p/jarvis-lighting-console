@@ -693,18 +693,32 @@ export function beatSelect(f) {
   return sel;
 }
 
+// Run it through the room by where the lights are, not by their numbers
+const SPACES = [["", "in light order"], ["left-right", "→ left to right"], ["right-left", "← right to left"],
+  ["stage-out", "↓ from the stage out"], ["back-in", "↑ back to the stage"], ["up", "bottom to top"], ["down", "top to bottom"],
+  ["centre-out", "◎ centre out"], ["outside-in", "outside in"], ["around", "↻ round the room"]];
+const fxSpace = (f) => (f.params && f.params.space) || "";
+export function spaceSelect(f) {
+  const sel = h("select.select.fx-beats", { title: "Which way it runs through the room (by where the lights are)" },
+    ...SPACES.map(([v, l]) => h("option", { value: v }, l)));
+  sel.value = fxSpace(f);
+  sel.addEventListener("change", () => run("fx_space", { id: f.id, space: sel.value || null }, { toast: true }));
+  return sel;
+}
+
 function renderRunning(force = false) {
   const list = (state.snap && state.snap.fx) || [];
   const box = $("#fx-running");
   // redraw only when the list changes: rebuilt on every live update, Stop
   // flickered and a click could land on a button already replaced
-  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length, fxBeats(f)]));
+  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length, fxBeats(f), fxSpace(f)]));
   if (!force && key === runningKey) return;
   runningKey = key;
   if (!list.length) { box.replaceChildren(h("p.muted.small", "No effects running.")); return; }
   box.replaceChildren(...list.map((f) => h("div.fx-run",
     h("b", f.label || `${f.kind || "wave"} ${f.role || ""}`),
     h("small", `${(f.heads || []).length} heads`),
+    f.lib ? spaceSelect(f) : null,
     beatSelect(f),
     h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
   h("button.btn.small.ghost", { onclick: () => run("stop_fx", {}) }, "Stop all"));

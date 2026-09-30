@@ -5,7 +5,7 @@
 // Built from the venue (spots come from its dance floor and zones) and the
 // engine's movement effects (app/motion.py): a shape of a given size around
 // the aim, fitted inside each light's range, never faster than its motor.
-import { beatSelect } from "./programmer.js";
+import { beatSelect, spaceSelect } from "./programmer.js";
 import { tap as tapTempo, tempo } from "./tempo.js";
 import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
@@ -319,7 +319,7 @@ function movementBlock() {
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
-      beatSelect(f),
+      spaceSelect(f), beatSelect(f),
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
