@@ -479,7 +479,10 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 ├── docs/ARCHITECTURE.md   how the pieces fit together
 ├── app/
 │   ├── main.py            HTTP server, routes, auth, live stream
-│   ├── engine.py          desk state and every action: patch, programmer, cues, undo
+│   ├── engine.py          the Engine: desk state, act(), undo, frames, state feeds
+│   ├── engine_base.py     the action list, constants and helpers the parts share
+│   ├── engine_*.py        the Engine's parts (mixins): patch, rig, quick, fxlayer,
+│   │                      move, timeline, program, cues, output, cmdline, looks, shows
 │   ├── engine_support.py  DMX vocabulary, 16-bit maths, curves (pure)
 │   ├── merge.py           the 40 Hz core: resolve and build frames (pure)
 │   ├── fx.py, fxlib.py    waveform engine and named effects

@@ -26,7 +26,11 @@ Everything that changes the desk goes through one entry point:
 Engine.act(action, **params) -> dict
 ```
 
-`ACTIONS` in `engine.py` is the registry. `act()` takes care of the things
+`ACTIONS` in `engine_base.py` (re-exported by `engine.py`) is the registry.
+The `Engine` class is assembled from mixins, one per area
+(`engine_patch.py`, `engine_cues.py`, `engine_output.py`, ...); a handler
+`_a_<action>` lives in the part for its area and reaches the rest through
+`self`. `act()` takes care of the things
 every caller would otherwise get wrong:
 
 * **Undo.** A snapshot is pushed before any action not in `UNDO_EXCLUDED`

@@ -103,6 +103,11 @@ SPEC_GDTF = """<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 PASS, FAIL = 0, 0
 
 
+def engine_source() -> str:
+    """The engine's source: app/engine.py and its parts (engine_*.py)."""
+    return "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "app").glob("engine*.py")))
+
+
 def check(label: str, condition: bool, detail: str = "") -> None:
     global PASS, FAIL
     if condition:
@@ -4008,8 +4013,7 @@ def test_limits_and_lock(tmp: Path) -> None:
         check("the right one unlocks - to OPERATE, not to DESIGN",
               r.get("ok") and e.lock_state == "operate", r.get("summary"))
         check("the hash comparison is length-safe, not a bare ==",
-              "_secrets_equal" in
-              (ROOT / "app" / "engine.py").read_text(encoding="utf-8"), "")
+              "_secrets_equal" in engine_source(), "")
         e.act("set_lock", state="design")
 
     finally:
@@ -5905,7 +5909,7 @@ def test_colour_picker() -> None:
           e._colour_values(wheel_head, "#ff8800") == {},
           str(e._colour_values(wheel_head, "#ff8800")))
 
-    src_eng = (ROOT / "app" / "engine.py").read_text(encoding="utf-8")
+    src_eng = engine_source()
     ev = src_eng[src_eng.index("def _colour_values"):]
     ev = ev[:ev.index("def _white_values")]
     check("and the engine itself still tests RGB, then CMY, then white",
