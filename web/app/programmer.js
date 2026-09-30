@@ -44,7 +44,12 @@ function capabilities() {
 function applyTabVisibility() {
   const any = hasSel();
   const cap = capabilities();
-  const show = { position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
+  // only SFX machines / hazers / lasers selected: no Level or colour-effect
+  // tabs (they did nothing for a confetti cannon)
+  const LIGHTISH = new Set(["dimmer", "shutter", "strobe", ...COLOUR_ROLES]);
+  const light = [...cap.roles].some((r) => LIGHTISH.has(r));
+  const show = { intensity: !any || light, fx: !any || light,
+    position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
     laser: any && [...cap.roles].some((r) => r.startsWith("laser_")),
     sfx: any && [...cap.roles].some((r) => r.startsWith("fx_") || r === "fog") && ![...cap.roles].some((r) => r.startsWith("laser_")) };
   $$("#prog-tabs button").forEach((b) => {
@@ -53,7 +58,7 @@ function applyTabVisibility() {
     b.hidden = !visible;
     b.title = visible ? (b.dataset.title || b.title) : "";
   });
-  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : "intensity");
+  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : show.intensity ? "intensity" : "looks");
 }
 
 // ------------------------------------------------------------- header
