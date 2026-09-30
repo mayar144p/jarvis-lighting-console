@@ -227,11 +227,15 @@ The pass walked every tab for one light of each type (see A0).  Next:
 
 ## A5. A buttons screen (MagicQ execute-window style) and AI that programs
 
-22. **A full-screen buttons page** (desktop and tablet): pages of tiles
-    that can be buttons, faders (a group master, a playback), XY pads,
-    speed / BPM tiles, cue-list tiles, and SFX tiles with MagicFX-style
-    safety (arm key, E-stop, hold-to-fire); tile size, colour, icon,
-    label and what it does all editable in place; lock the layout.
+22. **A full-screen buttons page.  DONE:** Buttons -> ⛶ Full screen (the
+    whole screen, browser full screen too); tiles can now also be
+    **Fader** (grand master, Speed master, a playback, a group master -
+    vertical in a tall tile, live), **XY pad** (pan / tilt of the tile's
+    lights), **Tempo** (BPM, tap on the beat), **Cue list** (cue now and
+    next, tap = GO, ◀ back) and **E-stop** (every effect and laser off,
+    disarmed); with the existing ARM / hold-to-fire SFX buttons, sizes,
+    colours, icons, pages and in-place editing.  **Lock** (per device)
+    hides Edit so nothing can be moved.
 23. **AI that programs, not only commands.** "These lights should only
     hover around the dance floor and the DJ booth" becomes a program:
     a new *roam* movement that wanders smoothly inside venue zones (the

@@ -11,7 +11,7 @@ import { state, on, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, menu } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, menu, throttle } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -28,6 +28,11 @@ const DOES = [
   ["go", "GO", "GO on a playback"],
   ["release", "Release", "Releases a playback"],
   ["preset", "Preset", "Applies a recorded preset"],
+  ["fader", "Fader", "A fader tile: the master, the Speed master, a playback or a group"],
+  ["xy", "XY pad", "Drag to point these lights (pan / tilt)"],
+  ["tempo", "Tempo", "Shows the BPM and the beat; tap it on the beat"],
+  ["cuelist", "Cue list", "A playback's cue now and next; tap = GO"],
+  ["estop", "E-stop", "Stops every special effect and laser at once, disarms"],
   ["blackout", "Blackout all", "Everything off while held"],
   ["sfx", "Fire SFX", "Confetti / CO2 / flame / sparks (needs ARM)"],
   ["fog", "Fog / haze", "Fog or haze output"],
@@ -37,7 +42,8 @@ const DOES = [
 ];
 const KIND_COLOUR = { flash: "#f8fafc", strobe: "#fde047", colour: null, kill: "#64748b", fx: "#a78bfa",
   custom: "#38bdf8", move: "#a78bfa", go: "#22c55e", release: "#f97316", preset: "#38bdf8", blackout: "#ef4444",
-  sfx: "#f97316", fog: "#cbd5e1", laser: "#22d3ee", arm: "#ef4444", fxkill: "#ef4444" };
+  sfx: "#f97316", fog: "#cbd5e1", laser: "#22d3ee", arm: "#ef4444", fxkill: "#ef4444",
+  fader: "#38bdf8", xy: "#a78bfa", tempo: "#fde047", cuelist: "#22c55e", estop: "#ef4444" };
 const FX = [["rainbow", "Rainbow"], ["colour_chase", "Colour chase"], ["alternate", "Alternate"], ["breathe", "Breathe"],
   ["pulse", "Pulse"], ["dimmer_chase", "Dimmer chase"], ["sparks", "Sparks"], ["circle", "Circle"],
   ["pan_sweep", "Sweep"], ["tilt_bounce", "Bounce"], ["figure_eight", "Figure 8"], ["fan_pan", "Fan"],
@@ -51,8 +57,12 @@ const SWATCH = ["#ffffff", "#ff0000", "#ff5a00", "#ffb000", "#ffe600", "#00ff40"
 const TINTS = ["#38bdf8", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#f8fafc", "#64748b"];
 const SPLITS = [["", "All of them"], ["odd", "Odd"], ["even", "Even"], ["left", "Left half"], ["right", "Right half"]];
 const FX_KINDS = new Set(["sfx", "fog", "laser", "arm", "fxkill"]);
-const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill"]);
-const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill"]);
+const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill", "fader", "tempo", "cuelist", "estop"]);
+const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill", "fader", "xy", "tempo", "cuelist", "estop"]);
+// tiles that are a control, not a button (drawn live, see controlTile)
+const CONTROL = new Set(["fader", "xy", "tempo", "cuelist"]);
+let locked = false;
+try { locked = localStorage.getItem("jarvis.qb.locked") === "1"; } catch { /* private window */ }
 // Icons a tile can carry: 24x24 stroke paths (the engine keeps the same names).
 const ICONS = {
   bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
@@ -221,7 +231,19 @@ function render(force = false) {
       continue;
     }
     const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
-    const el = h("button.qbtn" + (active.has(b.id) ? ".on" : ""), {
+    if (CONTROL.has(b.kind) && !editing) {
+      const el = controlTile(b);
+      el.style.setProperty("--tint", tint);
+      const sp = span.get(slot);
+      if (sp) {
+        el.style.gridColumn = `${(slot - 1) % COLS + 1} / span ${sp[0]}`;
+        el.style.gridRow = `${Math.floor((slot - 1) / COLS) + 1} / span ${sp[1]}`;
+        el.classList.add(sp[1] > 1 ? "qbig" : "qwide");
+      }
+      cells.push(el);
+      continue;
+    }
+    const el = h("button.qbtn" + (b.kind === "estop" ? ".qestop" : "") + (active.has(b.id) ? ".on" : ""), {
       title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy)" : ""}`,
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
@@ -275,8 +297,103 @@ function render(force = false) {
   renderPages();
   $("#qb-edit").classList.toggle("on", editing);
   $("#qb-edit").textContent = editing ? "Done" : "Edit";
+  $("#qb-edit").hidden = locked;
+  $("#qb-lock").classList.toggle("on", locked);
+  $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
+  updateControls();
   const empty = !q.buttons.some((b) => b.page === page);
   $("#qb-suggest").hidden = !empty;
+}
+
+// ---------------------------------------------------------------- control tiles
+// A fader, an XY pad, the tempo and a cue list live on the page as tiles:
+// drawn once, their numbers kept current from the live feed.
+const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
+function faderValue(c) {
+  if (c.what === "master") return snapOrLite("master") ?? 100;
+  if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
+  if (c.what === "playback") {
+    const pb = ((state.snap && state.snap.playbacks) || []).find((x) => x.n === c.n);
+    return pb ? pb.level : 0;
+  }
+  const g = groups().find((x) => x.n === c.n);
+  return g ? (g.master ?? 100) : 100;
+}
+const faderText = (c, v) => c.what === "speed" ? `${(v / 50).toFixed(2).replace(/0$/, "")}×` : `${Math.round(v)}%`;
+
+function controlTile(b) {
+  const el = h("div.qbtn.qctl.q" + b.kind, { dataset: { id: b.id } });
+  const head = h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label));
+  if (b.kind === "fader") {
+    const c = b.control || { what: "master" };
+    const v = faderValue(c);
+    const out = h("output.qval", faderText(c, v));
+    const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
+    const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
+    inp.addEventListener("input", () => { out.textContent = faderText(c, +inp.value); inp.dataset.busy = "1"; send(+inp.value); });
+    inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
+    el.append(head, out, inp);
+  } else if (b.kind === "xy") {
+    const dot = h("i.qxy-dot");
+    const pad = h("div.qxy", dot);
+    const send = throttle((pan, tilt) => run("quick_xy", { id: b.id, pan, tilt }, { silentError: true }), 70);
+    let down = false;
+    const at = (e) => {
+      const r = pad.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+      dot.style.left = x * 100 + "%";
+      dot.style.top = y * 100 + "%";
+      send(Math.round(x * 255), Math.round((1 - y) * 255));
+    };
+    pad.addEventListener("pointerdown", (e) => { down = true; pad.setPointerCapture(e.pointerId); at(e); });
+    pad.addEventListener("pointermove", (e) => { if (down) at(e); });
+    pad.addEventListener("pointerup", () => { down = false; });
+    el.append(head, pad);
+  } else if (b.kind === "tempo") {
+    el.append(head, h("output.qval.qbpm", "–"), h("small.qsub", "tap on the beat"));
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.classList.add("down"); press(b, true); setTimeout(() => el.classList.remove("down"), 90); });
+  } else if (b.kind === "cuelist") {
+    const back = h("button.chip.qback", { title: "Back a cue", onclick: (e) => { e.stopPropagation(); run("cue_back", { playback: b.playback }); } }, "◀");
+    el.append(head, h("output.qval.qcue", "–"), h("small.qsub.qnext", ""), back);
+    el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".qback")) return;
+      e.preventDefault(); el.classList.add("down"); press(b, true); setTimeout(() => el.classList.remove("down"), 120);
+    });
+  }
+  return el;
+}
+
+function updateControls() {
+  for (const el of $$("#qb-grid .qctl")) {
+    const b = quick().buttons.find((x) => x.id === el.dataset.id);
+    if (!b) continue;
+    if (b.kind === "fader") {
+      const inp = el.querySelector(".qfader-in");
+      if (inp.dataset.busy) continue;
+      const v = faderValue(b.control || { what: "master" });
+      inp.value = v;
+      el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
+    } else if (b.kind === "tempo") {
+      const t = snapOrLite("tempo") || {};
+      el.querySelector(".qbpm").textContent = t.bpm ? `${t.bpm.toFixed(t.bpm % 1 ? 1 : 0)} BPM` : "–";
+    } else if (b.kind === "cuelist") {
+      const pb = ((state.snap && state.snap.playbacks) || []).find((x) => x.n === b.playback) || { stack: [] };
+      const cur = pb.index >= 0 ? pb.stack[pb.index] : null, nxt = pb.stack[(pb.index ?? -1) + 1];
+      el.querySelector(".qcue").textContent = cur && pb.active ? `${cur.n} · ${cur.name}` : pb.stack.length ? "ready" : "no cues";
+      el.querySelector(".qnext").textContent = nxt ? `next: ${nxt.n} · ${nxt.name}` : pb.stack.length ? "last cue" : "";
+    }
+  }
+}
+
+// ------------------------------------------------------------- full screen
+function setFull(on) {
+  const box = $("#qb");
+  box.classList.toggle("qb-full", on);
+  document.body.classList.toggle("qb-fullscreen", on);
+  $("#qb-full").textContent = on ? "Exit full screen" : "⛶ Full screen";
+  if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  render(true);
 }
 
 // ---------------------------------------------------------------- editor
@@ -320,6 +437,7 @@ function fromButton(b) {
     fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
+    control: b && b.control ? { ...b.control } : { what: "master" },
   };
   if (b && b.kind === "custom") {
     const only = Object.keys(b).filter((k) => ["level", "hz", "kill", "attrs", "values", "fx_list", "colour"].includes(k) && b[k]);
@@ -368,6 +486,8 @@ function toButton(s) {
   if (d === "go" || d === "release") b.playback = +s.playback || 1;
   if (d === "go" && s.cue !== "") b.cue = +s.cue;
   if (d === "preset") b.preset = +s.preset;
+  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 } : { what: s.control.what };
+  if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
   return b;
@@ -423,6 +543,15 @@ function editButton(slot, btn) {
       kids.push(row("Colour", swatches(SWATCH, s.colour, (c) => { s.colour = c; draw(); }, { none: "Keep their colour" })));
     }
     if (d === "dim") kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
+    if (d === "fader") {
+      const c = s.control;
+      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group"]], c.what,
+        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1 }; draw(); })));
+      if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
+      if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
+        : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
+    }
+    if (d === "cuelist") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), s.playback, (v) => { s.playback = v; draw(); })));
     if (d === "colour") kids.push(row("Colour", swatches(SWATCH, s.colour || "#ffffff", (c) => { s.colour = c; draw(); })));
     if (d === "strobe") {
       kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"]], s.hz,
@@ -657,6 +786,15 @@ export function initQuickButtons() {
     }
   }, true);
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
+  $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
+  $("#qb-lock").addEventListener("click", () => {
+    locked = !locked;
+    if (locked) editing = false;
+    try { localStorage.setItem("jarvis.qb.locked", locked ? "1" : "0"); } catch { /* private window */ }
+    toast(locked ? "Layout locked on this device - buttons play, nothing can be moved or edited" : "Layout unlocked", "ok");
+    render(true);
+  });
   $("#qb-suggest").addEventListener("click", async () => {
     if (!patch().length) { toast("Add some lights first"); return; }
     const fxOnly = patch().length && patch().every((x) => (x.map || []).some((r) => r.startsWith("fx_") || r.startsWith("laser_") || r === "fog"));
@@ -667,6 +805,7 @@ export function initQuickButtons() {
   on("lite", () => {
     const active = activeIds();
     $$("#qb-grid .qbtn[data-id]").forEach((el) => el.classList.toggle("on", active.has(el.dataset.id)));
+    updateControls();
   });
   // a held button must never stay stuck on if the window loses focus
   window.addEventListener("blur", () => {

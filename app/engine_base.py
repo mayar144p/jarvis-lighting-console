@@ -88,7 +88,7 @@ UNDO_LIMIT = 60
 UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
-    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
+    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
     "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get",
@@ -145,7 +145,7 @@ _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
 # throw the first away.
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
-    "set_address", "set_place", "aim_at", "nudge",
+    "set_address", "set_place", "aim_at", "nudge", "quick_xy",
 })
 
 # --- channel roles ------------------------------------------------------
@@ -638,7 +638,7 @@ ACTIONS = (
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
-    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots",
+    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy",
 )
 
 

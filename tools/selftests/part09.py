@@ -1120,3 +1120,52 @@ def test_teach_wheel() -> None:
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the programmer: teach links, white presets, spin rows, an Advanced fold",
           "openTeachWheel" in js and "White presets" in js and "rotateRow" in js and "attr-adv" in js, "")
+
+
+def test_control_tiles() -> None:
+    """The buttons page's control tiles: faders (master, speed, playback,
+    group), an XY pad on the tile's lights, tempo taps, a cue list's GO,
+    the E-stop - and a fader is moved, not pressed."""
+    print("Buttons page: control tiles")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            mv = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            par = e.act("add_heads", query="LED PAR", qty=2)["heads"]
+            e.act("select_heads", heads=par)
+            e.act("group_create", name="PARs")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1, name="A")
+            tiles = {1: {"kind": "fader", "label": "GM", "control": {"what": "master"}},
+                     2: {"kind": "fader", "label": "PB", "control": {"what": "playback", "n": 1}},
+                     3: {"kind": "fader", "label": "Grp", "control": {"what": "group", "n": 1}},
+                     4: {"kind": "fader", "label": "Spd", "control": {"what": "speed"}},
+                     5: {"kind": "xy", "label": "XY", "target": {"all": True}},
+                     6: {"kind": "tempo", "label": "BPM"}, 7: {"kind": "cuelist", "label": "List", "playback": 1},
+                     8: {"kind": "estop", "label": "STOP"}}
+            ok = all(e.act("quick_set", page=2, slot=k, button=b).get("ok") for k, b in tiles.items())
+            check("every kind of tile saves", ok, "")
+            e.act("quick_fader", id="q2-1", level=40)
+            e.act("quick_fader", id="q2-2", level=70)
+            e.act("quick_fader", id="q2-3", level=25)
+            e.act("quick_fader", id="q2-4", level=100)
+            g = next(x for x in e.groups if x["name"] == "PARs")
+            check("faders: master, playback, group master, speed (50 = 1x)",
+                  e.master == 40 and e.playbacks[0]["level"] == 70 and g.get("master") == 25 and abs(e.speed_master - 2.0) < 0.01,
+                  f"{e.master} {e.playbacks[0]['level']} {g.get('master')} {e.speed_master}")
+            e.act("quick_xy", id="q2-5", pan=10, tilt=200)
+            check("the XY pad moves only the tile's movers", all(e.programmer[n].get("pan") == 10 for n in mv)
+                  and all("pan" not in e.programmer.get(n, {}) for n in par), str(e.programmer))
+            check("a fader tile is not pressed", not e.act("quick_press", id="q2-1").get("ok"), "")
+            r = e.act("quick_press", id="q2-7")
+            check("the cue list tile GOes", r.get("ok") and e.playbacks[0]["active"], str(r))
+            check("E-stop stops the effects", e.act("quick_press", id="q2-8").get("ok"), "")
+            check("moving a fader is not an undo step", "quick_fader" not in [u["action"] for u in e._undo], "")
+        finally:
+            e.shutdown()
