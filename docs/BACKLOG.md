@@ -7,6 +7,53 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 # Part A - the plan (open)
 
+## Next, in this order (agreed 2026-09-30)
+
+1. **Desktop only** (item A6 below): take the phone / tablet features out.
+2. **Review everything since PR #30** for bugs, then a full mock gig in the
+   browser (patch, venue, cues, buttons, timecode, roam, blackout); fix
+   what breaks.
+3. **Finish item 23** (AI that programs): 3D preview before a roam /
+   effect is applied; "the back truss chases red and white on the beat
+   during the drop"; "build me 8 buttons for this rig"; "a 32-bar
+   build-up" on the timeline.
+4. **On the beat:** buttons / strobes that fire on the next beat; Ableton
+   Link; effect size from the sound; an audio-input picker.
+5. **Effects:** two-colour gradients across the room; bars / panels as
+   pixels; images / video mapped onto the rig; step effects in cues and
+   buttons; a key-frame shape editor for movement.
+6. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+   ceiling height per area; align / distribute rigging; clip upload for
+   LED screens; gobo pictures; shadows.
+7. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+
+Dropped for now (maybe later): the phone room scan.
+
+## A6. Desktop only
+
+Jarvis runs on a desktop / laptop screen only.  Remove what exists for
+phones and tablets:
+- web/app/tablet.js (screen wake lock, "Install as an app", the iOS
+  add-to-home-screen hint) and its Settings rows (Keep this screen awake,
+  Install as an app); web/manifest.webmanifest, the manifest link and the
+  home-screen icon sizes only it uses.  Keep the reconnect re-sync that
+  lives there (it matters on a laptop's Wi-Fi too) - move it into main.js.
+- Gig mode turning itself on for touch screens (`pointer: coarse` in
+  main.js); the Gig mode switch itself stays for a laptop at a gig.
+- The phone / small-screen layouts in app.css (the max-width 820 / 700 /
+  560 / 520 / 480 / 380 px rules, the phone bottom bar with its Blackout)
+  - with a sensible minimum window width instead.
+- The DJ-booth remote page (web/remote.html, web/remote/, the Settings
+  link to it): it is a phone page.  OSC in stays (Companion, QLab and
+  other desktop apps use it).
+- Tablet wording ("on phones and tablets", "a tablet at the DJ booth",
+  "turn auto-lock off in the tablet's settings", touch hints) in tooltips
+  and help.
+- The selftests for the removed parts (wake lock / install / remote page),
+  and the tablet notes in item 3 of A1.
+Keep: pointer events (they work with a mouse), the floor map on the Move
+tab (useful on a desktop), full screen for the buttons page.
+
 ## A0. Full debugging pass (DONE, 2026-09-30)
 
 Tools: `tools/rigcheck.py` (every light type + ~15 brands + CO2 / flame /
@@ -157,7 +204,7 @@ blur, VR).
     10 cm grid by default (Shift: any angle), the last wall lines up with
     the first corner, a typed length + Enter makes a wall exactly that
     long.  Copies of a truss or object N m apart (inspector -> Copies...).
-    Left: a phone room scan; doors, pillars and balconies drawn in the
+    Left: doors, pillars and balconies drawn in the
     drafting mode; a ceiling height per area; align / distribute for
     rigging.
 13. **Rigging library.  DONE:** Arrange -> Rigging…: box (22 / 29 / 40
