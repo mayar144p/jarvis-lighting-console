@@ -510,7 +510,7 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   ├── js/stage/          visualiser (models, materials, venue, editor, GDTF meshes)
 │   └── vendor/            three.js and pdf.js, vendored for offline use
 ├── tools/
-│   ├── selftest.py        the test suite
+│   ├── selftest.py        the test suite (runs tools/selftests/)
 │   ├── featurecheck.py    feature coverage report
 │   ├── artnet_loopback.py prove the UDP path locally
 │   ├── import_gdtf.py     bulk fixture import

@@ -214,7 +214,11 @@ type and brand the engine reports, so it appears the moment it is added.
 
 ## Tests
 
-`tools/selftest.py` is one file of isolated suites. It exercises the engine
+`tools/selftest.py` runs isolated suites; the suites live in
+`tools/selftests/` (`common.py` holds `check()` and shared helpers, the
+`partNN.py` files the suites) and are listed in `_suites()` /
+`_standalone_suites()`, so a new suite is one function plus one line.
+They exercise the engine
 directly, runs the HTTP server on a free port for route and security tests,
 and runs web modules under node (with an import hook that maps three.js to
 the vendored copy) to check the picker maths and the 3DS parser.
