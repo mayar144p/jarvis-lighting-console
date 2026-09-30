@@ -52,9 +52,13 @@ def pick_fixtures(quick: bool = False) -> list[tuple[str, str, str, str, str]]:
             if brand and (brand, t) not in by_brand and len([k for k in by_brand if k[0] == brand]) < (1 if quick else 3):
                 by_brand[(brand, t)] = row_t
     out = list(by_type.values()) + [v for v in by_brand.values() if v not in by_type.values()]
-    # the Jarvis library's SFX / lasers too
-    for key in ("laserworld/beambar-10b-mk3",):
-        out.append(("jarvis", key, "Laserworld", "BeamBar 10B MK3", "laser"))
+    # special effects of every kind, and the Jarvis library's
+    out += [("jarvis", "laserworld/beambar-10b-mk3", "Laserworld", "BeamBar 10B MK3", "laser"),
+            ("jarvis", "chauvet-dj/funfetti-shot", "Chauvet DJ", "Funfetti Shot", "confetti"),
+            ("ofl", "magicfx/psyco2jet.json", "MagicFX", "Psyco2Jet", "co2"),
+            ("qlc", "MagicFX/MagicFX-Stage-Flame.qxf", "MagicFX", "Stage Flame", "flame"),
+            ("ofl", "showven/sparkular.json", "Showven", "Sparkular", "spark"),
+            ("qlc", "Martin/Martin-JEM-K1-Hazer.qxf", "Martin", "JEM K1 Hazer", "atmos")]
     return out
 
 
@@ -75,6 +79,9 @@ def main() -> int:
     quick = "--quick" in sys.argv
     rep = Report()
     picks = pick_fixtures(quick)
+    if "--list" in sys.argv:                  # for tools/rigcheck_3d.mjs
+        print(json.dumps([{"src": p[0], "key": p[1], "man": p[2], "model": p[3], "type": p[4]} for p in picks]))
+        return 0
     print(f"{len(picks)} fixtures: " + ", ".join(sorted({p[4] for p in picks})))
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)

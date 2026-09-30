@@ -23,6 +23,8 @@ from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS,  # noqa: I001
                              is_fine_role, logical16 as _logical16,
                              split_16bit)
 
+VDIM = "_vdim"       # a dimmer-less light's virtual intensity (0-100), never on the wire
+
 __all__ = ["resolve_head", "htp_value", "build_frames", "pair_map"]
 
 
@@ -196,10 +198,40 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
         else:
             for r in beams:
                 resolved[r] = int((rest or {}).get(r, 0))
+    dimmerless = not any(r in HTP_ROLES for r in head["map"])
+    emitters = [r for r in COLOUR_ROLES if r in head["map"]]
+    if dimmerless and emitters:
+        # the VIRTUAL dimmer of a light with colour emitters and no dimmer
+        # (a 3-channel RGB PAR): intensity, cues and flash buttons scale
+        # its colour, HTP like a real dimmer; with no colour set it is
+        # white.  None anywhere = never driven: the colour is used as is.
+        cands = []
+        if VDIM in fx_row:
+            cands.append(int(fx_row[VDIM]))
+        else:
+            if pvals.get(VDIM) is not None:
+                cands.append(int(pvals[VDIM]))
+            for level, vals in pb_vals:
+                v = (vals.get(n) or {}).get(VDIM)
+                if v is not None:
+                    cands.append(int(v) * level // 100)
+        vd = max(cands) if cands else None
+        if over:
+            if over.get("level") is not None:
+                vd = max(vd or 0, int(over["level"]))
+            if over.get("cap") is not None and vd is not None:
+                vd = min(vd, int(over["cap"]))
+        if vd is not None:
+            if not any(resolved.get(r, 0) for r in emitters):
+                white = ["white"] if "white" in emitters else [r for r in ("red", "green", "blue") if r in emitters]
+                for r in white or emitters[:1]:
+                    resolved[r] = 255
+            for r in emitters:
+                if r in resolved:
+                    resolved[r] = resolved[r] * max(0, min(100, vd)) // 100
     # A fixture with no dimmer still has to obey BLACKOUT and the master:
     # its shutter/strobe gate closes (0 is closed on every profile we
     # know), and its colour channels act as a virtual dimmer.
-    dimmerless = not any(r in HTP_ROLES for r in head["map"])
     killed = bool(over and (over.get("kill") or strobe_off))
     if dimmerless and (blackout or master < 100 or killed):
         scale = 0 if (blackout or killed) else master

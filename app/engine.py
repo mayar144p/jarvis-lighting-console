@@ -171,6 +171,7 @@ _BEAM_LOOK_ROLES = ("zoom", "iris", "frost", "focus", "gobo", "gobo_rot",
 
 # Colour roles: on a fixture with no dimmer these ARE the brightness.
 _COLOUR_ROLES = COLOUR_ROLES
+VDIM = merge.VDIM            # a dimmer-less light's virtual intensity (0-100)
 
 # (manufacturer, model, mode, channels) -> (role defaults, open values),
 # filled lazily by Engine._profile_levels (see app/profiles.py).
@@ -299,8 +300,17 @@ def default_mode(modes: list[dict]) -> dict:
     if not modes:
         return {}
     moves = any({"pan", "tilt"} <= roles(m) for m in modes)
+    fires = any("fx_fire" in roles(m) for m in modes)
+    if fires:
+        # an SFX machine: a mode that can actually fire (a Psyco2Jet's
+        # first "safety" mode has only its arm channel)
+        usable = [m for m in modes if "fx_fire" in roles(m)]
+        return min(usable, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
     light = {"dimmer", "shutter", "strobe", "red", "white", "wheel"}
-    usable = [m for m in modes if roles(m) & light and (not moves or {"pan", "tilt"} <= roles(m))]
+    width = lambda m: m.get("channel_count") or len(m.get("channels") or [])  # noqa: E731
+    wide = any(width(m) >= 2 for m in modes)
+    usable = [m for m in modes if roles(m) & light and (not moves or {"pan", "tilt"} <= roles(m))
+              and (width(m) >= 2 or not wide)]       # a 1-channel "shows" mode is a program picker
     pool = usable or modes
     return min(pool, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
 
@@ -2641,16 +2651,25 @@ class Engine:
         htp = self._intensity_roles(head)
         if htp:
             return {role: int(pct) for role in htp}
+        out: dict = {}
+        if set(head["map"]) & _COLOUR_ROLES:
+            # no dimmer, but colour emitters (a 3/4/6-channel RGB PAR):
+            # a VIRTUAL dimmer that scales the colour - white when no
+            # colour is set (merge.resolve_head).  "Full" used to do
+            # nothing at all on these, the commonest DJ lights.
+            out[VDIM] = int(pct)
         role = self._shutter_role(head)
         if role is None:
-            return {}
+            return out
         # Closed first: on the fixtures we can describe, 0 is the closed
         # end of the gate.  build_frames writes the same 0 for an
         # un-driven channel, so "nothing programmed" means "dark" - the
         # wire and the visualiser never disagree.
         if pct <= 0:
-            return {role: 0}
-        return {role: self._open_value(head, role)}
+            out[role] = 0
+        else:
+            out[role] = self._open_value(head, role)
+        return out
 
     def _a_set_intensity(self, level=None, fade=None, **_):
         if level is None:

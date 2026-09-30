@@ -7534,6 +7534,7 @@ def _standalone_suites():
     ("RDM: the lights say what they are (fake node)", test_rdm),
     ("aiming: towers, scanners, out-of-reach, fine pan without fine tilt", test_aim_debug),
     ("rigging: turn, length, stand up, ceiling, stays inside the room", test_rig_tools),
+    ("RGB-only lights: a virtual dimmer; modes that can be controlled", test_virtual_dimmer),
     )
 
 
@@ -9744,6 +9745,62 @@ def test_rig_tools() -> None:
     ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
     check("the editor turns rigs, keeps them in the room and frames them", 's.type === "rig")' in ed
           and "_rigDelta" in ed and "_frameRig" in ed, "")
+
+
+def test_virtual_dimmer() -> None:
+    """A light with colour emitters and no dimmer (a 3-channel RGB PAR):
+    Full, the fader, cues, flash buttons and the master scale its colour
+    (white with none set).  "Full" used to do nothing on them.  And the
+    mode picked by default is one that can control the light."""
+    print("virtual dimmer and default modes")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        for q in ("beamZ BAC302", "Ayra Compar Kit 1"):
+            r = fixlib.search(q, limit=1)[0]
+            fixtures.store_parsed(db, fixlib.load(r.get("src"), r["key"]), r.get("src"))
+        fixtures.store_parsed(db, fixlib.load("ofl", "magicfx/psyco2jet.json"), "ofl")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BAC302", qty=1)
+            h = e.patch[0]
+            check("the RGB PAR is patched in a colour mode with no dimmer", h["map"][:3] == ["red", "green", "blue"]
+                  and "dimmer" not in h["map"], str(h["map"]))
+            f = lambda: list(e.build_frames()[1][:3])  # noqa: E731
+            e.act("select_all")
+            r = e.act("set_intensity", level=100)
+            check("Full lights it white", r.get("heads") == 1 and f() == [255, 255, 255], str((r.get("summary"), f())))
+            e.act("set_colour", hex="#ff0000")
+            e.act("set_intensity", level=50)
+            check("the fader scales its colour", f() == [127, 0, 0], str(f()))
+            e.act("record_cue", playback=1, name="half red")
+            e.act("cue_go", playback=1)
+            check("a cue plays it back at that level", f() == [127, 0, 0], str(f()))
+            e.act("playback_release", playback=1)
+            e.act("master", level=0)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            check("the grand master still takes it down", f() == [0, 0, 0], str(f()))
+            e.act("master", level=100)
+            e.act("clear_programmer")
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "target": {"all": True}})
+            e.act("quick_press", id="q1-1")
+            check("a flash button lights it", f() == [255, 255, 255], str(f()))
+            e.act("quick_press", id="q1-1", down=False)
+            e.act("select_all")
+            e.act("set_colour", hex="#00ff00")
+            check("a colour on its own still lights it as before", f() == [0, 255, 0], str(f()))
+            e.act("add_heads", query="Compar Kit 1", qty=1)
+            check("a light's 1-channel 'shows' mode is not the default", e.patch[-1]["channels"] > 1,
+                  f"{e.patch[-1]['mode']} ({e.patch[-1]['channels']} ch)")
+            e.act("add_heads", query="Psyco2Jet", qty=1)
+            check("an SFX machine's default mode can fire", "fx_fire" in e.patch[-1]["map"], str(e.patch[-1]["map"]))
+        finally:
+            e.shutdown()
 
 
 def test_cue_list_modes() -> None:
