@@ -1,10 +1,140 @@
 # Backlog
 
-Work agreed with the operator, newest items first after the original list.
-Everything below is DONE (as of this update); each entry keeps the notes
-on how it was built, for whoever changes it next.
-Each item notes the cause already found in the code, so whoever picks it up
-starts from the diagnosis, not from scratch.
+Work agreed with the operator.  **Part A is the open plan**, in the
+suggested order; Part B (items 1-17) is DONE and keeps the notes on how it
+was built.  Each item notes the cause already found in the code, so
+whoever picks it up starts from the diagnosis, not from scratch.
+
+# Part A - the plan (open)
+
+## A0. Full debugging pass (DONE, 2026-09-30)
+
+Tools: `tools/rigcheck.py` (every light type + ~15 brands + CO2 / flame /
+spark / confetti / hazer / laser, hung / stood / dragged / snapped on
+trusses, a pole and a pipe in an L-shaped room; every action and button
+kind; DMX vs 3D feed: 4,266 checks) and `tools/rigcheck_3d.mjs` (the same
+lights in the real visualiser: model, beam, where it lands, SFX firing).
+Fixed:
+- **Lights looking at the roof after "aim here":** a mode with fine pan but
+  no fine tilt got a 16-bit tilt (full tilt, also on the rig); an
+  unreachable spot left the light at home (up) - now as close as it can and
+  it says so; lights high on a tower stood upright (now hang above 2 m);
+  a light dragged up past 2 m kept "standing"; the solver used one pivot
+  height for every model (now each 3D model's); scanners aimed as if the
+  beam left upwards.
+- **RGB-only lights (3/4/6-ch PARs, bars, panels): "Full" did nothing.**
+  A virtual dimmer now scales their colour (white with none set) for the
+  fader, cues, flash / dim buttons and the master.
+- "Shutter, strobe, reset" channels were maintenance (light never opened);
+  default modes skipped 1-channel "sound active" modes but still picked
+  SFX modes that can't fire; lamp-only lights show lit (Ready? warns).
+- Rigging: bars can be turned (rotate tool, Turn 90/45), resized, stood
+  up / laid flat, hung from the ceiling; a drag stays inside the room and
+  snaps to the ceiling; rigs off-screen or level with the camera (low
+  rooms) are framed when selected; a resized room scales its zones.
+- Programmer: stray "null" text on the FX / colour tabs; SFX-only
+  selections no longer get Level / FX tabs.
+
+## A1. Engineering (bugs, steady DMX, tablets, code health)
+
+1. The 8 bugs from the review of PR #28: undo after recording a cue loses
+   its effects; cue effects survive loading another show; one unpatched
+   light drops a whole cue effect; RDM ignores DMX_NET and > 32 universes;
+   show_versions / show_export reload every screen; hold-chip slide-off
+   swallows the next tap; Ready? never clears after one DMX error.
+2. **Steady DMX with several screens** (measured: 256 lights, 3 screens,
+   frame gaps up to 52-58 ms instead of 25): compute the 3D look once per
+   tick for all screens; cache `fxlib.available` (70% of a frame);
+   build DMX and the 3D look from one resolve; send only changed parts
+   of the 196 KB snapshot; ArtSync / sACN sync; a frame-timing CI check
+   and a status-bar health dot.
+3. Tablets: screen wake lock, installable full-screen app, instant
+   re-sync after a reconnect.
+4. Code health: split engine.py (10.5k lines) and selftest.py (11.4k) by
+   area; consolidate app.css (47 duplicated selectors).
+5. A built-in virtual Art-Net / RDM node and a MIDI test page.
+
+## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
+
+6. A live beat clock (tap, MIDI clock, Ableton Link, Pro DJ Link, audio in)
+   that effects, chases, strobes and buttons lock to.
+7. Sound-reactive control: level / bass / mid / high driving brightness,
+   effect speed or size, and firing buttons; drop detection.
+8. Autopilot for unprogrammed sets: rotate looks by energy, change on
+   phrases (8 / 16 / 32 bars; Pro DJ Link phrase data when present).
+9. Spatial effects across the room from the 3D positions (waves L->R,
+   centre-out, circles; gradients; bars / panels as pixels; later
+   images / video).
+10. Step effects from your own looks (key-frame shapes / phasers) with
+    per-step timing, curves and phase spread; palette-linked effects.
+11. Desk tools: highlight / solo, park; group masters; tracking /
+    cue-only; move-in-black; cue actions; macros; blind edit with 3D
+    preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);
+    a DJ-booth remote page.
+
+## A3. Visualiser and venue editor
+
+Research: Capture (truss library by manufacturer with end snappers and
+fixture snappers along the tubes, rigging points in reports), Vectorworks
+Spotlight (draw a truss by dragging a line to length; plots, legends,
+auto-numbering, paperwork from the drawing), Depence R4 (photoreal real-
+time beams, video mapping onto any surface, pixel-mapped lasers, motion
+blur, VR).
+12. **Draw rooms like a plan, not by dragging a line:** a top-down drafting
+    mode with a grid, typed dimensions ("8 m" while drawing), click-corner
+    room outlines with right angles and closing, measured walls, doors,
+    pillars, balconies, a ceiling height per area; copy / array (4
+    trusses 2 m apart), align and distribute.
+13. **Rigging library:** straight / corner / circle truss pieces, poles,
+    stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
+    snapping; fixtures snap along any tube; hanging from the ceiling with a
+    trim height; rigging points and loads in a report.
+14. **Look:** better haze volumetrics and gobo projections on surfaces;
+    LED screens / video walls that play a clip or mirror a pixel map;
+    shadows from the crowd and stage; lens flares at low angles; a
+    "photo" render; first-person walk; camera presets per venue.
+15. **Paperwork:** a light plot (top view with symbols, numbers,
+    addresses) and a patch sheet as PDF, straight from the drawing.
+16. Fixes still open from the pass: the default camera can sit far from a
+    small room (24 m back from a 3 m room); crowd size doesn't follow the
+    room / dance floor size.
+
+## A4. Programmer, per light type and brand
+
+The pass walked every tab for one light of each type (see A0).  Next:
+17. **Show only what the light can do**, everywhere: e.g. a wheel of whites
+    (ADB ALC4) is labelled "Colour wheel" - call it white presets; a light
+    whose file lists no wheel slots shows "guessed positions" - add
+    **Teach the wheel** (step through it, name each colour, saved to the
+    fixture); gobo wheels with pictures; prism / gobo rotation as
+    direction + speed; macros and auto programs as named buttons; lamp,
+    reset and fan under an "Advanced" fold.
+18. **Mixed selections:** one section per kind ("6 movers: position,
+    gobo; 12 PARs: colour") instead of the union of all controls.
+19. **Brand colour matching:** LED colours differ between brands - a
+    per-fixture colour calibration so "red" matches across the rig.
+20. Lights with an unknown shutter "open" value (Warp M, COB blinder):
+    Test this light learns it and stores it with the fixture.
+21. Wording: "reaches all 1", "Other" in the programmer bar, and the
+    strobe open / close row for dimmer-less lights.
+
+## A5. A buttons screen (MagicQ execute-window style) and AI that programs
+
+22. **A full-screen buttons page** (desktop and tablet): pages of tiles
+    that can be buttons, faders (a group master, a playback), XY pads,
+    speed / BPM tiles, cue-list tiles, and SFX tiles with MagicFX-style
+    safety (arm key, E-stop, hold-to-fire); tile size, colour, icon,
+    label and what it does all editable in place; lock the layout.
+23. **AI that programs, not only commands.** "These lights should only
+    hover around the dance floor and the DJ booth" becomes a program:
+    a new *roam* movement that wanders smoothly inside venue zones (the
+    aim solver per frame, so every light - hung, standing, on a pole -
+    stays on the zone), assigned per group, saved as a look, a button or
+    a cue, with a preview in 3D before it is applied.  Same for "the
+    back truss chases red and white on the beat during the drop", "build
+    me 8 buttons for this rig", "make a 32-bar build-up".
+
+# Part B - done
 
 ## 1. Bug fixes (DONE)
 
