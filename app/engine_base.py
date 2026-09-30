@@ -105,6 +105,7 @@ UNDO_EXCLUDED = frozenset({
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats",
+    "sound_tempo",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target", "virtual_node",
     # `run_command` manages its OWN undo, because a line is one step: a
@@ -627,6 +628,7 @@ ACTIONS = (
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats",
+    "sound_link", "sound_trigger", "sound_tempo",
 )
 
 

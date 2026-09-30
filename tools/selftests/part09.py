@@ -1,6 +1,7 @@
 """Self-test suites, part 9: the virtual node and the MIDI monitor."""
 from __future__ import annotations
 
+import json
 import socket
 import tempfile
 import time
@@ -312,3 +313,153 @@ def test_beat_clock() -> None:
     check("running effects can be locked to the beat", '"fx_beats"' in pj and "beatSelect" in pj, "")
     mj = (ROOT / "app" / "midi.py").read_text(encoding="utf-8")
     check("the desk's MIDI input hands clock bytes to the beat clock", "tempo_midi" in mj and "0xF8" in mj, "")
+
+
+def test_sound_reactive() -> None:
+    """The room plays the lights: the bass (etc.) moves a brightness or the
+    effects' speed, a beat or a drop presses a button, the room's beat can
+    set the tempo - and with nothing listening nothing is dimmed."""
+    print("sound-reactive")
+    import time as _time
+    from app import engine as eng
+    from app import sound
+
+    link = sound.clean_link({"source": "bass", "target": {"type": "master"}, "depth": 60}, "s1")
+    check("a link at 60% depth: full bass keeps it all, silence keeps 40%",
+          abs(sound.link_factor(link, 1.0) - 1.0) < 1e-9 and abs(sound.link_factor(link, 0.0) - 0.4) < 1e-9, "")
+    sp = sound.clean_link({"source": "level", "target": {"type": "fx_speed"}, "depth": 50}, "s2")
+    check("effect speed: 0.5x .. 1.5x at 50%", abs(sound.link_factor(sp, 0) - 0.5) < 1e-9 and abs(sound.link_factor(sp, 1) - 1.5) < 1e-9, "")
+    scales, _ = sound.apply({"links": [link]}, None, None, 0.0, [1, 2], {})
+    check("no reading, no dimming", scales == {}, str(scales))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("add_heads", query="Uplight rgb", qty=1, universe=1, address=20)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ffffff")
+            r = e.act("sound_link", link={"source": "bass", "target": {"type": "master"}, "depth": 100})
+            check("a link is made (and is an undo step)", r.get("ok") and e._undo and e._undo[-1].get("action") == "sound_link", str(r))
+            e.sound_feed({"level": 0.2, "bass": 0.0, "mid": 0.1, "high": 0.1})
+            with e.lock:
+                f = e.build_frames()[1]
+            check("no bass: the rig is dark", f[0] == 0, str(list(f[:6])))
+            dimless = e.patch[-1]
+            a = dimless["address"] - 1
+            check("...a light with no dimmer too", dimless["map"] == ["red", "green", "blue"]
+                  and max(f[a:a + 3]) == 0, str((dimless["map"], list(f[a:a + 3]))))
+            e.sound_feed({"level": 0.9, "bass": 1.0, "mid": 0.5, "high": 0.5})
+            with e.lock:
+                f = e.build_frames()[1]
+            check("full bass: full", f[0] == 255, str(list(f[:6])))
+            e._sound_at = _time.monotonic() - 5
+            with e.lock:
+                f = e.build_frames()[1]
+            check("the microphone stops: the rig is back to full, never left dark", f[0] == 255, str(list(f[:6])))
+            r = e.act("sound_link", link={"source": "bass", "target": {"type": "group", "group": 99}})
+            check("a link to a group that isn't there is refused", not r.get("ok"), str(r))
+            e.act("sound_link", link={"source": "level", "target": {"type": "fx_speed"}, "depth": 100})
+            e.act("run_fx", name="rainbow")
+            e.sound_feed({"level": 0.0})
+            with e.lock:
+                e._override_vals()
+            check("quiet room: effects crawl", abs(e._sound_speed - 0.05) < 1e-6, str(e._sound_speed))
+            # triggers
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "Hit"})
+            bid = e.quick[0]["id"]
+            r = e.act("sound_trigger", trigger={"on": "beat", "button": bid, "every": 2})
+            check("a trigger on every 2nd beat", r.get("ok"), str(r))
+            presses = []
+            real = e.act
+
+            def spy(action, **kw):
+                if action == "quick_press" and kw.get("down"):
+                    presses.append(kw["id"])
+                return real(action, **kw)
+            e.act = spy
+            for _ in range(4):
+                e.sound_feed({"bass": 1.0, "beat": True})
+            e.act = real
+            check("...presses the button on beats 1 and 3", presses == [bid, bid], str(presses))
+            r = e.act("sound_trigger", trigger={"on": "drop", "button": "nope"})
+            check("a trigger for a button that isn't there is refused", not r.get("ok"), "")
+            # the room's beat as the tempo
+            e.act("sound_tempo", state=True)
+            e.sound_feed({"bass": 1.0, "beat": True, "bpm": 126, "confidence": 0.8})
+            check("the room sets the tempo", e.tempo.bpm == 126 and e.tempo.source == "audio", str(e.tempo_public()))
+            e.act("save_show", name="loud")
+            e.act("sound_link", id="s1", remove=True)
+            e.act("load_show", name="loud")
+            check("links, triggers and the tempo choice are saved with the show",
+                  len(e.sound_cfg["links"]) == 2 and len(e.sound_cfg["triggers"]) == 1 and e.sound_cfg["tempo"], str(e.sound_cfg))
+            check("it rides the live feed", "sound" in e.lite() and e.lite()["sound"]["links"], "")
+        finally:
+            e.shutdown()
+    web = ROOT / "web" / "app"
+    si = (web / "soundin.js").read_text(encoding="utf-8") + (web / "soundanalysis.js").read_text(encoding="utf-8")
+    sd = (web / "sounddialog.js").read_text(encoding="utf-8")
+    tj = (web / "tempo.js").read_text(encoding="utf-8")
+    mj = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the browser listens: bands with their own gain, beats, the tempo, drops",
+          "getUserMedia" in si and "estimateBpm" in si and "breakdown" in si and '"/api/console/sound"' in si, "")
+    check("the Sound dialog: meters, links, triggers; from the tempo menu",
+          '"sound_link"' in sd and '"sound_trigger"' in sd and "openSoundDialog" in tj, "")
+    check("the feed is a route of its own, not an action", 'route == "/api/console/sound"' in mj, "")
+
+
+_SOUND_SIM = r"""
+import { createAnalysis } from "MODULE";
+const out = {};
+for (const bpm of [128, 97]) {
+  const sr = 44100, bins = 1024, a = createAnalysis(sr, bins);
+  const beat = 60000 / bpm, bin = (hz) => Math.round(hz / (sr / 2) * bins);
+  let beats = 0; const drops = [];
+  for (let t = 0; t < 32000; t += 40) {
+    const inBreak = t >= 12000 && t < 20000, since = t % beat, kick = !inBreak && since < 160;
+    const hat = Math.abs(since - beat / 2) < 40;
+    const f = new Float32Array(bins).fill(-90);
+    for (let i = bin(30); i <= bin(150); i++) f[i] = kick ? -12 - since / 20 : (inBreak ? -85 : -60);
+    for (let i = bin(150); i <= bin(2000); i++) f[i] = -40 + (i % 4);
+    for (let i = bin(2000); i <= bin(12000); i++) f[i] = hat ? -30 : -70;
+    const w = new Float32Array(2048).map((_, i) => Math.sin(i / 7) * (kick ? 0.8 : 0.1));
+    const ev = a.step(f, w, t);
+    if (ev.beat) beats++;
+    if (ev.drop) drops.push(t);
+  }
+  out[bpm] = { beats, bpm: a.reading.bpm, drops };
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def test_sound_analysis() -> None:
+    """The browser's listening, run under node on a made-up track: kicks
+    at 128 and 97 BPM, an 8 s breakdown, then the drop."""
+    print("sound analysis (node)")
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if node is None:
+        print("  skip  node not found")
+        check("node is needed for the sound analysis check", True, "")
+        return
+    mod = (ROOT / "web" / "app" / "soundanalysis.js").as_uri()
+    proc = _sp.run([node, "--input-type=module", "-e", _SOUND_SIM.replace("MODULE", mod)], capture_output=True, text=True, timeout=60)
+    try:
+        got = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        got = {}
+    check("the analysis runs under node", bool(got), (proc.stderr or proc.stdout)[:200])
+    if not got:
+        return
+    for bpm, want_beats in (("128", 51), ("97", 39)):
+        g = got[bpm]
+        check(f"{bpm} BPM: every kick is a beat, the tempo is right", abs(g["beats"] - want_beats) <= 2
+              and g["bpm"] and abs(g["bpm"] - float(bpm)) < 1.0, str(g))
+        check(f"{bpm} BPM: one drop, when the bass comes back after the breakdown",
+              len(g["drops"]) == 1 and 20000 <= g["drops"][0] <= 20600, str(g["drops"]))

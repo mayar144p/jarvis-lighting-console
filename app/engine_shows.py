@@ -15,6 +15,7 @@ from pathlib import Path
 
 from app import fixture_kind
 from app import timeline as tl_mod
+from app import sound as sound_mod
 from app import venue as venue_mod
 from app.engine_base import (
     READY_ERROR_WINDOW_S,
@@ -67,6 +68,7 @@ class ShowMixin:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "sound": self._sound_cfg(),
             "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
@@ -221,6 +223,7 @@ class ShowMixin:
             self.master = _clamp(meta.get("master", 100), 0, 100)
             self.show_file = meta.get("show_file") or self.show_file
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
+            self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             if isinstance(payload.get("output_target"), dict):
                 self.dmx_target = clean_dmx_target(payload["output_target"])
             for b in payload.get("quick") or []:
@@ -258,6 +261,7 @@ class ShowMixin:
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
                 "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
@@ -595,6 +599,7 @@ class ShowMixin:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
+            self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.moves = []
             for m in payload.get("moves") or []:
                 try:

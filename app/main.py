@@ -161,7 +161,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- helpers ---------------------------------------------------------
     def log_message(self, fmt: str, *args) -> None:  # quieter than default
-        if "/api/" in (args[0] if args else ""):
+        line = str(args[0]) if args else ""
+        # the live feeds (sound readings, lite polls) would drown the log
+        if "/api/" in line and "/api/console/sound" not in line and "lite=1" not in line:
             print(f"[http] {self.address_string()} {fmt % args}")
 
     def _json(self, obj, status: int = 200) -> None:
@@ -464,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm",
-                         "/api/console/look", "/api/console/room"):
+                         "/api/console/look", "/api/console/room", "/api/console/sound"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             return self._json({"error": str(exc)}, 500)
@@ -677,6 +679,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.build(eng, body["design"], playback))
             return self._console_result(eng, autoshow.design(
                 eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+        if route == "/api/console/sound":
+            # The browser's listening, ~25 a second: not an action (no undo,
+            # no reload of every screen), the engine keeps the latest.
+            return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
         if route == "/api/console/room":
             # A room from words.  The AI (when there is a key) fills the
             # same spec the offline reader does - off the engine lock -

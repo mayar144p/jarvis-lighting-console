@@ -1192,3 +1192,20 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .tempo.live { border-color: rgba(56, 189, 248, .5); }
 @media (max-width: 820px) { .tempo-tap small, .tempo-tap em { display: none; } }
 .fx-beats { width: auto; min-width: 0; height: 26px; padding: 0 6px; font-size: 12px; }
+.tempo.hearing .tempo-tap small::after { content: " ♪"; color: var(--accent); }
+
+/* ------------------------------------------------------------- sound */
+.snd { display: flex; flex-direction: column; gap: 10px; }
+.snd-meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: center; }
+.snd-meter { display: grid; grid-template-columns: 70px 1fr; gap: 6px; align-items: center; font-size: 12px; color: var(--text-2); }
+.snd-meter b { height: 10px; border-radius: 5px; background: var(--bg-2); overflow: hidden; }
+.snd-meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #38bdf8, #a78bfa); transition: width .05s; }
+.snd-bpm { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.snd-beat { width: 14px; height: 14px; border-radius: 50%; background: #243044; }
+.snd-beat.on { background: #f472b6; box-shadow: 0 0 10px #f472b6; }
+.snd-list { display: flex; flex-direction: column; gap: 6px; }
+.snd-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.snd-row .select { width: auto; min-width: 0; height: 28px; font-size: 12px; }
+.snd-row input[type=number] { width: 56px; }
+.snd-k { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--muted); }
+.snd-k input[type=range] { width: 90px; }

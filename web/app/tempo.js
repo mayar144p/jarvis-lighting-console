@@ -22,6 +22,8 @@ function sync() {
   const src = SRC[t.source] || "";
   $("#tempo-src").textContent = src && (t.live || t.source === "tap") ? src : "";
   $("#tempo").classList.toggle("live", !!t.live);
+  const snd = (state.lite && state.lite.sound) || (state.snap && state.snap.sound) || {};
+  $("#tempo").classList.toggle("hearing", !!snd.listening);
   $("#tempo").title = `${t.bpm.toFixed(1)} BPM${src ? " from " + (t.source === "prodj" && t.deck ? t.deck.name || "the CDJs" : src) : ""}`
     + ` · tap on the beat (T), Shift+T for the 1 · effects locked to the beat follow it`
     + (t.follow ? " · the Speed master follows it" : "");
@@ -56,12 +58,16 @@ function openMenu(anchor) {
       const v = await promptBox("Tempo", "BPM", (t.bpm || 120).toFixed(1), { ok: "Set" });
       if (v) run("tempo_set", { bpm: +v }, { toast: true });
     } },
+    { label: "Double  ×2", hint: "it heard half-time", run: () => run("tempo_set", { bpm: (t.bpm || 120) * 2 }, { toast: true }) },
+    { label: "Half  ÷2", run: () => run("tempo_set", { bpm: (t.bpm || 120) / 2 }, { toast: true }) },
     { label: "Faster  +0.5", run: () => run("tempo_nudge", { bpm: 0.5 }) },
     { label: "Slower  −0.5", run: () => run("tempo_nudge", { bpm: -0.5 }) },
     "-",
     { label: (t.follow ? "✓ " : "") + "Speed master follows the tempo", hint: "120 BPM = 1×", run: () => run("tempo_set", { follow: !t.follow }, { toast: true }) },
     { label: (t.prodj ? "✓ " : "") + "Listen to the CDJs (Pro DJ Link)", hint: "tempo + the bar from the decks", run: () => run("tempo_prodj", { state: !t.prodj }, { toast: true }) },
     { label: "MIDI clock", hint: "from the desk's MIDI, or Settings → MIDI on this device", disabled: true },
+    "-",
+    { label: "Sound: listen to the room…", hint: "the music plays the lights", run: () => import("./sounddialog.js").then((m) => m.openSoundDialog()) },
   ]);
 }
 

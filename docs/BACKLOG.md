@@ -87,8 +87,16 @@ Fixed:
    in phase with the bar, kept in cues and buttons).
    Left: Ableton Link, audio in (with item 7), buttons and strobes that
    fire on the next beat.
-7. Sound-reactive control: level / bass / mid / high driving brightness,
-   effect speed or size, and firing buttons; drop detection.
+7. **(DONE) Sound-reactive control** (tempo menu -> Sound): a screen
+   listens (microphone / line in; https or the desk computer itself) and
+   sends loudness, bass, mids and highs (each with its own automatic
+   gain), beats, a tempo estimate and drops (the bass back hard after a
+   breakdown) ~25 times a second.  Links: a sound (or the beat as a
+   pulse) moves everything's, a group's or some lights' brightness, or
+   the effects' speed, with depth and sensitivity; triggers: each beat /
+   bar / drop (every Nth) presses a button; the room's beat can be the
+   tempo.  With nothing listening nothing is dimmed.  Saved with the show.
+   Left: effect size from the sound; a line-in picker.
 8. Autopilot for unprogrammed sets: rotate looks by energy, change on
    phrases (8 / 16 / 32 bars; Pro DJ Link phrase data when present).
 9. Spatial effects across the room from the 3D positions (waves L->R,

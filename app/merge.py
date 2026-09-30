@@ -74,7 +74,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     of that and still under blackout and the master: {"level": HTP floor,
     "cap": HTP ceiling (a dim button),
     "kill": force intensity to 0, "set": {role: value} forced LTP values,
-    "strobe": Hz}.  Strobe gates the light in time when `now` is given
+    "strobe": Hz, "scale": percent of it that is let through (sound
+    links, group masters)}.  Strobe gates the light in time when `now` is given
     (the wire); without `now` (the visualiser feed) it is left to the
     caller to show.  `gate_closed` is the value that shuts this head's
     shutter/strobe channel, or None when the profile says 0 is open and
@@ -107,6 +108,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                 total = max(total, int(over["level"]))
             if over.get("cap") is not None:      # a "dim to 30%" button
                 total = min(total, int(over["cap"]))
+            if over.get("scale") is not None:    # sound / group master: a share of it
+                total = int(total * float(over["scale"]) / 100)
             if strobe_off:
                 total = 0
         if blackout:
@@ -233,8 +236,9 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # its shutter/strobe gate closes (0 is closed on every profile we
     # know), and its colour channels act as a virtual dimmer.
     killed = bool(over and (over.get("kill") or strobe_off))
-    if dimmerless and (blackout or master < 100 or killed):
-        scale = 0 if (blackout or killed) else master
+    share = float(over["scale"]) if over and over.get("scale") is not None else 100.0
+    if dimmerless and (blackout or master < 100 or killed or share < 100):
+        scale = 0 if (blackout or killed) else int(master * share / 100)
         if scale == 0 and gate_closed is not None:
             for role in ("shutter", "strobe"):
                 if role in head["map"]:

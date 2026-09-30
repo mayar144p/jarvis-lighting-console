@@ -144,6 +144,8 @@ from tools.selftests.part09 import (  # noqa: E402
     test_beat_clock,
     test_midi_monitor,
     test_room_making,
+    test_sound_analysis,
+    test_sound_reactive,
     test_virtual_node,
 )
 
@@ -256,6 +258,8 @@ def _standalone_suites():
     ("MIDI monitor: every message and what it did", test_midi_monitor),
     ("making a room: shapes, words, starter layouts, drafting", test_room_making),
     ("beat clock: taps, MIDI clock, CDJs; effects locked to the beat", test_beat_clock),
+    ("sound-reactive: links, triggers, the room's tempo, never dark without sound", test_sound_reactive),
+    ("sound analysis: beats, tempo and drops from a made-up track", test_sound_analysis),
     )
 
 

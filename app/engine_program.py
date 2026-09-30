@@ -485,7 +485,7 @@ class ProgrammerMixin:
             # the effect's own clock, run at the Speed master's rate: changing
             # the master changes the SPEED from here on, never jumps the shape
             last = row.get("_last", row["t0"])
-            master = 1.0 if row.get("free") else float(self.speed_master)
+            master = 1.0 if row.get("free") else float(self.speed_master) * float(self.__dict__.get("_sound_speed", 1.0))
             step = max(0.0, now - last) * master * float(row.get("rate", 1.0))
             row["_last"] = max(last, now)
             row["_v"] = row.get("_v", 0.0) + step

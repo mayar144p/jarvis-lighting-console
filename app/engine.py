@@ -14,6 +14,7 @@ Merge precedence, highest first:
 from __future__ import annotations
 
 import collections
+import copy
 import json
 import threading
 import time
@@ -61,11 +62,12 @@ from app.engine_quick import QuickMixin
 from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
+from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -242,6 +244,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "sound_cfg": copy.deepcopy(self._sound_cfg()),
             "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
@@ -282,6 +285,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
+        if "sound_cfg" in state:
+            self.sound_cfg = copy.deepcopy(state["sound_cfg"])
         self.moves = [dict(m) for m in (state.get("moves") or [])]
         self.timeline = tl_mod.normalise(state.get("timeline") or {})
         self.quick_active = {k: v for k, v in self.quick_active.items()
@@ -1168,6 +1173,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "master": self.master,
                 "speed_master": self.speed_master,
                 "tempo": self.tempo_public(),
+                "sound": self.sound_public(),
                 "move_spots": self._move_spots(),
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
                 "floor_movers": len(self._floor_limits()),
@@ -1233,6 +1239,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "master": self.master,
                 "speed_master": self.speed_master,
                 "tempo": self.tempo_public(),
+                "sound": self.sound_public(),
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out

@@ -768,6 +768,7 @@ class QuickMixin:
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():
                 out.setdefault(n, {}).setdefault("set", {}).update(sets)
+        self._sound_overrides(out)
         return out
 
     def _quick_override_vals(self) -> dict:
