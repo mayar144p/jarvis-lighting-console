@@ -67,7 +67,13 @@ Fixed:
    tools/selftests/ (common.py and eight parts).  app.css: the 22
    selectors defined twice are merged; the computed style of every element
    at four widths, gig mode on and off, every programmer tab, is unchanged.
-5. A built-in virtual Art-Net / RDM node and a MIDI test page.
+5. **(DONE)** A built-in virtual Art-Net / RDM node (Settings -> Output
+   -> Virtual node: the output goes to it on loopback; it shows every
+   universe byte by byte with whose channel each is, the frame rate and
+   ArtSyncs, and answers ArtPoll and RDM for every patched light, which
+   can be readdressed without touching the patch) and a MIDI monitor
+   (Settings -> MIDI: every message from the desk computer's controller
+   with what it did, and every message a controller on the tablet sends).
 
 ## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
 

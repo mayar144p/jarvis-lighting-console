@@ -20,7 +20,19 @@ export function onNote(fn) {
   return () => listeners.delete(fn);
 }
 
+const monitors = new Set();
+
+/** Every message (notes, CC, anything): fn({ data, input, at }). For the MIDI monitor. */
+export function onAnyMidi(fn) {
+  monitors.add(fn);
+  return () => monitors.delete(fn);
+}
+
 function message(e) {
+  if (monitors.size) {
+    const m = { data: [...(e.data || [])], input: (e.target && e.target.name) || "", at: Date.now() };
+    for (const fn of [...monitors]) { try { fn(m); } catch (err) { /* ignore */ } }
+  }
   const [status, number, velocity] = e.data || [];
   const kind = status & 0xf0;
   if (kind !== 0x90 && kind !== 0x80) return;

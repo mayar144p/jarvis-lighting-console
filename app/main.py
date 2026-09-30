@@ -538,17 +538,19 @@ class Handler(BaseHTTPRequestHandler):
             net = eng.network_info()
             host = net["target"]["host"] if net["target"]["mode"] != "auto" and net["target"]["host"] \
                 else "255.255.255.255"
+            port = int((net.get("resolved") or {}).get("port") or config.DMX_PORT)
+            eng.vnode_status()                   # the virtual node's lights follow the patch
             if isinstance(body.get("set_address"), dict):
                 sa = body["set_address"]
                 try:
                     res = rdm.set_address(str(sa.get("uid") or ""), int(sa.get("universe") or 1),
-                                          int(sa.get("address") or 0), host=host, port=config.DMX_PORT,
+                                          int(sa.get("address") or 0), host=host, port=port,
                                           net=config.DMX_NET)
                 except ValueError as exc:
                     res = {"ok": False, "error": str(exc)}
                 return self._console_result(eng, res)
             universes = body.get("universes") or sorted({h["universe"] for h in eng.patch}) or [1]
-            found = rdm.discover([int(u) for u in universes], host=host, port=config.DMX_PORT,
+            found = rdm.discover([int(u) for u in universes], host=host, port=port,
                                  net=config.DMX_NET, timeout=float(body.get("timeout") or 2.0))
             result = eng.act("rdm_compare", devices=found["devices"], universes=found.get("universes"))
             result["rdm_error"] = found.get("error")
@@ -773,6 +775,14 @@ class Handler(BaseHTTPRequestHandler):
             status["dmx_input"] = dmxin.snapshot()   # observable input state
             status["midi"] = midi.status()           # devices / open / errors
             return self._json(status)
+        if route == "/api/console/vnode":
+            # the virtual node: what it has been sent (one universe's bytes
+            # with ?universe=N), for the node monitor
+            eng = engine_mod.ENGINE
+            if eng is None:
+                return self._json({"running": False})
+            u = query.get("universe")
+            return self._json(eng.vnode_status(int(u) if u else None))
         if route == "/api/console/input":
             # DMX input observability: frames, per-universe age + staleness.
             return self._json(dmxin.snapshot())

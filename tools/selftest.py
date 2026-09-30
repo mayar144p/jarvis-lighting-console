@@ -140,6 +140,7 @@ from tools.selftests.part08 import (  # noqa: E402
     test_share_relogin,
     test_show_building,
 )
+from tools.selftests.part09 import test_midi_monitor, test_virtual_node  # noqa: E402
 
 
 def _suites():
@@ -246,6 +247,8 @@ def _standalone_suites():
     ("review of PR #28: undo / load / unpatch with cue effects, queries, Ready?", test_review_fixes),
     ("steady DMX: ArtSync / sACN sync, shared looks, effect lookups cached", test_steady_dmx),
     ("tablets: screen stays awake, installs as an app, reconnects at once", test_tablets),
+    ("virtual node: the whole output and RDM with no hardware", test_virtual_node),
+    ("MIDI monitor: every message and what it did", test_midi_monitor),
     )
 
 

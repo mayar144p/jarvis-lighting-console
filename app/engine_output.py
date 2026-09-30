@@ -20,6 +20,7 @@ from app.engine_base import (
 )
 from app.engine_support import SLOTS
 from app.sacn import SacnSender
+from app.virtualnode import VirtualNode
 
 
 class OutputMixin:
@@ -133,9 +134,58 @@ class OutputMixin:
         self._thread = None
         self.output["running"] = False
 
+    # -- the virtual node: the whole output path with no hardware ----------
+    def _a_virtual_node(self, state=None, **_):
+        """A virtual Art-Net node inside the desk (loopback), with an RDM
+        light for each patched light.  On: the output goes to it; off:
+        back to where it went before."""
+        node = self.__dict__.get("vnode")
+        want = (not (node and node.running)) if state is None else \
+            str(state).lower() in ("1", "true", "on", "yes", "start")
+        if want:
+            prev = self.__dict__.get("_vnode_prev")
+            self._vnode_prev = prev if prev is not None else dict(self.dmx_target)
+            self._a_set_dmx_target(mode="node", host="127.0.0.1", transport="artnet")
+            _t, host, port = self._dmx_resolved()
+            if node is None or node.port != port:
+                if node is not None:
+                    node.stop()
+                node = self.vnode = VirtualNode(host, port, config.DMX_NET)
+            self._vnode_sync(force=True)
+            if not node.start():
+                self.dmx_target = clean_dmx_target(self._vnode_prev)
+                self._vnode_prev = None
+                raise ValueError(node.error)
+            return {"virtual_node": True, "host": f"{host}:{port}",
+                    "summary": f"virtual node on at {host}:{port}: the output goes to it"}
+        if node is not None:
+            node.stop()
+        prev = self.__dict__.get("_vnode_prev")
+        if prev is not None:
+            self.dmx_target = clean_dmx_target(prev)
+            self._vnode_prev = None
+        return {"virtual_node": False, "summary": "virtual node off"}
+
+    def _vnode_sync(self, force: bool = False) -> None:
+        node = self.__dict__.get("vnode")
+        if node is not None and (force or self.__dict__.get("_vnode_rev") != self.patch_rev):
+            node.set_lights([h for h in self.patch if self._head_class(h) == "light"] or self.patch)
+            self._vnode_rev = self.patch_rev
+
+    def vnode_status(self, universe: int | None = None) -> dict:
+        """What the virtual node has been sent (and one universe's bytes)."""
+        with self.lock:
+            node = self.__dict__.get("vnode")
+            if node is None:
+                return {"running": False}
+            self._vnode_sync()
+        return node.status(universe)
+
     def shutdown(self) -> None:
         """Process exit: stop the threads, optionally send blackout."""
         self.live = False
+        if self.__dict__.get("vnode") is not None:
+            self.vnode.stop()
         try:
             self._autosave(force=True)     # never lose the last edit
         except Exception:

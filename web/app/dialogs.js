@@ -3,6 +3,7 @@
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
+import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { wakeSupported, wakeOn, wakeHeld, wakeError, setWake, canInstall, installed, install } from "./tablet.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
@@ -749,7 +750,10 @@ function outputSection(con) {
       h("button.btn", { onclick: (e) => find(e.currentTarget) }, "Find nodes"),
       h("button.btn", { onclick: refresh }, "Re-check network")),
     status, nodes, adapters,
-    h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."));
+    h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."),
+    h("div.row-btns",
+      h("button.btn", { onclick: () => openNodeMonitor() }, virtualNodeOn() ? "Virtual node (on)…" : "Virtual node…"),
+      h("span.muted.small", "test the whole output and RDM with no hardware")));
   ip.addEventListener("keydown", (e) => { if (e.key === "Enter") apply({ mode: mode.value === "auto" ? "node" : mode.value, host: ip.value.trim(), transport: proto.value }); });
   status.append(h("div.muted.small", "Checking the network…"));
   refresh();
@@ -821,6 +825,8 @@ export async function openSettings() {
     h("h3", "MIDI"),
     h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
     webMidiRow(),
+    h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
+      h("span.muted.small", "see what a controller sends and what it did")),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });

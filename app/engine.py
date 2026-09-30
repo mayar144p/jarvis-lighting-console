@@ -1053,6 +1053,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
     def _output_public(self) -> dict:
         pub = dict(self.output)
         pub["timing"] = self._output_timing()
+        node = self.__dict__.get("vnode")
+        pub["virtual_node"] = bool(node and node.running)
         err_at = pub.pop("last_error_at", None)
         pub["recent_error"] = err_at is not None and time.monotonic() - err_at < READY_ERROR_WINDOW_S
         pub["target"] = dict(self.dmx_target)

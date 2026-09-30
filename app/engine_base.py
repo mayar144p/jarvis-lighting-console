@@ -105,7 +105,7 @@ UNDO_EXCLUDED = frozenset({
     # the Speed master is performed live, like the grand master
     "speed_master", "floor_safe",
     # where the DMX goes is desk setup, not an edit to the show
-    "set_dmx_target",
+    "set_dmx_target", "virtual_node",
     # `run_command` manages its OWN undo, because a line is one step: a
     # `cue go` line must cost no Ctrl+Z at all, while `1-4 pan 90` must
     # cost exactly one.  Letting `act` push unconditionally would charge
@@ -606,7 +606,7 @@ ACTIONS = (
     "set_limits", "clear_limits", "set_orient", "get_limits",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
-    "set_dmx_target", "set_place", "set_position", "set_venue", "status", "stop_fx",
+    "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",
     "venue_template", "venue_room", "venue_stage", "venue_add",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",

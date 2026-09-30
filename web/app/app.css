@@ -1143,3 +1143,14 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 /* three coordinates side by side: no spinner arrows eating the digits */
 .venue-inspector input.num { -moz-appearance: textfield; appearance: textfield; padding: 0 4px; font-variant-numeric: tabular-nums; }
 .venue-inspector input.num::-webkit-outer-spin-button, .venue-inspector input.num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ------------------------------------------------ node / MIDI monitors */
+.nm-unis { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.nm-grid { width: 100%; max-width: 640px; aspect-ratio: 2 / 1; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.nm-hover { min-height: 18px; margin-top: 4px; font-family: var(--mono); }
+.nm-lights { display: grid; gap: 2px; max-height: 180px; overflow: auto; font-size: 12px; }
+.nm-light { display: grid; grid-template-columns: 130px 1fr 70px; gap: 8px; }
+.mm-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .mm-cols { grid-template-columns: 1fr; } }
+.mm-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; font-size: 12px; }
+.mm-row { display: grid; grid-template-columns: 76px 1fr auto; gap: 8px; align-items: baseline; }
