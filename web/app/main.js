@@ -1,6 +1,6 @@
 // Jarvis: boot the desk.
 import { get, openStream } from "./api.js";
-import { state, emit, setSnapshot, setLite, setLooks } from "./store.js";
+import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./store.js";
 import { $, $$ } from "./ui.js";
 import { initTopbar } from "./topbar.js";
 import { initFixtures } from "./fixtures.js";
@@ -9,6 +9,9 @@ import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
 import { initWebMidi } from "./webmidi.js";
+import { initTablet } from "./tablet.js";
+import { initTempo } from "./tempo.js";
+import { initStepFx } from "./stepfx.js";
 import { initFxPanel } from "./fxpanel.js";
 import { initMovePanel } from "./movepanel.js";
 import { initTimeline } from "./timeline.js";
@@ -46,6 +49,9 @@ async function boot() {
   initPlaybacks();
   initQuickButtons();
   initWebMidi();
+  initTablet();
+  initTempo();
+  initStepFx();
   initFxPanel();
   initMovePanel();
   initCmdbar();
@@ -54,6 +60,7 @@ async function boot() {
   wireMobile();
   openStream({
     snapshot: setSnapshot,
+    snapdiff: applySnapDiff,
     lite: setLite,
     look: setLooks,
   }, (connected, error) => {

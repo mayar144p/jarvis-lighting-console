@@ -360,6 +360,10 @@ def mount_position(r: dict, t: float, orient: str | None = None) -> dict:
     t = max(0.0, min(1.0, float(t)))
     a, b = r["a"], r["b"]
     p = [a[i] + (b[i] - a[i]) * t for i in range(3)]
+    if not orient and is_vertical(r):
+        # clamped to a tower or pole: hung (yoke up) once it is up high -
+        # standing upright at 4 m it couldn't tilt down to the floor
+        orient = "hang" if p[1] >= 2.0 else "stand"
     orient = orient or default_orient(r)
     half = r["size"] / 2
     if is_vertical(r):
@@ -474,9 +478,84 @@ def fit_inside(v: dict, margin: float = 0.2) -> int:
 
     moved = 0
     for r in v.get("rigging") or []:
+        moved += _fit_rig(r, inside, pull, (lo_x, hi_x, lo_z, hi_z), top)
+    for o in v.get("objects") or []:
+        if inside(o["x"], o["z"]):
+            continue
+        o["x"], o["z"] = pull(o["x"], o["z"])
+        moved += 1
+    for zn in v.get("zones") or []:
+        # a dance floor / stage zone left outside the new walls comes in
+        # too (the crowd stands on it), squeezed to fit when it's bigger
+        pts = [list(q) for q in zn.get("points") or []]
+        if not pts or all(inside(q[0], q[1]) for q in pts):
+            continue
+        zn["points"] = [list(pull(q[0], q[1])) for q in pts]
+        moved += 1
+    return moved
+
+
+def scale_zones(old: dict, new: dict) -> int:
+    """When the room is resized, its zones (dance floor, stage, bar...)
+    scale with it, keeping their place in the room - clamping squashed a
+    dance floor outside a smaller room into a line."""
+    ow, od, _ = dims(old)
+    nw, nd, _ = dims(new)
+    if not (ow and od and nw and nd) or (ow, od) == (nw, nd):
+        return 0
+    ob, nb = bounds(old), bounds(new)
+    sx = (nb["x1"] - nb["x0"]) / ((ob["x1"] - ob["x0"]) or 1)
+    sz = (nb["z1"] - nb["z0"]) / ((ob["z1"] - ob["z0"]) or 1)
+    n = 0
+    for zn in new.get("zones") or []:
+        pts = zn.get("points") or []
+        if not pts:
+            continue
+        zn["points"] = [[round(nb["x0"] + (q[0] - ob["x0"]) * sx, 3), round(nb["z0"] + (q[1] - ob["z0"]) * sz, 3)]
+                        for q in pts]
+        n += 1
+    return n
+
+
+def _room_fns(v: dict, margin: float = 0.2):
+    """(inside, pull, box, top) for the room, or None when it has no size."""
+    w, d, _h = dims(v)
+    if not w or not d:
+        return None
+    b = bounds(v)
+    top = b["h"] - 0.1
+    outline = [(float(p[0]), float(p[1])) for p in ((v.get("room") or {}).get("outline") or [])
+               if isinstance(p, (list, tuple)) and len(p) >= 2]
+    lo_x, hi_x, lo_z, hi_z = b["x0"] + margin, b["x1"] - margin, b["z0"] + margin, b["z1"] - margin
+
+    def inside(x, z):
+        if not (lo_x <= x <= hi_x and lo_z <= z <= hi_z):
+            return False
+        return point_in_polygon(x, z, outline) if len(outline) >= 3 else True
+
+    def pull(x, z):
+        x, z = min(hi_x, max(lo_x, x)), min(hi_z, max(lo_z, z))
+        if len(outline) >= 3 and not point_in_polygon(x, z, outline):
+            x, z = _nearest_inside(x, z, outline, margin)
+        return round(x, 3), round(z, 3)
+    return inside, pull, (lo_x, hi_x, lo_z, hi_z), top
+
+
+def keep_rig_inside(v: dict, r: dict) -> bool:
+    """Bring one rig inside the room (and under its ceiling); True if moved."""
+    fns = _room_fns(v)
+    if not fns:
+        return False
+    inside, pull, box, top = fns
+    return bool(_fit_rig(r, inside, pull, box, top))
+
+
+def _fit_rig(r: dict, inside, pull, box, top) -> int:
+    lo_x, hi_x, lo_z, hi_z = box
+    if True:
         a, bb = list(r["a"]), list(r["b"])
         if inside(a[0], a[2]) and inside(bb[0], bb[2]) and max(a[1], bb[1]) <= top:
-            continue
+            return 0
         # slide the whole piece in first, so it keeps its length
         sx = (lo_x - min(a[0], bb[0]) if min(a[0], bb[0]) < lo_x else 0) or \
              (hi_x - max(a[0], bb[0]) if max(a[0], bb[0]) > hi_x else 0)
@@ -487,13 +566,39 @@ def fit_inside(v: dict, margin: float = 0.2) -> int:
             p[0], p[2] = pull(p[0], p[2])              # still out (too long, or an L-room corner)
             p[1] = round(min(p[1], top), 3)
         r["a"], r["b"] = a, bb
-        moved += 1
-    for o in v.get("objects") or []:
-        if inside(o["x"], o["z"]):
-            continue
-        o["x"], o["z"] = pull(o["x"], o["z"])
-        moved += 1
-    return moved
+        return 1
+
+
+def rig_transform(v: dict, r: dict, turn: float | None = None, length: float | None = None,
+                  orient: str | None = None, ceiling: bool = False) -> dict:
+    """A rig turned about its middle (degrees, seen from above), resized,
+    stood up as a pole / laid flat, or hung just under the ceiling.
+    Returns the new {a, b}."""
+    a, b = list(r["a"]), list(r["b"])
+    mid = [(a[i] + b[i]) / 2 for i in range(3)]
+    half = [(b[i] - a[i]) / 2 for i in range(3)]
+    ln = math.sqrt(sum(c * c for c in half)) * 2 or 1.0
+    if orient == "vertical":
+        half = [0.0, ln / 2, 0.0]               # a pole: stands on the floor
+        mid[1] = ln / 2
+    elif orient == "horizontal":
+        flat = math.hypot(half[0], half[2])
+        half = [half[0] / flat * ln / 2, 0.0, half[2] / flat * ln / 2] if flat > 1e-6 else [ln / 2, 0.0, 0.0]
+    if turn:
+        c, sn = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+        half = [half[0] * c - half[2] * sn, half[1], half[0] * sn + half[2] * c]
+    if length:
+        k = float(length) / ln
+        half = [x * k for x in half]
+        if orient == "vertical" or abs(half[1]) > max(abs(half[0]), abs(half[2])):
+            mid[1] = max(mid[1], abs(half[1]))   # a pole keeps its foot on the floor
+    if ceiling:
+        h = dims(v)[2] or 6.0
+        mid[1] = h - float(r.get("size") or 0.3) / 2 - 0.05 - abs(half[1])
+    a = [round(mid[i] - half[i], 3) for i in range(3)]
+    b = [round(mid[i] + half[i], 3) for i in range(3)]
+    a[1], b[1] = max(0.0, a[1]), max(0.0, b[1])
+    return {"a": a, "b": b}
 
 
 def point_in_polygon(x: float, z: float, pts: list) -> bool:
@@ -763,6 +868,7 @@ def add_item(v: dict, raw: dict) -> tuple[dict, dict]:
     raw.pop("id", None)
     if kind in RIG_KINDS:
         item = _clean_rig(raw, v)
+        keep_rig_inside(v, item)                # never outside the walls or through the ceiling
         v["rigging"].append(item)
     elif kind in OBJECT_KINDS:
         item = _clean_object(raw, v)
@@ -799,6 +905,8 @@ def update_item(v: dict, ident: str, changes: dict) -> tuple[dict, dict]:
     if not clean:
         raise ValueError("that change would leave the item invalid")
     clean["id"] = ident
+    if key == "rigging":
+        keep_rig_inside(v, clean)
     v[key][i] = clean
     return v, clean
 

@@ -439,6 +439,8 @@ check the table, then save it to your library.
 | `DMX_PORT` / `DMX_HZ` / `DMX_NET` | 6454 / 40 / 0 | port, frame rate (10–120), Art-Net Net (0–127) |
 | `DMX_BLACKOUT_ON_EXIT` | false | blackout on shutdown |
 | `SACN_PRIORITY` / `SACN_SOURCE_NAME` | 100 / APP_NAME | E1.31 source fields |
+| `DMX_SYNC` | true | Art-Net: an ArtSync after each frame so several universes change together (never to a broadcast address) |
+| `SACN_SYNC_UNIVERSE` | 0 | sACN: E1.31 synchronisation on this universe (1–63999); 0 = off |
 | `DMX_INPUT` | false | listen for Art-Net/sACN input |
 | `MIDI_ENABLED` / `MIDI_DEVICE` / `MIDI_MAP` | true / first / data/midi_map.json | MIDI input (Windows); degrades quietly with no device |
 | `CONSOLE_SHOW_DIR` | data/shows | show files |
@@ -477,7 +479,10 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 ├── docs/ARCHITECTURE.md   how the pieces fit together
 ├── app/
 │   ├── main.py            HTTP server, routes, auth, live stream
-│   ├── engine.py          desk state and every action: patch, programmer, cues, undo
+│   ├── engine.py          the Engine: desk state, act(), undo, frames, state feeds
+│   ├── engine_base.py     the action list, constants and helpers the parts share
+│   ├── engine_*.py        the Engine's parts (mixins): patch, rig, quick, fxlayer,
+│   │                      move, timeline, program, cues, output, cmdline, looks, shows
 │   ├── engine_support.py  DMX vocabulary, 16-bit maths, curves (pure)
 │   ├── merge.py           the 40 Hz core: resolve and build frames (pure)
 │   ├── fx.py, fxlib.py    waveform engine and named effects
@@ -505,7 +510,7 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 │   ├── js/stage/          visualiser (models, materials, venue, editor, GDTF meshes)
 │   └── vendor/            three.js and pdf.js, vendored for offline use
 ├── tools/
-│   ├── selftest.py        the test suite
+│   ├── selftest.py        the test suite (runs tools/selftests/)
 │   ├── featurecheck.py    feature coverage report
 │   ├── artnet_loopback.py prove the UDP path locally
 │   ├── import_gdtf.py     bulk fixture import

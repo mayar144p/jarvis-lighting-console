@@ -44,7 +44,12 @@ function capabilities() {
 function applyTabVisibility() {
   const any = hasSel();
   const cap = capabilities();
-  const show = { position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
+  // only SFX machines / hazers / lasers selected: no Level or colour-effect
+  // tabs (they did nothing for a confetti cannon)
+  const LIGHTISH = new Set(["dimmer", "shutter", "strobe", ...COLOUR_ROLES]);
+  const light = [...cap.roles].some((r) => LIGHTISH.has(r));
+  const show = { intensity: !any || light, fx: !any || light,
+    position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
     laser: any && [...cap.roles].some((r) => r.startsWith("laser_")),
     sfx: any && [...cap.roles].some((r) => r.startsWith("fx_") || r === "fog") && ![...cap.roles].some((r) => r.startsWith("laser_")) };
   $$("#prog-tabs button").forEach((b) => {
@@ -53,7 +58,7 @@ function applyTabVisibility() {
     b.hidden = !visible;
     b.title = visible ? (b.dataset.title || b.title) : "";
   });
-  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : "intensity");
+  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : show.intensity ? "intensity" : "looks");
 }
 
 // ------------------------------------------------------------- header
@@ -675,18 +680,46 @@ function startFx(fx) {
   }));
 }
 
+// Lock a running effect to the beat clock: one cycle per 1, 2, 4 ... beats,
+// in phase with the bar - or free, on its own speed.
+const fxBeats = (f) => (f.params && f.params.beats) || f.beats || 0;
+export function beatSelect(f) {
+  const sel = h("select.select.fx-beats", { title: "Lock it to the beat: one cycle every … (the tempo in the top bar)" },
+    h("option", { value: 0 }, "free"),
+    ...[[0.25, "¼ beat"], [0.5, "½ beat"], [1, "1 beat"], [2, "2 beats"], [4, "1 bar"], [8, "2 bars"], [16, "4 bars"], [32, "8 bars"]]
+      .map(([v, l]) => h("option", { value: v }, "♩ " + l)));
+  sel.value = String(fxBeats(f));
+  sel.addEventListener("change", () => run("fx_beats", { id: f.id, beats: +sel.value }, { toast: true }));
+  return sel;
+}
+
+// Run it through the room by where the lights are, not by their numbers
+const SPACES = [["", "in light order"], ["left-right", "→ left to right"], ["right-left", "← right to left"],
+  ["stage-out", "↓ from the stage out"], ["back-in", "↑ back to the stage"], ["up", "bottom to top"], ["down", "top to bottom"],
+  ["centre-out", "◎ centre out"], ["outside-in", "outside in"], ["around", "↻ round the room"]];
+const fxSpace = (f) => (f.params && f.params.space) || "";
+export function spaceSelect(f) {
+  const sel = h("select.select.fx-beats", { title: "Which way it runs through the room (by where the lights are)" },
+    ...SPACES.map(([v, l]) => h("option", { value: v }, l)));
+  sel.value = fxSpace(f);
+  sel.addEventListener("change", () => run("fx_space", { id: f.id, space: sel.value || null }, { toast: true }));
+  return sel;
+}
+
 function renderRunning(force = false) {
   const list = (state.snap && state.snap.fx) || [];
   const box = $("#fx-running");
   // redraw only when the list changes: rebuilt on every live update, Stop
   // flickered and a click could land on a button already replaced
-  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length]));
+  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length, fxBeats(f), fxSpace(f)]));
   if (!force && key === runningKey) return;
   runningKey = key;
   if (!list.length) { box.replaceChildren(h("p.muted.small", "No effects running.")); return; }
   box.replaceChildren(...list.map((f) => h("div.fx-run",
     h("b", f.label || `${f.kind || "wave"} ${f.role || ""}`),
     h("small", `${(f.heads || []).length} heads`),
+    f.lib ? spaceSelect(f) : null,
+    beatSelect(f),
     h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
   h("button.btn.small.ghost", { onclick: () => run("stop_fx", {}) }, "Stop all"));
 }
@@ -867,6 +900,17 @@ export function initProgrammer() {
   }));
   $("#locate-btn").addEventListener("click", () => run("locate"));
   $("#clear-btn").addEventListener("click", () => run("clear_programmer"));
+  const hl = $("#hl-btn");
+  hl.addEventListener("click", (e) => {
+    const cur = (state.snap && state.snap.highlight) || {};
+    run("highlight", { state: !cur.on, solo: e.shiftKey || (cur.on ? cur.solo : false) }, { toast: true });
+  });
+  const syncHl = () => {
+    const cur = (state.snap && state.snap.highlight) || {};
+    hl.classList.toggle("on", !!cur.on);
+    hl.textContent = cur.on && cur.solo ? "Solo" : "Highlight";
+  };
+  on("snapshot", syncHl);
   const rec = $("#highlight-btn");
   rec.textContent = "Record cue…";
   rec.title = "Record the programmer as a cue (R)";

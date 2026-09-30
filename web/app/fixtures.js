@@ -68,7 +68,7 @@ const addr = (hd) => `${hd.universe}.${String(hd.address).padStart(3, "0")}`;
 
 function headRow(hd, child = false) {
   const b = hd.body || {};
-  return h("tr" + (child ? ".fold-child" : ""), { dataset: { head: hd.head_no } },
+  return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""), { dataset: { head: hd.head_no } },
     h("td.c-no", hd.head_no),
     h("td", h("div.f-name",
       h("i.lamp"),
@@ -106,7 +106,7 @@ function render() {
   const stale = new Set(((state.snap && state.snap.stale_heads) || []).map(Number));
   const tbody = $("#fx-rows");
   const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.mode, r.body && r.body.type, r.unverified]),
-    [...stale], [...expanded]]);
+    [...stale], [...expanded], parked()]);
   if (sig !== lastSig) {
     lastSig = sig;
     const out = [];
@@ -189,14 +189,21 @@ function holdToFlash(el, params) {
       run("group_flash", { ...params, down: true }, { silentError: true });
     }, 350);
   });
-  const up = () => {
+  // swallows the click that follows a hold; armed only while that click
+  // can still come, so a later real tap is never eaten
+  const swallow = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
+  const up = (e) => {
     clearTimeout(timer);
     if (!flashing) return;
     el.classList.remove("flashing");
     run("group_flash", { down: false }, { silentError: true });
-    // the click that follows a hold is not a tap
-    el.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); }, { capture: true, once: true });
-    setTimeout(() => { flashing = false; }, 0);
+    // released over the chip: a click follows, and it is not a tap.
+    // Slid off or cancelled: no click comes, so nothing to swallow.
+    if (e.type === "pointerup") {
+      el.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => el.removeEventListener("click", swallow, { capture: true }), 0);
+    }
+    flashing = false;
   };
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
@@ -453,6 +460,8 @@ async function openRdm() {
     ...((r.silent || []).length ? [h("h3", "Patched, but no answer"), ...r.silent.map(row)] : []));
 }
 
+const parked = () => (state.snap && state.snap.parked) || [];
+
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
@@ -467,6 +476,11 @@ function toolsMenu(btn) {
     { label: "Export patch as CSV", run: () => exportCsv() },
     { label: "Import patch from CSV…", run: () => openCsvImport() },
     { label: "DMX channels of the selection", disabled: !sel.length, run: () => openChannels(sel) },
+    "-",
+    { label: "Park the selection dark", hint: "held off whatever runs", disabled: !sel.length, run: () => run("park", { heads: sel, mode: "dark" }, { toast: true }) },
+    { label: "Park the selection as it is", hint: "frozen, whatever runs", disabled: !sel.length, run: () => run("park", { heads: sel, mode: "hold" }, { toast: true }) },
+    { label: "Unpark the selection", disabled: !sel.length || !sel.some((n) => parked().includes(n)), run: () => run("unpark", { heads: sel }, { toast: true }) },
+    { label: `Unpark all${parked().length ? ` (${parked().length})` : ""}`, disabled: !parked().length, run: () => run("unpark", { all: true }, { toast: true }) },
     "-",
     { label: "Remove selected fixtures", danger: true, disabled: !sel.length, run: async () => {
       if (await confirmBox("Remove fixtures", `Remove ${sel.length} fixture(s) from the patch? Ctrl+Z brings them back.`, { ok: "Remove", danger: true })) run("remove_heads", { heads: sel });

@@ -26,6 +26,7 @@ produces), so no physical MIDI hardware is ever needed.
 """
 from __future__ import annotations
 
+import collections
 import json
 import queue
 import sys
@@ -338,6 +339,8 @@ class MidiManager:
         self.status = {"enabled": True, "open": False, "devices": [],
                        "device": None, "error": None, "events": 0,
                        "mapped": 0, "map_skipped": list(self.mapper.skipped)}
+        # the last messages and what each did, for the MIDI monitor
+        self.recent: collections.deque = collections.deque(maxlen=40)
 
     # -- devices ----------------------------------------------------------
     @staticmethod
@@ -433,6 +436,16 @@ class MidiManager:
     def handle(self, event: dict) -> list[dict]:
         """Resolve + execute one event against the engine (thread-safe:
         engine.act takes the engine lock itself)."""
+        results = self._handle(event)
+        did = ", ".join(r.get("summary") or r.get("action") or "" for r in results if r.get("ok"))
+        bad = next((r.get("error") for r in results if not r.get("ok")), None)
+        self.recent.append({"kind": event.get("kind"), "channel": event.get("channel"),
+                            "number": event.get("number"), "value": event.get("value"),
+                            "on": event.get("on"), "at": time.time(),
+                            "did": did or (f"failed: {bad}" if bad else "")})
+        return results
+
+    def _handle(self, event: dict) -> list[dict]:
         results = []
         if event.get("kind") == "note":
             # remembered for "Learn" in the button editor
@@ -480,6 +493,16 @@ class MidiManager:
                 if self._stop.is_set():
                     break
                 continue
+            status = int(item[1]) & 0xFF
+            if status in (0xF8, 0xFA, 0xFB, 0xFC):
+                # MIDI clock / start: the desk's beat clock, not a mapping
+                feed = getattr(self.engine, "tempo_midi", None)
+                if feed is not None:
+                    try:
+                        feed(status)
+                    except Exception:           # noqa: BLE001 - never die
+                        pass
+                continue
             try:
                 event = parse_short(item[1], item[2], item[3])
             except Exception:                   # noqa: BLE001
@@ -523,6 +546,7 @@ def status() -> dict:
                 "device": None, "error": None, "events": 0, "mapped": 0}
     data = dict(MANAGER.status)
     data["enabled"] = True
+    data["recent"] = list(MANAGER.recent)
     if MANAGER.map_error:
         data["map_error"] = MANAGER.map_error
     return data

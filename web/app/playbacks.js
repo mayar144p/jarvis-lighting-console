@@ -108,11 +108,37 @@ function render() {
     }
     c.fd.set(pb.level ?? 100);
   }
+  renderGroupMasters();
   const s = state.snap || {};
   gm.set(s.master ?? 100);
   $("#gm-num").textContent = s.master ?? 100;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
   $("#mobile-bo").classList.toggle("on", !!s.blackout);
+}
+
+// A fader per group (the first eight): its lights at that share of
+// whatever they are doing, like the grand master for one group.
+let grpKey = "";
+const grpFaders = new Map();
+function renderGroupMasters() {
+  const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
+  const box = $("#grp-masters");
+  const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
+  if (key !== grpKey) {
+    grpKey = key;
+    grpFaders.clear();
+    box.replaceChildren(...groups.map((g) => {
+      const el = h("div.vfader", { "aria-label": `${g.name} master` });
+      const num = h("output", String(g.master ?? 100));
+      const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => { num.textContent = v; run("group_master", { group: g.n, level: v }, { silentError: true }); }, 60) });
+      grpFaders.set(g.n, { f, num });
+      return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label", g.name.slice(0, 8), " ", num));
+    }));
+  }
+  for (const g of groups) {
+    const it = grpFaders.get(g.n);
+    if (it) { it.f.set(g.master ?? 100); it.num.textContent = g.master ?? 100; }
+  }
 }
 
 function wireModes() {

@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0e14">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
 <title>Jarvis</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e14'/%3E%3Cpath d='M16 5 L23 24 L16 20 L9 24 Z' fill='%2338bdf8'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/app/app.css">
@@ -39,6 +46,11 @@
     <div class="fxctl" id="fxctl" role="group" aria-label="Special effects" hidden>
       <button class="tb-btn fx-arm" id="fx-arm" title="Arm lasers and special effects (fire, lasers). Switches itself off after 10 minutes.">ARM FX</button>
       <button class="tb-btn fx-kill" id="fx-kill" title="Stop every laser and effect at once, and disarm">KILL FX</button>
+    </div>
+
+    <div class="tempo" id="tempo" role="group" aria-label="Tempo" hidden>
+      <button class="tempo-tap" id="tempo-tap" aria-label="Tap tempo"><i class="tempo-dot" id="tempo-dot"></i><b id="tempo-bpm">120</b><small>BPM</small><em id="tempo-src"></em></button>
+      <button class="tempo-more" id="tempo-more" aria-label="Tempo options">▾</button>
     </div>
 
     <div class="tb-spacer"></div>
@@ -139,7 +151,7 @@
           <button id="vt-rotate" title="Rotate / aim (E)">Rotate</button>
         </div>
         <button class="hud-btn" id="vt-venues" title="My venues: save this venue, open a saved one">Venues ▾</button>
-        <button class="hud-btn" id="vt-room" title="Draw the room's walls in any shape: click each corner">Draw room shape</button>
+        <button class="hud-btn" id="vt-room" title="Make the room: a shape and its sizes, described in words, a template, a floor plan, or drawn">Room…</button>
         <button class="hud-btn" id="vt-truss" title="Add a horizontal truss to hang lights on">+ Truss</button>
         <button class="hud-btn" id="vt-pole" title="Add a vertical pole to hang lights on">+ Pole</button>
         <button class="hud-btn" id="vt-pipe" title="Add a horizontal pipe / bar">+ Pipe</button>
@@ -205,6 +217,7 @@
             <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
             <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
             <button class="btn" id="highlight-btn" title="Flash the selection">Flash</button>
+            <button class="btn" id="hl-btn" title="Highlight: the selection at full, open white until you turn it off (H); Shift: solo, everything else dark">Highlight</button>
           </div>
         </div>
 
@@ -258,6 +271,8 @@
           <div class="fx-params" id="fx-params"></div>
           <h3>Running</h3>
           <div class="fx-running" id="fx-running"><p class="muted small">No effects running.</p></div>
+          <h3>Step effects <small class="muted">from your own looks</small></h3>
+          <div class="fx-running" id="stepfx-list"></div>
           <details class="more">
             <summary>Custom wave on one attribute</summary>
             <div class="lfo">
@@ -377,6 +392,7 @@
         <p class="tl-hint">Double-click a lane to add · drag clips to move, their edge to resize · right-click to edit · Alt = no snap</p>
       </div>
       <div class="masters">
+        <div class="grp-masters" id="grp-masters"></div>
         <div class="master">
           <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
           <span class="m-label">GM <output id="gm-num">100</output></span>
@@ -390,6 +406,7 @@
   <footer class="statusbar" id="statusbar">
     <span id="st-out"></span>
     <span id="st-net"></span>
+    <span id="st-timing" class="hidden"></span>
     <span id="st-feed"></span>
     <span class="st-grow" id="st-last"></span>
     <span id="st-save"></span>

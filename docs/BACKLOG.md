@@ -1,10 +1,208 @@
 # Backlog
 
-Work agreed with the operator, newest items first after the original list.
-Everything below is DONE (as of this update); each entry keeps the notes
-on how it was built, for whoever changes it next.
-Each item notes the cause already found in the code, so whoever picks it up
-starts from the diagnosis, not from scratch.
+Work agreed with the operator.  **Part A is the open plan**, in the
+suggested order; Part B (items 1-17) is DONE and keeps the notes on how it
+was built.  Each item notes the cause already found in the code, so
+whoever picks it up starts from the diagnosis, not from scratch.
+
+# Part A - the plan (open)
+
+## A0. Full debugging pass (DONE, 2026-09-30)
+
+Tools: `tools/rigcheck.py` (every light type + ~15 brands + CO2 / flame /
+spark / confetti / hazer / laser, hung / stood / dragged / snapped on
+trusses, a pole and a pipe in an L-shaped room; every action and button
+kind; DMX vs 3D feed: 4,266 checks) and `tools/rigcheck_3d.mjs` (the same
+lights in the real visualiser: model, beam, where it lands, SFX firing).
+Fixed:
+- **Lights looking at the roof after "aim here":** a mode with fine pan but
+  no fine tilt got a 16-bit tilt (full tilt, also on the rig); an
+  unreachable spot left the light at home (up) - now as close as it can and
+  it says so; lights high on a tower stood upright (now hang above 2 m);
+  a light dragged up past 2 m kept "standing"; the solver used one pivot
+  height for every model (now each 3D model's); scanners aimed as if the
+  beam left upwards.
+- **RGB-only lights (3/4/6-ch PARs, bars, panels): "Full" did nothing.**
+  A virtual dimmer now scales their colour (white with none set) for the
+  fader, cues, flash / dim buttons and the master.
+- "Shutter, strobe, reset" channels were maintenance (light never opened);
+  default modes skipped 1-channel "sound active" modes but still picked
+  SFX modes that can't fire; lamp-only lights show lit (Ready? warns).
+- Rigging: bars can be turned (rotate tool, Turn 90/45), resized, stood
+  up / laid flat, hung from the ceiling; a drag stays inside the room and
+  snaps to the ceiling; rigs off-screen or level with the camera (low
+  rooms) are framed when selected; a resized room scales its zones.
+- Programmer: stray "null" text on the FX / colour tabs; SFX-only
+  selections no longer get Level / FX tabs.
+
+## A1. Engineering (bugs, steady DMX, tablets, code health)
+
+1. **(DONE)** The 8 bugs from the review of PR #28: undo after recording
+   a cue loses its effects; cue effects survive loading another show; one
+   unpatched light drops a whole cue effect; RDM ignores DMX_NET and > 32
+   universes; show_versions / show_export reload every screen; hold-chip
+   slide-off swallows the next tap; Ready? never clears after one DMX error.
+2. **(DONE) Steady DMX with several screens.**  Measured before: 286
+   lights, 3 screens, frame gaps up to 52-58 ms instead of 25.  Now: the
+   effect lookup is answered once per role set (frame build 11.3 -> 5.3
+   ms); the 3D look is made once per tick on the output thread just after
+   the frame goes out and shared by every screen (p99 gap 25.1 ms with 3
+   screens); a screen gets only the snapshot parts an edit changed
+   (`snapdiff`); ArtSync (unicast Art-Net) and E1.31 sync
+   (`SACN_SYNC_UNIVERSE`); `tools/frametiming.py` in CI; a timing dot in
+   the status bar ("smooth" / "a few late frames" / "stuttering").
+   Left: DMX and the 3D look from one resolve - no longer on the DMX
+   path, so only CPU; do it with the engine split (item 4).
+3. **(DONE) Tablets.**  Screen wake lock (Settings -> Keep this screen
+   awake, on by default; browsers only allow it on https or the desk
+   computer itself, and Settings says so); installable full-screen app
+   (manifest, icons, "Install as an app" in Settings, Add to Home Screen
+   on iPad); a stream that goes quiet for 3 s is dropped and re-opened
+   with a full snapshot, retries are at most 2 s apart, and coming back
+   online or to the tab retries at once.
+4. **(DONE) Code health.**  engine.py (10.7k lines) is the Engine core
+   (1.3k) plus twelve mixins, one per area, and engine_base.py for the
+   shared constants and helpers (re-exported, so `from app.engine import
+   X` still works).  selftest.py (11.8k) is a 320-line runner plus
+   tools/selftests/ (common.py and eight parts).  app.css: the 22
+   selectors defined twice are merged; the computed style of every element
+   at four widths, gig mode on and off, every programmer tab, is unchanged.
+5. **(DONE)** A built-in virtual Art-Net / RDM node (Settings -> Output
+   -> Virtual node: the output goes to it on loopback; it shows every
+   universe byte by byte with whose channel each is, the frame rate and
+   ArtSyncs, and answers ArtPoll and RDM for every patched light, which
+   can be readdressed without touching the patch) and a MIDI monitor
+   (Settings -> MIDI: every message from the desk computer's controller
+   with what it did, and every message a controller on the tablet sends).
+
+## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
+
+6. **(DONE) A live beat clock** (app/tempo.py): a tempo pill in the top
+   bar with a light on each beat (pink on the 1); tap it or press T,
+   Shift+T is the 1; a typed BPM and nudges; MIDI clock from the desk's
+   MIDI input or the browser's (Start = the 1); Pro DJ Link from the
+   CDJs (tempo with the pitch fader and the beat of the bar).  The Speed
+   master follows it (120 BPM = 1x) until moved by hand; any running
+   effect or movement can lock to it (one cycle per 1/4 beat .. 8 bars,
+   in phase with the bar, kept in cues and buttons).
+   Left: Ableton Link, audio in (with item 7), buttons and strobes that
+   fire on the next beat.
+7. **(DONE) Sound-reactive control** (tempo menu -> Sound): a screen
+   listens (microphone / line in; https or the desk computer itself) and
+   sends loudness, bass, mids and highs (each with its own automatic
+   gain), beats, a tempo estimate and drops (the bass back hard after a
+   breakdown) ~25 times a second.  Links: a sound (or the beat as a
+   pulse) moves everything's, a group's or some lights' brightness, or
+   the effects' speed, with depth and sensitivity; triggers: each beat /
+   bar / drop (every Nth) presses a button; the room's beat can be the
+   tempo.  With nothing listening nothing is dimmed.  Saved with the show.
+   Left: effect size from the sound; a line-in picker.
+8. **(DONE) Autopilot** (tempo menu -> Autopilot): a cue list is a pool
+   of looks; every 4 / 8 / 16 / 32 bars on the beat clock another one -
+   ranked calm / medium / big from the cues themselves (brightness,
+   effects, strobing) and picked by how loud the room has been (Sound),
+   the biggest straight away on a drop, round the list in order with no
+   sound.  Next look now / Biggest now; AUTO on the tempo pill.
+   Left: Pro DJ Link phrase data (verse / chorus) when a CDJ-3000 sends it.
+9. **(DONE, first part) Spatial effects:** any running effect or
+   movement can run through the room by where its lights are - left to
+   right, right to left, from the stage out, back to the stage, up,
+   down, centre out, outside in, round the room - instead of by light
+   number: lights side by side move together, a gap in the rig is a gap
+   in the wave (FX / Move tab -> the effect's "which way").
+   Left: two-colour gradients across the room; bars / panels as pixels;
+   images / video mapped onto the rig.
+10. **(DONE) Step effects from your own looks** (FX tab -> Step effects):
+    steps taken from the programmer (the look the selected lights have)
+    or from palettes (the effect follows the palette), a time and a
+    crossfade share per step, smooth / straight / snap, a spread round
+    the cycle (by light number or, with a direction, by where the lights
+    are), beat lock; saved with the show.  Gobos and other slot channels
+    change at the middle of a fade instead of sliding through the wheel.
+    Left: step effects inside cues and buttons; a key-frame shape editor
+    for movement (phasers).
+11. Desk tools.  **DONE:** highlight / solo (programmer -> Highlight, H /
+    Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
+    group masters (a fader per group next to the GM).  **Left:** tracking /
+    cue-only; move-in-black; cue actions; macros; blind edit with 3D
+    preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);
+    a DJ-booth remote page.
+
+## A3. Visualiser and venue editor
+
+Research: Capture (truss library by manufacturer with end snappers and
+fixture snappers along the tubes, rigging points in reports), Vectorworks
+Spotlight (draw a truss by dragging a line to length; plots, legends,
+auto-numbering, paperwork from the drawing), Depence R4 (photoreal real-
+time beams, video mapping onto any surface, pixel-mapped lasers, motion
+blur, VR).
+12. **Many ways to make a room, drawing is only one.**  DONE: Arrange ->
+    Room... (also Settings -> Venue and the start-up venue picker) with
+    five ways: *Shape & size* (rectangle, L, T, U, octagon, round, fan /
+    wedge; typed width, depth, ceiling and the cut-out; optionally a
+    starter layout that fits the shape - DJ or stage at the stage end,
+    dance floor, bar, trusses wall to wall - or only the walls, keeping
+    the rigging); *Describe it* ("a 12 x 8 m club, bar on the left, DJ
+    booth on a 40 cm riser": read offline, or by the AI when there is a
+    key; it says what it read and what it guessed); *Template*; *Draw it*;
+    *Floor plan*.  Every way previews the room first, drawn from what the
+    engine will build.  Walls are drawn like a plan: right angles and a
+    10 cm grid by default (Shift: any angle), the last wall lines up with
+    the first corner, a typed length + Enter makes a wall exactly that
+    long.  Copies of a truss or object N m apart (inspector -> Copies...).
+    Left: a phone room scan; doors, pillars and balconies drawn in the
+    drafting mode; a ceiling height per area; align / distribute for
+    rigging.
+13. **Rigging library:** straight / corner / circle truss pieces, poles,
+    stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
+    snapping; fixtures snap along any tube; hanging from the ceiling with a
+    trim height; rigging points and loads in a report.
+14. **Look:** better haze volumetrics and gobo projections on surfaces;
+    LED screens / video walls that play a clip or mirror a pixel map;
+    shadows from the crowd and stage; lens flares at low angles; a
+    "photo" render; first-person walk; camera presets per venue.
+15. **Paperwork:** a light plot (top view with symbols, numbers,
+    addresses) and a patch sheet as PDF, straight from the drawing.
+16. Fixes still open from the pass: the default camera can sit far from a
+    small room (24 m back from a 3 m room); crowd size doesn't follow the
+    room / dance floor size.
+
+## A4. Programmer, per light type and brand
+
+The pass walked every tab for one light of each type (see A0).  Next:
+17. **Show only what the light can do**, everywhere: e.g. a wheel of whites
+    (ADB ALC4) is labelled "Colour wheel" - call it white presets; a light
+    whose file lists no wheel slots shows "guessed positions" - add
+    **Teach the wheel** (step through it, name each colour, saved to the
+    fixture); gobo wheels with pictures; prism / gobo rotation as
+    direction + speed; macros and auto programs as named buttons; lamp,
+    reset and fan under an "Advanced" fold.
+18. **Mixed selections:** one section per kind ("6 movers: position,
+    gobo; 12 PARs: colour") instead of the union of all controls.
+19. **Brand colour matching:** LED colours differ between brands - a
+    per-fixture colour calibration so "red" matches across the rig.
+20. Lights with an unknown shutter "open" value (Warp M, COB blinder):
+    Test this light learns it and stores it with the fixture.
+21. Wording: "reaches all 1", "Other" in the programmer bar, and the
+    strobe open / close row for dimmer-less lights.
+
+## A5. A buttons screen (MagicQ execute-window style) and AI that programs
+
+22. **A full-screen buttons page** (desktop and tablet): pages of tiles
+    that can be buttons, faders (a group master, a playback), XY pads,
+    speed / BPM tiles, cue-list tiles, and SFX tiles with MagicFX-style
+    safety (arm key, E-stop, hold-to-fire); tile size, colour, icon,
+    label and what it does all editable in place; lock the layout.
+23. **AI that programs, not only commands.** "These lights should only
+    hover around the dance floor and the DJ booth" becomes a program:
+    a new *roam* movement that wanders smoothly inside venue zones (the
+    aim solver per frame, so every light - hung, standing, on a pole -
+    stays on the zone), assigned per group, saved as a look, a button or
+    a cue, with a preview in 3D before it is applied.  Same for "the
+    back truss chases red and white on the beat during the drop", "build
+    me 8 buttons for this rig", "make a 32-bar build-up".
+
+# Part B - done
 
 ## 1. Bug fixes (DONE)
 

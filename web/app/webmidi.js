@@ -1,3 +1,4 @@
+import { act } from "./api.js";
 // MIDI in the browser (Web MIDI): a controller plugged into THIS device -
 // a tablet or a laptop running only the browser - plays the buttons.  The
 // desk's own MIDI input (app/midi.py) is separate; this one is off until
@@ -20,7 +21,38 @@ export function onNote(fn) {
   return () => listeners.delete(fn);
 }
 
+const monitors = new Set();
+
+/** Every message (notes, CC, anything): fn({ data, input, at }). For the MIDI monitor. */
+export function onAnyMidi(fn) {
+  monitors.add(fn);
+  return () => monitors.delete(fn);
+}
+
+// MIDI clock from a controller or DJ software on this device: 24 ticks a
+// beat.  The tempo goes to the desk's beat clock about once a second (not
+// 48 times), Start says "this is the 1".
+let ticks = [];
+let sentBpm = 0, sentAt = 0;
+function clock(st, at) {
+  if (st === 0xfa) { ticks = []; act("tempo_sync", { beat: 1 }).catch(() => {}); return; }
+  if (ticks.length && at - ticks[ticks.length - 1] > 1000) ticks = [];
+  ticks.push(at);
+  if (ticks.length > 97) ticks = ticks.slice(-97);
+  if (ticks.length < 25 || at - sentAt < 1000) return;
+  const bpm = 60000 / (((ticks[ticks.length - 1] - ticks[0]) / (ticks.length - 1)) * 24);
+  if (Math.abs(bpm - sentBpm) < 0.2) return;
+  sentBpm = bpm; sentAt = at;
+  act("tempo_set", { bpm: Math.round(bpm * 10) / 10, source: "browser" }).catch(() => {});
+}
+
 function message(e) {
+  const st0 = (e.data || [])[0];
+  if (st0 === 0xf8 || st0 === 0xfa) clock(st0, e.timeStamp || performance.now());
+  if (monitors.size) {
+    const m = { data: [...(e.data || [])], input: (e.target && e.target.name) || "", at: Date.now() };
+    for (const fn of [...monitors]) { try { fn(m); } catch (err) { /* ignore */ } }
+  }
   const [status, number, velocity] = e.data || [];
   const kind = status & 0xf0;
   if (kind !== 0x90 && kind !== 0x80) return;

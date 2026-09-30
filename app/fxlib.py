@@ -53,6 +53,8 @@ t=2.5 without a rig.
 """
 from __future__ import annotations
 
+import functools
+
 from .fx import wave
 
 # --- capability groups -----------------------------------------------------
@@ -85,13 +87,18 @@ def normalise(roles) -> set[str]:
     do nothing an effect can drive, and offering it everything is the same
     lie as offering it nothing.
     """
+    return set(_normalised(tuple(str(r) for r in roles or ())))
+
+
+@functools.lru_cache(maxsize=1024)
+def _normalised(roles: tuple) -> frozenset:
     out: set[str] = set()
-    for r in roles or ():
+    for r in roles:
         r = str(r).lower()
         if r in ("unused", "raw"):
             continue
         out.add(_FINE.get(r, r))
-    return out
+    return frozenset(out)
 
 
 def _satisfies(have: set[str], group) -> bool:
@@ -497,7 +504,13 @@ def available(roles) -> list[str]:
     source of truth, which is how "it offered me Circle and then nothing
     happened" happens.
     """
-    have = normalise(roles)
+    return list(_available_for(frozenset(normalise(roles))))
+
+
+@functools.lru_cache(maxsize=512)
+def _available_for(have: frozenset) -> tuple[str, ...]:
+    # every effect on every head asks this 40 times a second, and a rig has
+    # a handful of distinct role sets: answer each set once
     out: list[str] = []
     for name in sorted(FX):
         spec = FX[name]
@@ -508,7 +521,7 @@ def available(roles) -> list[str]:
             if not all(_satisfies(have, g) for g in _groups(spec)):
                 continue
         out.append(name)
-    return out
+    return tuple(out)
 
 
 def describe(roles) -> list[dict]:
@@ -555,7 +568,7 @@ def apply(name: str, base: dict, roles, params: dict | None = None,
     if not spec:
         raise ValueError("unknown effect %r" % (name,))
     have = normalise(roles)
-    if name not in available(roles):
+    if name not in _available_for(frozenset(have)):
         raise ValueError("%s: %s" % (name, why_not(roles, name)))
     p = defaults(name)
     p.update({k: float(v) for k, v in (params or {}).items()

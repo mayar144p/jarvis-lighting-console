@@ -1,6 +1,7 @@
 // Arrange mode's controls: the toolbar (add, draw, floor plan), the
 // inspector for whatever is selected, and the floor-plan upload with its
 // two-point scale.  Every change is one engine action, so Ctrl+Z undoes it.
+import { openRoomDialog } from "./roomdialog.js";
 import { VenueEditor } from "/js/stage/editor.js";
 import { post } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
@@ -172,13 +173,25 @@ async function onDrawn(kind, pts, opts) {
 function hint(text) {
   const box = $("#draw-hint");
   box.hidden = !text;
+  delete box.dataset.base;              // the live length is added to THIS text
   if (text) box.textContent = text;
 }
 
 function drawRoom() {
   stage.view("top");
-  hint("Draw the room: click each corner of the walls. Click the first corner (or press Enter) to close it. Shift squares the line; Backspace removes a point.");
+  hint("Draw the walls: click each corner; click the first corner (or Enter) to close. Right angles and a 10 cm grid (Shift: any angle); type a length + Enter for an exact wall; Backspace undoes a corner.");
   editor.startDraw("outline");
+}
+
+/** From the room dialog: draw the walls / upload a plan, in Arrange. */
+export function startDrawRoom() {
+  if (!arranging) setArranging(true);
+  drawRoom();
+}
+
+export function startPlanUpload() {
+  if (!arranging) setArranging(true);
+  $("#plan-file").click();
 }
 
 function drawZone(kind, label) {
@@ -273,9 +286,28 @@ function renderInspector(sel) {
         const d = v - midY;
         upd({ a: [found.a[0], r2(found.a[1] + d), found.a[2]], b: [found.b[0], r2(found.b[1] + d), found.b[2]] });
       }, { min: 0 })),
-      h("p.muted.small", "Drag the yellow ends to change its length and angle."),
+      h("div.vi-row",
+        field("Length m", num(r2(len), (v) => run("venue_rig", { id: s.id, length: v }, { toast: true }), { min: 0.2, step: 0.5 })),
+        field("Centre X", num(r2((found.a[0] + found.b[0]) / 2), (v) => {
+          const d = v - (found.a[0] + found.b[0]) / 2;
+          upd({ a: [r2(found.a[0] + d), found.a[1], found.a[2]], b: [r2(found.b[0] + d), found.b[1], found.b[2]] });
+        })),
+        field("Centre Z", num(r2((found.a[2] + found.b[2]) / 2), (v) => {
+          const d = v - (found.a[2] + found.b[2]) / 2;
+          upd({ a: [found.a[0], found.a[1], r2(found.a[2] + d)], b: [found.b[0], found.b[1], r2(found.b[2] + d)] });
+        }))),
+      h("div.row-btns",
+        h("button.btn.small", { title: "Turn it a quarter turn about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 90 }, { toast: true }) }, "Turn 90°"),
+        h("button.btn.small", { title: "Turn it 45° about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 45 }, { toast: true }) }, "Turn 45°"),
+        Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
+          ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
+          : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
+        h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
+        h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
+      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
+        copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
         del(s.id, found.kind)));
   } else if (s.type === "object") {
     const o = (venue().objects || []).find((x) => x.id === s.id);
@@ -288,7 +320,7 @@ function renderInspector(sel) {
       h("div.vi-row", field("X", num(o.x, (v) => upd({ x: v }))), field("Z", num(o.z, (v) => upd({ z: v }))), field("Up", num(o.y, (v) => upd({ y: v }), { min: 0 }))),
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
-      h("div.row-btns", del(s.id, o.kind === "mark" ? "mark" : "object")));
+      h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
   } else if (s.type === "zone") {
     const z = (venue().zones || []).find((x) => x.id === s.id);
     if (!z) { box.hidden = true; return; }
@@ -327,6 +359,28 @@ function renderInspector(sel) {
         h("button.btn.small.danger", { onclick: () => { run("venue_underlay", { remove: true }); editor.select(null); } }, "Remove")));
   }
   box.replaceChildren(...body.filter(Boolean));
+}
+
+// Copies of one truss / object in a row: "4 trusses 2 m apart".
+function copiesBtn(id, what, axis) {
+  return h("button.btn.small", {
+    title: `Make copies of this ${what} in a row`,
+    onclick: () => {
+      const n = h("input", { type: "number", min: 2, max: 24, value: 4 });
+      const gap = h("input", { type: "number", step: 0.25, value: 2 });
+      const dir = h("select.select", h("option", { value: "z" }, "towards the audience (Z)"), h("option", { value: "x" }, "across (X)"));
+      dir.value = axis;
+      const close = modal({
+        title: `Copies of this ${what}`,
+        body: h("div.form-grid", field("How many in all", n), field("Apart (m, − for the other way)", gap), field("Direction", dir)),
+        foot: [h("button.btn", { onclick: () => close() }, "Cancel"),
+          h("button.btn.primary", { onclick: async () => {
+            const r = await run("venue_array", { id, count: +n.value || 2, step: +gap.value || 2, axis: dir.value }, { toast: true });
+            if (r.ok) close();
+          } }, "Make copies")],
+      });
+    },
+  }, "Copies…");
 }
 
 // ------------------------------------------------------------ toolbar
@@ -420,7 +474,7 @@ function venuePicker() {
       ...list.map((v) => h("button.vp-item", { onclick: () => { close(); openVenue(v); } },
         h("b", v.name),
         h("small", `${v.shape === "custom" ? "custom shape" : "rectangle"} · ${v.rigging} rigging · ${v.lights} light(s)`)))),
-    foot: [h("span.muted.small", "Or start fresh: Settings → Venue has room templates."), h("span.grow"),
+    foot: [h("button.btn", { onclick: () => { close(); openRoomDialog(); } }, "Make a new room…"), h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Start empty")],
   });
   return true;
@@ -454,12 +508,12 @@ export function initVenuePanel(theStage) {
     updateUnderlay: (changes) => run("venue_underlay", changes),
     onMeasure,
     onDrawn,
-    onDrawProgress: (kind, n, len) => {
+    onDrawProgress: (kind, n, len, typed) => {
       if (!kind) return;
       const box = $("#draw-hint");
       const base = box.dataset.base || box.textContent;
       box.dataset.base = base;
-      box.textContent = base + (len ? `  ·  ${len.toFixed(2)} m` : "");
+      box.textContent = base + (typed ? `  ·  length: ${typed}▏ (Enter)` : len ? `  ·  ${len.toFixed(2)} m` : "");
     },
   });
   window.jarvisEditor = editor;
@@ -472,7 +526,7 @@ export function initVenuePanel(theStage) {
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
   $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
-  $("#vt-room").addEventListener("click", drawRoom);
+  $("#vt-room").addEventListener("click", () => openRoomDialog());
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));
   $("#vt-plan").addEventListener("click", (e) => openPlan(e.currentTarget));
   $("#vt-done").addEventListener("click", () => setArranging(false));

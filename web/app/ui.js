@@ -1,5 +1,15 @@
 // Small DOM helpers: element builder, toasts, modals, menus, faders.
 
+// replaceChildren(a, cond ? b : null) printed the word "null" into the
+// panel (the FX tab showed it on almost every light): skip null /
+// undefined / false the way h() does, everywhere at once.
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+  const raw = proto.replaceChildren;
+  proto.replaceChildren = function replaceChildren(...kids) {
+    return raw.apply(this, kids.filter((k) => k !== null && k !== undefined && k !== false));
+  };
+}
+
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 

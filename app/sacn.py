@@ -242,6 +242,29 @@ def decode_sacn(packet: bytes) -> dict:
     }
 
 
+SYNC_ROOT_VECTOR = 0x00000008       # VECTOR_ROOT_E131_EXTENDED
+SYNC_FRAMING_VECTOR = 0x00000001    # VECTOR_E131_EXTENDED_SYNCHRONIZATION
+SYNC_PACKET_SIZE = 49
+
+
+def build_sync(sync_universe: int, sequence: int = 0, cid=None) -> bytes:
+    """E1.31 Synchronization packet: receivers holding data that named
+    this sync universe show it now."""
+    if not UNIVERSE_MIN <= int(sync_universe) <= UNIVERSE_MAX:
+        raise ValueError(f"a sync universe is {UNIVERSE_MIN}..{UNIVERSE_MAX}")
+    buf = bytearray(SYNC_PACKET_SIZE)
+    struct.pack_into(">HH", buf, 0, PREAMBLE_SIZE, 0)
+    buf[4:16] = ACN_IDENTIFIER
+    struct.pack_into(">H", buf, 16, _pdu_length(SYNC_PACKET_SIZE, 16))
+    struct.pack_into(">I", buf, 18, SYNC_ROOT_VECTOR)
+    buf[22:38] = _cid_bytes(cid)
+    struct.pack_into(">H", buf, 38, _pdu_length(SYNC_PACKET_SIZE, 38))
+    struct.pack_into(">I", buf, 40, SYNC_FRAMING_VECTOR)
+    buf[44] = int(sequence) & 0xFF
+    struct.pack_into(">H", buf, 45, int(sync_universe))
+    return bytes(buf)                              # 47-48 reserved
+
+
 class SacnSender:
     """sACN counterpart of ArtNetSender - same interface, same engine.
 
@@ -254,7 +277,8 @@ class SacnSender:
 
     def __init__(self, host: str, port: int = E131_PORT, net: int = 0,
                  dry_run: bool = True, priority: int = DEFAULT_PRIORITY,
-                 source_name: str = DEFAULT_SOURCE_NAME, cid=None):
+                 source_name: str = DEFAULT_SOURCE_NAME, cid=None,
+                 sync_universe: int = 0):
         if not PRIORITY_MIN <= int(priority) <= PRIORITY_MAX:
             raise ValueError(f"sACN priority must be "
                              f"{PRIORITY_MIN}..{PRIORITY_MAX}")
@@ -265,6 +289,10 @@ class SacnSender:
         self.priority = int(priority)
         self.source_name = str(source_name or DEFAULT_SOURCE_NAME)
         self.cid = _cid_bytes(cid)
+        # 0 = no synchronisation; else data names it and sync() fires it
+        self.sync_universe = int(sync_universe) if UNIVERSE_MIN <= int(sync_universe or 0) <= UNIVERSE_MAX else 0
+        self.syncs_sent = 0
+        self._sync_seq = -1
         self.frames_sent = 0
         self.simulated_frames = 0
         self.errors = 0
@@ -309,7 +337,7 @@ class SacnSender:
             return False
         packet = build_sacn(universe, data, self.next_sequence(universe),
                             self.net, self.priority, self.source_name,
-                            self.cid)
+                            self.cid, sync_address=self.sync_universe)
         try:
             self._socket().sendto(packet,
                                   (self.destination(universe), self.port))
@@ -324,9 +352,26 @@ class SacnSender:
         self.last_error = None
         return True
 
+    def sync(self, universes: int) -> bool:
+        """The E1.31 sync after a tick's frames, when a sync universe is
+        set (the data then waits for it, so it goes every tick)."""
+        if self.dry_run or not self.sync_universe or universes < 1:
+            return False
+        self._sync_seq = (self._sync_seq + 1) % 256
+        dest = self.host if self.host not in ("multicast", "") else multicast_group(self.sync_universe, 0)
+        try:
+            self._socket().sendto(build_sync(self.sync_universe, self._sync_seq, self.cid), (dest, self.port))
+        except OSError as exc:
+            self.last_error = str(exc)
+            return False
+        self.syncs_sent += 1
+        return True
+
     def stats(self) -> dict:
         return {
             "transport": self.transport,
+            "sync_universe": self.sync_universe,
+            "syncs_sent": self.syncs_sent,
             "host": f"{self.host}:{self.port}",
             "net": self.net,
             "priority": self.priority,

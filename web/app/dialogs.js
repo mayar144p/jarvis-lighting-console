@@ -3,6 +3,8 @@
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
+import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
+import { wakeSupported, wakeOn, wakeHeld, wakeError, setWake, canInstall, installed, install } from "./tablet.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
@@ -59,7 +61,8 @@ export function openAddDialog(query = "") {
     title.textContent = `${item.manufacturer || ""} ${item.model || item.fixture || ""}`.trim();
     const modes = item.modes || [];
     mode.replaceChildren(...modes.map((m) => h("option", { value: m.name },
-      `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)`)));
+      `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)${m.name === item.default_mode ? " - recommended" : ""}`)));
+    if (item.default_mode) mode.value = item.default_mode;
     const origin = item._origin || source;
     if (origin === "share") {
       meta.textContent = `GDTF Share · revision ${item.revision || "?"} · downloads the manufacturer's file, then adds it`;
@@ -747,7 +750,10 @@ function outputSection(con) {
       h("button.btn", { onclick: (e) => find(e.currentTarget) }, "Find nodes"),
       h("button.btn", { onclick: refresh }, "Re-check network")),
     status, nodes, adapters,
-    h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."));
+    h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."),
+    h("div.row-btns",
+      h("button.btn", { onclick: () => openNodeMonitor() }, virtualNodeOn() ? "Virtual node (on)…" : "Virtual node…"),
+      h("span.muted.small", "test the whole output and RDM with no hardware")));
   ip.addEventListener("keydown", (e) => { if (e.key === "Enter") apply({ mode: mode.value === "auto" ? "node" : mode.value, host: ip.value.trim(), transport: proto.value }); });
   status.append(h("div.muted.small", "Checking the network…"));
   refresh();
@@ -785,6 +791,8 @@ export async function openSettings() {
     h("h3", "Venue"),
     h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
       : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
+    h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
+      h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
     h("div.form-grid",
       h("label.field", h("span", "Start from"), tpl),
       h("div.field", h("span", " "), h("button.btn", {
@@ -800,6 +808,8 @@ export async function openSettings() {
       }, "Resize room"))),
     h("h3", "Screen"),
     h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
+    wakeRow(),
+    installRow(),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
@@ -817,9 +827,41 @@ export async function openSettings() {
     h("h3", "MIDI"),
     h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
     webMidiRow(),
+    h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
+      h("span.muted.small", "see what a controller sends and what it did")),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
+}
+
+// Keep this screen on while the console is open.
+function wakeRow() {
+  const box = h("input", { type: "checkbox" });
+  box.checked = wakeOn();
+  const note = h("span.muted.small", "");
+  const show = () => {
+    note.textContent = !wakeSupported()
+      ? (window.isSecureContext ? "This browser can't keep the screen on: turn auto-lock off in the tablet's settings."
+        : "Browsers only keep the screen on for https pages: turn auto-lock off in the tablet's settings.")
+      : !box.checked ? "" : wakeHeld() ? "The screen stays on while Jarvis is open." : (wakeError() || "Tap anywhere to keep the screen on.");
+  };
+  box.disabled = !wakeSupported();
+  box.addEventListener("change", async () => { await setWake(box.checked); show(); });
+  show();
+  return h("div", h("label.check", box, h("span", "Keep this screen awake")), note);
+}
+
+// Install as an app: full screen, its own icon, no browser bars.
+function installRow() {
+  if (installed()) return h("p.muted.small", "Running as an installed app.");
+  if (canInstall()) {
+    return h("div.row-btns", h("button.btn", {
+      onclick: async (e) => { if (await install()) e.target.replaceWith(h("span.muted.small", "Installed: open Jarvis from the home screen.")); },
+    }, "Install as an app"), h("span.muted.small", "full screen, its own icon, no browser bars"));
+  }
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return h("p.muted.small", ios ? "To install: Share → Add to Home Screen. It then opens full screen."
+    : "To install: the browser menu → Install app / Add to Home screen.");
 }
 
 // MIDI on this device: a controller plugged into the tablet / laptop the
@@ -849,7 +891,7 @@ const KEYS = [
   ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
   ["A / Shift+A", "select all / none"], ["1 … 9", "select fixture 1–9 (Shift adds)"], ["G", "group the selection"],
   ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O", "overwrite the current cue"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
-  ["F", "frame the selection on stage"], ["Esc", "close / leave full screen"], ["?", "this help"],
+  ["T / Shift+T", "tap the tempo / this is beat 1"], ["H / Shift+H", "highlight / solo the selection"], ["F", "frame the selection on stage"], ["Esc", "close / leave full screen"], ["?", "this help"],
 ];
 const SYNTAX = [
   ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["all warm white", "every fixture warm white"],

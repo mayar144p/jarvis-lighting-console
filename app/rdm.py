@@ -228,7 +228,19 @@ def discover(universes: list[int], host: str = "255.255.255.255", port: int = ar
         return {"devices": [], "error": f"cannot open a UDP socket: {exc}", "tried": host}
     devices: list[dict] = []
     try:
-        tods = _exchange(probe, host, port, build_tod_request(universes, net), parse_tod_data, timeout)
+        # one ArtTodRequest covers up to 32 universes of ONE Art-Net Net:
+        # group by the Net each universe lands on, 32 at a time
+        by_net: dict[int, list[int]] = {}
+        for u in universes:
+            by_net.setdefault(artnet.port_address(u, net)[1], []).append(u)
+        tods = []
+        for group in by_net.values():
+            for i in range(0, len(group), 32):
+                try:
+                    tods += _exchange(probe, host, port, build_tod_request(group[i:i + 32], net),
+                                      parse_tod_data, timeout / max(1, (len(universes) + 31) // 32) + 0.2)
+                except (OSError, ValueError):
+                    continue
         seen = set()
         tn = [0]
         for tod, node_ip in tods:

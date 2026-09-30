@@ -80,10 +80,30 @@ export function openStream(handlers, onStatus) {
   let stopped = false;
   let delay = 500;
   let ctrl = null;
+  let lastData = 0;
+  let wakeWait = null;           // cuts a reconnect back-off short
+
+  // A tablet that slept or changed Wi-Fi keeps a dead connection that
+  // never errors.  The server sends something at least every 100 ms
+  // (lite), so 3 s of silence means the link is gone: drop it and
+  // reconnect (the new connection starts with a full snapshot).
+  const watchdog = setInterval(() => {
+    if (ctrl && lastData && performance.now() - lastData > 3000) ctrl.abort();
+  }, 1000);
+  const now = () => {
+    if (stopped) return;
+    delay = 500;
+    if (wakeWait) wakeWait();                       // retry right away
+    else if (ctrl && lastData && performance.now() - lastData > 1500) ctrl.abort();
+  };
+  const onVisible = () => { if (document.visibilityState === "visible") now(); };
+  window.addEventListener("online", now);
+  document.addEventListener("visibilitychange", onVisible);
 
   const run = async () => {
     while (!stopped) {
       ctrl = new AbortController();
+      lastData = 0;
       try {
         const resp = await fetch("/api/console/stream", { headers: headers(false), signal: ctrl.signal });
         if (resp.status === 401) {
@@ -93,12 +113,14 @@ export function openStream(handlers, onStatus) {
         if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
         onStatus(true, null);
         delay = 500;
+        lastData = performance.now();
         const reader = resp.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
+          lastData = performance.now();
           buf += dec.decode(value, { stream: true });
           let i;
           while ((i = buf.indexOf("\n\n")) >= 0) {
@@ -116,12 +138,19 @@ export function openStream(handlers, onStatus) {
         throw new Error("stream ended");
       } catch (err) {
         if (stopped) return;
-        onStatus(false, err.message || String(err));
-        await new Promise((r) => setTimeout(r, delay));
-        delay = Math.min(delay * 1.8, 5000);
+        onStatus(false, err.name === "AbortError" ? "link went quiet" : (err.message || String(err)));
+        await new Promise((r) => { wakeWait = r; setTimeout(r, delay); });
+        wakeWait = null;
+        delay = Math.min(delay * 1.8, 2000);   // the desk back = the screen back, within 2 s
       }
     }
   };
   run();
-  return () => { stopped = true; if (ctrl) ctrl.abort(); };
+  return () => {
+    stopped = true;
+    clearInterval(watchdog);
+    window.removeEventListener("online", now);
+    document.removeEventListener("visibilitychange", onVisible);
+    if (ctrl) ctrl.abort();
+  };
 }

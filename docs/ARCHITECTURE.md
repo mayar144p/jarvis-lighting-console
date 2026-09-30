@@ -26,7 +26,11 @@ Everything that changes the desk goes through one entry point:
 Engine.act(action, **params) -> dict
 ```
 
-`ACTIONS` in `engine.py` is the registry. `act()` takes care of the things
+`ACTIONS` in `engine_base.py` (re-exported by `engine.py`) is the registry.
+The `Engine` class is assembled from mixins, one per area
+(`engine_patch.py`, `engine_cues.py`, `engine_output.py`, ...); a handler
+`_a_<action>` lives in the part for its area and reaches the rest through
+`self`. `act()` takes care of the things
 every caller would otherwise get wrong:
 
 * **Undo.** A snapshot is pushed before any action not in `UNDO_EXCLUDED`
@@ -210,7 +214,11 @@ type and brand the engine reports, so it appears the moment it is added.
 
 ## Tests
 
-`tools/selftest.py` is one file of isolated suites. It exercises the engine
+`tools/selftest.py` runs isolated suites; the suites live in
+`tools/selftests/` (`common.py` holds `check()` and shared helpers, the
+`partNN.py` files the suites) and are listed in `_suites()` /
+`_standalone_suites()`, so a new suite is one function plus one line.
+They exercise the engine
 directly, runs the HTTP server on a free port for route and security tests,
 and runs web modules under node (with an import hook that maps three.js to
 the vendored copy) to check the picker maths and the 3DS parser.

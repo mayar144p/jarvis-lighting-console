@@ -1,6 +1,7 @@
 // The one client-side copy of the engine's state, and change events.
 //
-// `snapshot` replaces everything (on connect and after every edit);
+// `snapshot` replaces everything (on connect), `snapdiff` the parts an
+// edit changed;
 // `lite` refreshes the fast-moving parts; `looks` is the light for the
 // stage.  Panels subscribe to the slices they draw.
 
@@ -32,6 +33,15 @@ export function setSnapshot(snap) {
   state.snap = snap;
   emit("snapshot", snap);
   emit("any");
+}
+
+// Only the parts of the snapshot that changed since the last one.  The
+// parts left alone keep their objects, so a panel can tell they didn't move.
+export function applySnapDiff(diff) {
+  if (!state.snap) return;
+  const next = { ...state.snap, ...(diff.set || {}) };
+  for (const k of diff.del || []) delete next[k];
+  setSnapshot(next);
 }
 
 export function setLite(lite) {

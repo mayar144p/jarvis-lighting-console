@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
-                 fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles, rdm)
+                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, profiles, rdm, roomshape)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from tools import import_gdtf  # noqa: E402
@@ -35,6 +35,7 @@ _MIME = {
     ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
     ".jpg": "image/jpeg", ".woff2": "font/woff2", ".glb": "model/gltf-binary",
     ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
 }
 
 # One GDTF Share client for the process.  It owns the session cookie, so
@@ -160,7 +161,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- helpers ---------------------------------------------------------
     def log_message(self, fmt: str, *args) -> None:  # quieter than default
-        if "/api/" in (args[0] if args else ""):
+        line = str(args[0]) if args else ""
+        # the live feeds (sound readings, lite polls) would drown the log
+        if "/api/" in line and "/api/console/sound" not in line and "lite=1" not in line:
             print(f"[http] {self.address_string()} {fmt % args}")
 
     def _json(self, obj, status: int = 200) -> None:
@@ -463,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm",
-                         "/api/console/look"):
+                         "/api/console/look", "/api/console/room", "/api/console/sound"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             return self._json({"error": str(exc)}, 500)
@@ -537,17 +540,20 @@ class Handler(BaseHTTPRequestHandler):
             net = eng.network_info()
             host = net["target"]["host"] if net["target"]["mode"] != "auto" and net["target"]["host"] \
                 else "255.255.255.255"
+            port = int((net.get("resolved") or {}).get("port") or config.DMX_PORT)
+            eng.vnode_status()                   # the virtual node's lights follow the patch
             if isinstance(body.get("set_address"), dict):
                 sa = body["set_address"]
                 try:
                     res = rdm.set_address(str(sa.get("uid") or ""), int(sa.get("universe") or 1),
-                                          int(sa.get("address") or 0), host=host, port=config.DMX_PORT)
+                                          int(sa.get("address") or 0), host=host, port=port,
+                                          net=config.DMX_NET)
                 except ValueError as exc:
                     res = {"ok": False, "error": str(exc)}
                 return self._console_result(eng, res)
             universes = body.get("universes") or sorted({h["universe"] for h in eng.patch}) or [1]
-            found = rdm.discover([int(u) for u in universes], host=host, port=config.DMX_PORT,
-                                 timeout=float(body.get("timeout") or 2.0))
+            found = rdm.discover([int(u) for u in universes], host=host, port=port,
+                                 net=config.DMX_NET, timeout=float(body.get("timeout") or 2.0))
             result = eng.act("rdm_compare", devices=found["devices"], universes=found.get("universes"))
             result["rdm_error"] = found.get("error")
             result["tried"] = found.get("tried")
@@ -673,6 +679,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.build(eng, body["design"], playback))
             return self._console_result(eng, autoshow.design(
                 eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+        if route == "/api/console/sound":
+            # The browser's listening, ~25 a second: not an action (no undo,
+            # no reload of every screen), the engine keeps the latest.
+            return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/room":
+            # A room from words.  The AI (when there is a key) fills the
+            # same spec the offline reader does - off the engine lock -
+            # and the engine builds it; apply=false only answers.
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"error": "describe the room"}, 400)
+            offline = roomshape.parse(text)
+            spec, by, note, unsure = offline["spec"], "offline", None, offline["unsure"]
+            if llm.available() and not body.get("offline"):
+                try:
+                    got = llm.structured([{"role": "system", "content": roomshape.PROMPT},
+                                          {"role": "user", "content": text}],
+                                         "room_spec", "The room, its size and shape, and what is in it.",
+                                         roomshape.SPEC_SCHEMA)
+                    spec, by, unsure = roomshape.clean_spec(got), "ai", []
+                except llm.LLMError as exc:
+                    note = f"the AI didn't answer ({exc}); read it offline instead"
+            info = {"spec": spec, "understood": roomshape.explain(spec) if by == "ai" else offline["understood"],
+                    "unsure": unsure, "by": by, "note": note}
+            if body.get("apply") is False:
+                return self._json({"result": {"ok": True, **info}})
+            result = eng.act("venue_build", spec=spec, keep_mounts=bool(body.get("keep_mounts")))
+            result.update(info)
+            return self._console_result(eng, result)
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
             # operator confirms via /api/console/import_show.
@@ -707,6 +742,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         rev = None
+        sent_parts: dict[str, str] | None = None    # what this screen has
         last_look = None
         next_lite = 0.0
         next_beat = 0.0
@@ -721,14 +757,29 @@ class Handler(BaseHTTPRequestHandler):
                     rev = eng.act_rev
                     snap = eng.snapshot()
                     snap["actions"] = sorted(engine_mod.ACTIONS)
-                    send("snapshot", snap)
+                    parts = {k: json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+                             for k, v in snap.items()}
+                    if sent_parts is None:
+                        body = "{" + ",".join(json.dumps(k) + ":" + t for k, t in parts.items()) + "}"
+                        self.wfile.write(f"event: snapshot\ndata: {body}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                    else:
+                        # only the parts that changed: an edit to one cue
+                        # is not 200 KB to every screen
+                        changed = [k for k, t in parts.items() if sent_parts.get(k) != t]
+                        gone = [k for k in sent_parts if k not in parts]
+                        if changed or gone:
+                            body = ('{"set":{' + ",".join(json.dumps(k) + ":" + parts[k] for k in changed)
+                                    + '},"del":' + json.dumps(gone) + "}")
+                            self.wfile.write(f"event: snapdiff\ndata: {body}\n\n".encode("utf-8"))
+                            self.wfile.flush()
+                    sent_parts = parts
                 if now >= next_lite:
                     next_lite = now + 0.1
                     lite = eng.lite(eng.patch_rev)
                     lite.pop("heads", None)
                     send("lite", lite)
-                looks = eng.look_rows()
-                text = json.dumps(looks, separators=(",", ":"))
+                text = eng.look_text()          # shared by every screen
                 if text != last_look:
                     last_look = text
                     self.wfile.write(("event: look\ndata: " + text + "\n\n").encode("utf-8"))
@@ -755,6 +806,14 @@ class Handler(BaseHTTPRequestHandler):
             status["dmx_input"] = dmxin.snapshot()   # observable input state
             status["midi"] = midi.status()           # devices / open / errors
             return self._json(status)
+        if route == "/api/console/vnode":
+            # the virtual node: what it has been sent (one universe's bytes
+            # with ?universe=N), for the node monitor
+            eng = engine_mod.ENGINE
+            if eng is None:
+                return self._json({"running": False})
+            u = query.get("universe")
+            return self._json(eng.vnode_status(int(u) if u else None))
         if route == "/api/console/input":
             # DMX input observability: frames, per-universe age + staleness.
             return self._json(dmxin.snapshot())
@@ -928,7 +987,8 @@ class Handler(BaseHTTPRequestHandler):
             for r in rows:
                 # What the light physically is, so the picker can show the
                 # 3D model before anything is patched.
-                mode = (r.get("modes") or [{}])[0]
+                mode = engine_mod.default_mode(r.get("modes") or []) or {}
+                r["default_mode"] = mode.get("name")
                 r["body"] = fixture_kind.describe({
                     "manufacturer": r.get("manufacturer"), "model": r.get("model"),
                     "mode": mode.get("name", ""),
