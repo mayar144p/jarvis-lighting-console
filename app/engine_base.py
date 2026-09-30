@@ -91,7 +91,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report",
+    "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -136,7 +136,7 @@ READY_ERROR_WINDOW_S = 60.0
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare",
-                        "venue_preview", "step_capture", "rig_pieces", "rig_report"})
+                        "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "paperwork"})
 
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the
@@ -638,7 +638,7 @@ ACTIONS = (
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
-    "rig_pieces", "rig_add", "rig_trim", "rig_report",
+    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork",
 )
 
 

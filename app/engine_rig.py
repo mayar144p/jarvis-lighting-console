@@ -749,6 +749,36 @@ class RigMixin:
         fx = self._fixture_db(h.get("manufacturer"), h.get("model")) or {}
         return fixlib.physical(fx.get("source") or "")
 
+    def _a_paperwork(self, **_):
+        """Everything the light plot and the patch sheet print: each light
+        (number, name, type, maker / model / mode, universe.address, how many
+        channels, where it is and what it hangs on, weight, power), the
+        venue and the rigging report."""
+        from app import fixture_kind
+        v = venue_mod.normalise(self.venue)
+        rigs = {r["id"]: r for r in v.get("rigging") or []}
+        rows = []
+        for h in sorted(self.patch, key=lambda x: x["head_no"]):
+            ph = self._head_physical(h)
+            d = fixture_kind.describe(h)
+            rid = (h.get("mount") or {}).get("rig")
+            rows.append({
+                "n": h["head_no"], "name": h.get("name", ""), "type": d.get("type") or "generic",
+                "label": d.get("label") or "", "manufacturer": h.get("manufacturer", ""),
+                "model": h.get("model", ""), "mode": h.get("mode", ""),
+                "universe": h.get("universe", 1), "address": h.get("address", 1),
+                "channels": len(h.get("map") or []),
+                "x": round(float(h.get("x") or 0), 2), "y": round(float(h.get("y") or 0), 2),
+                "z": round(float(h.get("z") or 0), 2), "stance": h.get("stance") or "",
+                "rig": (rigs.get(rid) or {}).get("name") or ("floor" if float(h.get("y") or 0) < 1.5 else ""),
+                "kg": ph.get("kg") if ph.get("kg") is not None else riglib.KIND_KG[riglib.light_kind(h)],
+                "kg_known": ph.get("kg") is not None, "watts": ph.get("watts")})
+        rep = riglib.report(v, self.patch, self._head_physical)
+        name = self.show_file if getattr(self, "show_file", None) else ""
+        return {"lights": rows, "venue": v, "rigging": rep, "show": name or "",
+                "universes": sorted({r["universe"] for r in rows}),
+                "summary": f"{len(rows)} light(s) on {len({r['universe'] for r in rows})} universe(s)"}
+
     def _a_rig_report(self, csv=False, **_):
         """The rigging report: each piece or shape, the lights on it, its
         own weight, pick-up points and the load on each (and a parts list)."""

@@ -1006,5 +1006,14 @@ def test_rigging_library() -> None:
                   and parts.get(("box30", "4.0")) == 1 and parts.get(("box30", "3.0")) == 1, str(parts))
             check("the report as CSV", rep["csv"].startswith("piece,") and "Circle 4 m" in rep["csv"], "")
             check("guessed weights are said", any("guessed" in w for w in c["warnings"]), str(c["warnings"]))
+            pw = e.act("paperwork")
+            L = pw["lights"][0]
+            check("paperwork: every light with its address, kind, rig and weight",
+                  pw.get("ok") and len(pw["lights"]) == 6 and L["universe"] == 1 and L["address"] == 1
+                  and L["rig"] == "Circle 4 m" and L["kg"] > 0 and L["channels"] > 0, str(L))
+            page = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
+            check("the plot page prints the plot, the patch sheet and the rigging",
+                  '"paperwork"' in page and "function patchSheet" in page and "function rigSheet" in page
+                  and "window.print" in page, "")
         finally:
             e.shutdown()

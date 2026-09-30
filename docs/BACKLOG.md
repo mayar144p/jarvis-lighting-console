@@ -176,8 +176,15 @@ blur, VR).
     LED screens / video walls that play a clip or mirror a pixel map;
     shadows from the crowd and stage; lens flares at low angles; a
     "photo" render; first-person walk; camera presets per venue.
-15. **Paperwork:** a light plot (top view with symbols, numbers,
-    addresses) and a patch sheet as PDF, straight from the drawing.
+15. **Paperwork.  DONE:** Show ▾ -> Paperwork… (/plot.html): the light
+    plot (the room from above - walls, stage, zones, objects, marks,
+    rigging with names and trims - a symbol per kind of light with its
+    number and universe.address, a legend with the models, a 2 m scale,
+    a title block: show, venue, lights, rigging load, date, power; a
+    deep room turns on its side to fill the page), the patch sheet (by
+    universe and address: channels, name, maker / model / mode, kind,
+    what it hangs on, x y z, kg and W) and the rigging report with the
+    parts list.  A4 landscape; Print / Save as PDF.
 16. **DONE:** the view goes to the front of the room it is showing (on
     load and whenever the room's size changes; it was placed once for the
     stand-in room - 24 m back from a 3 m room); the crowd follows each
