@@ -6404,6 +6404,8 @@ def test_hardening(tmp: Path) -> None:
                    headers={"Host": "attacker.example:%d" % port}) == 403, "")
         check("a malformed GET answers 400 instead of dropping the connection",
               call("/api/gdtf/search?limit=abc") == 400, "")
+        check("the app manifest is served (install as an app)",
+              call("/manifest.webmanifest") == 200 and call("/icons/icon-512.png") == 200, "")
         check("the network check answers (Settings -> Output)",
               call("/api/console/network") == 200, "")
         check("the open libraries are searchable over HTTP",
@@ -7548,6 +7550,7 @@ def _standalone_suites():
     ("RGB-only lights: a virtual dimmer; modes that can be controlled", test_virtual_dimmer),
     ("review of PR #28: undo / load / unpatch with cue effects, queries, Ready?", test_review_fixes),
     ("steady DMX: ArtSync / sACN sync, shared looks, effect lookups cached", test_steady_dmx),
+    ("tablets: screen stays awake, installs as an app, reconnects at once", test_tablets),
     )
 
 
@@ -9594,6 +9597,35 @@ def test_steady_dmx() -> None:
                   and pub["recent_error"] is False, str(pub))
         finally:
             e.shutdown()
+
+
+def test_tablets() -> None:
+    """A tablet at a gig: the screen doesn't sleep, the console installs as
+    a full-screen app, and a dead link (slept, changed Wi-Fi) is noticed in
+    seconds and re-synced with a full snapshot."""
+    print("tablets")
+    web = ROOT / "web"
+    man = json.loads((web / "manifest.webmanifest").read_text(encoding="utf-8"))
+    sizes = {i["sizes"] for i in man["icons"] if i["type"] == "image/png"}
+    check("the manifest opens full screen with 192 and 512 px icons",
+          man["display"] == "fullscreen" and {"192x192", "512x512"} <= sizes
+          and any("maskable" in i.get("purpose", "") for i in man["icons"]), str(man))
+    check("every icon the manifest names exists",
+          all((web / i["src"].lstrip("/")).is_file() for i in man["icons"]), "")
+    html = (web / "index.html").read_text(encoding="utf-8")
+    check("the page links the manifest and a home-screen icon",
+          'rel="manifest"' in html and 'rel="apple-touch-icon"' in html
+          and (web / "icons" / "icon-180.png").is_file(), "")
+    from app import main as main_mod
+    check("the manifest is served as a manifest", main_mod._MIME.get(".webmanifest") == "application/manifest+json", "")
+    tj = (web / "app" / "tablet.js").read_text(encoding="utf-8")
+    check("the wake lock is taken, and taken again when the tab comes back",
+          'wakeLock.request("screen")' in tj and "visibilitychange" in tj and "beforeinstallprompt" in tj, "")
+    api = (web / "app" / "api.js").read_text(encoding="utf-8")
+    check("a quiet stream is dropped and re-opened; coming back online retries at once",
+          "watchdog" in api and '"online"' in api and "wakeWait" in api, "")
+    dj = (web / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("Settings has keep-awake and install", "wakeRow()" in dj and "installRow()" in dj, "")
 
 
 def test_room_fit() -> None:

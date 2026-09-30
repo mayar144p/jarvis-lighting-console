@@ -35,6 +35,7 @@ _MIME = {
     ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
     ".jpg": "image/jpeg", ".woff2": "font/woff2", ".glb": "model/gltf-binary",
     ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
 }
 
 # One GDTF Share client for the process.  It owns the session cookie, so

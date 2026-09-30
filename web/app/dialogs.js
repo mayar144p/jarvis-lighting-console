@@ -3,6 +3,7 @@
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
+import { wakeSupported, wakeOn, wakeHeld, wakeError, setWake, canInstall, installed, install } from "./tablet.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
@@ -801,6 +802,8 @@ export async function openSettings() {
       }, "Resize room"))),
     h("h3", "Screen"),
     h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
+    wakeRow(),
+    installRow(),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
@@ -821,6 +824,36 @@ export async function openSettings() {
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
+}
+
+// Keep this screen on while the console is open.
+function wakeRow() {
+  const box = h("input", { type: "checkbox" });
+  box.checked = wakeOn();
+  const note = h("span.muted.small", "");
+  const show = () => {
+    note.textContent = !wakeSupported()
+      ? (window.isSecureContext ? "This browser can't keep the screen on: turn auto-lock off in the tablet's settings."
+        : "Browsers only keep the screen on for https pages: turn auto-lock off in the tablet's settings.")
+      : !box.checked ? "" : wakeHeld() ? "The screen stays on while Jarvis is open." : (wakeError() || "Tap anywhere to keep the screen on.");
+  };
+  box.disabled = !wakeSupported();
+  box.addEventListener("change", async () => { await setWake(box.checked); show(); });
+  show();
+  return h("div", h("label.check", box, h("span", "Keep this screen awake")), note);
+}
+
+// Install as an app: full screen, its own icon, no browser bars.
+function installRow() {
+  if (installed()) return h("p.muted.small", "Running as an installed app.");
+  if (canInstall()) {
+    return h("div.row-btns", h("button.btn", {
+      onclick: async (e) => { if (await install()) e.target.replaceWith(h("span.muted.small", "Installed: open Jarvis from the home screen.")); },
+    }, "Install as an app"), h("span.muted.small", "full screen, its own icon, no browser bars"));
+  }
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return h("p.muted.small", ios ? "To install: Share → Add to Home Screen. It then opens full screen."
+    : "To install: the browser menu → Install app / Add to Home screen.");
 }
 
 // MIDI on this device: a controller plugged into the tablet / laptop the

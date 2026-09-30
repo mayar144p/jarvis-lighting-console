@@ -53,8 +53,13 @@ Fixed:
    the status bar ("smooth" / "a few late frames" / "stuttering").
    Left: DMX and the 3D look from one resolve - no longer on the DMX
    path, so only CPU; do it with the engine split (item 4).
-3. Tablets: screen wake lock, installable full-screen app, instant
-   re-sync after a reconnect.
+3. **(DONE) Tablets.**  Screen wake lock (Settings -> Keep this screen
+   awake, on by default; browsers only allow it on https or the desk
+   computer itself, and Settings says so); installable full-screen app
+   (manifest, icons, "Install as an app" in Settings, Add to Home Screen
+   on iPad); a stream that goes quiet for 3 s is dropped and re-opened
+   with a full snapshot, retries are at most 2 s apart, and coming back
+   online or to the tab retries at once.
 4. Code health: split engine.py (10.5k lines) and selftest.py (11.4k) by
    area; consolidate app.css (47 duplicated selectors).
 5. A built-in virtual Art-Net / RDM node and a MIDI test page.
