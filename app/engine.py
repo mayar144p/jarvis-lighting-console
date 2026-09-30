@@ -693,6 +693,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                                     gates=self._gates(), rests=self._rests())
         if not self.blackout:
             self._write_raw(frames)
+        self._write_colour_cal(frames)
         return frames
 
     def _raw_holds(self) -> dict:

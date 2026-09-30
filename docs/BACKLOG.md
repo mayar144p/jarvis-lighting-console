@@ -209,8 +209,12 @@ The pass walked every tab for one light of each type (see A0).  Next:
     ("3 × Moving Head · colour, position, beam"; "4 × LED PARty · more
     channels") with that model's controls, sent to those lights only
     (set_attribute / set_attr_range take `heads`).
-19. **Brand colour matching:** LED colours differ between brands - a
-    per-fixture colour calibration so "red" matches across the rig.
+19. **Brand colour matching.  DONE:** Colour tab -> Match colours across
+    brands…: show white / red / amber… on the selection next to a
+    reference light and take each emitter down (40-100%); kept with the
+    fixture (every light of that model and mode, not an undo step),
+    applied as the frame is written (cues, effects, buttons - 16-bit
+    too); the 3D view keeps the colour asked for; reset.
 20. **DONE (already there):** lights with an unknown shutter "open" value:
     the Level / Beam warning and Test this light find it on the real
     light and `remember_open` stores it for every light of that model.

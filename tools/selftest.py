@@ -150,6 +150,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_cue_modes,
     test_rigging_library,
     test_mixed_selection_targets,
+    test_colour_match,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -280,6 +281,7 @@ def _standalone_suites():
     ("Cue lists: tracking, move in black, cue actions, blind", test_cue_modes),
     ("Rigging library: shapes, trim, loads", test_rigging_library),
     ("Mixed selection: per-kind controls", test_mixed_selection_targets),
+    ("Colour matching across brands", test_colour_match),
     )
 
 

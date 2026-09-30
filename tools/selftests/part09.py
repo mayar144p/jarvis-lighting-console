@@ -1052,3 +1052,38 @@ def test_mixed_selection_targets() -> None:
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Beam tab: a section per kind of light; plain words",
           "attr-kind" in js and "reaches all" not in js and "Own channels" in js, "")
+
+
+def test_colour_match() -> None:
+    """Colour matching: a model's gain per emitter scales what goes out on
+    the wire (not the 3D look), for every light of the model; reset."""
+    print("Colour matching across brands")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ffffff")
+            h = e.patch[0]
+            a = h["address"] - 1
+            ri, bi = h["map"].index("red"), h["map"].index("blue")
+            r = e.act("colour_cal", red=80, blue=50)
+            f = e.build_frames()
+            b = e.patch[1]["address"] - 1
+            check("red 80%, blue 50% on the wire - both lights of the model",
+                  r.get("ok") and f[1][a + ri] == 204 and f[1][a + bi] == 127 and f[1][b + ri] == 204,
+                  str([f[1][a + i] for i in range(len(h["map"]))]))
+            check("the 3D look still shows white", e._looks()[0]["hex"] == "#ffffff", e._looks()[0]["hex"])
+            check("read back", e.act("colour_cal_get", head=1)["cal"] == {"red": 80, "green": 100, "blue": 50}, "")
+            check("not an undo step (it is the fixture's)", "colour_cal" not in [u["action"] for u in e._undo], "")
+            e.act("colour_cal", head=1, reset=True)
+            f = e.build_frames()
+            check("reset: as it comes", f[1][a + ri] == 255 and f[1][a + bi] == 255, "")
+        finally:
+            e.shutdown()

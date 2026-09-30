@@ -316,6 +316,11 @@ function renderMarks() {
     ...marks.map((m) => h("option", { value: m.name }, m.name || "mark")));
 }
 
+function wireColourMatch() {
+  const b = $("#colour-match");
+  if (b) b.addEventListener("click", () => import("./colourmatch.js").then((m) => m.openColourMatch()));
+}
+
 function wirePad() {
   $("#aim-spot").addEventListener("click", () => {
     if (!hasSel()) { toast("Select the lights to aim first"); return; }
@@ -985,6 +990,7 @@ export function initProgrammer() {
     else toast("Colour as #rrggbb", "bad");
   });
   wirePad();
+  wireColourMatch();
   wireTools();
   const kel = $("#kelvin");
   kel.addEventListener("input", () => {

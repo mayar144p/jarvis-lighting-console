@@ -1272,3 +1272,6 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .stage canvas.walking { cursor: grab !important; }
 .attr-kind { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 8px; }
 .attr-kind > summary { cursor: pointer; padding: 2px 0 6px; }
+#colour-match { margin-top: 10px; }
+.cm-row { display: grid; grid-template-columns: 70px 1fr 44px; gap: 8px; align-items: center; margin: 6px 0; }
+.colour-match .chip-row { margin: 8px 0 10px; flex-wrap: wrap; }
