@@ -80,7 +80,12 @@ Spotlight (draw a truss by dragging a line to length; plots, legends,
 auto-numbering, paperwork from the drawing), Depence R4 (photoreal real-
 time beams, video mapping onto any surface, pixel-mapped lasers, motion
 blur, VR).
-12. **Draw rooms like a plan, not by dragging a line:** a top-down drafting
+12. **Many ways to make a room, drawing is only one:** pick a shape and
+    type its sizes (rectangle, L, T, U, round / octagon, with a stage end);
+    a template (club, warehouse, ...); trace a floor plan / photo; describe
+    it to the AI ("a 12 x 8 m club, bar on the left, DJ booth on a 40 cm
+    riser"); later a phone room scan.  **And draw rooms like a plan, not by
+    dragging a line:** a top-down drafting
     mode with a grid, typed dimensions ("8 m" while drawing), click-corner
     room outlines with right angles and closing, measured walls, doors,
     pillars, balconies, a ceiling height per area; copy / array (4
