@@ -70,6 +70,7 @@ class ShowMixin:
             "quick": self.quick,
             "sound": self._sound_cfg(),
             "step_fx": self._steps(),
+            "parked": self.__dict__.get("parked") or {},
             "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
@@ -226,6 +227,7 @@ class ShowMixin:
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
+            self.parked = self._clean_parked(payload.get("parked"))
             if isinstance(payload.get("output_target"), dict):
                 self.dmx_target = clean_dmx_target(payload["output_target"])
             for b in payload.get("quick") or []:
@@ -265,6 +267,7 @@ class ShowMixin:
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
                 "step_fx": json.loads(json.dumps(self._steps(), default=str)),
+                "parked": json.loads(json.dumps(self.__dict__.get("parked") or {}, default=str)),
                 "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
@@ -604,6 +607,7 @@ class ShowMixin:
                 if isinstance(payload.get("quick_names"), dict) else {}
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
+            self.parked = self._clean_parked(payload.get("parked"))
             self.moves = []
             for m in payload.get("moves") or []:
                 try:

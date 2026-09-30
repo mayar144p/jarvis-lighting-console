@@ -143,6 +143,7 @@ from tools.selftests.part08 import (  # noqa: E402
 from tools.selftests.part09 import (  # noqa: E402
     test_autopilot,
     test_beat_clock,
+    test_desk_tools,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -266,6 +267,7 @@ def _standalone_suites():
     ("autopilot: a cue list plays itself on the phrase, by the room", test_autopilot),
     ("spatial effects: through the room by where the lights are", test_spatial_fx),
     ("step effects: from your own looks and palettes", test_step_fx),
+    ("desk tools: highlight / solo, park, group masters", test_desk_tools),
     )
 
 

@@ -648,3 +648,73 @@ def test_step_fx() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("the FX tab lists step effects; the editor takes looks and palettes as steps",
           'id="stepfx-list"' in html and '"step_capture"' in sj and '"step_fx_save"' in sj and "palette" in sj, "")
+
+
+def test_desk_tools() -> None:
+    """Highlight / solo find the lights you work on; park holds a light
+    dark or as it is whatever runs; a group master scales its group."""
+    print("desk tools")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2, 3, 4])
+            e.act("set_intensity", level=40)
+            e.act("set_colour", hex="#ff0000")
+            e.act("select_heads", heads=[2])
+            r = e.act("highlight", state=True)
+            with e.lock:
+                f = e.build_frames()[1]
+            check("highlight: the selected light at full, open white", r.get("ok") and f[4] == 255
+                  and f[5] == f[6] == f[7] == 255, str(list(f[:16])))
+            check("...the others as they were", f[0] == 102, str(list(f[:4])))
+            e.act("highlight", state=True, solo=True)
+            with e.lock:
+                f = e.build_frames()[1]
+            check("solo: everything else dark", f[0] == 0 and f[4] == 255, str(list(f[:16])))
+            e.act("highlight", state=False)
+            with e.lock:
+                f = e.build_frames()[1]
+            check("off: back to the show, nothing recorded", f[4] == 102 and e.programmer[2].get("dimmer") == 40, str(list(f[:8])))
+            e.act("park", heads=[3], mode="dark")
+            e.act("park", heads=[4], mode="hold")
+            e.act("select_heads", heads=[3, 4])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#0000ff")
+            with e.lock:
+                f = e.build_frames()[1]
+            check("parked dark: stays dark whatever you do", f[8] == 0, str(list(f[8:12])))
+            check("parked as it was: frozen", f[12] == 102 and f[13] == 255 and f[15] == 0, str(list(f[12:16])))
+            check("park shows in the snapshot", e.snapshot()["parked"] == [3, 4], "")
+            e.act("save_show", name="parked")
+            e.act("unpark", all=True)
+            with e.lock:
+                f = e.build_frames()[1]
+            check("unparked: they follow the programmer again", f[8] == 255 and f[15] == 255, str(list(f[8:16])))
+            e.act("load_show", name="parked")
+            check("parking is saved with the show", e.snapshot()["parked"] == [3, 4], str(e.snapshot()["parked"]))
+            e.act("unpark", all=True)
+            e.act("select_heads", heads=[1, 2, 3, 4])
+            e.act("set_intensity", level=100)
+            e.act("select_heads", heads=[1, 2])
+            e.act("group_create", name="Front")
+            g = e.groups[0]["n"]
+            e.act("group_master", group=g, level=50)
+            with e.lock:
+                f = e.build_frames()[1]
+            check("a group master at 50%: its lights at half", f[0] == 127 and f[4] == 127 and f[8] == 255, str(list(f[:12])))
+            r = e.act("group_master", group=99, level=10)
+            check("a group that isn't there is refused", not r.get("ok"), "")
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    check("Highlight button (H), park in the fixtures menu, group master faders",
+          'id="hl-btn"' in html and '"park"' in fj and '"unpark"' in fj and '"group_master"' in pj
+          and 'id="grp-masters"' in html, "")

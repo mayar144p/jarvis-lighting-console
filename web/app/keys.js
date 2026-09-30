@@ -61,6 +61,10 @@ export function initKeys() {
     if (k === "?") { openHelp(); return; }
     const low = k.toLowerCase();
     if (low === "t") return e.shiftKey ? downbeat() : tap();
+    if (low === "h") {
+      const cur = (state.snap && state.snap.highlight) || {};
+      return run("highlight", { state: !cur.on, solo: e.shiftKey });
+    }
     if (low === "b") return run("cue_back", { playback: focusedPlayback() });
     if (low === "x") return run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 });
     if (low === "a") return e.shiftKey ? select([]) : run("select_all");

@@ -900,6 +900,17 @@ export function initProgrammer() {
   }));
   $("#locate-btn").addEventListener("click", () => run("locate"));
   $("#clear-btn").addEventListener("click", () => run("clear_programmer"));
+  const hl = $("#hl-btn");
+  hl.addEventListener("click", (e) => {
+    const cur = (state.snap && state.snap.highlight) || {};
+    run("highlight", { state: !cur.on, solo: e.shiftKey || (cur.on ? cur.solo : false) }, { toast: true });
+  });
+  const syncHl = () => {
+    const cur = (state.snap && state.snap.highlight) || {};
+    hl.classList.toggle("on", !!cur.on);
+    hl.textContent = cur.on && cur.solo ? "Solo" : "Highlight";
+  };
+  on("snapshot", syncHl);
   const rec = $("#highlight-btn");
   rec.textContent = "Record cue…";
   rec.title = "Record the programmer as a cue (R)";

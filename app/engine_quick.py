@@ -761,14 +761,17 @@ class QuickMixin:
             summary += f"; {r['summary']}"
         return {"buttons": len(made), "summary": summary}
 
-    def _override_vals(self) -> dict:
+    def _override_vals(self, skip_parked: bool = False) -> dict:
         """Per-head overrides from the quick buttons that are held now,
-        and from the FX layer (the only way an effect's output moves)."""
+        from the FX layer (the only way an effect's output moves), from
+        the sound, group masters, highlight and park - park last: a parked
+        light stays where it was parked whatever else is going on."""
         out = self._quick_override_vals()
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():
                 out.setdefault(n, {}).setdefault("set", {}).update(sets)
         self._sound_overrides(out)
+        self._desk_overrides(out, skip_parked=skip_parked)
         return out
 
     def _quick_override_vals(self) -> dict:

@@ -217,6 +217,7 @@
             <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
             <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
             <button class="btn" id="highlight-btn" title="Flash the selection">Flash</button>
+            <button class="btn" id="hl-btn" title="Highlight: the selection at full, open white until you turn it off (H); Shift: solo, everything else dark">Highlight</button>
           </div>
         </div>
 
@@ -391,6 +392,7 @@
         <p class="tl-hint">Double-click a lane to add · drag clips to move, their edge to resize · right-click to edit · Alt = no snap</p>
       </div>
       <div class="masters">
+        <div class="grp-masters" id="grp-masters"></div>
         <div class="master">
           <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
           <span class="m-label">GM <output id="gm-num">100</output></span>

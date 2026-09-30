@@ -64,12 +64,13 @@ from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
 from app.engine_autopilot import AutopilotMixin
 from app.engine_steps import StepsMixin
+from app.engine_desk import DeskMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -248,6 +249,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
             "step_fx": copy.deepcopy(self._steps()),
+            "parked": copy.deepcopy(self.__dict__.get("parked") or {}),
             "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
@@ -290,6 +292,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.quick_names = dict(state.get("quick_names") or {})
         if "sound_cfg" in state:
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
+        if "parked" in state:
+            self.parked = copy.deepcopy(state["parked"])
         if "step_fx" in state:
             self.step_fx = copy.deepcopy(state["step_fx"])
             self.fx = [r for r in self.fx if not r.get("steps") or any(f["id"] == r["steps"] for f in self.step_fx)]
@@ -1187,6 +1191,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
+                "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "move_spots": self._move_spots(),
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
                 "floor_movers": len(self._floor_limits()),
@@ -1255,6 +1261,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
+                "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out
