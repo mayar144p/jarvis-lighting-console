@@ -455,6 +455,12 @@ function syncAudio() {
 function onTransport(t) {
   if (!t) return;
   transport = t;
+  const tc = t.timecode || {};
+  const b = $("#tl-tc");
+  if (b) {
+    b.classList.toggle("on", !!tc.follow);
+    b.textContent = tc.follow ? (tc.running ? `MTC ${tc.time}` : "MTC · waiting") : "MTC";
+  }
   stamp = performance.now();
   if (visible) drawHead();
   syncAudio();
@@ -472,6 +478,14 @@ export function setTimelineVisible(on) {
 
 export function initTimeline() {
   $("#tl-play").addEventListener("click", () => run(transport.playing ? "timeline_pause" : "timeline_play"));
+  $("#tl-tc").addEventListener("click", async () => {
+    const tc = transport.timecode || {};
+    if (tc.follow) { run("timecode", { state: false }, { toast: true }); return; }
+    const off = await promptBox("Follow MIDI timecode", "The timecode where the timeline starts (seconds, or h:mm:ss)", tc.offset ? String(tc.offset) : "0", { ok: "Follow" });
+    if (off === null) return;
+    const secs = String(off).includes(":") ? String(off).split(":").reduce((a, v) => a * 60 + (+v || 0), 0) : +off || 0;
+    run("timecode", { state: true, offset: secs }, { toast: true });
+  });
   $("#tl-stop").addEventListener("click", () => run("timeline_stop"));
   $("#tl-loop").addEventListener("click", () => run("timeline_set", { loop: !doc().loop }));
   $("#tl-bpm").addEventListener("change", (e) => run("timeline_set", { bpm: +e.target.value || 120 }));

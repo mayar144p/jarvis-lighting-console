@@ -814,3 +814,46 @@ def test_osc() -> None:
     bad = [a for a in ("patch_clear", "remove_heads", "save_show", "load_show", "set_dmx_target", "venue_") if a in rj]
     check("the DJ-booth remote: buttons, tap, autopilot, master, blackout - and nothing that edits the show",
           'id="grid"' in rh and '"quick_press"' in rj and '"tempo_tap"' in rj and '"autopilot"' in rj and not bad, str(bad))
+
+
+def test_timecode() -> None:
+    """MIDI timecode: the timeline jumps to it, plays along, re-seeks when
+    it drifts and pauses when the timecode stops."""
+    print("MIDI timecode")
+    from app import engine as eng
+    from app import tempo
+
+    tc = tempo.Timecode()
+    got = [tc.quarter_frame(b, 0.0) for b in tempo.build_mtc(3723.4)]
+    check("eight quarter frames make one time (+2 frames)", got[:7] == [None] * 7 and abs(got[7] - 3723.48) < 0.01, str(got))
+    check("the time reads h:mm:ss:ff", tc.text().startswith("01:02:03"), tc.text())
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("timeline_set", length=120)
+            for b in tempo.build_mtc(10.0):
+                e.tempo_mtc(b)
+            check("not following: the timeline stays", not e.tl["playing"], "")
+            r = e.act("timecode", state=True, offset=5)
+            check("follow timecode", r.get("ok") and e.timecode_public()["follow"], str(r))
+            for b in tempo.build_mtc(10.0):
+                e.tempo_mtc(b)
+            check("it plays from the timecode less the offset", e.tl["playing"] and abs(e._tl_now() - 5.08) < 0.1, str(e._tl_now()))
+            for b in tempo.build_mtc(40.0):
+                e.tempo_mtc(b)
+            check("a jump re-seeks", abs(e._tl_now() - 35.08) < 0.1, str(e._tl_now()))
+            check("the transport shows it", e.timecode_public()["running"] and "timecode" in e._tl_transport(), "")
+            deadline = time.monotonic() + 2
+            while e.tl["playing"] and time.monotonic() < deadline:
+                time.sleep(0.05)
+            check("the timecode stops: the timeline pauses", not e.tl["playing"], "")
+            for b in tempo.build_mtc(2.0):
+                e.tempo_mtc(b)
+            check("before the offset: nothing plays", not e.tl["playing"], str(e._tl_now()))
+            e.act("timecode", state=False)
+            check("timecode off", not e.timecode_public()["follow"], "")
+        finally:
+            e.shutdown()

@@ -494,6 +494,15 @@ class MidiManager:
                     break
                 continue
             status = int(item[1]) & 0xFF
+            if status == 0xF1:
+                # MIDI timecode: the timeline follows it
+                feed = getattr(self.engine, "tempo_mtc", None)
+                if feed is not None:
+                    try:
+                        feed(int(item[2]))
+                    except Exception:           # noqa: BLE001 - never die
+                        pass
+                continue
             if status in (0xF8, 0xFA, 0xFB, 0xFC):
                 # MIDI clock / start: the desk's beat clock, not a mapping
                 feed = getattr(self.engine, "tempo_midi", None)

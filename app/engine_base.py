@@ -107,7 +107,7 @@ UNDO_EXCLUDED = frozenset({
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats", "fx_space",
     "step_fx_run", "highlight", "group_master",
     # a macro manages its own undo: its lines are ONE step
-    "macro_run", "osc",
+    "macro_run", "osc", "timecode",
     "sound_tempo", "autopilot", "autopilot_next",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target", "virtual_node",
@@ -634,7 +634,7 @@ ACTIONS = (
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
     "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run",
     "highlight", "park", "unpark", "group_master",
-    "macro_save", "macro_delete", "macro_run", "osc",
+    "macro_save", "macro_delete", "macro_run", "osc", "timecode",
 )
 
 

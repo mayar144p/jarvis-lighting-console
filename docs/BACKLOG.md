@@ -125,10 +125,11 @@ Fixed:
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
     group masters (a fader per group next to the GM), macros (command
     lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
-    the DJ-booth remote page (/remote.html).  **Left:** tracking /
-    cue-only; move-in-black; cue actions; macros; blind edit with 3D
-    preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);
-    a DJ-booth remote page.
+    the DJ-booth remote page (/remote.html), MIDI timecode (the timeline
+    follows MTC from the desk's MIDI in: MTC in the timeline bar, with
+    the timecode where the timeline starts).  **Left:** tracking /
+    cue-only; move-in-black; cue actions; blind edit with 3D preview;
+    LTC (audio timecode); OSC out.
 
 ## A3. Visualiser and venue editor
 
