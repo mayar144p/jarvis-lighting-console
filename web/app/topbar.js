@@ -167,7 +167,7 @@ function syncBlind() {
   const el = $("#blind-pill");
   if (!el) return;
   el.hidden = !b.on;
-  el.textContent = b.cue ? `BLIND · cue ${b.cue}` : "BLIND";
+  el.textContent = b.cue ? `PREVIEW · cue ${b.cue}` : "PREVIEW";
 }
 
 export function initTopbar() {
@@ -177,7 +177,7 @@ export function initTopbar() {
     const b = (state.snap && state.snap.blind) || {};
     menu(e.currentTarget, [
       b.cue ? { label: `Record into cue ${b.cue} (PB${b.playback})`, hint: "replace it with the programmer", run: () => run("record_cue", { playback: b.playback, cue: b.cue, mode: "replace" }, { toast: true }) } : null,
-      { label: "Leave blind", hint: "drops what wasn't recorded", run: () => run("blind", { state: false }, { toast: true }) },
+      { label: "Leave preview", hint: "drops what wasn't recorded", run: () => run("blind", { state: false }, { toast: true }) },
     ].filter(Boolean));
   });
   $("#out-arm").addEventListener("click", () => (outputState() === "live" ? run("set_output", { state: 0 }) : goLive()));

@@ -145,7 +145,7 @@ _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
 # throw the first away.
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
-    "set_address", "set_place",
+    "set_address", "set_place", "aim_at", "nudge",
 })
 
 # --- channel roles ------------------------------------------------------

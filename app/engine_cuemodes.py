@@ -224,15 +224,15 @@ class CueModesMixin:
                 self._prog_fade = None
                 self._blind_cue = (pb["n"], num)
                 return {"blind": self.blind_public(),
-                        "summary": f"blind: editing cue {num} on PB{pb['n']} - the rig doesn't see it; Record to keep"}
-            return {"blind": self.blind_public(), "summary": "blind: the programmer shows in 3D only"}
+                        "summary": f"preview: editing cue {num} on PB{pb['n']} in 3D only - the rig doesn't see it; Record to keep"}
+            return {"blind": self.blind_public(), "summary": "preview: the programmer shows in 3D only"}
         if on:
             self.programmer = self.__dict__.get("_blind_prog") or {}
             self._prog_fade = None
         self._blind_live = None
         self._blind_prog = None
         self._blind_cue = None
-        return {"blind": self.blind_public(), "summary": "blind off: the programmer is live again"}
+        return {"blind": self.blind_public(), "summary": "preview off: the programmer is live again"}
 
     def _blind_recorded(self, pb: dict, num: int) -> None:
         """Recording while blind-editing that cue ends the edit (the rest

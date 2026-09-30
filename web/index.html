@@ -48,7 +48,7 @@
       <button class="tb-btn fx-kill" id="fx-kill" title="Stop every laser and effect at once, and disarm">KILL FX</button>
     </div>
 
-    <button class="blind-pill" id="blind-pill" hidden title="Blind: the programmer shows in 3D only - the rig doesn't see it. Click for Record / leave blind.">BLIND</button>
+    <button class="blind-pill" id="blind-pill" hidden title="Preview: the programmer shows in 3D only - the rig doesn't see it. Click for Record / leave preview.">PREVIEW</button>
     <div class="tempo" id="tempo" role="group" aria-label="Tempo" hidden>
       <button class="tempo-tap" id="tempo-tap" aria-label="Tap tempo"><i class="tempo-dot" id="tempo-dot"></i><b id="tempo-bpm">120</b><small>BPM</small><em id="tempo-src"></em></button>
       <button class="tempo-more" id="tempo-more" aria-label="Tempo options">▾</button>
@@ -238,26 +238,30 @@
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>
+          <div id="move-aim"></div>
+          <section class="mv-sec mv-pt" id="mv-pt">
+            <h3>Pan / tilt</h3>
+            <div class="mv-pt-row">
+              <div class="pad" id="pad" aria-label="Pan and tilt pad" title="Drag: pan left-right, tilt up-down">
+                <div class="pad-grid"></div>
+                <div class="pad-dot" id="pad-dot"></div>
+              </div>
+              <div id="move-nudge"></div>
+            </div>
+            <div class="pad-read" id="pad-read">pan – · tilt –</div>
+            <div class="aim-row">
+              <label class="field inline"><span>Pan °</span><input type="number" id="aim-pan" step="1"></label>
+              <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
+              <button class="btn small" id="aim-btn">Aim</button>
+              <button class="btn small ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
+            </div>
+            <div class="row-btns aim-tools">
+              <button class="btn small" id="aim-spot" title="Then click once anywhere in the 3D view: every selected mover points there">Aim at one click…</button>
+              <select class="select" id="aim-mark" title="Point the selection at a performer mark"><option value="">Aim at a mark…</option></select>
+            </div>
+            <div class="palette-strip" data-kind="position"></div>
+          </section>
           <div id="move-panel"></div>
-          <details class="more mv-more">
-          <summary>Pan/tilt pad, exact angles, aim at a point in 3D, marks, saved spots</summary>
-          <div class="pad" id="pad" aria-label="Pan and tilt pad">
-            <div class="pad-grid"></div>
-            <div class="pad-dot" id="pad-dot"></div>
-          </div>
-          <div class="pad-read" id="pad-read">pan – · tilt –</div>
-          <div class="aim-row">
-            <label class="field inline"><span>Pan °</span><input type="number" id="aim-pan" step="1"></label>
-            <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
-            <button class="btn" id="aim-btn">Aim</button>
-          </div>
-          <div class="row-btns aim-tools">
-            <button class="btn" id="aim-spot" title="Then click anywhere in the 3D view: every selected mover points there">Aim at a spot…</button>
-            <select class="select" id="aim-mark" title="Point the selection at a performer mark"><option value="">Aim at a mark…</option></select>
-            <button class="btn ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
-          </div>
-          <div class="palette-strip" data-kind="position"></div>
-          </details>
         </div>
 
         <div class="tab-pane" data-pane="beam" hidden>

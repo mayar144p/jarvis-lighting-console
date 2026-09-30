@@ -966,7 +966,7 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .mv-play { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; background: none; border: 0; color: var(--text); cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-height: 48px; }
 .mv-play b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mv-play small { font-size: 11px; color: var(--muted); }
-.mv-more { margin-top: 8px; width: 36px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
+.mv-opts { width: 36px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 16px; }
 .mv-more:hover { color: var(--text); }
 /* Looks: named, one tap plays colours + positions + effects */
 .looks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -1232,3 +1232,28 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .grp-masters:empty { display: none; }
 .master.grp .m-label { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 800; font-size: 10px; }
+
+/* Move tab: aim (follow me + floor map), pan/tilt with nudge beside it */
+.aim-follow { width: 100%; justify-content: center; font-weight: 600; margin-bottom: 8px; }
+.aim-follow.on { border-color: var(--accent); background: var(--accent-bg); color: var(--text); animation: blindpulse 1.6s ease-in-out infinite; }
+.aim-map { border: 1px solid var(--border-2); border-radius: var(--radius); background: var(--bg-2); margin-bottom: 8px; touch-action: none; cursor: crosshair; }
+.aim-map svg { display: block; width: 100%; height: auto; max-height: 260px; }
+.am-room { fill: #0d121b; stroke: var(--border-2); stroke-width: .06; }
+.am-stage { fill: #1d2330; stroke: #3a4458; stroke-width: .05; }
+.am-zone { fill: rgba(56,189,248,.06); stroke: rgba(56,189,248,.35); stroke-width: .05; }
+.am-dancefloor { fill: rgba(56,189,248,.12); }
+.am-label { fill: var(--muted); font-size: .6px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.am-head { fill: #5b6475; }
+.am-head.on { fill: #fbbf24; stroke: #000; stroke-width: .04; }
+.am-ring { fill: none; stroke: var(--accent); stroke-width: .1; }
+.am-dot { fill: var(--accent); }
+.mv-spotbox .mv-spots { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.mv-spotbox .mv-spot { padding: 7px 4px; }
+.mv-pt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.mv-pt .pad { aspect-ratio: 1.15; max-height: 190px; }
+.mv-nudgebox .mv-nudge { flex-direction: column; align-items: stretch; gap: 8px; }
+.mv-nudgebox .mv-pad { grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 34px); }
+.mv-nudgebox .mv-nudge-side { gap: 6px; }
+.mv-pt .aim-row input { width: 64px; }
+.stage canvas.following { cursor: crosshair !important; }
+@media (max-width: 380px) { .mv-pt-row { grid-template-columns: 1fr; } }
