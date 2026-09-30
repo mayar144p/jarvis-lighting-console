@@ -829,6 +829,7 @@ export async function openSettings() {
     webMidiRow(),
     h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
       h("span.muted.small", "see what a controller sends and what it did")),
+    oscRow(),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
@@ -862,6 +863,25 @@ function installRow() {
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   return h("p.muted.small", ios ? "To install: Share → Add to Home Screen. It then opens full screen."
     : "To install: the browser menu → Install app / Add to Home screen.");
+}
+
+// OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
+function oscRow() {
+  const o = (state.snap && state.snap.osc) || {};
+  const box = h("input", { type: "checkbox" });
+  box.checked = !!o.on;
+  const port = h("input", { type: "number", min: 1024, max: 65535, value: o.port || 8000, style: { width: "90px" } });
+  const note = h("span.muted.small", o.on ? `listening on UDP ${o.port} · ${o.count} message(s)` + (o.last ? ` · last ${o.last.address}` : "") : (o.error || ""));
+  const apply = async () => {
+    const r = await run("osc", { state: box.checked, port: +port.value || 8000 }, { toast: true });
+    if (!r.ok) box.checked = false;
+  };
+  box.addEventListener("change", apply);
+  port.addEventListener("change", () => { if (box.checked) apply(); });
+  return h("div",
+    h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
+    note,
+    h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
 }
 
 // MIDI on this device: a controller plugged into the tablet / laptop the

@@ -188,6 +188,7 @@ class OutputMixin:
             self.vnode.stop()
         self._prodj_stop()
         self._ap_shutdown()
+        self._osc_stop()
         try:
             self._autosave(force=True)     # never lose the last edit
         except Exception:

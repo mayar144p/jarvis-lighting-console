@@ -761,3 +761,51 @@ def test_macros() -> None:
             e.shutdown()
     cj = (ROOT / "web" / "app" / "cmdbar.js").read_text(encoding="utf-8")
     check("the command bar opens Macros and finds them by name", "openMacros" in cj and "macroCandidates" in cj, "")
+
+
+def test_osc() -> None:
+    """OSC in: TouchOSC / Companion play the show - GO, masters, buttons,
+    macros, command lines, tempo - and every message is answered."""
+    print("OSC")
+    from app import engine as eng
+    from app import osc
+
+    m = osc.build("/jarvis/cue", 1, 3)
+    check("a message round-trips", osc.parse(m) == [("/jarvis/cue", [1, 3])], str(osc.parse(m)))
+    b = osc.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
+    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/jarvis/master", "/jarvis/cmd"], "")
+    check("junk is nothing", osc.parse(b"hello") == [] and osc.parse(b"") == [], "")
+
+    port = _free_port()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1, name="A")
+            e.act("clear_programmer")
+            r = e.act("osc", state=True, port=port)
+            check("OSC listens", r.get("ok") and e.osc_public()["on"], str(r))
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(2)
+            s.sendto(osc.build("/jarvis/master", 0.5), ("127.0.0.1", port))
+            reply = osc.parse(s.recvfrom(1024)[0])
+            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/jarvis/ok", str(reply))
+            s.sendto(osc.build("/jarvis/go", 1), ("127.0.0.1", port))
+            s.recvfrom(1024)
+            check("GO", e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
+            s.sendto(osc.build("/jarvis/cmd", "1-2 red"), ("127.0.0.1", port))
+            s.recvfrom(1024)
+            check("a command line", e.programmer.get(1, {}).get("red") == 255, str(e.programmer))
+            s.sendto(osc.build("/jarvis/patch_clear"), ("127.0.0.1", port))
+            reply = osc.parse(s.recvfrom(1024)[0])
+            check("anything else is refused, with a reason", reply[0][0] == "/jarvis/error" and len(e.patch) == 4, str(reply))
+            s.close()
+            e.act("osc", state=False)
+            check("OSC off", not e.osc_public()["on"], "")
+        finally:
+            e.shutdown()

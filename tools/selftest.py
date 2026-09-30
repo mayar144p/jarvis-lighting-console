@@ -145,6 +145,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_beat_clock,
     test_desk_tools,
     test_macros,
+    test_osc,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -270,6 +271,7 @@ def _standalone_suites():
     ("step effects: from your own looks and palettes", test_step_fx),
     ("desk tools: highlight / solo, park, group masters", test_desk_tools),
     ("macros: command lines in one go, one undo step", test_macros),
+    ("OSC in: TouchOSC / Companion play the show", test_osc),
     )
 
 
