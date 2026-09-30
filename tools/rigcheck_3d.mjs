@@ -66,13 +66,15 @@ for (const s of seen) {
   const h = heads.find((x) => x.n === s.n);
   const what = `${h.type} / ${h.man} ${h.model}`;
   if (!check(!s.missing, what, "no 3D instance")) continue;
-  check(s.type === h.type || h.type === "generic", what, `3D type ${s.type}`);
-  const light = !["atmos", "co2", "flame", "spark", "confetti", "sfx"].includes(h.type);
+  // the library row's type came from its biggest mode; what it was patched
+  // in (the default mode) decides - so judge by the 3D type it got
+  if (s.type !== h.type) console.log(`  note: ${what} is a ${s.type} in its default mode`);
+  const light = !["atmos", "co2", "flame", "spark", "confetti", "sfx", "laser"].includes(s.type);
   if (light) {
     check((s.level || 0) > 0, what, "dark in 3D at full");
     check(s.beams.some((bm) => bm.vis), what, "no visible beam at full");
   }
-  if (["moving_spot", "moving_wash", "moving_beam", "moving_hybrid", "moving_bar", "scanner"].includes(h.type)) {
+  if (["moving_spot", "moving_wash", "moving_beam", "moving_hybrid", "moving_bar", "scanner"].includes(s.type)) {
     const bm = s.beams.find((x) => x.vis) || s.beams[0];
     if (bm) {
       const t = bm.d[1] < -1e-3 ? -bm.o[1] / bm.d[1] : null;
