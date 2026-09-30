@@ -151,6 +151,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_rigging_library,
     test_mixed_selection_targets,
     test_colour_match,
+    test_teach_wheel,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -282,6 +283,7 @@ def _standalone_suites():
     ("Rigging library: shapes, trim, loads", test_rigging_library),
     ("Mixed selection: per-kind controls", test_mixed_selection_targets),
     ("Colour matching across brands", test_colour_match),
+    ("Teach the wheel; spin channels", test_teach_wheel),
     )
 
 

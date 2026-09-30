@@ -198,13 +198,15 @@ blur, VR).
 ## A4. Programmer, per light type and brand
 
 The pass walked every tab for one light of each type (see A0).  Next:
-17. **Show only what the light can do**, everywhere: e.g. a wheel of whites
-    (ADB ALC4) is labelled "Colour wheel" - call it white presets; a light
-    whose file lists no wheel slots shows "guessed positions" - add
-    **Teach the wheel** (step through it, name each colour, saved to the
-    fixture); gobo wheels with pictures; prism / gobo rotation as
-    direction + speed; macros and auto programs as named buttons; lamp,
-    reset and fan under an "Advanced" fold.
+17. **Show only what the light can do.  DONE:** a wheel of whites is
+    "White presets"; a colour wheel / gobo / prism the file doesn't
+    describe has **Teach the…** (step through it on the real light, name
+    each position, a swatch for colours; saved with the fixture for every
+    light of the model; forget); gobo / prism / a light's own rotation
+    channels as ↺ ■ ↻ + slow-fast (from the file's named ranges);
+    lamp / reset / fan / display / control channels under an "Advanced"
+    fold; named ranges (macros, auto programs) were already one-tap chips.
+    **Left:** gobo pictures.
 18. **Mixed selections.  DONE:** the Beam tab shows one section per model
     ("3 × Moving Head · colour, position, beam"; "4 × LED PARty · more
     channels") with that model's controls, sent to those lights only

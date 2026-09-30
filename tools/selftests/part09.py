@@ -1087,3 +1087,36 @@ def test_colour_match() -> None:
             check("reset: as it comes", f[1][a + ri] == 255 and f[1][a + bi] == 255, "")
         finally:
             e.shutdown()
+
+
+def test_teach_wheel() -> None:
+    """Teach the wheel: positions found on the real light become named
+    slots with ranges for every light of the model; forget; a spin
+    channel's named ranges become slots for ↺ ■ ↻."""
+    print("Teach the wheel; spin channels")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("select_all")
+            gobo = lambda n: next(a for p in e.attribute_state([n])["pages"] for a in p["attrs"] if a["role"] == "gobo")
+            check("no slots in the file", not gobo(1).get("slots"), "")
+            r = e.act("teach_slots", head=1, role="gobo", slots=[{"name": "Open", "value": 0}, {"name": "Stars", "value": 20},
+                                                                 {"name": "Dots", "value": 40}])
+            s2 = gobo(2)["slots"]
+            check("taught: named slots with ranges, on the other light of the model too",
+                  r.get("ok") and [(x["name"], x["from"], x["to"]) for x in s2] == [("Open", 0, 10), ("Stars", 11, 30), ("Dots", 31, 255)], str(s2))
+            check("one name is not a wheel", not e.act("teach_slots", head=1, role="gobo", slots=[{"name": "A", "value": 3}]).get("ok"), "")
+            check("a light without that wheel is refused", not e.act("teach_slots", head=1, role="wheel", slots=[]).get("ok"), "")
+            e.act("teach_slots", head=1, role="gobo", clear=True)
+            check("forget: back to the file", not gobo(1).get("slots"), "")
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the programmer: teach links, white presets, spin rows, an Advanced fold",
+          "openTeachWheel" in js and "White presets" in js and "rotateRow" in js and "attr-adv" in js, "")

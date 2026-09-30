@@ -281,6 +281,7 @@ class DeskMixin:
         fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
                               "_model", "colour_cal", cur or None)
         fixtures.invalidate_cache()
+        self._drop_fixture_caches()
         self._cal_rev = self.__dict__.get("_cal_rev", 0) + 1
         same = sum(1 for x in self.patch if (x.get("manufacturer"), x.get("model"), x.get("mode"))
                    == (h.get("manufacturer"), h.get("model"), h.get("mode")))
@@ -297,3 +298,50 @@ class DeskMixin:
         cur = (self.head_ranges(h).get("_model") or {}).get("colour_cal") or {}
         return {"head": h["head_no"], "model": h.get("model"), "emitters": have,
                 "cal": {r: round(float(cur.get(r, 1.0)) * 100) for r in have}}
+
+    # -- teach a wheel ------------------------------------------------------
+    TEACH_ROLES = ("wheel", "wheel2", "gobo", "gobo2", "prism")
+
+    def _a_teach_slots(self, head=None, role="wheel", slots=None, clear=False, **_):
+        """A wheel the fixture file doesn't describe, taught on the real
+        light: `slots` [{name, value, hex?}] as found stepping through it.
+        Each slot gets the range up to the next one; saved with the fixture
+        for every light of that model and mode.  clear=true forgets it."""
+        if head is None:
+            head = self._require_selection()[0]["head_no"]
+        h = self._head(int(head))
+        role = str(role or "wheel")
+        if role not in self.TEACH_ROLES or role not in h["map"]:
+            raise ValueError(f"this light has no {role} to teach")
+        from app import fixtures
+        if _truthy(clear):
+            fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"), role, "slots", None)
+            fixtures.invalidate_cache()
+            self._drop_fixture_caches()
+            return {"slots": [], "summary": f"{h.get('model')}: {role} back to the file's"}
+        rows = []
+        for st in slots or []:
+            if not isinstance(st, dict) or st.get("value") is None:
+                continue
+            name = str(st.get("name") or "").strip()[:30]
+            if not name:
+                continue
+            row = {"name": name, "value": int(max(0, min(255, float(st["value"]))))}
+            hx = str(st.get("hex") or "")
+            if len(hx) == 7 and hx.startswith("#"):
+                row["hex"] = hx.lower()
+            rows.append(row)
+        rows.sort(key=lambda r: r["value"])
+        if len(rows) < 2:
+            raise ValueError("teach at least two positions")
+        if len({r["value"] for r in rows}) < len(rows):
+            raise ValueError("two names on the same value")
+        out = []
+        for i, r in enumerate(rows):
+            lo = 0 if i == 0 else (rows[i - 1]["value"] + r["value"]) // 2 + 1
+            hi = 255 if i == len(rows) - 1 else (r["value"] + rows[i + 1]["value"]) // 2
+            out.append({**r, "from": lo, "to": hi, "slot": i + 1, "taught": True})
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"), role, "slots", out)
+        fixtures.invalidate_cache()
+        self._drop_fixture_caches()
+        return {"slots": out, "summary": f"{h.get('model')}: {len(out)} {role} position(s) taught"}

@@ -262,8 +262,10 @@ function renderWheel() {
   box.replaceChildren(
     h("span.muted.small", wheelOnly
       ? "These lights have a colour wheel: tap one of its colours."
-      : wheel && wheel.slots ? "Colour wheel:" : "Colour wheel (guessed positions):"),
+      : wheel && wheel.slots ? (whitesOnly(wheel.slots) ? "White presets:" : "Colour wheel:") : "Colour wheel (guessed positions):"),
     ...slotButtons("wheel", wheel),
+    !(wheel && wheel.slots) ? h("button.linkish.small", { title: "Step through the wheel on the real light and name each colour",
+      onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel("wheel", () => { box.dataset.key = ""; loadAttributes(); })) }, "Teach the wheel…") : null,
     wheelOnly ? h("button.linkish.small", { onclick: () => { pickerAnyway = !pickerAnyway; box.dataset.key = ""; renderWheel(); } },
       pickerAnyway ? "Hide the colour picker" : "Pick any colour (goes to the nearest wheel colour)") : null);
 }
@@ -476,8 +478,13 @@ function renderAttributes() {
       if (page.page === "intensity") continue;
       const attrs = (page.attrs || []).filter((a) => !["red", "green", "blue", "pan", "tilt", "pan_fine", "tilt_fine"].includes(a.role));
       if (!attrs.length) continue;
-      rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
-      for (const a of attrs) rows.push(attrRow(a, heads));
+      const main = attrs.filter((a) => !isAdvanced(a)), adv = attrs.filter(isAdvanced);
+      if (main.length) {
+        rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
+        for (const a of main) rows.push(attrRow(a, heads));
+      }
+      if (adv.length) rows.push(h("details.attr-adv", h("summary", `Advanced · ${adv.map((a) => (a.name || attrName(a.role)).toLowerCase()).join(", ")}`),
+        ...adv.map((a) => attrRow(a, heads))));
     }
     return rows;
   };
@@ -508,7 +515,48 @@ const ATTR_NAMES = {
 const attrName = (role) => ATTR_NAMES[role] || role.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const slotAt = (a, v) => (a.slots || []).find((s) => v >= s.from && v <= s.to) || null;
 
+// a wheel of whites (warm, cold, CTO...) is white presets, not a colour wheel
+function whitesOnly(slots) {
+  return (slots || []).length > 1 && slots.every((s) => /white|open|\bk\b|\d{4}\s*k|cto|ctb|warm|cool|cold|daylight|tungsten/i.test(s.name || "")
+    || (s.hex && (() => { const n = parseInt(s.hex.slice(1), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; return Math.min(r, g, b) > 150; })()));
+}
+const TEACHABLE = new Set(["wheel", "wheel2", "gobo", "gobo2", "prism"]);
+const ADVANCED_RE = /lamp|reset|fan|maint|display|dimmer ?curve|dim(mer)? mode|control|service|auto ?test|pan\/tilt ?mode|blackout while/i;
+const isAdvanced = (a) => a.role === "control" || ADVANCED_RE.test(a.name || "");
+
+// a rotation channel (gobo / prism spin) as ↺ ■ ↻ and slow -> fast, when
+// its ranges say which way; else null and it stays a plain slider
+const slowFirstName = (text) => !/decreas|fast\s*(to|->|→|-)\s*slow/i.test(text || "");
+function rotateRow(a, heads) {
+  const slots = a.slots || [];
+  const ccw = slots.find((x) => /counter|anti|ccw|left/i.test(x.name));
+  const cw = slots.find((x) => x !== ccw && /clockwise|\bcw\b|right/i.test(x.name));
+  if (!ccw || !cw) return null;
+  const stop = slots.find((x) => /stop|no rot|off|index|^0$/i.test(x.name));
+  const cur = a.value;
+  const dir = cur == null ? 0 : cur >= ccw.from && cur <= ccw.to ? -1 : cur >= cw.from && cur <= cw.to ? 1 : 0;
+  const speed = h("input", { type: "range", min: 0, max: 100, value: 40, title: "Speed" });
+  const inRange = (slot, s01) => { const f = slowFirstName(slot.name) ? s01 : 1 - s01; return Math.round(slot.from + f * (slot.to - slot.from)); };
+  let d = dir;
+  const send = (to) => {
+    d = to;
+    const v = to === 0 ? (stop ? stop.value : 0) : inRange(to < 0 ? ccw : cw, +speed.value / 100);
+    sendAttrNow(a.role, v, heads);
+    for (const b of row.querySelectorAll(".chip")) b.classList.toggle("on", +b.dataset.d === to);
+  };
+  speed.addEventListener("input", () => { if (d) sendAttr(a.role, inRange(d < 0 ? ccw : cw, +speed.value / 100), heads); });
+  const b = (label, to, title) => h("button.chip" + (dir === to ? ".on" : ""), { title, "data-d": to, onclick: () => send(to) }, label);
+  const row = h("div.attr-rot", h("label", { title: a.role }, a.name || attrName(a.role)),
+    h("span.chip-row", b("↺", -1, "Turn counter-clockwise"), b("■", 0, "Stop"), b("↻", 1, "Turn clockwise")),
+    h("span.muted.small", "slow"), speed, h("span.muted.small", "fast"));
+  return row;
+}
+
 function attrRow(a, heads = null) {
+  if (/_rot$/.test(a.role) || (/^aux\d+$/.test(a.role) && /rotat/i.test(a.name || ""))) {
+    const r = rotateRow(a, heads);
+    if (r) return r;
+  }
   const full = a.full || 255;
   const val = a.value === null || a.value === undefined ? null : a.value;
   const pct = (v) => (v / full * 100) + "%";
@@ -524,7 +572,8 @@ function attrRow(a, heads = null) {
     val === null ? "–" : a.mixed ? "mix" : show(val));
   const clear = () => run("set_attr_range", heads ? { attribute: a.role, clear: true, heads } : { attribute: a.role, clear: true }).then(loadAttributes);
   const row = h("div.attr" + (a.set ? ".set" : "") + (a.partial ? ".partial" : ""),
-    h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role }, a.name || attrName(a.role)),
+    h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role },
+      a.role === "wheel" && whitesOnly(a.slots) ? "White presets" : a.name || attrName(a.role)),
     bar, out,
     h("button.clr", { title: "Remove from the programmer", onclick: clear }, "×"));
   let cur = val ?? 0;
@@ -577,6 +626,12 @@ function attrRow(a, heads = null) {
     clearTimeout(keyT);
     keyT = setTimeout(loadAttributes, 600);
   });
+  if (TEACHABLE.has(a.role) && (!a.slots || !a.slots.length) && !a.mixed) {
+    return h("div.attr-wrap", row, h("div.attr-slots", h("button.linkish.small", {
+      title: "Its file lists no positions: step through it on the real light and name them",
+      onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel(a.role, loadAttributes)),
+    }, `Teach the ${a.role.startsWith("wheel") ? "colour wheel" : attrName(a.role).toLowerCase()}…`)));
+  }
   if (!a.slots || !a.slots.length || a.mixed) return row;
   // a wheel / gobo: its named slots as one-tap chips under the bar
   const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {

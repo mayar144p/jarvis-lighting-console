@@ -101,7 +101,7 @@ UNDO_EXCLUDED = frozenset({
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "remember_open", "light_test", "light_tested", "colour_cal",
+    "fx_status", "remember_open", "light_test", "light_tested", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats", "fx_space",
@@ -638,7 +638,7 @@ ACTIONS = (
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
-    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get",
+    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots",
 )
 
 
