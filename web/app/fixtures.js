@@ -189,14 +189,21 @@ function holdToFlash(el, params) {
       run("group_flash", { ...params, down: true }, { silentError: true });
     }, 350);
   });
-  const up = () => {
+  // swallows the click that follows a hold; armed only while that click
+  // can still come, so a later real tap is never eaten
+  const swallow = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
+  const up = (e) => {
     clearTimeout(timer);
     if (!flashing) return;
     el.classList.remove("flashing");
     run("group_flash", { down: false }, { silentError: true });
-    // the click that follows a hold is not a tap
-    el.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); }, { capture: true, once: true });
-    setTimeout(() => { flashing = false; }, 0);
+    // released over the chip: a click follows, and it is not a tap.
+    // Slid off or cancelled: no click comes, so nothing to swallow.
+    if (e.type === "pointerup") {
+      el.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => el.removeEventListener("click", swallow, { capture: true }), 0);
+    }
+    flashing = false;
   };
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);

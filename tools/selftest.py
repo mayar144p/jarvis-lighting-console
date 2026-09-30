@@ -7535,6 +7535,7 @@ def _standalone_suites():
     ("aiming: towers, scanners, out-of-reach, fine pan without fine tilt", test_aim_debug),
     ("rigging: turn, length, stand up, ceiling, stays inside the room", test_rig_tools),
     ("RGB-only lights: a virtual dimmer; modes that can be controlled", test_virtual_dimmer),
+    ("review of PR #28: undo / load / unpatch with cue effects, queries, Ready?", test_review_fixes),
     )
 
 
@@ -9426,6 +9427,68 @@ def test_ready_versions() -> None:
             e.shutdown()
 
 
+def test_review_fixes() -> None:
+    """Found reviewing PR #28: undo after recording a cue lost the
+    programmer's effect; cue effects outlived loading another show; one
+    unpatched light dropped a whole cue effect; listing versions reloaded
+    every screen; Ready? stayed red for the whole run after one error."""
+    print("review of PR #28")
+    import tempfile
+    import time as _time
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=3)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("run_fx", name="rainbow")
+            e.act("record_cue", playback=1, name="Rainbow")
+            check("recording takes the effect off the programmer", not any(f.get("lib") == "rainbow" for f in e.fx), "")
+            e.act("undo")
+            check("undo of the record puts the programmer's effect back",
+                  [f.get("cue_pb") for f in e.fx if f.get("lib") == "rainbow"] == [None], str(e.fx))
+            e.act("record_cue", playback=1, name="Rainbow")
+            e.act("save_show", name="other")
+            e.act("cue_go", playback=1)
+            check("GO starts the cue effect", any(f.get("cue_pb") == 1 for f in e.fx), str(e.fx))
+            e.act("remove_heads", heads=[2])
+            e.act("playback_release", playback=1)
+            e.act("cue_go", playback=1)
+            running = [f for f in e.fx if f.get("cue_pb") == 1]
+            check("one unpatched light doesn't drop the effect from the others",
+                  running and sorted(running[0]["heads"]) == [1, 3], str(running))
+            e.playbacks[0]["stack"][0]["fx"] = []
+            e.playbacks[0]["active"] = False
+            e.act("save_show", name="plain")
+            e.act("cue_go", playback=1, cue=1)
+            e.playbacks[0]["stack"][0]["fx"] = [{"name": "rainbow", "heads": [1, 3], "params": {}}]
+            e._cue_fx_start(e.playbacks[0], e.playbacks[0]["stack"][0])
+            e.act("load_show", name="plain")
+            check("loading another show stops the old cue effects", not any(f.get("cue_pb") for f in e.fx), str(e.fx))
+            rev = e.act_rev
+            e.act("show_versions", name="plain")
+            e.act("show_export", name="plain")
+            check("listing versions / exporting doesn't reload every screen", e.act_rev == rev, f"{rev} -> {e.act_rev}")
+            e.output["errors"] = 3
+            e.output["last_error"] = "boom"
+            e.output["last_error_at"] = _time.monotonic()
+            bad = lambda: any("DMX send error" in i["text"] for i in e.act("ready_check")["items"])  # noqa: E731
+            check("a recent DMX error is flagged", bad(), "")
+            e.output["last_error_at"] = _time.monotonic() - eng.READY_ERROR_WINDOW_S - 1
+            check("...and an old one no longer is", not bad(), "")
+        finally:
+            e.shutdown()
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("a hold that slides off the chip doesn't swallow the next tap",
+          'e.type === "pointerup"' in fj and "removeEventListener(\"click\", swallow" in fj, "")
+
+
 def test_room_fit() -> None:
     """Shrinking or reshaping the room pulls rigging (and the lights hung
     on it) back inside; a truss keeps its length when it fits."""
@@ -9553,6 +9616,7 @@ def test_rdm() -> None:
     port = sock.getsockname()[1]
     sock.settimeout(0.2)
     stop = threading.Event()
+    reqs: list[tuple[int, int]] = []
 
     def node():
         while not stop.is_set():
@@ -9561,6 +9625,7 @@ def test_rdm() -> None:
             except (socket.timeout, OSError):
                 continue
             if pkt[8:10] == struct.pack("<H", rdm.TODREQUEST_OP):
+                reqs.append((pkt[21], pkt[23]))          # Net, AdCount
                 sock.sendto(rdm.build_tod_data(0, pkt[24], list(lights)), peer)
                 continue
             got = rdm.parse_artrdm(pkt)
@@ -9600,6 +9665,18 @@ def test_rdm() -> None:
         check("model, address, footprint and mode come back",
               spot.get("manufacturer") == "Chauvet" and spot.get("model") == "Intimidator Spot 360"
               and spot.get("address") == 1 and spot.get("footprint") == 14 and spot.get("mode") == "14-Channel", str(spot))
+        reqs.clear()
+        rdm.discover(list(range(1, 41)), host="127.0.0.1", port=port, timeout=0.6, per_request=0.1)
+        check("more than 32 universes: one ToD request per 32", sorted(c for _, c in reqs) == [8, 32], str(reqs))
+        reqs.clear()
+        rdm.discover([250, 260], host="127.0.0.1", port=port, timeout=0.6, per_request=0.1)
+        check("universes on two Art-Net Nets: one request per Net, never an error",
+              sorted(reqs) == [(0, 1), (1, 1)], str(reqs))
+        reqs.clear()
+        rdm.discover([1], host="127.0.0.1", port=port, net=3, timeout=0.4, per_request=0.1)
+        check("the configured DMX Net is asked", reqs and reqs[0][0] == 3, str(reqs))
+        mj = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+        check("the RDM route passes the DMX Net", mj.count("net=config.DMX_NET") >= 2, "")
         r = rdm.set_address("02A0:DEADBEEF", 1, 101, host="127.0.0.1", port=port)
         check("a light can be readdressed from the desk", r.get("ok") and lights[bytes.fromhex("02A0DEADBEEF")]["addr"] == 101, str(r))
         with tempfile.TemporaryDirectory() as td:

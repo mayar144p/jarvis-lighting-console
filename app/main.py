@@ -541,13 +541,14 @@ class Handler(BaseHTTPRequestHandler):
                 sa = body["set_address"]
                 try:
                     res = rdm.set_address(str(sa.get("uid") or ""), int(sa.get("universe") or 1),
-                                          int(sa.get("address") or 0), host=host, port=config.DMX_PORT)
+                                          int(sa.get("address") or 0), host=host, port=config.DMX_PORT,
+                                          net=config.DMX_NET)
                 except ValueError as exc:
                     res = {"ok": False, "error": str(exc)}
                 return self._console_result(eng, res)
             universes = body.get("universes") or sorted({h["universe"] for h in eng.patch}) or [1]
             found = rdm.discover([int(u) for u in universes], host=host, port=config.DMX_PORT,
-                                 timeout=float(body.get("timeout") or 2.0))
+                                 net=config.DMX_NET, timeout=float(body.get("timeout") or 2.0))
             result = eng.act("rdm_compare", devices=found["devices"], universes=found.get("universes"))
             result["rdm_error"] = found.get("error")
             result["tried"] = found.get("tried")

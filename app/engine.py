@@ -135,6 +135,9 @@ UNDO_EXCLUDED = frozenset({
 # operator is dragging or typing into.  Discrete edits must not coalesce -
 # recording two cues 400 ms apart is two cues, and collapsing them would
 # throw the first away.
+# Ready? counts a DMX send error as a problem this long after it happened
+READY_ERROR_WINDOW_S = 60.0
+
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
@@ -859,10 +862,23 @@ class Engine:
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
                 if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
+            # the programmer's own effects (not a button's, not a cue's):
+            # recording a cue takes them off, so undo must put them back
+            "prog_fx": [dict(f, params=dict(f.get("params") or {}), heads=list(f.get("heads") or []))
+                        for f in self._programmer_fx()],
         }
+
+    def _programmer_fx(self) -> list[dict]:
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+        return [f for f in self.fx if not f.get("cue_pb") and f["id"] not in owned]
 
     def _restore_state(self, state: dict) -> None:
         self._prog_fade = None
+        if "prog_fx" in state:
+            mine = {f["id"] for f in self._programmer_fx()}
+            self.fx = [f for f in self.fx if f["id"] not in mine] + [
+                dict(f, params=dict(f.get("params") or {}), heads=list(f.get("heads") or []))
+                for f in state["prog_fx"]]
         self.patch = [dict(h) for h in state.get("patch", [])]
         self.programmer = {int(k): dict(v) for k, v
                            in (state.get("programmer") or {}).items()}
@@ -873,6 +889,7 @@ class Engine:
                          for k, v in (state.get("palettes") or {}).items()}
         self.presets = [dict(p) for p in (state.get("presets") or [])]
         self.playbacks = _copy_playbacks(state.get("playbacks") or [])
+        self._resync_cue_fx()
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
@@ -1110,10 +1127,12 @@ class Engine:
             if isinstance(extra, dict):
                 res.update(extra)
             self._log(name, True, None, extra.get("summary"))
-            self.act_rev += 1
-            if name != "status":
+            # a query (show_versions, show_export) changes nothing: no
+            # reload for every client, no autosave
+            if name not in _READ_ONLY:
+                self.act_rev += 1
                 self._autosave()
-            self._sync_follow_thread()
+                self._sync_follow_thread()
         return res
 
     def _result(self, action, ok: bool, error) -> dict:
@@ -6890,16 +6909,31 @@ class Engine:
             ids.append(f["id"])
         return items[:12], ids
 
+    def _resync_cue_fx(self) -> None:
+        """Cue effects follow the playbacks as they now are - after undo,
+        loading a show or importing a stack, the old ones don't linger on
+        whatever heads now have those numbers."""
+        self.fx = [f for f in self.fx if not f.get("cue_pb")]
+        for pb in self.playbacks:
+            if pb.get("active") and 0 <= pb.get("index", -1) < len(pb.get("stack") or []):
+                self._cue_fx_start(pb, pb["stack"][pb["index"]])
+
     def _cue_fx_stop(self, pb: dict) -> None:
         self.fx = [f for f in self.fx if f.get("cue_pb") != pb["n"]]
 
     def _cue_fx_start(self, pb: dict, cue: dict) -> None:
         """A cue's effects take over from the last cue's on this playback."""
         self._cue_fx_stop(pb)
+        patched = {h["head_no"] for h in self.patch}
         for item in cue.get("fx") or []:
+            # the lights still patched: one removed light must not drop the
+            # effect from all the others
+            heads = [n for n in item.get("heads") or [] if n in patched]
+            if not heads:
+                continue
             try:
                 r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
-                                         item.get("heads") or [], None, across=bool(item.get("across")))
+                                         heads, None, across=bool(item.get("across")))
             except (ValueError, KeyError):
                 continue
             for f in self.fx:
@@ -7913,6 +7947,7 @@ class Engine:
                 except Exception as exc:            # never die silently
                     self.output["errors"] += 1
                     self.output["last_error"] = str(exc)
+                    self.output["last_error_at"] = time.monotonic()
                 done = time.monotonic()
                 if previous is not None:
                     inst_ms = (done - previous) * 1000
@@ -7941,6 +7976,7 @@ class Engine:
             else:
                 self.output["errors"] += 1
                 self.output["last_error"] = sender.last_error
+                self.output["last_error_at"] = time.monotonic()
 
     # ------------------------------------------------------------------
     # merge + frame building
@@ -9735,6 +9771,7 @@ class Engine:
                             if isinstance(q, dict)]
             self.playbacks = _normalize_playbacks(
                 payload.get("playbacks") or [])
+            self._resync_cue_fx()
             patched = {h["head_no"] for h in self.patch}
             self.programmer = {}
             for k, row in (payload.get("programmer") or {}).items():
@@ -9983,7 +10020,10 @@ class Engine:
             add("info", f"{len(lasers)} laser(s): output only while ARMED; KILL FX stops everything.", "")
         if self.dry_run or not self.live:
             add("warn", "BLIND / output stopped: nothing reaches the lights yet.", "Go live…")
-        if self.output.get("errors"):
+        # the error count is for the whole run: one hiccup an hour ago is
+        # history, only a recent failure means the output is broken now
+        err_at = self.output.get("last_error_at")
+        if self.output.get("errors") and err_at is not None and time.monotonic() - err_at < READY_ERROR_WINDOW_S:
             add("bad", f"{self.output['errors']} DMX send error(s): {self.output.get('last_error') or ''}".strip(),
                 "Settings → Output")
         if not self.show_file:
@@ -10222,6 +10262,7 @@ class Engine:
                 self.palettes[key] = list(palettes.get(key) or [])
             self.presets = presets
             self.playbacks = playbacks
+            self._resync_cue_fx()
             self.master = master
             self.show_file = label
             self.quick = quick
@@ -10349,6 +10390,7 @@ class Engine:
         pb["index"] = -1
         pb["active"] = False
         pb["fade"] = None
+        self._cue_fx_stop(pb)
         if name:
             pb["name"] = str(name)
         elif data.get("name"):
