@@ -1269,3 +1269,4 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .rig-report tr.warn td { background: rgba(245,165,36,.06); }
 .warn-text { color: var(--warn, #f5a524); margin-top: 2px; }
 .rig-parts { margin: 4px 0 10px; padding-left: 18px; }
+.stage canvas.walking { cursor: grab !important; }

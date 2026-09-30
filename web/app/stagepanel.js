@@ -189,6 +189,19 @@ function viewsMenu(btn) {
     { label: "From the DJ / stage", hint: "Looking out at the room", run: () => stage.viewStage() },
     { label: "Through the selected light", hint: sel.length ? `Down #${sel[0]}'s beam` : "Select a light first",
       disabled: !sel.length, run: () => stage.lookThrough(sel[0]) },
+    { label: stage.walking ? "Stop walking" : "Walk around", hint: "W A S D to move, drag to look, Esc stops", run: () => {
+      if (stage.walking) { stage.walk(false); return; }
+      stage.walk(true, () => toast("Stopped walking"));
+      toast("Walking: W A S D (or arrows) to move, Shift to run, drag to look round, Esc to stop", "", 5000);
+    } },
+    { label: "Take a photo", hint: "the view at 4K, as a PNG", run: () => {
+      const url = stage.photo(3840);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `jarvis-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+      a.click();
+      toast("Photo saved", "ok");
+    } },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
     { label: "Save this view…", run: async () => {

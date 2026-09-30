@@ -172,10 +172,15 @@ blur, VR).
     the library file, typical for the kind where the file doesn't say),
     pick-up points and kg per point, warnings (point load, stand load,
     hung at the ceiling), a parts list in standard lengths, CSV.
-14. **Look:** better haze volumetrics and gobo projections on surfaces;
-    LED screens / video walls that play a clip or mirror a pixel map;
-    shadows from the crowd and stage; lens flares at low angles; a
-    "photo" render; first-person walk; camera presets per venue.
+14. **Look.**  Already there: haze beams, gobo projections on every
+    surface (the surface shader), a head-on lens glow, saved views per
+    venue (Views -> Save this view).  **DONE now:** LED screens show the
+    lights (a live mirror: every light's colour as a tile, cells of a bar
+    each their own), a clip or a picture by link, or nothing (inspector ->
+    Shows); Views -> Take a photo (the view re-rendered at 4K, PNG);
+    Views -> Walk around (eye height, W A S D / arrows, Shift runs, drag to
+    look, stays inside the walls, Esc).  **Left:** shadows from the crowd
+    and stage; real lens-flare streaks; a clip upload (a link for now).
 15. **Paperwork.  DONE:** Show ▾ -> Paperwork… (/plot.html): the light
     plot (the room from above - walls, stage, zones, objects, marks,
     rigging with names and trims - a symbol per kind of light with its

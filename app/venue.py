@@ -182,6 +182,10 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     })
     if not item["colour"]:
         del item["colour"]
+    if item["kind"] == "screen":
+        # what the LED screen shows: the rig's colours, nothing, or a clip
+        c = _text(raw.get("content"), "rig", 300)
+        item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:")) else "rig"
     return item
 
 

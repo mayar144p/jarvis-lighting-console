@@ -252,6 +252,37 @@ function buildRig(r, M, room) {
 // ---------------------------------------------------------------------------
 // objects
 // ---------------------------------------------------------------------------
+// An LED screen's face: a live canvas (the rig's colours, drawn by the
+// stage each frame - a pixel-map mirror) or a clip / picture by URL.  Unlit:
+// a screen makes its own light.
+function screenMaterial(content, aspect) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  if (content === "rig") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = Math.max(32, Math.round(256 / Math.max(0.2, aspect)));
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    mat.map = tex;
+    mat.userData.canvas = canvas;
+  } else if (content.startsWith("clip:")) {
+    const video = document.createElement("video");
+    Object.assign(video, { src: content.slice(5), muted: true, loop: true, playsInline: true, crossOrigin: "anonymous" });
+    video.play().catch(() => { /* autoplay waits for a click on the page */ });
+    const tex = new THREE.VideoTexture(video);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    mat.map = tex;
+    mat.userData.video = video;
+  } else if (content.startsWith("image:")) {
+    new THREE.TextureLoader().loadAsync(content.slice(6)).then((tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+      mat.needsUpdate = true;
+    }).catch(() => { /* a broken link: the screen stays white-ish */ });
+  }
+  return mat;
+}
+
 function buildObject(o, M) {
   const g = new THREE.Group();
   g.position.set(o.x, o.y || 0, o.z);
@@ -285,7 +316,10 @@ function buildObject(o, M) {
     }
     case "screen": {
       add(new THREE.BoxGeometry(w, h, Math.max(0.05, d)).translate(0, h / 2, 0), M.black);
-      add(new THREE.PlaneGeometry(w * 0.96, h * 0.94).translate(0, h / 2, Math.max(0.05, d) / 2 + 0.003), custom || M.screen);
+      const content = o.content || "rig";
+      const face = add(new THREE.PlaneGeometry(w * 0.96, h * 0.94).translate(0, h / 2, Math.max(0.05, d) / 2 + 0.003),
+        content === "off" ? (custom || M.screen) : screenMaterial(content, w / h));
+      if (content !== "off") face.userData.screen = { content, aspect: w / h };
       break;
     }
     case "table": {
@@ -665,8 +699,10 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     }).catch(() => { /* the room still draws without its plan */ });
   }
 
+  const screens = [];
+  group.traverse((m) => { if (m.userData && m.userData.screen) screens.push(m); });
   return { group, venue: v, room: R, planes, segments, boxes: blockers(v), walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline };
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens };
 }
 
 /** Hide the walls between the camera and the room, and the ceiling from above. */

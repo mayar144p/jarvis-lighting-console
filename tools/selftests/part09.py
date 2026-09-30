@@ -1006,6 +1006,14 @@ def test_rigging_library() -> None:
                   and parts.get(("box30", "4.0")) == 1 and parts.get(("box30", "3.0")) == 1, str(parts))
             check("the report as CSV", rep["csv"].startswith("piece,") and "Circle 4 m" in rep["csv"], "")
             check("guessed weights are said", any("guessed" in w for w in c["warnings"]), str(c["warnings"]))
+            sc = e.act("venue_add", item={"kind": "screen", "x": 0, "z": 0, "w": 4, "h": 2, "d": 0.1})["item"]
+            check("an LED screen mirrors the lights by default", sc["content"] == "rig", str(sc))
+            e.act("venue_update", id=sc["id"], changes={"content": "clip:/media/loop.mp4"})
+            e.act("venue_update", id=[o for o in e.venue["objects"] if o["kind"] == "screen"][0]["id"], changes={"content": "javascript:x"})
+            check("a clip link is kept, anything else falls back to the lights",
+                  [o for o in e.venue["objects"] if o["kind"] == "screen"][0]["content"] == "rig", "")
+            js = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            check("the 3D view: photo, walk, live screens", "photo(longSide" in js and "walk(on" in js and "_drawScreens" in js, "")
             pw = e.act("paperwork")
             L = pw["lights"][0]
             check("paperwork: every light with its address, kind, rig and weight",

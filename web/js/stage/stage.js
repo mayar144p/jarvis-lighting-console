@@ -887,6 +887,7 @@ export class Stage {
     const now = performance.now();
     let motion = false;
 
+    if (this.walking) this._walkStep(now);
     if (this.fly) {
       const t = smooth((now - this.fly.start) / this.fly.dur);
       this.camera.position.lerpVectors(this.fly.p0, this.fly.p1, t);
@@ -895,7 +896,8 @@ export class Stage {
       motion = true;
       this.camMoved = true;
     }
-    if (this.controls.update()) motion = true;
+    if (this.walking) this.camMoved = true;               // the walker steers the camera, not the orbit
+    else if (this.controls.update()) motion = true;
     if (this.camMoved) {
       cutaway(this.built, this.camera.position);
       this.camMoved = false;
@@ -943,6 +945,7 @@ export class Stage {
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
+    this._drawScreens(now);
 
     this.dirty = false;
     this._adapt(now);
@@ -951,6 +954,142 @@ export class Stage {
     this.composer.render();
     this._drawLabels();
     if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** A still of the view at print size (the long side `longSide` px), as
+   *  a PNG data URL: the scene rendered again at a higher resolution. */
+  photo(longSide = 3840) {
+    const w = Math.max(1, this.el.clientWidth), h = Math.max(1, this.el.clientHeight);
+    const keep = this.q.ratio;
+    this.q.ratio = Math.min(4, Math.max(1, longSide / Math.max(w, h)));
+    this.resize();
+    this.bloom.enabled = !!this.options.bloom;
+    this.composer.render();
+    const url = this.renderer.domElement.toDataURL("image/png");
+    this.q.ratio = keep;
+    this.resize();
+    this.dirty = true;
+    return url;
+  }
+
+  /** Walk the room at eye height: W A S D / arrows to move (Shift runs),
+   *  drag to look round, Esc (or walk(false)) to stop.  Stays inside the
+   *  walls. */
+  walk(on = true, onEnd = null) {
+    const dom = this.renderer.domElement;
+    if (!on) {
+      if (!this.walking) return;
+      const w = this.walking;
+      this.walking = null;
+      window.removeEventListener("keydown", w.kd, true);
+      window.removeEventListener("keyup", w.ku, true);
+      dom.removeEventListener("pointerdown", w.pd, true);
+      window.removeEventListener("pointermove", w.pm, true);
+      window.removeEventListener("pointerup", w.pu, true);
+      dom.classList.remove("walking");
+      this.controls.enabled = true;
+      this.controls.target.copy(this.camera.position).add(new THREE.Vector3(0, 0, -2).applyEuler(new THREE.Euler(w.pitch, w.yaw, 0, "YXZ")));
+      this.controls.update();
+      if (w.onEnd) w.onEnd();
+      return;
+    }
+    if (this.walking) return;
+    this.povHead = null;
+    const v = (this.built && this.built.venue) || {};
+    const zone = (v.zones || []).find((z) => z.kind === "dancefloor") || (v.zones || []).find((z) => z.kind === "standing");
+    const R = this.room;
+    let x = (R.cx || 0), z = Math.min(R.z1 - 1, (this.stageFront || 0) + 4);
+    if (zone) {
+      x = zone.points.reduce((a, q) => a + q[0], 0) / zone.points.length;
+      z = zone.points.reduce((a, q) => a + q[1], 0) / zone.points.length;
+    }
+    this.fly = null;
+    this.camera.position.set(x, 1.7, z);
+    const w = { keys: new Set(), yaw: 0, pitch: 0.12, drag: null, last: performance.now(), onEnd };
+    const keyOf = (e) => ({ ArrowUp: "w", ArrowDown: "s", ArrowLeft: "a", ArrowRight: "d" }[e.key] || e.key.toLowerCase());
+    w.kd = (e) => {
+      if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      if (e.key === "Escape") { this.walk(false); e.stopPropagation(); return; }
+      const k = keyOf(e);
+      if ("wasd".includes(k) && k.length === 1) { w.keys.add(k); e.preventDefault(); e.stopPropagation(); }
+      w.run = e.shiftKey;
+    };
+    w.ku = (e) => { w.keys.delete(keyOf(e)); w.run = e.shiftKey; };
+    w.pd = (e) => { w.drag = { x: e.clientX, y: e.clientY }; e.stopImmediatePropagation(); };
+    w.pm = (e) => {
+      if (!w.drag) return;
+      w.yaw -= (e.clientX - w.drag.x) * 0.004;
+      w.pitch = Math.max(-1.2, Math.min(1.2, w.pitch - (e.clientY - w.drag.y) * 0.004));
+      w.drag = { x: e.clientX, y: e.clientY };
+      this.dirty = true;
+    };
+    w.pu = () => { w.drag = null; };
+    window.addEventListener("keydown", w.kd, true);
+    window.addEventListener("keyup", w.ku, true);
+    dom.addEventListener("pointerdown", w.pd, true);
+    window.addEventListener("pointermove", w.pm, true);
+    window.addEventListener("pointerup", w.pu, true);
+    dom.classList.add("walking");
+    this.controls.enabled = false;
+    this.walking = w;
+    this.dirty = true;
+  }
+
+  _walkStep(now) {
+    const w = this.walking;
+    const dt = Math.min(0.1, (now - w.last) / 1000);
+    w.last = now;
+    const speed = (w.run ? 5 : 2.2) * dt;
+    const fwd = (w.keys.has("w") ? 1 : 0) - (w.keys.has("s") ? 1 : 0);
+    const side = (w.keys.has("d") ? 1 : 0) - (w.keys.has("a") ? 1 : 0);
+    const p = this.camera.position;
+    if (fwd || side) {
+      p.x += (-Math.sin(w.yaw) * fwd + Math.cos(w.yaw) * side) * speed;
+      p.z += (-Math.cos(w.yaw) * fwd - Math.sin(w.yaw) * side) * speed;
+      const R = this.room;
+      p.x = Math.max(R.x0 + 0.3, Math.min(R.x1 - 0.3, p.x));
+      p.z = Math.max(R.z0 + 0.3, Math.min(R.z1 - 0.3, p.z));
+      this.dirty = true;
+    }
+    this.camera.rotation.set(w.pitch, w.yaw, 0, "YXZ");
+  }
+
+  /** LED screens: "the lights" draws every light's colour as a tile (a
+   *  pixel-map mirror of the rig, in number order); a clip keeps the view
+   *  rendering while it plays. */
+  _drawScreens(now) {
+    const list = this.built && this.built.screens;
+    if (!list || !list.length) return;
+    if (list.some((m) => m.material.userData.video)) this.dirty = true;
+    if (now - (this._scrLast || 0) < 60) return;
+    this._scrLast = now;
+    const heads = [...this.fixtures.values()].sort((a, b) => a.head - b.head);
+    const tiles = [];
+    for (const inst of heads) {
+      const L = inst.cur || {};
+      const a = Math.min(1, inst.level || 0);
+      if (L.cells && L.cells.length > 1) for (const c of L.cells) tiles.push([c.r, c.g, c.b, a]);
+      else tiles.push([L.r || 0, L.g || 0, L.b || 0, a]);
+    }
+    for (const m of list) {
+      const cv = m.material.userData.canvas;
+      if (!cv) continue;
+      const ctx = cv.getContext("2d");
+      const W = cv.width, H = cv.height;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+      const n = tiles.length;
+      if (n) {
+        const cols = Math.max(1, Math.ceil(Math.sqrt(n * W / H))), rows = Math.ceil(n / cols);
+        const tw = W / cols, th = H / rows, gap = Math.max(1, Math.min(tw, th) * 0.06);
+        tiles.forEach(([r, g, b, a], i) => {
+          const k = 255 * Math.min(1, a * 1.2);
+          ctx.fillStyle = `rgb(${Math.min(255, r * k) | 0},${Math.min(255, g * k) | 0},${Math.min(255, b * k) | 0})`;
+          ctx.fillRect((i % cols) * tw + gap / 2, Math.floor(i / cols) * th + gap / 2, tw - gap, th - gap);
+        });
+      }
+      m.material.map.needsUpdate = true;
+    }
   }
 
   /** Auto quality: shed resolution when frames run long, win it back later. */

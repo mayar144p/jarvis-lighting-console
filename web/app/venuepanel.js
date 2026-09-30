@@ -325,6 +325,7 @@ function renderInspector(sel) {
       h("div.vi-row", field("X", num(o.x, (v) => upd({ x: v }))), field("Z", num(o.z, (v) => upd({ z: v }))), field("Up", num(o.y, (v) => upd({ y: v }), { min: 0 }))),
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
+      o.kind === "screen" ? screenContent(o, upd) : null,
       h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
   } else if (s.type === "zone") {
     const z = (venue().zones || []).find((x) => x.id === s.id);
@@ -364,6 +365,24 @@ function renderInspector(sel) {
         h("button.btn.small.danger", { onclick: () => { run("venue_underlay", { remove: true }); editor.select(null); } }, "Remove")));
   }
   box.replaceChildren(...body.filter(Boolean));
+}
+
+// What an LED screen shows: the lights (a live mirror of the rig's colours),
+// a clip or a picture (a link the browser can open), or nothing.
+function screenContent(o, upd) {
+  const c = o.content || "rig";
+  const sel = h("select.select.small",
+    h("option", { value: "rig" }, "The lights (live mirror)"), h("option", { value: "clip" }, "A video clip…"),
+    h("option", { value: "image" }, "A picture…"), h("option", { value: "off" }, "Nothing (off)"));
+  sel.value = c.startsWith("clip:") ? "clip" : c.startsWith("image:") ? "image" : c;
+  sel.addEventListener("change", async () => {
+    if (sel.value === "clip" || sel.value === "image") {
+      const cur = c.startsWith(sel.value + ":") ? c.slice(sel.value.length + 1) : "";
+      const url = await promptBox(sel.value === "clip" ? "Video clip" : "Picture", "A link to it (mp4 / webm, or png / jpg)", cur, { ok: "Show it" });
+      if (url) upd({ content: `${sel.value}:${url.trim()}` }); else sel.value = c.split(":")[0];
+    } else upd({ content: sel.value });
+  });
+  return field("Shows", sel);
 }
 
 // Copies of one truss / object in a row: "4 trusses 2 m apart".
