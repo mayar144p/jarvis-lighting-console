@@ -928,7 +928,8 @@ class Handler(BaseHTTPRequestHandler):
             for r in rows:
                 # What the light physically is, so the picker can show the
                 # 3D model before anything is patched.
-                mode = (r.get("modes") or [{}])[0]
+                mode = engine_mod.default_mode(r.get("modes") or []) or {}
+                r["default_mode"] = mode.get("name")
                 r["body"] = fixture_kind.describe({
                     "manufacturer": r.get("manufacturer"), "model": r.get("model"),
                     "mode": mode.get("name", ""),

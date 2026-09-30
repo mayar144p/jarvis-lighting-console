@@ -72,10 +72,11 @@ CREATE TABLE IF NOT EXISTS modes (
 # and channels no longer collapse onto one role; 7: a light's unnamed
 # channels get their own controls - aux1..aux24; 8: also for fixtures whose
 # file is gone, upgraded in the database; 9: an SFX machine's GO / trigger
-# channel is its fire output, and "Preset" is not a reset channel).  On start, fixtures imported by an
+# channel is its fire output, and "Preset" is not a reset channel; 10: a
+# "Shutter, strobe, reset" channel is the shutter, not maintenance).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 9
+PARSER_VERSION = 10
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than

@@ -273,7 +273,25 @@ function renderInspector(sel) {
         const d = v - midY;
         upd({ a: [found.a[0], r2(found.a[1] + d), found.a[2]], b: [found.b[0], r2(found.b[1] + d), found.b[2]] });
       }, { min: 0 })),
-      h("p.muted.small", "Drag the yellow ends to change its length and angle."),
+      h("div.vi-row",
+        field("Length m", num(r2(len), (v) => run("venue_rig", { id: s.id, length: v }, { toast: true }), { min: 0.2, step: 0.5 })),
+        field("Centre X", num(r2((found.a[0] + found.b[0]) / 2), (v) => {
+          const d = v - (found.a[0] + found.b[0]) / 2;
+          upd({ a: [r2(found.a[0] + d), found.a[1], found.a[2]], b: [r2(found.b[0] + d), found.b[1], found.b[2]] });
+        })),
+        field("Centre Z", num(r2((found.a[2] + found.b[2]) / 2), (v) => {
+          const d = v - (found.a[2] + found.b[2]) / 2;
+          upd({ a: [found.a[0], found.a[1], r2(found.a[2] + d)], b: [found.b[0], found.b[1], r2(found.b[2] + d)] });
+        }))),
+      h("div.row-btns",
+        h("button.btn.small", { title: "Turn it a quarter turn about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 90 }, { toast: true }) }, "Turn 90°"),
+        h("button.btn.small", { title: "Turn it 45° about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 45 }, { toast: true }) }, "Turn 45°"),
+        Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
+          ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
+          : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
+        h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
+        h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
+      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         del(s.id, found.kind)));

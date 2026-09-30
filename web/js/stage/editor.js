@@ -87,18 +87,49 @@ export class VenueEditor {
 
   _applyMode() {
     const s = this.sel;
-    const canRotate = s && (s.type === "object" || s.type === "underlay" || s.type === "light");
+    const canRotate = s && (s.type === "object" || s.type === "underlay" || s.type === "light" || s.type === "rig");
     const mode = this.mode === "rotate" && canRotate ? "rotate" : "translate";
     this.tc.setMode(mode);
     this.tc.showX = true; this.tc.showZ = true;
     this.tc.showY = true;
     if (mode === "rotate") {
-      this.tc.showX = s.type === "light";
+      this.tc.showX = s.type === "light";           // a rig turns flat (seen from above); stand it up from the panel
       this.tc.showZ = false;
     } else if (s && (s.type === "zone" || s.type === "underlay" || s.type === "stage" || s.type === "vertex")) {
       this.tc.showY = false;                    // these live on the floor
     }
     this.stage.dirty = true;
+  }
+
+  /** The room's inside, as the engine clamps it (venue.py bounds + margin). */
+  _roomBox() {
+    const room = this.venue.room || {};
+    const w = +room.width || 0, d = +room.depth || 0, h = +room.height || 0;
+    if (!w || !d) return null;
+    const m = 0.2, cx = +room.cx || 0, back = +room.back || 0;
+    return { x0: cx - w / 2 + m, x1: cx + w / 2 - m, z0: back + m, z1: back + d - m, top: (h || 20) - 0.1, h: h || 20 };
+  }
+
+  /** A rig at the edge of the screen (or with the camera level with it,
+   *  as in a low room) can't be grabbed: bring it into view first. */
+  frameRigById(id) {
+    const found = this._item(id);
+    if (found && found.key === "rigging") this._frameRig(new THREE.Vector3(...found.it.a), new THREE.Vector3(...found.it.b), true);
+  }
+
+  _frameRig(a, b, force = false) {
+    const st = this.stage, cam = st.camera;
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    const q = mid.clone().project(cam);
+    const edge = Math.abs(q.x) > 0.75 || Math.abs(q.y) > 0.7 || q.z > 1;
+    const flat = Math.abs(cam.position.y - mid.y) < 1.2;
+    if (!force && !edge && !flat) return;
+    const len = a.distanceTo(b);
+    const box = this._roomBox();
+    const back = Math.max(3, len * 0.9);
+    const pos = new THREE.Vector3(mid.x, Math.max(0.6, mid.y - Math.min(1.6, mid.y * 0.55)), mid.z + back);
+    if (box) pos.z = Math.min(pos.z, box.z1 + 3);       // may look in from outside the front wall
+    st._flyTo(pos, mid, false);
   }
 
   /** The venue as currently drawn (the engine's, or the auto room). */
@@ -162,6 +193,7 @@ export class VenueEditor {
         p.position.copy(a).add(b).multiplyScalar(0.5);
         this._handle("a", a);
         this._handle("b", b);
+        if (!opts.silent) this._frameRig(a, b);
       } else if (found.key === "objects") {
         sel.type = "object";
         p.position.set(it.x, it.y || 0, it.z);
@@ -210,6 +242,30 @@ export class VenueEditor {
     this.tc.attach(this.proxy);
     this.tc.showY = base.type === "rig";
     this.stage.dirty = true;
+  }
+
+  /** A rig drag, kept inside the room and under its ceiling; near the
+   *  ceiling it snaps up to hang just below it. */
+  _rigDelta(it, d) {
+    const dd = d.clone();
+    const box = this._roomBox();
+    if (!box) return dd;
+    const xs = [it.a[0], it.b[0]], zs = [it.a[2], it.b[2]], ys = [it.a[1], it.b[1]];
+    const fit = (lo, hi, vals, v) => {
+      const mn = Math.min(...vals) + v, mx = Math.max(...vals) + v;
+      if (mx - mn > hi - lo) return (lo + hi) / 2 - (Math.min(...vals) + Math.max(...vals)) / 2;   // longer than the room: centre it
+      if (mn < lo) return v + (lo - mn);
+      if (mx > hi) return v - (mx - hi);
+      return v;
+    };
+    dd.x = fit(box.x0, box.x1, xs, dd.x);
+    dd.z = fit(box.z0, box.z1, zs, dd.z);
+    const size = +(it.size || 0.3);
+    const hangY = box.h - size / 2 - 0.05;                 // just under the ceiling
+    const top = Math.max(...ys) + dd.y;
+    if (top > hangY - 0.35) dd.y = hangY - Math.max(...ys);  // snap up to the ceiling
+    dd.y = Math.max(dd.y, -Math.min(...ys));                // never through the floor
+    return dd;
   }
 
   // ------------------------------------------------------------ dragging
@@ -266,12 +322,21 @@ export class VenueEditor {
         s.snap = snap;
       }
     } else if (s.type === "rig" && s.group) {
-      s.group.position.copy(s.group0).add(d);
-      for (const r of s.riders) r.inst.holder.position.copy(r.pos).add(d);
-      this.handles.children.forEach((m, i) => {
-        const it = s.item;
-        m.position.set(...(i === 0 ? it.a : it.b)).add(d);
-      });
+      const it = s.item;
+      if (this.tc.mode === "rotate") {
+        const yaw = this.proxy.rotation.y - s.startRot.y;
+        s.group.rotation.y = yaw;
+        const mid = new THREE.Vector3(...it.a).add(new THREE.Vector3(...it.b)).multiplyScalar(0.5);
+        s.group.position.copy(s.group0).sub(mid).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(mid);
+        for (const r of s.riders) r.inst.holder.position.copy(r.pos).sub(mid).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(mid);
+        s.yaw = yaw;
+      } else {
+        const dd = this._rigDelta(it, d);
+        s.group.position.copy(s.group0).add(dd);
+        for (const r of s.riders) r.inst.holder.position.copy(r.pos).add(dd);
+        this.handles.children.forEach((m, i) => m.position.set(...(i === 0 ? it.a : it.b)).add(dd));
+        s.dd = dd;
+      }
     } else if (s.type === "object" && s.group) {
       s.group.position.copy(s.group0).add(d);
       s.group.rotation.y = s.groupRot0 + (this.proxy.rotation.y - s.startRot.y);
@@ -313,10 +378,21 @@ export class VenueEditor {
       }
     } else if (s.type === "rig") {
       const it = s.item;
-      H.updateItem && H.updateItem(s.id, {
-        a: [r2(it.a[0] + d.x), r2(Math.max(0, it.a[1] + d.y)), r2(it.a[2] + d.z)],
-        b: [r2(it.b[0] + d.x), r2(Math.max(0, it.b[1] + d.y)), r2(it.b[2] + d.z)],
-      });
+      if (this.tc.mode === "rotate") {
+        const yaw = s.yaw || 0;
+        const A = new THREE.Vector3(...it.a), B = new THREE.Vector3(...it.b);
+        const mid = A.clone().add(B).multiplyScalar(0.5);
+        const Y = new THREE.Vector3(0, 1, 0);
+        const na = A.sub(mid).applyAxisAngle(Y, yaw).add(mid), nb = B.sub(mid).applyAxisAngle(Y, yaw).add(mid);
+        if (s.group) s.group.rotation.y = 0;
+        H.updateItem && H.updateItem(s.id, { a: [r2(na.x), r2(na.y), r2(na.z)], b: [r2(nb.x), r2(nb.y), r2(nb.z)] });
+      } else {
+        const dd = s.dd || this._rigDelta(it, d);
+        H.updateItem && H.updateItem(s.id, {
+          a: [r2(it.a[0] + dd.x), r2(Math.max(0, it.a[1] + dd.y)), r2(it.a[2] + dd.z)],
+          b: [r2(it.b[0] + dd.x), r2(Math.max(0, it.b[1] + dd.y)), r2(it.b[2] + dd.z)],
+        });
+      }
     } else if (s.type === "object") {
       const rot = Math.round(-this.proxy.rotation.y * 180 / Math.PI);
       H.updateItem && H.updateItem(s.id, { x: r2(p.x), y: r2(Math.max(0, p.y)), z: r2(p.z), rot });

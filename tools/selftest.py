@@ -7533,6 +7533,7 @@ def _standalone_suites():
     ("scanners, derbies and more get their own 3D model", test_more_models),
     ("RDM: the lights say what they are (fake node)", test_rdm),
     ("aiming: towers, scanners, out-of-reach, fine pan without fine tilt", test_aim_debug),
+    ("rigging: turn, length, stand up, ceiling, stays inside the room", test_rig_tools),
     )
 
 
@@ -9681,6 +9682,68 @@ def test_aim_debug() -> None:
             check("...by dipping its mirror, not by pointing up", ly > 0, f"pan {p_deg:.1f} tilt {t_deg:.1f}")
         finally:
             e.shutdown()
+
+
+def test_rig_tools() -> None:
+    """Bars can be turned, resized, stood up and hung from the ceiling; a
+    rig is never left outside the walls or through the ceiling; a resized
+    room's zones scale with it; a light dragged up high hangs."""
+    print("rig tools")
+    import tempfile
+    from app import engine as eng
+    from app import venue as V
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_room", width=4, depth=4, height=3)
+            r = e.act("venue_add", item={"type": "rigging", "kind": "truss", "a": [-3, 2.8, 2], "b": [3, 2.8, 2]})
+            rid = r["item"]["id"]
+
+            def g():
+                return next(x for x in e.venue["rigging"] if x["id"] == rid)
+            b = V.bounds(e.venue)
+            inside = lambda rr: all(b["x0"] <= p[0] <= b["x1"] and b["z0"] <= p[2] <= b["z1"] and p[1] <= b["h"]  # noqa: E731
+                                    for p in (rr["a"], rr["b"]))
+            check("a 6 m bar added to a 4 m room stays inside it", inside(g()), str(g()))
+            e.act("venue_update", id=rid, changes={"a": [4, 6, 9], "b": [8, 6, 9]})
+            check("dragged out through the wall and ceiling, it stays in", inside(g()), str(g()))
+            e.act("venue_rig", id=rid, length=2)
+            ln = lambda rr: sum((rr["b"][i] - rr["a"][i]) ** 2 for i in range(3)) ** 0.5  # noqa: E731
+            check("its length can be set", abs(ln(g()) - 2) < 0.01, str(g()))
+            before = g()
+            e.act("venue_rig", id=rid, turn=90)
+            now = g()
+            check("it turns about its middle", abs(now["a"][0] - now["b"][0]) < 0.01 and abs(now["a"][2] - now["b"][2]) > 1.9
+                  and abs((now["a"][0] + now["b"][0]) / 2 - (before["a"][0] + before["b"][0]) / 2) < 0.01, str(now))
+            e.act("venue_rig", id=rid, orient="vertical")
+            check("it stands up as a pole on the floor", V.is_vertical(g()) and min(g()["a"][1], g()["b"][1]) == 0, str(g()))
+            e.act("venue_rig", id=rid, orient="horizontal")
+            e.act("venue_rig", id=rid, ceiling=True)
+            check("it hangs just under the ceiling", abs(g()["a"][1] - (3 - 0.15 - 0.05)) < 0.06, str(g()))
+            e.act("venue_template", name="club")
+            e.act("venue_room", width=5, depth=5, height=3)
+            b = V.bounds(e.venue)
+            zs = e.venue["zones"]
+            check("a smaller room: its zones scale into it, not squashed",
+                  zs and all(b["x0"] - 0.01 <= q[0] <= b["x1"] + 0.01 and b["z0"] - 0.01 <= q[1] <= b["z1"] + 0.01
+                             for z in zs for q in z["points"])
+                  and all(max(q[1] for q in z["points"]) - min(q[1] for q in z["points"]) > 0.2 for z in zs), str(zs))
+            e.act("add_heads", query="LED PAR 4ch", qty=1)
+            n = e.patch[-1]["head_no"]
+            e.act("set_place", head=n, x=0, y=0, z=1)
+            e.act("set_place", head=n, x=0, y=2.6, z=1)
+            h = e._head(n)
+            check("a light dragged up high hangs", (h.get("stance") == "hang") or (not h.get("stance") and h.get("kind") == "truss"),
+                  str((h.get("stance"), h.get("kind"))))
+        finally:
+            e.shutdown()
+    ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    check("the editor turns rigs, keeps them in the room and frames them", 's.type === "rig")' in ed
+          and "_rigDelta" in ed and "_frameRig" in ed, "")
 
 
 def test_cue_list_modes() -> None:

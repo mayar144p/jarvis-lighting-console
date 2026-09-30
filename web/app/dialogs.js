@@ -59,7 +59,8 @@ export function openAddDialog(query = "") {
     title.textContent = `${item.manufacturer || ""} ${item.model || item.fixture || ""}`.trim();
     const modes = item.modes || [];
     mode.replaceChildren(...modes.map((m) => h("option", { value: m.name },
-      `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)`)));
+      `${m.name} (${m.channel_count ?? m.dmxfootprint ?? "?"} ch)${m.name === item.default_mode ? " - recommended" : ""}`)));
+    if (item.default_mode) mode.value = item.default_mode;
     const origin = item._origin || source;
     if (origin === "share") {
       meta.textContent = `GDTF Share · revision ${item.revision || "?"} · downloads the manufacturer's file, then adds it`;

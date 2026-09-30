@@ -124,7 +124,7 @@ BRANDS: dict[str, dict] = {
 # First match wins, so the more specific patterns come first.
 FAMILIES: list[tuple[str, str, str]] = [
     # (regex, type, family label)
-    (r"^(?!.*laser).*(\bscan(ner)?\b|\bmartin acrobat\b|\bdouble phase\b|\bcy-?\d+|\bspin master\b"
+    (r"^(?!.*laser).*(\bscan(ner)?\b|\b(club|mini|micro|twin|pocket|x|inno)-?scan\b|\bmartin acrobat\b|\bdouble phase\b|\bcy-?\d+|\bspin master\b"
      r"|\bnucleus\b|\bkls scan\b|\bmirror ?scan)", "scanner", ""),
     (r"\bflower\b|\bderby\b|\bmoon ?flower\b|\bgem\b|\bjelly ?dome\b|\brevo\b|\bh2o\b"
      r"|\btwister\b|\bcentre pro\b|\bastro\b|\bstarball\b|\bkaleido\b|\bmushroom\b",

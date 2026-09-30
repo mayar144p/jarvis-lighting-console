@@ -302,7 +302,7 @@ body.arranging #arrange-btn { color: #fbbf24; border-color: rgba(251, 191, 36, .
   padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.4; text-align: center;
 }
 .venue-inspector {
-  position: absolute; right: 10px; top: 50px; z-index: 3; width: 250px; max-height: calc(100% - 110px); overflow: auto;
+  position: absolute; right: 10px; top: 50px; z-index: 3; width: 290px; max-height: calc(100% - 110px); overflow: auto;
   background: rgba(10, 13, 19, .94); border: 1px solid var(--border-2); border-radius: 10px; padding: 10px 12px;
   display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(8px); font-size: 12px;
 }
@@ -1133,3 +1133,7 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .rdm-row.ok .ready-ic { background: #16a34a; color: #fff; } .rdm-row.different .ready-ic { background: #d97706; color: #fff; }
 .rdm-row.new .ready-ic { background: #2563eb; color: #fff; } .rdm-row.silent { opacity: .75; }
 .rdm-row small { display: block; }
+
+/* three coordinates side by side: no spinner arrows eating the digits */
+.venue-inspector input.num { -moz-appearance: textfield; appearance: textfield; padding: 0 4px; font-variant-numeric: tabular-nums; }
+.venue-inspector input.num::-webkit-outer-spin-button, .venue-inspector input.num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

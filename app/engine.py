@@ -289,6 +289,22 @@ def _parse_hex(value: str) -> tuple[int, int, int]:
         raise ValueError(f"bad colour {value!r} - use #rrggbb") from exc
 
 
+def default_mode(modes: list[dict]) -> dict:
+    """The mode to patch when none is asked for: the fewest channels that
+    still give real control - a dimmer, shutter or colour, and pan + tilt
+    when the light has them at all.  Fewest-first alone picked 1-channel
+    "sound active" modes that the desk can't control."""
+    def roles(m):
+        return {channel_role(c) for c in m.get("channels") or []}
+    if not modes:
+        return {}
+    moves = any({"pan", "tilt"} <= roles(m) for m in modes)
+    light = {"dimmer", "shutter", "strobe", "red", "white", "wheel"}
+    usable = [m for m in modes if roles(m) & light and (not moves or {"pan", "tilt"} <= roles(m))]
+    pool = usable or modes
+    return min(pool, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
+
+
 def _clamp(value, low: int, high: int) -> int:
     try:
         v = int(round(float(value)))
@@ -589,7 +605,7 @@ ACTIONS = (
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
     "venue_save", "venue_open", "venue_delete",
-    "patch_move_free", "change_type", "ready_check", "show_versions", "restore_version", "rdm_compare",
+    "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
@@ -1392,7 +1408,7 @@ class Engine:
             if chosen is None:
                 raise ValueError(f"{fx['model']} has no mode {mode!r}")
         if chosen is None:
-            chosen = modes[0]          # fewest channels first
+            chosen = default_mode(modes)   # fewest channels that still control the light
         labels = list(chosen.get("channels") or [])
         if not labels:
             raise ValueError(f"mode {chosen['name']} lists no channels")
@@ -3054,6 +3070,13 @@ class Engine:
                     was_mounted = bool(h.pop("mount", None))
                     if was_mounted and stance is None:
                         h.pop("stance", None)    # free again: height decides
+                if y is not None and stance is None:
+                    # dragged up past 2 m it hangs, down below it stands: a
+                    # light left "standing" in mid-air at 5 m couldn't tilt
+                    # down to the floor (it aimed at the roof)
+                    if (float(h["y"]) >= 2.0) != (cy >= 2.0):
+                        h.pop("stance", None)
+                    h["kind"] = "truss" if cy >= 2.0 else "floor"
                 h["x"], h["y"], h["z"] = cx, cy, cz
             if rot is not None:
                 if isinstance(rot, (list, tuple)) and len(rot) == 2:
@@ -3415,7 +3438,7 @@ class Engine:
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient",
         "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
-        "venue_room", "venue_stage", "venue_add", "venue_update",
+        "venue_room", "venue_stage", "venue_add", "venue_update", "venue_rig",
         "venue_remove", "venue_underlay",
     })
     LOCK_LIBRARY = frozenset({
@@ -3586,7 +3609,9 @@ class Engine:
         v = venue_mod.normalise(v)
         if not (v["room"]["width"] and v["room"]["depth"]):
             raise ValueError("the room needs a width and a depth")
-        # rigging left outside the new walls comes back in (its lights with it)
+        # zones scale with the room; rigging and objects left outside the
+        # new walls come back in (the lights on a rig with it)
+        venue_mod.scale_zones(venue_mod.normalise(self.venue), v)
         pulled = venue_mod.fit_inside(v)
         self._set_venue_doc(v)
         w, d, h = venue_mod.dims(v)
@@ -3636,6 +3661,30 @@ class Engine:
         self._set_venue_doc(v)
         return self._venue_result(f"updated {item['kind']} {item['id']}",
                                   item=item)
+
+    def _a_venue_rig(self, id=None, turn=None, length=None, orient=None, ceiling=False, **_):
+        """Reshape one rig: turn it about its middle (degrees), set its
+        length, stand it up (orient="vertical") or lay it flat, or hang it
+        just under the ceiling.  It stays inside the room; lights on it go
+        with it."""
+        if not id:
+            raise ValueError("id is required")
+        r = venue_mod.rig(self.venue, str(id))
+        if not r:
+            raise ValueError(f"no rig {id!r}")
+        if orient not in (None, "", "vertical", "horizontal"):
+            raise ValueError("orient is vertical or horizontal")
+        if length is not None and not 0.2 <= float(length) <= 60:
+            raise ValueError("a rig is 0.2 to 60 m long")
+        changes = venue_mod.rig_transform(self.venue, r, turn=float(turn) if turn else None,
+                                          length=float(length) if length else None,
+                                          orient=orient or None, ceiling=_truthy(ceiling))
+        v, item = venue_mod.update_item(self.venue, str(id), changes)
+        self._set_venue_doc(v)
+        what = ", ".join(x for x in (f"turned {float(turn):g}°" if turn else "", f"{float(length):g} m" if length else "",
+                                     {"vertical": "stood up", "horizontal": "laid flat"}.get(orient or "", ""),
+                                     "hung from the ceiling" if _truthy(ceiling) else "") if x)
+        return self._venue_result(f"{item['kind']} {item['id']}: {what or 'unchanged'}", item=item)
 
     def _a_venue_remove(self, id=None, **_):
         if not id:
@@ -9444,6 +9493,13 @@ class Engine:
                           "on": row["on"]}}
                 for row in self._looks(now)]
 
+    @staticmethod
+    def _lamp_only(head: dict) -> bool:
+        """A light whose lamp can't be dimmed or closed from DMX at all."""
+        m = set(head.get("map") or [])
+        return not m & (HTP_ROLES | {"shutter", "strobe"} | _COLOUR_ROLES) and bool(
+            m & {"pan", "tilt", "wheel", "gobo", "gobo_rot", "prism", "zoom", "focus"})
+
     def _gate_intensity(self, head: dict, values: dict) -> int:
         """Brightness of a fixture that has no dimmer channel (0 or 100).
 
@@ -9457,6 +9513,11 @@ class Engine:
         if role is None:
             # No dimmer and no gate (e.g. a raw 3ch RGB par): the colour
             # channels ARE the brightness.
+            if not set(head["map"]) & _COLOUR_ROLES:
+                # a lamp light with nothing that can dim or close it (an old
+                # scanner: pan, tilt, colour wheel, gobo): the lamp is simply
+                # on, whatever the desk does - show it that way
+                return 100 if self._lamp_only(head) else 0
             colour = [v for r, v in values.items()
                       if r in _COLOUR_ROLES]
             return round(max(colour) * 100 / 255) if colour else 0
@@ -9890,6 +9951,11 @@ class Engine:
             add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues")
         if not any(pb["stack"] for pb in self.playbacks):
             add("warn", "No cues recorded yet.", "Record a cue")
+        always = [h["head_no"] for h in self.patch if self._lamp_only(h)]
+        if always:
+            add("warn", f"{len(always)} light(s) have no dimmer or shutter in their mode, so Blackout can't "
+                        f"darken them ({', '.join(f'#{n}' for n in always[:6])}).",
+                "Pick a mode with a dimmer / shutter, or fix the profile")
         movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
         if movers and not self.floor_safe:
             add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Move tab → Stay on the floor")
