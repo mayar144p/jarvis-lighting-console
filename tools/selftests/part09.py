@@ -1025,3 +1025,30 @@ def test_rigging_library() -> None:
                   and "window.print" in page, "")
         finally:
             e.shutdown()
+
+
+def test_mixed_selection_targets() -> None:
+    """One kind of light in a mixed selection: set_attribute and
+    set_attr_range take `heads` and touch only those."""
+    print("Mixed selection: per-kind controls")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            mv = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            par = e.act("add_heads", query="LED PAR", qty=2)["heads"]
+            e.act("select_all")
+            r = e.act("set_attribute", attribute="gobo", value=40, heads=mv)
+            check("the movers' section sets only the movers", r.get("ok") and set(e.programmer) == set(mv), str(e.programmer))
+            e.act("set_attr_range", attribute="gobo", clear=True, heads=mv[:1])
+            check("clear on one kind leaves the rest", "gobo" not in e.programmer.get(mv[0], {}) and e.programmer[mv[1]]["gobo"] == 40, "")
+            check("the selection is left as it was", sorted(e.selected) == sorted(mv + par), str(e.selected))
+        finally:
+            e.shutdown()
+    js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Beam tab: a section per kind of light; plain words",
+          "attr-kind" in js and "reaches all" not in js and "Own channels" in js, "")

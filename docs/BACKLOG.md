@@ -205,14 +205,19 @@ The pass walked every tab for one light of each type (see A0).  Next:
     fixture); gobo wheels with pictures; prism / gobo rotation as
     direction + speed; macros and auto programs as named buttons; lamp,
     reset and fan under an "Advanced" fold.
-18. **Mixed selections:** one section per kind ("6 movers: position,
-    gobo; 12 PARs: colour") instead of the union of all controls.
+18. **Mixed selections.  DONE:** the Beam tab shows one section per model
+    ("3 × Moving Head · colour, position, beam"; "4 × LED PARty · more
+    channels") with that model's controls, sent to those lights only
+    (set_attribute / set_attr_range take `heads`).
 19. **Brand colour matching:** LED colours differ between brands - a
     per-fixture colour calibration so "red" matches across the rig.
-20. Lights with an unknown shutter "open" value (Warp M, COB blinder):
-    Test this light learns it and stores it with the fixture.
-21. Wording: "reaches all 1", "Other" in the programmer bar, and the
-    strobe open / close row for dimmer-less lights.
+20. **DONE (already there):** lights with an unknown shutter "open" value:
+    the Level / Beam warning and Test this light find it on the real
+    light and `remember_open` stores it for every light of that model.
+21. **DONE:** "this light mixes any colour" / "all 7 mix any colour";
+    the programmer bar's "Other" says what it is (Laser, Effects, Own
+    channels); dimmer-less lights: "the fader dims their colour. Their
+    strobe channel: Open - light on / Closed - dark".
 
 ## A5. A buttons screen (MagicQ execute-window style) and AI that programs
 

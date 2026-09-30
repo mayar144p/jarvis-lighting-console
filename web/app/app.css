@@ -1270,3 +1270,5 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .warn-text { color: var(--warn, #f5a524); margin-top: 2px; }
 .rig-parts { margin: 4px 0 10px; padding-left: 18px; }
 .stage canvas.walking { cursor: grab !important; }
+.attr-kind { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 8px; }
+.attr-kind > summary { cursor: pointer; padding: 2px 0 6px; }

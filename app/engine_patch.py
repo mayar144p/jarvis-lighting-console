@@ -1615,7 +1615,16 @@ class PatchMixin:
         return {"level": pct, "heads": driven, "no_dimmer": no_dimmer,
                 "summary": f"intensity {pct}% on {driven} head(s){note}"}
 
-    def _a_set_attribute(self, attribute=None, value=None, cell=None, **_):
+    def _given_heads(self, heads=None) -> list[dict]:
+        """`heads` (numbers) when given - one kind of light in a mixed
+        selection - else the selection."""
+        if heads:
+            if isinstance(heads, (int, str)):
+                heads = [heads]
+            return [self._head(int(x)) for x in heads]
+        return self._require_selection()
+
+    def _a_set_attribute(self, attribute=None, value=None, cell=None, heads=None, **_):
         if attribute is None or value is None:
             raise ValueError("attribute and value are required")
         cells = self._cells(cell)
@@ -1626,7 +1635,7 @@ class PatchMixin:
             # a laser's output/mode channel: the programmer (and so a cue)
             # may choose the MODE it runs in when fired - never "off", and
             # never the output itself, which moves only from its armed buttons
-            heads = [h for h in self._require_selection() if "laser_on" in h["map"]]
+            heads = [h for h in self._given_heads(heads) if "laser_on" in h["map"]]
             if not heads:
                 raise ValueError("select a laser with an output/mode channel")
             v = int(_clamp(value, 0, 255))
@@ -1640,7 +1649,7 @@ class PatchMixin:
         if role in FX_OUTPUT_ROLES:
             raise ValueError(f"{role} is an effect's output: it moves only from the "
                              f"armed FX buttons, never from the programmer")
-        heads = self._require_selection()
+        heads = self._given_heads(heads)
         if role in HTP_ROLES:
             pct = _clamp(value, 0, 100)
             driven, no_dimmer = 0, []

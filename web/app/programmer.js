@@ -143,16 +143,17 @@ function renderGate() {
   box.dataset.key = key;
   const nums = heads.map((x) => x.head_no);
   const cls = gateOnly ? "button.btn.gate-btn" : "button.chip";
+  const what = role === "shutter" ? "shutter" : "strobe channel";
   box.replaceChildren(h("span.muted.small", gateOnly
-    ? `${heads.length === 1 ? "This light has" : "These lights have"} no dimmer: the ${role} turns the light on and off.`
-    : `${heads.length} light${heads.length === 1 ? " has" : "s have"} no dimmer - open or close the ${role}:`),
+    ? `${heads.length === 1 ? "This light has" : "These lights have"} no dimmer: its ${what} turns it on and off.`
+    : `${heads.length === 1 ? "1 light has" : `${heads.length} lights have`} no dimmer - the fader dims ${heads.length === 1 ? "its" : "their"} colour. ${heads.length === 1 ? "Its" : "Their"} ${what}:`),
     h(cls + (now === "open" ? ".on" : ""), { onclick: async () => {
       const a = await get("/api/console/attributes?heads=" + nums.join(","));
       const at = (a.pages || []).flatMap((p) => p.attrs || []).find((x) => x.role === role);
       run("set_attribute", { attribute: role, value: at && at.open !== undefined ? at.open : 255, heads: nums });
-    } }, gateOnly ? "On (open)" : "Open"),
+    } }, gateOnly ? "On (open)" : "Open - light on"),
     h(cls + (now === "closed" ? ".on" : ""), { onclick: () => run("set_attribute", { attribute: role, value: 0, heads: nums }) },
-      gateOnly ? "Off (closed)" : "Closed"),
+      gateOnly ? "Off (closed)" : "Closed - dark"),
     gateOnly ? h("span.muted.small", "Strobe speeds and effects are on the Beam tab.") : null);
 }
 
@@ -225,7 +226,8 @@ function renderColour() {
   const heads = selectionHeads();
   const colourable = heads.filter((x) => (x.map || []).some((r) => ["red", "wheel", "cyan", "white"].includes(r))).length;
   $("#colour-reach").textContent = heads.length
-    ? (colourable === heads.length ? `reaches all ${heads.length}` : `reaches ${colourable} of ${heads.length} - the rest have no colour mixing`)
+    ? (colourable === heads.length ? (heads.length === 1 ? "this light mixes any colour" : `all ${heads.length} mix any colour`)
+      : `${colourable} of ${heads.length} mix colour - the rest have none`)
     : "";
 }
 
@@ -353,18 +355,42 @@ function wirePad() {
 }
 
 // ---------------------------------------------------------- attributes
+// A mixed selection (movers and PARs...) shows one section per kind of
+// light - that model's own controls, sent to those lights only - instead of
+// every control any of them has in one list.
+let attrKinds = null;          // [{label, heads, state}] when the selection mixes models
+function kindsOf(heads) {
+  const by = new Map();
+  for (const x of heads) {
+    const k = `${x.manufacturer}|${x.model}|${x.mode}`;
+    if (!by.has(k)) by.set(k, { model: x.model || "Light", label: (x.body && x.body.label) || "", heads: [] });
+    by.get(k).heads.push(x.head_no);
+  }
+  return [...by.values()];
+}
+
 async function loadAttributes() {
   clearTimeout(attrTimer);
-  if (!hasSel()) { attrState = null; renderAttributes(); return; }
+  if (!hasSel()) { attrState = null; attrKinds = null; renderAttributes(); return; }
   attrTimer = setTimeout(async () => {
     try {
       attrState = await get("/api/console/attributes?heads=" + sel().join(","));
+      const kinds = kindsOf(selectionHeads());
+      attrKinds = kinds.length > 1
+        ? await Promise.all(kinds.map(async (k) => ({ ...k, state: await get("/api/console/attributes?heads=" + k.heads.join(",")) })))
+        : null;
       renderAttributes();
     } catch (e) { /* the grid just stays as it was */ }
   }, 60);
 }
 
-const sendAttr = throttle((attribute, value) => run("set_attribute", { attribute, value }, { silentError: true }), 70);
+const sendAttrNow = (attribute, value, heads) => run("set_attribute", heads ? { attribute, value, heads } : { attribute, value }, { silentError: true });
+const sendAttrs = new Map();
+const sendAttr = (attribute, value, heads) => {
+  const k = attribute + "|" + (heads || []).join(",");
+  if (!sendAttrs.has(k)) sendAttrs.set(k, throttle((v, hs) => sendAttrNow(attribute, v, hs), 70));
+  sendAttrs.get(k)(value, heads);
+};
 
 // One-press values for the beam: strobe speeds from the fixture's own
 // "open" value, numbered gobo/prism steps, and zoom/iris/frost extremes.
@@ -436,17 +462,33 @@ function renderAttributes() {
     box.replaceChildren(h("p.muted.small", "Select fixtures to see every attribute they have."));
     return;
   }
-  const rows = [];
-  // a light's own extra channels (continuous pan, built-in programs...)
-  // first: at the bottom of a long list nobody found them
-  const pages = [...attrState.pages].sort((x, y) => (y.page === "other") - (x.page === "other"));
-  for (const page of pages) {
-    if (page.page === "intensity") continue;
-    const attrs = (page.attrs || []).filter((a) => !["red", "green", "blue", "pan", "tilt", "pan_fine", "tilt_fine"].includes(a.role));
-    if (!attrs.length) continue;
-    rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
-    for (const a of attrs) rows.push(attrRow(a));
+  const pageRows = (st, heads) => {
+    const rows = [];
+    // a light's own extra channels (continuous pan, built-in programs...)
+    // first: at the bottom of a long list nobody found them
+    const pages = [...(st.pages || [])].sort((x, y) => (y.page === "other") - (x.page === "other"));
+    for (const page of pages) {
+      if (page.page === "intensity") continue;
+      const attrs = (page.attrs || []).filter((a) => !["red", "green", "blue", "pan", "tilt", "pan_fine", "tilt_fine"].includes(a.role));
+      if (!attrs.length) continue;
+      rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
+      for (const a of attrs) rows.push(attrRow(a, heads));
+    }
+    return rows;
+  };
+  if (attrKinds && attrKinds.length > 1) {
+    const secs = attrKinds.map((k) => {
+      const rows = pageRows(k.state, k.heads);
+      const names = [...new Set(rows.filter((r) => r.classList && r.classList.contains("attr-page")).map((r) => r.textContent.toLowerCase()))];
+      return h("details.attr-kind", { open: true },
+        h("summary", h("b", `${k.heads.length} × ${k.model}`), k.label ? h("span.muted.small", ` ${k.label}`) : null,
+          h("span.muted.small", names.length ? ` · ${names.join(", ")}` : " · nothing on this tab")),
+        ...(rows.length ? rows : [h("p.muted.small", "No beam controls on these.")]));
+    });
+    box.replaceChildren(h("p.muted.small", "Mixed selection: each kind of light has its own controls, sent to those lights only."), ...secs);
+    return;
   }
+  const rows = pageRows(attrState, null);
   box.replaceChildren(...(rows.length ? rows : [h("p.muted.small", "These fixtures have no beam attributes.")]));
 }
 
@@ -461,7 +503,7 @@ const ATTR_NAMES = {
 const attrName = (role) => ATTR_NAMES[role] || role.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const slotAt = (a, v) => (a.slots || []).find((s) => v >= s.from && v <= s.to) || null;
 
-function attrRow(a) {
+function attrRow(a, heads = null) {
   const full = a.full || 255;
   const val = a.value === null || a.value === undefined ? null : a.value;
   const pct = (v) => (v / full * 100) + "%";
@@ -475,7 +517,7 @@ function attrRow(a) {
   };
   const out = h("output", { title: val === null ? "" : `DMX ${Math.round(val)}` },
     val === null ? "–" : a.mixed ? "mix" : show(val));
-  const clear = () => run("set_attr_range", { attribute: a.role, clear: true }).then(loadAttributes);
+  const clear = () => run("set_attr_range", heads ? { attribute: a.role, clear: true, heads } : { attribute: a.role, clear: true }).then(loadAttributes);
   const row = h("div.attr" + (a.set ? ".set" : "") + (a.partial ? ".partial" : ""),
     h("label", { title: a.partial ? `${a.role}: only ${a.heads} of the selection have it` : a.role }, a.name || attrName(a.role)),
     bar, out,
@@ -490,7 +532,7 @@ function attrRow(a) {
     out.title = `DMX ${cur}`;
     bar.setAttribute("aria-valuenow", cur);
     row.classList.add("set");
-    sendAttr(a.role, cur);
+    sendAttr(a.role, cur, heads);
   };
   const fromPointer = (e) => {
     const r = bar.getBoundingClientRect();
@@ -601,17 +643,28 @@ function renderProgIn() {
   const box = $("#prog-in");
   const vals = ((state.snap && state.snap.programmer) || {}).values || {};
   const counts = {};
+  const others = new Set();
   for (const row of Object.values(vals)) {
     const seen = new Set();
-    for (const r of Object.keys(row)) seen.add(GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")] || "other");
+    for (const r of Object.keys(row)) {
+      const base = r.replace(/@\d+$/, "").replace(/_fine$/, "");
+      const g = GROUP_OF[base] || "other";
+      if (g === "other") others.add(base);
+      seen.add(g);
+    }
     for (const g of seen) counts[g] = (counts[g] || 0) + 1;
   }
+  // "Other" says what it is: the laser, special effects, or the light's own
+  // channels (programs, speeds, spins)
+  const otherName = [...others].every((r) => r.startsWith("laser")) ? "Laser"
+    : [...others].every((r) => /^(fire|flame|co2|confetti|spark|fog|haze|fan|sfx)/.test(r)) ? "Effects"
+      : "Own channels";
   const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib));
   if (moving && !counts.position) counts.position = 0;
-  const key = JSON.stringify(counts);
+  const key = JSON.stringify([counts, otherName]);
   if (key === progInKey) return;          // redraw only on change: keeps the x clickable
   progInKey = key;
-  const groups = IN_GROUPS.filter(([g]) => g in counts);
+  const groups = IN_GROUPS.filter(([g]) => g in counts).map(([g, l]) => [g, g === "other" ? otherName : l]);
   box.hidden = !groups.length;
   box.replaceChildren(...(groups.length ? [h("span.muted.small", "In the programmer:"),
     ...groups.map(([g, label]) => h("span.chip.prog-in-chip",
