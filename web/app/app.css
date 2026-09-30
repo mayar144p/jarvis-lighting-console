@@ -1257,3 +1257,15 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .mv-pt .aim-row input { width: 64px; }
 .stage canvas.following { cursor: crosshair !important; }
 @media (max-width: 380px) { .mv-pt-row { grid-template-columns: 1fr; } }
+
+/* Arrange -> Rigging… */
+.rigdlg .seg { margin-bottom: 12px; }
+.rig-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.rig-shape { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-2); color: var(--muted); cursor: pointer; }
+.rig-shape b { font-size: 22px; line-height: 1; color: var(--text); }
+.rig-shape.on { border-color: var(--accent); background: var(--accent-bg); color: var(--text); }
+.rig-totals { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.rig-totals .btn { margin-left: auto; }
+.rig-report tr.warn td { background: rgba(245,165,36,.06); }
+.warn-text { color: var(--warn, #f5a524); margin-top: 2px; }
+.rig-parts { margin: 4px 0 10px; padding-left: 18px; }

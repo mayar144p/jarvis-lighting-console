@@ -950,3 +950,61 @@ def test_cue_modes() -> None:
             check("tracking / MIB / block / actions are saved", e.playbacks[0]["tracking"] and e.playbacks[1]["stack"][1].get("actions"), "")
         finally:
             e.shutdown()
+
+
+def test_rigging_library() -> None:
+    """Rigging library: shapes from real pieces, lights round a shape, a
+    shape moves and trims as one, the report's loads and parts."""
+    print("Rigging library")
+    from app import engine as eng
+    from app import fixlib, riglib
+
+    check("a straight 7 m run is 4 + 3", riglib.sections(7) == [4.0, 3.0], str(riglib.sections(7)))
+    check("6.2 m rounds up to 6.5 (4 + 2.5)", riglib.sections(6.2) == [4.0, 2.5], str(riglib.sections(6.2)))
+    circ = riglib.build("circle", diameter=6)
+    check("a 6 m circle is 12 pieces, closed", len(circ) == 12 and circ[0]["a"] == circ[-1]["b"], str(len(circ)))
+    gp = riglib.build("goalpost", width=5, height=3)
+    check("a goal post: two poles and a truss on top", [x["kind"] for x in gp] == ["tower", "tower", "truss"], "")
+    ph = fixlib.physical("qlc:Chauvet/Chauvet-Intimidator-Scan-360.qxf")
+    check("a light's weight from its library file", ph.get("kg") == 5.7, str(ph))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=14, depth=16, height=6, layout=False)
+            r = e.act("rig_add", preset="circle", diameter=4, x=0, z=6, trim=4)
+            check("a circle truss added as one shape", r.get("ok") and len(r["ids"]) == 8 and r["group"], str(r.get("error")))
+            e.act("add_heads", query="Moving Head", qty=6)
+            a = e.act("attach_heads", heads=[1, 2, 3, 4, 5, 6], rig=r["ids"][0])
+            rigs = {h["mount"]["rig"] for h in e.patch}
+            check("six lights spread round the circle", a.get("ok") and len(rigs) == 6 and rigs <= set(r["ids"]), str(rigs))
+            first = dict(e.venue["rigging"][0])
+            before = [dict(x) for x in e.venue["rigging"]]
+            e.act("venue_update", id=first["id"], a=[first["a"][0] + 1, first["a"][1], first["a"][2]],
+                  b=[first["b"][0] + 1, first["b"][1], first["b"][2]])
+            check("moving one piece moves the shape", all(abs(n["a"][0] - o["a"][0] - 1) < 1e-6
+                                                          for n, o in zip(e.venue["rigging"], before)), "")
+            e.act("rig_trim", id=r["ids"][3], trim=3)
+            check("trim: the shape hangs at 3 m, its lights too",
+                  all(abs(x["a"][1] - 3.145) < 1e-3 for x in e.venue["rigging"]) and max(h["y"] for h in e.patch) < 3.2,
+                  str([h["y"] for h in e.patch]))
+            bad = e.act("rig_trim", id=r["ids"][0], trim=9)
+            check("a trim above the ceiling is refused", not bad.get("ok"), "")
+            e.act("rig_add", preset="straight", length=7, piece="box30", z=10, trim=4.5)
+            rep = e.act("rig_report", csv=True)
+            rows = {x["name"]: x for x in rep["report"]["rigs"]}
+            c = rows["Circle 4 m"]
+            check("circle: 8 pieces, 6 lights, 4 points, the load shared",
+                  c["pieces"] == 8 and len(c["lights"]) == 6 and c["points"] == 4
+                  and abs(c["per_point_kg"] - c["total_kg"] / 4) < 0.1, str(c))
+            s = rows["Box truss 29 cm (F34 type)"]
+            check("a 7 m truss: 35 kg, 3 points, at 4.5 m", s["self_kg"] == 35.0 and s["points"] == 3 and s["trim"] == 4.5, str(s))
+            parts = {(p["model"], str(p["length"])): p["count"] for p in rep["report"]["parts"]}
+            check("parts: 8 arcs, a 4 m and a 3 m", parts.get(("box30", "arc 1/8 of Ø4.0 m")) == 8
+                  and parts.get(("box30", "4.0")) == 1 and parts.get(("box30", "3.0")) == 1, str(parts))
+            check("the report as CSV", rep["csv"].startswith("piece,") and "Circle 4 m" in rep["csv"], "")
+            check("guessed weights are said", any("guessed" in w for w in c["warnings"]), str(c["warnings"]))
+        finally:
+            e.shutdown()

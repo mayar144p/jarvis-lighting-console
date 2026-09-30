@@ -942,3 +942,38 @@ def apply_fx(item: dict) -> dict:
         mode["fx_class"] = cls
     item["fx_class"] = cls
     return item
+
+
+_PHYS: dict[str, dict] = {}
+
+
+def physical(source: str) -> dict:
+    """{kg, watts} from a bundled fixture's own file ("ofl:key" /
+    "qlc:key"); {} when the file doesn't say (or isn't bundled)."""
+    source = str(source or "")
+    if source in _PHYS:
+        return _PHYS[source]
+    out: dict = {}
+    src, _, key = source.partition(":")
+    path = _bundle(src) if src in ("ofl", "qlc") and key else None
+    if path is not None:
+        try:
+            with zipfile.ZipFile(path) as zf:
+                raw = zf.read("fixtures/" + key)
+            if src == "ofl":
+                phys = json.loads(raw).get("physical") or {}
+                if isinstance(phys.get("weight"), (int, float)) and phys["weight"] > 0:
+                    out["kg"] = float(phys["weight"])
+                if isinstance(phys.get("power"), (int, float)) and phys["power"] > 0:
+                    out["watts"] = float(phys["power"])
+            else:
+                m = re.search(rb'<Dimensions[^>]*\bWeight="([0-9.]+)"', raw)
+                if m and float(m.group(1)) > 0:
+                    out["kg"] = float(m.group(1))
+                m = re.search(rb'<Technical[^>]*\bPowerConsumption="([0-9.]+)"', raw)
+                if m and float(m.group(1)) > 0:
+                    out["watts"] = float(m.group(1))
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+            out = {}
+    _PHYS[source] = out
+    return out

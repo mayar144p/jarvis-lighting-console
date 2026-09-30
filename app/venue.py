@@ -159,6 +159,11 @@ def _clean_rig(raw: dict, v: dict) -> dict | None:
         b = [a[0], a[1] + 3.0, a[2]]
     item.update({"a": a, "b": b,
                  "size": round(_num(raw.get("size"), RIG_SIZE[kind], 0.02, 2), 3)})
+    # the library piece it is (app/riglib.py) and the shape it belongs to
+    for key in ("model", "group"):
+        val = _text(raw.get(key), "", 24)
+        if val:
+            item[key] = val
     return item
 
 
@@ -623,7 +628,8 @@ def describe(v: dict) -> dict:
                      "height": round((a[1] + b[1]) / 2, 2),
                      "z": round((a[2] + b[2]) / 2, 2),
                      "x": [round(min(a[0], b[0]), 2), round(max(a[0], b[0]), 2)],
-                     "length": round(length(r), 2), "vertical": is_vertical(r)})
+                     "length": round(length(r), 2), "vertical": is_vertical(r),
+                     **{k: r[k] for k in ("group", "model") if r.get(k)}})
     zones = []
     for z in v.get("zones") or []:
         cx, cz = zone_centroid(z)

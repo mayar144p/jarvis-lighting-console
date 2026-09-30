@@ -1136,7 +1136,8 @@ class PatchMixin:
                                              float(h.get("z") or 0), reach=0.8) if rigs else None
                 rid = near[0]["id"] if near else None
             if rid in rigs:
-                by_rig.setdefault(rid, []).append(h["head_no"])
+                # the pieces of one shape (a circle, a frame) are one group
+                by_rig.setdefault(rigs[rid].get("group") or rid, []).append(h["head_no"])
             elif float(h.get("y") or 0) < 1.5:
                 by_rig.setdefault("floor", []).append(h["head_no"])
         out = []
@@ -1147,7 +1148,8 @@ class PatchMixin:
                         "heads": sorted(heads)})
         if len(by_rig) > 1 or (by_rig and len(by_type) > 1):
             for rid, heads in by_rig.items():
-                name = "Floor" if rid == "floor" else rigs[rid].get("name") or rid
+                piece = rigs.get(rid) or next((r for r in rigs.values() if r.get("group") == rid), {})
+                name = "Floor" if rid == "floor" else piece.get("name") or rid
                 out.append({"key": f"rig:{rid}", "kind": "rig", "name": name, "heads": sorted(heads)})
         self._auto_group_cache = (key, out)
         return out

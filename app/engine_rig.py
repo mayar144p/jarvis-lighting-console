@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import roomshape
+from app import fixlib, riglib, roomshape
 from app import venue as venue_mod
 from app.engine_base import _attr_role, _clamp, _secrets_equal, _truthy, attr_domain
 
@@ -664,10 +665,99 @@ class RigMixin:
             raise ValueError("id is required")
         raw = dict(changes) if isinstance(changes, dict) else {
             k: v for k, v in params.items() if not k.startswith("_")}
+        cur = venue_mod.rig(self.venue, str(id))
         v, item = venue_mod.update_item(self.venue, str(id), raw)
+        # a piece of a shape (circle, frame...) moved as a whole: the rest of
+        # the shape comes with it
+        if cur and cur.get("group") and "a" in raw and "b" in raw:
+            da = [item["a"][k] - cur["a"][k] for k in range(3)]
+            db = [item["b"][k] - cur["b"][k] for k in range(3)]
+            if all(abs(da[k] - db[k]) < 1e-3 for k in range(3)) and any(abs(x) > 1e-4 for x in da):
+                for other in list(v["rigging"]):
+                    if other.get("group") == cur["group"] and other["id"] != item["id"]:
+                        v, _o = venue_mod.update_item(v, other["id"], {
+                            "a": [round(other["a"][k] + da[k], 3) for k in range(3)],
+                            "b": [round(other["b"][k] + da[k], 3) for k in range(3)]})
         self._set_venue_doc(v)
         return self._venue_result(f"updated {item['kind']} {item['id']}",
                                   item=item)
+
+    # -- the rigging library -----------------------------------------------
+    def _a_rig_pieces(self, **_):
+        """The rigging library: pieces and the shapes they make."""
+        return {"pieces": riglib.pieces_public(), "presets": list(riglib.PRESETS),
+                "lengths": list(riglib.LENGTHS)}
+
+    def _a_rig_add(self, preset="straight", piece="box30", x=0.0, y=None, z=None, length=4.0,
+                   width=4.0, depth=3.0, diameter=4.0, segments=None, height=3.0, rot=0.0,
+                   name="", trim=None, **_):
+        """Add a rigging shape from the library: a straight run, a corner, a
+        frame, a circle, a goal post, a pole or a stand, made of that piece.
+        `trim`: the height it hangs at (default: under the ceiling)."""
+        room = (venue_mod.normalise(self.venue).get("room") or {})
+        top = float(room.get("height") or 6.0)
+        hang = float(trim) if trim is not None else (float(y) if y is not None else top - 0.6)
+        hang = max(0.3, min(top - 0.2, hang))
+        zz = float(z) if z is not None else float(room.get("back", -1) or -1) + float(room.get("depth") or 10) * 0.35
+        items = riglib.build(str(preset), str(piece), float(x or 0), hang, zz, float(length), float(width),
+                             float(depth), float(diameter), int(segments) if segments else None,
+                             min(float(height), top), float(rot or 0), str(name or ""))
+        v = self.venue
+        group = None
+        if len(items) > 1:
+            n = 1 + sum(1 for r in (venue_mod.normalise(v).get("rigging") or []) if r.get("group"))
+            group = f"g{n}"
+            while any(r.get("group") == group for r in venue_mod.normalise(v).get("rigging") or []):
+                n += 1
+                group = f"g{n}"
+        made = []
+        for it in items:
+            if group:
+                it["group"] = group
+            v, m = venue_mod.add_item(v, it)
+            made.append(m["id"])
+        self._set_venue_doc(v)
+        spec = riglib.PIECES[str(piece)]
+        return self._venue_result(f"added {preset} ({spec['name']}, {len(made)} piece(s))",
+                                  ids=made, group=group, id=made[0])
+
+    def _a_rig_trim(self, id=None, trim=None, **_):
+        """Hang a piece (or its whole shape) at `trim` metres (the height of
+        its underside, as riggers give it); its lights come with it."""
+        r = venue_mod.rig(self.venue, str(id or ""))
+        if not r:
+            raise ValueError(f"no rig {id!r}")
+        room = venue_mod.normalise(self.venue).get("room") or {}
+        top = float(room.get("height") or 60)
+        t = float(trim)
+        if not 0.3 <= t <= top - 0.1:
+            raise ValueError(f"a trim is 0.3 to {top - 0.1:g} m in this room")
+        members = [x for x in venue_mod.normalise(self.venue)["rigging"]
+                   if (r.get("group") and x.get("group") == r["group"]) or x["id"] == r["id"]]
+        v = self.venue
+        n = 0
+        for m in members:
+            if abs(m["a"][1] - m["b"][1]) > 0.5 and math.hypot(m["a"][0] - m["b"][0], m["a"][2] - m["b"][2]) < 0.3:
+                continue                                   # a pole / stand stays on the floor
+            y = round(t + float(m.get("size") or 0.3) / 2, 3)
+            v, _i = venue_mod.update_item(v, m["id"], {"a": [m["a"][0], y, m["a"][2]], "b": [m["b"][0], y, m["b"][2]]})
+            n += 1
+        self._set_venue_doc(v)
+        return self._venue_result(f"{r.get('name') or r['kind']} trimmed to {t:g} m ({n} piece(s))", id=r["id"])
+
+    def _head_physical(self, h: dict) -> dict:
+        fx = self._fixture_db(h.get("manufacturer"), h.get("model")) or {}
+        return fixlib.physical(fx.get("source") or "")
+
+    def _a_rig_report(self, csv=False, **_):
+        """The rigging report: each piece or shape, the lights on it, its
+        own weight, pick-up points and the load on each (and a parts list)."""
+        rep = riglib.report(venue_mod.normalise(self.venue), self.patch, self._head_physical)
+        out = {"report": rep,
+               "summary": f"{len(rep['rigs'])} rig(s), {rep['total_kg']:g} kg in all, {rep['points']} pick-up point(s)"}
+        if _truthy(csv):
+            out["csv"] = riglib.report_csv(rep)
+        return out
 
     def _a_venue_rig(self, id=None, turn=None, length=None, orient=None, ceiling=False, **_):
         """Reshape one rig: turn it about its middle (degrees), set its

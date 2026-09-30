@@ -303,6 +303,11 @@ function renderInspector(sel) {
           ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
           : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
         h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
+        h("button.btn.small", { title: "Hang it (and the rest of its shape) with its underside at this height", onclick: async () => {
+          const v = await promptBox("Trim height", "Height of its underside (m)", String(r2(Math.min(found.a[1], found.b[1]) - (found.size || 0.3) / 2)), { ok: "Trim" });
+          if (v !== null && v !== "") run("rig_trim", { id: s.id, trim: +v }, { toast: true });
+        } }, "Trim…"),
+        h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
       h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it."),
       h("div.row-btns",
@@ -525,6 +530,7 @@ export function initVenuePanel(theStage) {
   $("#vt-truss").addEventListener("click", () => addItem("truss", "Truss"));
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
+  $("#vt-rigging").addEventListener("click", () => import("./rigdialog.js").then((m) => m.openRigDialog()));
   $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
   $("#vt-room").addEventListener("click", () => openRoomDialog());
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));

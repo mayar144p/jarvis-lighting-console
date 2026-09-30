@@ -160,10 +160,18 @@ blur, VR).
     Left: a phone room scan; doors, pillars and balconies drawn in the
     drafting mode; a ceiling height per area; align / distribute for
     rigging.
-13. **Rigging library:** straight / corner / circle truss pieces, poles,
-    stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
-    snapping; fixtures snap along any tube; hanging from the ceiling with a
-    trim height; rigging points and loads in a report.
+13. **Rigging library.  DONE:** Arrange -> Rigging…: box (22 / 29 / 40
+    cm), triangle and ladder truss, 48 mm pipe, truss poles, wind-up stands
+    and base plates, each with a typical kg/m; shapes - straight, corner,
+    frame, circle (arc pieces), goal post, pole, stand - at typed sizes,
+    position, turn and **trim** (underside height).  A shape is one thing:
+    moving a piece moves it, Trim… (inspector) hangs all of it, lights put
+    on it spread round all of it, one automatic group.  Ends join when
+    dragged within 40 cm of another piece's end.  **Rigging report**: each
+    piece / shape, its own weight, the lights on it (their weight from
+    the library file, typical for the kind where the file doesn't say),
+    pick-up points and kg per point, warnings (point load, stand load,
+    hung at the ceiling), a parts list in standard lengths, CSV.
 14. **Look:** better haze volumetrics and gobo projections on surfaces;
     LED screens / video walls that play a clip or mirror a pixel map;
     shadows from the crowd and stage; lens flares at low angles; a
