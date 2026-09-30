@@ -463,3 +463,72 @@ def test_sound_analysis() -> None:
               and g["bpm"] and abs(g["bpm"] - float(bpm)) < 1.0, str(g))
         check(f"{bpm} BPM: one drop, when the bass comes back after the breakdown",
               len(g["drops"]) == 1 and 20000 <= g["drops"][0] <= 20600, str(g["drops"]))
+
+
+def test_autopilot() -> None:
+    """A cue list plays itself: a new look every phrase on the beat clock,
+    calmer or bigger with the room, the biggest on a drop."""
+    print("autopilot")
+    import random as _random
+    from app import autopilot as ap
+    from app import engine as eng
+
+    calm = {"name": "calm", "values": {"1": {"dimmer": 30}}}
+    mid = {"name": "mid", "values": {"1": {"dimmer": 70}}}
+    big = {"name": "big", "values": {"1": {"dimmer": 100, "strobe": 120}}, "fx": [{"name": "rainbow"}]}
+    stack = [calm, mid, big]
+    check("a look's size: bright, effects, strobing", ap.cue_energy(calm) < ap.cue_energy(mid) < ap.cue_energy(big), "")
+    check("ranked within the list", ap.tiers(stack) == ["low", "mid", "high"], str(ap.tiers(stack)))
+    rng = _random.Random(1)
+    check("a loud room gets the big look, a quiet one the calm one",
+          ap.choose(stack, 1, "high", [], rng) == 2 and ap.choose(stack, 1, "low", [], rng) == 0, "")
+    check("no sound: round the list in order", ap.choose(stack, 2, None, []) == 0, "")
+    check("a drop: the biggest", ap.choose(stack, 0, None, [], biggest=True) == 2, "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("select_all")
+            r = e.act("autopilot", state=True)
+            check("an empty cue list can't be flown", not r.get("ok"), str(r))
+            for lvl, name in ((30, "Calm"), (70, "Mid"), (100, "Big")):
+                e.act("set_intensity", level=lvl)
+                e.act("record_cue", playback=1, name=name)
+            e.act("tempo_set", bpm=120)
+            e.tempo.downbeat(1000.0)
+            r = e.act("autopilot", state=True, bars=4, follow_sound=False)
+            check("the autopilot starts on a list of looks", r.get("ok") and e.autopilot["on"], str(r))
+            e._ap_stop_ev.set()                               # tick it by hand below
+            beat = 0.5
+            check("the first tick finds the next phrase, changes nothing", e.ap_tick(1000.0 + 1 * beat) is None
+                  and e.autopilot["next_bar"] == 4, str(e.autopilot))
+            check("mid-phrase: nothing", e.ap_tick(1000.0 + 10 * beat) is None, "")
+            pick = e.ap_tick(1000.0 + 16 * beat + 0.01)
+            check("on the phrase (4 bars = 16 beats): the next look", pick == (1, 1) and e.playbacks[0]["index"] == 0
+                  and e.autopilot["next_bar"] == 8, str((pick, e.autopilot)))
+            pick = e.ap_tick(1000.0 + 32 * beat + 0.01)
+            check("...and the next, a phrase later", pick == (1, 2), str(pick))
+            undo_n = len(e._undo)
+            e.act("autopilot_next", biggest=True)
+            check("biggest now: the big look, and flying it costs no undo steps",
+                  e.playbacks[0]["index"] == 2 and len(e._undo) == undo_n, str(e.autopilot.get("last")))
+            e.act("autopilot", follow_sound=True)
+            for _ in range(400):
+                e.sound_feed({"level": 0.05, "bass": 0.05})
+            pick = e.ap_tick(1000.0 + 48 * beat + 0.01)
+            check("a quiet room: a calm look", pick == (1, 1) and e.autopilot["last"]["tier"] == "low", str(e.autopilot["last"]))
+            e.sound_feed({"level": 0.9, "bass": 1.0, "drop": True})
+            check("a drop: the biggest look straight away", e.playbacks[0]["index"] == 2
+                  and e.autopilot["last"]["why"] == "drop", str(e.autopilot["last"]))
+            check("it rides the live feed", e.lite()["autopilot"]["on"] is True, "")
+            e.act("autopilot", state=False)
+        finally:
+            e.shutdown()
+    tj = (ROOT / "web" / "app" / "tempo.js").read_text(encoding="utf-8")
+    aj = (ROOT / "web" / "app" / "autopilot.js").read_text(encoding="utf-8")
+    check("the tempo menu opens the autopilot; it shows when it's flying",
+          "openAutopilot" in tj and '"autopilot"' in aj and '"autopilot_next"' in aj and "auto" in tj, "")

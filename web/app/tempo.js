@@ -24,6 +24,8 @@ function sync() {
   $("#tempo").classList.toggle("live", !!t.live);
   const snd = (state.lite && state.lite.sound) || (state.snap && state.snap.sound) || {};
   $("#tempo").classList.toggle("hearing", !!snd.listening);
+  const auto = (state.lite && state.lite.autopilot) || (state.snap && state.snap.autopilot) || {};
+  $("#tempo").classList.toggle("auto", !!auto.on);
   $("#tempo").title = `${t.bpm.toFixed(1)} BPM${src ? " from " + (t.source === "prodj" && t.deck ? t.deck.name || "the CDJs" : src) : ""}`
     + ` · tap on the beat (T), Shift+T for the 1 · effects locked to the beat follow it`
     + (t.follow ? " · the Speed master follows it" : "");
@@ -68,6 +70,7 @@ function openMenu(anchor) {
     { label: "MIDI clock", hint: "from the desk's MIDI, or Settings → MIDI on this device", disabled: true },
     "-",
     { label: "Sound: listen to the room…", hint: "the music plays the lights", run: () => import("./sounddialog.js").then((m) => m.openSoundDialog()) },
+    { label: "Autopilot…", hint: "a cue list plays itself on the phrase", run: () => import("./autopilot.js").then((m) => m.openAutopilot()) },
   ]);
 }
 

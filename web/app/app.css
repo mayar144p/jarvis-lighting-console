@@ -1209,3 +1209,5 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .snd-row input[type=number] { width: 56px; }
 .snd-k { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--muted); }
 .snd-k input[type=range] { width: 90px; }
+.tempo.auto .tempo-tap::after { content: "AUTO"; font-size: 9px; font-weight: 800; color: #04121c; background: #fbbf24; border-radius: 3px; padding: 1px 4px; }
+.ap { display: flex; flex-direction: column; gap: 10px; }

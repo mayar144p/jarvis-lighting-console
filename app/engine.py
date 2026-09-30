@@ -62,12 +62,13 @@ from app.engine_quick import QuickMixin
 from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
+from app.engine_autopilot import AutopilotMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -1174,6 +1175,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "speed_master": self.speed_master,
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
+                "autopilot": self.autopilot_public(),
                 "move_spots": self._move_spots(),
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
                 "floor_movers": len(self._floor_limits()),
@@ -1240,6 +1242,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "speed_master": self.speed_master,
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
+                "autopilot": self.autopilot_public(),
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out
                 # what it refuses, rather than letting the operator find out

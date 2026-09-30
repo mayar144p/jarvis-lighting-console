@@ -187,6 +187,7 @@ class OutputMixin:
         if self.__dict__.get("vnode") is not None:
             self.vnode.stop()
         self._prodj_stop()
+        self._ap_shutdown()
         try:
             self._autosave(force=True)     # never lose the last edit
         except Exception:

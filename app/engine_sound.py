@@ -43,6 +43,9 @@ class SoundMixin:
             now = time.monotonic()
             self._sound = reading
             self._sound_at = now
+            # how loud the room has been over the last ~8 s (the autopilot)
+            prev = self.__dict__.get("_sound_energy")
+            self._sound_energy = reading["level"] if prev is None else prev * 0.995 + reading["level"] * 0.005
             self._sound_from = who[:40] or None
             cfg = self._sound_cfg()
             t = self._tempo()
@@ -70,6 +73,8 @@ class SoundMixin:
                 counts[tr["id"]] = counts.get(tr["id"], 0) + 1
                 if (counts[tr["id"]] - 1) % tr["every"] == 0:
                     fire.append(tr["button"])
+        if reading["drop"]:
+            self.ap_drop()
         for bid in fire:
             # a trigger is a quick press: down now, up a moment later (a
             # flash flashes, a latch toggles once)

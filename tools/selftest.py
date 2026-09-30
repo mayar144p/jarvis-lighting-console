@@ -141,6 +141,7 @@ from tools.selftests.part08 import (  # noqa: E402
     test_show_building,
 )
 from tools.selftests.part09 import (  # noqa: E402
+    test_autopilot,
     test_beat_clock,
     test_midi_monitor,
     test_room_making,
@@ -260,6 +261,7 @@ def _standalone_suites():
     ("beat clock: taps, MIDI clock, CDJs; effects locked to the beat", test_beat_clock),
     ("sound-reactive: links, triggers, the room's tempo, never dark without sound", test_sound_reactive),
     ("sound analysis: beats, tempo and drops from a made-up track", test_sound_analysis),
+    ("autopilot: a cue list plays itself on the phrase, by the room", test_autopilot),
     )
 
 

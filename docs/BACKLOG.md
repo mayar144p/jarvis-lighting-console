@@ -97,8 +97,13 @@ Fixed:
    bar / drop (every Nth) presses a button; the room's beat can be the
    tempo.  With nothing listening nothing is dimmed.  Saved with the show.
    Left: effect size from the sound; a line-in picker.
-8. Autopilot for unprogrammed sets: rotate looks by energy, change on
-   phrases (8 / 16 / 32 bars; Pro DJ Link phrase data when present).
+8. **(DONE) Autopilot** (tempo menu -> Autopilot): a cue list is a pool
+   of looks; every 4 / 8 / 16 / 32 bars on the beat clock another one -
+   ranked calm / medium / big from the cues themselves (brightness,
+   effects, strobing) and picked by how loud the room has been (Sound),
+   the biggest straight away on a drop, round the list in order with no
+   sound.  Next look now / Biggest now; AUTO on the tempo pill.
+   Left: Pro DJ Link phrase data (verse / chorus) when a CDJ-3000 sends it.
 9. Spatial effects across the room from the 3D positions (waves L->R,
    centre-out, circles; gradients; bars / panels as pixels; later
    images / video).
