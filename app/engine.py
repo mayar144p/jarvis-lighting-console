@@ -65,13 +65,14 @@ from app.engine_support import HTP_ROLES
 from app.engine_autopilot import AutopilotMixin
 from app.engine_steps import StepsMixin
 from app.engine_desk import DeskMixin
+from app.engine_cuemodes import CueModesMixin
 from app.engine_osc import OscMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -614,16 +615,17 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         target = pb.get("target")
         if target is None:
             target = cue["values"]
+        done = pb.get("target_mib") or target      # the fade is over: move in black
         if not fade:
-            return target
+            return done
         dur = float(fade.get("dur") or 0.0)
         parts = fade.get("parts") or {}
         longest = max([dur, *[float(v) for v in parts.values()]])
         if longest <= 0:
-            return target
+            return done
         el = now - float(fade["t0"])
         if el >= longest:
-            return target
+            return done
         if el <= 0:
             return fade["from"]
         src, dst = fade["from"], target
@@ -683,7 +685,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         snapshots the state it needs and hands it over.
         """
         now = time.monotonic() if now is None else now
-        frames = merge.build_frames(self._frame_patch(), self._programmer_now(now),
+        frames = merge.build_frames(self._frame_patch(), self._live_programmer(now),
                                     self._active_playbacks(now),
                                     self._fx_values(now),
                                     self.master, self.blackout,
@@ -1171,7 +1173,10 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "xfade_s": (float(pb["xfade"]["dur"])
                             if pb.get("xfade") else None),
                 "index": pb["index"],
+                "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib")),
                 "stack": [{"n": c["n"], "name": c["name"],
+                           "block": bool(c.get("block")),
+                           "actions": c.get("actions") or None,
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
                            "times": c.get("times") or None,
@@ -1195,6 +1200,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "move_spots": self._move_spots(),
@@ -1267,6 +1273,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "blackout": self.blackout,

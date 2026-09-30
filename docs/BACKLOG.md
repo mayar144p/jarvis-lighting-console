@@ -127,9 +127,11 @@ Fixed:
     lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
     the DJ-booth remote page (/remote.html), MIDI timecode (the timeline
     follows MTC from the desk's MIDI in: MTC in the timeline bar, with
-    the timecode where the timeline starts).  **Left:** tracking /
-    cue-only; move-in-black; cue actions; blind edit with 3D preview;
-    LTC (audio timecode); OSC out.
+    the timecode where the timeline starts), tracking or cue only per
+    cue list (+ block, record cue only), move in black, cue actions
+    (buttons, macros, other lists, timeline, tempo), blind (3D only;
+    blind-edit a cue, BLIND in the top bar).  **Left:** LTC (audio
+    timecode); OSC out.
 
 ## A3. Visualiser and venue editor
 

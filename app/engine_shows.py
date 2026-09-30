@@ -525,7 +525,8 @@ class ShowMixin:
                 "xfade_s": (float(pb["xfade"]["dur"])
                             if pb.get("xfade") else None),
                 "follow": {"on": f["on"], "delay": f["delay"],
-                           "paused": f["paused"], "loop": f["loop"]}}
+                           "paused": f["paused"], "loop": f["loop"]},
+                "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib"))}
 
     @staticmethod
     def _stale_heads(heads: list[dict], playbacks: list[dict]) -> list[int]:

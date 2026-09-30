@@ -857,3 +857,96 @@ def test_timecode() -> None:
             check("timecode off", not e.timecode_public()["follow"], "")
         finally:
             e.shutdown()
+
+
+def test_cue_modes() -> None:
+    """Tracking / cue only / block, move in black, cue actions, blind."""
+    print("Cue modes")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            heads = [h["head_no"] for h in e.patch]
+            h1 = heads[0]
+            check("a moving head with a dimmer", "dimmer" in e.patch[0]["map"] and "pan" in e.patch[0]["map"], str(e.patch[0]["map"]))
+
+            def rec(vals, **kw):
+                e.programmer = {h1: dict(vals)}
+                return e.act("record_cue", playback=1, **kw)
+            rec({"dimmer": 100, "pan": 10})
+            rec({"pan": 200})
+            rec({"red": 255})
+            now = e._clock()
+            e.act("cue_go", playback=1, cue=3)
+            check("cue only (default): cue 3 holds only its own", e._pb_values(e.playbacks[0], now + 1).get(h1) == {"red": 255},
+                  str(e._pb_values(e.playbacks[0], now + 1)))
+            r = e.act("playback_mode", playback=1, tracking=True)
+            check("tracking on", r.get("ok") and e.playbacks[0]["tracking"], str(r))
+            e.act("cue_go", playback=1, cue=3)
+            v = e._pb_values(e.playbacks[0], e._clock() + 1)[h1]
+            check("tracking: cue 3 = 1 + 2 + 3", v == {"dimmer": 100, "pan": 200, "red": 255}, str(v))
+            e.act("cue_set", playback=1, cue=3, block=True)
+            e.act("cue_go", playback=1, cue=3)
+            check("a block starts afresh", e._pb_values(e.playbacks[0], e._clock() + 1)[h1] == {"red": 255}, "")
+            e.act("cue_set", playback=1, cue=3, block=False)
+            rec({"dimmer": 50}, cue=1, mode="merge", cue_only=True)
+            check("cue only in tracking: the next cue puts the old level back",
+                  e.playbacks[0]["stack"][1]["values"][h1].get("dimmer") == 100, str(e.playbacks[0]["stack"][1]["values"]))
+            e.act("cue_go", playback=1, cue=1)
+            check("cue 1 has the new level", e._pb_values(e.playbacks[0], e._clock() + 1)[h1]["dimmer"] == 50, "")
+
+            # move in black: cue A dark, cue B on somewhere else
+            e.act("playback_mode", playback=2, mib=True)
+            e.programmer = {h1: {"dimmer": 0, "pan": 0}}
+            e.act("record_cue", playback=2, fade=0)
+            e.programmer = {h1: {"dimmer": 100, "pan": 250, "tilt": 90}}
+            e.act("record_cue", playback=2)
+            e.act("cue_go", playback=2, cue=1)
+            v = e._pb_values(e.playbacks[1], e._clock() + 1)[h1]
+            check("move in black: dark, already at the next cue's pan/tilt", v == {"dimmer": 0, "pan": 250, "tilt": 90}, str(v))
+            e.act("playback_mode", playback=2, mib=False)
+            e.act("cue_go", playback=2, cue=1)
+            check("MIB off: it stays where the cue says", e._pb_values(e.playbacks[1], e._clock() + 1)[h1]["pan"] == 0, "")
+
+            # cue actions
+            bad = e.act("cue_set", playback=2, cue=2, actions=[{"action": "patch_clear"}])
+            check("a cue can't edit the show", not bad.get("ok"), str(bad))
+            e.act("cue_set", playback=2, cue=2, actions=[{"action": "tempo_set", "args": {"bpm": 128}},
+                                                         {"action": "cue_go", "args": {"playback": 1, "cue": 2}}])
+            e.act("cue_go", playback=2, cue=2)
+            check("cue actions play with the cue", round(e.tempo_public()["bpm"]) == 128 and e.playbacks[0]["index"] == 1,
+                  f"{e.tempo_public()['bpm']} {e.playbacks[0]['index']}")
+            e.act("cue_set", playback=1, cue=2, actions=[{"action": "cue_go", "args": {"playback": 2, "cue": 2}}])
+            r = e.act("cue_go", playback=2, cue=2)
+            check("a loop of cues stops", r.get("ok"), str(r))
+            check("the list shows modes and actions", e._pb_public(e.playbacks[1])["mib"] is False
+                  and e._pb_public(e.playbacks[1])["stack"][1]["actions"], "")
+
+            # blind
+            e.act("playback_release", playback=1)
+            e.act("playback_release", playback=2)
+            e.programmer = {h1: {"dimmer": 30}}
+            r = e.act("blind", playback=1, cue=1)
+            check("blind-edit a cue: its values come into the programmer", r.get("ok") and e.programmer.get(h1, {}).get("dimmer") == 50, str(e.programmer))
+            e.programmer[h1]["dimmer"] = 80
+            frame = e.build_frames()
+            look = {x["n"]: x for x in e._looks()}
+            uni, addr = e.patch[0]["universe"], e.patch[0]["address"]
+            dim_slot = e.patch[0]["map"].index("dimmer")
+            check("the rig keeps the live programmer", frame[uni][addr - 1 + dim_slot] < 200, str(frame[uni][addr - 1 + dim_slot]))
+            check("3D shows the blind edit", look[h1]["a"] >= 0.79, str(look[h1]))
+            e.act("record_cue", playback=1, cue=1)
+            check("record puts it back into the cue", e.playbacks[0]["stack"][0]["values"][h1]["dimmer"] == 80, "")
+            e.act("blind", state=False)
+            check("blind off: the live programmer is back", e.programmer.get(h1) == {"dimmer": 30} and not e.blind_public()["on"], str(e.programmer))
+            e.act("save_show", name="cm")
+            e.act("playback_mode", playback=1, tracking=False)
+            e.act("load_show", name="cm")
+            check("tracking / MIB / block / actions are saved", e.playbacks[0]["tracking"] and e.playbacks[1]["stack"][1].get("actions"), "")
+        finally:
+            e.shutdown()

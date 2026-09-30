@@ -1179,6 +1179,9 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .tpl-card small { color: var(--muted); }
 
 /* ------------------------------------------------------------ tempo */
+.blind-pill { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid #c77dff; background: rgba(199,125,255,.18); color: #e3c4ff; font-weight: 700; letter-spacing: .08em; cursor: pointer; animation: blindpulse 1.6s ease-in-out infinite; }
+.blind-pill[hidden] { display: none; }
+@keyframes blindpulse { 50% { background: rgba(199,125,255,.32); } }
 .tempo { display: inline-flex; align-items: stretch; border: 1px solid var(--border-2); border-radius: var(--radius-sm); background: var(--bg-2); height: 32px; }
 .tempo-tap { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0 10px; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .tempo-tap b { font: 600 14px var(--mono); min-width: 3ch; text-align: right; }

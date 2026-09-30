@@ -147,6 +147,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_macros,
     test_osc,
     test_timecode,
+    test_cue_modes,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -274,6 +275,7 @@ def _standalone_suites():
     ("macros: command lines in one go, one undo step", test_macros),
     ("OSC in: TouchOSC / Companion play the show", test_osc),
     ("MIDI timecode: the timeline follows it", test_timecode),
+    ("Cue lists: tracking, move in black, cue actions, blind", test_cue_modes),
     )
 
 
