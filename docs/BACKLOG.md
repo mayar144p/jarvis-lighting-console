@@ -81,6 +81,18 @@ alone or together, per-head values, and effects that run ACROSS the heads
   Earlier versions… opens one (the current show is kept as a version
   too); Export downloads the show file.
 
+## 17. More 3D models (DONE)
+
+Of the ~2,400 fixtures in the bundled libraries, 102 (in their largest
+mode) fell back to the generic model.  Now 55: two new types with their
+own models - **Scanner** (a lamp housing with a pan / tilt mirror, the
+beam off the mirror, 44 fixtures) and **Effect light** (flower / derby /
+moonflower: a dome of lenses throwing four beams, turning while lit, 22) -
+and name matching for lasers, hazers, studio COB lights (fresnel model),
+strobes and follow spots that the channels alone didn't give away.  A
+selftest keeps every light type paired with a 3D builder.  The rest
+(dimmer packs, colour-changer accessories, "Other") stay generic.
+
 ## 16. Cue list (DONE, first part)
 
 - Recording over a cue: Replace / Merge (adds the programmer's changes,

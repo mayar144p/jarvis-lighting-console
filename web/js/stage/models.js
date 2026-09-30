@@ -832,6 +832,102 @@ function sfxBody(body, kind) {
   return sk;
 }
 
+/** A mirror scanner: a long lamp housing on the floor or truss, its
+ *  beam bounced off a mirror at the front that pans and tilts. */
+function scanner(body) {
+  const sk = skeleton();
+  const H = housing(body.style);
+  const L = 0.5, W = 0.16, HH = 0.15;
+  const box = rbox(W, HH, L, 0.02, H);
+  box.position.set(0, HH / 2 + 0.02, -L / 2 + 0.06);
+  sk.root.add(box);
+  const foot = rbox(W + 0.06, 0.02, 0.2, 0.006, steel());
+  foot.position.set(0, 0.01, -L / 2 + 0.06);
+  sk.root.add(foot);
+  for (let i = 0; i < 5; i++) {                      // vents along the side
+    const v = rbox(0.004, HH * 0.55, 0.03, 0.002, steel());
+    v.position.set(W / 2 + 0.002, HH / 2 + 0.02, -L + 0.2 + i * 0.05);
+    sk.root.add(v);
+  }
+  const plate = logo(body, L * 0.4, 0.04);
+  if (plate) {
+    plate.rotation.y = Math.PI / 2;
+    plate.position.set(W / 2 + 0.003, HH * 0.8, -L / 2);
+    sk.root.add(plate);
+  }
+  const nose = cyl(0.05, 0.05, 0.04, trim(body.style), 24);   // the lens barrel into the mirror
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, HH / 2 + 0.02, 0.08);
+  sk.root.add(nose);
+  // the mirror head: pan turns it round the beam, tilt swings the mirror
+  sk.pan.position.set(0, HH / 2 + 0.02, 0.14);
+  const cradle = rbox(0.12, 0.02, 0.02, 0.005, steel());
+  sk.pan.add(cradle);
+  const mirror = rbox(0.11, 0.004, 0.08, 0.003, new THREE.MeshStandardMaterial({
+    color: 0xdfe6ee, metalness: 1, roughness: 0.08 }));
+  sk.tilt.add(mirror);
+  const lens = lensMaterial();
+  sk.lenses.push(lens);
+  const spot = disc(0.025, lens, 20);
+  spot.position.y = 0.003;
+  sk.tilt.add(spot);
+  sk.emitters.push(emitter(sk.tilt, 0.004, 0.03));
+  sk.height = HH + 0.15;
+  sk.radius = 0.3;
+  return sk;
+}
+
+/** A flower / derby / moonflower effect: a dome of small lenses throwing
+ *  several beams at once, turning slowly while it is lit (`sk.spin`). */
+function effectLight(body) {
+  const sk = skeleton();
+  const R = 0.13;
+  bracket(sk, body, R + 0.01, 0.14);
+  const H = housing(body.style);
+  const base = lathe([[0.001, -0.07], [R * 0.9, -0.068], [R, -0.03], [R, 0.02], [R * 0.98, 0.03]], H);
+  sk.tilt.add(base);
+  const spin = new THREE.Group();
+  spin.position.y = 0.03;
+  sk.tilt.add(spin);
+  sk.spin = spin;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(R * 0.96, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x0b0e13, metalness: 0.2, roughness: 0.35 }));
+  spin.add(dome);
+  const lens = lensMaterial();
+  sk.lenses.push(lens);
+  const geo = new THREE.CircleGeometry(0.014, 12);
+  const up = new THREE.Vector3(0, 1, 0);
+  const n = new THREE.Vector3();
+  // lenses over the dome; four beam clusters splay out from it
+  const pts = [];
+  for (let ring = 0; ring < 3; ring++) {
+    const el = 0.35 + ring * 0.38;
+    const count = 6 + ring * 4;
+    for (let i = 0; i < count; i++) pts.push([el, (i / count) * Math.PI * 2 + ring * 0.3]);
+  }
+  pts.push([Math.PI / 2, 0]);
+  for (const [el, az] of pts) {
+    n.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az));
+    const l = new THREE.Mesh(geo, lens);
+    l.position.copy(n).multiplyScalar(R * 0.965);
+    l.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    spin.add(l);
+  }
+  for (let k = 0; k < 4; k++) {
+    const az = (k / 4) * Math.PI * 2 + 0.4;
+    const el = 1.0;
+    const dir = new THREE.Vector3(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az));
+    const node = new THREE.Object3D();
+    node.position.copy(dir).multiplyScalar(R * 0.97);
+    spin.add(node);
+    sk.emitters.push({ node, radius: 0.03, dir });
+  }
+  void up;
+  sk.height = 0.36;
+  sk.radius = 0.18;
+  return sk;
+}
+
 function generic(body) {
   const sk = ledPar({ ...body, cells: 1 });
   return sk;
@@ -862,6 +958,8 @@ const BUILDERS = {
   flame: (b) => sfxBody(b, "flame"),
   spark: (b) => sfxBody(b, "spark"),
   sfx: (b) => sfxBody(b, "sfx"),
+  scanner,
+  effect: effectLight,
   generic,
 };
 

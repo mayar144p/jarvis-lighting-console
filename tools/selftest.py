@@ -7530,6 +7530,7 @@ def _standalone_suites():
     ("Ready? check, show versions and export", test_ready_versions),
     ("a smaller room brings its rigging back inside", test_room_fit),
     ("looks: search, and any light of these types", test_look_types),
+    ("scanners, derbies and more get their own 3D model", test_more_models),
     )
 
 
@@ -9490,6 +9491,34 @@ def test_look_types() -> None:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Looks tab has a search and 'Play on every …'", "#look-search" in pj and 'on: "types"' in pj, "")
+
+
+def test_more_models() -> None:
+    """Lights that used to fall back to the generic model: mirror
+    scanners and flower / derby effects have models of their own, and
+    lasers, hazers and studio lights are recognised by name."""
+    print("more 3D models")
+    import re
+    from app import fixture_kind as fk
+
+    def kind(man, model, roles):
+        return fk.describe({"manufacturer": man, "model": model, "map": roles})["type"]
+    check("a mirror scanner", kind("Chauvet", "Intimidator Scan LED 300", ["pan", "tilt", "gobo", "shutter"]) == "scanner", "")
+    check("a derby / flower effect", kind("American DJ", "Quad Gem DMX", ["red", "green", "blue", "white", "raw"]) == "effect", "")
+    check("a laser by name", kind("Laserworld", "EL-400RGB MK2", ["raw", "raw", "raw"]) == "laser", "")
+    check("a hazer by name", kind("American DJ", "Entour Faze", ["raw", "raw"]) == "atmos", "")
+    check("a studio COB light", kind("Aputure", "LS 600D Pro", ["dimmer", "raw"]) == "fresnel", "")
+    check("a moving head called Acrobat is still a moving head",
+          kind("Showtec", "Acrobat", ["pan", "tilt", "gobo", "dimmer"]) == "moving_spot", "")
+    check("a scanning laser is a laser", kind("Shehds", "Constellaser 12W Scan Laser", ["raw"]) != "scanner", "")
+    js = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    block = js[js.index("const BUILDERS = {"):]
+    block = block[:block.index("};")]
+    keys = set(re.findall(r"^\s+([a-z_0-9]+)(?::|,)", block, re.M))
+    missing = sorted(set(fk.TYPES) - keys)
+    check("every light type has a 3D builder", not missing, str(missing))
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a derby turns while it is lit", "sk.spin" in st, "")
 
 
 def test_cue_list_modes() -> None:
