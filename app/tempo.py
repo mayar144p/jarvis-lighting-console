@@ -171,3 +171,52 @@ def build_prodj_beat(device: int, bpm: float, beat: int, pitch_pct: float = 0.0,
     p[0x5C] = beat
     p[0x5F] = device & 0xFF
     return bytes(p)
+
+
+# ---------------------------------------------------------------------------
+# MIDI timecode (MTC): eight quarter-frame messages (0xF1) make one time
+# ---------------------------------------------------------------------------
+MTC_RATES = {0: 24.0, 1: 25.0, 2: 29.97, 3: 30.0}
+
+
+class Timecode:
+    def __init__(self):
+        self.pieces = [None] * 8
+        self.seconds: float | None = None
+        self.fps = 25.0
+        self.at: float | None = None          # when the last quarter frame came
+
+    def quarter_frame(self, data: int, now: float) -> float | None:
+        """One quarter frame; returns the time (s) when a full one is in."""
+        piece, value = (data >> 4) & 7, data & 0x0F
+        self.pieces[piece] = value
+        self.at = now
+        if piece != 7 or any(p is None for p in self.pieces):
+            return None
+        p = self.pieces
+        frames = p[0] | (p[1] << 4)
+        secs = p[2] | (p[3] << 4)
+        mins = p[4] | (p[5] << 4)
+        hours = p[6] | ((p[7] & 1) << 4)
+        self.fps = MTC_RATES[(p[7] >> 1) & 3]
+        # the eight pieces take two frames to send: it is two frames later now
+        self.seconds = hours * 3600 + mins * 60 + secs + (frames + 2) / self.fps
+        return self.seconds
+
+    def running(self, now: float) -> bool:
+        return self.at is not None and now - self.at < 0.3
+
+    def text(self) -> str:
+        if self.seconds is None:
+            return "--:--:--:--"
+        t = self.seconds
+        return f"{int(t // 3600):02d}:{int(t // 60 % 60):02d}:{int(t % 60):02d}:{int((t % 1) * self.fps):02d}"
+
+
+def build_mtc(seconds: float, fps: float = 25.0) -> list[int]:
+    """The eight quarter-frame data bytes for a time (tests, a virtual source)."""
+    rate = {24.0: 0, 25.0: 1, 29.97: 2, 30.0: 3}[fps]
+    fr = int(round((seconds % 1) * fps))
+    s, m, h = int(seconds % 60), int(seconds // 60 % 60), int(seconds // 3600)
+    vals = [fr & 15, fr >> 4, s & 15, s >> 4, m & 15, m >> 4, h & 15, (h >> 4) | (rate << 1)]
+    return [(i << 4) | v for i, v in enumerate(vals)]

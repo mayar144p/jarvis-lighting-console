@@ -29,7 +29,8 @@ class TimelineMixin:
         return {**self.timeline, "transport": self._tl_transport()}
 
     def _tl_transport(self) -> dict:
-        return {"playing": self.tl["playing"],
+        return {"timecode": self.timecode_public(),
+                "playing": self.tl["playing"],
                 "pos": round(min(self._tl_now(), self.timeline["length"]), 3),
                 "length": self.timeline["length"], "loop": self.timeline["loop"]}
 

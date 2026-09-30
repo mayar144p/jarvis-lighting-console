@@ -162,7 +162,24 @@ function renderLink() {
   }
 }
 
+function syncBlind() {
+  const b = (state.lite && state.lite.blind) || (state.snap && state.snap.blind) || {};
+  const el = $("#blind-pill");
+  if (!el) return;
+  el.hidden = !b.on;
+  el.textContent = b.cue ? `PREVIEW · cue ${b.cue}` : "PREVIEW";
+}
+
 export function initTopbar() {
+  on("snapshot", syncBlind);
+  on("lite", syncBlind);
+  $("#blind-pill").addEventListener("click", (e) => {
+    const b = (state.snap && state.snap.blind) || {};
+    menu(e.currentTarget, [
+      b.cue ? { label: `Record into cue ${b.cue} (PB${b.playback})`, hint: "replace it with the programmer", run: () => run("record_cue", { playback: b.playback, cue: b.cue, mode: "replace" }, { toast: true }) } : null,
+      { label: "Leave preview", hint: "drops what wasn't recorded", run: () => run("blind", { state: false }, { toast: true }) },
+    ].filter(Boolean));
+  });
   $("#out-arm").addEventListener("click", () => (outputState() === "live" ? run("set_output", { state: 0 }) : goLive()));
   $("#out-state").addEventListener("click", (e) => outputMenu(e.currentTarget));
   $("#out-state").style.cursor = "pointer";

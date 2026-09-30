@@ -71,6 +71,7 @@ class ShowMixin:
             "sound": self._sound_cfg(),
             "step_fx": self._steps(),
             "parked": self.__dict__.get("parked") or {},
+            "macros": self._macros(),
             "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
@@ -228,6 +229,7 @@ class ShowMixin:
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
             self.parked = self._clean_parked(payload.get("parked"))
+            self.macros = self._clean_macro_list(payload.get("macros"))
             if isinstance(payload.get("output_target"), dict):
                 self.dmx_target = clean_dmx_target(payload["output_target"])
             for b in payload.get("quick") or []:
@@ -268,6 +270,7 @@ class ShowMixin:
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
                 "step_fx": json.loads(json.dumps(self._steps(), default=str)),
                 "parked": json.loads(json.dumps(self.__dict__.get("parked") or {}, default=str)),
+                "macros": json.loads(json.dumps(self._macros(), default=str)),
                 "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
@@ -522,7 +525,8 @@ class ShowMixin:
                 "xfade_s": (float(pb["xfade"]["dur"])
                             if pb.get("xfade") else None),
                 "follow": {"on": f["on"], "delay": f["delay"],
-                           "paused": f["paused"], "loop": f["loop"]}}
+                           "paused": f["paused"], "loop": f["loop"]},
+                "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib"))}
 
     @staticmethod
     def _stale_heads(heads: list[dict], playbacks: list[dict]) -> list[int]:
@@ -608,6 +612,7 @@ class ShowMixin:
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
             self.parked = self._clean_parked(payload.get("parked"))
+            self.macros = self._clean_macro_list(payload.get("macros"))
             self.moves = []
             for m in payload.get("moves") or []:
                 try:

@@ -123,10 +123,17 @@ Fixed:
     for movement (phasers).
 11. Desk tools.  **DONE:** highlight / solo (programmer -> Highlight, H /
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
-    group masters (a fader per group next to the GM).  **Left:** tracking /
-    cue-only; move-in-black; cue actions; macros; blind edit with 3D
-    preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);
-    a DJ-booth remote page.
+    group masters (a fader per group next to the GM), macros (command
+    lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
+    the DJ-booth remote page (/remote.html), MIDI timecode (the timeline
+    follows MTC from the desk's MIDI in: MTC in the timeline bar, with
+    the timecode where the timeline starts), tracking or cue only per
+    cue list (+ block, record cue only), move in black, cue actions
+    (buttons, macros, other lists, timeline, tempo), preview / blind (3D only;
+    preview-edit a cue, PREVIEW in the top bar - BLIND already means dry
+    run here), Move tab rebuilt: Aim (follow me on the 3D floor, floor
+    map), pan/tilt pad with nudge.  **Left:** LTC (audio
+    timecode); OSC out.
 
 ## A3. Visualiser and venue editor
 

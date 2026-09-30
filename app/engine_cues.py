@@ -71,7 +71,8 @@ class CueMixin:
                         f["move"] = item["move"]
 
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
-                      cue=None, follow=None, mode="replace", effects=True, **_):
+                      cue=None, follow=None, mode="replace", effects=True,
+                      cue_only=False, **_):
         """Record the programmer as a cue.  Over an existing cue, `mode`:
         "replace" (the cue becomes exactly the programmer), "merge" (the
         programmer's values are added into the cue, the rest of it kept) or
@@ -93,6 +94,12 @@ class CueMixin:
         if cue_n < 1:
             raise ValueError("cue numbers start at 1")
         old = pb["stack"][cue_n - 1] if cue_n <= len(pb["stack"]) and mode != "insert" else None
+        # cue only (tracking list): what the lights had here before, so the
+        # next cue can put it back
+        before = self._tracked(pb, cue_n - 1) if _truthy(cue_only) and old is not None else \
+            (self._tracked(pb, cue_n - 2) if _truthy(cue_only) and cue_n >= 2 else {})
+        before = {h: dict(r) for h, r in before.items()}
+        prog_vals = {h: dict(r) for h, r in values.items()}
         if old is not None and mode == "merge":
             merged = {int(k): dict(v) for k, v in (old.get("values") or {}).items()}
             for h, row in values.items():
@@ -125,9 +132,11 @@ class CueMixin:
             pb["stack"].insert(cue_n - 1, entry)
             for i, c in enumerate(pb["stack"], start=1):
                 c["n"] = i
+            kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
+            self._blind_recorded(pb, cue_n)
             self.programmer.clear()
             return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
-                    "summary": f"inserted cue {cue_n} on PB{pb['n']}"}
+                    "summary": f"inserted cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}
         # follow_s is stored ONLY when the caller gave one, so a new cue
         # INHERITS the stack's follow.
         #
@@ -156,10 +165,12 @@ class CueMixin:
             pb["stack"][cue_n - 1] = entry
         else:
             pb["stack"].append(entry)
+        kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
+        self._blind_recorded(pb, cue_n)
         self.programmer.clear()
         verb = "merged into" if old is not None and mode == "merge" else "updated" if old is not None else "recorded"
         return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
-                "summary": f"{verb} cue {cue_n} on PB{pb['n']}"}
+                "summary": f"{verb} cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}
 
     # --- cue-list editing -------------------------------------------------
     # You could record a cue and you could step through one.  You could not
@@ -428,7 +439,10 @@ class CueMixin:
         index = max(0, min(index, len(stack) - 1))
         was = self._pb_values(pb, now) if pb["index"] >= 0 else {}
         cue = stack[index]
-        target = self._scaled_cue(cue, at)
+        # tracking: what the cues so far add up to; move in black: the next
+        # cue's positions on the lights that are dark now
+        target = self._scaled_cue({"values": self._tracked(pb, index)}, at)
+        pb["target_mib"] = self._mib(pb, index, target)
         pb["fade"] = {"t0": now,
                       "dur": float(cue.get("fade_s") or 0.0), "from": was,
                       # its own fade per kind of value (position 4 s, colour 0...)
@@ -444,9 +458,13 @@ class CueMixin:
         self._order += 1
         pb["order"] = self._order
         self._arm_follow(pb, now)              # manual steps re-arm here
-        return {"playback": pb["n"], "cue": cue["n"], "name": cue["name"],
-                "cues": len(stack), "active": True, "fade_s": cue["fade_s"],
-                "at": at}
+        res = {"playback": pb["n"], "cue": cue["n"], "name": cue["name"],
+               "cues": len(stack), "active": True, "fade_s": cue["fade_s"],
+               "at": at}
+        errors = self._run_cue_actions(pb, cue)
+        if errors:
+            res["action_errors"] = errors
+        return res
 
     def _a_cue_go(self, playback=None, cue=None, at=None, **_):
         pb = self._playback(playback if playback is not None else 1)

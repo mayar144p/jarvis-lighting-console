@@ -749,6 +749,69 @@ export class Stage {
     this.dirty = true;
   }
 
+  /** Follow mode: press and drag in the view and `cb(point)` gets every
+   *  surface point the pointer crosses (the lights follow it); a ring marks
+   *  the spot.  Right-drag still orbits.  `follow(null)` ends it. */
+  follow(cb, onEnd) {
+    const dom = this.renderer.domElement;
+    if (!this._followWired) {
+      this._followWired = true;
+      let drag = false;
+      const at = (ev) => {
+        const p = this.surfacePoint(ev);
+        if (!p || !this._follow) return;
+        this._followMark(p);
+        this._follow.cb(p, ev.type === "pointerup");
+      };
+      dom.addEventListener("pointerdown", (ev) => {
+        if (!this._follow || ev.button !== 0 || this.editing) return;
+        ev.stopImmediatePropagation();
+        this.controls.enabled = false;
+        drag = true;
+        try { dom.setPointerCapture(ev.pointerId); } catch { /* old browsers */ }
+        at(ev);
+      }, true);
+      dom.addEventListener("pointermove", (ev) => {
+        if (!this._follow) return;
+        if (drag) { ev.stopImmediatePropagation(); at(ev); }
+      }, true);
+      const end = (ev) => {
+        if (!drag) return;
+        drag = false;
+        this.controls.enabled = true;
+        if (ev && ev.type === "pointerup") { ev.stopImmediatePropagation(); at(ev); }
+      };
+      dom.addEventListener("pointerup", end, true);
+      dom.addEventListener("pointercancel", end, true);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && this._follow) this.follow(null);
+      }, true);
+    }
+    const prev = this._follow;
+    this._follow = cb ? { cb, onEnd } : null;
+    dom.classList.toggle("following", !!cb);
+    if (!cb) {
+      if (this._followRing) { this._followRing.visible = false; this.dirty = true; }
+      if (prev && prev.onEnd) prev.onEnd();
+    }
+  }
+
+  _followMark(p) {
+    if (!this._followRing) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 40).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+      const dot = new THREE.Mesh(new THREE.CircleGeometry(0.08, 20).rotateX(-Math.PI / 2), ring.material);
+      ring.add(dot);
+      ring.renderOrder = 999;
+      dot.renderOrder = 999;
+      this.scene.add(ring);
+      this._followRing = ring;
+    }
+    this._followRing.position.set(p.x, p.y + 0.02, p.z);
+    this._followRing.visible = true;
+    this.dirty = true;
+  }
+
   /** The next click in the view reports the surface point under it. */
   pickPoint(cb) {
     this.pickOnce = cb;

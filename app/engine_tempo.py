@@ -168,3 +168,68 @@ class TempoMixin:
         if th and th is not threading.current_thread():
             th.join(1.0)
         self._prodj_thread = self._prodj_stopper = None
+
+    # -- MIDI timecode: the timeline follows it ---------------------------------
+    def _tc(self) -> tempo_mod.Timecode:
+        tc = self.__dict__.get("timecode")
+        if tc is None:
+            tc = self.timecode = tempo_mod.Timecode()
+            self.tc_follow = False
+            self.tc_offset = 0.0
+        return tc
+
+    def timecode_public(self) -> dict:
+        tc = self._tc()
+        return {"follow": self.tc_follow, "offset": self.tc_offset, "running": tc.running(time.monotonic()),
+                "time": tc.text(), "fps": tc.fps}
+
+    def _a_timecode(self, state=None, offset=None, **_):
+        """The timeline follows MIDI timecode (MTC) from the desk's MIDI
+        input: it jumps where the timecode is and plays along; `offset`
+        (seconds) is the timecode at which the timeline's 0 is."""
+        self._tc()
+        if offset is not None:
+            self.tc_offset = float(offset)
+        if state is not None:
+            self.tc_follow = _truthy(state)
+        if self.tc_follow:
+            self._tc_watch()
+        return {"timecode": self.timecode_public(),
+                "summary": ("the timeline follows MIDI timecode" + (f" (0 = {self.tc_offset:g} s)" if self.tc_offset else ""))
+                if self.tc_follow else "timecode off"}
+
+    def tempo_mtc(self, data: int) -> None:
+        """A quarter frame (0xF1) from the desk's MIDI input."""
+        with self.lock:
+            t = self._tc().quarter_frame(int(data), time.monotonic())
+            if t is None or not self.tc_follow:
+                return
+            target = t - self.tc_offset
+            if target < 0 or target > self.timeline["length"]:
+                if self.tl["playing"]:
+                    self._a_timeline_pause()
+                return
+            if not self.tl["playing"]:
+                self._a_timeline_seek(t=target)
+                self._a_timeline_play()
+                self._tc_started = True
+            elif abs(self._tl_now() - target) > 0.15:
+                self._a_timeline_seek(t=target)
+
+    def _tc_watch(self) -> None:
+        """Timecode stopped (no quarter frame for 0.3 s): pause the timeline."""
+        th = self.__dict__.get("_tc_thread")
+        if th is not None and th.is_alive():
+            return
+
+        def loop():
+            while self.__dict__.get("tc_follow"):
+                time.sleep(0.1)
+                with self.lock:
+                    if self.__dict__.get("_tc_started") and self.tl["playing"] \
+                            and not self._tc().running(time.monotonic()):
+                        self._a_timeline_pause()
+                        self._tc_started = False
+
+        self._tc_thread = threading.Thread(target=loop, name="jarvis-mtc", daemon=True)
+        self._tc_thread.start()

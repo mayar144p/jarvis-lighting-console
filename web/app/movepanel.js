@@ -13,6 +13,7 @@ import { run } from "./actions.js";
 import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
 import { openCueDialog } from "./dialogs.js";
 import { focusedPlayback } from "./playbacks.js";
+import { aimBlock } from "./aimfollow.js";
 
 const MOVES = [
   ["circle", "Circle", "↻"], ["pan_sweep", "Sweep", "↔"], ["tilt_bounce", "Bounce", "↕"],
@@ -170,10 +171,10 @@ function section(title, ...kids) {
 function spotsBlock() {
   const spots = (state.snap && state.snap.move_spots) || [];
   if (!spots.length) {
-    return section("Point at", h("p.muted.small", "Draw a dance floor (and DJ / stage / bar zones) in the Venue tab and they appear here as one-tap spots."));
+    return h("p.muted.small", "Draw a dance floor (and DJ / stage / bar zones) in the Venue tab and they appear here as one-tap spots.");
   }
   const floor = spots.some((s) => s.key === "floor");
-  return section("Point at",
+  return h("div.mv-spotbox",
     h("div.mv-spots", ...spots.map((s) => h("button.btn.mv-spot", {
       title: `Every selected mover points at ${s.label}, each from where it hangs`,
       onclick: () => run("aim_spot", { spot: s.key }, { toast: true }),
@@ -226,7 +227,7 @@ function nudgeBlock() {
   const btn = (label, axis, sign, title) => h("button.btn.mv-arrow", {
     title, onclick: () => run("nudge", { axis, step: sign * step() }, { silentError: false }),
   }, label);
-  return section("Nudge",
+  return h("div.mv-nudgebox",
     h("div.mv-nudge",
       h("div.mv-pad",
         h("span"), btn("↑", "tilt", 1, "Tilt up"), h("span"),
@@ -235,8 +236,8 @@ function nudgeBlock() {
         }, fine ? "fine" : "coarse"), btn("→", "pan", 1, "Pan right"),
         h("span"), btn("↓", "tilt", -1, "Tilt down"), h("span")),
       h("div.mv-nudge-side",
-        h("p.muted.small", "Watch the real beam and nudge it into place."),
-        h("button.btn", {
+        h("span.muted.small", "Nudge: watch the real beam"),
+        h("button.btn.small", {
           title: "Keep this position as a spot you can tap again (a position look)",
           onclick: async () => {
             const name = await promptBox("Save spot", "Name", "", { ok: "Save" });
@@ -366,7 +367,7 @@ function myMoves(act) {
       h("button.btn.small", { title: "Record the movement (and the rest of the programmer) as a cue",
         onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…")),
     list.length ? h("div.mv-mytiles", ...list.map((m) => {
-      const more = h("button.mv-more", { "aria-label": `${m.name} options`, title: "Rename, update, delete",
+      const more = h("button.mv-opts", { "aria-label": `${m.name} options`, title: "Rename, update, delete",
         onclick: (e) => {
           e.stopPropagation();
           menu(e.currentTarget, [
@@ -477,7 +478,9 @@ function render(force = false) {
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
     running().map((f) => [f.id, f.lib, f.move]), moves(), knobs, fine, own.key, own.attrs.length, own.rev,
-    state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers]]);
+    state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
+    state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],
+    ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z])]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);
     const m = box.querySelector(".mv-master");
@@ -489,16 +492,23 @@ function render(force = false) {
     return;
   }
   lastKey = key;
+  const aim = $("#move-aim"), pt = $("#mv-pt"), nudge = $("#move-nudge");
+  const show = (on) => { if (aim) aim.hidden = !on; if (pt) pt.hidden = !on; };
   if (!selectionHeads().length) {
-    box.replaceChildren(spotsBlock(), h("p.muted.small", "Select lights to move them."));
+    show(false);
+    box.replaceChildren(h("p.muted.small.mv-empty", "Select moving lights to aim and move them."));
     return;
   }
   if (!sel.length) {
+    show(false);
     box.replaceChildren(...[ls.length ? null : h("p.muted.small", "The selected lights can't move (no pan or tilt). Colour, brightness and effects are on the other tabs."),
       laserBlock(ls)].filter(Boolean));
     return;
   }
-  box.replaceChildren(...[spotsBlock(), floorBlock(), nudgeBlock(), movementBlock(), ownBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
+  show(true);
+  if (aim) aim.replaceChildren(aimBlock(spotsBlock()));
+  if (nudge) nudge.replaceChildren(nudgeBlock());
+  box.replaceChildren(...[movementBlock(), ownBlock(), floorBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
   loadOwn();
 }
 

@@ -1,0 +1,145 @@
+// Aim in the Move tab: point the selected movers by where you are
+// pointing.  "Follow me" - press and drag on the 3D view and the lights
+// follow the pointer over the floor (a ring marks the spot); the floor map
+// does the same from above, for a tablet or when the 3D angle is awkward.
+// Both send aim_at: each light solves its own pan/tilt from where it hangs.
+import { run } from "./actions.js";
+import { state, selectionHeads } from "./store.js";
+import { h, toast } from "./ui.js";
+
+const SVGNS = "http://www.w3.org/2000/svg";
+let following = false;
+let target = null;                      // {x, z}: the last spot aimed at
+let pending = null, timer = 0, last = 0;
+const RATE_MS = 70;
+
+const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
+
+/** Aim at (x, y, z), at most every RATE_MS; the last one always goes. */
+export function aimTo(p, final = false) {
+  target = { x: p.x, z: p.z };
+  drawTarget();
+  pending = { x: +p.x.toFixed(2), y: +(p.y || 0).toFixed(2), z: +p.z.toFixed(2) };
+  const send = () => {
+    timer = 0;
+    if (!pending) return;
+    const q = pending;
+    pending = null;
+    last = performance.now();
+    run("aim_at", q, { silentError: !final });
+  };
+  const wait = RATE_MS - (performance.now() - last);
+  if (final || wait <= 0) { clearTimeout(timer); send(); } else if (!timer) timer = setTimeout(send, wait);
+}
+
+async function stage() {
+  const m = await import("./stagepanel.js");
+  return m.getStage();
+}
+
+export async function setFollow(on) {
+  const st = await stage();
+  if (on && !movers().length) { toast("Select moving lights first"); return; }
+  if (!st) { toast("The 3D view isn't open"); return; }
+  following = !!on;
+  if (following) {
+    st.follow((p, up) => {
+      if (!movers().length) return;
+      aimTo(p, up);
+    }, () => { following = false; syncButtons(); });
+    toast("Follow: press and drag on the floor - the lights follow. Esc or the button again to stop.", "", 4500);
+  } else {
+    st.follow(null);
+  }
+  syncButtons();
+}
+
+function syncButtons() {
+  for (const b of document.querySelectorAll(".aim-follow")) {
+    b.classList.toggle("on", following);
+    b.textContent = following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor";
+  }
+}
+
+// ------------------------------------------------------------ floor map
+function bounds() {
+  const v = (state.snap && state.snap.venue) || {};
+  const r = v.room || { width: 12, depth: 14, back: -1, cx: 0 };
+  const x0 = (r.cx || 0) - r.width / 2, z0 = r.back ?? -1;
+  return { x0, z0, w: r.width, d: r.depth, v };
+}
+
+function drawTarget() {
+  for (const svg of document.querySelectorAll(".aim-map svg")) {
+    const t = svg.querySelector(".aim-target");
+    if (!t) continue;
+    t.style.display = target ? "" : "none";
+    if (target) t.setAttribute("transform", `translate(${target.x} ${target.z})`);
+  }
+}
+
+function el(tag, attrs = {}) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+function floorMap() {
+  const { x0, z0, w, d, v } = bounds();
+  const pad = 0.4;
+  const svg = el("svg", { viewBox: `${x0 - pad} ${z0 - pad} ${w + pad * 2} ${d + pad * 2}`, preserveAspectRatio: "xMidYMid meet" });
+  svg.append(el("rect", { x: x0, y: z0, width: w, height: d, class: "am-room", rx: 0.2 }));
+  const st = v.stage;
+  if (st && st.width) svg.append(el("rect", { x: (st.x || 0) - st.width / 2, y: st.z || 0, width: st.width, height: st.depth || 2, class: "am-stage" }));
+  for (const zn of v.zones || []) {
+    if (!(zn.points || []).length) continue;
+    svg.append(el("polygon", { points: zn.points.map((p) => p.join(",")).join(" "), class: "am-zone am-" + zn.kind }));
+    const cx = zn.points.reduce((a, p) => a + p[0], 0) / zn.points.length;
+    const cz = zn.points.reduce((a, p) => a + p[1], 0) / zn.points.length;
+    const t = el("text", { x: cx, y: cz, class: "am-label" });
+    t.textContent = zn.name || zn.kind;
+    svg.append(t);
+  }
+  const sel = new Set(movers().map((x) => x.head_no));
+  for (const hd of (state.snap && state.snap.patch) || []) {
+    if (typeof hd.x !== "number" || typeof hd.z !== "number") continue;
+    if (!(hd.map || []).includes("pan") && !(hd.map || []).includes("tilt")) continue;
+    svg.append(el("circle", { cx: hd.x, cy: hd.z, r: sel.has(hd.head_no) ? 0.28 : 0.18, class: sel.has(hd.head_no) ? "am-head on" : "am-head" }));
+  }
+  const tg = el("g", { class: "aim-target" });
+  tg.append(el("circle", { r: 0.5, class: "am-ring" }), el("circle", { r: 0.1, class: "am-dot" }));
+  svg.append(tg);
+  // drag: the lights follow
+  let down = false;
+  const at = (ev, final) => {
+    const m = svg.getScreenCTM();
+    if (!m) return;
+    const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse());
+    const x = Math.max(x0, Math.min(x0 + w, pt.x)), z = Math.max(z0, Math.min(z0 + d, pt.y));
+    aimTo({ x, y: 0, z }, final);
+  };
+  svg.addEventListener("pointerdown", (ev) => {
+    if (!movers().length) { toast("Select moving lights first"); return; }
+    down = true;
+    svg.setPointerCapture(ev.pointerId);
+    at(ev, false);
+  });
+  svg.addEventListener("pointermove", (ev) => { if (down) at(ev, false); });
+  svg.addEventListener("pointerup", (ev) => { if (down) { down = false; at(ev, true); } });
+  svg.addEventListener("pointercancel", () => { down = false; });
+  return svg;
+}
+
+/** The Aim section: follow toggle + floor map (+ the spots, from the caller). */
+export function aimBlock(...after) {
+  const btn = h("button.btn.aim-follow" + (following ? ".on" : ""), {
+    title: "Then press and drag on the 3D view: every selected moving light follows the pointer over the floor (right-drag still turns the view, Esc stops)",
+    onclick: () => setFollow(!following),
+  }, following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor");
+  const map = h("div.aim-map", { title: "Drag on the floor plan: the selected lights follow (stage at the top)" });
+  map.append(floorMap());
+  queueMicrotask(drawTarget);
+  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, ...after.filter(Boolean));
+}
+
+export const isFollowing = () => following;

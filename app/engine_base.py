@@ -106,6 +106,8 @@ UNDO_EXCLUDED = frozenset({
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats", "fx_space",
     "step_fx_run", "highlight", "group_master",
+    # a macro manages its own undo: its lines are ONE step
+    "macro_run", "osc", "timecode", "blind",
     "sound_tempo", "autopilot", "autopilot_next",
     # where the DMX goes is desk setup, not an edit to the show
     "set_dmx_target", "virtual_node",
@@ -143,7 +145,7 @@ _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
 # throw the first away.
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
-    "set_address", "set_place",
+    "set_address", "set_place", "aim_at", "nudge",
 })
 
 # --- channel roles ------------------------------------------------------
@@ -575,7 +577,8 @@ def _normalize_playbacks(saved) -> list[dict]:
                      # start value would snap the fader on load, and the
                      # operator would think the console had lost it.
                      "xfade_s": (max(0.0, float(pb["xfade_s"]))
-                                 if pb.get("xfade_s") is not None else None)})
+                                 if pb.get("xfade_s") is not None else None),
+                     "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib"))})
         ShowMixin._apply_follow(base, pb)
     return playbacks
 
@@ -586,6 +589,7 @@ def _new_playback(n: int) -> dict:
     # cue's hold time" (see _arm_follow).
     return {"n": n, "name": "", "stack": [], "index": -1, "active": False,
             "level": 100, "order": 0, "fade": None,
+            "tracking": False, "mib": False,
             "follow": {"on": False, "delay": 0.0, "paused": False,
                        "loop": False, "at": None}}
 
@@ -632,6 +636,8 @@ ACTIONS = (
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
     "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run",
     "highlight", "park", "unpark", "group_master",
+    "macro_save", "macro_delete", "macro_run", "osc", "timecode",
+    "playback_mode", "cue_set", "blind",
 )
 
 

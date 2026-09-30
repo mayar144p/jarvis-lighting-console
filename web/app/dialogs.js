@@ -510,6 +510,41 @@ function partTimes(n, c, refresh) {
   }, set ? `${set} part${set > 1 ? "s" : ""}` : "parts");
 }
 
+const CUE_ACTS = [
+  ["quick_press", "Press a button", "id", "button id or name"],
+  ["macro_run", "Run a macro", "id", "macro name"],
+  ["cue_go", "GO a cue list", "playback", "playback number"],
+  ["playback_release", "Release a cue list", "playback", "playback number"],
+  ["timeline_play", "Play the timeline", "", ""],
+  ["timeline_pause", "Pause the timeline", "", ""],
+  ["timeline_seek", "Timeline to (s)", "t", "seconds"],
+  ["tempo_set", "Set the tempo", "bpm", "BPM"],
+  ["step_fx_run", "Run a step effect", "id", "step effect id"],
+  ["master", "Set the master", "level", "0-100"],
+];
+
+function openCueActions(n, c, done) {
+  const list = JSON.parse(JSON.stringify(c.actions || []));
+  const box = h("div");
+  const draw = () => box.replaceChildren(...(list.length ? list.map((a, i) => {
+    const def = CUE_ACTS.find((d) => d[0] === a.action) || [a.action, a.action, "", ""];
+    const inp = def[2] ? h("input", { type: "text", value: a.args[def[2]] ?? "", placeholder: def[3] }) : null;
+    if (inp) inp.addEventListener("change", () => { const v = inp.value.trim(); a.args[def[2]] = v !== "" && !isNaN(+v) ? +v : v; });
+    return h("div.row-btns", h("b", def[1]), inp, h("button.btn.small.ghost", { onclick: () => { list.splice(i, 1); draw(); } }, "×"));
+  }) : [h("p.muted.small", "Nothing yet: add what this cue does as it plays.")]));
+  const add = h("select.select", h("option", { value: "" }, "+ add…"), ...CUE_ACTS.map((d) => h("option", { value: d[0] }, d[1])));
+  add.addEventListener("change", () => { if (add.value) list.push({ action: add.value, args: {} }); add.value = ""; draw(); });
+  draw();
+  const close = modal({
+    title: `Cue ${c.n} · actions`, body: h("div", box, add),
+    foot: [h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("cue_set", { playback: n, cue: c.n, actions: list }, { toast: true });
+        if (r.ok) { close(); done && done(); }
+      } }, "Save")],
+  });
+}
+
 export function openCueList(n) {
   let close = null;
   const render = () => {
@@ -525,7 +560,8 @@ export function openCueList(n) {
       fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
       hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
       const tr = h("tr" + (i === pb.index ? ".sel" : ""), { draggable: "true", title: "Drag to reorder" },
-        h("td.mono.cue-grip", "⋮⋮ ", c.n), h("td", nm, cueTimeline(c, longest),
+        h("td.mono.cue-grip", "⋮⋮ ", c.n, c.block ? h("span.chip", { title: "Block: starts afresh" }, "B") : null,
+          (c.actions || []).length ? h("span.chip", { title: c.actions.map((a) => a.action).join(", ") }, "▶" + c.actions.length) : null), h("td", nm, cueTimeline(c, longest),
           (c.fx || []).length ? h("div.cue-fx", { title: "Effects this cue runs (they stop at the next cue or on release)" },
             "⚡ " + c.fx.join(", ")) : null),
         h("td", fd, partTimes(n, c, () => refresh())), h("td", hd),
@@ -538,6 +574,11 @@ export function openCueList(n) {
             { label: "Merge the programmer into it", hint: "adds the changes, keeps the rest", run: () => run("record_cue", { playback: n, cue: c.n, mode: "merge" }, { toast: true }) },
             { label: "Replace it with the programmer", hint: "exactly what the programmer holds", run: () => run("record_cue", { playback: n, cue: c.n, mode: "replace" }, { toast: true }) },
             { label: "Record a new cue before it", run: () => run("record_cue", { playback: n, cue: c.n, mode: "insert" }, { toast: true }) },
+            { label: "Merge, cue only", hint: "tracking: the change stops at this cue", disabled: !pb.tracking, run: () => run("record_cue", { playback: n, cue: c.n, mode: "merge", cue_only: true }, { toast: true }) },
+            "-",
+            { label: "Preview edit…", hint: "edit it in 3D only - the rig doesn't see", run: () => run("blind", { playback: n, cue: c.n }, { toast: true }) },
+            { label: (c.block ? "✓ " : "") + "Block", hint: "tracking: start afresh here", disabled: !pb.tracking, run: () => run("cue_set", { playback: n, cue: c.n, block: !c.block }, { toast: true }).then(refresh) },
+            { label: `Actions… ${(c.actions || []).length ? "(" + c.actions.length + ")" : ""}`, hint: "buttons, macros, other lists, timeline, tempo", run: () => openCueActions(n, c, refresh) },
           ]) }, "Update ▾"),
           h("button.btn.small.ghost", { title: "Insert an empty cue below", onclick: () => run("insert_cue", { playback: n, at: c.n + 1 }).then(refresh) }, "+"),
           h("button.btn.small.ghost", { title: "Delete", onclick: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) }, "×"))));
@@ -556,6 +597,9 @@ export function openCueList(n) {
     });
     const delay = (pb.follow || {}).delay;
     return h("div",
+      h("div.row-btns",
+        h("button.btn.small" + (pb.tracking ? ".on" : ".ghost"), { title: "Tracking: a cue holds only what it changes, the rest carries on from the cues before. Off: each cue is the whole look.", onclick: () => run("playback_mode", { playback: n, tracking: !pb.tracking }, { toast: true }).then(refresh) }, pb.tracking ? "Tracking" : "Cue only"),
+        h("button.btn.small" + (pb.mib ? ".on" : ".ghost"), { title: "Move in black: lights that are dark now and on in the next cue move there while dark", onclick: () => run("playback_mode", { playback: n, mib: !pb.mib }, { toast: true }).then(refresh) }, "Move in black")),
       h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", "Fade s"), h("th", "Hold s"),
         h("th", { title: "Stack inherits the playback's auto-follow; Wait holds for GO; Auto runs the next cue by itself" }, "Then"), h("th", ""))),
         h("tbody", ...(rows.length ? rows : [h("tr", h("td", { colspan: 6, class: "muted" }, "No cues yet - set a look and record one."))]))),
@@ -810,6 +854,8 @@ export async function openSettings() {
     h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
     wakeRow(),
     installRow(),
+    h("p.small", "DJ booth remote: open ", h("a", { href: "/remote.html", target: "_blank", rel: "noopener" }, location.host + "/remote.html"),
+      h("span.muted", " on a phone or tablet - the buttons, tap tempo, autopilot, master and blackout, nothing else.")),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
@@ -829,6 +875,7 @@ export async function openSettings() {
     webMidiRow(),
     h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
       h("span.muted.small", "see what a controller sends and what it did")),
+    oscRow(),
     h("h3", "AI"),
     h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
   modal({ title: "Settings", body, wide: false });
@@ -862,6 +909,25 @@ function installRow() {
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   return h("p.muted.small", ios ? "To install: Share → Add to Home Screen. It then opens full screen."
     : "To install: the browser menu → Install app / Add to Home screen.");
+}
+
+// OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
+function oscRow() {
+  const o = (state.snap && state.snap.osc) || {};
+  const box = h("input", { type: "checkbox" });
+  box.checked = !!o.on;
+  const port = h("input", { type: "number", min: 1024, max: 65535, value: o.port || 8000, style: { width: "90px" } });
+  const note = h("span.muted.small", o.on ? `listening on UDP ${o.port} · ${o.count} message(s)` + (o.last ? ` · last ${o.last.address}` : "") : (o.error || ""));
+  const apply = async () => {
+    const r = await run("osc", { state: box.checked, port: +port.value || 8000 }, { toast: true });
+    if (!r.ok) box.checked = false;
+  };
+  box.addEventListener("change", apply);
+  port.addEventListener("change", () => { if (box.checked) apply(); });
+  return h("div",
+    h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
+    note,
+    h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
 }
 
 // MIDI on this device: a controller plugged into the tablet / laptop the

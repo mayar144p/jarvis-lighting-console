@@ -718,3 +718,235 @@ def test_desk_tools() -> None:
     check("Highlight button (H), park in the fixtures menu, group master faders",
           'id="hl-btn"' in html and '"park"' in fj and '"unpark"' in fj and '"group_master"' in pj
           and 'id="grp-masters"' in html, "")
+
+
+def test_macros() -> None:
+    """Macros: command lines played in one go - all or nothing, one undo
+    step - from the command bar or a button; saved with the show."""
+    print("macros")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            r = e.act("macro_save", macro={"name": "Walk-in", "lines": "1-4 dimmer 40\n# a comment\n1-2 red\n"})
+            check("a macro is saved (comments dropped)", r.get("ok") and e.macros[0]["lines"] == ["1-4 dimmer 40", "1-2 red"], str(r))
+            r = e.act("macro_save", macro={"name": "Bad", "lines": "1-4 wibble 9"})
+            check("a line that doesn't parse is refused at save", not r.get("ok"), str(r))
+            n0 = len(e._undo)
+            r = e.act("macro_run", id="Walk-in")
+            check("it plays every line", r.get("ok") and e.programmer[3].get("dimmer") == 40 and e.programmer[1].get("red") == 255,
+                  str(e.programmer))
+            check("...as ONE undo step, named after it", len(e._undo) == n0 + 1 and e._undo[-1]["label"] == "Walk-in", str(e._undo[-1:]))
+            e.act("undo")
+            check("one undo takes all of it back", not e.programmer.get(3), str(e.programmer))
+            e.macros.append({"id": "m9", "name": "Half", "lines": ["1-4 dimmer 70", "9-12 dimmer 50"]})
+            n0 = len(e._undo)
+            r = e.act("macro_run", id="m9")
+            check("a line that fails undoes the lines before it", not r.get("ok") and not e.programmer.get(1)
+                  and len(e._undo) == n0, str(r))
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "macro", "macro": "m1", "label": "Walk-in"})
+            check("a macro button", r.get("ok"), str(r))
+            e.act("quick_press", id="q1-1", down=True)
+            check("...plays it", e.programmer[3].get("dimmer") == 40, "")
+            e.act("save_show", name="mac")
+            e.act("macro_delete", id="m1")
+            e.act("load_show", name="mac")
+            check("saved with the show", [m["name"] for m in e.macros] == ["Walk-in", "Half"], str(e.macros))
+        finally:
+            e.shutdown()
+    cj = (ROOT / "web" / "app" / "cmdbar.js").read_text(encoding="utf-8")
+    check("the command bar opens Macros and finds them by name", "openMacros" in cj and "macroCandidates" in cj, "")
+
+
+def test_osc() -> None:
+    """OSC in: TouchOSC / Companion play the show - GO, masters, buttons,
+    macros, command lines, tempo - and every message is answered."""
+    print("OSC")
+    from app import engine as eng
+    from app import osc
+
+    m = osc.build("/jarvis/cue", 1, 3)
+    check("a message round-trips", osc.parse(m) == [("/jarvis/cue", [1, 3])], str(osc.parse(m)))
+    b = osc.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
+    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/jarvis/master", "/jarvis/cmd"], "")
+    check("junk is nothing", osc.parse(b"hello") == [] and osc.parse(b"") == [], "")
+
+    port = _free_port()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1, name="A")
+            e.act("clear_programmer")
+            r = e.act("osc", state=True, port=port)
+            check("OSC listens", r.get("ok") and e.osc_public()["on"], str(r))
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(2)
+            s.sendto(osc.build("/jarvis/master", 0.5), ("127.0.0.1", port))
+            reply = osc.parse(s.recvfrom(1024)[0])
+            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/jarvis/ok", str(reply))
+            s.sendto(osc.build("/jarvis/go", 1), ("127.0.0.1", port))
+            s.recvfrom(1024)
+            check("GO", e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
+            s.sendto(osc.build("/jarvis/cmd", "1-2 red"), ("127.0.0.1", port))
+            s.recvfrom(1024)
+            check("a command line", e.programmer.get(1, {}).get("red") == 255, str(e.programmer))
+            s.sendto(osc.build("/jarvis/patch_clear"), ("127.0.0.1", port))
+            reply = osc.parse(s.recvfrom(1024)[0])
+            check("anything else is refused, with a reason", reply[0][0] == "/jarvis/error" and len(e.patch) == 4, str(reply))
+            s.close()
+            e.act("osc", state=False)
+            check("OSC off", not e.osc_public()["on"], "")
+        finally:
+            e.shutdown()
+    rj = (ROOT / "web" / "remote" / "remote.js").read_text(encoding="utf-8")
+    rh = (ROOT / "web" / "remote.html").read_text(encoding="utf-8")
+    bad = [a for a in ("patch_clear", "remove_heads", "save_show", "load_show", "set_dmx_target", "venue_") if a in rj]
+    check("the DJ-booth remote: buttons, tap, autopilot, master, blackout - and nothing that edits the show",
+          'id="grid"' in rh and '"quick_press"' in rj and '"tempo_tap"' in rj and '"autopilot"' in rj and not bad, str(bad))
+
+
+def test_timecode() -> None:
+    """MIDI timecode: the timeline jumps to it, plays along, re-seeks when
+    it drifts and pauses when the timecode stops."""
+    print("MIDI timecode")
+    from app import engine as eng
+    from app import tempo
+
+    tc = tempo.Timecode()
+    got = [tc.quarter_frame(b, 0.0) for b in tempo.build_mtc(3723.4)]
+    check("eight quarter frames make one time (+2 frames)", got[:7] == [None] * 7 and abs(got[7] - 3723.48) < 0.01, str(got))
+    check("the time reads h:mm:ss:ff", tc.text().startswith("01:02:03"), tc.text())
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("timeline_set", length=120)
+            for b in tempo.build_mtc(10.0):
+                e.tempo_mtc(b)
+            check("not following: the timeline stays", not e.tl["playing"], "")
+            r = e.act("timecode", state=True, offset=5)
+            check("follow timecode", r.get("ok") and e.timecode_public()["follow"], str(r))
+            for b in tempo.build_mtc(10.0):
+                e.tempo_mtc(b)
+            check("it plays from the timecode less the offset", e.tl["playing"] and abs(e._tl_now() - 5.08) < 0.1, str(e._tl_now()))
+            for b in tempo.build_mtc(40.0):
+                e.tempo_mtc(b)
+            check("a jump re-seeks", abs(e._tl_now() - 35.08) < 0.1, str(e._tl_now()))
+            check("the transport shows it", e.timecode_public()["running"] and "timecode" in e._tl_transport(), "")
+            deadline = time.monotonic() + 2
+            while e.tl["playing"] and time.monotonic() < deadline:
+                time.sleep(0.05)
+            check("the timecode stops: the timeline pauses", not e.tl["playing"], "")
+            for b in tempo.build_mtc(2.0):
+                e.tempo_mtc(b)
+            check("before the offset: nothing plays", not e.tl["playing"], str(e._tl_now()))
+            e.act("timecode", state=False)
+            check("timecode off", not e.timecode_public()["follow"], "")
+        finally:
+            e.shutdown()
+
+
+def test_cue_modes() -> None:
+    """Tracking / cue only / block, move in black, cue actions, blind."""
+    print("Cue modes")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            heads = [h["head_no"] for h in e.patch]
+            h1 = heads[0]
+            check("a moving head with a dimmer", "dimmer" in e.patch[0]["map"] and "pan" in e.patch[0]["map"], str(e.patch[0]["map"]))
+
+            def rec(vals, **kw):
+                e.programmer = {h1: dict(vals)}
+                return e.act("record_cue", playback=1, **kw)
+            rec({"dimmer": 100, "pan": 10})
+            rec({"pan": 200})
+            rec({"red": 255})
+            now = e._clock()
+            e.act("cue_go", playback=1, cue=3)
+            check("cue only (default): cue 3 holds only its own", e._pb_values(e.playbacks[0], now + 1).get(h1) == {"red": 255},
+                  str(e._pb_values(e.playbacks[0], now + 1)))
+            r = e.act("playback_mode", playback=1, tracking=True)
+            check("tracking on", r.get("ok") and e.playbacks[0]["tracking"], str(r))
+            e.act("cue_go", playback=1, cue=3)
+            v = e._pb_values(e.playbacks[0], e._clock() + 1)[h1]
+            check("tracking: cue 3 = 1 + 2 + 3", v == {"dimmer": 100, "pan": 200, "red": 255}, str(v))
+            e.act("cue_set", playback=1, cue=3, block=True)
+            e.act("cue_go", playback=1, cue=3)
+            check("a block starts afresh", e._pb_values(e.playbacks[0], e._clock() + 1)[h1] == {"red": 255}, "")
+            e.act("cue_set", playback=1, cue=3, block=False)
+            rec({"dimmer": 50}, cue=1, mode="merge", cue_only=True)
+            check("cue only in tracking: the next cue puts the old level back",
+                  e.playbacks[0]["stack"][1]["values"][h1].get("dimmer") == 100, str(e.playbacks[0]["stack"][1]["values"]))
+            e.act("cue_go", playback=1, cue=1)
+            check("cue 1 has the new level", e._pb_values(e.playbacks[0], e._clock() + 1)[h1]["dimmer"] == 50, "")
+
+            # move in black: cue A dark, cue B on somewhere else
+            e.act("playback_mode", playback=2, mib=True)
+            e.programmer = {h1: {"dimmer": 0, "pan": 0}}
+            e.act("record_cue", playback=2, fade=0)
+            e.programmer = {h1: {"dimmer": 100, "pan": 250, "tilt": 90}}
+            e.act("record_cue", playback=2)
+            e.act("cue_go", playback=2, cue=1)
+            v = e._pb_values(e.playbacks[1], e._clock() + 1)[h1]
+            check("move in black: dark, already at the next cue's pan/tilt", v == {"dimmer": 0, "pan": 250, "tilt": 90}, str(v))
+            e.act("playback_mode", playback=2, mib=False)
+            e.act("cue_go", playback=2, cue=1)
+            check("MIB off: it stays where the cue says", e._pb_values(e.playbacks[1], e._clock() + 1)[h1]["pan"] == 0, "")
+
+            # cue actions
+            bad = e.act("cue_set", playback=2, cue=2, actions=[{"action": "patch_clear"}])
+            check("a cue can't edit the show", not bad.get("ok"), str(bad))
+            e.act("cue_set", playback=2, cue=2, actions=[{"action": "tempo_set", "args": {"bpm": 128}},
+                                                         {"action": "cue_go", "args": {"playback": 1, "cue": 2}}])
+            e.act("cue_go", playback=2, cue=2)
+            check("cue actions play with the cue", round(e.tempo_public()["bpm"]) == 128 and e.playbacks[0]["index"] == 1,
+                  f"{e.tempo_public()['bpm']} {e.playbacks[0]['index']}")
+            e.act("cue_set", playback=1, cue=2, actions=[{"action": "cue_go", "args": {"playback": 2, "cue": 2}}])
+            r = e.act("cue_go", playback=2, cue=2)
+            check("a loop of cues stops", r.get("ok"), str(r))
+            check("the list shows modes and actions", e._pb_public(e.playbacks[1])["mib"] is False
+                  and e._pb_public(e.playbacks[1])["stack"][1]["actions"], "")
+
+            # blind
+            e.act("playback_release", playback=1)
+            e.act("playback_release", playback=2)
+            e.programmer = {h1: {"dimmer": 30}}
+            r = e.act("blind", playback=1, cue=1)
+            check("blind-edit a cue: its values come into the programmer", r.get("ok") and e.programmer.get(h1, {}).get("dimmer") == 50, str(e.programmer))
+            e.programmer[h1]["dimmer"] = 80
+            frame = e.build_frames()
+            look = {x["n"]: x for x in e._looks()}
+            uni, addr = e.patch[0]["universe"], e.patch[0]["address"]
+            dim_slot = e.patch[0]["map"].index("dimmer")
+            check("the rig keeps the live programmer", frame[uni][addr - 1 + dim_slot] < 200, str(frame[uni][addr - 1 + dim_slot]))
+            check("3D shows the blind edit", look[h1]["a"] >= 0.79, str(look[h1]))
+            e.act("record_cue", playback=1, cue=1)
+            check("record puts it back into the cue", e.playbacks[0]["stack"][0]["values"][h1]["dimmer"] == 80, "")
+            e.act("blind", state=False)
+            check("blind off: the live programmer is back", e.programmer.get(h1) == {"dimmer": 30} and not e.blind_public()["on"], str(e.programmer))
+            e.act("save_show", name="cm")
+            e.act("playback_mode", playback=1, tracking=False)
+            e.act("load_show", name="cm")
+            check("tracking / MIB / block / actions are saved", e.playbacks[0]["tracking"] and e.playbacks[1]["stack"][1].get("actions"), "")
+        finally:
+            e.shutdown()
