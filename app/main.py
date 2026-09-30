@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
-                 fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles)
+                 fixture_kind, fixtures, gdtf_geom, gdtfshare, midi, profiles, rdm)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from tools import import_gdtf  # noqa: E402
@@ -462,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/scan", "/api/console/ai",
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
-                         "/api/console/autoshow",
+                         "/api/console/autoshow", "/api/console/rdm",
                          "/api/console/look"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
@@ -530,6 +530,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._console_result(eng, result)
         if route == "/api/console/load":
             result = eng.act("load_show", name=str(body.get("name", "")))
+            return self._console_result(eng, result)
+        if route == "/api/console/rdm":
+            # RDM: ask the lights what they are.  Network I/O off the lock,
+            # then the engine lines the answers up with the patch.
+            net = eng.network_info()
+            host = net["target"]["host"] if net["target"]["mode"] != "auto" and net["target"]["host"] \
+                else "255.255.255.255"
+            if isinstance(body.get("set_address"), dict):
+                sa = body["set_address"]
+                try:
+                    res = rdm.set_address(str(sa.get("uid") or ""), int(sa.get("universe") or 1),
+                                          int(sa.get("address") or 0), host=host, port=config.DMX_PORT)
+                except ValueError as exc:
+                    res = {"ok": False, "error": str(exc)}
+                return self._console_result(eng, res)
+            universes = body.get("universes") or sorted({h["universe"] for h in eng.patch}) or [1]
+            found = rdm.discover([int(u) for u in universes], host=host, port=config.DMX_PORT,
+                                 timeout=float(body.get("timeout") or 2.0))
+            result = eng.act("rdm_compare", devices=found["devices"], universes=found.get("universes"))
+            result["rdm_error"] = found.get("error")
+            result["tried"] = found.get("tried")
             return self._console_result(eng, result)
         if route == "/api/console/scan":
             # Network I/O runs OUTSIDE the engine lock: act() holds the

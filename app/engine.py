@@ -97,7 +97,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export",
+    "ready_check", "show_versions", "show_export", "rdm_compare",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -138,7 +138,7 @@ UNDO_EXCLUDED = frozenset({
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
                         "export_patch", "venue_info", "motion_get",
-                        "fx_status", "ready_check", "show_versions", "show_export"})
+                        "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare"})
 
 UNDO_COALESCE = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
@@ -589,7 +589,7 @@ ACTIONS = (
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
     "venue_save", "venue_open", "venue_delete",
-    "patch_move_free", "change_type", "ready_check", "show_versions", "restore_version",
+    "patch_move_free", "change_type", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
@@ -9789,6 +9789,43 @@ class Engine:
         os.replace(tmp, path)
         return {"file": label, "show_file": label, "version_kept": kept,
                 "summary": f"saved show {label!r}"}
+
+    def _a_rdm_compare(self, devices=None, universes=None, **_):
+        """Line up what the lights said over RDM with the patch: each light
+        is "ok" (a patched light at that address, same channel count),
+        "different" (patched there, but the light says otherwise) or "new"
+        (nothing patched there: + Add it).  Patched lights on the scanned
+        universes that nobody answered for are listed as "silent"."""
+        rows = []
+        seen = set()
+        by_addr = {(h["universe"], h["address"]): h for h in self.patch}
+        for d in devices or []:
+            u, a = int(d.get("universe") or 1), d.get("address")
+            name = " ".join(x for x in (d.get("manufacturer"), d.get("model")) if x) or d.get("uid")
+            row = {**d, "name": name}
+            h = by_addr.get((u, a)) if a else None
+            if h is None:
+                row["status"] = "new"
+                row["note"] = "not in the patch" + (f" - {d.get('footprint')} ch at {u}.{a}" if a else "")
+            else:
+                seen.add(h["head_no"])
+                row["head"] = h["head_no"]
+                fp = d.get("footprint")
+                if fp and fp != h["channels"]:
+                    row["status"] = "different"
+                    row["note"] = f"#{h['head_no']} is patched as {h['model']} ({h['channels']} ch); the light says {fp} ch" \
+                                  + (f" ({d['mode']})" if d.get("mode") else "")
+                else:
+                    row["status"] = "ok"
+                    row["note"] = f"#{h['head_no']} {h['name']}"
+            rows.append(row)
+        scanned = {int(u) for u in universes or []}
+        silent = [{"head": h["head_no"], "name": h["name"], "universe": h["universe"], "address": h["address"],
+                   "status": "silent", "note": "didn't answer (no RDM, off, or a different address)"}
+                  for h in self.patch if h["universe"] in scanned and h["head_no"] not in seen]
+        n_bad = sum(r["status"] != "ok" for r in rows)
+        return {"devices": rows, "silent": silent,
+                "summary": f"{len(rows)} RDM light(s) answered" + (f", {n_bad} to check" if n_bad else "")}
 
     def _a_ready_check(self, **_):
         """Before doors: everything that would bite during the show, each

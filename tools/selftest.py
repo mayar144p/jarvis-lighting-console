@@ -7531,6 +7531,7 @@ def _standalone_suites():
     ("a smaller room brings its rigging back inside", test_room_fit),
     ("looks: search, and any light of these types", test_look_types),
     ("scanners, derbies and more get their own 3D model", test_more_models),
+    ("RDM: the lights say what they are (fake node)", test_rdm),
     )
 
 
@@ -9519,6 +9520,103 @@ def test_more_models() -> None:
     check("every light type has a 3D builder", not missing, str(missing))
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
     check("a derby turns while it is lit", "sk.spin" in st, "")
+
+
+def test_rdm() -> None:
+    """RDM over Art-Net against a fake node: the Table of Devices, each
+    light's model / address / footprint / mode, a readdress, and the
+    comparison with the patch."""
+    print("RDM discovery")
+    import socket
+    import struct
+    import tempfile
+    import threading
+    from app import engine as eng
+    from app import rdm
+
+    lights = {
+        bytes.fromhex("02A012345678"): {"man": b"Chauvet", "model": b"Intimidator Spot 360", "addr": 1, "fp": 14,
+                                         "pers": 2, "mode": b"14-Channel"},
+        bytes.fromhex("02A0DEADBEEF"): {"man": b"Eurolite", "model": b"LED PARty RGBW", "addr": 40, "fp": 6,
+                                         "pers": 1, "mode": b"6 Channel"},
+    }
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.settimeout(0.2)
+    stop = threading.Event()
+
+    def node():
+        while not stop.is_set():
+            try:
+                pkt, peer = sock.recvfrom(2048)
+            except (socket.timeout, OSError):
+                continue
+            if pkt[8:10] == struct.pack("<H", rdm.TODREQUEST_OP):
+                sock.sendto(rdm.build_tod_data(0, pkt[24], list(lights)), peer)
+                continue
+            got = rdm.parse_artrdm(pkt)
+            msg = rdm.parse_rdm(got[1]) if got else None
+            if not msg or msg["dest"] not in lights:
+                continue
+            L = lights[msg["dest"]]
+            if msg["cc"] == rdm.SET and msg["pid"] == rdm.PID_DMX_START_ADDRESS:
+                L["addr"] = struct.unpack(">H", msg["data"])[0]
+                reply = rdm.build_rdm(msg["src"], rdm.SET_RESPONSE, msg["pid"], b"", tn=msg["tn"],
+                                      src=msg["dest"], response_type=rdm.ACK)
+            else:
+                data = {rdm.PID_DEVICE_INFO: struct.pack(">HHHIHBBHHB", 0x0100, 7, 0x0101, 1, L["fp"], L["pers"],
+                                                         3, L["addr"], 0, 0),
+                        rdm.PID_MANUFACTURER_LABEL: L["man"], rdm.PID_DEVICE_MODEL_DESCRIPTION: L["model"],
+                        rdm.PID_DEVICE_LABEL: b"",
+                        rdm.PID_DMX_PERSONALITY_DESCRIPTION: bytes([L["pers"]]) + struct.pack(">H", L["fp"]) + L["mode"],
+                        }.get(msg["pid"])
+                if data is None:
+                    continue
+                reply = rdm.build_rdm(msg["src"], rdm.GET_RESPONSE, msg["pid"], data, tn=msg["tn"],
+                                      src=msg["dest"], response_type=rdm.ACK)
+            sock.sendto(rdm.build_artrdm(reply, got[0]), peer)
+
+    t = threading.Thread(target=node, daemon=True)
+    t.start()
+    try:
+        msg = rdm.build_rdm(bytes(6), rdm.GET, rdm.PID_DEVICE_INFO, b"\x01\x02", tn=9)
+        back = rdm.parse_rdm(msg)
+        check("an RDM message round-trips (checksum incl. the start code)", back and back["tn"] == 9
+              and back["data"] == b"\x01\x02", str(back))
+        check("a broken checksum is refused", rdm.parse_rdm(msg[:-1] + bytes([msg[-1] ^ 1])) is None, "")
+        found = rdm.discover([1], host="127.0.0.1", port=port, timeout=0.6, per_request=0.3)
+        devs = found["devices"]
+        check("both lights answer", len(devs) == 2, str(found))
+        spot = next((d for d in devs if d["uid"] == "02A0:12345678"), {})
+        check("model, address, footprint and mode come back",
+              spot.get("manufacturer") == "Chauvet" and spot.get("model") == "Intimidator Spot 360"
+              and spot.get("address") == 1 and spot.get("footprint") == 14 and spot.get("mode") == "14-Channel", str(spot))
+        r = rdm.set_address("02A0:DEADBEEF", 1, 101, host="127.0.0.1", port=port)
+        check("a light can be readdressed from the desk", r.get("ok") and lights[bytes.fromhex("02A0DEADBEEF")]["addr"] == 101, str(r))
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            db = tmp / "f.db"
+            fixtures.seed_generics(db)
+            e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=1)
+                e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=200)
+                devs = rdm.discover([1], host="127.0.0.1", port=port, timeout=0.6, per_request=0.3)["devices"]
+                r = e.act("rdm_compare", devices=devs, universes=[1])
+                st = {d["uid"]: d["status"] for d in r.get("devices") or []}
+                check("a patched light the RDM light disagrees with is flagged", st.get("02A0:12345678") == "different", str(r))
+                check("an unpatched RDM light is new", st.get("02A0:DEADBEEF") == "new", str(st))
+                check("a patched light nobody answered for is silent",
+                      [x["head"] for x in r.get("silent") or []] == [2], str(r.get("silent")))
+            finally:
+                e.shutdown()
+    finally:
+        stop.set()
+        t.join(1)
+        sock.close()
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the fixture menu asks the lights", "openRdm" in fj and "/api/console/rdm" in fj, "")
 
 
 def test_cue_list_modes() -> None:

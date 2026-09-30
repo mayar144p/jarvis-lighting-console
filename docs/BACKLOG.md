@@ -1,10 +1,12 @@
 # Backlog
 
-Work agreed with the operator but not started yet, in the suggested order.
+Work agreed with the operator, newest items first after the original list.
+Everything below is DONE (as of this update); each entry keeps the notes
+on how it was built, for whoever changes it next.
 Each item notes the cause already found in the code, so whoever picks it up
 starts from the diagnosis, not from scratch.
 
-## 1. Bug fixes (next)
+## 1. Bug fixes (DONE)
 
 - **(DONE) Laser "hold" sticks on; needs a second click to stop.**
   `web/app/fxpanel.js` `holdButton`: the Laser tab re-renders while the
@@ -38,7 +40,7 @@ ch 29 Auto Programs, ch 30 Program Speed.  Fix: expose every non-maintenance
 channel under its own name on the Beam tab, its capability ranges as chips,
 recorded in cues (needs unique per-channel roles for unnamed channels).
 
-## 3. Multi-head / multi-cell fixtures (see 15: first part DONE)
+## 3. Multi-head / multi-cell fixtures (DONE, see 15)
 
 Channels that repeat per head collapse onto one role, so one control drives
 all heads.  Example: Wave 360 has 4 heads - ch 5-8 tilt x4, ch 11-26 RGBW x4,
@@ -55,7 +57,7 @@ alone or together, per-head values, and effects that run ACROSS the heads
   look in the programmer, on the first empty slot).  Output stays
   armed-only.
 
-## 5. Programming and cues redesign (mock-up first)
+## 5. Programming and cues redesign (DONE: items 10, 16, 8 Looks)
 
 - Programmer: one attribute grid for every fixture type, plus a bar showing
   what is in the programmer, each with its own clear.
@@ -64,14 +66,20 @@ alone or together, per-head values, and effects that run ACROSS the heads
   when recording over a cue.
 - Looks: palette tiles with a live colour/position preview.
 
-## 6. Patch safety
+## 6. Patch safety (DONE)
 
 - (DONE, item 14) DMX map per universe with clashes in red and "Move #n".
 - **(DONE) Change fixture type** (a light's ⋯ menu, or the selection):
   number, place, rigging, name, groups, cues and looks stay; the address
   stays when the new footprint fits, else the first free block (and it
   says so, and which cue values the new type has no channel for).
-- RDM discovery (model / mode / address from the light) if the node supports it.
+- **(DONE) RDM** (fixture list ⋯ → Ask the lights): over Art-Net
+  (ArtTodRequest / ArtTodData / ArtRdm, app/rdm.py) each RDM light says
+  its maker, model, DMX address, channel count and mode; the list shows
+  it against the patch - ok, "different" (→ Change type…), "new" (→ Add
+  it) and patched lights that didn't answer - and "Set address…" sends a
+  new start address to the light itself.  Tested against a fake node;
+  needs a node with RDM switched on.
 - **(DONE) Ready? check** (Show ▾, or the command bar): no lights, DMX
   clashes, unnamed channels, cues pointing at unpatched lights, no cues,
   stay-on-the-floor off, lasers, blind output, send errors, never saved -
@@ -93,7 +101,7 @@ strobes and follow spots that the channels alone didn't give away.  A
 selftest keeps every light type paired with a 3D builder.  The rest
 (dimmer packs, colour-changer accessories, "Other") stay generic.
 
-## 16. Cue list (DONE, first part)
+## 16. Cue list (DONE)
 
 - Recording over a cue: Replace / Merge (adds the programmer's changes,
   keeps the rest) / Insert before; the cue keeps its name and times unless
@@ -110,7 +118,7 @@ selftest keeps every light type paired with a 3D builder.  The rest
   a fade of its own ("parts" in the cue list), e.g. colour snaps while the
   movers glide 4 s.
 
-## 15. Multi-head lights (DONE, first part)
+## 15. Multi-head lights (DONE)
 
 A Wave 360's four tilts and RGBW cells: a value for one head is kept as
 `red@2` / `tilt@3` (merge: LTP, a running effect wins; limits and invert
@@ -119,10 +127,9 @@ writer sends the k-th copy of a role its head's value.  set_colour /
 set_attribute take `cell`; the programmer shows "Heads: All 1 2 3 4"
 for such lights and sends only to the picked heads; cues and looks keep
 per-head values; effects run "across each light's heads" (colour chase /
-rainbow step head to head).  Still open: movement effects across heads (a
-tilt wave), per-head colours in the 3D view.  (DONE since: tilt wave
-across the heads on the Move tab; a multi-head 3D model - heads on a bar,
-each tilting and coloured on its own.)
+rainbow step head to head); a tilt wave across the heads on the Move
+tab; a multi-head 3D model (heads on a bar, each tilting and coloured on
+its own).
 
 ## 14. Patch safety: DMX map and clashes (DONE); LED extras (DONE)
 
@@ -132,7 +139,7 @@ each tilting and coloured on its own.)
   in a DMX map (512 squares per universe, clashes red, per-light list).
 - The Colour tab adds White / Amber / UV / Lime sliders on top of a pure
   picked colour, for the lights that have them.
-- Still open: RDM (change fixture type is DONE, item 6).
+- (Change fixture type and RDM: DONE, item 6.)
 
 ## 13. My venues, room shapes, rigging up front (DONE)
 
@@ -245,7 +252,7 @@ the Move tab, next to a light's built-in programs.  It runs and loops on
 any selected lights until stopped: not a cue, and not tied to particular
 lights or a venue.  It can go on a button or into a Look.
 
-## 8. UI/UX overhaul (audited with a 21-light mixed rig; mock-ups agreed next)
+## 8. UI/UX overhaul (DONE: items 9-17; audited with a 21-light mixed rig)
 
 Found in the audit (same features kept, all of it re-laid out):
 

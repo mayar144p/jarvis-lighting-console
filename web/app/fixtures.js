@@ -411,12 +411,55 @@ export function openDmxMap() {
   const off = on("snapshot", () => { if (!document.body.contains(body)) { off && off(); return; } body.replaceChildren(draw()); });
 }
 
+// RDM: the lights say what they are, where they're addressed and in which
+// mode; the list compares that with the patch (needs an RDM node).
+async function openRdm() {
+  const body = h("div.rdm", h("p.muted", "Asking the lights… (a few seconds)"));
+  const close = modal({ title: "Ask the lights (RDM)", wide: true, body });
+  const d = await post("/api/console/rdm", {}).catch((e) => ({ error: e.message }));
+  const r = d.result || {};
+  if (d.error || !r.ok) {
+    body.replaceChildren(h("p.warn", d.error || r.error || "RDM failed"));
+    return;
+  }
+  const ICON = { ok: "✓", different: "!", new: "+", silent: "?" };
+  const setAddr = async (dev) => {
+    const v = await promptBox("Set the light's address", `DMX address on universe ${dev.universe} (1-512)`,
+      dev.address ? String(dev.address) : "", { ok: "Send to the light" });
+    if (!v) return;
+    const res = await post("/api/console/rdm", { set_address: { uid: dev.uid, universe: dev.universe, address: +v } })
+      .catch((e) => ({ error: e.message }));
+    const rr = res.result || {};
+    toast(res.error || rr.error || `The light is now at ${dev.universe}.${v}`, res.error || rr.error ? "bad" : "ok");
+  };
+  const row = (dev) => h("div.rdm-row." + dev.status,
+    h("span.ready-ic", ICON[dev.status] || "·"),
+    h("div", h("b", dev.name || `#${dev.head}`),
+      h("small.muted", [dev.uid, dev.universe && dev.address ? `${dev.universe}.${String(dev.address).padStart(3, "0")}` : "",
+        dev.footprint ? `${dev.footprint} ch` : "", dev.mode || ""].filter(Boolean).join(" · ")),
+      h("div.small", dev.note || "")),
+    h("div.row-btns",
+      dev.status === "new" ? h("button.btn.small", { onclick: () => {
+        close();
+        run("add_heads", { query: dev.name, universe: dev.universe, address: dev.address }, { toast: true });
+      } }, "Add it") : null,
+      dev.status === "different" ? h("button.btn.small", { onclick: () => { close(); openChangeType([dev.head]); } }, "Change type…") : null,
+      dev.uid ? h("button.btn.small.ghost", { onclick: () => setAddr(dev) }, "Set address…") : null));
+  const devs = r.devices || [];
+  body.replaceChildren(
+    devs.length ? h("p.muted.small", r.summary) : null,
+    ...(devs.length ? devs.map(row) : [h("p.muted", "No light answered. RDM needs a node with RDM switched on, and lights that support it"
+      + (r.tried && r.tried !== "255.255.255.255" ? ` (asked ${r.tried}).` : "."))]),
+    ...((r.silent || []).length ? [h("h3", "Patched, but no answer"), ...r.silent.map(row)] : []));
+}
+
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
     { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Scan the network for nodes", run: () => scanRig() },
+    { label: "Ask the lights (RDM)…", hint: "model, mode and address from each light", run: () => openRdm() },
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
     } },

@@ -1128,3 +1128,8 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .vp-item:hover { border-color: var(--accent); }
 .vp-item small { color: var(--muted); }
 .look-search { width: 100%; margin: 0 0 10px; }
+.rdm { display: grid; gap: 8px; }
+.rdm-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 8px; }
+.rdm-row.ok .ready-ic { background: #16a34a; color: #fff; } .rdm-row.different .ready-ic { background: #d97706; color: #fff; }
+.rdm-row.new .ready-ic { background: #2563eb; color: #fff; } .rdm-row.silent { opacity: .75; }
+.rdm-row small { display: block; }
