@@ -865,13 +865,15 @@ function scanner(body) {
   sk.pan.add(cradle);
   const mirror = rbox(0.11, 0.004, 0.08, 0.003, new THREE.MeshStandardMaterial({
     color: 0xdfe6ee, metalness: 1, roughness: 0.08 }));
+  mirror.rotation.x = -Math.PI / 4;                   // 45 degrees: lamp in from behind, beam out forward
   sk.tilt.add(mirror);
   const lens = lensMaterial();
   sk.lenses.push(lens);
   const spot = disc(0.025, lens, 20);
   spot.position.y = 0.003;
   sk.tilt.add(spot);
-  sk.emitters.push(emitter(sk.tilt, 0.004, 0.03));
+  // at rest the beam leaves the mirror FORWARD (+z): pan swings it, tilt dips it
+  sk.emitters.push(emitter(sk.tilt, 0.004, 0.03, { dir: new THREE.Vector3(0, 0, 1) }));
   sk.height = HH + 0.15;
   sk.radius = 0.3;
   return sk;

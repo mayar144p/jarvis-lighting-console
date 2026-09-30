@@ -7532,6 +7532,7 @@ def _standalone_suites():
     ("looks: search, and any light of these types", test_look_types),
     ("scanners, derbies and more get their own 3D model", test_more_models),
     ("RDM: the lights say what they are (fake node)", test_rdm),
+    ("aiming: towers, scanners, out-of-reach, fine pan without fine tilt", test_aim_debug),
     )
 
 
@@ -7598,7 +7599,9 @@ def test_venue() -> None:
     over = V.mount_position(truss, 0.25, "stand")
     check("or stands on top of it when asked", over["y"] > 5 and over["x"] == -2, json.dumps(over))
     tower = {"id": "r2", "kind": "tower", "a": [2, 0, 3], "b": [2, 4, 3], "size": 0.3}
-    check("a tower's lights stand", V.mount_position(tower, 1)["orient"] == "stand", "")
+    check("a light high on a tower hangs (so it can tilt down to the floor)",
+          V.mount_position(tower, 1)["orient"] == "hang", "")
+    check("...and one low on it stands", V.mount_position(tower, 0.25)["orient"] == "stand", "")
     slots = V.free_slots(truss, [0.5], 3, 1.0)
     check("free slots keep their spacing and avoid a taken one",
           len(slots) == 3 and all(abs(a - 0.5) * 8 >= 0.79 for a in slots)
@@ -7868,7 +7871,10 @@ def test_quick_buttons() -> None:
                 hung = h.get("stance") == "hang"
                 if hung:
                     d = [-d[0], -d[1], d[2]]
-                o = [h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]]
+                from app import fixture_kind as _fk
+                dsc = _fk.describe(h)
+                piv = 0.372 if dsc.get("heads") else e._AIM_PIVOT.get(dsc["type"], 0.4)
+                o = [h["x"], h["y"] + (-piv if hung else piv), h["z"]]      # the model's tilt axis
                 v = [(1.0, 0.5, 9.0)[i] - o[i] for i in range(3)]
                 along = sum(v[i] * d[i] for i in range(3))
                 worst = max(worst, math.sqrt(max(0.0, sum(x * x for x in v) - along * along)))
@@ -9617,6 +9623,64 @@ def test_rdm() -> None:
         sock.close()
     fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("the fixture menu asks the lights", "openRdm" in fj and "/api/console/rdm" in fj, "")
+
+
+def test_aim_debug() -> None:
+    """Bugs found by aiming every kind of mover at the floor: a Wave 360
+    mode with fine pan but no fine tilt was sent a 16-bit tilt (pinned at
+    full tilt, pointing at the roof); a light high on a tower stood upright
+    and couldn't reach the floor; an unreachable spot left the light at
+    home (pointing up); a scanner aimed as if its beam left upwards."""
+    print("aiming debug (towers, scanners, 8-bit tilt)")
+    import math
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        for src, key in (("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                         ("qlc", "Chauvet/Chauvet-Intimidator-Scan-360.qxf"),
+                         ("ofl", "chauvet-dj/intimidator-spot-260.json")):
+            fixtures.store_parsed(db, fixlib.load(src, key), src)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("floor_safe", movement=False)
+            truss = next(r["id"] for r in e.venue["rigging"] if r["kind"] == "truss")
+            tower = next(r["id"] for r in e.venue["rigging"] if r["kind"] == "tower")
+            wave = e.act("add_heads", query="Intimidator Wave 360", qty=1)["heads"][0]
+            e.act("attach_heads", heads=[wave], rig=truss, stance="hang")
+            h = e._head(wave)
+            e.act("aim_at", x=0, y=0, z=6, heads=[wave])
+            tilt_ch = h["address"] - 1 + h["map"].index("tilt")
+            frame = e.build_frames()[h["universe"]]
+            fp, ft = e._aim_solve(h, 0, 0, 6)[:2]
+            check("a mode with fine pan but no fine tilt gets an 8-bit tilt",
+                  abs(frame[tilt_ch] - round(ft * 255)) <= 1 and "tilt_fine" not in h["map"],
+                  str((frame[tilt_ch], round(ft * 255))))
+            row = next(r for r in e._looks() if r["n"] == wave)
+            check("...and the 3D view gets the same tilt (not full tilt)", abs(row["tilt"] - ft) < 0.01
+                  and all(abs(c["tilt"] - ft) < 0.01 for c in row.get("cells") or []), str(row.get("tilt")))
+            spot = e.act("add_heads", query="Intimidator Spot 260", qty=1)["heads"][0]
+            e.act("attach_heads", heads=[spot], rig=tower)
+            check("a mover high on a tower hangs", e._head(spot)["stance"] == "hang", str(e._head(spot).get("stance")))
+            e.act("set_place", head=spot, x=-3, y=0, z=3, stance="stand")
+            r = e.act("aim_at", x=-3, y=0, z=3.2, heads=[spot])        # right at its own feet
+            check("an unreachable spot: it points as close as it can, not at home",
+                  r.get("ok") and spot in (r.get("clamped") or []) and e.programmer.get(spot, {}).get("tilt"),
+                  str(r.get("summary")))
+            scan = e.act("add_heads", query="Intimidator Scan 360", qty=1)["heads"][0]
+            e.act("attach_heads", heads=[scan], rig=truss, stance="hang")
+            sh = e._head(scan)
+            got = e._aim_solve(sh, sh["x"], 0, sh["z"] + 8)      # ~28 degrees down: inside its mirror's 39
+            check("a hung scanner reaches the floor in front of it", got is not None and len(got) == 4, str(got))
+            p_deg, t_deg = got[2], got[3]
+            ly = -math.sin(math.radians(t_deg))
+            check("...by dipping its mirror, not by pointing up", ly > 0, f"pan {p_deg:.1f} tilt {t_deg:.1f}")
+        finally:
+            e.shutdown()
 
 
 def test_cue_list_modes() -> None:

@@ -5233,8 +5233,12 @@ class Engine:
                 "names": dict(getattr(self, "quick_names", {}) or {}),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
 
+    # height of the tilt axis above the base, per 3D model (web/js/stage/models.js)
+    _AIM_PIVOT = {"moving_spot": 0.465, "moving_hybrid": 0.502, "moving_beam": 0.378,
+                  "moving_wash": 0.402, "moving_bar": 0.372, "scanner": 0.095}
+
     def _aim_solve(self, h: dict, tx: float, ty: float, tz: float,
-                   near: tuple[float, float] | None = None):
+                   near: tuple[float, float] | None = None, closest: bool = False):
         """(pan frac, tilt frac, pan deg, tilt deg) that point head `h` at a
         point in the room, from where it hangs and which way up it is, or
         None if it can't reach it.  `near` (degrees) picks, of the several
@@ -5246,7 +5250,13 @@ class Engine:
             return None
         hung = (h.get("stance") == "hang") if h.get("stance") else \
             h.get("kind") == "truss"
-        ox, oy, oz = h["x"], h["y"] + (-0.35 if hung else 0.35), h["z"]
+        # the tilt axis, where the 3D model has it (measured off each model):
+        # a spot's is higher than a wash's; a scanner's mirror sits low and
+        # in front of its lamp housing
+        d = fixture_kind.describe(h)
+        pivot = 0.372 if d.get("heads") else self._AIM_PIVOT.get(d["type"], 0.4)
+        ahead = 0.14 if d["type"] == "scanner" else 0.0
+        ox, oy, oz = h["x"], h["y"] + (-pivot if hung else pivot), h["z"] + ahead
         dx, dy, dz = tx - ox, ty - oy, tz - oz
         n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
         dx, dy, dz = dx / n, dy / n, dz / n
@@ -5260,10 +5270,25 @@ class Engine:
                       and pr.get("min") is not None else (-270.0, 270.0))
         tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
                       and tr.get("min") is not None else (-135.0, 135.0))
-        cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
-        cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
+        if d["type"] == "scanner":
+            # a mirror scanner throws its beam FORWARD (+z) at rest: pan
+            # swings it sideways, tilt dips it (the 3D model's convention)
+            p0 = math.degrees(math.atan2(lx, lz))
+            t0 = math.degrees(math.asin(max(-1.0, min(1.0, -ly))))
+            cands = [(p0, t0)]
+        else:
+            cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
+            cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
         fits = [(p, t) for p, t in cands
                 if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
+        if not fits and closest:
+            # out of reach: point as near to it as the light can go (never
+            # leave it at home, pointing at the roof)
+            fits = [(min(pmax, max(pmin, p)), min(tmax, max(tmin, t))) for p, t in cands]
+            fits = [min(fits, key=lambda c: min(abs(c[0] - p) + abs(c[1] - t) for p, t in cands))]
+            h_clamped = True
+        else:
+            h_clamped = False
         if not fits:
             return None
         if near is not None:
@@ -5279,6 +5304,8 @@ class Engine:
             ft = 1 - ft
         if flags.get("swap"):
             fp, ft = ft, fp
+        if h_clamped:
+            return fp, ft, p, t, "clamped"
         return fp, ft, p, t
 
     def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
@@ -5303,24 +5330,33 @@ class Engine:
         rows = ([self._head(int(h)) for h in heads] if heads
                 else self._require_selection())
         aimed, skipped = [], []
+        clamped = []
         for h in rows:
-            solved = self._aim_solve(h, tx, ty, tz)
+            solved = self._aim_solve(h, tx, ty, tz, closest=True)
             if solved is None:
                 skipped.append(h["head_no"])
                 continue
+            if len(solved) > 4:
+                clamped.append(h["head_no"])
             fp, ft = solved[0], solved[1]
-            top = 65535 if "pan_fine" in h["map"] else 255
-            self._a_set_position(pan=round(max(0, min(1, fp)) * top),
-                                 tilt=round(max(0, min(1, ft)) * top),
+            # each axis at ITS OWN resolution: a mode can have a fine
+            # channel for pan and not for tilt (a Wave 360 in 17 ch), and a
+            # 16-bit value on an 8-bit tilt pinned it at full tilt
+            top_p = 65535 if "pan_fine" in h["map"] else 255
+            top_t = 65535 if "tilt_fine" in h["map"] else 255
+            self._a_set_position(pan=round(max(0, min(1, fp)) * top_p),
+                                 tilt=round(max(0, min(1, ft)) * top_t),
                                  unit="logical", head=h["head_no"])
             aimed.append(h["head_no"])
         if not aimed:
             raise ValueError("none of those lights can pan and tilt"
                              if skipped else "nothing selected")
-        return {"heads": aimed, "skipped": skipped, "target": [tx, ty, tz],
+        return {"heads": aimed, "skipped": skipped, "clamped": clamped, "target": [tx, ty, tz],
                 "summary": f"aimed {len(aimed)} light(s) at "
                            f"x{tx:.1f} z{tz:.1f}"
-                           + (f" ({len(skipped)} cannot move)" if skipped else "")}
+                           + (f" ({len(skipped)} cannot move)" if skipped else "")
+                           + (f"; {len(clamped)} can't reach it and point as close as they can "
+                              f"(#{', #'.join(map(str, clamped[:6]))} - hang it, or turn it)" if clamped else "")}
 
     # ------------------------------------------------------------------
     # the Move tab: one-tap spots, formations, nudge, a light's own range
@@ -5403,7 +5439,8 @@ class Engine:
                              else "the venue has no dance floor or zones yet (Venue tab)")
         r = self._a_aim_at(x=s["x"], y=s["y"], z=s["z"], heads=[h["head_no"] for h in movers])
         r["summary"] = f"{len(r['heads'])} light(s) on {s['label']}" + (
-            f" ({len(r['skipped'])} can't reach it)" if r.get("skipped") else "")
+            f" ({len(r['skipped'])} can't move)" if r.get("skipped") else "") + (
+            f" ({len(r['clamped'])} can't reach it: as close as they go)" if r.get("clamped") else "")
         return r
 
     def _floor_limits(self) -> dict:
@@ -9231,7 +9268,11 @@ class Engine:
                                                                   for r in ("red", "green", "blue", "white")) else row["hex"]}
                     t = values.get(f"tilt@{k}", values.get("tilt"))
                     if t is not None and "tilt" in head["map"]:
-                        cell["tilt"] = round(max(0, min(255, int(t))) / 255.0, 4)
+                        # the same scaling, limits and inversion as the head's
+                        # own tilt (a value can be 16-bit / logical, not 0-255)
+                        ct = self._aim01(head, {**values, "tilt": t}, "tilt")
+                        if ct is not None:
+                            cell["tilt"] = ct
                     cells.append(cell)
                 row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head

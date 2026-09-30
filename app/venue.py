@@ -360,6 +360,10 @@ def mount_position(r: dict, t: float, orient: str | None = None) -> dict:
     t = max(0.0, min(1.0, float(t)))
     a, b = r["a"], r["b"]
     p = [a[i] + (b[i] - a[i]) * t for i in range(3)]
+    if not orient and is_vertical(r):
+        # clamped to a tower or pole: hung (yoke up) once it is up high -
+        # standing upright at 4 m it couldn't tilt down to the floor
+        orient = "hang" if p[1] >= 2.0 else "stand"
     orient = orient or default_orient(r)
     half = r["size"] / 2
     if is_vertical(r):
