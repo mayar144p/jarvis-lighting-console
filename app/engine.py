@@ -6663,7 +6663,16 @@ class Engine:
                  "heads": len(used), "head_list": sorted(set(used)), "fx": fx,
                  "hexes": self._look_hexes([h for h in heads if h["head_no"] in used],
                                            lambda h: self.programmer.get(h["head_no"])),
-                 "tags": tags}
+                 "tags": tags,
+                 # what kinds of light it was made on: at another venue it can
+                 # play on "any light of these types"
+                 "types": sorted({fixture_kind.describe(h)["type"] for h in heads if h["head_no"] in used})}
+        kinds = {}
+        for h in heads:
+            if h["head_no"] in used:
+                d = fixture_kind.describe(h)
+                kinds[d["type"]] = d.get("label") or d["type"].replace("_", " ").title()
+        entry["type_labels"] = [kinds[t] for t in entry["types"]]
         for i, old in enumerate(self.presets):
             if old["n"] == n:
                 self.presets[i] = entry
@@ -6675,19 +6684,32 @@ class Engine:
                 "summary": f"saved look {label} ({len(used)} light(s)"
                            + (f", {len(fx)} effect(s)" if fx else "") + ")"}
 
-    def _a_include_preset(self, n=None, preset=None, **_):
+    def _look_type_heads(self, entry: dict) -> list[dict]:
+        """Every patched light of the kinds a look was made on."""
+        types = set(entry.get("types") or [])
+        if not types:
+            return []
+        return [h for h in self.patch if fixture_kind.describe(h)["type"] in types]
+
+    def _a_include_preset(self, n=None, preset=None, on=None, **_):
         """Play a look: on the selection, or - with nothing selected - on the
-        lights it was saved from.  Its effects start too, taking over from
-        effects of the same kind already on those lights."""
+        lights it was saved from (or, when those aren't patched here, on
+        every light of the same kinds).  on="types" plays it on every light
+        of those kinds.  Its effects start too, taking over from effects of
+        the same kind already on those lights."""
         ref = n if n is not None else preset
         entry = self._by_number_or_name(self.presets, ref)
         if entry is None:
             raise ValueError(f"no preset {ref!r}")
-        if self.selected:
+        if on == "types":
+            heads = self._look_type_heads(entry)
+            if not heads:
+                raise ValueError(f"no lights of the kinds {entry['name']} was made on")
+        elif self.selected:
             heads = self._require_selection()
         else:
             want = set(entry.get("head_list") or [])
-            heads = [h for h in self.patch if h["head_no"] in want]
+            heads = [h for h in self.patch if h["head_no"] in want] or self._look_type_heads(entry)
             if not heads:
                 raise ValueError(f"select the lights for {entry['name']} first")
         applied, skipped = 0, []

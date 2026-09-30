@@ -7529,6 +7529,7 @@ def _standalone_suites():
     ("change a light's fixture type, keeping everything else", test_change_type),
     ("Ready? check, show versions and export", test_ready_versions),
     ("a smaller room brings its rigging back inside", test_room_fit),
+    ("looks: search, and any light of these types", test_look_types),
     )
 
 
@@ -9453,6 +9454,42 @@ def test_room_fit() -> None:
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     check("an empty desk asks which venue at start-up", "Where are you playing tonight?" in vp
           and "jarvis.venuepick" in vp, "")
+
+
+def test_look_types() -> None:
+    """A look keeps the kinds of light it was made on, so at another venue
+    (other head numbers) it plays on every light of those kinds."""
+    print("looks on any light of these types")
+    import tempfile
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("select_all")
+            e.act("set_colour", hex="#ff0000")
+            r = e.act("record_preset", name="Red wash")
+            look = e.presets[0]
+            check("a look knows its kinds of light", r.get("ok") and look.get("types"), str(look.get("types")))
+            e.act("clear_programmer")
+            e.act("add_heads", query="LED PARty RGBW", qty=3)     # another venue: heads 3-5
+            e.act("remove_heads", heads=[1, 2])
+            e.act("clear_selection")
+            r = e.act("include_preset", preset=look["n"])
+            check("its lights aren't here: it plays on the same kind", r.get("ok") and r.get("heads") == 3, str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=[e.patch[0]["head_no"]])
+            r = e.act("include_preset", preset=look["n"], on="types")
+            check("'every light of these types' ignores the selection", r.get("ok") and r.get("heads") == 3, str(r))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Looks tab has a search and 'Play on every …'", "#look-search" in pj and 'on: "types"' in pj, "")
 
 
 def test_cue_list_modes() -> None:

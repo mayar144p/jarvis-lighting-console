@@ -264,8 +264,11 @@ Found in the audit (same features kept, all of it re-laid out):
   position, beam, effects & movements, other); a look keeps its effects
   and its lights, so one tap with nothing selected brings the whole thing
   back (on a selection, it plays there); update / rename / make a button /
-  delete from ⋯.  Palettes sit under a fold.  Still open: search and
-  "any light of these types" for another venue.
+  delete from ⋯.  Palettes sit under a fold.  (DONE since: a search box
+  once there are 7+ looks - name, colours, effects, kinds of light; a look
+  keeps the kinds of light it was made on, so where its lights aren't
+  patched it plays on every light of those kinds, and ⋯ → "Play on every
+  LED PAR" does that on purpose.)
 - **Effects:** ARM switches itself off after 10 min (`_a_fx_arm` default)
   and disarming stops the lasers; laser latch buttons cap at 600 s.  Offer
   "armed for 10 min / 1 h / until I disarm" and laser ON until stopped.

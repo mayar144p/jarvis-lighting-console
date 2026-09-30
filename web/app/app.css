@@ -1127,3 +1127,4 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .vp-item { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border-2); background: transparent; color: var(--text); cursor: pointer; }
 .vp-item:hover { border-color: var(--accent); }
 .vp-item small { color: var(--muted); }
+.look-search { width: 100%; margin: 0 0 10px; }
