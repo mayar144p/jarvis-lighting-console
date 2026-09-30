@@ -307,6 +307,7 @@ function renderInspector(sel) {
       h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
+        copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
         del(s.id, found.kind)));
   } else if (s.type === "object") {
     const o = (venue().objects || []).find((x) => x.id === s.id);
@@ -319,7 +320,7 @@ function renderInspector(sel) {
       h("div.vi-row", field("X", num(o.x, (v) => upd({ x: v }))), field("Z", num(o.z, (v) => upd({ z: v }))), field("Up", num(o.y, (v) => upd({ y: v }), { min: 0 }))),
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
-      h("div.row-btns", del(s.id, o.kind === "mark" ? "mark" : "object")));
+      h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
   } else if (s.type === "zone") {
     const z = (venue().zones || []).find((x) => x.id === s.id);
     if (!z) { box.hidden = true; return; }
@@ -358,6 +359,28 @@ function renderInspector(sel) {
         h("button.btn.small.danger", { onclick: () => { run("venue_underlay", { remove: true }); editor.select(null); } }, "Remove")));
   }
   box.replaceChildren(...body.filter(Boolean));
+}
+
+// Copies of one truss / object in a row: "4 trusses 2 m apart".
+function copiesBtn(id, what, axis) {
+  return h("button.btn.small", {
+    title: `Make copies of this ${what} in a row`,
+    onclick: () => {
+      const n = h("input", { type: "number", min: 2, max: 24, value: 4 });
+      const gap = h("input", { type: "number", step: 0.25, value: 2 });
+      const dir = h("select.select", h("option", { value: "z" }, "towards the audience (Z)"), h("option", { value: "x" }, "across (X)"));
+      dir.value = axis;
+      const close = modal({
+        title: `Copies of this ${what}`,
+        body: h("div.form-grid", field("How many in all", n), field("Apart (m, − for the other way)", gap), field("Direction", dir)),
+        foot: [h("button.btn", { onclick: () => close() }, "Cancel"),
+          h("button.btn.primary", { onclick: async () => {
+            const r = await run("venue_array", { id, count: +n.value || 2, step: +gap.value || 2, axis: dir.value }, { toast: true });
+            if (r.ok) close();
+          } }, "Make copies")],
+      });
+    },
+  }, "Copies…");
 }
 
 // ------------------------------------------------------------ toolbar

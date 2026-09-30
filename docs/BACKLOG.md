@@ -114,10 +114,10 @@ blur, VR).
     engine will build.  Walls are drawn like a plan: right angles and a
     10 cm grid by default (Shift: any angle), the last wall lines up with
     the first corner, a typed length + Enter makes a wall exactly that
-    long.  Copies of a truss or object N m apart (venue_array).
+    long.  Copies of a truss or object N m apart (inspector -> Copies...).
     Left: a phone room scan; doors, pillars and balconies drawn in the
     drafting mode; a ceiling height per area; align / distribute for
-    rigging; the copy tool in the inspector.
+    rigging.
 13. **Rigging library:** straight / corner / circle truss pieces, poles,
     stands, pipes, bars at real sizes (1 / 2 / 3 / 6 m), joined end to end by
     snapping; fixtures snap along any tube; hanging from the ceiling with a
