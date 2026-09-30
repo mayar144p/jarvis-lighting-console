@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv as csvmod
 import hashlib
 import io
+import collections
 import json
 import math
 import os
@@ -777,10 +778,16 @@ class Engine:
                        "hz": float(config.DMX_HZ),
                        "host": f"{config.DMX_HOST}:{config.DMX_PORT}"}
 
+        # the last 10 s of gaps between frames, for the status bar's
+        # timing dot (a steady 25 ms at 40 Hz, or the lights stutter)
+        self._gaps: collections.deque = collections.deque(maxlen=400)
         self._order = 0
         # Monotonic look-feed sequence (see look_feed); the visualiser
         # interpolates between ticks instead of stepping.
         self._look_seq = 0
+        self._look_cache: tuple[float, str] | None = None
+        self._look_cache_lock = threading.Lock()
+        self._look_wanted = -1e9
         # Bumped by every successful edit, so a live client knows when the
         # structure (patch, cues, palettes, shows...) needs a full reload.
         self.act_rev = 0
@@ -7805,7 +7812,8 @@ class Engine:
             new = SacnSender(host, port, config.DMX_NET, self.dry_run,
                              priority=config.SACN_PRIORITY,
                              source_name=config.SACN_SOURCE_NAME,
-                             cid=config.SACN_CID or None)
+                             cid=config.SACN_CID or None,
+                             sync_universe=config.SACN_SYNC_UNIVERSE)
         else:
             new = ArtNetSender(host, port, config.DMX_NET, self.dry_run)
         self._sender = new
@@ -7944,6 +7952,12 @@ class Engine:
                     with self.lock:
                         frames = self.build_frames()
                     self._dispatch(frames)
+                    # the screens' 3D look, right after the frame is out: the
+                    # next tick is a whole period away, so screens never make
+                    # the DMX wait for the lock (only while someone watches)
+                    if time.monotonic() - self._look_wanted < 1.0:
+                        self._look_cache = (time.monotonic(),
+                                            json.dumps(self.look_rows(), separators=(",", ":")))
                 except Exception as exc:            # never die silently
                     self.output["errors"] += 1
                     self.output["last_error"] = str(exc)
@@ -7952,6 +7966,7 @@ class Engine:
                 if previous is not None:
                     inst_ms = (done - previous) * 1000
                     self.output["last_tick_age_ms"] = round(inst_ms, 1)
+                    self._gaps.append(inst_ms)
                     # smooth the PERIOD, then invert: averaging rates biases
                     # high whenever jitter makes some ticks short
                     period_ema_ms = period_ema_ms * 0.85 + inst_ms * 0.15
@@ -7977,6 +7992,10 @@ class Engine:
                 self.output["errors"] += 1
                 self.output["last_error"] = sender.last_error
                 self.output["last_error_at"] = time.monotonic()
+        if frames and config.DMX_SYNC and not sender.dry_run:
+            sync = getattr(sender, "sync", None)
+            if sync is not None:
+                sync(len(frames))
 
     # ------------------------------------------------------------------
     # merge + frame building
@@ -9541,6 +9560,27 @@ class Engine:
             return [row for row in self._looks()
                     if row["a"] > 0 or "pan" in row or "tilt" in row or "fx" in row]
 
+    # every screen's live stream asks 30 times a second.  While the output
+    # runs, its thread makes the answer once per DMX tick, just after the
+    # frame went out; otherwise the first screen to ask makes one for all
+    # the screens asking within this long
+    LOOK_SHARE_S = 0.05
+
+    def look_text(self) -> str:
+        """look_rows as JSON, one answer shared by every screen."""
+        self._look_wanted = time.monotonic()
+        cached = self._look_cache
+        now = time.monotonic()
+        if cached and now - cached[0] < self.LOOK_SHARE_S:
+            return cached[1]
+        with self._look_cache_lock:
+            cached = self._look_cache
+            if cached and time.monotonic() - cached[0] < self.LOOK_SHARE_S:
+                return cached[1]
+            text = json.dumps(self.look_rows(), separators=(",", ":"))
+            self._look_cache = (time.monotonic(), text)
+            return text
+
     def _look(self, now: float | None = None) -> list[dict]:
         """Lite-feed look rows: {n, look:{hex, a, on}} (patch-revisioned)."""
         return [{"n": row["n"],
@@ -10427,8 +10467,25 @@ class Engine:
             seen.update(row)
         return sorted(seen)
 
+    def _output_timing(self) -> dict | None:
+        """How evenly frames went out lately: {worst_ms, late, period_ms,
+        state}.  `late` counts gaps over 1.5 periods; state is steady /
+        uneven / stuttering."""
+        gaps = list(self._gaps)
+        if not self.output.get("running") or len(gaps) < 8:
+            return None
+        period = 1000.0 / float(config.DMX_HZ)
+        worst = max(gaps)
+        late = sum(g > period * 1.5 for g in gaps)
+        state = "steady" if worst < period * 1.6 else "uneven" if worst < period * 3 and late < 8 else "stuttering"
+        return {"worst_ms": round(worst, 1), "late": late, "period_ms": round(period, 1),
+                "window": len(gaps), "state": state}
+
     def _output_public(self) -> dict:
         pub = dict(self.output)
+        pub["timing"] = self._output_timing()
+        err_at = pub.pop("last_error_at", None)
+        pub["recent_error"] = err_at is not None and time.monotonic() - err_at < READY_ERROR_WINDOW_S
         pub["target"] = dict(self.dmx_target)
         pub["dry_run"] = self.dry_run
         if self._sender is not None and self._sender_fixed:

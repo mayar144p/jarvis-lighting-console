@@ -1,6 +1,6 @@
 // Jarvis: boot the desk.
 import { get, openStream } from "./api.js";
-import { state, emit, setSnapshot, setLite, setLooks } from "./store.js";
+import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./store.js";
 import { $, $$ } from "./ui.js";
 import { initTopbar } from "./topbar.js";
 import { initFixtures } from "./fixtures.js";
@@ -54,6 +54,7 @@ async function boot() {
   wireMobile();
   openStream({
     snapshot: setSnapshot,
+    snapdiff: applySnapDiff,
     lite: setLite,
     look: setLooks,
   }, (connected, error) => {

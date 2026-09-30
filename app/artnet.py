@@ -63,6 +63,23 @@ def build_artdmx(universe: int, data, sequence: int, net: int = 0,
     return bytes(buf)
 
 
+ARTSYNC_OP = 0x5200
+
+
+def build_artsync() -> bytes:
+    """ArtSync: every node shows the ArtDmx frames it holds at once, so a
+    chase across several universes moves as one."""
+    buf = bytearray(14)
+    buf[0:8] = b"Art-Net\0"
+    struct.pack_into("<H", buf, 8, ARTSYNC_OP)
+    struct.pack_into(">H", buf, 10, PROTOCOL_VERSION)
+    return bytes(buf)                              # Aux1, Aux2 = 0
+
+
+def is_broadcast(host: str) -> bool:
+    return host == "255.255.255.255" or host.endswith(".255")
+
+
 def decode_artdmx(packet: bytes) -> dict:
     """Parse an ArtDmx packet (used by the loopback tool and tests)."""
     if len(packet) < 18 or packet[0:8] != b"Art-Net\0":
@@ -750,6 +767,7 @@ class ArtNetSender:
         self.frames_sent = 0
         self.simulated_frames = 0
         self.errors = 0
+        self.syncs_sent = 0
         self.last_error: str | None = None
         self._sequences: dict[int, int] = {}
         self._sock: socket.socket | None = None
@@ -790,9 +808,26 @@ class ArtNetSender:
         self.last_error = None
         return True
 
+    def sync(self, universes: int) -> bool:
+        """ArtSync after a tick's frames.  Only when more than one universe
+        went out (one universe is already in step with itself), and never
+        to a broadcast address: Art-Net 4 leaves broadcast ArtDmx
+        unsynchronised, and a node that got a sync it can't pair would
+        hold its frames."""
+        if self.dry_run or universes < 2 or is_broadcast(self.host):
+            return False
+        try:
+            self._socket().sendto(build_artsync(), (self.host, self.port))
+        except OSError as exc:
+            self.last_error = str(exc)
+            return False
+        self.syncs_sent += 1
+        return True
+
     def stats(self) -> dict:
         return {
             "transport": "artnet",
+            "syncs_sent": self.syncs_sent,
             "host": f"{self.host}:{self.port}",
             "net": self.net,
             "frames_sent": self.frames_sent,

@@ -197,7 +197,12 @@ DMX_HZ = max(10, min(120, int(_get("DMX_HZ", "40"))))
 DMX_NET = max(0, min(127, int(_get("DMX_NET", "0"))))
 # true = send blackout frames on shutdown, false = hold the last frame.
 DMX_BLACKOUT_ON_EXIT = _bool("DMX_BLACKOUT_ON_EXIT", "false")
+# Art-Net: an ArtSync after each tick's frames so several universes change
+# together (skipped for a broadcast DMX_HOST, as Art-Net 4 asks).
+DMX_SYNC = _bool("DMX_SYNC", "true")
 # sACN-only options (ignored by the Art-Net transport).
+# 1-63999 = E1.31 synchronisation on that universe; 0 = off.
+SACN_SYNC_UNIVERSE = max(0, min(63999, int(_get("SACN_SYNC_UNIVERSE", "0"))))
 SACN_PRIORITY = max(0, min(200, int(_get("SACN_PRIORITY", "100"))))
 SACN_SOURCE_NAME = _get("SACN_SOURCE_NAME", APP_NAME)
 # 32 hex chars; empty = deterministic per-installation CID (see sacn.py).
@@ -314,6 +319,8 @@ def status() -> dict:
             "hz": DMX_HZ,
             "net": DMX_NET,
             "sacn_priority": SACN_PRIORITY,
+            "sync": DMX_SYNC,
+            "sacn_sync_universe": SACN_SYNC_UNIVERSE,
             "autosave": CONSOLE_AUTOSAVE,
             "autorestore": CONSOLE_AUTORESTORE,
             "dmx_input": DMX_INPUT,

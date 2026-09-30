@@ -708,6 +708,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         rev = None
+        sent_parts: dict[str, str] | None = None    # what this screen has
         last_look = None
         next_lite = 0.0
         next_beat = 0.0
@@ -722,14 +723,29 @@ class Handler(BaseHTTPRequestHandler):
                     rev = eng.act_rev
                     snap = eng.snapshot()
                     snap["actions"] = sorted(engine_mod.ACTIONS)
-                    send("snapshot", snap)
+                    parts = {k: json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+                             for k, v in snap.items()}
+                    if sent_parts is None:
+                        body = "{" + ",".join(json.dumps(k) + ":" + t for k, t in parts.items()) + "}"
+                        self.wfile.write(f"event: snapshot\ndata: {body}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                    else:
+                        # only the parts that changed: an edit to one cue
+                        # is not 200 KB to every screen
+                        changed = [k for k, t in parts.items() if sent_parts.get(k) != t]
+                        gone = [k for k in sent_parts if k not in parts]
+                        if changed or gone:
+                            body = ('{"set":{' + ",".join(json.dumps(k) + ":" + parts[k] for k in changed)
+                                    + '},"del":' + json.dumps(gone) + "}")
+                            self.wfile.write(f"event: snapdiff\ndata: {body}\n\n".encode("utf-8"))
+                            self.wfile.flush()
+                    sent_parts = parts
                 if now >= next_lite:
                     next_lite = now + 0.1
                     lite = eng.lite(eng.patch_rev)
                     lite.pop("heads", None)
                     send("lite", lite)
-                looks = eng.look_rows()
-                text = json.dumps(looks, separators=(",", ":"))
+                text = eng.look_text()          # shared by every screen
                 if text != last_look:
                     last_look = text
                     self.wfile.write(("event: look\ndata: " + text + "\n\n").encode("utf-8"))

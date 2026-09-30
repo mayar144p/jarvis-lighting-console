@@ -115,13 +115,26 @@ function renderStatus() {
   const o = s.output || {};
   const st = outputState();
   const out = $("#st-out");
-  out.className = st === "live" ? (o.errors ? "bad" : "ok") : "warn";
+  // the error count is for the whole run; only a recent one is news
+  const failing = o.errors && o.recent_error !== false;
+  out.className = st === "live" ? (failing ? "bad" : "ok") : "warn";
   // plain words first; the numbers are one hover away
   out.textContent = st === "live"
-    ? (o.errors ? `● LIVE - ${o.errors} send error(s)` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "● LIVE - the lights follow the console")
+    ? (failing ? `● LIVE - ${o.errors} send error(s)` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "● LIVE - the lights follow the console")
     : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
   out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
     : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  // frame timing: a steady beat, or the lights stutter
+  const tm = $("#st-timing");
+  const t = o.timing;
+  tm.classList.toggle("hidden", !t);
+  if (t) {
+    tm.className = t.state === "steady" ? "ok" : t.state === "uneven" ? "warn" : "bad";
+    tm.textContent = t.state === "steady" ? "● smooth" : t.state === "uneven" ? "● a few late frames" : "● frames stuttering";
+    tm.title = `DMX timing, last ${Math.round(t.window * t.period_ms / 1000)} s: every ${t.period_ms} ms; `
+      + `slowest gap ${t.worst_ms} ms, ${t.late} late frame(s)`
+      + (t.state === "steady" ? "" : ". Close other screens or heavy programs on this computer.");
+  }
   const net = $("#st-net");
   net.textContent = `to the DMX node at ${o.host || "?"}`;
   net.title = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;

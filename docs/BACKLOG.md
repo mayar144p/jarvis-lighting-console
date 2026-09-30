@@ -37,17 +37,22 @@ Fixed:
 
 ## A1. Engineering (bugs, steady DMX, tablets, code health)
 
-1. The 8 bugs from the review of PR #28: undo after recording a cue loses
-   its effects; cue effects survive loading another show; one unpatched
-   light drops a whole cue effect; RDM ignores DMX_NET and > 32 universes;
-   show_versions / show_export reload every screen; hold-chip slide-off
-   swallows the next tap; Ready? never clears after one DMX error.
-2. **Steady DMX with several screens** (measured: 256 lights, 3 screens,
-   frame gaps up to 52-58 ms instead of 25): compute the 3D look once per
-   tick for all screens; cache `fxlib.available` (70% of a frame);
-   build DMX and the 3D look from one resolve; send only changed parts
-   of the 196 KB snapshot; ArtSync / sACN sync; a frame-timing CI check
-   and a status-bar health dot.
+1. **(DONE)** The 8 bugs from the review of PR #28: undo after recording
+   a cue loses its effects; cue effects survive loading another show; one
+   unpatched light drops a whole cue effect; RDM ignores DMX_NET and > 32
+   universes; show_versions / show_export reload every screen; hold-chip
+   slide-off swallows the next tap; Ready? never clears after one DMX error.
+2. **(DONE) Steady DMX with several screens.**  Measured before: 286
+   lights, 3 screens, frame gaps up to 52-58 ms instead of 25.  Now: the
+   effect lookup is answered once per role set (frame build 11.3 -> 5.3
+   ms); the 3D look is made once per tick on the output thread just after
+   the frame goes out and shared by every screen (p99 gap 25.1 ms with 3
+   screens); a screen gets only the snapshot parts an edit changed
+   (`snapdiff`); ArtSync (unicast Art-Net) and E1.31 sync
+   (`SACN_SYNC_UNIVERSE`); `tools/frametiming.py` in CI; a timing dot in
+   the status bar ("smooth" / "a few late frames" / "stuttering").
+   Left: DMX and the 3D look from one resolve - no longer on the DMX
+   path, so only CPU; do it with the engine split (item 4).
 3. Tablets: screen wake lock, installable full-screen app, instant
    re-sync after a reconnect.
 4. Code health: split engine.py (10.5k lines) and selftest.py (11.4k) by

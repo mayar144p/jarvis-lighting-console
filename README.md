@@ -439,6 +439,8 @@ check the table, then save it to your library.
 | `DMX_PORT` / `DMX_HZ` / `DMX_NET` | 6454 / 40 / 0 | port, frame rate (10–120), Art-Net Net (0–127) |
 | `DMX_BLACKOUT_ON_EXIT` | false | blackout on shutdown |
 | `SACN_PRIORITY` / `SACN_SOURCE_NAME` | 100 / APP_NAME | E1.31 source fields |
+| `DMX_SYNC` | true | Art-Net: an ArtSync after each frame so several universes change together (never to a broadcast address) |
+| `SACN_SYNC_UNIVERSE` | 0 | sACN: E1.31 synchronisation on this universe (1–63999); 0 = off |
 | `DMX_INPUT` | false | listen for Art-Net/sACN input |
 | `MIDI_ENABLED` / `MIDI_DEVICE` / `MIDI_MAP` | true / first / data/midi_map.json | MIDI input (Windows); degrades quietly with no device |
 | `CONSOLE_SHOW_DIR` | data/shows | show files |

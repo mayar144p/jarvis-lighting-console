@@ -26,6 +26,17 @@ jobs:
       - name: Self-test (engine, HTTP, web modules, picker maths, 3DS parser)
         run: python tools/selftest.py
 
+  frame-timing:
+    # DMX on a steady beat with a big rig and three screens watching
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Frame timing (286 lights, effects, 3 screens)
+        run: python tools/frametiming.py
+
   lint:
     runs-on: ubuntu-latest
     steps:

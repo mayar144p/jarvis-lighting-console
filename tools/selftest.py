@@ -6420,7 +6420,18 @@ def test_hardening(tmp: Path) -> None:
         while _time.monotonic() < deadline and not all(
                 k in body for k in (b"event: snapshot", b"event: lite", b"event: look")):
             body += resp.read1(65536)
+        # an edit sends only the parts it changed
+        call("/api/console", {"action": "master", "params": {"level": 42}}, json_h)
+        more = b""
+        deadline = _time.monotonic() + 3
+        while _time.monotonic() < deadline and b"event: snapdiff" not in more:
+            more += resp.read1(65536)
         conn.close()
+        diff_line = next((ln for ln in more.split(b"\n\n") if ln.startswith(b"event: snapdiff")), b"")
+        diff = json.loads(diff_line.split(b"data: ", 1)[1]) if diff_line else {}
+        check("after an edit a screen gets only the changed parts",
+              diff.get("set", {}).get("master") == 42 and "patch" not in diff.get("set", {})
+              and b"event: snapshot" not in more, str(diff)[:200])
         check("the live stream sends snapshot, lite and look events",
               resp.status == 200
               and resp.getheader("Content-Type", "").startswith("text/event-stream")
@@ -7536,6 +7547,7 @@ def _standalone_suites():
     ("rigging: turn, length, stand up, ceiling, stays inside the room", test_rig_tools),
     ("RGB-only lights: a virtual dimmer; modes that can be controlled", test_virtual_dimmer),
     ("review of PR #28: undo / load / unpatch with cue effects, queries, Ready?", test_review_fixes),
+    ("steady DMX: ArtSync / sACN sync, shared looks, effect lookups cached", test_steady_dmx),
     )
 
 
@@ -9487,6 +9499,101 @@ def test_review_fixes() -> None:
     fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("a hold that slides off the chip doesn't swallow the next tap",
           'e.type === "pointerup"' in fj and "removeEventListener(\"click\", swallow" in fj, "")
+
+
+def test_steady_dmx() -> None:
+    """Several universes change on the same frame (ArtSync / E1.31 sync);
+    every screen shares one look per tick; the effect-availability lookup
+    that was 70% of a frame is answered once per role set."""
+    print("steady DMX")
+    import socket
+    import struct
+    import tempfile
+    import time as _time
+    from app import artnet, sacn, fxlib
+    from app import engine as eng
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.settimeout(0.5)
+    port = sock.getsockname()[1]
+    try:
+        s = artnet.ArtNetSender("127.0.0.1", port, dry_run=False)
+        s.send(1, bytes(512))
+        s.send(2, bytes(512))
+        check("ArtSync goes after a tick of two universes", s.sync(2), "")
+        pkts = [sock.recvfrom(2048)[0] for _ in range(3)]
+        sync = pkts[-1]
+        check("...as a 14-byte OpSync packet", len(sync) == 14 and sync[:8] == b"Art-Net\0"
+              and struct.unpack_from("<H", sync, 8)[0] == 0x5200 and sync[11] == 14, sync.hex())
+        check("one universe needs no sync", not s.sync(1), "")
+        b = artnet.ArtNetSender("255.255.255.255", port, dry_run=False)
+        check("never after broadcast ArtDmx", not b.sync(4), "")
+        check("a dry run sends none", not artnet.ArtNetSender("127.0.0.1", port, dry_run=True).sync(4), "")
+        s.close()
+        pkt = sacn.build_sync(7000, 5)
+        check("an E1.31 sync packet is 49 bytes with the extended vectors",
+              len(pkt) == 49 and struct.unpack_from(">I", pkt, 18)[0] == 8
+              and struct.unpack_from(">I", pkt, 40)[0] == 1 and pkt[44] == 5
+              and struct.unpack_from(">H", pkt, 45)[0] == 7000
+              and struct.unpack_from(">H", pkt, 16)[0] == 0x7000 | 33
+              and struct.unpack_from(">H", pkt, 38)[0] == 0x7000 | 11, pkt.hex())
+        ss = sacn.SacnSender("127.0.0.1", port, dry_run=False, sync_universe=7000)
+        ss.send(1, bytes(512))
+        data = sock.recvfrom(2048)[0]
+        check("sACN data names the sync universe", struct.unpack_from(">H", data, 109)[0] == 7000, "")
+        check("...and the sync follows", ss.sync(1) and len(sock.recvfrom(2048)[0]) == 49, "")
+        check("no sync universe, no sync", not sacn.SacnSender("127.0.0.1", port, dry_run=False).sync(3), "")
+        ss.close()
+    finally:
+        sock.close()
+    tb = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    check("the status bar shows frame timing and only recent errors",
+          "#st-timing" in tb and "recent_error" in tb, "")
+    check("CI runs the frame-timing check",
+          "tools/frametiming.py" in (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"), "")
+    fxlib._available_for.cache_clear()
+    for _ in range(50):
+        fxlib.available(["red", "green", "blue", "dimmer"])
+    info = fxlib._available_for.cache_info()
+    check("fifty asks for one role set work it out once", info.misses == 1 and info.hits == 49, str(info))
+    got = fxlib.available(["red"])
+    got.append("junk")
+    check("the cached answer can't be spoiled by a caller", "junk" not in fxlib.available(["red"]), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            calls = [0]
+            real = e.look_rows
+
+            def counted():
+                calls[0] += 1
+                return real()
+            e.look_rows = counted
+            texts = {e.look_text() for _ in range(3)}
+            check("three screens asking at once share one look", calls[0] == 1 and len(texts) == 1, str(calls))
+            _time.sleep(e.LOOK_SHARE_S + 0.01)
+            e.act("set_intensity", level=10)
+            check("...and a later ask sees the change", '"a":0.1' in e.look_text(), "")
+            check("no timing dot while the output is stopped", e._output_public()["timing"] is None, "")
+            e.output["running"] = True
+            e._gaps.extend([25.0] * 20)
+            check("even frames read as steady", e._output_public()["timing"]["state"] == "steady", "")
+            e._gaps.extend([25.0] * 10 + [120.0] * 10)
+            t = e._output_public()["timing"]
+            check("long gaps read as stuttering", t["state"] == "stuttering" and t["late"] == 10, str(t))
+            e.output["running"] = False
+            pub = e._output_public()
+            check("the monotonic error time stays on the server", "last_error_at" not in pub
+                  and pub["recent_error"] is False, str(pub))
+        finally:
+            e.shutdown()
 
 
 def test_room_fit() -> None:
