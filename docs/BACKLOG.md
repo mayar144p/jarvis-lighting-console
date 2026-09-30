@@ -60,8 +60,13 @@ Fixed:
    on iPad); a stream that goes quiet for 3 s is dropped and re-opened
    with a full snapshot, retries are at most 2 s apart, and coming back
    online or to the tab retries at once.
-4. Code health: split engine.py (10.5k lines) and selftest.py (11.4k) by
-   area; consolidate app.css (47 duplicated selectors).
+4. **(DONE) Code health.**  engine.py (10.7k lines) is the Engine core
+   (1.3k) plus twelve mixins, one per area, and engine_base.py for the
+   shared constants and helpers (re-exported, so `from app.engine import
+   X` still works).  selftest.py (11.8k) is a 320-line runner plus
+   tools/selftests/ (common.py and eight parts).  app.css: the 22
+   selectors defined twice are merged; the computed style of every element
+   at four widths, gig mode on and off, every programmer tab, is unchanged.
 5. A built-in virtual Art-Net / RDM node and a MIDI test page.
 
 ## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
