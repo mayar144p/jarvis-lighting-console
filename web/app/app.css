@@ -1288,3 +1288,24 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .teach-row { display: flex; gap: 8px; align-items: center; }
 .swatch-mini { width: 24px; height: 24px; border-radius: 6px; border: 2px solid var(--border); cursor: pointer; }
 .swatch-mini.on { border-color: var(--accent); }
+/* buttons page: control tiles */
+.qctl { cursor: default; display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; gap: 4px; user-select: none; touch-action: none; }
+.qctl .qval { font: 700 18px var(--mono); color: var(--text); text-align: left; }
+.qctl .qsub { color: var(--muted); font-size: 11px; }
+.qfader-in { width: 100%; accent-color: var(--tint); }
+.qxy { position: relative; flex: 1; min-height: 60px; border-radius: 6px; background: rgba(255,255,255,.04);
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px); background-size: 25% 25%; cursor: crosshair; }
+.qxy-dot { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--tint); background: rgba(0,0,0,.4); }
+.qtempo, .qcuelist { cursor: pointer; }
+.qcuelist .qback { position: absolute; right: 6px; top: 6px; }
+.qctl.qcuelist { position: relative; }
+.qestop { --tint: #ef4444 !important; background: repeating-linear-gradient(45deg, rgba(239,68,68,.25) 0 10px, rgba(239,68,68,.12) 10px 20px) !important; border-color: #ef4444 !important; }
+.qestop b { color: #fecaca; letter-spacing: .08em; }
+/* the buttons page on the whole screen */
+.qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
+.qb.qb-full .qb-grid { flex: 1; }
+body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
+.qctl.qfader.qbig { align-items: center; }
+.qctl.qfader.qbig .qfader-in { writing-mode: vertical-lr; direction: rtl; flex: 1; width: 36px; min-height: 80px; }
+.qctl.qfader.qbig .qval { text-align: center; }
+.mv-roam { margin-top: 8px; row-gap: 6px; }

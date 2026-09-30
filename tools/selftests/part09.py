@@ -1120,3 +1120,126 @@ def test_teach_wheel() -> None:
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the programmer: teach links, white presets, spin rows, an Advanced fold",
           "openTeachWheel" in js and "White presets" in js and "rotateRow" in js and "attr-adv" in js, "")
+
+
+def test_control_tiles() -> None:
+    """The buttons page's control tiles: faders (master, speed, playback,
+    group), an XY pad on the tile's lights, tempo taps, a cue list's GO,
+    the E-stop - and a fader is moved, not pressed."""
+    print("Buttons page: control tiles")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            mv = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            par = e.act("add_heads", query="LED PAR", qty=2)["heads"]
+            e.act("select_heads", heads=par)
+            e.act("group_create", name="PARs")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1, name="A")
+            tiles = {1: {"kind": "fader", "label": "GM", "control": {"what": "master"}},
+                     2: {"kind": "fader", "label": "PB", "control": {"what": "playback", "n": 1}},
+                     3: {"kind": "fader", "label": "Grp", "control": {"what": "group", "n": 1}},
+                     4: {"kind": "fader", "label": "Spd", "control": {"what": "speed"}},
+                     5: {"kind": "xy", "label": "XY", "target": {"all": True}},
+                     6: {"kind": "tempo", "label": "BPM"}, 7: {"kind": "cuelist", "label": "List", "playback": 1},
+                     8: {"kind": "estop", "label": "STOP"}}
+            ok = all(e.act("quick_set", page=2, slot=k, button=b).get("ok") for k, b in tiles.items())
+            check("every kind of tile saves", ok, "")
+            e.act("quick_fader", id="q2-1", level=40)
+            e.act("quick_fader", id="q2-2", level=70)
+            e.act("quick_fader", id="q2-3", level=25)
+            e.act("quick_fader", id="q2-4", level=100)
+            g = next(x for x in e.groups if x["name"] == "PARs")
+            check("faders: master, playback, group master, speed (50 = 1x)",
+                  e.master == 40 and e.playbacks[0]["level"] == 70 and g.get("master") == 25 and abs(e.speed_master - 2.0) < 0.01,
+                  f"{e.master} {e.playbacks[0]['level']} {g.get('master')} {e.speed_master}")
+            e.act("quick_xy", id="q2-5", pan=10, tilt=200)
+            check("the XY pad moves only the tile's movers", all(e.programmer[n].get("pan") == 10 for n in mv)
+                  and all("pan" not in e.programmer.get(n, {}) for n in par), str(e.programmer))
+            check("a fader tile is not pressed", not e.act("quick_press", id="q2-1").get("ok"), "")
+            r = e.act("quick_press", id="q2-7")
+            check("the cue list tile GOes", r.get("ok") and e.playbacks[0]["active"], str(r))
+            check("E-stop stops the effects", e.act("quick_press", id="q2-8").get("ok"), "")
+            check("moving a fader is not an undo step", "quick_fader" not in [u["action"] for u in e._undo], "")
+        finally:
+            e.shutdown()
+
+
+def test_roam() -> None:
+    """Roam: movers wander inside zones, aimed from where they hang (truss,
+    pole, floor) - every aim lands on its zone; the lights share the zones
+    out; a cue keeps it; the AI turns a sentence into it."""
+    print("Roam inside zones; AI that programs")
+    import math
+
+    from app import console_ai
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            tr = [r for r in e.venue["rigging"] if r["kind"] == "truss"]
+            a = e.act("add_heads", query="Moving Head", qty=4)["heads"]
+            e.act("attach_heads", heads=a, rig=tr[1]["id"], stance="hang")
+            b = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            e.act("set_place", head=b[0], x=-5, y=0.3, z=6)
+            e.act("set_place", head=b[1], x=5, y=0.3, z=6)
+            heads = a + b
+            e.act("select_heads", heads=heads)
+            r = e.act("roam", zones=["dancefloor", "dj"], speed=2)
+            check("roam starts on the movers", r.get("ok") and sorted(r["heads"]) == sorted(heads), str(r))
+            zones = {z["kind"]: z for z in e.venue["zones"]}
+            import time as _time
+            t0 = _time.monotonic() + 0.5
+            pts, bad, moved = {}, 0, set()
+            for k in range(8):
+                vals = e._fx_values(t0 + k * 0.8)
+                for n in heads:
+                    p = (vals[n]["pan"], vals[n]["tilt"])
+                    if n in pts and pts[n] != p:
+                        moved.add(n)
+                    pts[n] = p
+            check("every light keeps moving", moved == set(heads), str(set(heads) - moved))
+            # the zone points it aims at are inside the zones: re-derive them
+            row = next(f for f in e.fx if f.get("roam"))
+            for k in range(20):
+                t = k * 0.9
+                for i, n in enumerate(row["heads"]):
+                    zi = i % len(row["roam"])
+                    x0, x1, z0, z1, cx, cz, diag = row["_zc"][zi]
+                    # the same path as _roam_values
+                    w = e._ROAM_W[i % len(e._ROAM_W)]
+                    s = t * 2.0 * 2.2 / diag
+                    u = 0.5 + 0.5 * (0.62 * math.sin(w[0] * s * 6.28 + i * 1.7) + 0.38 * math.sin(w[1] * s * 6.28 + 2 * i * 1.7))
+                    v = 0.5 + 0.5 * (0.62 * math.sin(w[2] * s * 6.28 + 3 * i * 1.7) + 0.38 * math.sin(w[3] * s * 6.28 + i * 1.7))
+                    x, z = x0 + u * (x1 - x0), z0 + v * (z1 - z0)
+                    if not (x0 - 0.01 <= x <= x1 + 0.01 and z0 - 0.01 <= z <= z1 + 0.01):
+                        bad += 1
+            check("every path stays in its zone's bounds", bad == 0, str(bad))
+            check("two zones share the lights out", {i % 2 for i in range(len(row["heads"]))} == {0, 1}
+                  and [z["name"] for z in row["roam"]] == ["Dance floor", "DJ"], "")
+            check("a light that can't pan / tilt is left out", not e.act("roam", heads=[999]).get("ok"), "")
+            check("an unknown zone says what there is", "Dance floor" in (e.act("roam", zones=["kitchen"]).get("error") or ""), "")
+            e.act("record_cue", playback=1, name="Roaming")
+            cue = e.playbacks[0]["stack"][0]
+            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["dj"]["id"]], str(cue.get("fx")))
+            e.act("cue_go", playback=1, cue=1)
+            check("...and plays it back", any(f.get("roam") for f in e.fx), "")
+            e.act("stop_fx")
+            e.act("select_heads", heads=heads)
+            p = console_ai.plan("these lights should only hover around the dance floor and the DJ booth", offline=True, eng=e)
+            out = console_ai.run(console_ai.resolve(p["steps"], e), e)
+            check("the AI turns the sentence into a roam", out.get("ok") and any(f.get("roam") for f in e.fx)
+                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "DJ"], str(p["steps"]))
+        finally:
+            e.shutdown()

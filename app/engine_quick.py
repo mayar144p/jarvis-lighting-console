@@ -30,12 +30,17 @@ class QuickMixin:
                    # special effects: their own buttons, never a light's
                    "sfx", "fog", "laser", "fxkill", "arm",
                    # a macro: its command lines, played in one go
-                   "macro")
+                   "macro",
+                   # control tiles on the buttons page: a fader, a pan/tilt
+                   # pad, the tempo, a cue list, the effects' emergency stop
+                   "fader", "xy", "tempo", "cuelist", "estop")
 
     FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
 
     # buttons that do one thing and are done: no timer, no radio group
-    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro"})
+    ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
+                                  "fader", "xy", "tempo", "cuelist", "estop"})
+    FADER_OF = ("master", "speed", "playback", "group")
 
     SPLITS = ("odd", "even", "left", "right")
 
@@ -145,6 +150,20 @@ class QuickMixin:
                 btn["cue"] = int(raw["cue"])
         if kind == "preset":
             btn["preset"] = int(raw.get("preset") or 0)
+        if kind == "fader":
+            c = raw.get("control") if isinstance(raw.get("control"), dict) else {}
+            what = str(c.get("what") or "master")
+            if what not in self.FADER_OF:
+                raise ValueError(f"a fader is one of {', '.join(self.FADER_OF)}")
+            btn["control"] = {"what": what}
+            if what in ("playback", "group"):
+                btn["control"]["n"] = int(_clamp(c.get("n", 1), 1, 999))
+            btn["mode"] = "tap"
+        if kind == "cuelist":
+            btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
+            btn["mode"] = "tap"
+        if kind in ("xy", "tempo", "estop"):
+            btn["mode"] = "tap"
         if kind == "macro":
             if not raw.get("macro"):
                 raise ValueError("a macro button needs a macro")
@@ -501,6 +520,18 @@ class QuickMixin:
                 self._quick_on(key, owner=f"tap:{time.monotonic():.3f}")
             return {"id": key, "active": key in self.quick_active,
                     "summary": f"{btn['label']} fired"}
+        if kind in ("fader", "xy"):
+            raise ValueError("a fader / XY tile is moved, not pressed")
+        if kind in ("tempo", "cuelist", "estop"):
+            if not down:
+                return {"id": key, "active": False}
+            if kind == "tempo":
+                r = self._a_tempo_tap()
+            elif kind == "cuelist":
+                r = self._a_cue_go(playback=btn["playback"])
+            else:
+                r = self._a_fx_kill()
+            return {"id": key, "active": False, "summary": r.get("summary") or btn["label"]}
         if kind == "macro":
             if not down:
                 return {"id": key, "active": False}
@@ -920,3 +951,33 @@ class QuickMixin:
                 rests.setdefault(h["head_no"], {})[role] = int(off)
         self._rest_cache = (self.patch_rev, rests)
         return rests
+
+    # -- control tiles --------------------------------------------------------
+    def _quick_tile(self, id, kind) -> dict:
+        btn = next((b for b in self.quick if b["id"] == str(id)), None)
+        if not btn or btn["kind"] != kind:
+            raise ValueError(f"no {kind} tile {id!r}")
+        return btn
+
+    def _a_quick_fader(self, id=None, level=None, **_):
+        """Move a fader tile: the master, the Speed master, a playback or a
+        group master, 0-100."""
+        btn = self._quick_tile(id, "fader")
+        v = _clamp(level if level is not None else 0, 0, 100)
+        c = btn["control"]
+        if c["what"] == "master":
+            return self._a_master(level=v)
+        if c["what"] == "speed":
+            return self._a_speed_master(pct=max(10, v * 2))           # 50 = 1x
+        if c["what"] == "playback":
+            return self._a_playback_level(playback=c["n"], level=v)
+        return self._a_group_master(group=c["n"], level=v)
+
+    def _a_quick_xy(self, id=None, pan=None, tilt=None, **_):
+        """Move an XY tile: its lights' pan / tilt, 0-255 each."""
+        btn = self._quick_tile(id, "xy")
+        heads = [n for n in self._target_heads(btn.get("target") or {"all": True})
+                 if any(r in ("pan", "tilt") for r in self._head(n)["map"])]
+        if not heads:
+            raise ValueError("no moving lights on this tile")
+        return self._a_set_position(pan=pan, tilt=tilt, unit="255", heads_in=heads)

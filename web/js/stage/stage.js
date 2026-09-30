@@ -64,7 +64,11 @@ function mixLook(a, b, t) {
     const x = a.beam[k], y = b.beam[k];
     beam[k] = x === undefined ? y : lerp(x, y, t);
   }
-  const ang = (x, y) => (x === null ? y : y === null ? x : lerp(x, y, t));
+  // pan / tilt go straight to the target: the motor model (_drive) gives
+  // the travel its real speed.  Easing them as well restarted from a
+  // standstill on every look update, so a head following a moving target
+  // (roam, the floor map, an XY pad) hardly moved at all.
+  const ang = (x, y) => (y === null ? x : y);
   return {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
@@ -72,7 +76,7 @@ function mixLook(a, b, t) {
     cells: b.cells ? b.cells.map((c, i) => {
       const o = (a.cells && a.cells[i]) || c;
       return { r: lerp(o.r, c.r, t), g: lerp(o.g, c.g, t), b: lerp(o.b, c.b, t),
-        tilt: c.tilt === null ? null : o.tilt === null ? c.tilt : lerp(o.tilt, c.tilt, t) };
+        tilt: c.tilt === null ? null : c.tilt };
     }) : null,
   };
 }

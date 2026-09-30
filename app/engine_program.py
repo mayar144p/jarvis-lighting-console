@@ -573,6 +573,9 @@ class ProgrammerMixin:
                 if row.get("lib") not in motion_mod.KINDS:
                     speed = float((row.get("params") or {}).get("speed") or row.get("speed") or 1.0)
                     row["_v"] = cyc / max(speed, 1e-6)
+            if row.get("roam"):
+                self._roam_values(row, row["_v"] if not beats else row.get("_beat_cycles", 0.0) * 2.0, out)
+                continue
             if row.get("lib") in motion_mod.KINDS:
                 if base is None:
                     base = (self._programmer_now(now), self._active_playbacks(now))
