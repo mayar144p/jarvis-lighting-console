@@ -810,6 +810,8 @@ export async function openSettings() {
     h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
     wakeRow(),
     installRow(),
+    h("p.small", "DJ booth remote: open ", h("a", { href: "/remote.html", target: "_blank", rel: "noopener" }, location.host + "/remote.html"),
+      h("span.muted", " on a phone or tablet - the buttons, tap tempo, autopilot, master and blackout, nothing else.")),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),

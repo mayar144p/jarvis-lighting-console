@@ -123,7 +123,9 @@ Fixed:
     for movement (phasers).
 11. Desk tools.  **DONE:** highlight / solo (programmer -> Highlight, H /
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
-    group masters (a fader per group next to the GM).  **Left:** tracking /
+    group masters (a fader per group next to the GM), macros (command
+    lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
+    the DJ-booth remote page (/remote.html).  **Left:** tracking /
     cue-only; move-in-black; cue actions; macros; blind edit with 3D
     preview; MTC / LTC timecode; OSC in / out (TouchOSC, Companion);
     a DJ-booth remote page.

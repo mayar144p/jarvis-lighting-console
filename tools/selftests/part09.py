@@ -809,3 +809,8 @@ def test_osc() -> None:
             check("OSC off", not e.osc_public()["on"], "")
         finally:
             e.shutdown()
+    rj = (ROOT / "web" / "remote" / "remote.js").read_text(encoding="utf-8")
+    rh = (ROOT / "web" / "remote.html").read_text(encoding="utf-8")
+    bad = [a for a in ("patch_clear", "remove_heads", "save_show", "load_show", "set_dmx_target", "venue_") if a in rj]
+    check("the DJ-booth remote: buttons, tap, autopilot, master, blackout - and nothing that edits the show",
+          'id="grid"' in rh and '"quick_press"' in rj and '"tempo_tap"' in rj and '"autopilot"' in rj and not bad, str(bad))
