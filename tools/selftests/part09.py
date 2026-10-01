@@ -2289,3 +2289,312 @@ def test_ceiling_areas() -> None:
             check("undo brings it back", len(e.venue["room"]["areas"]) == 1, "")
         finally:
             e.shutdown()
+
+
+def test_screen_media() -> None:
+    """LED screens: a clip or picture from this computer, sent raw to the
+    desk, kept by its content, served back in ranges (a video seeks)."""
+    print("screen clips and pictures")
+    import threading
+    import urllib.error
+    import urllib.request
+    from app import main as main_mod
+    old = main_mod.config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        main_mod.config.DATA = Path(td)
+        srv = main_mod.ThreadingHTTPServer(("127.0.0.1", 0), main_mod.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}/api/console/screen_media"
+
+        def send(data: bytes):
+            req = urllib.request.Request(base, data=data, method="POST",
+                                         headers={"Content-Type": "application/x-jarvis-upload"})
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}")
+        try:
+            mp4 = b"\x00\x00\x00\x18ftypisom" + bytes(range(256)) * 40
+            code, d = send(mp4)
+            check("an MP4 clip is kept, typed by its bytes", code == 200 and d.get("kind") == "clip"
+                  and d.get("type") == "mp4" and (Path(td) / "screens" / (d["id"] + ".mp4")).is_file(), str(d))
+            again = send(mp4)[1]
+            check("...the same clip twice is one file", again.get("id") == d.get("id")
+                  and len(list((Path(td) / "screens").iterdir())) == 1, "")
+            png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+            code, p = send(png)
+            check("a PNG picture is a picture", code == 200 and p.get("kind") == "image", str(p))
+            code, bad = send(b"MZ\x90\x00 not a clip at all")
+            check("anything else is refused, and nothing is left behind", code == 400 and "MP4" in bad.get("error", "")
+                  and not [f for f in (Path(td) / "screens").iterdir() if f.name.startswith(".")], str(bad))
+            req = urllib.request.Request(base, data=mp4, method="POST", headers={"Content-Type": "application/octet-stream"})
+            try:
+                urllib.request.urlopen(req, timeout=15)
+                code = 200
+            except urllib.error.HTTPError as e:
+                code = e.code
+            check("...only with its own type (a plain form on another site can't send one)", code == 403, str(code))
+            req = urllib.request.Request(base + "?id=" + d["id"], headers={"Range": "bytes=10-19"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                part, status, cr = r.read(), r.status, r.headers.get("Content-Range")
+            check("served back in ranges (a video seeks and loops)", status == 206 and part == mp4[10:20]
+                  and cr == f"bytes 10-19/{len(mp4)}", f"{status} {cr}")
+            with urllib.request.urlopen(base + "?id=" + d["id"], timeout=15) as r:
+                check("...or whole", r.read() == mp4 and r.headers.get("Content-Type") == "video/mp4", "")
+            try:
+                urllib.request.urlopen(base + "?id=../../etc/passwd", timeout=15)
+                code = 200
+            except urllib.error.HTTPError as e:
+                code = e.code
+            check("a made-up id is not found (no paths)", code == 404, str(code))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            main_mod.config.DATA = old
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("the screen inspector offers a file from this computer",
+          "A clip or picture from this computer" in vp and "/api/console/screen_media" in vp, "")
+    check("the 3D fetches an uploaded clip once (with the token) and keeps it", "setScreenMediaLoader" in vj
+          and "mediaUrls" in vj, "")
+
+
+def test_gobo_pictures() -> None:
+    """The 3D shows each light's real gobos: the fixture file names the
+    pictures (QLC+ Res1, OFL wheel slot resource), gobos.zip holds them,
+    the snapshot carries [from, to, picture] and the desk serves them."""
+    print("gobo pictures")
+    import threading
+    import urllib.error
+    import urllib.request
+    from app import engine as eng, fixlib
+    from app import main as main_mod
+    q = fixlib.gobo_slots("qlc:Chauvet/Chauvet-Intimidator-Spot-100-IRC.qxf", "6 Channel")
+    check("a QLC+ file's gobo wheel names its pictures", len(q) == 7 and q[0] == [8, 15, "qlc:Chauvet/gobo00045.svg"], str(q[:2]))
+    o = fixlib.gobo_slots("ofl:chauvet-dj/intimidator-spot-160.json")
+    check("...and an OFL file's", o and o[0][2] == "ofl:10-circles", str(o[:2]))
+    check("open and spin ranges are not pictures", all("open" not in r[2].lower() for r in q + o), "")
+    pic = fixlib.gobo_picture(q[0][2])
+    check("gobos.zip has the picture", pic is not None and pic[1] == "image/svg+xml" and pic[0].startswith(b"<svg"), "")
+    check("...an OFL one by its name", (fixlib.gobo_picture("ofl:10-circles") or (b"", ""))[1] == "image/svg+xml", "")
+    check("...and nothing outside it", fixlib.gobo_picture("qlc:../../etc/passwd") is None
+          and fixlib.gobo_picture("qlc:/etc/passwd") is None and fixlib.gobo_picture("x:y") is None, "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = "Chauvet/Chauvet-Intimidator-Spot-100-IRC.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 100 IRC", qty=1)
+            e.act("add_heads", query="Moving Head", qty=1)
+            rows = {h["head_no"]: h.get("gobos") for h in e.snapshot()["patch"]}
+            check("the snapshot carries a light's gobo pictures", rows[1] and rows[1][0][2] == "qlc:Chauvet/gobo00045.svg", str(rows[1]))
+            check("...and none for a light whose file names none", rows[2] is None, str(rows[2]))
+        finally:
+            e.shutdown()
+    srv = main_mod.ThreadingHTTPServer(("127.0.0.1", 0), main_mod.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}/api/console/gobo?ref="
+    try:
+        with urllib.request.urlopen(base + "qlc:Chauvet/gobo00045.svg", timeout=15) as r:
+            csp = r.headers.get_all("Content-Security-Policy") or []
+            check("the desk serves it as a picture that runs nothing", r.status == 200
+                  and any("sandbox" in c and "default-src 'none'" in c for c in csp), str(csp))
+        try:
+            urllib.request.urlopen(base + "qlc:../../app/main.py", timeout=15)
+            code = 200
+        except urllib.error.HTTPError as ex:
+            code = ex.code
+        check("...and 404s anything else", code == 404, str(code))
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the 3D draws the pictures into an atlas the floor shader samples",
+          "class GoboAtlas" in mj and "uniform sampler2D uGobos" in mj and "_goboId(inst" in sj, "")
+
+
+def test_shadows() -> None:
+    """3D shadows: the brightest beams get a depth picture of the crowd,
+    performers, objects and stage; the floor shader darkens what is behind
+    them; a toggle (Crowd menu) and the fast quality turn it off."""
+    print("3D shadows")
+    st = ROOT / "web" / "js" / "stage"
+    sh = (st / "shadows.js").read_text(encoding="utf-8")
+    mj = (st / "materials.js").read_text(encoding="utf-8")
+    vj = (st / "venue.js").read_text(encoding="utf-8")
+    sj = (st / "stage.js").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("a depth atlas for the brightest beams, casters only, back faces",
+          "SHADOW_SLOTS = 4" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
+          and "DepthTexture" in sh, "")
+    check("the surface shader darkens what a caster hides from a beam",
+          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[4]" in mj, "")
+    check("the crowd, performers, objects (not marks) and the stage deck cast",
+          "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
+          and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
+    check("on by default, off with the toggle or the fast quality",
+          "shadows: true" in sj and 'this.options.quality !== "fast"' in sj and "this.shadows.off()" in sj
+          and '"Shadows"' in sp and 'pref("shadows", "1")' in sp, "")
+
+
+def test_ai_sees_3d() -> None:
+    """The assistant can look at the 3D view after its own changes: it asks
+    (see_3d), the turn pauses, the screen draws the preview and sends a
+    picture, the turn carries on with it - still one undo step."""
+    print("AI assistant: sees the 3D after its changes")
+    from app import assistant, config as cfg
+    from app import engine as eng
+
+    def tool(name, i=0, **args):
+        return {"id": f"c{name}{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    seen, offered = [], []
+
+    def scripted(replies):
+        def chat(messages, tools=None, **_):
+            seen.append([dict(m) for m in messages])
+            offered.append([t["function"]["name"] for t in tools or []])
+            return replies.pop(0)
+        return chat
+
+    pic = "data:image/jpeg;base64," + "A" * 64
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        saved = cfg.DATA
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            n_undo = len(e._undo)
+            chat = scripted([
+                {"content": "", "tool_calls": [tool("do", action="select_all"), tool("do", 1, action="set_intensity", params={"level": 70}),
+                                               tool("see_3d")]},
+                {"content": "", "tool_calls": [tool("do", 2, action="set_colour", params={"colour": "red"}), tool("see_3d", 1)]},
+                {"content": "Red at 70%, and it reads well in 3D."},
+            ])
+            r = assistant.run_turn(e, "make it red", session="v", chat=chat, can_see=True)
+            check("it asks to see: the turn pauses with what it did so far", r.get("need_view") and r.get("turn")
+                  and len(r["steps"]) == 2 and r.get("preview"), json.dumps(r)[:200])
+            check("see_3d is offered only to a screen that can draw", "see_3d" in offered[0], str(offered[0]))
+            r2 = assistant.resume_turn(e, r["turn"], pic, chat=chat)
+            last = seen[1]
+            check("the picture comes back as the tool's answer and an image",
+                  any(m["role"] == "tool" and m.get("name") == "see_3d" for m in last)
+                  and isinstance(last[-1]["content"], list) and last[-1]["content"][1]["image_url"]["url"] == pic, "")
+            check("...and a second look pauses again", r2.get("need_view") and r2["turn"] != r["turn"], json.dumps(r2)[:200])
+            r3 = assistant.resume_turn(e, r2["turn"], pic, chat=chat)
+            check("then it finishes: the reply, every step, still one undo step",
+                  r3.get("ok") and r3["reply"].startswith("Red") and len(r3["steps"]) == 3 and r3["views"] == 2
+                  and len(e._undo) == n_undo + 1, json.dumps(r3)[:300])
+            check("...after two looks it isn't offered a third", "see_3d" not in offered[-1], str(offered[-1]))
+            check("a turn nobody is waiting for can't be resumed", not assistant.resume_turn(e, r["turn"], pic, chat=chat).get("ok"), "")
+            e.act("blind", state=False, keep=True)
+            # a paused turn the screen never answers ends when the next request starts
+            n_undo = len(e._undo)
+            chat = scripted([
+                {"content": "", "tool_calls": [tool("do", action="select_all"), tool("do", 1, action="set_intensity", params={"level": 30}),
+                                               tool("see_3d")]},
+                {"content": "Done."},
+            ])
+            r = assistant.run_turn(e, "dim it", session="v", chat=chat, can_see=True)
+            r2 = assistant.run_turn(e, "thanks", session="v", chat=chat, can_see=True)
+            check("a paused turn ends (as one undo step) when the next request starts",
+                  r.get("need_view") and r2.get("ok") and len(e._undo) == n_undo + 1
+                  and not assistant.resume_turn(e, r["turn"], pic, chat=chat).get("ok"), str(len(e._undo) - n_undo))
+            chat = scripted([{"content": "", "tool_calls": [tool("see_3d")]}, {"content": "I can't see from here."}])
+            r = assistant.run_turn(e, "how does it look?", session="w", chat=chat)
+            check("without a screen that draws, see_3d isn't offered and doesn't pause",
+                  "see_3d" not in offered[-2] and r.get("ok") and not r.get("need_view"), json.dumps(r)[:200])
+        finally:
+            e.shutdown()
+            cfg.DATA = saved
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("the copilot sends a picture when the AI asks to see", "r.need_view" in cj and "resume: r.turn" in cj and "can_see:" in cj, "")
+
+
+def test_ai_operator() -> None:
+    """The AI operator runs the lights live: a change at the start, every
+    phrase and on a drop (one undo step each); touching the desk stops it
+    and drops a change it was still thinking about."""
+    print("AI operator")
+    from app import ai_operator, config as cfg
+    from app import engine as eng
+
+    def tool(name, i=0, **args):
+        return {"id": f"c{name}{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    calls = []
+
+    def chat(messages, tools=None, **_):
+        calls.append(json.loads(messages[-1]["content"]) if messages[-1]["role"] == "user" else None)
+        if messages[-1]["role"] == "user":
+            return {"content": "", "tool_calls": [tool("do", action="select_all"),
+                                                  tool("do", 1, action="set_intensity", params={"level": 60 + len(calls)})]}
+        return {"content": f"look {len(calls)}"}
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        saved = cfg.DATA
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("it needs lights to run", not _raises_ok(lambda: ai_operator.start(e, thread=False)), "")
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            n_undo = len(e._undo)
+            st = ai_operator.start(e, brief="moody techno", bars=8, thread=False, chat=chat)
+            check("on, with the brief", st["on"] and st["brief"] == "moody techno", str(st))
+            t = e._tempo()
+            now = time.monotonic()
+            got = ai_operator.tick(e, now=now, chat=chat)
+            check("the first look straight away, as one undo step, logged",
+                  got and got["why"] == "start" and got["text"].startswith("look") and len(e._undo) == n_undo + 1
+                  and len(got["steps"]) == 2, str(got))
+            check("it was given the music and the lights", calls[0] and "music" in calls[0] and len(calls[0]["lights_now"]) == 3, "")
+            check("nothing between phrases", ai_operator.tick(e, now=now + 1, chat=chat) is None, "")
+            bar_s = 4 * 60.0 / t.bpm
+            got = ai_operator.tick(e, now=now + 8 * bar_s + 13, chat=chat)
+            check("a change on the next phrase", got and got["why"] == "phrase" and len(e._undo) == n_undo + 2, str(got))
+            e._sound_drop_at = now + 8 * bar_s + 21
+            got = ai_operator.tick(e, now=now + 8 * bar_s + 21, chat=chat)
+            check("...and on a drop", got and got["why"] == "drop", str(got))
+            check("what it did lately goes to the next decision", calls[-2] and len(calls[-2]["you_did_lately"]) == 2, str(calls[-2])[:200])
+            check("selecting or setting up the room isn't taking over",
+                  not ai_operator.take_over(e, "select_heads") and not ai_operator.take_over(e, "venue_update")
+                  and ai_operator.status(e)["on"], "")
+            check("a cue, a button, the programmer is", ai_operator.take_over(e, "set_colour")
+                  and not ai_operator.status(e)["on"] and "set colour" in ai_operator.status(e)["stopped"], "")
+            # a decision in flight when the operator takes over is dropped
+            ai_operator.start(e, thread=False, chat=chat)
+
+            def slow(messages, tools=None, **_):
+                ai_operator.take_over(e, "cue_go")          # the operator presses GO while it thinks
+                return {"content": "", "tool_calls": [tool("do", action="select_all"), tool("do", 1, action="set_intensity", params={"level": 5})]}
+            n_undo = len(e._undo)
+            r = ai_operator.decide(e, "phrase", chat=slow)
+            check("a change it was still thinking about is dropped", r is None and len(e._undo) == n_undo, str(r))
+            lite = e.lite() if hasattr(e, "lite") else None
+            check("the top bar knows", "ai_operator" in (lite or e.snapshot()), "")
+        finally:
+            e.shutdown()
+            cfg.DATA = saved
+    tb = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    mj = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the pill says the AI runs the lights, with I've got it", "op-pill" in tb and "I've got it" in tb, "")
+    check("any action from a screen goes past take_over first", "ai_operator.take_over(eng, action)" in mj, "")
+
+
+def _raises_ok(fn) -> bool:
+    try:
+        fn()
+        return True
+    except ValueError:
+        return False

@@ -1238,6 +1238,13 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "cue": self._pb_cue(pb),
                 "follow": self._follow_public(pb)}
 
+    def _ai_operator_lite(self) -> dict:
+        """The AI operator (app/ai_operator.py) in a few words, for the top bar."""
+        st = self.__dict__.get("ai_operator") or {}
+        last = (st.get("log") or [{}])[-1]
+        return {"on": bool(st.get("on")), "busy": bool(st.get("busy")), "last": last.get("text"),
+                "stopped": st.get("stopped"), "decisions": st.get("decisions", 0)}
+
     def snapshot(self) -> dict:
         """Full state for GET /api/console."""
         with self.lock:
@@ -1251,6 +1258,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "ai_operator": self._ai_operator_lite(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
@@ -1264,7 +1272,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h))
+                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
@@ -1326,6 +1334,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
+                "ai_operator": self._ai_operator_lite(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),

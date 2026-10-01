@@ -166,6 +166,11 @@ from tools.selftests.part09 import (  # noqa: E402
     test_drafting,
     test_align_rigging,
     test_ceiling_areas,
+    test_screen_media,
+    test_gobo_pictures,
+    test_shadows,
+    test_ai_sees_3d,
+    test_ai_operator,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -312,6 +317,11 @@ def _standalone_suites():
     ("Drafting: doors, pillars and balconies drawn on the plan", test_drafting),
     ("Align / distribute rigging and objects", test_align_rigging),
     ("Ceiling height per area", test_ceiling_areas),
+    ("LED screens: clips and pictures from this computer", test_screen_media),
+    ("Gobo pictures from the fixture files in the 3D", test_gobo_pictures),
+    ("3D shadows from the crowd, objects and stage", test_shadows),
+    ("AI assistant: sees the 3D after its changes", test_ai_sees_3d),
+    ("AI operator: runs the lights live, you take over", test_ai_operator),
     )
 
 

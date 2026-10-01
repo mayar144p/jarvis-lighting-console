@@ -127,7 +127,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      its lights.
    * The output already clamps every value to a light's limits, so the
      3D view, cues and movements respect them too.
-9. **(DONE, first part) A real AI assistant** (asked 2026-10-01; replaces "more copilot
+9. **(DONE) A real AI assistant** (asked 2026-10-01; replaces "more copilot
    commands").  Today the copilot is one shot: one message in, one list of
    allowed steps out, Apply.  Without a key it is the offline keyword
    compiler, which really is hard-coded.  It should work like an assistant:
@@ -179,14 +179,24 @@ whoever picks it up starts from the diagnosis, not from scratch.
      - a question is answered, not acted on: it checks, then says.
    * Fixed on the way: the pad's pad_info and venue_info became undo steps
      ("Undo pad info"); every read-only action is now outside undo.
-   **Left:** the "AI operator" mode (it plays the show live with the music,
-   you take over any time); the 3D picture after its own changes within a
-   turn (today it checks with check_lights, in words).
+   * **Sees its own changes:** the AI can ask to look at the 3D view after
+     what it did (see_3d, up to 2 a request): the request pauses, the
+     screen draws the preview and sends a picture, the AI carries on and
+     fixes what looks wrong.  Tried with Gemini: it asked to look.
+   * **AI operator** (copilot -> ▶ Run the show…): the AI runs the lights
+     live with the music - a first look at once, then one change every
+     8 / 16 / 32 bars on the beat clock and straight away on a drop (Sound),
+     each one undo step, from a brief ("house night, warm, purple and
+     amber") and what it did lately.  A green AI RUNNING pill in the top
+     bar; touching the desk (a cue, a button, a fader, the programmer -
+     not selecting or the venue) or "I've got it" hands the lights back at
+     once, and a change it was still thinking about is dropped.  It never
+     arms or fires effects.  Tried with Gemini end to end.
    * Later, separate (not planned yet): the AI changing Jarvis's own code
      on request - a branch + PR made by a coding agent, tests run, you
      review and merge, Jarvis updates itself (never patching the running
      app).
-10. **Venue / 3D** (first part DONE):
+10. **(DONE) Venue / 3D:**
    * Arrange -> + More: **Draw a door** (two clicks along a wall: it goes in
      the nearest wall, as wide as drawn, turned along it), **Draw pillars**
      (click where each stands, floor to ceiling, until Enter / Esc),
@@ -204,7 +214,16 @@ whoever picks it up starts from the diagnosis, not from scratch.
    * Fixed on the way: a truss seen from above could not be clicked (the
      click fell between its rods, or picked the stage under it) - an unseen
      hull along each rig now takes the clicks.
-   **Left:** clip upload for LED screens; gobo pictures; shadows.
+   * **LED screens** show a clip or picture from this computer (inspector ->
+     Shows -> A clip or picture from this computer…): sent to the desk,
+     kept by content, played back in the 3D.  Links still work.
+   * **Real gobos:** a light's own gobo pictures from its library file
+     (QLC+ / OFL, 554 pictures in app/fixlib/gobos.zip) are projected on
+     the floor and walls for the slot the gobo channel is in; lights whose
+     file has no pictures keep the drawn patterns.
+   * **Shadows:** the crowd, performers, objects and the stage block the
+     brightest beams (Crowd menu -> Shadows; off on Fast quality).
+   Left (later): real lens-flare streaks.
 11. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
@@ -388,9 +407,8 @@ blur, VR).
     10 cm grid by default (Shift: any angle), the last wall lines up with
     the first corner, a typed length + Enter makes a wall exactly that
     long.  Copies of a truss or object N m apart (inspector -> Copies...).
-    Left: doors, pillars and balconies drawn in the
-    drafting mode; a ceiling height per area; align / distribute for
-    rigging.
+    Doors, pillars, balconies, ceiling areas and align / distribute:
+    done (plan item 10).
 13. **Rigging library.  DONE:** Arrange -> Rigging…: box (22 / 29 / 40
     cm), triangle and ladder truss, 48 mm pipe, truss poles, wind-up stands
     and base plates, each with a typical kg/m; shapes - straight, corner,
@@ -410,8 +428,8 @@ blur, VR).
     each their own), a clip or a picture by link, or nothing (inspector ->
     Shows); Views -> Take a photo (the view re-rendered at 4K, PNG);
     Views -> Walk around (eye height, W A S D / arrows, Shift runs, drag to
-    look, stays inside the walls, Esc).  **Left:** shadows from the crowd
-    and stage; real lens-flare streaks; a clip upload (a link for now).
+    look, stays inside the walls, Esc).  Shadows and clip upload: done
+    (plan item 10).  **Left:** real lens-flare streaks.
 15. **Paperwork.  DONE:** Show ▾ -> Paperwork… (/plot.html): the light
     plot (the room from above - walls, stage, zones, objects, marks,
     rigging with names and trims - a symbol per kind of light with its
@@ -437,7 +455,7 @@ The pass walked every tab for one light of each type (see A0).  Next:
     channels as ↺ ■ ↻ + slow-fast (from the file's named ranges);
     lamp / reset / fan / display / control channels under an "Advanced"
     fold; named ranges (macros, auto programs) were already one-tap chips.
-    **Left:** gobo pictures.
+    Gobo pictures: done (plan item 10).
 18. **Mixed selections.  DONE:** the Beam tab shows one section per model
     ("3 × Moving Head · colour, position, beam"; "4 × LED PARty · more
     channels") with that model's controls, sent to those lights only

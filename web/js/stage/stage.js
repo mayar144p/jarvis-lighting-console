@@ -17,8 +17,9 @@ import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
 import { SfxSystem } from "./sfx.js";
+import { Shadows } from "./shadows.js";
 import {
-  LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap,
+  LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, GoboAtlas,
 } from "./materials.js";
 
 const DEG = Math.PI / 180;
@@ -120,10 +121,13 @@ export class Stage {
   constructor(container, opts = {}) {
     this.el = container;
     this.opts = opts;
+    // the fixtures' own gobo pictures, fetched as lights first show them
+    this.gobos = opts.loadGobo ? new GoboAtlas(opts.loadGobo) : null;
+    if (this.gobos) this.gobos.onReady = () => { this.dirty = true; };
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
-      quality: "auto", zones: false, dance: true };
+      quality: "auto", zones: false, dance: true, shadows: true };
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -171,6 +175,7 @@ export class Stage {
     scene.background = new THREE.Color(0x040508);
     this.scene = scene;
     this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
+    this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
@@ -962,6 +967,10 @@ export class Stage {
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
+    // shadows for the brightest beams, unless the view is kept light
+    if (this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
+      this.shadows.update(LIGHTS.uCount.value);
+    } else this.shadows.off();
     this._drawScreens(now);
 
     this.dirty = false;
@@ -1246,7 +1255,7 @@ export class Stage {
         b.mesh.visible = false;
         b.glow.visible = false;
       }
-      const goboId = goboV > 0.06 ? 1 + (Math.floor(goboV * 7.99) % 7) : 0;
+      const goboId = this._goboId(inst, goboV);
       const rot = (L.beam.gobo_rot || 0) > 0.03 ? time * (L.beam.gobo_rot - 0.03) * 6 : 0;
       const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;
       lights.push({
@@ -1255,6 +1264,22 @@ export class Stage {
         gobo: goboId, rot, weight: power * (L.r + L.g + L.b),
       });
     }
+  }
+
+  /** Which gobo a light shows: the picture in its file for the slot the
+   *  channel is in (100 + atlas cell), open (0), or - when the file names
+   *  no pictures, or one can't be had - a drawn pattern (1..7). */
+  _goboId(inst, v) {
+    const rows = inst.data.gobos;
+    if (rows && rows.length && this.gobos) {
+      const dmx = Math.round(v * 255);
+      const row = rows.find((r) => dmx >= r[0] && dmx <= r[1]);
+      if (!row) return 0;                       // between pictures: open, or a spin range
+      const cell = this.gobos.cell(row[2]);
+      if (cell >= 0) return 100 + cell;
+      return cell === -1 ? 0 : 1 + (rows.indexOf(row) % 7);   // loading: open for a moment
+    }
+    return v > 0.06 ? 1 + (Math.floor(v * 7.99) % 7) : 0;
   }
 
   /**

@@ -148,7 +148,14 @@ async function assist(text) {
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
-    const r = await post("/api/console/assistant", { message: text, session, image, preview: true });
+    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.jarvisStage && !window.jarvisStage.failed) });
+    // the AI asked to see its changes: let the 3D draw them, then send a picture
+    while (r.ok && r.need_view) {
+      thinking.firstChild.textContent = "Looking at the 3D…";
+      await new Promise((ok) => setTimeout(ok, 900));
+      const shot = await viewShot().catch(() => null);
+      r = await post("/api/console/assistant", { resume: r.turn, image: shot });
+    }
     clearInterval(tick);
     thinking.remove();
     if (r.no_key) { $("#ai-offline").checked = true; say("bot", r.error); plan(text); return; }
@@ -400,6 +407,7 @@ export function initCopilot() {
     say("bot", "New conversation. What would you like?");
   });
   $("#ai-memory").addEventListener("click", showMemory);
+  $("#ai-operator").addEventListener("click", () => import("./aioperator.js").then((m) => m.openOperator()));
   const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan"; };
   $("#ai-offline").addEventListener("change", syncTools);
   $("#ai-text").addEventListener("keydown", (e) => {

@@ -9,6 +9,13 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surfaceMaterial, crowdMaterial } from "./materials.js";
+import { CASTER_LAYER } from "./shadows.js";
+
+// things that stand in a beam's way cast a shadow (shadows.js)
+function casts(root) {
+  root.traverse((m) => { if (m.isMesh) m.layers.enable(CASTER_LAYER); });
+  return root;
+}
 
 const DEG = Math.PI / 180;
 
@@ -272,6 +279,25 @@ function buildRig(r, M, room) {
 // An LED screen's face: a live canvas (the rig's colours, drawn by the
 // stage each frame - a pixel-map mirror) or a clip / picture by URL.  Unlit:
 // a screen makes its own light.
+// Clips and pictures uploaded to the desk ("clip:upload:<id>") come through
+// a loader the app sets (it adds the access token); each is fetched once and
+// kept across rebuilds of the room.
+let mediaLoader = null;
+const mediaUrls = new Map();
+export function setScreenMediaLoader(fn) { mediaLoader = fn; }
+
+function mediaUrl(src) {
+  if (!src.startsWith("upload:")) return Promise.resolve(src);
+  const id = src.slice(7);
+  if (!mediaUrls.has(id)) {
+    if (!mediaLoader) return Promise.reject(new Error("no loader"));
+    const p = mediaLoader(id).then((blob) => URL.createObjectURL(blob));
+    p.catch(() => mediaUrls.delete(id));
+    mediaUrls.set(id, p);
+  }
+  return mediaUrls.get(id);
+}
+
 function screenMaterial(content, aspect) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   if (content === "rig") {
@@ -284,14 +310,17 @@ function screenMaterial(content, aspect) {
     mat.userData.canvas = canvas;
   } else if (content.startsWith("clip:")) {
     const video = document.createElement("video");
-    Object.assign(video, { src: content.slice(5), muted: true, loop: true, playsInline: true, crossOrigin: "anonymous" });
-    video.play().catch(() => { /* autoplay waits for a click on the page */ });
+    Object.assign(video, { muted: true, loop: true, playsInline: true, crossOrigin: "anonymous" });
+    mediaUrl(content.slice(5)).then((url) => {
+      video.src = url;
+      video.play().catch(() => { /* autoplay waits for a click on the page */ });
+    }).catch(() => { /* not reachable: the screen stays dark */ });
     const tex = new THREE.VideoTexture(video);
     tex.colorSpace = THREE.SRGBColorSpace;
     mat.map = tex;
     mat.userData.video = video;
   } else if (content.startsWith("image:")) {
-    new THREE.TextureLoader().loadAsync(content.slice(6)).then((tex) => {
+    mediaUrl(content.slice(6)).then((url) => new THREE.TextureLoader().loadAsync(url)).then((tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       mat.map = tex;
       mat.needsUpdate = true;
@@ -674,6 +703,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     if (s.height > 0.01) {
       const skirt = new THREE.Mesh(new THREE.BoxGeometry(s.width, s.height, s.depth).translate(s.x, s.height / 2, s.z + s.depth / 2), M.skirt);
       skirt.userData = { venueKind: "stage", venueId: "stage" };
+      skirt.layers.enable(CASTER_LAYER);
       group.add(skirt);
     }
     const x0 = s.x - s.width / 2, x1 = s.x + s.width / 2, z0 = s.z, z1 = s.z + s.depth;
@@ -695,6 +725,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   }
   for (const o of v.objects || []) {
     const g = buildObject(o, M);
+    if (o.kind !== "mark") casts(g);
     items.set(o.id, g);
     group.add(g);
   }
@@ -704,8 +735,8 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   group.add(zones);
 
   const people = new THREE.Group();
-  const crowd = buildCrowd(v, stageFront);
-  people.add(crowd, buildPerformers(v));
+  const crowd = casts(buildCrowd(v, stageFront));
+  people.add(crowd, casts(buildPerformers(v)));
   people.visible = opts.people !== false;
   group.add(people);
 

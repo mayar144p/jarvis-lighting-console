@@ -5,7 +5,7 @@ import { openRoomDialog } from "./roomdialog.js";
 import { VenueEditor } from "/js/stage/editor.js";
 import { outlineOf } from "/js/stage/venue.js";
 import { doorFrom, balconyFrom, pillarAt } from "./drafting.js";
-import { post } from "./api.js";
+import { post, token } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox, typingInField, anyModal, modal } from "./ui.js";
@@ -33,7 +33,12 @@ export const ZONE_KINDS = [
   ["vip", "VIP"], ["dj", "DJ / stage area"], ["foh", "FOH / tech"], ["backstage", "Backstage"],
 ];
 
-const venue = () => (stage && stage.built && stage.built.venue) || (state.snap && state.snap.venue) || {};
+// the engine's venue as soon as a snapshot brings it (the 3D rebuilds a
+// moment later); the drawn one (an automatic room) when there is none yet
+const venue = () => {
+  const v = state.snap && state.snap.venue;
+  return (v && v.room && v.room.width ? v : null) || (stage && stage.built && stage.built.venue) || v || {};
+};
 const r2 = (v) => Math.round(v * 100) / 100;
 
 function where() {
@@ -454,21 +459,53 @@ function renderInspector(sel) {
 }
 
 // What an LED screen shows: the lights (a live mirror of the rig's colours),
-// a clip or a picture (a link the browser can open), or nothing.
+// a clip or a picture from this computer (kept on the desk) or by link, or
+// nothing.
+async function uploadScreenFile(file) {
+  const t = token();
+  toast(`Sending ${file.name}…`, "", 1600);
+  const r = await fetch("/api/console/screen_media", {
+    method: "POST", body: file,
+    headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.id) throw new Error(d.error || `upload failed (${r.status})`);
+  return d;
+}
+
 function screenContent(o, upd) {
   const c = o.content || "rig";
   const sel = h("select.select.small",
-    h("option", { value: "rig" }, "The lights (live mirror)"), h("option", { value: "clip" }, "A video clip…"),
-    h("option", { value: "image" }, "A picture…"), h("option", { value: "off" }, "Nothing (off)"));
-  sel.value = c.startsWith("clip:") ? "clip" : c.startsWith("image:") ? "image" : c;
+    h("option", { value: "rig" }, "The lights (live mirror)"),
+    h("option", { value: "file" }, "A clip or picture from this computer…"),
+    h("option", { value: "clip" }, "A video clip by link…"),
+    h("option", { value: "image" }, "A picture by link…"), h("option", { value: "off" }, "Nothing (off)"));
+  const uploaded = /^(clip|image):upload:/.test(c);
+  sel.value = uploaded ? "file" : c.startsWith("clip:") ? "clip" : c.startsWith("image:") ? "image" : c;
+  const file = h("input", { type: "file", accept: "video/mp4,video/webm,video/quicktime,image/png,image/jpeg,image/webp", hidden: true });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    file.value = "";
+    if (!f) { sel.value = c.split(":")[0]; return; }
+    try {
+      const d = await uploadScreenFile(f);
+      upd({ content: `${d.kind}:upload:${d.id}` });
+    } catch (e) {
+      toast(e.message || String(e), "bad");
+      sel.value = uploaded ? "file" : c.split(":")[0];
+    }
+  });
   sel.addEventListener("change", async () => {
+    if (sel.value === "file") { file.click(); return; }
     if (sel.value === "clip" || sel.value === "image") {
-      const cur = c.startsWith(sel.value + ":") ? c.slice(sel.value.length + 1) : "";
+      const cur = c.startsWith(sel.value + ":") && !uploaded ? c.slice(sel.value.length + 1) : "";
       const url = await promptBox(sel.value === "clip" ? "Video clip" : "Picture", "A link to it (mp4 / webm, or png / jpg)", cur, { ok: "Show it" });
-      if (url) upd({ content: `${sel.value}:${url.trim()}` }); else sel.value = c.split(":")[0];
+      if (url) upd({ content: `${sel.value}:${url.trim()}` }); else sel.value = uploaded ? "file" : c.split(":")[0];
     } else upd({ content: sel.value });
   });
-  return field("Shows", sel);
+  return h("div", field("Shows", sel), file,
+    uploaded ? h("p.muted.small", (c.startsWith("clip:") ? "A clip" : "A picture") + " kept on the desk. ",
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); file.click(); } }, "Change…")) : null);
 }
 
 // Copies of one truss / object in a row: "4 trusses 2 m apart".
