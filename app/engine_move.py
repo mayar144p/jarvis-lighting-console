@@ -6,14 +6,89 @@ Engine and every other part is reachable through it.
 from __future__ import annotations
 
 import json
+import os
 import time
 
+from app import motion as motion_mod
 from app import venue as venue_mod
-from app.engine_base import _truthy, attr_domain
+from app.engine_base import _fclamp, _truthy, attr_domain
 from app.engine_support import logical16 as _logical16
 
 
 class MoveMixin:
+    # ------------------------------------------------------------------
+    # shapes of your own: key points the heads go round (phasers)
+    # ------------------------------------------------------------------
+    MAX_SHAPES = 32
+
+    def _shapes(self) -> list[dict]:
+        lst = self.__dict__.get("shapes")
+        if lst is None:
+            lst = self.shapes = []
+        return lst
+
+    @staticmethod
+    def _shape_clean(raw: dict, ident: str) -> dict:
+        raw = raw if isinstance(raw, dict) else {}
+        name = str(raw.get("name") or "").strip()[:32] or "Shape"
+        return {"id": ident, "name": name, "points": motion_mod.clean_points(raw.get("points")),
+                "smooth": raw.get("smooth") is not False}
+
+    def _a_shape_save(self, shape=None, id=None, **_):
+        """Keep a movement shape: {name, points [[pan, tilt] -1..1, tilt up],
+        smooth} - the heads go round the points, a curve through them or
+        straight lines."""
+        lst = self._shapes()
+        ident = str(id or (shape or {}).get("id") or "")
+        if not ident:
+            if len(lst) >= self.MAX_SHAPES:
+                raise ValueError(f"at most {self.MAX_SHAPES} shapes")
+            ident = "s" + os.urandom(3).hex()
+        clean = self._shape_clean(shape, ident)
+        self.shapes = [s for s in lst if s["id"] != ident] + [clean]
+        return {"id": ident, "shapes": self.shapes,
+                "summary": f"shape {clean['name']}: {len(clean['points'])} points"}
+
+    def _a_shape_delete(self, id=None, **_):
+        if not any(s["id"] == str(id) for s in self._shapes()):
+            raise ValueError(f"no shape {id!r}")
+        self.shapes = [s for s in self._shapes() if s["id"] != str(id)]
+        self.fx = [f for f in self.fx if not (f.get("lib") == "shape" and f["params"].get("shape") == str(id))]
+        return {"shapes": self.shapes, "summary": "shape deleted"}
+
+    def _shape_start(self, params: dict, nums: list[int]) -> int:
+        if len(self.fx) >= 16:
+            raise ValueError("too many effects running - stop some first")
+        # one movement at a time on a head
+        self.fx = [f for f in self.fx if not (f.get("lib") in motion_mod.ALL_KINDS
+                                              and set(f.get("heads") or []) & set(nums) and not f.get("cue_pb"))]
+        self._fx_seq += 1
+        self.fx.append({"id": self._fx_seq, "lib": "shape", "params": dict(params), "heads": list(nums),
+                        "t0": time.monotonic(), "duration": None})
+        return self._fx_seq
+
+    def _a_run_shape(self, id=None, heads=None, group=None, speed=0.25, size=30.0, spread=0.0,
+                     direction=1, beats=None, space=None, **_):
+        """Run a shape on the selected moving lights: `size` degrees round
+        where each is aimed, `speed` rounds a second (or a round per
+        `beats`), `spread` degrees round the shape between the lights."""
+        shp = next((s for s in self._shapes() if s["id"] == str(id)), None)
+        if shp is None:
+            raise ValueError(f"no shape {id!r}")
+        rows = self._fx_targets(heads, group)
+        nums = [h["head_no"] for h in rows if "pan" in h["map"] or "tilt" in h["map"]]
+        if not nums:
+            raise ValueError("select moving lights first")
+        p = {"shape": shp["id"], "speed": _fclamp(speed, 0.005, 2.0), "size": _fclamp(size, 1, 270),
+             "spread": _fclamp(spread, 0, 720), "phase": 0.0, "arc": 360.0,
+             "direction": -1.0 if float(direction or 1) < 0 else 1.0, "lock": 0.0}
+        if beats not in (None, "", 0, "0", False):
+            p["beats"] = self._clean_beats(beats)
+        if space:
+            p["space"] = self._clean_space(space)
+        fid = self._shape_start(p, nums)
+        return {"fx": fid, "heads": len(nums), "summary": f"{shp['name']} on {len(nums)} light(s)"}
+
     # ------------------------------------------------------------------
     # the Move tab: one-tap spots, formations, nudge, a light's own range
     # ------------------------------------------------------------------

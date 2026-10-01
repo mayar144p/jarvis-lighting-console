@@ -7,6 +7,7 @@ import { act } from "./api.js";
 import { run } from "./actions.js";
 import { state, on } from "./store.js";
 import { $, h, modal, toast, confirmBox } from "./ui.js";
+import { renderPix } from "./pixpanel.js";
 
 const list = () => (state.snap && state.snap.step_fx) || [];
 let key = "";
@@ -106,6 +107,7 @@ export function openStepEditor(existing) {
 }
 
 export function initStepFx() {
-  on("snapshot", () => renderStepFx());
+  on("snapshot", () => { renderStepFx(); renderPix(); });
   renderStepFx(true);
+  renderPix(true);
 }

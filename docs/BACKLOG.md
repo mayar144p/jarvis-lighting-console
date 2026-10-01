@@ -34,9 +34,28 @@ whoever picks it up starts from the diagnosis, not from scratch.
    * A sound link to the effects' size (movement size, dimmer depth).
    * An input picker in the Sound dialog, remembered per computer, falling
      back to the default when unplugged.
-5. **Effects:** two-colour gradients across the room; bars / panels as
+5. **(DONE) Effects:** two-colour gradients across the room; bars / panels as
    pixels; images / video mapped onto the rig; step effects in cues and
    buttons; a key-frame shape editor for movement.
+   Done:
+   * **Pixels** (app/pixels.py): every cell of a pixel bar or panel is a
+     pixel at its own place along the bar; other colour lights are one.
+   * **Gradient** (FX tab -> Paint the rig): 2-6 colours across the room
+     in any direction (left-right, stage-out, up, centre-out, round),
+     still or scrolling, or locked to the beat.
+   * **Pictures / video**: a picture is shrunk in the browser (at most
+     64 px a side) and kept with the show. A video plays in the browser
+     and its frames go to the desk while it plays. Either is laid over the
+     rig seen from the front or from above.
+   * **Step effects, gradients, pictures and shapes in cues**: recorded
+     and played again on GO. A button can run a step effect (on the beat
+     too); "capture" buttons take running step effects.
+   * **Shapes** (Move tab -> Shapes): key points on a square, smooth or
+     straight, with presets (triangle, square, star, wave, zig-zag). They
+     run with the Move tab's size / speed / direction / wave, and are kept
+     with the show.
+   * Fixed on the way: speeds below 1 given to the new actions were rounded
+     to whole numbers (an integer clamp).
 6. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
@@ -178,8 +197,7 @@ Fixed:
    down, centre out, outside in, round the room - instead of by light
    number: lights side by side move together, a gap in the rig is a gap
    in the wave (FX / Move tab -> the effect's "which way").
-   Left: two-colour gradients across the room; bars / panels as pixels;
-   images / video mapped onto the rig.
+   Left: nothing (gradients, pixels and pictures / video: plan step 5).
 10. **(DONE) Step effects from your own looks** (FX tab -> Step effects):
     steps taken from the programmer (the look the selected lights have)
     or from palettes (the effect follows the palette), a time and a
@@ -187,8 +205,7 @@ Fixed:
     the cycle (by light number or, with a direction, by where the lights
     are), beat lock; saved with the show.  Gobos and other slot channels
     change at the middle of a fade instead of sliding through the wheel.
-    Left: step effects inside cues and buttons; a key-frame shape editor
-    for movement (phasers).
+    Left: nothing (in cues and buttons, and shapes: plan step 5).
 11. Desk tools.  **DONE:** highlight / solo (programmer -> Highlight, H /
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
     group masters (a fader per group next to the GM), macros (command

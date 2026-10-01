@@ -159,6 +159,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_plan_preview,
     test_ai_programs,
     test_on_the_beat,
+    test_paint_and_shapes,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -298,6 +299,7 @@ def _standalone_suites():
     ("Copilot plan preview in 3D", test_plan_preview),
     ("AI that programs: chases, buttons, build-ups", test_ai_programs),
     ("On the beat: quantised buttons, size from the sound, Link", test_on_the_beat),
+    ("Effects: gradients, pixels, pictures, step effects in cues, shapes", test_paint_and_shapes),
     )
 
 

@@ -62,7 +62,7 @@ class ProgrammerMixin:
                 self.programmer.pop(no)
         fx_n = 0
         if g == "position":
-            keep = [f for f in self.fx if f.get("lib") not in motion_mod.KINDS]
+            keep = [f for f in self.fx if f.get("lib") not in motion_mod.ALL_KINDS]
             fx_n = len(self.fx) - len(keep)
             self.fx = keep
         return {"cleared": n, "fx": fx_n, "summary": f"{g} cleared ({n} values)"}
@@ -357,6 +357,11 @@ class ProgrammerMixin:
             row["_turns"] = row.get("_turns", 0.0) + step * rate
         prog, pbs = base
         sized = self._sized(p, "move")
+        if kind == "shape":
+            shp = next((s for s in self._shapes() if s["id"] == p.get("shape")), None)
+            if shp is None:
+                return
+            sized = {**sized, "points": shp["points"], "smooth": 1 if shp.get("smooth", True) else 0}
         # "across": every head of a multi-head light (a Wave 360's four
         # tilts) is one step of the movement - a tilt wave through the light
         units = []
@@ -592,13 +597,16 @@ class ProgrammerMixin:
                 # phase with the downbeat - the clock, not the elapsed time
                 cyc = self._tempo().beats(now) / float(beats)
                 row["_beat_cycles"] = cyc
-                if row.get("lib") not in motion_mod.KINDS:
+                if row.get("lib") not in motion_mod.ALL_KINDS:
                     speed = float((row.get("params") or {}).get("speed") or row.get("speed") or 1.0)
                     row["_v"] = cyc / max(speed, 1e-6)
+            if row.get("pix"):
+                self._pix_values(row, row["_v"] * float((row.get("params") or {}).get("speed") or 1.0), o)
+                continue
             if row.get("roam"):
                 self._roam_values(row, row["_v"] if not beats else row.get("_beat_cycles", 0.0) * 2.0, o)
                 continue
-            if row.get("lib") in motion_mod.KINDS:
+            if row.get("lib") in motion_mod.ALL_KINDS:
                 if base is None:
                     base = (self._live_programmer(now) if rig else self._programmer_now(now), self._active_playbacks(now))
                 self._move_values(row, step, base, o)
@@ -823,7 +831,7 @@ class ProgrammerMixin:
         fx = []
         if "fx" in parts:
             for f in self.fx:
-                if f.get("lib") and nums & set(f.get("heads") or []) and len(fx) < 6:
+                if f.get("lib") in fxlib_mod.FX and nums & set(f.get("heads") or []) and len(fx) < 6:
                     fx.append({"name": f["lib"], "params": dict(f.get("params") or {})})
                     used.extend(n for n in f["heads"] if n in nums and n not in used)
         if not values and not fx:

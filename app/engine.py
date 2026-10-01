@@ -72,9 +72,10 @@ from app.engine_osc import OscMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
+from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -252,6 +253,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+            "media": copy.deepcopy(self._media()),
+            "shapes": copy.deepcopy(self._shapes()),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
             "step_fx": copy.deepcopy(self._steps()),
             "parked": copy.deepcopy(self.__dict__.get("parked") or {}),
@@ -297,6 +300,10 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
         self.quick_quant = float(state.get("quick_quant") or 0.0)
+        if "media" in state:
+            self.media = copy.deepcopy(state["media"])
+        if "shapes" in state:
+            self.shapes = copy.deepcopy(state["shapes"])
         if "sound_cfg" in state:
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
         if "macros" in state:
@@ -1133,6 +1140,20 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                             "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
                             "duration": dur, "remaining": None})
                 continue
+            if row.get("pix"):
+                pp = row.get("params") or {}
+                label = ("Gradient " + " → ".join(pp.get("colours") or [])) if row["pix"] == "gradient" \
+                    else "Picture: " + (self._media().get(pp.get("media"), {}).get("name") or "?")
+                out.append({"id": row["id"], "pix": row["pix"], "label": label,
+                            "params": {k: v for k, v in pp.items() if not k.startswith("_")},
+                            "heads": list(row["heads"]), "duration": dur, "remaining": None})
+                continue
+            if row.get("lib") == "shape":
+                shp = next((x for x in self._shapes() if x["id"] == (row.get("params") or {}).get("shape")), {})
+                out.append({"id": row["id"], "lib": "shape", "label": "Shape: " + shp.get("name", "?"),
+                            "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
+                            "duration": dur, "remaining": None})
+                continue
             if row.get("roam"):
                 out.append({"id": row["id"], "lib": "roam", "label": "Roam: " + " + ".join(z["name"] for z in row["roam"]),
                             "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
@@ -1200,7 +1221,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
                            "times": c.get("times") or None,
-                           "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f["name"])
+                           "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f.get("label") or f["name"])
                                   for f in c.get("fx") or []],
                            "empty": not (c.get("values") or {}) and not c.get("fx")}
                           for c in pb["stack"]],
@@ -1251,6 +1272,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "step_fx": [dict(f) for f in self._steps()],
+                "media": self.media_public(),
+                "shapes": [dict(s) for s in self._shapes()],
                 "macros": [dict(m) for m in self._macros()],
                 "osc": self.osc_public(),
                 "moves": [dict(m) for m in self.moves],

@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app import pixels as pixels_mod
 from app import fixture_kind
 from app import timeline as tl_mod
 from app import sound as sound_mod
@@ -32,6 +33,27 @@ class ShowMixin:
     # ------------------------------------------------------------------
     # show files
     # ------------------------------------------------------------------
+    def _load_media_shapes(self, payload: dict) -> None:
+        """Pictures and movement shapes from a saved show."""
+        self.shapes = []
+        for i, s in enumerate(payload.get("shapes") or [] if isinstance(payload.get("shapes"), list) else []):
+            try:
+                self.shapes.append(self._shape_clean(s, str((s or {}).get("id") or f"s{i + 1}")[:16]))
+            except (ValueError, TypeError, AttributeError):
+                continue
+        self.shapes = self.shapes[:self.MAX_SHAPES]
+        self.media = {}
+        for mid, m in (payload.get("media") or {}).items() if isinstance(payload.get("media"), dict) else []:
+            try:
+                if m.get("kind") == "video":
+                    self.media[str(mid)[:16]] = {"name": str(m.get("name") or "video")[:40], "kind": "video"}
+                else:
+                    w, h, _raw = pixels_mod.clean_media(m.get("w"), m.get("h"), m.get("data"))
+                    self.media[str(mid)[:16]] = {"name": str(m.get("name") or "picture")[:40], "kind": "image",
+                                                 "w": w, "h": h, "data": m["data"]}
+            except (ValueError, TypeError, AttributeError, KeyError):
+                continue
+
     def _safe_name(self, name) -> str:
         text = str(name or "").strip()
         if not SAFE_NAME.match(text):
@@ -228,6 +250,7 @@ class ShowMixin:
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
+            self._load_media_shapes(payload)
             self.parked = self._clean_parked(payload.get("parked"))
             self.macros = self._clean_macro_list(payload.get("macros"))
             if isinstance(payload.get("output_target"), dict):
@@ -268,6 +291,8 @@ class ShowMixin:
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+                "media": json.loads(json.dumps(self._media(), default=str)),
+                "shapes": json.loads(json.dumps(self._shapes(), default=str)),
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
                 "step_fx": json.loads(json.dumps(self._steps(), default=str)),
                 "parked": json.loads(json.dumps(self.__dict__.get("parked") or {}, default=str)),
@@ -615,6 +640,7 @@ class ShowMixin:
             except (TypeError, ValueError):
                 qq = 0.0
             self.quick_quant = qq if qq in self.QUANTS else 0.0
+            self._load_media_shapes(payload)
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
             self.parked = self._clean_parked(payload.get("parked"))

@@ -181,6 +181,24 @@ button is never an undo step; setting one up is. Buttons save with the show.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### Painting the rig and shapes
+
+* **FX tab -> Paint the rig.** A **gradient** of 2 to 6 colours across
+  the room (left to right, from the stage out, bottom to top, centre out,
+  round the room), still, scrolling or on the beat. Or a **picture or
+  video** laid over the lights as seen from the front or from above. A
+  picture is kept with the show. A video plays in the browser that opened
+  it, and the lights follow while it plays. Pixel bars and panels take it
+  cell by cell. It paints colour, not brightness: bring the lights up
+  first.
+* **Move tab -> Shapes.** Draw your own movement: key points round where
+  the lights aim, a smooth curve or straight lines, starting from a
+  triangle, square, star, wave or zig-zag if you like. It runs with the
+  tab's size, speed, direction and wave.
+* Cues record what is running, including gradients, pictures, shapes and
+  step effects, and GO plays them again. An effect button can run one of
+  your step effects, on the beat if you like.
+
 ### On the beat
 
 The tempo pill in the top bar is the desk's beat clock: tap it, type a BPM,

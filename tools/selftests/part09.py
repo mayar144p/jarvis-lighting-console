@@ -1672,3 +1672,157 @@ def test_on_the_beat() -> None:
         finally:
             peer.close()
             e.shutdown()
+
+
+def test_paint_and_shapes() -> None:
+    """Plan step 5: gradients across the room, bars as pixels, pictures and
+    video over the rig, step effects in cues and buttons, shapes of your
+    own for movement."""
+    print("Effects: gradients, pixels, pictures / video, step effects in cues + buttons, shapes")
+    import base64 as _b64
+
+    from app import engine as eng
+    from app import motion
+    from app import pixels
+
+    bar = {"head_no": 1, "map": ["zone_dimmer", "red", "green", "blue"] * 3, "x": 0, "y": 3, "z": 2}
+    us = pixels.units([bar, {"head_no": 2, "map": ["dimmer", "pan"], "x": 1, "y": 3, "z": 2}])
+    check("a bar is a pixel per cell, along it; a light with no colour is none",
+          [u["k"] for u in us] == [1, 2, 3] and us[0]["x"] < us[1]["x"] < us[2]["x"], str(us))
+    check("the gradient's stops", pixels.gradient_at(["#ff0000", "#0000ff"], 0) == (255, 0, 0)
+          and pixels.gradient_at(["#ff0000", "#0000ff"], 1) == (0, 0, 255)
+          and pixels.gradient_at(["#ff0000", "#00ff00", "#0000ff"], 0.5) == (0, 255, 0))
+    check("scrolling folds back, never jumps", abs(pixels.scroll(0.9, 0.2) - 0.9) < 1e-9 and pixels.scroll(0.5, 0) == 0.5)
+    raw = bytes([255, 0, 0, 0, 0, 255])
+    check("a picture is sampled between its pixels", pixels.sample(2, 1, raw, 0, 0) == (255, 0, 0)
+          and pixels.sample(2, 1, raw, 1, 0) == (0, 0, 255) and pixels.sample(2, 1, raw, 0.5, 0) == (128, 0, 128))
+    bad = 0
+    for args in ((0, 1, ""), (2, 1, "!!"), (2, 1, _b64.b64encode(b"abc").decode()), (200, 1, "")):
+        try:
+            pixels.clean_media(*args)
+        except ValueError:
+            bad += 1
+    check("bad pictures are refused", bad == 4)
+    pts = [[0, 1], [1, -1], [-1, -1]]
+    check("a shape goes through its points", all(
+        max(abs(a - b) for a, b in zip(motion.key_frames(pts, i / 3, smooth), p)) < 1e-9
+        for i, p in enumerate(pts) for smooth in (True, False)))
+    check("a straight shape is straight between them", motion.key_frames(pts, 1 / 6, False) == (0.5, 0.0))
+    try:
+        motion.clean_points([[0, 0]])
+        check("a shape needs 2 points", False)
+    except ValueError:
+        check("a shape needs 2 points", True)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            e.act("add_heads", query="RGBW Bar 12ch", qty=1)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            for i, x in enumerate((-4, 0, 4)):
+                e.act("set_place", head=i + 1, x=x, y=3, z=2)
+            e.act("set_place", head=4, x=2, y=3, z=2)
+            e.act("select_heads", head=1, head_end=4)
+            r = e.act("run_gradient", colours=["red", "blue"])
+            v = e._fx_values(time.monotonic())
+            check("a gradient left to right: red on the left, blue on the right",
+                  r.get("ok") and v[1]["red"] > v[1]["blue"] and v[3]["blue"] > v[3]["red"]
+                  and v[2]["red"] > 50 and v[2]["blue"] > 50, json.dumps(v)[:300])
+            check("the bar takes it cell by cell", {"red@1", "red@2", "red@3"} <= set(v[4]), str(v.get(4)))
+            check("the snapshot lists it", any(f.get("pix") == "gradient" and "Gradient" in f["label"] for f in e.snapshot()["fx"]))
+            e.act("stop_fx")
+            e.act("run_gradient", colours="red, blue", speed=1)
+            a = e._fx_values(time.monotonic())[1]
+            b = e._fx_values(time.monotonic() + 0.5)[1]
+            check("a scrolling gradient moves", a != b, f"{a} {b}")
+            e.act("stop_fx")
+            e.act("run_gradient", colours="red, blue", speed=0.3)
+            check("a slow scroll keeps its speed (not rounded to still)",
+                  any(f.get("pix") and f["params"]["speed"] == 0.3 for f in e.fx))
+            check("bad gradients are refused", not e.act("run_gradient", colours=["red"]).get("ok")
+                  and not e.act("run_gradient", colours=["red", "blue"], space="sideways").get("ok"))
+            e.act("stop_fx")
+            # a picture: left half red, right half blue
+            pic = _b64.b64encode(bytes([255, 0, 0, 0, 0, 255])).decode()
+            r = e.act("media_save", name="Split", w=2, h=1, data=pic)
+            mid = r.get("id")
+            e.act("select_heads", head=1, head_end=3)
+            r = e.act("run_media", id=mid, view="front")
+            v = e._fx_values(time.monotonic())
+            check("a picture over the rig: each light the colour under it",
+                  r.get("ok") and v[1]["red"] == 255 and v[1]["blue"] == 0 and v[3]["blue"] == 255 and v[3]["red"] == 0,
+                  json.dumps(v)[:200])
+            r = e.act("media_save", name="Clip", kind="video")
+            vid = r["id"]
+            e.act("run_media", id=vid, view="top")
+            check("a video nobody plays shows nothing", 1 not in e._fx_values(time.monotonic()))
+            e.media_frame(vid, 1, 1, _b64.b64encode(bytes([0, 255, 0])).decode())
+            v = e._fx_values(time.monotonic())
+            check("a video's frame lights them", v[1]["green"] == 255 and v[2]["green"] == 255, str(v.get(1)))
+            try:
+                e.media_frame("nope", 1, 1, _b64.b64encode(bytes(3)).decode())
+                check("a frame for no video is refused", False)
+            except ValueError:
+                check("a frame for no video is refused", True)
+            check("the media list says it plays", any(m["id"] == vid and m["playing"] for m in e.snapshot()["media"]))
+            e.act("stop_fx")
+            # step effects and paintings in cues; a step effect on a button
+            e.act("select_heads", head=1, head_end=3)
+            e.act("set_intensity", level=100)
+            e.act("run_gradient", colours=["red", "blue"])
+            r = e.act("record_cue", playback=1, name="painted")
+            check("a gradient is recorded in a cue", r.get("ok") and any(i.get("pix") for i in e.playbacks[0]["stack"][0].get("fx") or []),
+                  str(e.playbacks[0]["stack"][0].get("fx")))
+            e.act("clear_programmer")
+            e.act("select_heads", head=1, head_end=3)
+            e.act("chase_colours", colours=["red", "white"])
+            sid = e.step_fx[-1]["id"]
+            r = e.act("record_cue", playback=1, name="chase")
+            check("a step effect is recorded in a cue", any(i.get("steps") == sid for i in e.playbacks[0]["stack"][1].get("fx") or []))
+            e.act("stop_fx")
+            e.act("cue_go", playback=1, cue=1)
+            check("GO plays the gradient again", any(f.get("pix") == "gradient" and f.get("cue_pb") for f in e.fx))
+            e.act("cue_go", playback=1, cue=2)
+            check("and the next cue its step effect", any(f.get("steps") == sid and f.get("cue_pb") for f in e.fx)
+                  and not any(f.get("pix") for f in e.fx), str([(f.get("pix"), f.get("steps")) for f in e.fx]))
+            check("the cue list names them", e.snapshot()["playbacks"][0]["stack"][0]["fx"] == ["Gradient"])
+            e.act("playback_release", playback=1)
+            r = e.act("quick_set", page=1, slot=1, button={"kind": "fx", "label": "Chase", "fx": f"step:{sid}",
+                                                           "target": {"heads": [1, 2, 3]}, "params": {"beats": 2}})
+            check("a button can run a step effect", r.get("ok"), str(r.get("error")))
+            e.act("quick_press", id="q1-1", down=True)
+            running = [f for f in e.fx if f.get("steps") == sid]
+            check("pressed, it runs (on the beat)", running and running[0]["params"].get("beats") == 2.0, str(e.fx)[:200])
+            e.act("quick_release_all")
+            check("a button with a step effect that isn't there is refused",
+                  not e.act("quick_set", page=1, slot=2, button={"kind": "fx", "fx": "step:nope"}).get("ok"))
+            # shapes
+            r = e.act("shape_save", shape={"name": "Tri", "points": pts, "smooth": False})
+            shp = r.get("id")
+            e.act("select_heads", head=5, head_end=6)
+            e.act("set_position", pan=128, tilt=128)
+            r = e.act("run_shape", id=shp, speed=0.5, size=30)
+            vals = [e._fx_values(time.monotonic() + k * 0.4).get(5) for k in range(4)]
+            check("a shape moves the movers round it", r.get("ok") and len({(x["pan"], x["tilt"]) for x in vals}) >= 3, str(vals))
+            check("it is listed by name", any(f.get("label") == "Shape: Tri" for f in e.snapshot()["fx"]))
+            check("a shape on lights that can't move is refused", not e.act("run_shape", id=shp, heads=[1]).get("ok"))
+            r = e.act("record_cue", playback=2, name="tri")
+            e.act("stop_fx")
+            e.act("cue_go", playback=2)
+            check("a shape in a cue plays again", any(f.get("lib") == "shape" and f.get("cue_pb") == 2 for f in e.fx))
+            e.act("save_show", name="paint")
+            e.act("shape_delete", id=shp)
+            check("deleting a shape stops it", not any(f.get("lib") == "shape" for f in e.fx) and not e.shapes)
+            e.act("load_show", name="paint")
+            check("pictures, videos and shapes are saved with the show",
+                  {m["name"] for m in e.media_public()} == {"Split", "Clip"}
+                  and e.media[mid]["data"] == pic and [s["name"] for s in e.shapes] == ["Tri"])
+            e.act("undo")
+            check("undo keeps them in step", isinstance(e.shapes, list))
+        finally:
+            e.shutdown()

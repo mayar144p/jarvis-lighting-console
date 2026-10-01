@@ -1237,3 +1237,22 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .qctl.qfader.qbig .qval { text-align: center; }
 .mv-roam { margin-top: 8px; row-gap: 6px; }
 .no-pick .preview3d, .no-pick .form-grid { display: none; }
+/* FX tab -> Paint the rig */
+.pix-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 8px; }
+.pix-row .k { font-size: 12px; color: var(--muted); min-width: 64px; }
+.pix-col { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line, #333); border-radius: 4px; background: none; }
+.pix-media { display: flex; flex-direction: column; gap: 4px; }
+/* Move tab -> Shapes */
+.shape-ed { display: flex; gap: 18px; flex-wrap: wrap; }
+.shape-left { display: flex; flex-direction: column; gap: 6px; }
+.shape-right { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 240px; }
+.shape-svg { background: #0b0d12; border: 1px solid var(--line, #333); border-radius: 6px; cursor: crosshair; touch-action: none; }
+.shape-bg { fill: #10131a; }
+.shape-axis { stroke: #2a2f3a; stroke-width: 0.01; }
+.shape-path { fill: none; stroke: var(--accent, #3ab0ff); stroke-width: 0.025; opacity: .8; }
+.shape-pt { fill: #e8edf5; stroke: #0b0d12; stroke-width: 0.02; cursor: grab; }
+.shape-pt.first { fill: #fbbf24; }
+.shape-n { fill: #9aa4b2; font-size: 0.11px; }
+.shape-dot { fill: #ff4d6d; }
+.shape-chip { display: inline-flex; }
+.shape-chip .chip.ghost { padding: 0 6px; opacity: .7; }

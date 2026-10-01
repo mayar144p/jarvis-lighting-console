@@ -153,12 +153,21 @@ class QuickMixin:
             raise ValueError("a colour button needs a colour")
         if kind == "fx":
             name = str(raw.get("fx") or "")
-            if name not in fxlib_mod.FX:
-                raise ValueError(f"unknown effect {name!r}")
-            btn["fx"] = name
-            params = self._quick_fx_params(name, raw.get("params"))
-            if params:
-                btn["params"] = params
+            if name.startswith("step:"):
+                # one of the show's step effects (FX tab -> Step effects)
+                if not any(f["id"] == name[5:] for f in self._steps()):
+                    raise ValueError(f"no step effect {name[5:]!r}")
+                btn["fx"] = name
+                beats = (raw.get("params") or {}).get("beats") if isinstance(raw.get("params"), dict) else None
+                if beats not in (None, "", 0):
+                    btn["params"] = {"beats": self._clean_beats(beats)}
+            else:
+                if name not in fxlib_mod.FX:
+                    raise ValueError(f"unknown effect {name!r}")
+                btn["fx"] = name
+                params = self._quick_fx_params(name, raw.get("params"))
+                if params:
+                    btn["params"] = params
         if kind in ("go", "release"):
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
             if raw.get("cue") not in (None, ""):
@@ -220,7 +229,7 @@ class QuickMixin:
         on the selection now (shape and knobs) is what gets saved."""
         if lib in (None, ""):
             sel = set(self.selected)
-            row = next((f for f in reversed(self.fx) if f.get("lib") in motion_mod.KINDS
+            row = next((f for f in reversed(self.fx) if f.get("lib") in motion_mod.ALL_KINDS
                         and (not sel or sel & set(f.get("heads") or []))), None)
             if row is None:
                 raise ValueError("start a movement first (or give its shape) - then save it")
@@ -251,7 +260,7 @@ class QuickMixin:
         nums = {h["head_no"] for h in rows}
         if not nums:
             raise ValueError("select the lights to move first")
-        self.fx = [f for f in self.fx if not (f.get("lib") in motion_mod.KINDS
+        self.fx = [f for f in self.fx if not (f.get("lib") in motion_mod.ALL_KINDS
                                               and nums & set(f.get("heads") or []))]
         r = self._a_run_fx_named(mv["lib"], mv["params"], None, sorted(nums), None)
         for f in self.fx:
@@ -322,7 +331,13 @@ class QuickMixin:
         for item in (raw.get("fx_list") or [])[:4]:
             if not isinstance(item, dict):
                 continue
-            name = str(item.get("name") or "").lower()
+            name = str(item.get("name") or "")
+            if name.startswith("step:"):
+                if not any(f["id"] == name[5:] for f in self._steps()):
+                    raise ValueError(f"no step effect {name[5:]!r}")
+                fx_list.append({"name": name, "params": {}})
+                continue
+            name = name.lower()
             if name not in fxlib_mod.FX:
                 raise ValueError(f"unknown effect {name!r}")
             fx_list.append({"name": name, "params": self._quick_fx_params(name, item.get("params"))})
@@ -352,8 +367,10 @@ class QuickMixin:
                 values[str(n)] = row
         fx_list = []
         for f in self.fx:
-            if f.get("lib") and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
+            if f.get("lib") in fxlib_mod.FX and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
                 fx_list.append({"name": f["lib"], "params": dict(f.get("params") or {})})
+            elif f.get("steps") and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
+                fx_list.append({"name": "step:" + f["steps"], "params": {}})
         if not values and not fx_list:
             raise ValueError("nothing to capture - set a look or start an effect on the lights first")
         out = dict(raw, kind="custom", values=values, fx_list=fx_list)
@@ -694,8 +711,12 @@ class QuickMixin:
                 wanted = btn.get("fx_list") or []
             for item in wanted:
                 try:
-                    r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
-                                             run["heads"], None)
+                    if item["name"].startswith("step:"):
+                        r = self._a_step_fx_run(id=item["name"][5:], heads=run["heads"],
+                                                beats=(item.get("params") or {}).get("beats"))
+                    else:
+                        r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
+                                                 run["heads"], None)
                     run["fx_ids"].append(r.get("fx"))
                     self._fx_live(r.get("fx"))
                 except ValueError:
