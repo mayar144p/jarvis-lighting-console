@@ -212,6 +212,7 @@ function roamBlock() {
       onclick: () => { roamSpeed = v; render(true); } }, l))),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
       onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
+    roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => buttonForNow() }, "Make a button") : null,
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }
 
@@ -281,13 +282,47 @@ function bpmText() {
   return t && t.source !== "manual" ? `${Math.round(t.bpm)} BPM` : "Tap";
 }
 
-// A button that plays this (a saved move follows the move when it's updated)
-async function makeButton(button, label) {
-  const name = await promptBox("Make a button", "Name", label, { ok: "Make button" });
-  if (name === null) return;
+// Who a button made here plays on: the group, when the selection is
+// exactly a group (lights added to the group later follow it), else just
+// the selected moving lights.
+function buttonTarget() {
+  const sel = new Set(((state.snap && state.snap.selected) || []).map(Number));
+  const g = ((state.snap && state.snap.groups) || []).find((x) =>
+    x.heads.length && x.heads.length === sel.size && x.heads.every((n) => sel.has(n)));
+  if (g) return { target: { group: g.n }, who: `group ${g.name}` };
   const heads = movers().map((x) => x.head_no);
-  run("quick_set", { page: 1, slot: "free", button: { ...button, label: name || label, mode: "latch",
-    target: heads.length ? { heads } : { all: true } } }, { toast: true });
+  return { target: { heads }, who: `${heads.length} light(s)` };
+}
+
+// A button that plays this, made at once (rename it in Edit any time); a
+// saved move follows the move when it's updated
+async function makeButton(button, label) {
+  if (!movers().length) { toast("Select moving lights first"); return; }
+  const { target, who } = buttonTarget();
+  const r = await run("quick_set", { page: 1, slot: "free", button: { ...button, label: label.slice(0, 24), mode: "latch", target } });
+  if (r.ok) toast(`Button “${label}” made for ${who} - ${r.summary.replace(/^button /, "Buttons page ").replace(/:.*$/, "")}`, "ok", 4000);
+}
+
+// the button for what the selected lights are doing now: a roam, a shape
+// or a movement with its knobs
+function buttonForNow() {
+  const heads = movers().map((x) => x.head_no);
+  const on = (f) => f.heads.some((n) => heads.includes(n));
+  const roam = ((state.snap && state.snap.fx) || []).find((f) => f.lib === "roam" && on(f));
+  if (roam) {
+    const p = roam.params || {};
+    return makeButton({ kind: "fx", fx: "roam", params: { zones: (roam.zones || []).map((z) => z.id), speed: p.speed, size: p.size, beats: p.beats } },
+      roam.label || "Roam");
+  }
+  const mine = running().find(on);
+  if (mine && mine.lib === "shape") {
+    const p = mine.params || {};
+    return makeButton({ kind: "fx", fx: `shape:${p.shape}`, params: { speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, beats: p.beats } },
+      mine.label.replace(/^Shape: /, ""));
+  }
+  const lib = mine ? mine.lib : lastLib;
+  return makeButton({ kind: "fx", fx: lib, params: { ...params(), ...(mine && mine.params && mine.params.beats ? { beats: mine.params.beats } : {}) } },
+    (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
 }
 
 function speedMaster() {
@@ -388,13 +423,8 @@ function myMoves(act) {
   return h("div.mv-mine",
     h("div.mv-row", h("span.k", "My moves"),
       h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move"),
-      h("button.btn.small", { title: "A quick button (on / off) that runs this movement on these lights",
-        onclick: () => {
-          const heads = movers().map((x) => x.head_no);
-          const mine = running().find((f) => f.heads.some((n) => heads.includes(n)));
-          const lib = mine ? mine.lib : lastLib;
-          makeButton({ kind: "fx", fx: lib, params: params() }, (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
-        } }, "Make a button"),
+      h("button.btn.small", { title: "A button (on / off) right now that plays what these lights are doing - the roam, shape or movement with its knobs - on these lights only (or their group)",
+        onclick: () => buttonForNow() }, "Make a button"),
       h("button.btn.small", { title: "Record the movement (and the rest of the programmer) as a cue",
         onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…")),
     list.length ? h("div.mv-mytiles", ...list.map((m) => {

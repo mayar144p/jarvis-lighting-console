@@ -1612,6 +1612,9 @@ def test_on_the_beat() -> None:
             e._sound_size = 1.0
         finally:
             e.shutdown()
+        aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+        check("follow-me has a speed: instant / fast / medium / slow, sent to the desk",
+              "Follow speed" in aj and "pending.glide = glide" in aj and '"Slow"' in aj)
 
         # Ableton Link: the pure part
         node = b"peer0001"
@@ -1824,5 +1827,122 @@ def test_paint_and_shapes() -> None:
                   and e.media[mid]["data"] == pic and [s["name"] for s in e.shapes] == ["Tri"])
             e.act("undo")
             check("undo keeps them in step", isinstance(e.shapes, list))
+        finally:
+            e.shutdown()
+
+
+def test_move_buttons_and_glide() -> None:
+    """Plan steps 6 and 7: a button straight from the Move tab (a roam, a
+    shape, a movement) for the selected lights or their group; the follow
+    speed glided by the engine at the DMX rate."""
+    print("Move tab: instant buttons; follow speed in the engine")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=4)
+            e.act("select_heads", head=1, head_end=4)
+            e.act("attach_heads", rig=e._rig_named("front truss")["id"])
+            e.act("group_create", name="Front movers", heads=[1, 2])
+            zones = [z["id"] for z in e.venue["zones"] if z["kind"] in ("dancefloor", "bar")]
+            r = e.act("roam", zones=zones, speed=0.5, heads=[1, 2])
+            check("a slow roam keeps its speed (no longer rounded to 0.05)",
+                  r.get("ok") and e.fx[-1]["params"]["speed"] == 0.5, str(e.fx[-1]["params"]))
+            e.act("stop_fx")
+            r = e.act("quick_set", page=1, slot="free", button={
+                "kind": "fx", "fx": "roam", "label": "Roam floor+bar", "mode": "latch",
+                "params": {"zones": zones, "speed": 0.5, "size": 0.8}, "target": {"group": 1}})
+            bid = r.get("id")
+            check("a roam button: its zones and speed", r.get("ok") and r["button"]["params"]["speed"] == 0.5
+                  and r["button"]["params"]["zones"] == zones, str(r.get("error") or r.get("button")))
+            e.act("quick_press", id=bid, down=True)
+            row = next((f for f in e.fx if f.get("roam")), None)
+            check("pressed: the group roams those zones", row and row["heads"] == [1, 2]
+                  and {z["id"] for z in row["roam"]} == set(zones), str(row and row["heads"]))
+            e.act("quick_press", id=bid, down=True)              # latch: off
+            check("pressed again: it stops", not any(f.get("roam") for f in e.fx))
+            next(x for x in e.groups if x["n"] == 1)["heads"].append(3)     # the group grows
+            e.act("quick_press", id=bid, down=True)
+            row = next((f for f in e.fx if f.get("roam")), None)
+            check("a light added to the group later follows the button", row and 3 in row["heads"], str(row and row["heads"]))
+            e.act("quick_release_all")
+            check("a roam button needs zones that are in the room",
+                  not e.act("quick_set", page=1, slot=9, button={"kind": "fx", "fx": "roam", "params": {"zones": ["nowhere"]}}).get("ok")
+                  and not e.act("quick_set", page=1, slot=9, button={"kind": "fx", "fx": "roam", "params": {}}).get("ok"))
+            shp = e.act("shape_save", shape={"name": "Tri", "points": [[0, 1], [1, -1], [-1, -1]]})["id"]
+            r = e.act("quick_set", page=1, slot="free", button={
+                "kind": "fx", "fx": f"shape:{shp}", "label": "Tri", "params": {"speed": 0.4, "size": 25, "spread": 360},
+                "target": {"heads": [3, 4]}})
+            check("a shape button keeps its knobs", r.get("ok") and r["button"]["params"]["speed"] == 0.4
+                  and r["button"]["params"]["size"] == 25.0, str(r.get("error") or r.get("button")))
+            e.act("quick_press", id=r["id"], down=True)
+            row = next((f for f in e.fx if f.get("lib") == "shape"), None)
+            check("pressed: only those lights run the shape", row and row["heads"] == [3, 4] and row["params"]["speed"] == 0.4)
+            e.act("quick_release_all")
+            check("a button for a shape that isn't there is refused",
+                  not e.act("quick_set", page=1, slot=9, button={"kind": "fx", "fx": "shape:nope"}).get("ok"))
+            r = e.act("quick_set", page=1, slot=10, button={"kind": "flash", "label": "Hit", "mode": "tap", "seconds": 2.5})
+            check("a 2.5 s timed button stays 2.5 s (no longer rounded)", r.get("ok") and r["button"]["seconds"] == 2.5)
+
+            # follow speed: the engine glides
+            e.act("clear_programmer")
+            e.act("select_heads", head=1, head_end=2)
+            e.act("aim_at", x=-3, y=0, z=8)
+            instant_left = dict(e.programmer[1])
+            e.act("aim_at", x=3, y=0, z=8)
+            instant_right = dict(e.programmer[1])
+            e.act("aim_at", x=-3, y=0, z=8, glide=1.0)
+            g = e._glide
+            check("the first glide starts where the lights were left", g and abs(g["cur"][0] - 3.0) < 0.05, str(g and g["cur"]))
+            t0 = g["last"]
+            e._aim_glide_tick(now=t0 + 0.3)
+            mid = dict(e.programmer[1])
+            check("part of the way after 0.3 s", -3.0 < e._glide["cur"][0] < 3.0
+                  and mid["pan"] != instant_left["pan"] and mid["pan"] != instant_right["pan"], f"{e._glide['cur']} {mid}")
+            check("the live feed has where the lights are now", e.lite(e.patch_rev)["aim_glide"]["x"] == round(e._glide["cur"][0], 2))
+            e._aim_glide_tick(now=t0 + 20)
+            check("and there in the end, exactly as an instant aim", e.programmer[1]["pan"] == instant_left["pan"]
+                  and e.programmer[1]["tilt"] == instant_left["tilt"] and e._glide is None
+                  and e.lite(e.patch_rev)["aim_glide"] is None, str(e.programmer[1]))
+            e.act("aim_at", x=3, y=0, z=8, glide=2.0)
+            e._aim_glide_tick(now=e._glide["last"] + 0.2)
+            e.act("nudge", axis="pan", step=0.05)
+            e._aim_glide_tick(now=time.monotonic() + 0.5)
+            check("nudged by hand: the glide lets go", e._glide is None)
+            e.act("aim_at", x=-3, y=0, z=8, glide=2.0)
+            e.act("aim_at", x=0, y=0, z=6)
+            check("an instant aim stops a glide", e._glide is None)
+            e.act("aim_at", x=3, y=0, z=8, glide=1.0)
+            before = e._glide["cur"][0]
+            e.build_frames(time.monotonic() + 0.3)
+            check("the frame builder moves it (the browser does not have to)",
+                  e._glide is None or e._glide["cur"][0] != before, str(before))
+            # stopping effects without clearing the lights
+            e.act("clear_programmer")
+            e.act("select_heads", head=1, head_end=2)
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle")
+            e.act("record_cue", playback=1, name="circling")
+            e.act("cue_go", playback=1)
+            e.act("select_heads", head=3, head_end=4)
+            e.act("set_colour", hex="#0000ff")
+            e.act("run_fx", name="circle")
+            pub = {f["from"] for f in e.snapshot()["fx"]}
+            check("each running effect says who started it", pub == {"cue", "programmer"}, str(pub))
+            r = e.act("stop_fx", programmer=True)
+            check("stop my effects: the lights keep their colour, the cue's effect plays on",
+                  r.get("ok") and r["stopped"] == 1 and any(f.get("cue_pb") for f in e.fx)
+                  and e.programmer[3].get("blue") == 255, str(e.fx)[:200])
+            e.act("run_fx", name="circle")
+            e.act("clear_programmer")
+            check("Clear drops your effects, not the cue's", any(f.get("cue_pb") for f in e.fx)
+                  and not any(not f.get("cue_pb") for f in e.fx))
         finally:
             e.shutdown()

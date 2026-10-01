@@ -71,8 +71,11 @@ class ProgrammerMixin:
         self._prog_fade = None
         n = sum(len(v) for v in self.programmer.values())
         self.programmer.clear()
-        fx_n = len(self.fx)
-        self.fx = []                    # CLEAR drops the effects too
+        # CLEAR drops the effects you started too - not a cue's, a button's
+        # or a timeline clip's: those belong to their playback / button
+        mine = {f["id"] for f in self._programmer_fx() if not f.get("live")}
+        fx_n = len(mine)
+        self.fx = [f for f in self.fx if f["id"] not in mine]
         return {"cleared": n, "fx": fx_n, "summary": "programmer cleared"}
 
     # --- effects ---------------------------------------------------------
@@ -314,8 +317,14 @@ class ProgrammerMixin:
                 "skipped": [h["head_no"] for h in skipped],
                 "summary": msg}
 
-    def _a_stop_fx(self, id=None, fx=None, **_):
+    def _a_stop_fx(self, id=None, fx=None, programmer=False, **_):
+        """Stop one effect, every effect, or (programmer=true) the ones you
+        started - leaving the cues', buttons' and timeline's playing."""
         target = id if id is not None else fx
+        if target is None and _truthy(programmer):
+            mine = {f["id"] for f in self._programmer_fx() if not f.get("live")}
+            self.fx = [f for f in self.fx if f["id"] not in mine]
+            return {"stopped": len(mine), "summary": f"stopped {len(mine)} effect(s) - the lights keep their colour and position"}
         if target is None:
             n = len(self.fx)
             self.fx = []

@@ -12,7 +12,7 @@ import time
 from app import fixture_kind
 from app import fxlib as fxlib_mod
 from app import motion as motion_mod
-from app.engine_base import _attr_role, _clamp, _hex_or_none, _truthy
+from app.engine_base import _attr_role, _clamp, _fclamp, _hex_or_none, _truthy
 from app.engine_support import HTP_ROLES, LASER_ROLES, ROLES
 from app.merge import FX_OUTPUT_ROLES
 
@@ -129,7 +129,7 @@ class QuickMixin:
                 if not btn["exclusive"]:
                     btn.pop("exclusive")
             if kind not in self.FX_BUTTONS and raw.get("seconds") not in (None, "", 0, "0"):
-                btn["seconds"] = float(_clamp(raw.get("seconds"), 0.1, 3600))
+                btn["seconds"] = _fclamp(raw.get("seconds"), 0.1, 3600)
         if kind == "custom":
             self._quick_clean_custom(raw, btn)
         # a key on the keyboard (one letter or digit) that plays it
@@ -148,12 +148,35 @@ class QuickMixin:
         if kind == "flash":
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
-            btn["hz"] = float(_clamp(raw.get("hz", 10), 1, 20))
+            btn["hz"] = _fclamp(raw.get("hz", 10), 1, 20)
         if kind == "colour" and not btn["colour"]:
             raise ValueError("a colour button needs a colour")
         if kind == "fx":
             name = str(raw.get("fx") or "")
-            if name.startswith("step:"):
+            rp = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+            if name == "roam":
+                # a roam made on the Move tab: its zones, speed, size, beat
+                zones = rp.get("zones") if isinstance(rp.get("zones"), list) else [rp.get("zones")] if rp.get("zones") else []
+                zones = [str(z)[:40] for z in zones if z][:8]
+                if not zones:
+                    raise ValueError("a roam button needs its zones")
+                self._roam_zones(zones)                      # they must be in this room
+                btn["fx"] = "roam"
+                btn["params"] = {"zones": zones, "speed": _fclamp(rp.get("speed", 1.0), 0.05, 8),
+                                 "size": _fclamp(rp.get("size", 1.0), 0.2, 1.0)}
+                if rp.get("beats") not in (None, "", 0):
+                    btn["params"]["beats"] = self._clean_beats(rp["beats"])
+            elif name.startswith("shape:"):
+                if not any(s["id"] == name[6:] for s in self._shapes()):
+                    raise ValueError(f"no shape {name[6:]!r}")
+                btn["fx"] = name
+                btn["params"] = {"speed": _fclamp(rp.get("speed", 0.25), 0.005, 2.0),
+                                 "size": _fclamp(rp.get("size", 30), 1, 270),
+                                 "spread": _fclamp(rp.get("spread", 0), 0, 720),
+                                 "direction": -1.0 if float(rp.get("direction") or 1) < 0 else 1.0}
+                if rp.get("beats") not in (None, "", 0):
+                    btn["params"]["beats"] = self._clean_beats(rp["beats"])
+            elif name.startswith("step:"):
                 # one of the show's step effects (FX tab -> Step effects)
                 if not any(f["id"] == name[5:] for f in self._steps()):
                     raise ValueError(f"no step effect {name[5:]!r}")
@@ -199,7 +222,7 @@ class QuickMixin:
                 raise ValueError("a move button needs one of My moves")
             btn["move"] = mid
         if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
-            btn["seconds"] = float(_clamp(raw.get("seconds"), 0.2, 600))
+            btn["seconds"] = _fclamp(raw.get("seconds"), 0.2, 600)
         if kind == "fog":
             btn["level"] = int(_clamp(raw.get("level", 100), 1, 100))
             btn.setdefault("seconds", 10.0)
@@ -304,7 +327,7 @@ class QuickMixin:
         if raw.get("dim") not in (None, ""):
             btn["dim"] = int(_clamp(raw["dim"], 0, 100))
         if raw.get("hz") not in (None, "", 0, "0"):
-            btn["hz"] = float(_clamp(raw["hz"], 0.5, 25))
+            btn["hz"] = _fclamp(raw["hz"], 0.5, 25)
         if _truthy(raw.get("kill")):
             btn["kill"] = True
         keep = lambda r: r in ROLES and r not in FX_OUTPUT_ROLES \
@@ -711,9 +734,16 @@ class QuickMixin:
                 wanted = btn.get("fx_list") or []
             for item in wanted:
                 try:
-                    if item["name"].startswith("step:"):
+                    ip = item.get("params") or {}
+                    if item["name"] == "roam":
+                        r = self._a_roam(zones=ip.get("zones"), heads=run["heads"], speed=ip.get("speed", 1.0),
+                                         size=ip.get("size", 1.0), beats=ip.get("beats"))
+                        r["fx"] = r["id"]
+                    elif item["name"].startswith("shape:"):
+                        r = self._a_run_shape(id=item["name"][6:], heads=run["heads"], **ip)
+                    elif item["name"].startswith("step:"):
                         r = self._a_step_fx_run(id=item["name"][5:], heads=run["heads"],
-                                                beats=(item.get("params") or {}).get("beats"))
+                                                beats=ip.get("beats"))
                     else:
                         r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
                                                  run["heads"], None)
@@ -973,6 +1003,8 @@ class QuickMixin:
         the sound, group masters, highlight and park - park last: a parked
         light stays where it was parked whatever else is going on."""
         self._quick_pending_tick()
+        if self.__dict__.get("_glide"):
+            self._aim_glide_tick()
         out = self._quick_override_vals()
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():

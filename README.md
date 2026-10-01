@@ -181,6 +181,29 @@ button is never an undo step; setting one up is. Buttons save with the show.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### Follow me speed
+
+Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on
+the floor map or the 3D floor. **Instant** goes straight there, as fast as
+the lights can move. **Fast**, **Medium** and **Slow** make the beams glide
+after it and carry on to where you let go (a dashed ring shows where they
+are aimed right now). The desk does the gliding at the full DMX rate, so
+the real lights glide smoothly even with the page hidden or closed. Nudging
+or re-aiming the lights by hand stops a glide. Remembered on this computer.
+
+**Make a button** (Move tab, and in the Roam row while roaming) makes a
+button straight away for what the selected lights are doing: the roam
+(its zones, speed and size), a shape or a movement with its knobs. It is
+for those lights only, or for their group when the selection is exactly a
+group (lights added to the group later follow it). Rename it in Edit.
+
+**Stopping effects:** the "In the programmer" bar shows **Effects** with
+a ×: it stops the effects you started and leaves the lights' colour, level
+and position (and the effects of cues, buttons and the timeline) alone.
+The FX tab's Running list says where each effect comes from; **Stop mine**
+and **Stop all** are there too. **Clear all** no longer stops the effects
+of cues and buttons.
+
 ### Painting the rig and shapes
 
 * **FX tab -> Paint the rig.** A **gradient** of 2 to 6 colours across

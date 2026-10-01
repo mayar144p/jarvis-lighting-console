@@ -4,7 +4,7 @@
 // does the same from above, when the 3D angle is awkward.
 // Both send aim_at: each light solves its own pan/tilt from where it hangs.
 import { run } from "./actions.js";
-import { state, selectionHeads } from "./store.js";
+import { state, selectionHeads, on } from "./store.js";
 import { h, toast } from "./ui.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -13,19 +13,32 @@ let target = null;                      // {x, z}: the last spot aimed at
 let pending = null, timer = 0, last = 0;
 let fan = 0;                            // multi-head lights: metres between their heads' spots
 const RATE_MS = 70;
+// how fast the beams follow the pointer: 0 = straight there, else the
+// seconds they take to cover most of the way (they glide after it)
+const GLIDES = [[0, "Instant"], [0.25, "Fast"], [0.8, "Medium"], [2, "Slow"]];
+let glide = (() => { try { return +(localStorage.getItem("jarvis.followGlide") || 0); } catch (e) { return 0; } })();
+if (!GLIDES.some(([v]) => v === glide)) glide = 0;
+let aimNow = null;                      // {x, z}: where the desk has the beams while they glide
 
 const multiHead = () => selectionHeads().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
 
-/** Aim at (x, y, z), at most every RATE_MS; the last one always goes. */
+/** Aim at (x, y, z): straight there, or - with a Follow speed - the desk
+ *  glides the real lights after it (the engine moves them every DMX frame,
+ *  whatever this page does). */
 export function aimTo(p, final = false) {
   target = { x: p.x, z: p.z };
   drawTarget();
+  sendAim(p, final);
+}
+
+function sendAim(p, final) {
   pending = { x: +p.x.toFixed(2), y: +(p.y || 0).toFixed(2), z: +p.z.toFixed(2) };
   // a Wave 360 and the like: the heads picked follow on their own, or all
   // of them fan out along the throw
   if (state.cells && state.cells.length) pending.cell = [...state.cells];
   if (fan && multiHead()) pending.spread = fan;
+  pending.glide = glide;                // 0: straight there
   const send = () => {
     timer = 0;
     if (!pending) return;
@@ -81,6 +94,12 @@ function drawTarget() {
     if (!t) continue;
     t.style.display = target ? "" : "none";
     if (target) t.setAttribute("transform", `translate(${target.x} ${target.z})`);
+    // where the beams are right now, while they glide after the pointer
+    const c = svg.querySelector(".aim-now");
+    if (c) {
+      c.style.display = aimNow ? "" : "none";
+      if (aimNow) c.setAttribute("transform", `translate(${aimNow.x} ${aimNow.z})`);
+    }
   }
 }
 
@@ -114,7 +133,9 @@ function floorMap() {
   }
   const tg = el("g", { class: "aim-target" });
   tg.append(el("circle", { r: 0.5, class: "am-ring" }), el("circle", { r: 0.1, class: "am-dot" }));
-  svg.append(tg);
+  const now = el("g", { class: "aim-now" });
+  now.append(el("circle", { r: 0.22, class: "am-now" }));
+  svg.append(tg, now);
   // drag: the lights follow
   let down = false;
   const at = (ev, final) => {
@@ -145,12 +166,29 @@ export function aimBlock(...after) {
   const map = h("div.aim-map", { title: "Drag on the floor plan: the selected lights follow (stage at the top)" });
   map.append(floorMap());
   queueMicrotask(drawTarget);
+  const speed = h("div.mv-row", h("span.k", "Follow speed"),
+    h("span.chip-row", ...GLIDES.map(([v, l]) => h("button.chip" + (glide === v ? ".on" : ""), {
+      title: v ? `The beams glide after the pointer (about ${v} s to catch up), and carry on to where you let go` : "The beams go straight to the pointer, as fast as the lights can move",
+      onclick: (e) => {
+        glide = v;
+        try { localStorage.setItem("jarvis.followGlide", String(v)); } catch (err) { /* private window */ }
+        for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget);
+      },
+    }, l))));
   const heads = multiHead() ? h("div.mv-row", h("span.k", "Heads"),
     h("span.chip-row", ...[[0, "Together"], [0.8, "Fan out"], [2, "Wide fan"]].map(([v, l]) => h("button.chip" + (fan === v ? ".on" : ""), {
       title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar)",
       onclick: (e) => { fan = v; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); },
     }, l))), h("span.muted.small", "or pick heads (Heads: 1 2 3 4) to move them alone")) : null;
-  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, heads, ...after.filter(Boolean));
+  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, speed, heads, ...after.filter(Boolean));
 }
 
 export const isFollowing = () => following;
+
+// the desk's glide, from the live feed: the dashed ring on the map
+on("lite", (lite) => {
+  const g = lite && lite.aim_glide;
+  const was = aimNow;
+  aimNow = g ? { x: g.x, z: g.z } : null;
+  if (was || aimNow) drawTarget();
+});

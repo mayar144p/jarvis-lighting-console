@@ -56,10 +56,95 @@ whoever picks it up starts from the diagnosis, not from scratch.
      with the show.
    * Fixed on the way: speeds below 1 given to the new actions were rounded
      to whole numbers (an integer clamp).
-6. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+6. **(DONE) Instant buttons from moves** (asked 2026-10-01): when you are done
+   setting a movement up on the Move tab (a roam over your own zones, a
+   preset movement with its knobs, a shape), one press makes a button that
+   plays exactly that, with no cue in between. The button is only for the
+   lights selected when it is made, or the selected group (kept as the
+   group, so lights added to the group later follow it). It keeps the
+   zones / shape, speed, size, direction and beat lock. Today a roam can
+   only become a button through a cue and a GO button. The Move tab's
+   "Make a button" covers only preset movements and saved moves, and
+   targets the movers rather than the group.
+7. **(DONE) Follow speed in the engine** (asked 2026-10-01).  The Follow speed
+   (Move tab -> Aim: instant / fast / medium / slow) already moves the real
+   lights: the glide changes the pan / tilt sent on DMX, not just the 3D
+   view.  But the glide is worked out in the browser:
+   * a hidden or minimised tab slows its timers to about once a second,
+     so the real lights move in jerky steps;
+   * closing the page mid-glide leaves them where they are;
+   * new positions go out about 14 times a second, not at the full DMX
+     rate.
+   To do: the browser sends only the target and the speed.  The engine
+   glides the pan / tilt at the full 40 updates a second, whatever the
+   browser does, the same for every screen.  Optional: use the fixture's
+   own pan / tilt speed channel when it has one.
+   Done (6 and 7):
+   * Move tab -> Make a button (also in the Roam row) makes the button at
+     once for the roam / shape / movement running on the selection. It is
+     for the selected lights, or their group (kept as the group).
+   * aim_at takes `glide`: the engine moves the aim every frame (glide
+     state, a tick in the frame builder) and lets go when the lights are
+     moved by hand. The live feed shows where the beams are.
+   * Fixed on the way:
+     - Slow roam (0.5) ran at 0.05: an integer clamp. Button seconds and
+       strobe Hz were rounded the same way.
+     - No way to stop effects without clearing the lights: an Effects chip
+       (×) on the programmer bar and Stop mine. Clear and the chip leave
+       cue / button / timeline effects playing, and each running effect
+       says where it comes from.
+   * The fixture's own pan / tilt speed channel: not used yet.
+8. **Show only what a light can do** (asked 2026-10-01):
+   * The pan / tilt pad (Move tab, programmer) shows a light's real travel.
+     That means its pan and tilt degrees from the fixture file (a 180° pan
+     scanner, a tilt-only bar, a head with limited tilt) rather than the
+     full square for everyone. Places it can't reach are greyed out, and
+     the readout is in its own degrees. With several lights selected, the
+     pad shows the range they share.
+   * The 3D view, the aim tools (Follow me, the floor map, spots) and the
+     movement effects respect the same limits.
+   * No colour or movement controls on a unit that hasn't got them. The
+     tabs already hide by channel for the whole selection, but the Laser
+     and SFX panels can still show colour and move controls for a laser or
+     CO2 that has no such channels, and a mixed selection shows controls
+     some of its units can't use. To do: audit every panel per unit type,
+     hide what a unit lacks, and say which selected lights a control won't
+     reach.
+9. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
+   commands").  Today the copilot is one shot: one message in, one list of
+   allowed steps out, Apply.  Without a key it is the offline keyword
+   compiler, which really is hard-coded.  It should work like an assistant:
+   * **A loop, not one shot.**  Tools (read the rig / programmer / cues /
+     DMX, set lights, record, make buttons, a 3D snapshot...) that the
+     model chooses and chains itself, many steps a request.  It sees the
+     result (DMX values, the 3D picture) and corrects itself ("the movers
+     hit the ceiling" -> it checks the aim, re-aims, checks again).
+   * **Feelings, not commands.**  "Make the drop hit harder", "more
+     sunset", "calmer for the speeches", "this looks cheap, fix it".  It
+     chooses colour / level / movement / timing and says why in a line.
+   * **It talks back.**  It asks when unclear ("back truss or upstage
+     truss?"), suggests ("a blackout hit on the 1?"), and answers about the
+     show ("why is head 7 dark?" -> "parked since cue 3").
+   * **It sees.**  The 3D view as a picture ("the left side looks empty");
+     a dropped-in photo to match.
+   * **It remembers.**  Your style, the venue, what you kept or undid
+     ("warm white for speeches"), per show and per user.
+   * **With the music.**  Optional: it follows tempo, sections and drops,
+     suggests the next look, or runs an "AI operator" mode you can take
+     over at any moment.
+   * **Safety stays.**  3D preview first, one Ctrl+Z, never arms the
+     output / fires pyro or CO2 / deletes without asking; the offline
+     compiler stays as the fallback with no key.
+   * Works with the Gemini key in `.env` (tool use); a stronger model is
+     smarter.  The key stays in `.env`, never in the repo.
+   * Later, separate (not planned yet): the AI changing Jarvis's own code
+     on request - a branch + PR made by a coding agent, tests run, you
+     review and merge, Jarvis updates itself (never patching the running
+     app).
+10. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
-7. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+11. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
 
@@ -210,7 +295,7 @@ Fixed:
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
     group masters (a fader per group next to the GM), macros (command
     lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
-    the DJ-booth remote page (/remote.html), MIDI timecode (the timeline
+    the DJ-booth remote page (removed with Desktop only), MIDI timecode (the timeline
     follows MTC from the desk's MIDI in: MTC in the timeline bar, with
     the timecode where the timeline starts), tracking or cue only per
     cue list (+ block, record cue only), move in black, cue actions

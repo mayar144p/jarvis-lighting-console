@@ -721,16 +721,22 @@ function renderProgIn() {
       : "Own channels";
   const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib));
   if (moving && !counts.position) counts.position = 0;
-  const key = JSON.stringify([counts, otherName]);
+  // the effects you started (not a cue's, a button's or the timeline's)
+  const mineFx = ((state.snap && state.snap.fx) || []).filter((f) => (f.from || "programmer") === "programmer");
+  const key = JSON.stringify([counts, otherName, mineFx.length]);
   if (key === progInKey) return;          // redraw only on change: keeps the x clickable
   progInKey = key;
   const groups = IN_GROUPS.filter(([g]) => g in counts).map(([g, l]) => [g, g === "other" ? otherName : l]);
-  box.hidden = !groups.length;
-  box.replaceChildren(...(groups.length ? [h("span.muted.small", "In the programmer:"),
+  box.hidden = !groups.length && !mineFx.length;
+  box.replaceChildren(...(groups.length || mineFx.length ? [h("span.muted.small", "In the programmer:"),
     ...groups.map(([g, label]) => h("span.chip.prog-in-chip",
       { title: counts[g] ? `${label} on ${counts[g]} light(s)` : `${label}: a movement is running` },
       label, counts[g] ? h("small", ` ${counts[g]}`) : null,
       h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
+    mineFx.length ? h("span.chip.prog-in-chip.prog-fx", { title: mineFx.map((f) => f.label).join(", ") },
+      "Effects", h("small", ` ${mineFx.length}`),
+      h("button.x", { title: "Stop the effects you started - the lights keep their colour, level and position (cues' and buttons' effects keep playing)",
+        onclick: () => run("stop_fx", { programmer: true }, { toast: true }) }, "×")) : null,
     h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all"),
     // on every tab: set a colour on the Colour tab and record it right there
     h("button.btn.small.prog-rec", { title: "Record what is in the programmer as a cue (R)", onclick: () => openCueDialog() }, "Record cue…")] : []));
@@ -826,17 +832,19 @@ function renderRunning(force = false) {
   const box = $("#fx-running");
   // redraw only when the list changes: rebuilt on every live update, Stop
   // flickered and a click could land on a button already replaced
-  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, (f.heads || []).length, fxBeats(f), fxSpace(f)]));
+  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, f.from, (f.heads || []).length, fxBeats(f), fxSpace(f)]));
   if (!force && key === runningKey) return;
   runningKey = key;
   if (!list.length) { box.replaceChildren(h("p.muted.small", "No effects running.")); return; }
   box.replaceChildren(...list.map((f) => h("div.fx-run",
     h("b", f.label || `${f.kind || "wave"} ${f.role || ""}`),
-    h("small", `${(f.heads || []).length} heads`),
+    h("small", `${(f.heads || []).length} heads` + (f.from && f.from !== "programmer" ? ` · from a ${f.from}` : "")),
     f.lib ? spaceSelect(f) : null,
     beatSelect(f),
     h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
-  h("button.btn.small.ghost", { onclick: () => run("stop_fx", {}) }, "Stop all"));
+  list.some((f) => (f.from || "programmer") === "programmer")
+    ? h("button.btn.small.ghost", { title: "Stop the effects you started; cues' and buttons' effects keep playing", onclick: () => run("stop_fx", { programmer: true }) }, "Stop mine") : null,
+  h("button.btn.small.ghost", { title: "Stop every effect, cues' and buttons' too", onclick: () => run("stop_fx", {}) }, "Stop all"));
 }
 
 // ----------------------------------------------------------------- looks
