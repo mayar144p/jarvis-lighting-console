@@ -1257,3 +1257,15 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .shape-dot { fill: #ff4d6d; }
 .shape-chip { display: inline-flex; }
 .shape-chip .chip.ghost { padding: 0 6px; opacity: .7; }
+/* the pad shows only what the selected lights can do */
+.pad-out { position: absolute; background: repeating-linear-gradient(45deg, rgba(0,0,0,.45) 0 6px, rgba(0,0,0,.3) 6px 12px); pointer-events: none; z-index: 0; }
+.pad-ax { position: absolute; font: 10px var(--mono); color: var(--muted); pointer-events: none; z-index: 2; }
+.pad-ax.l { left: 4px; top: 50%; transform: translateY(-120%); }
+.pad-ax.r { right: 4px; top: 50%; transform: translateY(-120%); }
+.pad-ax.t { top: 3px; left: 50%; transform: translateX(6px); }
+.pad-ax.b { bottom: 3px; left: 50%; transform: translateX(6px); }
+.pad.no-pan .pad-dot { left: 50% !important; }
+.pad.no-tilt .pad-dot { top: 50% !important; }
+.pad.no-pan::before, .pad.no-tilt::after { display: none; }
+.pad.no-pan { background-image: linear-gradient(90deg, transparent calc(50% - 14px), rgba(255,255,255,.04) calc(50% - 14px), rgba(255,255,255,.04) calc(50% + 14px), transparent calc(50% + 14px)); }
+.pad.no-tilt { background-image: linear-gradient(0deg, transparent calc(50% - 14px), rgba(255,255,255,.04) calc(50% - 14px), rgba(255,255,255,.04) calc(50% + 14px), transparent calc(50% + 14px)); }

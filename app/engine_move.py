@@ -208,6 +208,45 @@ class MoveMixin:
         self._floor_cache = (key, out)
         return out
 
+    def _a_pad_info(self, heads=None, **_):
+        """What the pan / tilt pad shows for the selection: which axes the
+        lights have, their travel in degrees, and the part they can all
+        reach (their own limits; the dance floor too when it is locked)."""
+        nums = [int(n) for n in heads] if heads else list(self.selected)
+        by = {h["head_no"]: h for h in self.patch}
+        rows = [by[n] for n in nums if n in by and ("pan" in by[n]["map"] or "tilt" in by[n]["map"])]
+        out = {"heads": [h["head_no"] for h in rows], "pan": False, "tilt": False,
+               "deg": {}, "reach": {}, "mixed": False, "both": False}
+        if not rows:
+            return {**out, "summary": "no moving lights selected"}
+        out["pan"] = any("pan" in h["map"] for h in rows)
+        out["tilt"] = any("tilt" in h["map"] for h in rows)
+        out["both"] = any("pan" in h["map"] and "tilt" in h["map"] for h in rows)
+        for role in ("pan", "tilt"):
+            have = [h for h in rows if role in h["map"]]
+            if not have:
+                continue
+            lo, hi = 0.0, 1.0
+            spans = set()
+            for h in have:
+                a, b = self._eff_limits(h, bool(self.floor_lock)).get(role, (0.0, 1.0))
+                lo, hi = max(lo, a), min(hi, b)
+                r = self.head_ranges(h).get(role) or {}
+                if r.get("min") is not None and r.get("max") is not None and r.get("unit") == "degree":
+                    spans.add((float(r["min"]), float(r["max"])))
+                else:
+                    spans.add(None)
+            if lo > hi:                      # they share no part: the first light's
+                lo, hi = self._eff_limits(have[0], bool(self.floor_lock)).get(role, (0.0, 1.0))
+            out["reach"][role] = [round(lo, 4), round(hi, 4)]
+            known = [s for s in spans if s]
+            if known:
+                out["deg"][role] = list(known[0])
+            if len(spans) > 1:
+                out["mixed"] = True
+        axes = " and ".join(a for a in ("pan", "tilt") if out[a])
+        return {**out, "summary": f"{len(rows)} light(s): {axes}"}
+
     def _eff_limits(self, h: dict, floor: bool) -> dict:
         """A head's pan/tilt range as fractions: its own range, narrowed to
         the dance floor when `floor` - {"pan": (lo, hi), "tilt": (lo, hi)}."""

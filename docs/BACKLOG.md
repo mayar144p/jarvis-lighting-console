@@ -94,7 +94,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
        cue / button / timeline effects playing, and each running effect
        says where it comes from.
    * The fixture's own pan / tilt speed channel: not used yet.
-8. **Show only what a light can do** (asked 2026-10-01):
+8. **(DONE) Show only what a light can do** (asked 2026-10-01):
    * The pan / tilt pad (Move tab, programmer) shows a light's real travel.
      That means its pan and tilt degrees from the fixture file (a 180° pan
      scanner, a tilt-only bar, a head with limited tilt) rather than the
@@ -110,6 +110,23 @@ whoever picks it up starts from the diagnosis, not from scratch.
      some of its units can't use. To do: audit every panel per unit type,
      hide what a unit lacks, and say which selected lights a control won't
      reach.
+   Done:
+   * The pad: `pad_info` (axes, degrees from the fixture file, the part all
+     selected lights can reach: their limits, the dance floor when it is
+     locked).  The pad greys what they can't reach, labels its edges in
+     the lights' degrees, reads out in degrees, and a drag stops at the
+     limit.  A light that only tilts (a CO2 jet) gets a tilt-only pad and
+     sends tilt only; one that only pans, pan only.
+   * The Move tab: movements a light can't do are hidden (only Bounce for
+     tilt-only; Sweep / Fan for pan-only).  Aim / follow / spots / roam
+     need pan and tilt, so tilt-only lights get a note to use the pad.
+   * Level / Colour / Beam / FX tabs count real lights only.  A laser's or
+     effect machine's colour channels (a laser's red / green / blue diode
+     channels) are on its Laser / SFX tab ("Other channels"); colour and
+     level never reached them anyway.  A mixed selection keeps the tabs for
+     its lights.
+   * The output already clamps every value to a light's limits, so the
+     3D view, cues and movements respect them too.
 9. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
    commands").  Today the copilot is one shot: one message in, one list of
    allowed steps out, Apply.  Without a key it is the offline keyword

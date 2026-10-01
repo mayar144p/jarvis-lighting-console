@@ -133,7 +133,7 @@ UNDO_EXCLUDED = frozenset({
 READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
-_READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info",
+_READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare",
                         "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "paperwork"})
@@ -647,7 +647,7 @@ ACTIONS = (
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
     "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build", "quick_quant",
     "run_gradient", "run_media", "media_save", "media_delete",
-    "shape_save", "shape_delete", "run_shape",
+    "shape_save", "shape_delete", "run_shape", "pad_info",
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
