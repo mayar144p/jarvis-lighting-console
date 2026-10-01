@@ -634,7 +634,7 @@ ACTIONS = (
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats",
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
-    "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run",
+    "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build",
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",

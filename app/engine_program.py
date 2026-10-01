@@ -536,12 +536,13 @@ class ProgrammerMixin:
         return {"speed_master": self.speed_master,
                 "summary": f"effects at {round(self.speed_master * 100)}% speed"}
 
-    def _fx_values(self, now: float | None = None) -> dict[int, dict[str, int]]:
+    def _fx_values(self, now: float | None = None, rig: bool = False) -> dict[int, dict[str, int]]:
         """{head_no: {role: value}} for every running, unexpired effect.
 
         Called from the frame builder and the look feed (both under the
         lock); expired effects are dropped here, so no other bookkeeping
-        is needed.
+        is needed.  `rig`: what the wire gets - an effect started while in
+        blind (preview) runs in 3D only, so it is left out.
         """
         if not self.fx:
             return {}
@@ -549,12 +550,15 @@ class ProgrammerMixin:
         out: dict[int, dict[str, int]] = {}
         keep: list[dict] = []
         base = None                       # programmer + cues under the effects
+        hidden = self._blind_fx_from() if rig else None
+        junk: dict[int, dict[str, int]] = {}
         for row in self.fx:
             elapsed = now - row["t0"]
             dur = row.get("duration")
             if dur is not None and elapsed >= dur:
                 continue                              # expired - drop it
             keep.append(row)
+            o = junk if self._blind_hidden(row, hidden) else out
             heads = row["heads"]
             count = len(heads)
             # the effect's own clock, run at the Speed master's rate: changing
@@ -574,16 +578,16 @@ class ProgrammerMixin:
                     speed = float((row.get("params") or {}).get("speed") or row.get("speed") or 1.0)
                     row["_v"] = cyc / max(speed, 1e-6)
             if row.get("roam"):
-                self._roam_values(row, row["_v"] if not beats else row.get("_beat_cycles", 0.0) * 2.0, out)
+                self._roam_values(row, row["_v"] if not beats else row.get("_beat_cycles", 0.0) * 2.0, o)
                 continue
             if row.get("lib") in motion_mod.KINDS:
                 if base is None:
-                    base = (self._programmer_now(now), self._active_playbacks(now))
-                self._move_values(row, step, base, out)
+                    base = (self._live_programmer(now) if rig else self._programmer_now(now), self._active_playbacks(now))
+                self._move_values(row, step, base, o)
                 continue
             elapsed = row["_v"]
             if row.get("steps"):
-                self._step_values(row, elapsed, out)          # elapsed: seconds at the Speed master
+                self._step_values(row, elapsed, o)          # elapsed: seconds at the Speed master
                 continue
             if row.get("lib"):
                 # A NAMED effect writes SEVERAL roles per head, so the
@@ -609,7 +613,7 @@ class ProgrammerMixin:
                                                    elapsed=elapsed, index=i, count=len(units))
                         except ValueError:
                             continue
-                        dst = out.setdefault(head_no, {})
+                        dst = o.setdefault(head_no, {})
                         for role, v in (vals or {}).items():
                             if k is None:
                                 dst[role] = v
@@ -634,7 +638,7 @@ class ProgrammerMixin:
                         # 200 Hz; the effect stops being listed.
                         continue
                     if vals:
-                        out.setdefault(head_no, {}).update(vals)
+                        o.setdefault(head_no, {}).update(vals)
                 continue
             for i, head_no in enumerate(heads):
                 cycles = fxmod.cycles_for(elapsed, row["speed"], row["phase"],
@@ -643,7 +647,7 @@ class ProgrammerMixin:
                                        row["depth"],
                                        seed=row["id"] * 1000 + head_no,
                                        low=row["low"], high=row["high"])
-                out.setdefault(head_no, {})[row["role"]] = value
+                o.setdefault(head_no, {})[row["role"]] = value
         if len(keep) != len(self.fx):
             self.fx = keep
         return out

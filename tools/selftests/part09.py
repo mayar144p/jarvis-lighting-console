@@ -1330,3 +1330,189 @@ def test_review_fixes_oct() -> None:
                   abs(it["a"][1] - 4.145) < 1e-3 and any(x["trim"] == 4.0 for x in rep), f"{it['a'][1]} {[x['trim'] for x in rep]}")
         finally:
             e.shutdown()
+
+
+def test_plan_preview() -> None:
+    """Preview a copilot plan in 3D: blind holds the programmer AND any
+    effect started in it back from the rig, the 3D look shows them; Keep
+    hands all of it to the rig, Throw away (undo + blind off) drops it."""
+    print("Copilot plan preview in 3D")
+    from app import console_ai
+    from app import engine as eng
+
+    saved_key = config.LLM_API_KEY
+    config.LLM_API_KEY = ""
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ffffff")
+            now = time.monotonic()
+            wire0 = bytes(e.build_frames(now)[1][:16])
+
+            def preview(text: str) -> dict:
+                p = console_ai.plan(text, offline=True, eng=e)
+                e.act("blind", state=True)
+                return console_ai.run(console_ai.resolve(p["steps"], e), e)
+
+            from app import fxlib
+            hues = {tuple(sorted(fxlib.apply("rainbow", {}, ["red", "green", "blue"], {"spread": 180},
+                                             elapsed=0.3, index=i, count=6).items())) for i in range(6)}
+            check("a rainbow ACROSS the rig: the heads get different colours", len(hues) >= 4, str(hues))
+            r = preview("rainbow across the rig")
+            check("the plan ran in preview", r.get("ok") and any(f.get("lib") == "rainbow" for f in e.fx), str(r)[:200])
+            t = time.monotonic() + 0.7
+            wire = bytes(e.build_frames(t)[1][:16])
+            hexes = {x["hex"] for x in e._looks(t)}
+            check("the rig keeps what it had", wire == wire0, f"{list(wire0)} -> {list(wire)}")
+            check("the 3D view shows the rainbow", len(hexes) > 1 or hexes != {"#ffffff"}, str(hexes))
+            # throw away
+            e.act("undo")
+            e.act("blind", state=False)
+            check("thrown away: no rainbow, the rig as before",
+                  not any(f.get("lib") == "rainbow" for f in e.fx)
+                  and bytes(e.build_frames(time.monotonic())[1][:16]) == wire0, str(e.fx)[:200])
+            # keep
+            preview("rainbow across the rig")
+            e.act("blind", state=False, keep=True)
+            t = time.monotonic() + 0.7
+            wire = bytes(e.build_frames(t)[1][:16])
+            check("kept: the rig runs the rainbow", wire != wire0 and any(f.get("lib") == "rainbow" for f in e.fx)
+                  and not e.blind_public()["on"], f"{list(wire)}")
+            # an effect running BEFORE blind stays on the rig while blind
+            e.act("blind", state=True)
+            check("an effect from before the preview still reaches the rig",
+                  bytes(e.build_frames(time.monotonic() + 1.3)[1][:16]) != wire0)
+            e.act("blind", state=False)
+            check("leaving blind keeps the older effect", any(f.get("lib") == "rainbow" for f in e.fx))
+            # a cue GO in blind plays on the live rig - its effects too
+            e.act("stop_fx")
+            e.act("clear_programmer")
+            e.act("select_all")
+            e.act("set_intensity", level=100)
+            e.act("run_fx", name="rainbow", params={"spread": 180})
+            e.act("record_cue", playback=1, name="fx cue", fade=0)
+            e.act("stop_fx")
+            e.act("clear_programmer")
+            wire1 = bytes(e.build_frames(time.monotonic())[1][:16])
+            e.act("blind", state=True)
+            e.act("cue_go", playback=1)
+            cue_fx = [f for f in e.fx if f.get("cue_pb")]
+            later = bytes(e.build_frames(time.monotonic() + 0.9)[1][:16])
+            check("in blind, a cue's effect still reaches the rig", cue_fx and later != wire1, f"{cue_fx} {list(later)}")
+            e.act("blind", state=False)
+            check("and leaving blind doesn't stop it", any(f.get("cue_pb") for f in e.fx))
+        finally:
+            config.LLM_API_KEY = saved_key
+            e.shutdown()
+
+
+def test_ai_programs() -> None:
+    """Item 23, the rest of it: "the back truss chases red and white on the
+    beat during the drop" (a rig by what people call it, a two-colour step
+    chase, a clip over the drop), "build me 8 buttons", "a 32-bar build-up"."""
+    print("AI that programs: chases, buttons, build-ups")
+    from app import console_ai
+    from app import engine as eng
+    from app import timeline as tl_mod
+
+    saved_key = config.LLM_API_KEY
+    config.LLM_API_KEY = ""
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+
+        def say(text: str) -> dict:
+            p = console_ai.plan(text, offline=True, eng=e)
+            return console_ai.run(console_ai.resolve(p["steps"], e), e)
+
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="LED PAR 4ch", qty=6)
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            check("back truss = the Rear truss, not the upstage one",
+                  (e._rig_named("back truss") or {}).get("name") == "Rear truss"
+                  and (e._rig_named("the front truss") or {}).get("name") == "Front truss"
+                  and e._rig_named("balcony pipe") is None)
+            e.act("select_heads", head=1, head_end=6)
+            e.act("attach_heads", rig=e._rig_named("back truss")["id"])
+            e.act("clear_selection")
+            e.act("timeline_set", length=120, bpm=120,
+                  markers=[{"t": 0, "name": "Intro"}, {"t": 64, "name": "Drop"}, {"t": 96, "name": "Breakdown"}])
+            check("the drop runs from its marker to the next one", tl_mod.section_span(e.timeline, "the drop") == (64.0, 96.0))
+            r = say("the back truss chases red and white on the beat during the drop")
+            clip = next((c for t in e.timeline["tracks"] for c in t["clips"] if c.get("step")), None)
+            fx = next((f for f in e.step_fx if clip and f["id"] == clip["step"]), None)
+            check("a chase clip over the drop, on the truss lights only",
+                  r.get("ok") and clip and clip["t"] == 64.0 and clip["dur"] == 32.0
+                  and clip["target"] == {"heads": [1, 2, 3, 4, 5, 6]} and clip["beats"] == 2.0,
+                  json.dumps(r)[:300] + json.dumps(clip))
+            check("the chase: 2 steps, red and white swapping between neighbours",
+                  fx and len(fx["steps"]) == 2 and fx["name"].lower().startswith("red / white")
+                  and fx["steps"][0]["values"]["1"]["red"] > fx["steps"][0]["values"]["1"]["blue"]
+                  and fx["steps"][0]["values"]["2"]["blue"] > 200
+                  and fx["steps"][1]["values"]["1"]["blue"] > 200, json.dumps(fx)[:300])
+            e.act("timeline_play", at=70)
+            e.act("status")
+            running = [f for f in e.fx if f.get("steps") == (clip or {}).get("step")]
+            check("playing the drop runs it, locked to the beat",
+                  len(running) == 1 and running[0]["heads"] == [1, 2, 3, 4, 5, 6]
+                  and running[0]["params"].get("beats") == 2.0, str(e.fx)[:200])
+            e.act("timeline_seek", t=100)
+            e.act("status")
+            check("after the drop it stops", not any(f.get("steps") for f in e.fx), str(e.fx)[:200])
+            e.act("timeline_stop")
+            r = say("chase red and blue")
+            check("no section: it runs now on everything", r.get("ok") and any(f.get("steps") for f in e.fx), json.dumps(r)[:200])
+            e.act("undo")
+            check("one undo takes it back", not any(f.get("steps") for f in e.fx))
+            r = say("the balcony truss chases red and white")
+            check("a rig that isn't there is said so", not r.get("ok") and "rig" in str(r.get("error")), str(r.get("error")))
+            # buttons
+            r = say("build me 8 buttons for this rig")
+            page = sorted({b["page"] for b in e.quick})
+            labels = [b["label"] for b in e.quick if b["page"] == page[0]] if page else []
+            check("8 buttons, the busking basics first",
+                  r.get("ok") and len(labels) == 8 and labels[:3] == ["Flash all", "Strobe all", "Blackout (hold)"]
+                  and "Circle" not in labels, str(labels))
+            r = say("make 6 strobe buttons")
+            p2 = [b for b in e.quick if b["page"] not in page[:1]]
+            check("a focus, on the next free page",
+                  r.get("ok") and len(p2) == 6 and all(b["kind"] in ("strobe", "flash", "blackout", "kill") for b in p2),
+                  str([(b["page"], b["label"]) for b in p2]))
+            check("movement buttons without movers: said so",
+                  "moving" in str(say("buttons for the movers").get("error")))
+            # build-up
+            r = say("a 32-bar build-up")
+            tr = next((t for t in e.timeline["tracks"] if t["name"].startswith("Copilot build")), None)
+            bar = 2.0
+            check("the build ends where the drop starts",
+                  r.get("ok") and tr and tr["clips"][0]["t"] == 0.0
+                  and abs(tr["clips"][-1]["t"] + tr["clips"][-1]["dur"] - 64.0) < 0.01, json.dumps(tr)[:300])
+            check("it speeds up: 8, 4, 2, 1 beats a round, then 16ths",
+                  tr and [c.get("beats") for c in tr["clips"]] == [8, 4, 2, 1, 0.25]
+                  and tr["clips"][-1]["dur"] == bar, json.dumps(tr)[:300])
+            lv = next((t for t in e.timeline["tracks"] if t["kind"] == "level" and t.get("target") == "master"), None)
+            check("the master climbs half to full over it",
+                  lv and tl_mod.level_at(lv, 0.0) == 50 and tl_mod.level_at(lv, 32.0) == 75.0
+                  and tl_mod.level_at(lv, 64.0) == 100, json.dumps(lv))
+            e.act("timeline_play", at=63)
+            e.act("status")
+            check("the last bar pulses", any(f.get("lib") == "pulse" and f["params"].get("beats") == 0.25 for f in e.fx),
+                  str(e.fx)[:200])
+            e.act("timeline_stop")
+            r = say("16 bar build-up at 10 seconds")
+            tr = [t for t in e.timeline["tracks"] if t["name"].startswith("Copilot build")][-1]
+            check("or where it was asked for", r.get("ok") and tr["clips"][0]["t"] == 10.0, json.dumps(tr)[:200])
+        finally:
+            config.LLM_API_KEY = saved_key
+            e.shutdown()

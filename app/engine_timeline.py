@@ -117,6 +117,55 @@ class TimelineMixin:
         return {"clip": clean, "id": clean["id"],
                 "summary": f"added a clip at {clean['t']:.2f} s"}
 
+    def _a_timeline_build(self, bars=16, start=None, before=None, heads=None, **_):
+        """A build-up on the timeline ("a 32-bar build-up"): a dimmer chase
+        that doubles its speed every quarter of it, pulsing in sixteenths in
+        the last bar, the grand master climbing from half to full.  Ends at
+        the drop (or the part named in `before`), else starts at `start` /
+        the playhead."""
+        doc = tl_mod.normalise(json.loads(json.dumps(self.timeline)))
+        bars = int(max(1, min(256, float(bars or 16))))
+        bar_s = 240.0 / float(doc.get("bpm") or 120.0)          # 4/4
+        length = bars * bar_s
+        if start not in (None, ""):
+            t0 = max(0.0, float(start))
+        else:
+            ahead = tl_mod.section_span(doc, before or "drop")
+            if ahead is not None:
+                t0 = max(0.0, ahead[0] - length)
+            elif before:
+                raise ValueError(f"no {before!r} on the timeline - put a marker called {before} where it starts")
+            else:
+                t0 = float(self._tl_transport()["pos"])
+        t1 = t0 + length
+        nums = [int(n) for n in heads] if heads else [h["head_no"] for h in self.patch if self._head_class(h) == "light"]
+        if not nums:
+            raise ValueError("no lights are patched")
+        target = {"heads": sorted(nums)} if heads else {"all": True}
+        track = {"kind": "fx", "name": f"Copilot build {bars} bars", "clips": []}
+        body = max(0, bars - 1)                                   # the last bar pulses
+        cuts = [round(body * i / 4) for i in range(5)]
+        for i, beats in enumerate((8, 4, 2, 1)):
+            a, b = cuts[i], cuts[i + 1]
+            if b > a:
+                track["clips"].append({"t": round(t0 + a * bar_s, 3), "dur": round((b - a) * bar_s, 3),
+                                       "fx": "dimmer_chase", "beats": beats, "target": target,
+                                       "label": f"Chase, a round per {beats} beat(s)"})
+        track["clips"].append({"t": round(t0 + body * bar_s, 3), "dur": round(bar_s, 3), "fx": "pulse",
+                               "beats": 0.25, "target": target, "label": "Pulse in 16ths"})
+        doc["tracks"].append(track)
+        note = ""
+        if any(t["kind"] == "level" and t.get("target") == "master" for t in doc["tracks"]):
+            note = " (the master already has a level track - left as it is)"
+        else:
+            doc["tracks"].append({"kind": "level", "name": "Copilot build master", "target": "master",
+                                  "clips": ([{"t": round(t0 - 0.05, 3), "v": 100}] if t0 > 0.05 else [])
+                                  + [{"t": round(t0, 3), "v": 50}, {"t": round(t1, 3), "v": 100}]})
+        doc["length"] = max(float(doc["length"]), t1 + 1)
+        self._tl_set_doc(doc)
+        return {"start": round(t0, 3), "end": round(t1, 3),
+                "summary": f"{bars}-bar build-up, {t0:.1f}-{t1:.1f} s on the timeline{note}"}
+
     def _a_timeline_from_playback(self, playback=1, start=0.0, **_):
         """Lay a playback's cue list out on a new cue track, one clip per
         cue, spaced by each cue's fade, hold and follow."""
@@ -251,9 +300,14 @@ class TimelineMixin:
             else:
                 heads = self._heads_for_target(c.get("target") or {"all": True})
                 try:
-                    r = self._a_run_fx(name=c["fx"], heads=heads) if heads else {}
+                    if c.get("step"):
+                        r = self._a_step_fx_run(id=c["step"], heads=heads or None, beats=c.get("beats"))
+                    else:
+                        r = self._a_run_fx(name=c["fx"], heads=heads,
+                                           params={"beats": c["beats"]} if c.get("beats") else None) if heads else {}
                 except ValueError:
                     r = {}
+                self._fx_live(r.get("fx"))
                 self.tl["spans"][cid] = {"fx": r.get("fx")}
             changed = True
         return changed

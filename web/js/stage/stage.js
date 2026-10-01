@@ -936,10 +936,21 @@ export class Stage {
     const lights = [];
     let lit = 0;
     for (const inst of this.fixtures.values()) {
-      const t = inst.dur > 0 ? Math.min(1, (now - inst.t0) / inst.dur) : 1;
-      if (t < 1 || !inst.settled) {
-        inst.cur = mixLook(inst.from, inst.to, smooth(t));
-        inst.settled = t >= 1;
+      if (!inst.settled) {
+        // from where it is now to the new look, landing by t0 + dur
+        // whatever the frame rate: easing from inst.from restarted on every
+        // update, so when frames were slower than the looks came in (a slow
+        // GPU, a big rig) a rainbow or chase never got anywhere and the
+        // beams stayed the colour they started
+        const end = inst.t0 + inst.dur;
+        // progress = the real time since the last frame (up to 50 ms of it
+        // from before the update): a slow frame that lands just after an
+        // update still moves the light
+        const from = Math.max(inst.mixAt || 0, inst.t0 - 50);
+        const k = inst.dur <= 0 || now >= end ? 1 : Math.max(0, (now - from) / (end - from));
+        inst.cur = mixLook(inst.cur, inst.to, k);
+        inst.mixAt = now;
+        inst.settled = k >= 1;
       }
       if (this._drive(inst, time, lights)) lit++;
     }

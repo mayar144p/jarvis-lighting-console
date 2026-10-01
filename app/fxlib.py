@@ -136,6 +136,9 @@ def _rainbow(base, have, p, elapsed, index, count):
     if len(order) < 2:
         return
     t = elapsed * p["speed"] + p["phase"] * 0.01 * index
+    # spread: the heads that far apart round the colour wheel (360 = one
+    # whole rainbow across them) - "rainbow across the rig"
+    t += p["spread"] / 360.0 * (index / max(1, count)) * len(order) * max(p["rate"], 0.01)
     pos = (t / max(p["rate"], 0.01)) % len(order)
     a = order[int(pos) % len(order)]
     b = order[(int(pos) + 1) % len(order)]

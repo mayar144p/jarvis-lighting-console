@@ -67,9 +67,15 @@ def clean_clip(kind: str, raw: dict, doc: dict) -> dict | None:
         clip["button"] = str(raw["button"])[:16]
         clip["dur"] = round(_num(raw.get("dur"), 0.5, 0.05, MAX_LENGTH), 3)
     elif kind == "fx":
-        if not raw.get("fx"):
+        if raw.get("step"):
+            # a step effect of the show (a two-colour chase...), by id
+            clip["step"] = str(raw["step"])[:24]
+        elif raw.get("fx"):
+            clip["fx"] = str(raw["fx"])[:30]
+        else:
             return None
-        clip["fx"] = str(raw["fx"])[:30]
+        if raw.get("beats"):
+            clip["beats"] = round(_num(raw["beats"], 1, 0.125, 64), 3)    # a cycle per N beats
         clip["dur"] = round(_num(raw.get("dur"), 4.0, 0.1, MAX_LENGTH), 3)
         clip["target"] = _clean_target(raw.get("target"))
     elif kind == "level":
@@ -211,3 +217,26 @@ def with_track(doc: dict, raw: dict) -> tuple[dict, dict]:
         raise ValueError(f"track kind must be one of {', '.join(TRACK_KINDS)}")
     doc["tracks"].append(t)
     return doc, t
+
+
+def section_span(doc: dict, name: str) -> tuple[float, float] | None:
+    """(start, end) of a named part of the song ("the drop"): a marker of
+    that name, or a cue clip labelled with it (an AI show labels its cues
+    by section), up to the next marker / labelled cue, or the end."""
+    want = str(name or "").strip().lower()
+    if want.startswith("the "):
+        want = want[4:]
+    if not want:
+        return None
+    marks = [(float(m["t"]), str(m.get("name") or "")) for m in doc.get("markers") or []]
+    for tr in doc.get("tracks") or []:
+        if tr.get("kind") == "cue":
+            marks += [(float(c["t"]), str(c.get("label") or "")) for c in tr.get("clips") or [] if c.get("label")]
+    marks.sort()
+    for i, (t, label) in enumerate(marks):
+        low = label.strip().lower()
+        if low == want or low.startswith(want + " ") or low.split(" ")[0] == want:
+            later = [t2 for t2, _l in marks[i + 1:] if t2 > t + 0.01]
+            end = later[0] if later else float(doc.get("length") or t + 30.0)
+            return (t, max(end, t + 0.1))
+    return None

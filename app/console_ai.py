@@ -97,15 +97,17 @@ PARAMS: dict[str, tuple[str, ...]] = {
     # the room, the buttons and the timeline
     "aim_at": ("x", "y", "z", "mark", "heads"),
     "roam": ("zones", "speed", "size", "beats", "heads", "group"),
+    "chase_colours": ("colours", "rig", "beats", "section", "name", "heads"),
     "attach_heads": ("heads", "head", "rig", "spacing", "stance"),
     "venue_template": ("name", "width", "depth", "height"),
     "venue_crowd": ("style", "density", "show"),
-    "quick_defaults": ("page",),
+    "quick_defaults": ("page", "count", "focus", "free"),
     "timeline_play": ("at",),
     "timeline_pause": (),
     "timeline_stop": (),
     "timeline_seek": ("t",),
     "timeline_from_playback": ("playback", "start"),
+    "timeline_build": ("bars", "start", "before", "heads"),
 }
 
 _UNKNOWN = [a for a in PARAMS if a not in ENGINE_ACTIONS]
@@ -122,7 +124,7 @@ SELECTION_ACTIONS = frozenset({
     "set_intensity", "set_attribute", "set_colour", "set_position",
     "locate", "record_palette", "include_palette", "include_preset",
     "run_fx", "fan", "align", "distribute", "mirror", "set_attr_range",
-    "record_preset", "aim_at", "attach_heads", "roam",
+    "record_preset", "aim_at", "attach_heads", "roam", "chase_colours",
 })
 
 
@@ -205,7 +207,7 @@ def rig_context(eng) -> str:
         w, d, hh = room["room"]
         lines.append(f"ROOM: {room['name'] or 'venue'} {w:g} x {d:g} m, {hh:g} m high.")
         if room["rigging"]:
-            lines.append("RIGGING (attach_heads rig=id): " + "; ".join(
+            lines.append("RIGGING (attach_heads rig=id; target \"rig <name>\"): " + "; ".join(
                 f"{r['id']} {r['name'] or r['kind']} ({r['kind']}, {r['height']:g} m high)"
                 for r in room["rigging"]))
         if room["marks"]:
@@ -218,6 +220,11 @@ def rig_context(eng) -> str:
         lines.append(f"TIMELINE: {len(tl['tracks'])} tracks, {tl['length']:g} s at "
                      f"{tl['bpm']:g} BPM, {'playing' if tl_state['playing'] else 'stopped'} "
                      f"at {tl_state['pos']:.1f} s")
+        parts = [f"{m['name']}@{m['t']:.0f}s" for m in tl.get("markers") or [] if m.get("name")]
+        parts += [f"{c['label']}@{c['t']:.0f}s" for tr in tl["tracks"] if tr["kind"] == "cue"
+                  for c in tr["clips"] if c.get("label")]
+        if parts:
+            lines.append("SONG PARTS (section=name): " + ", ".join(parts[:24]))
     named = [f"{k} ({v['label']}, {v['group']})" for k, v in fxlib.FX.items()]
     lines.append("NAMED EFFECTS (run_fx name=...): " + ", ".join(named))
     return "\n".join(lines)
@@ -240,7 +247,8 @@ Answer with ONE JSON object:
 
 target: "auto" (the selection if there is one, else everything), "all",
   "selection", "group N", "heads 1-4" or "heads 1,3,5", "type movers",
-  "type pars", "playback N", or "programmer".
+  "type pars", "rig <name>" (the lights hanging on that truss / pipe,
+  e.g. "rig back truss"), "playback N", or "programmer".
 action: exactly one of
 {_param_ref()}
 attributes: that action's keyword arguments.  level 0-100 (percent);
@@ -258,6 +266,18 @@ roam: moving lights wander smoothly INSIDE venue zones, each aimed from
   zones share the lights out).  Use it for "hover / wander / roam / move
   around the dance floor (and the DJ booth)", "keep them searching the
   crowd".
+chase_colours: lights swap between colours step by step, neighbours apart:
+  {{"colours": ["#ff0000", "#ffffff"], "beats": 1, "section": "drop"}}
+  (beats a step, 1 = on the beat; section: a part of the song on the
+  timeline - a marker or an AI-show section - to put it there instead of
+  running it now; target "rig back truss" for the lights on a truss).  Use
+  it for "the back truss chases red and white on the beat during the drop".
+quick_defaults: buttons for this rig on the first empty page (or `page`):
+  {{"free": true, "count": 8, "focus": "strobe"}} - count = the N most useful, focus one
+  of strobe / colour / effects / movement.  "Build me 8 buttons".
+timeline_build: a build-up on the timeline - a chase doubling its speed,
+  pulsing in the last bar, the master climbing: {{"bars": 32}}; it ends
+  where the drop starts (or `before`: another part), else `start` seconds.
 
 Rules:
   * Use the rig below: real head numbers, groups and capabilities.  Target
@@ -457,11 +477,17 @@ def _fallback(text: str) -> dict:
     add_words = re.search(r"\b(?:add|patch|put|hang|rig)\s+\d+", low)
     kind_hit = None if add_words else re.search(
         r"\b(movers?|moving\s+heads?|spots?|washes|pars?|bars?)\b", low)
+    rig_hit = None if add_words else re.search(
+        r"\b(?:the\s+)?((?:(?:back|rear|front|mid|middle|upstage|downstage|left|right|side|centre|center|top|floor)\s+)+"
+        r"(?:truss|pipe|bar|tower|ladder)|(?:truss|pipe|tower|ladder)\s*\d+)\b", low) or (None if add_words else re.search(
+        r"\bthe\s+((?:[a-z]+\s+)?(?:truss|pipe|tower|ladder))\b", low))
     if group_hit:
         target = f"group {group_hit.group(1)}"
     elif head_hit:
         spec = re.sub(r"\s*(?:to|thru|through)\s*", "-", head_hit.group(1))
         target = "heads " + re.sub(r"\s*(?:and)\s*", ",", spec).replace(" ", "")
+    elif rig_hit:
+        target = "rig " + rig_hit.group(1).strip()
     elif kind_hit:
         word = kind_hit.group(1)
         target = ("type movers" if word.startswith(("mover", "moving", "spot"))
@@ -557,7 +583,15 @@ def _fallback(text: str) -> dict:
             if any(s <= m.start() < e for s, e, _h in colour_hits):
                 continue                    # part of a longer name already
             colour_hits.append((m.start(), m.end(), hexcode))
-    if hex_match and (not colour_hits
+    chase_words = re.search(r"\b(chase\w*|alternat\w*|swap\w*|flip\w*|switch\w*)\b", low)
+    distinct = []
+    for _s, _e, hx in sorted(colour_hits):
+        if hx not in distinct:
+            distinct.append(hx)
+    colour_chase = bool(chase_words) and len(distinct) >= 2
+    if colour_chase:
+        pass                                # a chase between them, below
+    elif hex_match and (not colour_hits
                       or hex_match.start() < min(c[0] for c in colour_hits)):
         add(target, "set_colour", {"hex": hex_match.group(0)})
     elif colour_hits:
@@ -659,7 +693,45 @@ def _fallback(text: str) -> dict:
                       (r"\bbar\b(?!s)", "bar"), (r"\bcrowd\b|\baudience\b", "standing")):
         if re.search(pat, low) and zone not in zone_words:
             zone_words.append(zone)
-    if roam_words and (zone_words or re.search(r"\broam", low)):
+    btns = re.search(r"(?:\b(?:build|make|create|give|set up|add)\s+(?:me\s+)?|^\s*)(?:a\s+page\s+of\s+)?(\d{1,2})?\s*"
+                     r"(?:(strobe|flash|colou?r|effect|fx|movement|mover)\s*)?(?:quick\s+)?buttons?\b", low)
+    if btns:
+        attrs = {"free": True}
+        if btns.group(1):
+            attrs["count"] = max(1, min(32, int(btns.group(1))))
+        word = btns.group(2) or (re.search(r"\bfor\s+(?:the\s+)?(strobes?|flash\w*|colou?rs?|effects?|movement|movers?)\b", low)
+                                 or [None, None])[1]
+        if word:
+            attrs["focus"] = word
+        return {"reply": "Buttons for this rig on the first empty page.",
+                "steps": [{"target": "auto", "action": "quick_defaults", "attributes": attrs,
+                           "fx": {}, "timing": {}}]}
+    build = re.search(r"\b(?:(\d{1,3})[- ]?bars?\s+)?build[- ]?ups?\b|\bbuild[- ]?ups?\s+of\s+(\d{1,3})\s+bars?\b", low)
+    if build and not btns and not re.search(r"\bchase\w*\b[^.]*\bcolou?r|\b(?:during|in)\s+the\s+build", low):
+        attrs = {"bars": int(build.group(1) or build.group(2) or 16)}
+        before = re.search(r"\b(?:before|into|leading into|up to)\s+the\s+(drop|chorus|finale|peak|lift)\b", low)
+        if before:
+            attrs["before"] = before.group(1)
+        at = re.search(r"\bat\s+(\d+(?:\.\d+)?)\s*(?:s\b|sec|seconds?)", low)
+        if at:
+            attrs["start"] = float(at.group(1))
+        return {"reply": f"A {attrs['bars']}-bar build-up on the timeline.",
+                "steps": [{"target": "auto", "action": "timeline_build", "attributes": attrs,
+                           "fx": {}, "timing": {}}]}
+    section = re.search(r"\b(?:during|in|for|on|at)\s+the\s+(intro|build\s*-?\s*up|build|drop|breakdown|"
+                        r"chorus|verse|outro|bridge|break|finale|ending|peak|lift|groove)\b", low)
+    if colour_chase:
+        attrs = {"colours": [showdesign._name_of(hx) for hx in distinct[:8]]}
+        every = re.search(r"\bevery\s+(\d+|other|two|four)\s+beats?\b|\bevery\s+(bar)\b|\b(half|double)[- ]time\b", low)
+        if every:
+            word = every.group(1) or every.group(2) or every.group(3)
+            attrs["beats"] = {"other": 2, "two": 2, "four": 4, "bar": 4, "half": 2, "double": 0.5}.get(word) or float(word)
+        elif re.search(r"\bon the beat\b|\bto the beat\b|\bbeat\b", low):
+            attrs["beats"] = 1
+        if section:
+            attrs["section"] = re.sub(r"\s|-", "", section.group(1)).replace("buildup", "build")
+        add(target, "chase_colours", attrs)
+    elif roam_words and (zone_words or re.search(r"\broam", low)):
         attrs = {"zones": zone_words or ["dancefloor"]}
         if speed is not None:
             attrs["speed"] = 0.5 if speed < 1 else 2.5 if speed > 1 else 1.0
@@ -717,6 +789,9 @@ def _label(row: dict) -> str:
         return f"playback {at.get('playback')} {at.get('level')}%"
     if action == "stop_fx":
         return "stop fx"
+    if action == "chase_colours":
+        where = f" in the {at['section']}" if at.get("section") else ""
+        return f"{' / '.join(map(str, at.get('colours') or []))} chase{where}"
     return action.replace("_", " ")
 
 
@@ -811,6 +886,18 @@ def resolve(steps: list[dict], eng=None) -> list[dict]:
                     select = ("select_query", {"role": "pan"})
                 else:
                     raise ValueError(f"step {idx}: {target!r} needs the rig")
+        elif target.startswith("rig "):
+            name = target[4:].strip()
+            if action == "chase_colours" or action == "attach_heads":
+                params.setdefault("rig", name)
+            elif action in SELECTION_ACTIONS:
+                if eng is None:
+                    raise ValueError(f"step {idx}: {target!r} needs the rig")
+                _r, nums = eng.rig_heads(name)
+                if action == "run_fx":
+                    params.setdefault("heads", nums)
+                else:
+                    select = ("select_heads", {"heads": nums})
         elif target.startswith(("playback", "pb", "fader")):
             params.setdefault("playback", number(target))
         else:

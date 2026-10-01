@@ -17,7 +17,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
    calibration order); in the gig, the Add dialog kept a stale fixture after
    a search, and Record cue was only reachable from the Level tab (now on the
    programmer bar too).
-3. **Finish item 23** (AI that programs): 3D preview before a roam /
+3. **(DONE) Finish item 23** (AI that programs): 3D preview before a roam /
    effect is applied; "the back truss chases red and white on the beat
    during the drop"; "build me 8 buttons for this rig"; "a 32-bar
    build-up" on the timeline.
@@ -305,9 +305,28 @@ The pass walked every tab for one light of each type (see A0).  Next:
     wander / roam / move around the …").  Fixed on the way: the 3D view
     eased pan / tilt from a standstill on every update, so heads following
     a moving target (roam, the floor map, an XY tile) hardly moved.
-    **Left:** a 3D preview before applying (Preview covers the programmer,
-    not effects); "the back truss chases red and white on the beat
-    during the drop", "build me 8 buttons", "a 32-bar build-up".
+    **DONE (the rest):**
+    * **Preview in 3D** on a copilot plan: blind now holds back the effects
+      and roams started in it as well as the programmer (the 3D view shows
+      them). Keep hands it all to the rig, Throw away drops it. A cue's,
+      a quick button's or a timeline clip's effect still plays live.
+    * **"The back truss chases red and white on the beat during the drop"**:
+      `chase_colours` makes a step effect (each light takes the next colour
+      every step, neighbours apart) and runs it now, or as a clip over a
+      named part of the song. A rig is found by what people call it (back =
+      rear = upstage, nearest word first), and the copilot target is
+      "rig <name>". Timeline effect clips run step effects and lock to the
+      beat.
+    * **"Build me 8 buttons"**: `quick_defaults` takes a count (the most
+      useful first: flash, strobe, blackout, colours, a chase, movement), a
+      focus (strobe / colour / effects / movement) and the first free page.
+    * **"A 32-bar build-up"**: `timeline_build` adds a dimmer chase at 8, 4,
+      2 and 1 beats a round, sixteenth-note pulses in the last bar, and the
+      master going from half to full. It ends at the drop.
+    * Fixed on the way: Rainbow ignored *spread*, so "rainbow across the
+      rig" was one colour everywhere. The 3D view's colour easing restarted
+      on every update, so on a slow GPU a fast-changing look (rainbow,
+      chase) stayed the colour it started.
 
 # Part B - done
 

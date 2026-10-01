@@ -620,7 +620,8 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .plan-step .n { font: 700 10.5px var(--mono); color: var(--muted); }
 .plan-step.ok { box-shadow: inset 3px 0 0 var(--ok); }
 .plan-step.bad { box-shadow: inset 3px 0 0 var(--live); }
-.plan-actions { display: flex; gap: 6px; margin-top: 8px; }
+.plan-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+.plan-previewing { color: var(--warn, #e0a030); flex-basis: 100%; }
 .ai-suggest { display: flex; flex-wrap: wrap; gap: 5px; }
 .ai-input { display: flex; gap: 8px; align-items: flex-end; }
 .ai-input textarea { flex: 1; min-height: 42px; max-height: 140px; }

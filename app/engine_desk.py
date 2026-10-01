@@ -44,7 +44,7 @@ class DeskMixin:
             now = time.monotonic()
             prog = self._programmer_now(now)
             pbs = self._active_playbacks(now)
-            fxv = self._fx_values(now)
+            fxv = self._fx_values(now, rig=True)
             over = self._override_vals(skip_parked=True)
             for n in nums:
                 vals = self._resolve_head(by_no[n], prog, pbs, fxv.get(n), over.get(n))
