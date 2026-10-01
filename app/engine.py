@@ -435,6 +435,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             # is a press of Ctrl+Z the operator loses.
             try:
                 self._lock_check(name)
+                self._hold_check(name, params)
             except ValueError as exc:
                 res = self._result(name, False, str(exc))
                 self._log(name, False, res["error"])
@@ -531,6 +532,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
         with self.lock:
             try:
                 self._lock_check(name)
+                self._hold_check(name, params)
             except ValueError as exc:
                 res = self._result(name, False, str(exc))
                 self._log(name, False, res["error"])
@@ -1259,6 +1261,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
                 "ai_operator": self._ai_operator_lite(),
+                "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
@@ -1272,7 +1275,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h))
+                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), better_mode=self._better_mode(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
@@ -1335,6 +1338,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
                 "ai_operator": self._ai_operator_lite(),
+                "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),

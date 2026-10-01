@@ -193,6 +193,7 @@
         <button role="tab" data-tab="looks">Looks</button>
         <button role="tab" data-tab="tools" title="Setup: arrange, fan, limits, orientation">Setup</button>
       </nav>
+      <div class="prog-held" id="prog-held" hidden></div>
       <div class="prog-body" id="prog-body">
 
         <div class="tab-pane" data-pane="intensity">
@@ -219,6 +220,7 @@
         </div>
 
         <div class="tab-pane" data-pane="colour" hidden>
+          <div class="mode-hint" id="mode-hint" hidden></div>
           <div class="picker" id="picker">
             <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
           </div>

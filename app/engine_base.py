@@ -309,13 +309,31 @@ def default_mode(modes: list[dict]) -> dict:
         # first "safety" mode has only its arm channel)
         usable = [m for m in modes if "fx_fire" in roles(m)]
         return min(usable, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
+    # a laser: the mode that controls it most (pattern, colour, size,
+    # position...) - its 1-channel "auto / sound" mode can't be programmed,
+    # and the 3D can't draw a laser it can't read
+    laser = lambda m: {r for r in roles(m) if r.startswith("laser_")}  # noqa: E731
+    most = max((len(laser(m)) for m in modes), default=0)
+    if most:
+        usable = [m for m in modes if len(laser(m)) == most]
+        return min(usable, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
     light = {"dimmer", "shutter", "strobe", "red", "white", "wheel"}
     width = lambda m: m.get("channel_count") or len(m.get("channels") or [])  # noqa: E731
     wide = any(width(m) >= 2 for m in modes)
     usable = [m for m in modes if roles(m) & light and (not moves or {"pan", "tilt"} <= roles(m))
               and (width(m) >= 2 or not wide)]       # a 1-channel "shows" mode is a program picker
     pool = usable or modes
-    return min(pool, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
+    # full control first: colour mixing when any mode mixes (an RGB bar's
+    # "colour macro" modes only pick presets - the picker can't reach most
+    # colours), then the fewest channels (no dimmer is fine: a light with
+    # colour emitters gets a virtual one)
+    mix = {"red", "green", "blue"}
+    mixes = any(mix <= roles(m) for m in modes)
+    emit = max((len(roles(m) & {"white", "warm_white", "cool_white", "amber", "uv", "lime"}) for m in modes), default=0)
+    return min(pool, key=lambda m: (
+        bool(mixes and not mix <= roles(m)),
+        bool(not mixes and emit and len(roles(m) & {"white", "warm_white", "cool_white", "amber", "uv", "lime"}) < emit),
+        width(m), modes.index(m)))
 
 
 def _fclamp(value, low: float, high: float) -> float:
@@ -627,7 +645,7 @@ ACTIONS = (
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",
     "venue_template", "venue_room", "venue_stage", "venue_add",
-    "venue_shape", "venue_build", "venue_describe", "venue_array", "venue_align", "venue_ceiling", "venue_preview",
+    "venue_shape", "venue_build", "venue_describe", "venue_array", "venue_align", "venue_ceiling", "venue_preview", "quick_from_programmer",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",

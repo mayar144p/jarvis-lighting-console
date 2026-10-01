@@ -132,6 +132,10 @@ class QuickMixin:
                 btn["seconds"] = _fclamp(raw.get("seconds"), 0.1, 3600)
         if kind == "custom":
             self._quick_clean_custom(raw, btn)
+        # a button made from the programmer HOLDS its lights: while it is on
+        # the programmer can't change what it holds (turn it off first)
+        if kind in ("custom", "fx", "move") and _truthy(raw.get("hold")):
+            btn["hold"] = True
         # a key on the keyboard (one letter or digit) that plays it
         key = str(raw.get("key") or "").strip().lower()[:1]
         if key and key.isalnum():
@@ -749,6 +753,13 @@ class QuickMixin:
                                                  run["heads"], None)
                     run["fx_ids"].append(r.get("fx"))
                     self._fx_live(r.get("fx"))
+                    centre = self._quick_centre(btn, run["heads"])
+                    if centre:
+                        # it moves around where the button's lights were
+                        # aimed when it was made, not where the programmer is
+                        for row in self.fx:
+                            if row.get("id") == r.get("fx"):
+                                row["centre"] = centre
                 except ValueError:
                     pass
             self._quick_pace(btn, run)
@@ -1005,6 +1016,8 @@ class QuickMixin:
         self._quick_pending_tick()
         if self.__dict__.get("_glide"):
             self._aim_glide_tick()
+        if self.__dict__.get("_pt_glides"):
+            self._pt_glide_tick()
         out = self._quick_override_vals()
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():
@@ -1050,6 +1063,154 @@ class QuickMixin:
                     self._quick_custom_over(btn, head, o, f)
         return out
 
+    MOVE_ROLES = ("pan", "tilt")
+
+    @staticmethod
+    def _button_moves(btn: dict) -> bool:
+        """Does the button run a movement (it drives pan / tilt itself)?"""
+        if btn.get("kind") == "move":
+            return True
+        names = [btn.get("fx")] if btn.get("kind") == "fx" else [i.get("name") for i in btn.get("fx_list") or []]
+        return any(n and (n in motion_mod.ALL_KINDS or n == "roam" or str(n).startswith("shape:")) for n in names)
+
+    def _quick_centre(self, btn: dict, heads: list[int]) -> dict:
+        """{head: {pan, tilt}} the button's movement goes round (captured)."""
+        vals = btn.get("values") or {}
+        out = {}
+        for n in heads:
+            row = vals.get(str(n)) or {}
+            c = {r: row[r] for r in self.MOVE_ROLES if r in row}
+            c.update({k: v for k, v in row.items() if k.startswith("tilt@")})
+            if c:
+                out[n] = c
+        return out
+
+    # what each programmer action changes, for the hold lock
+    _HOLD_MOVE = frozenset({"set_position", "aim_at", "aim_spot", "nudge", "fan", "move_play", "roam",
+                            "run_shape", "move_range", "follow_set"})
+    _HOLD_COLOUR = frozenset({"set_colour", "chase_colours", "run_gradient", "run_media"})
+    _COLOUR_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv", "lime", "cyan", "magenta",
+                               "yellow", "wheel", "wheel2", "cto", "hue", "saturation"})
+
+    def _hold_check(self, name: str, params: dict) -> None:
+        """Refuse a programmer change on lights a HOLD button holds now:
+        "turn the button off first" - it would otherwise do nothing you
+        can see (the button overrides it) and surprise you when it's off."""
+        if not self.quick_active:
+            return
+        touch: set = set()
+        if name in self._HOLD_MOVE:
+            touch = set(self.MOVE_ROLES)
+        elif name in self._HOLD_COLOUR:
+            touch = {"_colour"}
+        elif name in ("set_attribute", "set_attr_range"):
+            role = _attr_role(params.get("attribute") or params.get("role") or "")
+            if role:
+                touch = {"_colour"} if role in self._COLOUR_ROLES else {role}
+        elif name == "run_fx" and str(params.get("name") or "").lower() in motion_mod.ALL_KINDS:
+            touch = set(self.MOVE_ROLES)
+        elif name in ("include_palette", "include_preset"):
+            touch = {"*"}
+        if not touch:
+            return
+        held = self.held_by_buttons()
+        if not held:
+            return
+        heads = params.get("heads") or params.get("heads_in") or ([params["head"]] if params.get("head") else None)
+        if params.get("group") is not None:
+            g = next((g for g in self.groups if str(g["n"]) == str(params["group"])), None)
+            heads = g["heads"] if g else []
+        if isinstance(heads, (int, str)):
+            heads = [heads]
+        try:
+            nums = [int(x) for x in heads] if heads else list(self.selected)
+        except (TypeError, ValueError):
+            return
+        hit, label = [], None
+        for n in nums:
+            if n not in held:
+                continue
+            lbl, roles = held[n]
+            have = {"_colour" if r in self._COLOUR_ROLES else r for r in roles}
+            if "*" in touch or touch & have:
+                hit.append(n)
+                label = label or lbl
+        if hit:
+            what = "movement" if touch <= set(self.MOVE_ROLES) else "colour" if touch == {"_colour"} else "settings"
+            lights = f"light {hit[0]}" if len(hit) == 1 else f"{len(hit)} lights"
+            raise ValueError(f"the button “{label}” holds the {what} of {lights} - turn it off to change them")
+
+    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, **_):
+        """Make a button of what the selected lights do now - position,
+        colour, gobo..., and the movement or effects running on them - and
+        turn it on: it holds those lights (the programmer lets go of them)
+        until it is turned off."""
+        if group not in (None, ""):
+            target = {"group": int(group)}
+            nums = self._target_heads(target)
+        else:
+            nums = [int(x) for x in (heads or self.selected)]
+            target = {"heads": nums}
+        if not nums:
+            raise ValueError("select the lights first")
+        raw = self._quick_capture({"label": str(label or "My look")[:24], "kind": "custom", "mode": "latch",
+                                   "target": target, "hold": True})
+        res = self._a_quick_set(page=page, slot="free", button=raw)
+        key = res.get("id") or next((b["id"] for b in reversed(self.quick) if b["label"] == raw["label"]), None)
+        # the programmer lets go of these lights: the button has them now
+        mine = {f["id"] for f in self._programmer_fx() if not f.get("live") and set(f.get("heads") or []) & set(nums)}
+        self.fx = [f for f in self.fx if f["id"] not in mine]
+        for n in nums:
+            self.programmer.pop(n, None)
+        if _truthy(on) and key:
+            self._quick_on(key, owner="hand")
+        btn = next((b for b in self.quick if b["id"] == key), {})
+        what = []
+        if self._button_moves(btn):
+            what.append("movement")
+        roles = {r for row in (btn.get("values") or {}).values() for r in row}
+        if roles & self._COLOUR_ROLES:
+            what.append("colour")
+        if roles - self._COLOUR_ROLES - set(self.MOVE_ROLES) - set(HTP_ROLES):
+            what.append("beam")
+        where = f"Buttons page {btn.get('page')}, slot {btn.get('slot')}"
+        return {"id": key, "summary": f"button “{btn.get('label', label)}” is on ({where}) - it holds {len(nums)} light(s)"
+                + (f" ({', '.join(what)})" if what else "") + "; turn it off to change them"}
+
+    def held_public(self) -> list[dict]:
+        """The HOLD buttons on now: [{id, label, heads}] (the programmer
+        shows them for the selected lights, with a Turn off)."""
+        out = []
+        for key, run in (self.quick_active or {}).items():
+            btn = next((b for b in self.quick if b["id"] == key), None)
+            if btn and btn.get("hold") and not run.get("release_at"):
+                out.append({"id": key, "label": btn["label"], "heads": sorted(run.get("heads") or [])})
+        return out
+
+    def held_by_buttons(self) -> dict:
+        """{head: (button label, {roles})} for the lights an active HOLD
+        button holds: what it captured, and pan / tilt when it moves."""
+        out: dict[int, tuple[str, set]] = {}
+        if not self.quick_active:
+            return out
+        by_id = {b["id"]: b for b in self.quick}
+        for key, run in self.quick_active.items():
+            btn = by_id.get(key)
+            if not btn or not btn.get("hold") or run.get("release_at"):
+                continue
+            moves = self._button_moves(btn)
+            for n in run.get("heads") or []:
+                roles = {r.split("@")[0] for r in ((btn.get("values") or {}).get(str(n)) or {})}
+                roles |= set(btn.get("attrs") or {})
+                if moves:
+                    roles |= set(self.MOVE_ROLES)
+                if btn.get("colour"):
+                    roles.add("_colour")
+                if roles:
+                    lbl, have = out.get(n, (btn["label"], set()))
+                    out[n] = (lbl, have | roles)
+        return out
+
     def _quick_custom_over(self, btn: dict, head: dict, o: dict, f: float = 1.0) -> None:
         """One custom button's part of a light's override.  Brightness never
         goes in as a forced value (that would skip blackout and the master):
@@ -1057,8 +1218,11 @@ class QuickMixin:
         n = head["head_no"]
         sets = o.setdefault("set", {})
         level = btn.get("level")
+        moving = self._button_moves(btn)
         for src in (btn.get("attrs") or {}, (btn.get("values") or {}).get(str(n)) or {}):
             for role, v in src.items():
+                if moving and role.split("@")[0] in self.MOVE_ROLES:
+                    continue                    # its own movement drives these
                 if role in HTP_ROLES:
                     level = max(level or 0, int(v))
                 elif role in head["map"]:

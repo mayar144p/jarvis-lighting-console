@@ -13,7 +13,7 @@ import { run } from "./actions.js";
 import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
 import { openCueDialog } from "./dialogs.js";
 import { focusedPlayback } from "./playbacks.js";
-import { aimBlock } from "./aimfollow.js";
+import { aimBlock, followGlide } from "./aimfollow.js";
 import { shapesRow, setShapeKnobs, shapes } from "./shapeeditor.js";
 
 const MOVES = [
@@ -193,12 +193,12 @@ function spotsBlock() {
   return h("div.mv-spotbox",
     h("div.mv-spots", ...spots.map((s) => h("button.btn.mv-spot", {
       title: `Every selected mover points at ${s.label}, each from where it hangs`,
-      onclick: () => run("aim_spot", { spot: s.key }, { toast: true }),
+      onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
     }, s.label))),
     floor ? h("div.mv-row", h("span.k", "Formation"),
-      h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan" }, { toast: true }) }, "Fan out"),
-      h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross" }, { toast: true }) }, "Cross"),
-      h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split" }, { toast: true }) }, "Split")) : null);
+      h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan", glide: followGlide() }, { toast: true }) }, "Fan out"),
+      h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross", glide: followGlide() }, { toast: true }) }, "Cross"),
+      h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split", glide: followGlide() }, { toast: true }) }, "Split")) : null);
 }
 
 // Roam: the selected movers wander inside the zones picked (each light on
@@ -221,7 +221,7 @@ function roamBlock() {
       onclick: () => { roamSpeed = v; render(true); } }, l))),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
       onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
-    roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => buttonForNow() }, "Make a button") : null,
+    roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…") : null,
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }
 
@@ -310,28 +310,6 @@ async function makeButton(button, label) {
   const { target, who } = buttonTarget();
   const r = await run("quick_set", { page: 1, slot: "free", button: { ...button, label: label.slice(0, 24), mode: "latch", target } });
   if (r.ok) toast(`Button “${label}” made for ${who} - ${r.summary.replace(/^button /, "Buttons page ").replace(/:.*$/, "")}`, "ok", 4000);
-}
-
-// the button for what the selected lights are doing now: a roam, a shape
-// or a movement with its knobs
-function buttonForNow() {
-  const heads = movers().map((x) => x.head_no);
-  const on = (f) => f.heads.some((n) => heads.includes(n));
-  const roam = ((state.snap && state.snap.fx) || []).find((f) => f.lib === "roam" && on(f));
-  if (roam) {
-    const p = roam.params || {};
-    return makeButton({ kind: "fx", fx: "roam", params: { zones: (roam.zones || []).map((z) => z.id), speed: p.speed, size: p.size, beats: p.beats } },
-      roam.label || "Roam");
-  }
-  const mine = running().find(on);
-  if (mine && mine.lib === "shape") {
-    const p = mine.params || {};
-    return makeButton({ kind: "fx", fx: `shape:${p.shape}`, params: { speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, beats: p.beats } },
-      mine.label.replace(/^Shape: /, ""));
-  }
-  const lib = mine ? mine.lib : canRun(lastLib) ? lastLib : (MOVES.find(([n]) => canRun(n)) || ["tilt_bounce"])[0];
-  return makeButton({ kind: "fx", fx: lib, params: { ...params(), ...(mine && mine.params && mine.params.beats ? { beats: mine.params.beats } : {}) } },
-    (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
 }
 
 function speedMaster() {
@@ -434,7 +412,7 @@ function myMoves(act) {
     h("div.mv-row", h("span.k", "My moves"),
       h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move"),
       h("button.btn.small", { title: "A button (on / off) right now that plays what these lights are doing - the roam, shape or movement with its knobs - on these lights only (or their group)",
-        onclick: () => buttonForNow() }, "Make a button"),
+        onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…"),
       h("button.btn.small", { title: "Record the movement (and the rest of the programmer) as a cue",
         onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…")),
     list.length ? h("div.mv-mytiles", ...list.map((m) => {

@@ -818,7 +818,14 @@ class FxLayerMixin:
         elif rest:
             cur = list(rest)                             # from where these lights were left
         else:
-            cur = [tx, ty, tz]                           # the first time: straight there
+            # not aimed from here before: glide each light from where it
+            # really points now (its pan / tilt), at the same speed
+            self.__dict__["_glide"] = None
+            r = self._aim_at_now(tx, ty, tz, None, list(nums), cell, spread)
+            self._pt_glide_start(nums, tau)
+            self.__dict__.setdefault("_aim_rest", {})[nums] = [tx, ty, tz]
+            return {**r, "glide": tau, "target": [tx, ty, tz],
+                    "summary": f"lights gliding to x{tx:.1f} z{tz:.1f}"}
         self._glide = {"heads": nums, "goal": [tx, ty, tz], "cur": list(cur), "tau": tau,
                        "cell": cell, "spread": spread, "last": _t.monotonic(), "wrote": None}
         r = self._aim_glide_tick(force=True) or {}
@@ -862,6 +869,82 @@ class FxLayerMixin:
             self.__dict__.setdefault("_aim_rest", {})[g["heads"]] = list(goal)
             self._glide = None
         return r
+
+    # -- a glide in pan / tilt, light by light ------------------------------
+    _PT = ("pan", "tilt")
+
+    def _pt_keys(self, row: dict) -> dict:
+        return {k: v for k, v in (row or {}).items() if k.split("@")[0] in self._PT}
+
+    def _pt_now(self, n: int) -> dict:
+        """Where light n points now (pan / tilt values), whoever put it there."""
+        h = next((x for x in self.patch if x["head_no"] == n), None)
+        if h is None:
+            return {}
+        import time as _t
+        now = _t.monotonic()
+        got = self._resolve_head(h, self._programmer_now(now).get(n) or {}, self._active_playbacks(now))
+        return self._pt_keys(got)
+
+    def _pt_glide_start(self, nums, tau: float, before: dict | None = None) -> None:
+        """The programmer already holds where the lights GO: take them back
+        to where they are (before, or what they show now) and let the frame
+        builder glide each pan / tilt there, `tau` s to most of the way."""
+        import time as _t
+        gl = self.__dict__.setdefault("_pt_glides", {})
+        for n in nums:
+            goal = self._pt_keys(self.programmer.get(n))
+            if not goal:
+                continue
+            old = gl.get(n)
+            if old:
+                start = dict(old["cur"])                 # mid-glide: carry on from there
+            elif before is not None and before.get(n):
+                start = dict(before[n])
+            else:
+                # what it shows without this aim: the programmer's pan/tilt
+                # taken out for a moment
+                keep = self.programmer.get(n) or {}
+                self.programmer[n] = {k: v for k, v in keep.items() if k not in goal}
+                start = self._pt_now(n)
+                self.programmer[n] = keep
+            # nothing drives it: the light sits at 0 on the wire
+            cur = {k: float(start.get(k, start.get(k.split("@")[0], 0))) for k in goal}
+            gl[n] = {"goal": goal, "cur": cur, "tau": float(tau), "last": _t.monotonic(), "wrote": None}
+            self._pt_write(n, gl[n])
+
+    def _pt_write(self, n: int, g: dict) -> None:
+        row = self.programmer.setdefault(n, {})
+        for k, v in g["cur"].items():
+            row[k] = int(round(v))
+        g["wrote"] = self._pt_keys(row)
+
+    def _pt_glide_tick(self, now: float | None = None) -> None:
+        gl = self.__dict__.get("_pt_glides")
+        if not gl:
+            return
+        import math as _m
+        import time as _t
+        now = _t.monotonic() if now is None else now
+        for n, g in list(gl.items()):
+            if self._pt_keys(self.programmer.get(n)) != g["wrote"]:
+                del gl[n]                                # moved by something else: let go
+                continue
+            dt = max(0.0, now - g["last"])
+            g["last"] = now
+            k = 1.0 - _m.exp(-dt / max(0.05, g["tau"]))
+            done = True
+            for key, goal in g["goal"].items():
+                c = g["cur"][key] + (goal - g["cur"][key]) * k
+                span = 65535 if goal > 255 or g["cur"][key] > 255 else 255
+                if abs(goal - c) > span * 0.002:
+                    done = False
+                g["cur"][key] = c
+            if done:
+                g["cur"] = {kk: float(v) for kk, v in g["goal"].items()}
+            self._pt_write(n, g)
+            if done:
+                del gl[n]
 
     def aim_glide_public(self) -> dict | None:
         g = self.__dict__.get("_glide")

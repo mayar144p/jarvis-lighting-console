@@ -1683,11 +1683,58 @@ class PatchMixin:
         return {"attribute": role, "value": raw, "heads": len(heads),
                 "summary": f"{role}={raw} on {len(heads)} head(s)"}
 
+    _NUMBERED = re.compile(r"^\s*(colou?r|col|slot|pos(ition)?|macro|preset|wheel)?\s*\.?\s*#?\d+\s*$", re.I)
+
     def _wheel_slots(self, head: dict, role: str = "wheel") -> list[dict]:
-        """The wheel's real slots from the fixture file, or []."""
+        """The wheel's real slots from the fixture file, or [].  A colour
+        slot the file names only by number ("Color 3") but gives a colour
+        is named by its colour ("Light cyan")."""
         if not hasattr(self, "_range_cache"):     # a bare engine (tools)
             return []
-        return list((self.head_ranges(head).get(role) or {}).get("slots") or [])
+        slots = list((self.head_ranges(head).get(role) or {}).get("slots") or [])
+        if role.startswith("wheel") and any(not x.get("hex") for x in slots):
+            # a slot named "Red" with no colour in the file: the colour of
+            # its name, so the picker can land on it and the 3D shows it
+            from app.showdesign import hex_from_name
+            slots = [dict(x, hex=hex_from_name(x.get("name") or "")) if not x.get("hex") and hex_from_name(x.get("name") or "")
+                     else x for x in slots]
+        if role.startswith("wheel") and any(self._NUMBERED.match(str(x.get("name") or "")) and x.get("hex") for x in slots):
+            from app.showdesign import colour_name
+            seen: dict = {}
+            out = []
+            for x in slots:
+                x = dict(x)
+                if self._NUMBERED.match(str(x.get("name") or "")) and x.get("hex"):
+                    name = colour_name(x["hex"])
+                    seen[name] = seen.get(name, 0) + 1
+                    x["name"] = name if seen[name] == 1 else f"{name} {seen[name]}"
+                out.append(x)
+            slots = out
+        return slots
+
+    def _better_mode(self, head: dict) -> str | None:
+        """A mode of this light that can do more than the one it's patched
+        in - full colour where it is on colour presets only - or None."""
+        if not any(r in head.get("map") or [] for r in ("wheel", "red", "white", "dimmer")):
+            return None
+        key = (head.get("manufacturer"), head.get("model"), head.get("mode"))
+        cache = self.__dict__.setdefault("_better_cache", {})
+        if key in cache:
+            return cache[key]
+        out = None
+        fx = self._fixture_db(head.get("manufacturer"), head.get("model")) or {}
+        modes = fx.get("modes") or []
+        if len(modes) > 1:
+            best = default_mode(modes)
+            mine = set(head.get("map") or [])
+            theirs = {channel_role(c) for c in best.get("channels") or []}
+            mix = {"red", "green", "blue"}
+            if best.get("name") != head.get("mode") and (
+                    (mix <= theirs and not mix <= mine)
+                    or ({"pan", "tilt"} <= theirs and not {"pan", "tilt"} <= mine)):
+                out = best["name"]
+        cache[key] = out
+        return out
 
     def _gobo_images(self, head: dict) -> list[list] | None:
         """[[from, to, picture], ...] of the light's gobo wheel, for the 3D
@@ -1783,10 +1830,13 @@ class PatchMixin:
         cells = self._cells(cell)
         heads = self._require_selection(lights_only=True)
         touched = 0
+        unknown = 0
         for h in heads:
             values = self._colour_values(h, str(hexcol))
             if not values:
                 continue                          # raw head: nothing to set
+            if set(values) == {"wheel"} and sum(1 for x in self._wheel_slots(h) if x.get("hex")) <= 1:
+                unknown += 1                       # its file names no colours: we can't aim for one
             reps = merge._repeated(h["map"])
             for role, v in values.items():
                 if cells and role in reps:
@@ -1795,9 +1845,17 @@ class PatchMixin:
                     self._set_programmer(h["head_no"], role, v)
             touched += 1
         if not touched:
+            maps = [set(h["map"]) for h in heads]
+            if any("wheel" in m for m in maps):
+                raise ValueError("these lights' colour wheels aren't named in their files - "
+                                 "Colour tab -> Name the colours… once (look at the real light), then pick")
+            if maps and all(m & {"uv"} and not m & {"red", "green", "blue", "white", "amber"} for m in maps):
+                raise ValueError("these are UV lights: they have one colour - set their level instead")
             raise ValueError("selected heads have no colour channels")
-        return {"hex": str(hexcol), "heads": touched,
-                "summary": f"colour {hexcol} on {touched} head(s)"}
+        note = (f"; {unknown} light(s) have a colour wheel their file doesn't name - "
+                "Colour tab -> Name the colours… once, then colours land on the right slot") if unknown else ""
+        return {"hex": str(hexcol), "heads": touched, "unknown_wheel": unknown,
+                "summary": f"colour {hexcol} on {touched} head(s)" + note}
 
     def _a_set_position(self, pan=None, tilt=None, unit=None,
                         head=None, heads_in=None, **_):

@@ -83,7 +83,35 @@ def _centred(span: float | None) -> tuple[float | None, float | None]:
     return -abs(span) / 2.0, abs(span) / 2.0
 
 
+def _orphan_fine(rows: list[dict]) -> list[dict]:
+    """A "fine" channel with no coarse one in the mode is the coarse one
+    (files tag a lone gobo / dimmer / shutter as the 2nd byte): a gobo wheel
+    read as "Gobo fine" never moved.  When several would take the same
+    place, the one whose name says it wins; the others stay the light's own."""
+    present = {r.get("role") for r in rows}
+    want: dict[str, list[int]] = {}
+    for i, r in enumerate(rows):
+        role = str(r.get("role") or "")
+        if role.endswith("_fine") and role[:-5] not in present:
+            want.setdefault(role[:-5], []).append(i)
+    for base, idx in want.items():
+        word = base.split("_")[0]
+        named = [i for i in idx if word in str(rows[i].get("name") or "").lower()]
+        pick = named[0] if named else (idx[0] if len(idx) == 1 else None)
+        for i in idx:
+            r = rows[i]
+            own = str(r.get("name") or r.get("label") or "")
+            if i == pick:
+                label = str(r.get("label") or "")
+                label = label[:-5] if label.lower().endswith(" fine") else label
+                r.update({"label": label, "role": channel_role(label), "bits": 8})
+            else:
+                r.update({"label": own, "role": "raw"})
+    return rows
+
+
 def _mode(name: str, rows: list[dict]) -> dict:
+    rows = _orphan_fine(rows)
     for n, row in enumerate(rows, start=1):
         row["n"] = n
     return {"name": name or "Default", "channel_count": len(rows),
@@ -782,6 +810,9 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
             return "FX Setting"
         if role == "gobo":
             return "Laser Pattern"
+        if role in ("red", "green", "blue") and re.search(r"laser", name) \
+                and re.search(r"\boff\b", caps_text) and re.search(r"\bon\b", caps_text):
+            return "Laser Output"            # "Red Laser: off / on" - one of its outputs
         return None if role in ("red", "green", "blue", "white") else ("FX Setting" if role == "raw" else None)
     # SFX machines
     if re.search(r"safety|\barm\b|armed|ignit|enable|security|interlock", name) \
@@ -947,6 +978,27 @@ def apply_fx(item: dict) -> dict:
             if role in ("fx_fire", "fog", "laser_on"):
                 row.setdefault("fx_kind", kind)
                 row.setdefault("max_s", max_s)
+        if kind == "laser" and not any(r.get("role") == "laser_on" or str(r.get("role")).startswith("laser_beam")
+                                       for r in rows):
+            # no power channel: its mode switch ("0-9 blackout ... 220-255 DMX
+            # mode") is what turns it on and off - the output, so ARM and the
+            # laser buttons drive it (and the 3D draws it)
+            off_re = re.compile(r"\boff\b|black\s*-?\s*out|bl?ock\s*out|\bdark\b|\bclosed?\b", re.I)
+            on_re = re.compile(r"\bdmx\b|manual|^\s*(laser\s*)?on\s*$", re.I)
+            sw = next((r for r in rows if r.get("role") in ("fx_mode", "laser_pattern") and r.get("caps")
+                       and any(on_re.search(str(c[2])) for c in r["caps"])
+                       and any(off_re.search(str(c[2])) for c in r["caps"])
+                       and (r.get("role") == "fx_mode" or any(re.search(r"\bdmx\b", str(c[2]), re.I) for c in r["caps"]))), None)
+            if sw is not None:
+                caps = sw["caps"]
+                ons = [c for c in caps if on_re.search(str(c[2])) and not off_re.search(str(c[2]))]
+                offs = [c for c in caps if off_re.search(str(c[2]))]
+                i = rows.index(sw)
+                sw.update({"label": "Laser Output", "role": "laser_on", "fx_kind": kind, "max_s": max_s,
+                           "on_value": (int(ons[-1][0]) + int(ons[-1][1])) // 2,
+                           "off_value": (int(offs[0][0]) + int(offs[0][1])) // 2 if offs else _off_value(caps)})
+                if i < len(mode["channels"]):
+                    mode["channels"][i] = "Laser Output"
         mode["fx_class"] = cls
     item["fx_class"] = cls
     return item

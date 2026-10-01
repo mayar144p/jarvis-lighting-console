@@ -15,6 +15,8 @@ the open slot, so a cue still reads as "white" rather than black.
 """
 from __future__ import annotations
 
+import re
+
 from . import engine as engine_mod
 from . import fixture_kind
 
@@ -91,6 +93,73 @@ def _name_of(hexcode: str) -> str:
         return (r - hr) ** 2 + (g - hg) ** 2 + (b - hb) ** 2
 
     return min(COLOR_NAMES, key=lambda pair: dist(pair[1]))[0]
+
+
+_HUES = [(12, "red"), (24, "orange red"), (38, "orange"), (48, "amber"), (64, "yellow"), (82, "lime"),
+         (100, "green yellow"), (140, "green"), (160, "sea green"), (175, "aqua"), (195, "cyan"),
+         (212, "sky blue"), (248, "blue"), (258, "royal blue"), (270, "violet"), (290, "purple"),
+         (315, "magenta"), (335, "pink"), (350, "rose"), (361, "red")]
+
+
+_NAMED = {
+    "red": "#ff2020", "deep red": "#c00010", "dark red": "#a00010", "light red": "#ff6060", "congo": "#5a1fff",
+    "orange": "#ff8a20", "dark orange": "#ff6a00", "light orange": "#ffb060", "amber": "#ffb020",
+    "yellow": "#ffe020", "light yellow": "#fff080", "gold": "#ffcc33", "lime": "#a8ff3c",
+    "green": "#20e040", "light green": "#90ff90", "dark green": "#008020", "sea green": "#30d090",
+    "mint": "#80ffc0", "turquoise": "#30e0d0", "teal": "#20b0a0", "aqua": "#30f0e0",
+    "cyan": "#20e0ff", "light blue": "#80c8ff", "sky blue": "#70c0ff", "blue": "#2050ff",
+    "dark blue": "#1020c0", "deep blue": "#1020d0", "brilliant blue": "#2a40ff", "royal blue": "#3040ff",
+    "lavender": "#b090ff", "violet": "#9050ff", "purple": "#8a2be2", "magenta": "#ff20d0",
+    "pink": "#ff70c0", "light pink": "#ffb0d8", "rose": "#ff5f8a", "uv": "#6a20ff", "ultraviolet": "#6a20ff",
+    "white": "#ffffff", "warm white": "#ffd9a8", "cold white": "#dce9ff", "cool white": "#dce9ff",
+    "cto": "#ffc890", "ctb": "#c8dcff",
+}
+
+
+def hex_from_name(name: str) -> str | None:
+    """A colour from a slot's name ("Red", "Light Blue", "Dark green
+    (fast)"), or None - and None for a split between two ("Red / Blue")."""
+    low = str(name or "").lower()
+    if re.search(r"/|&|\band\b|\+|split|half", low):
+        return None
+    low = re.sub(r"\(.*?\)|[^a-z ]", " ", low)
+    low = re.sub(r"\s+", " ", low).strip()
+    if low in _NAMED:
+        return _NAMED[low]
+    words = low.split()
+    for n in (2, 1):                       # "light blue" before "blue"
+        for i in range(len(words) - n + 1):
+            hx = _NAMED.get(" ".join(words[i:i + n]))
+            if hx:
+                return hx
+    return None
+
+
+def colour_name(hexcode: str) -> str:
+    """A plain name for any colour ("Light cyan", "Deep blue", "Warm white"),
+    for wheel slots whose file gives only a number."""
+    import colorsys
+    r, g, b = _hex_rgb(hexcode)
+    h, sat, val = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    deg = h * 360.0
+    if val < 0.12:
+        return "Off"
+    if sat < 0.12:
+        if val < 0.85:
+            return "Grey"
+        if sat > 0.04:
+            return "Warm white" if (deg < 70 or deg > 330) else "Cool white"
+        return "White"
+    name = next(n for top, n in _HUES if deg < top)
+    if sat < 0.45 and val > 0.6:
+        if 20 < deg < 60 and sat < 0.3:
+            return "Warm white" if sat < 0.22 else "Light " + name
+        return ("Pale " if sat < 0.28 else "Light ") + name
+    if val < 0.55:
+        return "Dark " + name
+    if sat > 0.92 and name in ("blue", "red", "green", "purple"):
+        return "Deep " + name
+    return name[0].upper() + name[1:]
 
 
 def _hex_rgb(hexcode: str) -> tuple[int, int, int]:

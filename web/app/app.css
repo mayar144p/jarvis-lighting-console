@@ -1285,3 +1285,14 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .ai-steps summary { cursor: pointer; color: var(--muted); }
 .ai-q { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .ai-note { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+
+/* a button holding the selected lights */
+.prog-held { padding: 6px 12px; background: rgba(250, 204, 21, .10); border-bottom: 1px solid rgba(250, 204, 21, .35); }
+.prog-held[hidden] { display: none; }
+.prog-held-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
+.prog-held-row span { flex: 1; }
+
+.mode-hint { margin: 0 0 10px; padding: 8px 10px; border: 1px solid rgba(56,189,248,.45); background: rgba(56,189,248,.10); border-radius: var(--radius-sm); font-size: 12.5px; }
+.mode-hint[hidden] { display: none; }
+.mode-hint .row-btns { margin-top: 6px; }
+.wheel-teach { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }

@@ -381,9 +381,14 @@ class ProgrammerMixin:
         for u, (i, h, k) in enumerate(units):
             n = h["head_no"]
             centre, limits = [], []
+            own = (row.get("centre") or {}).get(n) or {}       # a button's captured aim
             for role in ("pan", "tilt"):
                 dom = attr_domain(h, role) if role in h["map"] else 255
-                v = (prog.get(n) or {}).get(f"{role}@{k}") if k and role == "tilt" else None
+                v = own.get(f"{role}@{k}") if k and role == "tilt" else None
+                if v is None:
+                    v = own.get(role)
+                if v is None and k and role == "tilt":
+                    v = (prog.get(n) or {}).get(f"{role}@{k}")
                 if v is None:
                     v = (prog.get(n) or {}).get(role)
                 if v is None:

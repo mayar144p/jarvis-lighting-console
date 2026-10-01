@@ -166,9 +166,9 @@ export function aimBlock(...after) {
   const map = h("div.aim-map", { title: "Drag on the floor plan: the selected lights follow (stage at the top)" });
   map.append(floorMap());
   queueMicrotask(drawTarget);
-  const speed = h("div.mv-row", h("span.k", "Follow speed"),
+  const speed = h("div.mv-row", h("span.k", "Aim speed"),
     h("span.chip-row", ...GLIDES.map(([v, l]) => h("button.chip" + (glide === v ? ".on" : ""), {
-      title: v ? `The beams glide after the pointer (about ${v} s to catch up), and carry on to where you let go` : "The beams go straight to the pointer, as fast as the lights can move",
+      title: v ? `The beams glide (about ${v} s to get most of the way) - after the pointer, and to the spots below` : "The beams go straight there, as fast as the lights can move",
       onclick: (e) => {
         glide = v;
         try { localStorage.setItem("jarvis.followGlide", String(v)); } catch (err) { /* private window */ }
@@ -184,6 +184,8 @@ export function aimBlock(...after) {
 }
 
 export const isFollowing = () => following;
+/** The Follow speed picked (seconds; 0 = instant): the spot buttons use it too. */
+export const followGlide = () => glide;
 
 // the desk's glide, from the live feed: the dashed ring on the map
 on("lite", (lite) => {

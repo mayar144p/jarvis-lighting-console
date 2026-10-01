@@ -253,7 +253,31 @@ export function kelvinHex(k) {
 // nearest wheel colour - waits behind "Pick any colour".
 let pickerAnyway = false;
 
+// A light patched in a mode that can't mix colour (an RGB bar in its
+// "colour macro" mode) when another mode of it can: say so, one click away.
+let modeHintKey = "";
+function renderModeHint() {
+  const box = $("#mode-hint");
+  if (!box) return;
+  const heads = patch().filter((x) => sel().includes(x.head_no) && x.better_mode);
+  const k = JSON.stringify(heads.map((x) => [x.head_no, x.mode, x.better_mode]));
+  if (k === modeHintKey) return;
+  modeHintKey = k;
+  box.hidden = !heads.length;
+  if (!heads.length) { box.replaceChildren(); return; }
+  const x = heads[0];
+  box.replaceChildren(
+    h("div", h("b", `${x.model} is in its “${x.mode}” mode`), ` - it can only pick its built-in colours there. Its “${x.better_mode}” mode mixes any colour.`),
+    h("div.row-btns", h("button.btn.small.primary", {
+      title: "Re-patch these lights in that mode (they keep their place, groups and cues). Set the real lights to the same mode in their own menu.",
+      onclick: async () => {
+        const ok = await confirmBox("Change mode", `Patch ${heads.length === 1 ? "this light" : `these ${heads.length} lights`} in the “${x.better_mode}” mode? Set the real light${heads.length === 1 ? "" : "s"} to that mode too (in ${heads.length === 1 ? "its" : "their"} own menu) - the DMX address may move.`, { ok: "Change mode" });
+        if (ok) run("change_type", { heads: heads.map((y) => y.head_no), query: `${x.manufacturer} ${x.model}`, mode: x.better_mode }, { toast: true });
+      } }, `Use the “${x.better_mode}” mode`)));
+}
+
 function renderWheel() {
+  renderModeHint();
   const cap = capabilities();
   $("#kelvin-row").hidden = !cap.mixing && hasSel();
   const box = $("#wheel-steps");
@@ -271,8 +295,12 @@ function renderWheel() {
       ? "These lights have a colour wheel: tap one of its colours."
       : wheel && wheel.slots ? (whitesOnly(wheel.slots) ? "White presets:" : "Colour wheel:") : "Colour wheel (guessed positions):"),
     ...slotButtons("wheel", wheel),
-    !(wheel && wheel.slots) ? h("button.linkish.small", { title: "Step through the wheel on the real light and name each colour",
-      onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel("wheel", () => { box.dataset.key = ""; loadAttributes(); })) }, "Teach the wheel…") : null,
+    // the file doesn't say which colours they are: name them once (by
+    // looking at the real light) and they're named everywhere after
+    !(wheel && wheel.slots && wheel.slots.some((x) => x.hex)) ? h("div.wheel-teach",
+      h("span.muted.small", "The fixture file doesn't say which colours these are."),
+      h("button.btn.small", { title: "Step through the wheel on the real light and name each colour (once for this model)",
+        onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel("wheel", () => { box.dataset.key = ""; loadAttributes(); })) }, "Name the colours…")) : null,
     wheelOnly ? h("button.linkish.small", { onclick: () => { pickerAnyway = !pickerAnyway; box.dataset.key = ""; renderWheel(); } },
       pickerAnyway ? "Hide the colour picker" : "Pick any colour (goes to the nearest wheel colour)") : null);
 }
@@ -543,6 +571,9 @@ function renderAttributes() {
       const main = attrs.filter((a) => !isAdvanced(a)), adv = attrs.filter(isAdvanced);
       if (main.length) {
         rows.push(h("div.attr-page", page.page === "other" ? "More channels" : page.page));
+        if (page.page === "other" && main.some((a) => /program|auto|macro|show|sound/i.test(a.name || ""))) {
+          rows.push(h("p.muted.small.attr-note", "A program goes to the real light, which runs it itself. The 3D can't know what it does: it shows a slow colour cycle and wander, and tags the light ▶ with the program's name."));
+        }
         for (const a of main) rows.push(attrRow(a, heads));
       }
       if (adv.length) rows.push(h("details.attr-adv", h("summary", `Advanced · ${adv.map((a) => (a.name || attrName(a.role)).toLowerCase()).join(", ")}`),
@@ -781,7 +812,7 @@ function renderProgIn() {
   const otherName = [...others].every((r) => r.startsWith("laser")) ? "Laser"
     : [...others].every((r) => /^(fire|flame|co2|confetti|spark|fog|haze|fan|sfx)/.test(r)) ? "Effects"
       : "Own channels";
-  const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib));
+  const moving = ((state.snap && state.snap.fx) || []).some((f) => MOVE_FX.has(f.lib) && (f.from || "programmer") === "programmer");
   if (moving && !counts.position) counts.position = 0;
   // the effects you started (not a cue's, a button's or the timeline's)
   const mineFx = ((state.snap && state.snap.fx) || []).filter((f) => (f.from || "programmer") === "programmer");
@@ -801,7 +832,42 @@ function renderProgIn() {
         onclick: () => run("stop_fx", { programmer: true }, { toast: true }) }, "×")) : null,
     h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all"),
     // on every tab: set a colour on the Colour tab and record it right there
-    h("button.btn.small.prog-rec", { title: "Record what is in the programmer as a cue (R)", onclick: () => openCueDialog() }, "Record cue…")] : []));
+    h("button.btn.small.prog-rec", { title: "Record what is in the programmer as a cue (R)", onclick: () => openCueDialog() }, "Record cue…"),
+    h("button.btn.small.primary.prog-btn", { title: "A button (on / off) of what the selected lights do now - position, colour, beam and the movement running. It turns on and holds those lights: change them again by turning it off.",
+      onclick: makeHoldButton }, "Make a button…")] : []));
+}
+
+// a button holding some of the selected lights: say so, with a Turn off
+let heldKey = "";
+function renderHeld() {
+  const box = $("#prog-held");
+  if (!box) return;
+  const held = (state.lite && state.lite.held) || (state.snap && state.snap.held) || [];
+  const mine = new Set(sel());
+  const hit = held.filter((b) => b.heads.some((n) => mine.has(n)));
+  const key = JSON.stringify(hit);
+  if (key === heldKey) return;
+  heldKey = key;
+  box.hidden = !hit.length;
+  box.replaceChildren(...hit.map((b) => h("div.prog-held-row",
+    h("span", "🔒 ", h("b", `“${b.label}”`), ` holds ${b.heads.filter((n) => mine.has(n)).length === 1 ? "this light" : "these lights"} - turn it off to change them.`),
+    h("button.btn.small", { onclick: () => run("quick_press", { id: b.id, down: true }, { toast: true }) }, "Turn it off"))));
+}
+on("lite", renderHeld);
+on("snapshot", renderHeld);
+on("selection", renderHeld);
+
+// what the selected lights do now, as a button that holds them
+export async function makeHoldButton() {
+  const heads = sel();
+  if (!heads.length) { toast("Select the lights first"); return; }
+  const name = await promptBox("Make a button", `A button of what ${heads.length === 1 ? "this light does" : `these ${heads.length} lights do`} now. It turns on and holds them - the programmer can't change them until you turn it off. Name it:`, "", { ok: "Make it", placeholder: "e.g. Slow circle red" });
+  if (name === null || name === undefined) return;
+  const groups = (state.snap && state.snap.groups) || [];
+  const set = new Set(heads);
+  const g = groups.find((x) => x.heads.length === set.size && x.heads.every((n) => set.has(n)));
+  const r = await run("quick_from_programmer", { label: (name || "My look").trim().slice(0, 24), ...(g ? { group: g.n } : { heads }) });
+  if (r.ok) toast(r.summary, "ok", 6000);
 }
 
 // --------------------------------------------------------------- effects
