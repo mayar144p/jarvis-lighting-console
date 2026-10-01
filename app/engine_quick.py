@@ -136,6 +136,8 @@ class QuickMixin:
         # the programmer can't change what it holds (turn it off first)
         if kind in ("custom", "fx", "move") and _truthy(raw.get("hold")):
             btn["hold"] = True
+            if isinstance(raw.get("keeps"), str) and raw["keeps"].strip():
+                btn["keeps"] = raw["keeps"].strip()[:80]
         # a key on the keyboard (one letter or digit) that plays it
         key = str(raw.get("key") or "").strip().lower()[:1]
         if key and key.isalnum():
@@ -366,7 +368,7 @@ class QuickMixin:
             raise ValueError("a custom button needs something to do: a level, a colour, "
                              "a strobe, a look captured from the programmer or an effect")
 
-    def _quick_capture(self, raw: dict) -> dict:
+    def _quick_capture(self, raw: dict, live: bool = False) -> dict:
         """Fill a custom button from what the programmer holds now for its
         lights: every value (colour, position, gobo...) and the effects
         running on them (circles, chases...) - make it on stage, then
@@ -379,8 +381,28 @@ class QuickMixin:
             heads = self._target_heads(t)
         heads = sorted(set(heads))
         values = {}
+        # live: what the lights show now - the cues up on the faders under
+        # the programmer (a colour or a level from a cue counts too)
+        under: dict[int, dict] = {}
+        if live:
+            for level, vals in reversed(self._active_playbacks(time.monotonic())):
+                for k, row in (vals or {}).items():
+                    try:
+                        n = int(k)
+                    except (TypeError, ValueError):
+                        continue
+                    if n not in heads or not level:
+                        continue
+                    dst = under.setdefault(n, {})
+                    for role, v in (row or {}).items():
+                        base = str(role).split("@")[0]
+                        if base in HTP_ROLES:
+                            dst[role] = max(dst.get(role, 0), int(round(v * level / 100)))
+                        else:
+                            dst[role] = v
         for n in heads:
-            row = {k: v for k, v in (self.programmer.get(n) or {}).items()}
+            row = dict(under.get(n) or {})
+            row.update(self.programmer.get(n) or {})
             if row:
                 values[str(n)] = row
         fx_list = []
@@ -1108,6 +1130,12 @@ class QuickMixin:
                 touch = {"_colour"} if role in self._COLOUR_ROLES else {role}
         elif name == "run_fx" and str(params.get("name") or "").lower() in motion_mod.ALL_KINDS:
             touch = set(self.MOVE_ROLES)
+        elif name == "run_fx" and fxlib_mod.FX.get(str(params.get("name") or "").lower(), {}).get("group") == "colour":
+            touch = {"_colour"}
+        elif name == "run_fx" and fxlib_mod.FX.get(str(params.get("name") or "").lower(), {}).get("group") == "dimmer":
+            touch = {"dimmer"}
+        elif name == "set_intensity":
+            touch = {"dimmer"}
         elif name in ("include_palette", "include_preset"):
             touch = {"*"}
         if not touch:
@@ -1135,9 +1163,40 @@ class QuickMixin:
                 hit.append(n)
                 label = label or lbl
         if hit:
-            what = "movement" if touch <= set(self.MOVE_ROLES) else "colour" if touch == {"_colour"} else "settings"
+            what = "movement" if touch <= set(self.MOVE_ROLES) else "colour" if touch == {"_colour"} \
+                else "brightness" if touch == {"dimmer"} else "settings"
             lights = f"light {hit[0]}" if len(hit) == 1 else f"{len(hit)} lights"
             raise ValueError(f"the button “{label}” holds the {what} of {lights} - turn it off to change them")
+
+    def _button_holds_text(self, btn: dict) -> list[str]:
+        """What a captured button keeps, in words: "brightness 40%",
+        "colour #00ff00", "Rainbow", "roam", "gobo"..."""
+        what = []
+        rows = list((btn.get("values") or {}).values())
+        roles = {str(r).split("@")[0] for row in rows for r in row}
+        dims = [v for row in rows for r, v in row.items() if str(r).split("@")[0] == "dimmer"]
+        if dims:
+            what.append(f"brightness {round(max(dims))}%")
+        names = [i.get("name") or "" for i in btn.get("fx_list") or []]
+        if roles & self._COLOUR_ROLES:
+            what.append("colour")
+        for n in names:
+            if n in fxlib_mod.FX:
+                what.append(fxlib_mod.FX[n]["label"])
+            elif n == "roam":
+                what.append("roam")
+            elif n.startswith("shape:"):
+                what.append("shape")
+            elif n.startswith("step:"):
+                what.append("step effect")
+        if self._button_moves(btn) and not any(n == "roam" or n.startswith("shape:") or n in motion_mod.ALL_KINDS for n in names):
+            what.append("movement")
+        elif roles & set(self.MOVE_ROLES) and not self._button_moves(btn):
+            what.append("position")
+        beam = roles - self._COLOUR_ROLES - set(self.MOVE_ROLES) - set(HTP_ROLES) - {"pan_fine", "tilt_fine", "shutter", "strobe"}
+        if beam:
+            what.append(", ".join(sorted(beam)[:4]))
+        return what
 
     def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, **_):
         """Make a button of what the selected lights do now - position,
@@ -1153,7 +1212,7 @@ class QuickMixin:
         if not nums:
             raise ValueError("select the lights first")
         raw = self._quick_capture({"label": str(label or "My look")[:24], "kind": "custom", "mode": "latch",
-                                   "target": target, "hold": True})
+                                   "target": target, "hold": True}, live=True)
         res = self._a_quick_set(page=page, slot="free", button=raw)
         key = res.get("id") or next((b["id"] for b in reversed(self.quick) if b["label"] == raw["label"]), None)
         # the programmer lets go of these lights: the button has them now
@@ -1164,14 +1223,9 @@ class QuickMixin:
         if _truthy(on) and key:
             self._quick_on(key, owner="hand")
         btn = next((b for b in self.quick if b["id"] == key), {})
-        what = []
-        if self._button_moves(btn):
-            what.append("movement")
-        roles = {r for row in (btn.get("values") or {}).values() for r in row}
-        if roles & self._COLOUR_ROLES:
-            what.append("colour")
-        if roles - self._COLOUR_ROLES - set(self.MOVE_ROLES) - set(HTP_ROLES):
-            what.append("beam")
+        what = self._button_holds_text(btn)
+        if btn:
+            btn["keeps"] = ", ".join(what)[:80]     # the tile says what it holds
         where = f"Buttons page {btn.get('page')}, slot {btn.get('slot')}"
         return {"id": key, "summary": f"button “{btn.get('label', label)}” is on ({where}) - it holds {len(nums)} light(s)"
                 + (f" ({', '.join(what)})" if what else "") + "; turn it off to change them"}
@@ -1205,6 +1259,12 @@ class QuickMixin:
                     roles |= set(self.MOVE_ROLES)
                 if btn.get("colour"):
                     roles.add("_colour")
+                for item in btn.get("fx_list") or []:
+                    grp = fxlib_mod.FX.get(item.get("name"), {}).get("group")
+                    if grp == "colour":
+                        roles.add("_colour")
+                    elif grp == "dimmer":
+                        roles.add("dimmer")
                 if roles:
                     lbl, have = out.get(n, (btn["label"], set()))
                     out[n] = (lbl, have | roles)
@@ -1228,9 +1288,19 @@ class QuickMixin:
                     sets[role] = int(v)
         if btn.get("colour"):
             sets.update(self._colour_values(head, btn["colour"]))
+        held_level = None
+        if btn.get("hold"):
+            vals = (btn.get("values") or {}).get(str(n)) or {}
+            dims = [int(v) for r, v in vals.items() if r in HTP_ROLES]
+            held_level = max(dims) if dims else None
         if level is not None or btn.get("hz"):
             if level is not None:
                 o["level"] = max(o.get("level") or 0, round(int(level) * f))
+            if held_level is not None and f >= 1.0:
+                # a button made from the programmer keeps ITS brightness: a
+                # brighter cue underneath doesn't lift it (master and
+                # blackout still apply after this)
+                o["cap"] = min(o["cap"], held_level) if o.get("cap") is not None else held_level
             gate = self._shutter_role(head)
             if gate and not any(r in HTP_ROLES for r in head["map"]) and (level or btn.get("hz")):
                 sets[gate] = self._open_value(head, gate)

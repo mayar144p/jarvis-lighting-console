@@ -862,7 +862,7 @@ on("selection", renderHeld);
 export async function makeHoldButton() {
   const heads = sel();
   if (!heads.length) { toast("Select the lights first"); return; }
-  const name = await promptBox("Make a button", `A button of what ${heads.length === 1 ? "this light does" : `these ${heads.length} lights do`} now. It turns on and holds them - the programmer can't change them until you turn it off. Name it:`, "", { ok: "Make it", placeholder: "e.g. Slow circle red" });
+  const name = await promptBox("Make a button", `A button of everything ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now: brightness, colour or colour effect (rainbow...), movement or roam, gobo and beam. It turns on and holds them - the programmer can't change them until you turn it off. Name it:`, "", { ok: "Make it", placeholder: "e.g. Slow circle red" });
   if (name === null || name === undefined) return;
   const groups = (state.snap && state.snap.groups) || [];
   const set = new Set(heads);

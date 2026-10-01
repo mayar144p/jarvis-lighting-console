@@ -261,6 +261,7 @@ function render(force = false) {
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
     }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
+    b.keeps ? h("small.qkeeps", { title: "What this button holds: " + b.keeps }, b.keeps) : null,
     b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
     PACED.has(b.kind) ? h("span.qrate" + (b.rate || b.free ? "" : ".one"), { title: "Speed (tap to change)" },
       (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);

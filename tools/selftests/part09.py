@@ -2632,7 +2632,7 @@ def test_hold_button() -> None:
             r = e.act("quick_from_programmer", label="Floor circle")
             btn = next((b for b in e.quick if b["label"] == "Floor circle"), {})
             check("one step: a button, on, holding the light", r.get("ok") and btn.get("hold") and btn["id"] in e.quick_active
-                  and len(e._undo) == n_undo + 1 and "movement, colour" in r["summary"], r.get("summary") or r.get("error"))
+                  and len(e._undo) == n_undo + 1 and "colour, Circle" in r["summary"], r.get("summary") or r.get("error"))
             check("...the programmer let go of the light (the button has it)", not e.programmer.get(1)
                   and not any(f.get("from", "programmer") == "programmer" and not f.get("live") for f in e._fx_public()), str(e.programmer))
             p = pans()
@@ -2642,7 +2642,8 @@ def test_hold_button() -> None:
             check("the programmer can't move it while the button is on", not bad.get("ok") and "turn it off" in bad.get("error", ""), str(bad))
             check("...nor change its colour", not e.act("set_colour", colour="#0000ff").get("ok"), "")
             check("...nor start another movement on it", not e.act("run_fx", name="circle").get("ok"), "")
-            check("its level can still go up (a level is not held)", e.act("set_intensity", level=50).get("ok"), "")
+            check("...nor its brightness (the button keeps everything it was made with)",
+                  not e.act("set_intensity", level=50).get("ok"), "")
             check("other lights are free", e.act("set_position", pan=20, tilt=80, head=2).get("ok"), "")
             held = e.lite()["held"]
             check("the screens know which button holds which lights", held and held[0]["label"] == "Floor circle"
@@ -2975,5 +2976,62 @@ def test_hold_button_roam() -> None:
                       str(btn.get("fx_list")))
             else:
                 check("shape_save works", False, str(sh))
+        finally:
+            e.shutdown()
+
+
+def test_hold_button_keeps_everything() -> None:
+    """A button made from the programmer keeps everything edited, not just
+    the movement: brightness, a solid colour or a rainbow, and what a cue
+    on a fader gives the lights; it plays exactly that (a brighter cue
+    underneath doesn't lift it) and holds it until it's off."""
+    print("hold button: brightness, colour, rainbow, cue look - all kept")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+
+            def look(n):
+                x = next(x for x in e._looks() if x["n"] == n)
+                return x["hex"].lower(), round(x.get("a", 0), 2)
+            # a cue at full, blue, under everything
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", colour="#0000ff")
+            e.act("record_cue", playback=1)
+            e.act("clear_programmer")
+            e.act("playback_go", playback=1) if "playback_go" in eng.ACTIONS else e.act("cue_go", playback=1)
+            # the programmer: 40 %, green, roaming
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("set_intensity", level=40)
+            e.act("set_colour", colour="#00ff00")
+            e.act("select_heads", heads=[1])
+            e.act("roam", zones=["dancefloor"])
+            e.act("select_heads", heads=[1, 2, 3])
+            r = e.act("quick_from_programmer", label="green roam")
+            check("the summary says what it keeps", r.get("ok") and all(w in r["summary"] for w in ("brightness 40%", "colour", "roam")),
+                  r.get("summary"))
+            check("it plays green at 40 %, not the full blue cue under it", look(2) == ("#00ff00", 0.4), str(look(2)))
+            check("the brightness is held", not e.act("set_intensity", level=90).get("ok"))
+            check("the colour is held", not e.act("set_colour", colour="#ff0000").get("ok"))
+            check("no rainbow over it either", not e.act("run_fx", name="rainbow").get("ok"))
+            # a cue's colour is kept when the programmer has none
+            for b in list(e.quick):
+                e.act("quick_set", page=b["page"], slot=b["slot"], button=None)
+            e.act("quick_release_all")
+            e.act("stop_fx")
+            e.act("clear_programmer")
+            e.act("select_heads", heads=[2, 3])
+            e.act("run_fx", name="rainbow")
+            r = e.act("quick_from_programmer", label="rainbow")
+            btn = next(b for b in e.quick if b["label"] == "rainbow")
+            check("a rainbow and the cue's look (blue at full) are kept", "Rainbow" in r.get("summary", "")
+                  and (btn.get("values") or {}).get("2", {}).get("dimmer") == 100, f"{r.get('summary')} {btn.get('values')}")
         finally:
             e.shutdown()
