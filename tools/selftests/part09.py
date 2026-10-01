@@ -2101,6 +2101,20 @@ def test_ai_assistant() -> None:
                   and not e.blind_public()["on"] and len(e._undo) == depth
                   and not any((e.programmer.get(n) or {}).get("dimmer") for n in (3, 4)), str(r)[:200])
             check("the extra actions are all real", not [a for a in assistant.EXTRA if a not in eng.ACTIONS])
+            from app import llm as _llm
+            body = ('{"error": {"code": 429, "message": "Quota exceeded ... limit: 15 ... Please retry in 46.8s.", '
+                    '"details": [{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier", "quotaValue": "15"}, '
+                    '{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "46s"}]}}')
+            saved_rpm = _llm._rpm
+            _llm._learn_rpm(body)
+            check("a free plan's 429: how long to wait, and the requests a minute it allows",
+                  _llm._retry_after(body) == 46.0 and _llm._rpm == 15)
+            _llm._rpm = saved_rpm
+            e.act("select_heads", head=1, head_end=2)
+            r = e.act("aim_at", zone="Dance floor")
+            check("aim at a zone by its name (the AI tried a mark of that name first)",
+                  r.get("ok") and "Dance floor" in assistant.check_lights(e, [1])["lights"][0].get("beam", ""), str(r.get("error")))
+            check("and 'mark' falls back to a zone", e.act("aim_at", mark="dance floor").get("ok"))
             from app import engine_base
             check("a read-only query never becomes an undo step (\"Undo pad info\")",
                   not [a for a in engine_base._READ_ONLY if a not in engine_base.UNDO_EXCLUDED])

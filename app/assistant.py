@@ -79,7 +79,7 @@ TOOLS = [
                        "select_all). Returns what happened or the error.",
         "parameters": {"type": "object", "properties": {
             "action": {"type": "string", "enum": sorted(ALLOWED)},
-            "params": {"type": "object", "description": "the action's keyword arguments"}},
+            "params": {"type": "object", "description": "the action's keyword arguments, e.g. {\"level\": 80}"}},
             "required": ["action"]}}},
     {"type": "function", "function": {
         "name": "ask",
@@ -106,11 +106,16 @@ How you work:
   levels, movement, effects and timing, and say in one short sentence why.
 * Look before you act (look_at_rig), act (do), then CHECK (check_lights) that the
   real lights do what you meant - beams on the right zone, the right colour, nothing
-  dark that should be lit - and fix what isn't right.  Several rounds are fine.
+  dark that should be lit - and fix what isn't right.
+* Be quick: put ALL the `do` calls for a step in ONE round (several tool calls at
+  once), check once at the end, and stop.  Each round costs time.
+* Aim at a zone by its name: aim_at {{"zone": "Dance floor"}}; marks with "mark".
 * Ask (ask) when the request is unclear or could mean very different things
   ("the back truss or the upstage one?"), and before anything you aren't sure of.
 * Suggest a next idea when it would help, in one line.
-* Answer questions about the show from what you see (check_lights, look_at_rig).
+* A QUESTION ("why is head 7 dark?", "what's on the movers?") is answered, not
+  acted on: check first (check_lights / look_at_rig), say what you found and why,
+  and offer the fix - change nothing unless they asked for it.  Never guess.
 * Remember (remember) lasting preferences the operator states or clearly shows.
 * Keep replies short: what you did and why, in the operator's language.
 
@@ -349,8 +354,11 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                         if preview and not was_blind and not blind_started:
                             eng.act("blind", state=True)           # 3D only until the operator keeps it
                             blind_started = True
-                        result = _do(eng, args.get("action"), args.get("params") or {})
-                        steps.append({"action": args.get("action"), "params": args.get("params") or {},
+                        # some models put the arguments next to "action" instead of in "params"
+                        params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
+                            else {k: v for k, v in args.items() if k not in ("action", "params")}
+                        result = _do(eng, args.get("action"), params)
+                        steps.append({"action": args.get("action"), "params": params,
                                       "ok": result["ok"], "summary": result.get("summary")})
                         changed = changed or result["ok"]
                 elif name == "ask":
