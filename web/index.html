@@ -42,6 +42,7 @@
       <button class="tb-btn fx-kill" id="fx-kill" title="Stop every laser and effect at once, and disarm">KILL FX</button>
     </div>
 
+    <button class="op-pill" id="op-pill" hidden title="The AI is running the lights. Click to take over.">AI RUNNING</button>
     <button class="blind-pill" id="blind-pill" hidden title="Preview: the programmer shows in 3D only - the rig doesn't see it. Click for Record / leave preview.">PREVIEW</button>
     <div class="tempo" id="tempo" role="group" aria-label="Tempo" hidden>
       <button class="tempo-tap" id="tempo-tap" aria-label="Tap tempo"><i class="tempo-dot" id="tempo-dot"></i><b id="tempo-bpm">120</b><small>BPM</small><em id="tempo-src"></em></button>
@@ -459,6 +460,7 @@
       <button class="btn small ghost" id="ai-attach" type="button" title="A photo to match (or paste / drop one in the box)">📷 Photo…</button>
       <span class="ai-att" id="ai-att" hidden></span>
       <span class="grow"></span>
+      <button class="btn small ghost" id="ai-operator" type="button" title="The AI runs the lights live with the music; touch the desk to take over">▶ Run the show…</button>
       <button class="btn small ghost" id="ai-memory" type="button" title="What the AI remembers about how you like things">What I remember</button>
       <button class="btn small ghost" id="ai-new" type="button" title="Start a new conversation">New chat</button>
       <input type="file" id="ai-photo" accept="image/*" hidden>

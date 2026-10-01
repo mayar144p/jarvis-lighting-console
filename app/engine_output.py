@@ -189,6 +189,12 @@ class OutputMixin:
         self._prodj_stop()
         self._link_stop()
         self._ap_shutdown()
+        op = self.__dict__.get("ai_operator")
+        if op:
+            op["on"] = False                # the AI operator's loop ends
+        ev = self.__dict__.get("_op_stop_ev")
+        if ev:
+            ev.set()
         self._osc_stop()
         try:
             self._autosave(force=True)     # never lose the last edit

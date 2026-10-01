@@ -17,6 +17,7 @@ import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
 import { SfxSystem } from "./sfx.js";
+import { Shadows } from "./shadows.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, GoboAtlas,
 } from "./materials.js";
@@ -126,7 +127,7 @@ export class Stage {
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
-      quality: "auto", zones: false, dance: true };
+      quality: "auto", zones: false, dance: true, shadows: true };
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -174,6 +175,7 @@ export class Stage {
     scene.background = new THREE.Color(0x040508);
     this.scene = scene;
     this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
+    this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
@@ -965,6 +967,10 @@ export class Stage {
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
+    // shadows for the brightest beams, unless the view is kept light
+    if (this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
+      this.shadows.update(LIGHTS.uCount.value);
+    } else this.shadows.off();
     this._drawScreens(now);
 
     this.dirty = false;

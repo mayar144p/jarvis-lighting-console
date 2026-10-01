@@ -20,6 +20,11 @@ export const LIGHTS = {
   uTime: { value: 0 },
   uBounce: { value: 1 },                // crowd dancing, 0..1
   uGobos: { value: null },              // the atlas of real gobo pictures
+  // shadows (shadows.js): the first uShadowCount lights each have a depth
+  // picture in a quarter of uShadowMap, seen through uShadowMat[i]
+  uShadowMap: { value: null },
+  uShadowMat: { value: Array.from({ length: 4 }, () => new THREE.Matrix4()) },
+  uShadowCount: { value: 0 },
 };
 
 // Real gobo pictures (the fixture file's own, app/fixlib gobos.zip), drawn
@@ -165,12 +170,32 @@ uniform vec3 uDir[MAX_LIGHTS];
 uniform vec3 uCol[MAX_LIGHTS];
 uniform vec4 uCone[MAX_LIGHTS];
 uniform vec3 uAmbient;
+uniform sampler2D uShadowMap;
+uniform mat4 uShadowMat[4];
+uniform int uShadowCount;
 uniform vec3 uAlbedo;
 uniform float uGrid;
 uniform float uSheen;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 ${GOBO_GLSL}
+// how much of light i reaches this point past the crowd, the objects and
+// the stage (1 = all of it); 2 x 2 taps for a soft edge
+float shadowAt(int i, vec3 wp) {
+  vec4 sp = uShadowMat[i] * vec4(wp, 1.0);
+  if (sp.w <= 0.0) return 1.0;
+  vec3 nd = sp.xyz / sp.w;
+  if (abs(nd.x) >= 1.0 || abs(nd.y) >= 1.0 || nd.z >= 1.0) return 1.0;
+  vec2 uv = nd.xy * 0.5 + 0.5;
+  vec2 off = vec2(mod(float(i), 2.0), floor(float(i) / 2.0)) * 0.5;
+  float d = nd.z * 0.5 + 0.5 - 0.0004;
+  float px = 1.0 / 1024.0, k = 0.0;
+  for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) {
+    vec2 q = clamp(uv + (vec2(float(a), float(b)) - 0.5) * 1.5 * px * 2.0, 0.002, 0.998);
+    k += d <= texture2D(uShadowMap, off + q * 0.5).r ? 1.0 : 0.0;
+  }
+  return k * 0.25;
+}
 void main() {
   vec3 N = normalize(vWorldNormal);
   if (!gl_FrontFacing) N = -N;
@@ -201,6 +226,7 @@ void main() {
     }
     float lam = max(dot(N, -Ld), 0.0);
     float att = 1.0 / (1.0 + 0.09 * d * d);
+    if (i < uShadowCount && spot * lam > 0.001) spot *= shadowAt(i, vWorldPos);
     light += uCol[i] * spot * lam * att;
   }
   vec3 albedo = uAlbedo;

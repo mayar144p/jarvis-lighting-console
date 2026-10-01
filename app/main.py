@@ -616,8 +616,12 @@ class Handler(BaseHTTPRequestHandler):
             params = body.get("params") or {}
             if not isinstance(params, dict):
                 raise ValueError("params must be an object")
-            return self._console_result(
-                eng, eng.act(str(body.get("action", "")), **params))
+            action = str(body.get("action", ""))
+            # touching the desk while the AI runs the lights hands them back
+            if eng.__dict__.get("ai_operator"):
+                from app import ai_operator
+                ai_operator.take_over(eng, action)
+            return self._console_result(eng, eng.act(action, **params))
         if route == "/api/console/underlay":
             return self._json(save_underlay(body))
         if route == "/api/console/audio":
@@ -825,8 +829,27 @@ class Handler(BaseHTTPRequestHandler):
             if not llm.available():
                 return self._json({"ok": False, "no_key": True,
                                    "error": "no AI key - put LLM_API_KEY in .env and restart (the offline copilot still works)"})
+            if body.get("operator"):
+                # the AI running the lights live: start / stop / status
+                from app import ai_operator
+                what = str(body.get("operator"))
+                if what == "start":
+                    if not llm.available():
+                        return self._json({"ok": False, "no_key": True, "error": "no AI key - put LLM_API_KEY in .env and restart"})
+                    try:
+                        return self._json({"ok": True, "operator": ai_operator.start(
+                            eng, body.get("brief") or "", int(body.get("bars") or 16), body.get("drops") is not False)})
+                    except ValueError as exc:
+                        return self._json({"ok": False, "error": str(exc)})
+                if what == "stop":
+                    return self._json({"ok": True, "operator": ai_operator.stop(eng, "you took over")})
+                return self._json({"ok": True, "operator": ai_operator.status(eng)})
+            if body.get("resume"):
+                # the screen's picture of the 3D view the AI asked to see
+                return self._json(assistant.resume_turn(eng, str(body.get("resume")), body.get("image")))
             return self._json(assistant.run_turn(eng, str(body.get("message") or ""), session,
-                                                 image=body.get("image"), preview=body.get("preview") is not False))
+                                                 image=body.get("image"), preview=body.get("preview") is not False,
+                                                 can_see=bool(body.get("can_see"))))
         if route == "/api/console/media_frame":
             # A video playing in a browser, ~25 frames a second, shrunk to
             # at most 96 x 96: not an action, the engine keeps the latest.

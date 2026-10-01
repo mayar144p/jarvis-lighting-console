@@ -20,6 +20,7 @@ load shows, or delete anything; it is told to ask instead.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 
@@ -106,7 +107,8 @@ How you work:
   levels, movement, effects and timing, and say in one short sentence why.
 * Look before you act (look_at_rig), act (do), then CHECK (check_lights) that the
   real lights do what you meant - beams on the right zone, the right colour, nothing
-  dark that should be lit - and fix what isn't right.
+  dark that should be lit - and fix what isn't right.  When you have see_3d, look at the
+  3D view once at the end too, and fix what looks wrong.
 * Be quick: put ALL the `do` calls for a step in ONE round (several tool calls at
   once), check once at the end, and stop.  Each round costs time.
 * Aim at a zone by its name: aim_at {{"zone": "Dance floor"}}; marks with "mark".
@@ -299,40 +301,87 @@ def _system(eng) -> str:
     return text + "\n\nTHE RIG NOW:\n" + console_ai.rig_context(eng)
 
 
+SEE_TOOL = {"type": "function", "function": {
+    "name": "see_3d",
+    "description": "A fresh picture of the 3D view as it is NOW, after your changes (the "
+                   "operator's screen draws it).  Use it once at the end to judge the look - "
+                   "beams, colours, where light lands - and fix what looks wrong.",
+    "parameters": {"type": "object", "properties": {}}}}
+MAX_VIEWS = 2                # pictures per request
+PENDING_S = 120.0            # a turn waiting for its picture is dropped after this
+_pending: dict[str, dict] = {}
+_pending_lock = threading.Lock()
+
+
 def run_turn(eng, message: str, session: str = "", image: str | None = None,
-             preview: bool = True, chat=None) -> dict:
-    """One request.  `chat` replaces llm.chat (tests)."""
-    chat = chat or llm.chat
+             preview: bool = True, chat=None, can_see: bool = False) -> dict:
+    """One request.  `chat` replaces llm.chat (tests).  `can_see`: the
+    screen asking can draw the 3D view, so the AI may ask to see it after
+    its changes (the turn then pauses: resume_turn carries the picture)."""
     message = str(message or "").strip()[:2000]
     if not message:
         return {"ok": False, "error": "say what you'd like"}
+    _finish_pending(eng, session)
     hist = _history(session)
     user: dict = {"role": "user", "content": message}
     if image and str(image).startswith("data:image/") and len(image) < 3_000_000:
         user = {"role": "user", "content": [{"type": "text", "text": message},
                                             {"type": "image_url", "image_url": {"url": image}}]}
-    msgs = [{"role": "system", "content": _system(eng)}, *hist[-MAX_HISTORY:], user]
-
     with eng.lock:
-        before = eng._undo_state()
-        top = eng._undo[-1] if eng._undo else None
-        was_blind = eng.blind_public()["on"]
-    blind_started = False
-    steps: list[dict] = []
+        st = {"message": message, "session": session, "preview": preview, "can_see": bool(can_see),
+              "msgs": [{"role": "system", "content": _system(eng)}, *hist[-MAX_HISTORY:], user],
+              "before": eng._undo_state(), "top": eng._undo[-1] if eng._undo else None,
+              "was_blind": eng.blind_public()["on"], "blind_started": False, "steps": [],
+              "changed": False, "rounds": 0, "views": 0, "t0": time.monotonic()}
+    return _go(eng, st, chat or llm.chat)
+
+
+def resume_turn(eng, turn: str, image: str | None, chat=None) -> dict:
+    """Carry on a turn that asked to see the 3D view, with the picture."""
+    with _pending_lock:
+        st = _pending.pop(str(turn or ""), None)
+    if st is None:
+        return {"ok": False, "error": "that request is no longer waiting - ask again"}
+    ok = bool(image) and str(image).startswith("data:image/") and len(image) < 3_000_000
+    st["msgs"].append({"role": "tool", "tool_call_id": st.pop("see_id"), "name": "see_3d",
+                       "content": json.dumps({"ok": ok, "note": "the picture follows" if ok
+                                              else "no picture could be taken - use check_lights"})})
+    if ok:
+        st["msgs"].append({"role": "user", "content": [
+            {"type": "text", "text": "(The 3D view now, after your changes.)"},
+            {"type": "image_url", "image_url": {"url": image}}]})
+    return _go(eng, st, chat or llm.chat)
+
+
+def _finish_pending(eng, session: str) -> None:
+    """A turn still waiting for its picture (the screen went away, or a new
+    request came first) ends as it is: kept as one undo step, previewed."""
+    now = time.monotonic()
+    with _pending_lock:
+        done = [k for k, v in _pending.items() if v["session"] == session or now - v["paused"] > PENDING_S]
+        olds = [_pending.pop(k) for k in done]
+    for st in olds:
+        _collapse(eng, st["top"], st["before"], f"AI: {st['message'][:40]}" if st["changed"] else None)
+
+
+def _go(eng, st: dict, chat) -> dict:
+    """The tool loop, from where the turn is."""
+    msgs, steps = st["msgs"], st["steps"]
+    tools = TOOLS + ([SEE_TOOL] if st["can_see"] and st["views"] < MAX_VIEWS else [])
     question = None
     options: list[str] = []
     reply = ""
-    changed = False
-    t0 = time.monotonic()
     try:
-        for _round in range(MAX_ROUNDS):
-            msg = chat(msgs, tools=TOOLS)
+        while st["rounds"] < MAX_ROUNDS:
+            st["rounds"] += 1
+            msg = chat(msgs, tools=tools)
             calls = msg.get("tool_calls") or []
             if not calls:
                 reply = str(msg.get("content") or "").strip()
                 break
             msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
             stop = False
+            see_id = None
             for call in calls:
                 fn = (call.get("function") or {})
                 name = fn.get("name") or ""
@@ -341,7 +390,12 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                         else (fn.get("arguments") or {})
                 except ValueError:
                     args = {}
-                if name == "look_at_rig":
+                if name == "see_3d":
+                    if st["can_see"] and st["views"] < MAX_VIEWS and see_id is None:
+                        see_id = call.get("id") or name           # answered when the picture comes
+                        continue
+                    result = {"error": "no more pictures this time - use check_lights"}
+                elif name == "look_at_rig":
                     result = {"rig": console_ai.rig_context(eng)}
                 elif name == "check_lights":
                     result = check_lights(eng, args.get("heads"))
@@ -351,16 +405,16 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                     if len(steps) >= MAX_ACTIONS:
                         result = {"ok": False, "error": "that's enough steps for one request - finish up"}
                     else:
-                        if preview and not was_blind and not blind_started:
+                        if st["preview"] and not st["was_blind"] and not st["blind_started"]:
                             eng.act("blind", state=True)           # 3D only until the operator keeps it
-                            blind_started = True
+                            st["blind_started"] = True
                         # some models put the arguments next to "action" instead of in "params"
                         params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
                             else {k: v for k, v in args.items() if k not in ("action", "params")}
                         result = _do(eng, args.get("action"), params)
                         steps.append({"action": args.get("action"), "params": params,
                                       "ok": result["ok"], "summary": result.get("summary")})
-                        changed = changed or result["ok"]
+                        st["changed"] = st["changed"] or result["ok"]
                 elif name == "ask":
                     question = str(args.get("question") or "").strip()[:300] or "Which one?"
                     options = [str(o)[:60] for o in (args.get("options") or [])][:4]
@@ -383,28 +437,43 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                     result = {"error": f"no tool {name!r}"}
                 msgs.append({"role": "tool", "tool_call_id": call.get("id") or name, "name": name,
                              "content": json.dumps(result, default=str)[:12000]})
+            if see_id is not None and not stop:
+                # pause: the screen draws the view and sends it (resume_turn)
+                st["views"] += 1
+                st["see_id"] = see_id
+                st["paused"] = time.monotonic()
+                turn = os.urandom(8).hex()
+                with _pending_lock:
+                    _pending[turn] = st
+                return {"ok": True, "need_view": True, "turn": turn, "steps": list(steps),
+                        "preview": st["blind_started"], "seconds": round(time.monotonic() - st["t0"], 1)}
+            if see_id is not None:
+                msgs.append({"role": "tool", "tool_call_id": see_id, "name": "see_3d",
+                             "content": json.dumps({"skipped": "asked the operator first"})})
             if stop:
                 reply = str(msg.get("content") or "").strip()
                 break
         else:
             reply = reply or "I've done what I could in one go - tell me what to change."
     except llm.LLMError as exc:
-        if blind_started:
+        if st["blind_started"]:
             with eng.lock:
-                eng._restore_state(before)
+                eng._restore_state(st["before"])
             eng.act("blind", state=False)
-            _collapse(eng, top, before, None)
+            _collapse(eng, st["top"], st["before"], None)
         return {"ok": False, "error": str(exc), "steps": steps}
     # everything it did is one undo step
-    _collapse(eng, top, before, f"AI: {message[:40]}" if changed else None)
-    if blind_started and not changed:
+    _collapse(eng, st["top"], st["before"], f"AI: {st['message'][:40]}" if st["changed"] else None)
+    if st["blind_started"] and not st["changed"]:
         eng.act("blind", state=False)
-        blind_started = False
-    hist.append({"role": "user", "content": message})
+        st["blind_started"] = False
+    hist = _history(st["session"])
+    hist.append({"role": "user", "content": st["message"]})
     hist.append({"role": "assistant", "content": (reply or question or "")[:1500]})
     del hist[:-MAX_HISTORY * 2]
     return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps,
-            "changed": changed, "preview": blind_started, "seconds": round(time.monotonic() - t0, 1)}
+            "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],
+            "seconds": round(time.monotonic() - st["t0"], 1)}
 
 
 def _collapse(eng, top, before, label: str | None) -> None:

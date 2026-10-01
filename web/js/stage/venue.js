@@ -9,6 +9,13 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surfaceMaterial, crowdMaterial } from "./materials.js";
+import { CASTER_LAYER } from "./shadows.js";
+
+// things that stand in a beam's way cast a shadow (shadows.js)
+function casts(root) {
+  root.traverse((m) => { if (m.isMesh) m.layers.enable(CASTER_LAYER); });
+  return root;
+}
 
 const DEG = Math.PI / 180;
 
@@ -696,6 +703,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     if (s.height > 0.01) {
       const skirt = new THREE.Mesh(new THREE.BoxGeometry(s.width, s.height, s.depth).translate(s.x, s.height / 2, s.z + s.depth / 2), M.skirt);
       skirt.userData = { venueKind: "stage", venueId: "stage" };
+      skirt.layers.enable(CASTER_LAYER);
       group.add(skirt);
     }
     const x0 = s.x - s.width / 2, x1 = s.x + s.width / 2, z0 = s.z, z1 = s.z + s.depth;
@@ -717,6 +725,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   }
   for (const o of v.objects || []) {
     const g = buildObject(o, M);
+    if (o.kind !== "mark") casts(g);
     items.set(o.id, g);
     group.add(g);
   }
@@ -726,8 +735,8 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   group.add(zones);
 
   const people = new THREE.Group();
-  const crowd = buildCrowd(v, stageFront);
-  people.add(crowd, buildPerformers(v));
+  const crowd = casts(buildCrowd(v, stageFront));
+  people.add(crowd, casts(buildPerformers(v)));
   people.visible = opts.people !== false;
   group.add(people);
 

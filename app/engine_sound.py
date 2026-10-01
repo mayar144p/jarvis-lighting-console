@@ -67,6 +67,7 @@ class SoundMixin:
                     events.append("bar")
             if reading["drop"]:
                 events.append("drop")
+                self._sound_drop_at = now           # the AI operator reacts to it
             for tr in cfg["triggers"]:
                 if not tr.get("enabled", True) or tr["on"] not in events:
                     continue

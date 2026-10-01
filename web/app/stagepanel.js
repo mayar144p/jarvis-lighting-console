@@ -139,7 +139,7 @@ export function initStage() {
   };
   toggle("#zones-btn", "zones", false);
   const dance = pref("dance", "1") === "1";
-  stage.setOptions({ people: pref("people", "1") === "1", dance });
+  stage.setOptions({ people: pref("people", "1") === "1", dance, shadows: pref("shadows", "1") === "1" });
   $("#people-btn").classList.toggle("on", stage.options.people);
   $("#people-btn").addEventListener("click", (e) => crowdMenu(e.currentTarget, keep));
   $("#views-more").addEventListener("click", (e) => viewsMenu(e.currentTarget));
@@ -185,6 +185,10 @@ function crowdMenu(btn, keep) {
     { label: tick(stage.options.dance) + "Dancing", run: () => {
       stage.setOptions({ dance: !stage.options.dance });
       keep("dance", stage.options.dance ? "1" : "0");
+    } },
+    { label: tick(stage.options.shadows) + "Shadows", hint: "The crowd, the stage and objects block the beams", run: () => {
+      stage.setOptions({ shadows: !stage.options.shadows });
+      keep("shadows", stage.options.shadows ? "1" : "0");
     } },
     "-",
     { label: tick(c.style === "simple") + "Simple figures", hint: "Plain grey, lightest to draw", run: () => run("venue_crowd", { style: "simple" }) },

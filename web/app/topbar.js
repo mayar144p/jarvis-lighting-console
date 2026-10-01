@@ -1,5 +1,6 @@
 // Top bar: the show, the output state, undo, lock; and the status bar.
 import { state, on, outputState } from "./store.js";
+import { post } from "./api.js";
 import { run } from "./actions.js";
 import { $, h, menu, confirmBox, promptBox, toast } from "./ui.js";
 import { openShowMenu, openSettings, openHelp } from "./dialogs.js";
@@ -170,9 +171,22 @@ function syncBlind() {
   el.textContent = b.cue ? `PREVIEW · cue ${b.cue}` : "PREVIEW";
 }
 
+function syncOperator() {
+  const o = (state.lite && state.lite.ai_operator) || {};
+  const el = $("#op-pill");
+  if (!el) return;
+  el.hidden = !o.on;
+  el.textContent = o.on ? (o.busy ? "AI RUNNING · thinking…" : "AI RUNNING" + (o.last ? " · " + o.last : "")) : "";
+}
+
 export function initTopbar() {
   on("snapshot", syncBlind);
   on("lite", syncBlind);
+  on("lite", syncOperator);
+  $("#op-pill").addEventListener("click", (e) => menu(e.currentTarget, [
+    { label: "I've got it", hint: "stop the AI - the lights stay as they are", run: async () => { await post("/api/console/assistant", { operator: "stop" }); toast("You have the lights", "ok"); } },
+    { label: "What it's doing…", run: () => import("./aioperator.js").then((m) => m.openOperator()) },
+  ]));
   $("#blind-pill").addEventListener("click", (e) => {
     const b = (state.snap && state.snap.blind) || {};
     menu(e.currentTarget, [
