@@ -454,6 +454,15 @@
       <textarea id="ai-text" rows="2" placeholder="Describe the look… e.g. slow blue wash, movers circle the drummer" spellcheck="false"></textarea>
       <button class="btn primary" id="ai-send">Plan</button>
     </form>
+    <div class="ai-tools" id="ai-tools">
+      <label class="check small" title="Each message takes a small picture of the 3D view along, so the AI sees what you see"><input type="checkbox" id="ai-see" checked> AI sees the 3D view</label>
+      <button class="btn small ghost" id="ai-attach" type="button" title="A photo to match (or paste / drop one in the box)">📷 Photo…</button>
+      <span class="ai-att" id="ai-att" hidden></span>
+      <span class="grow"></span>
+      <button class="btn small ghost" id="ai-memory" type="button" title="What the AI remembers about how you like things">What I remember</button>
+      <button class="btn small ghost" id="ai-new" type="button" title="Start a new conversation">New chat</button>
+      <input type="file" id="ai-photo" accept="image/*" hidden>
+    </div>
     <label class="check small"><input type="checkbox" id="ai-offline"> Offline compiler (no AI service)</label>
   </div>
   <div class="ctab" data-cpane="design" hidden>

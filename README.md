@@ -275,6 +275,25 @@ Typing in a field never fires the rig.
 
 ## The copilot
 
+### The AI assistant (with an AI key)
+
+With `LLM_API_KEY` in `.env`, the copilot's Program tab is an assistant
+that works the desk itself. It looks at the rig, does things, then
+**checks the real lights** (level, colour, which zone each beam lands in)
+and fixes what isn't right, in as many rounds as it needs. Ask for a feeling
+(*"the drop needs to hit harder"*, *"calmer for the speeches"*, *"this looks
+cheap, fix it"*) or ask a question (*"why is head 7 dark?"*). It asks you
+when something is unclear, with answers to tap. It remembers your
+preferences (**What I remember**, with a × to forget one). **AI sees the 3D
+view** sends a small picture of the view with each message, and **Photo…**
+(or paste / drop) gives it a picture to match.
+
+Everything it does runs in 3D first (**Keep** / **Throw away**) and is one
+Ctrl+Z. It can't arm the output, fire effects or lasers, save or load
+shows, or delete anything; it asks you instead. **New chat** starts over.
+Tick *Offline compiler* (or have no key) for the keyword copilot described
+below.
+
 **AI** in the top bar opens it. Three tabs:
 
 * **Program.** *“Warm wash on the pars at 70%, then a slow rainbow on the

@@ -127,7 +127,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      its lights.
    * The output already clamps every value to a light's limits, so the
      3D view, cues and movements respect them too.
-9. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
+9. **(DONE, first part) A real AI assistant** (asked 2026-10-01; replaces "more copilot
    commands").  Today the copilot is one shot: one message in, one list of
    allowed steps out, Apply.  Without a key it is the offline keyword
    compiler, which really is hard-coded.  It should work like an assistant:
@@ -154,6 +154,26 @@ whoever picks it up starts from the diagnosis, not from scratch.
      compiler stays as the fallback with no key.
    * Works with the Gemini key in `.env` (tool use); a stronger model is
      smarter.  The key stays in `.env`, never in the repo.
+   Done (app/assistant.py, /api/console/assistant, the copilot chat):
+   * A tool loop (up to 14 rounds, 40 actions).  Tools: look_at_rig,
+     check_lights (level, colour, where each beam lands - a floor point and
+     its zone - and the effects on it), music (tempo, sound, timeline part),
+     do (the copilot's allowlist plus gradients, shapes, buttons, beat /
+     space locks, highlight, tempo), ask (a question with answers to tap,
+     the turn stops), remember / forget (notes kept in
+     data/assistant_memory.json, given to it every turn).
+   * The conversation is kept per screen; New chat starts over.
+   * Preview in blind, Keep / Throw away; the whole turn is one undo
+     step.  An AI failure half-way leaves nothing behind.
+   * It sees: a small JPEG of the 3D view with each message (switchable),
+     and a photo you attach, paste or drop.
+   * Tested with a scripted model and with a stand-in OpenAI-compatible
+     service end to end in the browser; not yet against Gemini itself.
+   * Fixed on the way: the pad's pad_info and venue_info became undo steps
+     ("Undo pad info"); every read-only action is now outside undo.
+   **Left:** the "AI operator" mode (it plays the show live with the music,
+   you take over any time); the 3D picture after its own changes within a
+   turn (today it checks with check_lights, in words).
    * Later, separate (not planned yet): the AI changing Jarvis's own code
      on request - a branch + PR made by a coding agent, tests run, you
      review and merge, Jarvis updates itself (never patching the running
