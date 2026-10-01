@@ -66,7 +66,20 @@ whoever picks it up starts from the diagnosis, not from scratch.
    only become a button through a cue and a GO button. The Move tab's
    "Make a button" covers only preset movements and saved moves, and
    targets the movers rather than the group.
-7. **Show only what a light can do** (asked 2026-10-01):
+7. **Follow speed in the engine** (asked 2026-10-01).  The Follow speed
+   (Move tab -> Aim: instant / fast / medium / slow) already moves the real
+   lights: the glide changes the pan / tilt sent on DMX, not just the 3D
+   view.  But the glide is worked out in the browser:
+   * a hidden or minimised tab slows its timers to about once a second,
+     so the real lights move in jerky steps;
+   * closing the page mid-glide leaves them where they are;
+   * new positions go out about 14 times a second, not at the full DMX
+     rate.
+   To do: the browser sends only the target and the speed.  The engine
+   glides the pan / tilt at the full 40 updates a second, whatever the
+   browser does, the same for every screen.  Optional: use the fixture's
+   own pan / tilt speed channel when it has one.
+8. **Show only what a light can do** (asked 2026-10-01):
    * The pan / tilt pad (Move tab, programmer) shows a light's real travel.
      That means its pan and tilt degrees from the fixture file (a 180° pan
      scanner, a tilt-only bar, a head with limited tilt) rather than the
@@ -82,7 +95,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      some of its units can't use. To do: audit every panel per unit type,
      hide what a unit lacks, and say which selected lights a control won't
      reach.
-8. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
+9. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
    commands").  Today the copilot is one shot: one message in, one list of
    allowed steps out, Apply.  Without a key it is the offline keyword
    compiler, which really is hard-coded.  It should work like an assistant:
@@ -113,10 +126,10 @@ whoever picks it up starts from the diagnosis, not from scratch.
      on request - a branch + PR made by a coding agent, tests run, you
      review and merge, Jarvis updates itself (never patching the running
      app).
-9. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+10. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
-10. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+11. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
 
