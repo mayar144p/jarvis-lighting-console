@@ -1128,6 +1128,12 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
         now = time.monotonic()
         out: list[dict] = []
         keep: list[dict] = []
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+
+        def origin(row):
+            # who started it: Clear and "stop my effects" leave the others be
+            return ("cue" if row.get("cue_pb") else "button" if row["id"] in owned
+                    else "timeline" if row.get("live") else "programmer")
         for row in self.fx:
             dur = row.get("duration")
             elapsed = now - row["t0"]
@@ -1156,6 +1162,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 continue
             if row.get("roam"):
                 out.append({"id": row["id"], "lib": "roam", "label": "Roam: " + " + ".join(z["name"] for z in row["roam"]),
+                            "zones": [{"id": z["id"], "name": z["name"]} for z in row["roam"]],
                             "params": dict(row.get("params") or {}), "heads": list(row["heads"]),
                             "duration": dur, "remaining": None})
                 continue
@@ -1189,6 +1196,9 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             out.append(pub)
         if len(keep) != len(self.fx):
             self.fx = keep
+        where = {row["id"]: origin(row) for row in keep}
+        for o in out:
+            o["from"] = where.get(o["id"], "programmer")
         return out
 
     @staticmethod
@@ -1328,6 +1338,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "selected": list(self.selected),
                 "quick_active": sorted(self.quick_active),
                 "quick_pending": sorted(self.__dict__.get("quick_pending") or {}),
+                "aim_glide": self.aim_glide_public(),
                 "sfx": self._sfx_public(),
                 "timeline": self._tl_transport(),
                 "patch_rev": self.patch_rev,

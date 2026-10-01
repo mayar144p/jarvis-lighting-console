@@ -572,7 +572,12 @@ function editButton(slot, btn) {
       if (steps.length) {
         kids.push(row("Or a step effect", chips(steps.map((f) => [`step:${f.id}`, f.name]), s.fx, (v) => { s.fx = v; s.params = {}; draw(); })));
       }
-      if (s.fx.startsWith("step:")) {
+      if (s.fx === "roam" || s.fx.startsWith("shape:")) {
+        const p = s.params || {};
+        const what = s.fx === "roam" ? `a roam over ${(p.zones || []).length} zone(s)` : "a shape";
+        kids.push(row("Movement", h("div.qe-note", `Made on the Move tab: ${what}, its speed and size${p.beats ? `, a round per ${p.beats} beat(s)` : ""}. `
+          + "To change it, set it up again on the Move tab and press Make a button - or pick another effect above.")));
+      } else if (s.fx.startsWith("step:")) {
         kids.push(row("On the beat", chips([[0, "Its own times"], [1, "A round a beat"], [2, "2 beats"], [4, "A bar"], [8, "2 bars"]],
           s.params.beats ?? 0, (v) => { s.params = v ? { beats: v } : {}; draw(); })));
       } else if (MOVES.has(s.fx)) {

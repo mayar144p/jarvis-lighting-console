@@ -56,7 +56,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      with the show.
    * Fixed on the way: speeds below 1 given to the new actions were rounded
      to whole numbers (an integer clamp).
-6. **Instant buttons from moves** (asked 2026-10-01): when you are done
+6. **(DONE) Instant buttons from moves** (asked 2026-10-01): when you are done
    setting a movement up on the Move tab (a roam over your own zones, a
    preset movement with its knobs, a shape), one press makes a button that
    plays exactly that, with no cue in between. The button is only for the
@@ -66,7 +66,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
    only become a button through a cue and a GO button. The Move tab's
    "Make a button" covers only preset movements and saved moves, and
    targets the movers rather than the group.
-7. **Follow speed in the engine** (asked 2026-10-01).  The Follow speed
+7. **(DONE) Follow speed in the engine** (asked 2026-10-01).  The Follow speed
    (Move tab -> Aim: instant / fast / medium / slow) already moves the real
    lights: the glide changes the pan / tilt sent on DMX, not just the 3D
    view.  But the glide is worked out in the browser:
@@ -79,6 +79,21 @@ whoever picks it up starts from the diagnosis, not from scratch.
    glides the pan / tilt at the full 40 updates a second, whatever the
    browser does, the same for every screen.  Optional: use the fixture's
    own pan / tilt speed channel when it has one.
+   Done (6 and 7):
+   * Move tab -> Make a button (also in the Roam row) makes the button at
+     once for the roam / shape / movement running on the selection. It is
+     for the selected lights, or their group (kept as the group).
+   * aim_at takes `glide`: the engine moves the aim every frame (glide
+     state, a tick in the frame builder) and lets go when the lights are
+     moved by hand. The live feed shows where the beams are.
+   * Fixed on the way:
+     - Slow roam (0.5) ran at 0.05: an integer clamp. Button seconds and
+       strobe Hz were rounded the same way.
+     - No way to stop effects without clearing the lights: an Effects chip
+       (×) on the programmer bar and Stop mine. Clear and the chip leave
+       cue / button / timeline effects playing, and each running effect
+       says where it comes from.
+   * The fixture's own pan / tilt speed channel: not used yet.
 8. **Show only what a light can do** (asked 2026-10-01):
    * The pan / tilt pad (Move tab, programmer) shows a light's real travel.
      That means its pan and tilt degrees from the fixture file (a 180° pan

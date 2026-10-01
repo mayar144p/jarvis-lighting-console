@@ -765,14 +765,92 @@ class FxLayerMixin:
                 out[f"tilt@{k}"] = int(round(max(0.0, min(1.0, s[1])) * top_t))
         return out
 
+    # -- follow speed: the engine glides the aim, at the full DMX rate --------
     def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
-                  cell=None, spread=None, **_):
+                  cell=None, spread=None, glide=None, **_):
         """Point every selected moving head at one spot in the room.
 
         Solved per head from where it hangs and which way up it is, through
         its own pan/tilt travel, so twelve movers on three trusses all land
         on the same mark - the thing you would otherwise do head by head.
+        `glide` (seconds): don't jump - glide there, the engine moving the
+        aim every frame (Move tab -> Follow speed), whatever the browser does.
         """
+        try:
+            g = float(glide or 0)
+        except (TypeError, ValueError):
+            g = 0.0
+        if g > 0 and not mark and x is not None and z is not None:
+            return self._aim_glide_start(float(x), float(y or 0.0), float(z), heads, cell, spread, min(g, 10.0))
+        self.__dict__["_glide"] = None                  # an instant aim: any glide stops
+        r = self._aim_at_now(x, y, z, mark, heads, cell, spread)
+        # where these lights were left: a glide later starts from here
+        nums = tuple(sorted(int(h) for h in heads)) if heads else tuple(sorted(self.selected))
+        self.__dict__.setdefault("_aim_rest", {})[nums] = list(r["target"])
+        return r
+
+    def _aim_glide_start(self, tx, ty, tz, heads, cell, spread, tau) -> dict:
+        import time as _t
+        nums = tuple(sorted(int(h) for h in heads)) if heads else tuple(sorted(h["head_no"] for h in self._require_selection()))
+        if not nums:
+            raise ValueError("nothing selected")
+        old = self.__dict__.get("_glide")
+        rest = (self.__dict__.get("_aim_rest") or {}).get(nums)
+        if old and old["heads"] == nums:
+            cur = old["cur"]                             # still gliding: carry on from there
+        elif rest:
+            cur = list(rest)                             # from where these lights were left
+        else:
+            cur = [tx, ty, tz]                           # the first time: straight there
+        self._glide = {"heads": nums, "goal": [tx, ty, tz], "cur": list(cur), "tau": tau,
+                       "cell": cell, "spread": spread, "last": _t.monotonic(), "wrote": None}
+        r = self._aim_glide_tick(force=True) or {}
+        return {**r, "glide": tau, "target": [tx, ty, tz],
+                "summary": f"lights gliding to x{tx:.1f} z{tz:.1f}"}
+
+    def _aim_glide_tick(self, now: float | None = None, force: bool = False) -> dict | None:
+        """One frame of the glide (called by the frame builder)."""
+        g = self.__dict__.get("_glide")
+        if not g:
+            return None
+        import math as _m
+        import time as _t
+        now = _t.monotonic() if now is None else now
+        # someone else moved these lights (nudge, a palette, undo, clear):
+        # the glide lets go rather than fight them
+        if g["wrote"] is not None and any(
+                {k: v for k, v in (self.programmer.get(n) or {}).items() if k.split("@")[0] in ("pan", "tilt", "pan_fine", "tilt_fine")}
+                != g["wrote"].get(n, {}) for n in g["heads"]):
+            self._glide = None
+            return None
+        dt = max(0.0, now - g["last"])
+        if dt <= 0 and not force:
+            return None
+        g["last"] = now
+        k = 1.0 - _m.exp(-dt / g["tau"])
+        cur, goal = g["cur"], g["goal"]
+        for i in range(3):
+            cur[i] += (goal[i] - cur[i]) * k
+        done = _m.hypot(goal[0] - cur[0], goal[2] - cur[2]) < 0.01
+        if done:
+            cur[:] = goal
+        try:
+            r = self._aim_at_now(cur[0], cur[1], cur[2], None, list(g["heads"]), g["cell"], g["spread"])
+        except ValueError:
+            self._glide = None
+            return None
+        g["wrote"] = {n: {k2: v for k2, v in (self.programmer.get(n) or {}).items()
+                          if k2.split("@")[0] in ("pan", "tilt", "pan_fine", "tilt_fine")} for n in g["heads"]}
+        if done:
+            self.__dict__.setdefault("_aim_rest", {})[g["heads"]] = list(goal)
+            self._glide = None
+        return r
+
+    def aim_glide_public(self) -> dict | None:
+        g = self.__dict__.get("_glide")
+        return {"x": round(g["cur"][0], 2), "z": round(g["cur"][2], 2)} if g else None
+
+    def _aim_at_now(self, x=None, y=None, z=None, mark=None, heads=None, cell=None, spread=None):
         if mark:
             found = next((o for o in (self.venue.get("objects") or [])
                           if o.get("kind") == "mark"

@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 
 from app import venue as venue_mod
-from app.engine_base import _clamp
+from app.engine_base import _fclamp
 
 
 def _inside(pts, x, z) -> bool:
@@ -64,7 +64,7 @@ class RoamMixin:
         movers = [h for h in rows if "pan" in h["map"] and "tilt" in h["map"]]
         if not movers:
             raise ValueError("none of those lights can pan and tilt")
-        p = {"speed": float(_clamp(speed, 0.05, 8)), "size": float(_clamp(size, 0.2, 1.0))}
+        p = {"speed": _fclamp(speed, 0.05, 8), "size": _fclamp(size, 0.2, 1.0)}
         if beats:
             p["beats"] = float(beats)
         nums = [h["head_no"] for h in movers]

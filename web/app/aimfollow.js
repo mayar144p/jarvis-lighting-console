@@ -4,7 +4,7 @@
 // does the same from above, when the 3D angle is awkward.
 // Both send aim_at: each light solves its own pan/tilt from where it hangs.
 import { run } from "./actions.js";
-import { state, selectionHeads } from "./store.js";
+import { state, selectionHeads, on } from "./store.js";
 import { h, toast } from "./ui.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -18,51 +18,18 @@ const RATE_MS = 70;
 const GLIDES = [[0, "Instant"], [0.25, "Fast"], [0.8, "Medium"], [2, "Slow"]];
 let glide = (() => { try { return +(localStorage.getItem("jarvis.followGlide") || 0); } catch (e) { return 0; } })();
 if (!GLIDES.some(([v]) => v === glide)) glide = 0;
-let aimNow = null;                      // {x, y, z}: where the beams are aimed while gliding
-let goal = null, goalFinal = false, glideTimer = 0, glideLast = 0;
-let restAt = null;                      // where the beams were left last time: the next glide starts there
+let aimNow = null;                      // {x, z}: where the desk has the beams while they glide
 
 const multiHead = () => selectionHeads().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
 
-/** Aim at (x, y, z) - straight away, or gliding there at the Follow speed. */
+/** Aim at (x, y, z): straight there, or - with a Follow speed - the desk
+ *  glides the real lights after it (the engine moves them every DMX frame,
+ *  whatever this page does). */
 export function aimTo(p, final = false) {
   target = { x: p.x, z: p.z };
   drawTarget();
-  if (!glide) {
-    aimNow = null;
-    restAt = { x: p.x, y: p.y || 0, z: p.z };
-    sendAim(p, final);
-    return;
-  }
-  goal = { x: p.x, y: p.y || 0, z: p.z };
-  goalFinal = final;
-  if (!aimNow) aimNow = restAt ? { ...restAt } : { ...goal };   // from where the beams were left
-  if (!glideTimer) {
-    glideLast = performance.now();
-    glideTimer = setInterval(glideStep, RATE_MS);
-  }
-}
-
-// one step of the glide: a share of the way that depends on the time
-// passed, so it is the same speed however often the pointer moves
-function glideStep() {
-  const now = performance.now();
-  const dt = (now - glideLast) / 1000;
-  glideLast = now;
-  if (!goal || !aimNow) { clearInterval(glideTimer); glideTimer = 0; return; }
-  const k = 1 - Math.exp(-dt / glide);
-  for (const ax of ["x", "y", "z"]) aimNow[ax] += (goal[ax] - aimNow[ax]) * k;
-  const left = Math.hypot(goal.x - aimNow.x, goal.z - aimNow.z);
-  const there = left < 0.03;
-  if (there) Object.assign(aimNow, goal);
-  drawTarget();
-  sendAim(aimNow, there && goalFinal);
-  if (there) {
-    clearInterval(glideTimer);
-    glideTimer = 0;
-    if (goalFinal) { restAt = { ...aimNow }; goal = null; aimNow = null; drawTarget(); }
-  }
+  sendAim(p, final);
 }
 
 function sendAim(p, final) {
@@ -71,6 +38,7 @@ function sendAim(p, final) {
   // of them fan out along the throw
   if (state.cells && state.cells.length) pending.cell = [...state.cells];
   if (fan && multiHead()) pending.spread = fan;
+  pending.glide = glide;                // 0: straight there
   const send = () => {
     timer = 0;
     if (!pending) return;
@@ -216,3 +184,11 @@ export function aimBlock(...after) {
 }
 
 export const isFollowing = () => following;
+
+// the desk's glide, from the live feed: the dashed ring on the map
+on("lite", (lite) => {
+  const g = lite && lite.aim_glide;
+  const was = aimNow;
+  aimNow = g ? { x: g.x, z: g.z } : null;
+  if (was || aimNow) drawTarget();
+});
