@@ -21,8 +21,19 @@ whoever picks it up starts from the diagnosis, not from scratch.
    effect is applied; "the back truss chases red and white on the beat
    during the drop"; "build me 8 buttons for this rig"; "a 32-bar
    build-up" on the timeline.
-4. **On the beat:** buttons / strobes that fire on the next beat; Ableton
+4. **(DONE) On the beat:** buttons / strobes that fire on the next beat; Ableton
    Link; effect size from the sound; an audio-input picker.
+   Done:
+   * Buttons fire on the next half beat, beat, 2 beats or bar. The desk
+     setting is on the Buttons page; each button can override it (Fires).
+     A press just after the beat counts as on it, and a tap between beats
+     gives a hit on the beat.
+   * Ableton Link, listen-only (app/link.py). Discovery and clock
+     measurement give the tempo and the place in the bar. Tested against a
+     fake peer on localhost, not yet against Live itself.
+   * A sound link to the effects' size (movement size, dimmer depth).
+   * An input picker in the Sound dialog, remembered per computer, falling
+     back to the default when unplugged.
 5. **Effects:** two-colour gradients across the room; bars / panels as
    pixels; images / video mapped onto the rig; step effects in cues and
    buttons; a key-frame shape editor for movement.
@@ -143,8 +154,7 @@ Fixed:
    master follows it (120 BPM = 1x) until moved by hand; any running
    effect or movement can lock to it (one cycle per 1/4 beat .. 8 bars,
    in phase with the bar, kept in cues and buttons).
-   Left: Ableton Link, audio in (with item 7), buttons and strobes that
-   fire on the next beat.
+   Left: nothing (Ableton Link and buttons on the beat: done, plan step 4).
 7. **(DONE) Sound-reactive control** (tempo menu -> Sound): a screen
    listens (microphone / line in; https or the desk computer itself) and
    sends loudness, bass, mids and highs (each with its own automatic
@@ -154,7 +164,7 @@ Fixed:
    the effects' speed, with depth and sensitivity; triggers: each beat /
    bar / drop (every Nth) presses a button; the room's beat can be the
    tempo.  With nothing listening nothing is dimmed.  Saved with the show.
-   Left: effect size from the sound; a line-in picker.
+   Left: nothing (effect size from the sound and the input picker: done).
 8. **(DONE) Autopilot** (tempo menu -> Autopilot): a cue list is a pool
    of looks; every 4 / 8 / 16 / 32 bars on the beat clock another one -
    ranked calm / medium / big from the cues themselves (brightness,

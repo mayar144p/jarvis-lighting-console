@@ -341,7 +341,7 @@ class ProgrammerMixin:
             return
         p = row["params"]
         kind = row["lib"]
-        cap = row.get("_cap")
+        cap = row.get("_cap")         # (worked out at full size: smaller only needs less speed)
         if not cap or cap[0] != (self.patch_rev, tuple(sorted(p.items()))):
             spans = [self._move_span(h) for h in heads]
             amps = [(kind, *motion_mod.amplitude(kind, p, s)) for s in spans]
@@ -356,6 +356,7 @@ class ProgrammerMixin:
             # free, or the beat asks more than the slowest motor can do
             row["_turns"] = row.get("_turns", 0.0) + step * rate
         prog, pbs = base
+        sized = self._sized(p, "move")
         # "across": every head of a multi-head light (a Wave 360's four
         # tilts) is one step of the movement - a tilt wave through the light
         units = []
@@ -385,7 +386,7 @@ class ProgrammerMixin:
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))
             where = spatial.get(h["head_no"], u) if spatial and k is None else u
-            vals = motion_mod.position(kind, row["_turns"], p, tuple(centre), tuple(limits),
+            vals = motion_mod.position(kind, row["_turns"], sized, tuple(centre), tuple(limits),
                                        cap[2][i], where, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():
@@ -402,6 +403,23 @@ class ProgrammerMixin:
                     dst[role] = 256 if 0 < v16 < 256 else v16    # never read as 8-bit
                 else:
                     dst[role] = int(round(frac * 255))
+
+    def _sized(self, p: dict | None, kind: str) -> dict | None:
+        """An effect's params at the size the sound asks for (a sound link
+        to the effects' size): a movement's size in degrees, a dimmer
+        effect's depth between its low and its high."""
+        f = float(self.__dict__.get("_sound_size", 1.0))
+        if f >= 0.999 or not p:
+            return p
+        q = dict(p)
+        if kind == "move":
+            q["size"] = max(1.0, float(p.get("size", 20.0)) * f)
+            if "arc" in p:
+                q["arc"] = max(10.0, float(p["arc"]) * f)
+        elif "high" in p or "low" in p:
+            lo = float(p.get("low", 0.0))
+            q["high"] = lo + (float(p.get("high", 100.0)) - lo) * f
+        return q
 
     def _move_span(self, h: dict) -> tuple[float, float]:
         """Degrees of pan and tilt travel, from the fixture file."""
@@ -609,7 +627,7 @@ class ProgrammerMixin:
                         roles = by_no.get(head_no, {}).get("map") or []
                         reps = merge._repeated(roles)
                         try:
-                            vals = fxlib_mod.apply(row["lib"], {}, roles, params=row.get("params"),
+                            vals = fxlib_mod.apply(row["lib"], {}, roles, params=self._sized(row.get("params"), "lib"),
                                                    elapsed=elapsed, index=i, count=len(units))
                         except ValueError:
                             continue
@@ -627,7 +645,7 @@ class ProgrammerMixin:
                     roles = by_no.get(head_no, {}).get("map") or []
                     try:
                         vals = fxlib_mod.apply(
-                            row["lib"], {}, roles, params=row.get("params"),
+                            row["lib"], {}, roles, params=self._sized(row.get("params"), "lib"),
                             elapsed=elapsed, index=spatial.get(head_no, i) if spatial else i, count=count)
                     except ValueError:
                         # The patch changed under a running effect - a mode
@@ -644,7 +662,7 @@ class ProgrammerMixin:
                 cycles = fxmod.cycles_for(elapsed, row["speed"], row["phase"],
                                           row["spread"], i, count)
                 value = fxmod.fx_value(row["kind"], cycles, row["base"],
-                                       row["depth"],
+                                       row["depth"] * float(self.__dict__.get("_sound_size", 1.0)),
                                        seed=row["id"] * 1000 + head_no,
                                        low=row["low"], high=row["high"])
                 o.setdefault(head_no, {})[row["role"]] = value

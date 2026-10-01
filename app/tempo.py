@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 MIN_BPM, MAX_BPM = 30.0, 300.0
-SOURCES = ("manual", "tap", "midi", "prodj", "browser", "audio")
+SOURCES = ("manual", "tap", "midi", "prodj", "browser", "audio", "link")
 # a source that has gone quiet this long no longer drives the clock
 QUIET_S = 4.0
 
@@ -51,7 +51,7 @@ class Clock:
 
     def live(self, now: float) -> bool:
         """A clock source (MIDI, CDJs, audio) is driving it right now."""
-        return self.source in ("midi", "prodj", "browser", "audio") and \
+        return self.source in ("midi", "prodj", "browser", "audio", "link") and \
             self.heard_at is not None and now - self.heard_at < QUIET_S
 
     def public(self, now: float) -> dict:
@@ -133,6 +133,23 @@ class Clock:
             self.set_bpm(bpm, now, "prodj")
         self.align(now, beat_in_bar)
         self.source = "prodj"
+        self.heard_at = now
+
+
+    # -- Ableton Link: the session's tempo and beat ---------------------------
+    def link_sync(self, now: float, bpm: float, beat: float | None) -> None:
+        """Follow a Link session: its tempo, and (once the clocks are
+        measured) its place in the bar - moved to the nearest count with
+        the same phase, so a locked effect never jumps a bar."""
+        if abs(bpm - self.bpm) > 0.01 or self.source != "link":
+            self.set_bpm(bpm, now, "link")
+        if beat is not None:
+            cur = self.beats(now)
+            d = (beat - cur) % self.bar
+            if d > self.bar / 2:
+                d -= self.bar
+            self.anchor = now - (cur + d) * 60.0 / self.bpm
+        self.source = "link"
         self.heard_at = now
 
 

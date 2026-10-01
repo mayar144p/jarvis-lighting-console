@@ -8,7 +8,8 @@ tempo estimate.  The desk keeps the latest reading and:
 
 * **links** - a sound source (level, bass, mid, high, or the beat as a
   pulse that decays) moves a target: the whole rig's brightness, a
-  group's, some lights', or the speed of the running effects.  `depth`
+  group's, some lights', the speed of the running effects, or their size
+  (how far a movement swings, how deep a dimmer effect goes).  `depth`
   is how much it moves (100: from dark to full with the music; 30: a
   gentle breathing), `gain` how sensitive it is.
 * **triggers** - on a beat, the first beat of a bar, or a drop, press a
@@ -24,7 +25,7 @@ from __future__ import annotations
 import math
 
 SOURCES = ("level", "bass", "mid", "high", "beat")
-TARGETS = ("master", "group", "heads", "fx_speed")
+TARGETS = ("master", "group", "heads", "fx_speed", "fx_size")
 EVENTS = ("beat", "bar", "drop")
 STALE_S = 0.6
 BEAT_DECAY_S = 0.18
@@ -148,6 +149,8 @@ def apply(cfg: dict, reading: dict | None, beat_at: float | None, now: float,
         if t["type"] == "fx_speed":
             speed *= f
             continue
+        if t["type"] == "fx_size":
+            continue                        # size(): read on its own
         if t["type"] == "master":
             heads = light_heads
         elif t["type"] == "group":
@@ -157,3 +160,15 @@ def apply(cfg: dict, reading: dict | None, beat_at: float | None, now: float,
         for n in heads:
             scales[n] = scales.get(n, 1.0) * f
     return scales, speed
+
+
+def size(cfg: dict, reading: dict | None, beat_at: float | None, now: float) -> float:
+    """The running effects' size factor from the fx_size links: 1-depth
+    when quiet .. 1 at full (no sound: 1, the effects as they were made)."""
+    f = 1.0
+    if not reading:
+        return f
+    for lk in cfg.get("links") or []:
+        if lk.get("on") and lk["target"]["type"] == "fx_size":
+            f *= link_factor(lk, value(lk["source"], reading, beat_at, now))
+    return max(0.0, min(1.0, f))

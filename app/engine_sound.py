@@ -87,6 +87,7 @@ class SoundMixin:
         cfg = self.__dict__.get("sound_cfg")
         if not cfg or not cfg["links"]:
             self._sound_speed = 1.0
+            self._sound_size = 1.0
             return
         now = time.monotonic()
         reading = self._sound_live(now)
@@ -94,6 +95,7 @@ class SoundMixin:
         scales, speed = sound_mod.apply(cfg, reading, self.__dict__.get("_sound_beat_at"), now,
                                         lights, {g["n"]: g for g in self.groups})
         self._sound_speed = speed
+        self._sound_size = sound_mod.size(cfg, reading, self.__dict__.get("_sound_beat_at"), now)
         for n, f in scales.items():
             o = out.setdefault(n, {})
             o["scale"] = round((o.get("scale", 100) * f), 1)
@@ -122,7 +124,8 @@ class SoundMixin:
             raise ValueError(f"no group {clean['target']['group']}")
         cfg["links"] = [lk for lk in cfg["links"] if lk["id"] != ident] + [clean]
         what = {"master": "everything", "group": f"group {clean['target'].get('group')}",
-                "heads": f"{len(clean['target'].get('heads') or [])} light(s)", "fx_speed": "effect speed"}[clean["target"]["type"]]
+                "heads": f"{len(clean['target'].get('heads') or [])} light(s)", "fx_speed": "effect speed",
+                "fx_size": "effect size"}[clean["target"]["type"]]
         return {"sound": self.sound_public(), "id": ident,
                 "summary": f"{clean['source']} moves {what} ({clean['depth']}%)"}
 

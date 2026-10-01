@@ -251,6 +251,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
             "step_fx": copy.deepcopy(self._steps()),
             "parked": copy.deepcopy(self.__dict__.get("parked") or {}),
@@ -295,6 +296,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
+        self.quick_quant = float(state.get("quick_quant") or 0.0)
         if "sound_cfg" in state:
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
         if "macros" in state:
@@ -1302,6 +1304,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
                 "lock_has_password": bool(getattr(self, "_lock_hash", "")),
                 "selected": list(self.selected),
                 "quick_active": sorted(self.quick_active),
+                "quick_pending": sorted(self.__dict__.get("quick_pending") or {}),
                 "sfx": self._sfx_public(),
                 "timeline": self._tl_transport(),
                 "patch_rev": self.patch_rev,

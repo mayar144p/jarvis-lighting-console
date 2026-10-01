@@ -6,7 +6,7 @@
 import { run } from "./actions.js";
 import { state, on, selected } from "./store.js";
 import { h, modal, toast } from "./ui.js";
-import { listening, startListening, stopListening, soundSupported, onSound } from "./soundin.js";
+import { listening, startListening, stopListening, soundSupported, onSound, listInputs, chosenInput, chooseInput, inputLabel } from "./soundin.js";
 
 const SOURCES = [["level", "Loudness"], ["bass", "Bass"], ["mid", "Mids"], ["high", "Highs"], ["beat", "The beat (a pulse)"]];
 const EVENTS = [["beat", "each beat"], ["bar", "each bar (the 1)"], ["drop", "a drop"]];
@@ -28,7 +28,8 @@ function meter(label) {
 function targetOptions() {
   const groups = (state.snap && state.snap.groups) || [];
   return [["master", "Everything"], ...groups.map((g) => [`group:${g.n}`, `Group: ${g.name}`]),
-    ["heads", `The selected lights${selected().length ? ` (${selected().length})` : ""}`], ["fx_speed", "The effects' speed"]];
+    ["heads", `The selected lights${selected().length ? ` (${selected().length})` : ""}`], ["fx_speed", "The effects' speed"],
+    ["fx_size", "The effects' size (movement, dimmer depth)"]];
 }
 
 function linkRow(lk) {
@@ -37,7 +38,7 @@ function linkRow(lk) {
   const tgt = h("select.select", ...targetOptions().map(([v, l]) => h("option", { value: v }, l)));
   const t = lk.target;
   tgt.value = t.type === "group" ? `group:${t.group}` : t.type;
-  if (t.type === "heads") tgt.options[tgt.options.length - 2].textContent = `${t.heads.length} light(s)`;
+  if (t.type === "heads") [...tgt.options].find((o) => o.value === "heads").textContent = `${t.heads.length} light(s)`;
   const depth = h("input", { type: "range", min: 0, max: 100, value: lk.depth, title: "How much it moves" });
   const gain = h("input", { type: "range", min: 0.25, max: 4, step: 0.25, value: lk.gain, title: "Sensitivity" });
   const onBox = h("input", { type: "checkbox" });
@@ -73,6 +74,22 @@ export function openSoundDialog() {
   const status = h("p.muted.small", "");
   const toggle = h("button.btn.primary", "Listen");
   const tempoBox = h("input", { type: "checkbox" });
+  // the input: a line in from the mixer is steadier than a microphone
+  const input = h("select.select.snd-input", { title: "What to listen to: a microphone, or a line in from the DJ mixer (an audio interface)" });
+  const fillInputs = async () => {
+    const list = await listInputs().catch(() => []);
+    const want = chosenInput();
+    input.replaceChildren(h("option", { value: "" }, "The default microphone"),
+      ...list.map((d) => h("option", { value: d.id }, d.label)));
+    input.value = list.some((d) => d.id === want) ? want : "";
+  };
+  input.addEventListener("change", async () => {
+    try { await chooseInput(input.value); } catch (e) { toast(e.message || String(e), "bad"); }
+    draw();
+  });
+  const onDevices = () => fillInputs();
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener("devicechange", onDevices);
+  fillInputs();
   const links = h("div.snd-list");
   const triggers = h("div.snd-list");
   const draw = () => {
@@ -80,7 +97,7 @@ export function openSoundDialog() {
     tempoBox.checked = !!s.tempo;
     toggle.textContent = listening() ? "Stop listening" : "Listen";
     toggle.classList.toggle("primary", !listening());
-    status.textContent = listening() ? "Listening on this screen." : s.listening ? `Listening on ${s.from || "another screen"}.`
+    status.textContent = listening() ? `Listening on this screen${inputLabel() ? ` (${inputLabel()})` : ""}.` : s.listening ? `Listening on ${s.from || "another screen"}.`
       : soundSupported() ? "Not listening. Links do nothing until something is listening (the rig is never left dark)."
         : (window.isSecureContext ? "This browser has no microphone access." : "A microphone needs https or the desk computer itself (localhost): listen from there.");
     const key = JSON.stringify([s.links, s.triggers, buttons().length, (state.snap && state.snap.groups || []).length]);
@@ -92,7 +109,7 @@ export function openSoundDialog() {
   };
   toggle.addEventListener("click", async () => {
     try {
-      if (listening()) stopListening(); else await startListening();
+      if (listening()) stopListening(); else { await startListening(); fillInputs(); }   // the names show once allowed
     } catch (e) {
       toast(e.message || String(e), "bad");
     }
@@ -114,6 +131,7 @@ export function openSoundDialog() {
   };
   const body = h("div.snd",
     h("div.row-btns", toggle, status),
+    h("label.snd-k.snd-in", "Input", input),
     h("div.snd-meters", ...meters.map((m) => m.el), h("div.snd-bpm", beat, bpm)),
     h("label.check", tempoBox, h("span", "The room's beat sets the tempo (when no MIDI clock or CDJ does)")),
     h("h3", "Links: the sound moves…"),
@@ -121,7 +139,10 @@ export function openSoundDialog() {
     links, h("div.row-btns", h("button.btn.small", { onclick: addLink }, "+ Add a link")),
     h("h3", "Triggers: on the beat or the drop, press a button"),
     triggers, h("div.row-btns", h("button.btn.small", { onclick: addTrigger }, "+ Add a trigger")));
-  const close = modal({ title: "Sound", body, wide: true, onClose: () => { offSound(); offSnap(); offLite(); } });
+  const close = modal({ title: "Sound", body, wide: true, onClose: () => {
+    offSound(); offSnap(); offLite();
+    if (navigator.mediaDevices && navigator.mediaDevices.removeEventListener) navigator.mediaDevices.removeEventListener("devicechange", onDevices);
+  } });
   draw();
   return close;
 }

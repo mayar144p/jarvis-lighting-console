@@ -1516,3 +1516,159 @@ def test_ai_programs() -> None:
         finally:
             config.LLM_API_KEY = saved_key
             e.shutdown()
+
+
+def test_on_the_beat() -> None:
+    """Item 4 of the plan: buttons that fire on the next beat / bar, the
+    effects' size from the sound, and Ableton Link (a fake peer on
+    localhost: the tempo and the place in the bar come across)."""
+    print("On the beat: quantised buttons, size from the sound, Ableton Link")
+    from app import engine as eng
+    from app import link as link_mod
+    from app import sound as sound_mod
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "Hit", "mode": "hold"})
+            e.act("quick_set", page=1, slot=2, button={"kind": "flash", "label": "Now", "mode": "hold", "quant": 0})
+            e.act("quick_set", page=1, slot=3, button={"kind": "strobe", "label": "Bar hit", "mode": "latch", "quant": 4})
+            ids = {b["label"]: b["id"] for b in e.quick}
+            e.act("tempo_set", bpm=120)
+            r = e.act("quick_quant", beats=1)
+            check("buttons on the beat: a desk setting", r.get("ok") and e.quick_quant == 1.0 and e._quick_public()["quant"] == 1.0)
+            t = e._tempo()
+            t.anchor = time.monotonic() - 0.25            # half way through a beat at 120 BPM
+            r = e.act("quick_press", id=ids["Hit"], down=True)
+            check("pressed mid-beat: it waits", r.get("pending") and ids["Hit"] not in e.quick_active, str(r))
+            at = t.anchor + 0.5                           # the next beat
+            e._quick_pending_tick(at - 0.02)
+            check("not before the beat", ids["Hit"] not in e.quick_active)
+            e._quick_pending_tick(at + 0.001)
+            check("on the beat it fires", ids["Hit"] in e.quick_active)
+            e.act("quick_press", id=ids["Hit"], down=False)
+            check("let go after it fired: off at once", ids["Hit"] not in e.quick_active)
+            # a quick tap before the beat: on at the beat, off a quarter beat on
+            t.anchor = time.monotonic() - 0.25
+            e.act("quick_press", id=ids["Hit"], down=True)
+            e.act("quick_press", id=ids["Hit"], down=False)
+            at = t.anchor + 0.5
+            e._quick_pending_tick(at + 0.001)
+            on_at_beat = ids["Hit"] in e.quick_active
+            e._quick_pending_tick(at + 0.5 * 0.25 + 0.002)
+            check("a tap between beats: a hit on the beat, then off", on_at_beat and ids["Hit"] not in e.quick_active)
+            # pressed just after the beat: it was meant to be on it
+            t.anchor = time.monotonic() - 0.01
+            r = e.act("quick_press", id=ids["Hit"], down=True)
+            check("pressed just after the beat: straight away", not r.get("pending") and ids["Hit"] in e.quick_active, str(r))
+            e.act("quick_press", id=ids["Hit"], down=False)
+            t.anchor = time.monotonic() - 0.25
+            r = e.act("quick_press", id=ids["Now"], down=True)
+            check("a button set to 'as pressed' ignores the desk setting", not r.get("pending") and ids["Now"] in e.quick_active)
+            e.act("quick_press", id=ids["Now"], down=False)
+            t.anchor = time.monotonic() - 0.75             # beat 1.5: the bar is at beat 4
+            r = e.act("quick_press", id=ids["Bar hit"], down=True)
+            pend = e.quick_pending.get(ids["Bar hit"])
+            check("'on the bar' waits for the next 1", r.get("pending") and pend and pend["at"] == 4.0, str(pend))
+            e._quick_pending_tick(t.anchor + 2.0 + 0.001)
+            check("and latches on it", ids["Bar hit"] in e.quick_active)
+            e.act("quick_release_all")
+            check("a bad beat setting is refused", not e.act("quick_quant", beats=3).get("ok")
+                  and not e.act("quick_set", page=1, slot=4, button={"kind": "flash", "quant": 3}).get("ok"))
+            e.act("save_show", name="beat")
+            e.act("quick_quant", beats=0)
+            e.act("load_show", name="beat")
+            check("the beat setting is saved with the show", e.quick_quant == 1.0
+                  and next(b for b in e.quick if b["label"] == "Bar hit").get("quant") == 4.0)
+
+            # the effects' size from the sound
+            cfg = {"links": [{"source": "level", "target": {"type": "fx_size"}, "depth": 100}]}
+            clean = sound_mod.clean_config(cfg)
+            check("fx_size: quiet = nothing, loud = as made",
+                  sound_mod.size(clean, {"level": 0.0}, None, 0) == 0.0
+                  and sound_mod.size(clean, {"level": 1.0}, None, 0) == 1.0
+                  and sound_mod.size(clean, None, None, 0) == 1.0)
+            e.act("select_all")
+            e.act("run_fx", name="pulse", params={"low": 0, "high": 100})
+            e.act("sound_link", link=cfg["links"][0])
+            e.sound_feed({"level": 0.0})
+            e._override_vals()
+            quiet = e._fx_values(time.monotonic() + 0.3)
+            e.sound_feed({"level": 1.0})
+            e._override_vals()
+            loud = e._fx_values(time.monotonic() + 0.3)
+            qd = max(v.get("dimmer", 0) for v in quiet.values())
+            ld = max(v.get("dimmer", 0) for v in loud.values())
+            check("a quiet room shrinks a dimmer effect to its low", qd == 0 and ld > 0, f"{quiet} {loud}")
+            p = e._sized({"size": 40.0, "speed": 0.2}, "move")
+            check("and a movement's size", p == {"size": 40.0, "speed": 0.2}, str(p))
+            e._sound_size = 0.5
+            check("half as loud, half the swing", e._sized({"size": 40.0}, "move")["size"] == 20.0)
+            e._sound_size = 1.0
+        finally:
+            e.shutdown()
+
+        # Ableton Link: the pure part
+        node = b"peer0001"
+        pkt = link_mod.build_alive(node, 128.0, 2.5, 1_000_000, mep4=("127.0.0.1", 4000))
+        msg = link_mod.parse_discovery(pkt)
+        check("a Link alive message reads back", msg and msg["timeline"] == (468750, 2_500_000, 1_000_000)
+              and msg["mep4"] == ("127.0.0.1", 4000) and msg["node"] == node.hex(), str(msg))
+        check("junk is not Link", link_mod.parse_discovery(b"_asdp_v\x01\x01") is None
+              and link_mod.parse_discovery(b"hello") is None and link_mod.parse_pong(b"_link_v\x01\x02") is None)
+        fol = link_mod.Follower()
+        fol.alive(msg, 0)
+        ping = link_mod.parse_ping(link_mod.build_ping(10_000))
+        pong = link_mod.parse_pong(link_mod.build_pong(node, 10_000 + 7_000_000 + 50, ping["payload"]))
+        fol.pong(pong, 10_100)
+        check("the clocks measured: offset from a ping and its pong", fol.offset == 7_000_000, str(fol.offset))
+        b = fol.beats(1_000_000 - 7_000_000 + 468750)       # one beat after the origin, in our time
+        check("the session's beat at our time", abs(b - 3.5) < 1e-6 and abs(fol.bpm() - 128.0) < 1e-9, str(b))
+
+        # and on the network: a fake peer on localhost
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+        peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        peer.bind(("127.0.0.1", 0))
+        peer.settimeout(0.05)
+        try:
+            port = _free_port()
+            err = e._link_start(port=port, group="239.255.0.1")
+            check("follows Link", err is None, str(err))
+            skew = 3_000_000                                   # the session's clock runs 3 s ahead of ours
+            ghost0 = int(time.monotonic() * 1e6) + skew
+            alive = link_mod.build_alive(node, 128.0, 2.5, ghost0, mep4=peer.getsockname())
+            sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                sender.sendto(alive, ("127.0.0.1", port))
+                try:
+                    data, addr = peer.recvfrom(2048)
+                    pg = link_mod.parse_ping(data)
+                    if pg:
+                        peer.sendto(link_mod.build_pong(node, int(time.monotonic() * 1e6) + skew, pg["payload"]), addr)
+                except socket.timeout:
+                    pass
+                tp = e.tempo_public()
+                if tp.get("link", {}).get("synced") and e._tempo().source == "link":
+                    break
+            sender.close()
+            time.sleep(0.15)
+            now = time.monotonic()
+            t = e._tempo()
+            want = 2.5 + ((now * 1e6 + skew) - ghost0) / 468750
+            got = t.beats(now)
+            d = (want - got) % 4
+            d = min(d, 4 - d)
+            check("the tempo comes from the session", abs(t.bpm - 128.0) < 0.01 and t.source == "link", f"{t.bpm} {t.source}")
+            check("and the place in the bar (within 20 ms)", d * 60 / 128 < 0.02, f"want {want % 4:.3f} got {got % 4:.3f}")
+            check("the tempo menu says so", e.tempo_public()["link"]["peers"] == 1, str(e.tempo_public()))
+            e.act("tempo_link", state=False)
+            check("and stops", not e.__dict__.get("_link_thread"))
+        finally:
+            peer.close()
+            e.shutdown()

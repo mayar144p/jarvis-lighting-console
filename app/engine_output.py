@@ -187,6 +187,7 @@ class OutputMixin:
         if self.__dict__.get("vnode") is not None:
             self.vnode.stop()
         self._prodj_stop()
+        self._link_stop()
         self._ap_shutdown()
         self._osc_stop()
         try:
