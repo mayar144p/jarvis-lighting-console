@@ -56,10 +56,20 @@ whoever picks it up starts from the diagnosis, not from scratch.
      with the show.
    * Fixed on the way: speeds below 1 given to the new actions were rounded
      to whole numbers (an integer clamp).
-6. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+6. **Instant buttons from moves** (asked 2026-10-01): when you are done
+   setting a movement up on the Move tab (a roam over your own zones, a
+   preset movement with its knobs, a shape), one press makes a button that
+   plays exactly that, with no cue in between. The button is only for the
+   lights selected when it is made, or the selected group (kept as the
+   group, so lights added to the group later follow it). It keeps the
+   zones / shape, speed, size, direction and beat lock. Today a roam can
+   only become a button through a cue and a GO button. The Move tab's
+   "Make a button" covers only preset movements and saved moves, and
+   targets the movers rather than the group.
+7. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
-7. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+8. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
 
