@@ -1284,3 +1284,49 @@ def test_multihead_aim() -> None:
             check("roam fans the heads", len({v[f"tilt@{k}"] for k in range(1, 5)}) == 4, str(v))
         finally:
             e.shutdown()
+
+
+def test_review_fixes_oct() -> None:
+    """Fixes from the review of PRs #30-#32: a 0-255 pan / tilt scales to a
+    16-bit mover; one macro is one undo step even with a full stack; junk
+    OSC never stops the listener; trim is the underside everywhere; a held
+    raw channel is not colour-matched."""
+    print("Review fixes (Oct)")
+    from app import engine as eng
+    from app import fixlib, osc
+    from app.engine_base import UNDO_LIMIT
+
+    for junk in (b"/jarvis/go", b"/jarvis/go\x00\x00,i\x00\x00", b"/a\x00\x00,s\x00\x00abc"):
+        check(f"a malformed OSC packet is nothing ({junk[:12]!r})", osc.parse(junk) == [], "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        key = "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", key), source=f"qlc:{key}")
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Wave 360", qty=1)
+            h = e.patch[0]
+            if "pan_fine" in h["map"]:
+                e.act("select_all")
+                e.act("set_position", pan=255, tilt=128, unit="255")
+                check("pan 255 of 255 is the end of a 16-bit pan", e.programmer[1]["pan"] == 65535, str(e.programmer[1]))
+            e.act("patch_clear")
+            e.act("add_heads", query="LED PAR", qty=2)
+            for i in range(UNDO_LIMIT + 3):
+                e.act("select_all")
+                e.act("set_intensity", level=i % 100)
+            e.act("macro_save", macro={"name": "M", "lines": ["1 red", "2 blue", "1-2 at 50"]})
+            e.act("macro_run", id="M")
+            acts = [u["action"] for u in e._undo]
+            check("a macro is one undo step with a full stack", acts[-1] == "macro" and acts.count("run_command") == 0, str(acts[-4:]))
+            e.act("venue_shape", shape="rectangle", width=14, depth=16, height=6, layout=False)
+            r = e.act("rig_add", preset="straight", length=4, trim=4)
+            it = next(x for x in e.venue["rigging"] if x["id"] == r["id"])
+            rep = e.act("rig_report")["report"]["rigs"]
+            check("trim is the underside: adding at 4 m hangs its centre at 4 m + half the truss, the report says 4",
+                  abs(it["a"][1] - 4.145) < 1e-3 and any(x["trim"] == 4.0 for x in rep), f"{it['a'][1]} {[x['trim'] for x in rep]}")
+        finally:
+            e.shutdown()

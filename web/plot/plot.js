@@ -164,7 +164,7 @@ function plotSheet(showAddr) {
     const ends = members.flatMap((x) => [P(x.a[0], x.a[2]), P(x.b[0], x.b[2])]);
     const xs = ends.map((e) => e[0]), ys = ends.map((e) => e[1]);
     const upright = Math.max(...ys) - Math.min(...ys) > Math.max(...xs) - Math.min(...xs);
-    const trim = Math.min(rg.a[1], rg.b[1]);
+    const trim = Math.min(rg.a[1], rg.b[1]) - (rg.size || 0.3) / 2;       // its underside
     const label = `${rg.name}${trim > 1 ? ` @ ${trim.toFixed(1)} m` : ""}`;
     // a run across the page: its name to the left; up the page: above it
     svg.append(upright

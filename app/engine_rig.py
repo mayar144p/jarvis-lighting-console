@@ -696,8 +696,12 @@ class RigMixin:
         `trim`: the height it hangs at (default: under the ceiling)."""
         room = (venue_mod.normalise(self.venue).get("room") or {})
         top = float(room.get("height") or 6.0)
-        hang = float(trim) if trim is not None else (float(y) if y is not None else top - 0.6)
-        hang = max(0.3, min(top - 0.2, hang))
+        # trim = the height of its UNDERSIDE (as riggers give it, and as Trim…
+        # and the report use it); the piece's line runs through its middle
+        half = float((riglib.PIECES.get(str(piece)) or {}).get("size") or 0.3) / 2
+        under = float(trim) if trim is not None else (float(y) - half if y is not None else top - 0.6 - half)
+        under = max(0.3, min(top - 0.2 - 2 * half, under))
+        hang = under + half
         zz = float(z) if z is not None else float(room.get("back", -1) or -1) + float(room.get("depth") or 10) * 0.35
         items = riglib.build(str(preset), str(piece), float(x or 0), hang, zz, float(length), float(width),
                              float(depth), float(diameter), int(segments) if segments else None,

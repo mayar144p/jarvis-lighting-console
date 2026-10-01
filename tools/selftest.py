@@ -155,6 +155,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_control_tiles,
     test_roam,
     test_multihead_aim,
+    test_review_fixes_oct,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -290,6 +291,7 @@ def _standalone_suites():
     ("Buttons page: control tiles", test_control_tiles),
     ("Roam inside zones; AI that programs", test_roam),
     ("Multi-head lights follow per head", test_multihead_aim),
+    ("Review fixes (Oct)", test_review_fixes_oct),
     )
 
 

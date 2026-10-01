@@ -21,7 +21,15 @@ def _read_str(data: bytes, i: int) -> tuple[str, int]:
 
 
 def parse(data: bytes) -> list[tuple[str, list]]:
-    """Every (address, args) in a packet (a bundle can hold many)."""
+    """Every (address, args) in a packet (a bundle can hold many); a
+    malformed packet (no terminator, a missing argument) is nothing."""
+    try:
+        return _parse(data)
+    except (ValueError, struct.error, UnicodeDecodeError, IndexError):
+        return []
+
+
+def _parse(data: bytes) -> list[tuple[str, list]]:
     if data.startswith(b"#bundle\0"):
         out = []
         i = 16                                          # "#bundle\0" + time tag
@@ -30,7 +38,7 @@ def parse(data: bytes) -> list[tuple[str, list]]:
             i += 4
             if size <= 0 or i + size > len(data):
                 break
-            out += parse(data[i:i + size])
+            out += _parse(data[i:i + size])
             i += size
         return out
     if not data.startswith(b"/"):

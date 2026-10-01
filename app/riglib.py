@@ -166,7 +166,8 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
         ground = first["kind"] in ("tower", "stand", "base") or all(_vertical(r) for r in items) \
             or any(min(r["a"][1], r["b"][1]) < 0.3 for r in items)
         horiz = [r for r in items if not _vertical(r)]
-        trim = round(min(min(r["a"][1], r["b"][1]) for r in horiz), 2) if horiz else None
+        # the trim is the height of its underside (the line runs through its middle)
+        trim = round(min(min(r["a"][1], r["b"][1]) - float(r.get("size") or 0.3) / 2 for r in horiz), 2) if horiz else None
         if ground:
             points = 0
         elif len(items) > 1:

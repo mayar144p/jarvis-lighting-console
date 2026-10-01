@@ -82,8 +82,18 @@ class OscMixin:
                     continue
                 except OSError:
                     break
-                for addr, args in osc_mod.parse(pkt):
-                    ok, said = self.osc_handle(addr, args)
+                # one bad packet (no terminator, a missing argument) is
+                # skipped and counted - it must never stop the listener
+                try:
+                    msgs = osc_mod.parse(pkt)
+                except Exception:
+                    st["bad"] = st.get("bad", 0) + 1
+                    continue
+                for addr, args in msgs:
+                    try:
+                        ok, said = self.osc_handle(addr, args)
+                    except Exception as exc:
+                        ok, said = False, f"{addr}: {exc}"
                     try:
                         sock.sendto(osc_mod.build("/jarvis/ok" if ok else "/jarvis/error", said), peer)
                     except OSError:

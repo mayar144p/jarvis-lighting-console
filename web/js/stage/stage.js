@@ -276,7 +276,9 @@ export class Stage {
     this._underlayVisibility();
     this.dirty = true;
     if (this.editor) this.editor.refresh();
-    if ((firstRoom && !this._userMoved) || roomChanged) this.view("front", jump);
+    // a drawn room that changed size: back to its front - but not for the
+    // stand-in room that follows the lights, and not while arranging
+    if ((firstRoom && !this._userMoved) || (roomChanged && !auto && !this.editing)) this.view("front", jump);
     if (this.opts.onVenueBuilt) this.opts.onVenueBuilt(built);
   }
 
