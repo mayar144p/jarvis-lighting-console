@@ -208,7 +208,16 @@ function render(force = false) {
     fit.take.forEach((x) => covered.add(x));
     span.set(slot, [fit.w, fit.t]);
   }
-  for (let slot = 1; slot <= total; slot++) {
+  // playing: the empty rows under the last button go, so the rows that
+  // are used get the height (Edit shows every slot)
+  let shown = total;
+  if (!editing) {
+    let last = 0;
+    for (const [slot] of byslot) last = Math.max(last, Math.floor((slot - 1) / COLS) + (span.get(slot) || [1, 1])[1]);
+    if (last) shown = Math.min(total, last * COLS);
+  }
+  box.style.setProperty("--qb-rows", String(Math.ceil(shown / COLS)));
+  for (let slot = 1; slot <= shown; slot++) {
     if (covered.has(slot)) continue;
     const b = byslot.get(slot);
     const drop = (el) => {

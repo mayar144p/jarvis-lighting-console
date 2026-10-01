@@ -10,7 +10,7 @@ import threading
 
 from app import timeline as tl_mod
 from app import venue as venue_mod
-from app.engine_base import _truthy
+from app.engine_base import _truthy, attr_domain
 
 
 class TimelineMixin:
@@ -483,11 +483,27 @@ class TimelineMixin:
                 no_light.append(h["head_no"])
                 continue
             values.update(self._white_values(h))
+            # centred, as the button says: a hung mover left pointing at the
+            # ceiling or a wall looked like it hadn't responded at all
+            for role in ("pan", "tilt"):
+                if role in h["map"]:
+                    values[role] = 32768 if attr_domain(h, role) > 255 else 128
             for role, v in values.items():
                 self._set_programmer(h["head_no"], role, v)
+        # the effects you started on them stop (a rainbow or a dimmer chase
+        # would otherwise keep its colour / level over Locate); a cue's or a
+        # button's keep playing - say so
+        nums = {h["head_no"] for h in heads}
+        mine = {f["id"] for f in self._programmer_fx() if not f.get("live") and set(f.get("heads") or []) & nums}
+        self.fx = [f for f in self.fx if f["id"] not in mine]
+        others = sorted({n for f in self._fx_public() if f.get("from") in ("cue", "button", "timeline")
+                         for n in f.get("heads") or [] if n in nums})
         note = ""
+        if others:
+            note += (f" - {len(others)} of them have an effect from a cue or button on them: "
+                     "Highlight shows them anyway")
         if no_light:
-            note = f" ({len(no_light)} head(s) have no drivable channels)"
+            note += f" ({len(no_light)} head(s) have no drivable channels)"
         return {"heads": len(heads) - len(no_light), "no_light": no_light,
                 "summary": f"located {len(heads) - len(no_light)} head(s){note}"}
 

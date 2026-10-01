@@ -134,7 +134,7 @@ class MoveMixin:
                 add("mark:" + str(o["name"]), str(o["name"]), o.get("x", 0), o.get("z", 0), 1.2)
         return spots
 
-    def _a_aim_spot(self, spot=None, formation=None, heads=None, **_):
+    def _a_aim_spot(self, spot=None, formation=None, heads=None, glide=None, **_):
         """Point the selection at a named spot (see _move_spots), or lay a
         formation across the dance floor: fan (spread across it), cross
         (each side to the other side), split (left heads left, right heads
@@ -151,6 +151,11 @@ class MoveMixin:
                 raise ValueError("draw a dance floor zone in the venue first (Venue tab)")
             left, right, mid = spots["left"], spots["right"], spots["floor"]
             n = len(movers)
+            try:
+                g = min(10.0, float(glide or 0))
+            except (TypeError, ValueError):
+                g = 0.0
+            before = {h["head_no"]: self._pt_now(h["head_no"]) for h in movers} if g > 0 else None
             for i, h in enumerate(movers):
                 t = i / (n - 1) if n > 1 else 0.5
                 if f == "fan":
@@ -162,13 +167,15 @@ class MoveMixin:
                 else:
                     raise ValueError("formation is fan, cross or split")
                 self._a_aim_at(x=x, y=0.0, z=mid["z"], heads=[h["head_no"]])
+            if g > 0:
+                self._pt_glide_start([h["head_no"] for h in movers], g, before)   # each glides to its own place
             return {"heads": [h["head_no"] for h in movers],
                     "summary": f"{f} across the dance floor ({n} lights)"}
         s = spots.get(str(spot or ""))
         if s is None:
             raise ValueError(f"no spot {spot!r} - the venue has: " + ", ".join(spots) if spots
                              else "the venue has no dance floor or zones yet (Venue tab)")
-        r = self._a_aim_at(x=s["x"], y=s["y"], z=s["z"], heads=[h["head_no"] for h in movers])
+        r = self._a_aim_at(x=s["x"], y=s["y"], z=s["z"], heads=[h["head_no"] for h in movers], glide=glide)
         r["summary"] = f"{len(r['heads'])} light(s) on {s['label']}" + (
             f" ({len(r['skipped'])} can't move)" if r.get("skipped") else "") + (
             f" ({len(r['clamped'])} can't reach it: as close as they go)" if r.get("clamped") else "")

@@ -2598,3 +2598,327 @@ def _raises_ok(fn) -> bool:
         return True
     except ValueError:
         return False
+
+
+def test_hold_button() -> None:
+    """Make a button of what the lights do now: it captures position,
+    colour and the movement, turns on and HOLDS the lights - its movement
+    goes round its own captured aim (never frozen), the programmer can't
+    change what it holds until it is off, then can again."""
+    print("hold button: make a button from the programmer")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            h = e.patch[0]
+            pan_at = h["address"] - 1 + h["map"].index("pan")
+
+            def pans(k=4):
+                out = []
+                for _ in range(k):
+                    out.append(e.build_frames()[h["universe"]][pan_at])
+                    time.sleep(0.2)
+                return out
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", colour="#ff0000")
+            e.act("set_position", pan=128, tilt=80)
+            e.act("run_fx", name="circle", speed=0.5)
+            n_undo = len(e._undo)
+            r = e.act("quick_from_programmer", label="Floor circle")
+            btn = next((b for b in e.quick if b["label"] == "Floor circle"), {})
+            check("one step: a button, on, holding the light", r.get("ok") and btn.get("hold") and btn["id"] in e.quick_active
+                  and len(e._undo) == n_undo + 1 and "movement, colour" in r["summary"], r.get("summary") or r.get("error"))
+            check("...the programmer let go of the light (the button has it)", not e.programmer.get(1)
+                  and not any(f.get("from", "programmer") == "programmer" and not f.get("live") for f in e._fx_public()), str(e.programmer))
+            p = pans()
+            check("its movement moves, round the captured aim (not frozen, not centred)", len(set(p)) > 1
+                  and all(abs(x - 128) < 30 for x in p), str(p))
+            bad = e.act("set_position", pan=20, tilt=80)
+            check("the programmer can't move it while the button is on", not bad.get("ok") and "turn it off" in bad.get("error", ""), str(bad))
+            check("...nor change its colour", not e.act("set_colour", colour="#0000ff").get("ok"), "")
+            check("...nor start another movement on it", not e.act("run_fx", name="circle").get("ok"), "")
+            check("its level can still go up (a level is not held)", e.act("set_intensity", level=50).get("ok"), "")
+            check("other lights are free", e.act("set_position", pan=20, tilt=80, head=2).get("ok"), "")
+            held = e.lite()["held"]
+            check("the screens know which button holds which lights", held and held[0]["label"] == "Floor circle"
+                  and held[0]["heads"] == [1], str(held))
+            e.act("quick_press", id=btn["id"], down=True)
+            check("turned off: the programmer can change it again", e.act("set_position", pan=20, tilt=80).get("ok")
+                  and e.build_frames()[h["universe"]][pan_at] == 20 and not e.lite()["held"], "")
+            e.act("quick_press", id=btn["id"], down=True)
+            p = pans()
+            check("on again: the same movement round the same aim", len(set(p)) > 1 and all(abs(x - 128) < 30 for x in p), str(p))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("Make a button… sits next to Record cue… on every tab, with the held strip",
+          "Make a button…" in pj and "quick_from_programmer" in pj and "Turn it off" in pj, "")
+
+
+def test_aim_speed_everywhere() -> None:
+    """The Aim speed glides every aim: the first one (no earlier aim to
+    start from - it starts where the light really points), the spot
+    buttons and the formations, light by light."""
+    print("aim speed: spots, formations, first aim")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            e.act("select_all")
+            e.act("attach_heads", rig=e._rig_named("front truss")["id"])
+            e.act("aim_spot", spot="back")
+            back = dict(e.programmer[1])
+            e.act("aim_spot", spot="front")
+            front = dict(e.programmer[1])
+            e.act("aim_spot", spot="back")
+            t0 = time.monotonic()
+            r = e.act("aim_spot", spot="front", glide=2)
+            check("a spot button glides at the Aim speed", r.get("ok") and e.programmer[1]["tilt"] == back["tilt"]
+                  and (1 in e.__dict__.get("_pt_glides", {}) or e.__dict__.get("_glide") is not None), str(e.programmer[1]))
+            e._override_vals()
+            tick = e._pt_glide_tick if e.__dict__.get("_pt_glides") else e._aim_glide_tick
+            tick(now=t0 + 1.0)
+            mid = e.programmer[1]["tilt"]
+            check("...part of the way after a second", min(back["tilt"], front["tilt"]) < mid < max(back["tilt"], front["tilt"]), f"{back['tilt']} {mid} {front['tilt']}")
+            tick(now=t0 + 30)
+            check("...and there in the end", e.programmer[1]["tilt"] == front["tilt"], str(e.programmer[1]))
+            # a first aim (never aimed from here): from where the light points
+            e.act("clear_programmer")
+            e.__dict__.pop("_aim_rest", None)
+            e.act("select_heads", heads=[2])
+            e.act("aim_at", x=0, z=12, glide=2)
+            check("a first aim glides too, from where the light points now", 2 in e.__dict__.get("_pt_glides", {})
+                  and e._pt_glides[2]["cur"]["tilt"] != e._pt_glides[2]["goal"]["tilt"], str(e._pt_glides.get(2)))
+            e.act("select_all")
+            e.act("aim_spot", formation="fan")
+            fan = {n: dict(e.programmer[n]) for n in (1, 2)}
+            e.act("aim_spot", spot="back")
+            e.act("aim_spot", formation="fan", glide=1)
+            check("a formation glides each light to its own place", set(e._pt_glides) == {1, 2}
+                  and all(e._pt_glides[n]["goal"]["pan"] == fan[n]["pan"] for n in (1, 2)), str(e._pt_glides))
+            e.act("set_position", pan=10, tilt=10)
+            e._pt_glide_tick()
+            check("moved by hand: the glide lets go", not e._pt_glides and e.programmer[1]["pan"] == 10, str(e._pt_glides))
+        finally:
+            e.shutdown()
+    mj = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("the spot and formation buttons send the Aim speed", mj.count("glide: followGlide()") == 4, "")
+
+
+def test_colour_fixes() -> None:
+    """Colour picking on real library fixtures: the full-colour mode is the
+    default, numbered wheel slots get colour names, wheels named "Red" with
+    no colour in the file land on red, the 3D shows the wheel's colour, a
+    lone "fine" channel is the channel."""
+    print("colour: modes, names, wheels, 3D")
+    from app import engine as eng, fixlib
+    from app.engine_base import default_mode
+    from app.showdesign import colour_name, hex_from_name
+
+    def modes(src, key):
+        it = fixlib.load(src, key)[0]
+        return [{"name": m["name"], "channel_count": m["channel_count"], "channels": [d["label"] for d in m["detail"]]}
+                for m in it["modes"]]
+    mb = default_mode(modes("qlc", "American_DJ/American-DJ-Mega-Bar-50RGB.qxf"))
+    check("an RGB bar is patched in a mode that mixes, not its colour-macro mode",
+          mb["name"] in ("3 Channel", "4 Channel"), mb["name"])
+    check("colour names from a colour", [colour_name(x) for x in ("#ff0000", "#00ffff", "#ffe9c9", "#000000")]
+          == ["Deep red", "Cyan", "Warm white", "Off"], "")
+    check("colour from a slot's name; none for a split", hex_from_name("Dark Blue (fast)") and hex_from_name("Red")
+          and hex_from_name("Red / Blue") is None and hex_from_name("Color 3") is None, "")
+    lx = fixlib.load("qlc", "Lixada/Lixada-Mini-Gobo-Moving-Head.qxf")[0]["modes"][1]
+    roles = [d["role"] for d in lx["detail"]]
+    check("a lone 'fine' channel is the channel (a gobo, dimmer, shutter that never moved)",
+          {"gobo", "dimmer", "shutter"} <= set(roles) and not any(r.endswith("_fine") for r in roles), str(roles))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        for src, key in (("qlc", "American_DJ/American-DJ-Asteroid-1200.qxf"), ("qlc", "Eurolite/Eurolite-TC-200.qxf"),
+                         ("qlc", "American_DJ/American-DJ-Mega-Bar-50RGB.qxf")):
+            fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Asteroid 1200", qty=1)
+            e.act("add_heads", query="Eurolite TC-200", qty=1)
+            e.act("add_heads", query="Mega Bar 50RGB", qty=1)
+            names = [x["name"] for x in e._wheel_slots(e.patch[0])]
+            check("a wheel the file numbers ('Color 1') shows colour names", "Aqua" in names and not any(n.startswith("Color ") for n in names), str(names[:6]))
+            e.act("select_heads", heads=[2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", colour="#ff0000")
+            red = e.programmer[2]["wheel"]
+            e.act("set_colour", colour="#0000ff")
+            blue = e.programmer[2]["wheel"]
+            check("a wheel named 'Red', 'Blue' with no colours in the file: red lands on Red, blue on Blue",
+                  17 <= red <= 33 and 102 <= blue <= 118, f"{red} {blue}")
+            look = next(x for x in e._looks() if x["n"] == 2)
+            check("...and the 3D shows the wheel's colour", look["hex"].lower() != "#cbd5e1" and look["hex"].lower().startswith("#2"), look["hex"])
+            check("the RGB bar arrived in its colour-mixing mode", {"red", "green", "blue"} <= set(e.patch[2]["map"]), str(e.patch[2]["map"]))
+            e.act("set_attribute", attribute="wheel", value=0, heads=[1])
+            e.patch[2]["map"] = ["wheel", "dimmer"]
+            e.patch[2]["mode"] = "2 Channel"
+            e.__dict__.pop("_better_cache", None)
+            check("a light left in its colour-macro mode is told its better mode",
+                  e._better_mode(e.patch[2]) in ("3 Channel", "4 Channel"), str(e._better_mode(e.patch[2])))
+        finally:
+            e.shutdown()
+
+
+def test_own_programs() -> None:
+    """A light's built-in program (and endless pan / tilt rotation) goes to
+    the wire and the 3D knows: the look carries "prog" and "spin", and a
+    dark light running a program is still in the look feed."""
+    print("built-in programs in the 3D")
+    from app import engine as eng, fixlib
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = "American_DJ/American-DJ-Asteroid-1200.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Asteroid 1200", qty=1)
+            h = e.patch[0]
+            prog = next(r for r in h["map"] if r.startswith("aux") and "program" in (e.head_ranges(h)[r].get("name") or "").lower())
+            spin = next(r for r in h["map"] if r.startswith("aux") and "pan continuous" in (e.head_ranges(h)[r].get("name") or "").lower())
+            e.act("select_all")
+            e.act("set_attribute", attribute=prog, value=50)
+            check("the program goes to the wire", e.build_frames()[h["universe"]][h["address"] - 1 + h["map"].index(prog)] == 50, "")
+            rows = e.look_rows()
+            check("a dark light running a program is in the 3D feed, with its name", rows and rows[0].get("prog") == "Program 3", str(rows[:1]))
+            e.act("set_attribute", attribute=prog, value=0)
+            e.act("set_attribute", attribute=spin, value=140)
+            row = e._looks()[0]
+            check("endless pan rotation: the 3D spins it", "prog" not in row and row.get("spin", {}).get("pan", 0) > 0, str(row.get("spin")))
+            e.act("set_attribute", attribute=spin, value=0)
+            check("off: nothing", "spin" not in e._looks()[0], "")
+        finally:
+            e.shutdown()
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the 3D plays a stand-in and tags the light", "L.prog" in sj and "▶ ${inst.cur.prog}" in sj and "L.spin" in sj, "")
+
+
+def test_laser_fixes() -> None:
+    """Lasers: patched in the mode that controls them (not the 1-channel
+    auto mode), a laser with no power channel fires through its mode switch
+    (Blackout ... DMX mode) - armed only - and a standing laser shoots over
+    the crowd in the 3D, a hung one down onto the floor."""
+    print("lasers: modes, mode-switch output, 3D aim")
+    from app import engine as eng, fixlib
+    from app.engine_base import default_mode
+
+    def pick(src, key):
+        it = fixlib.apply_fx(fixlib.load(src, key)[0])
+        return default_mode([{"name": m["name"], "channel_count": m["channel_count"], "channels": m["channels"]}
+                             for m in it["modes"]])["name"]
+    check("a laser is patched in the mode that controls it, not its 1-channel auto mode",
+          pick("qlc", "JB_Systems/JB-Systems-Space-4-Laser.qxf") == "8 Channel"
+          and pick("qlc", "Briteq/Briteq-Spectra-3D-Laser.qxf") == "19CH without ILDA", "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = "Showtec/Showtec-Dominator.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Showtec Dominator", qty=1)
+            h = e.patch[0]
+            check("its mode switch is its output", "laser_on" in h["map"], str(h["map"]))
+            at = h["address"] - 1 + h["map"].index("laser_on")
+            check("...at rest: Blackout", e.build_frames()[h["universe"]][at] <= 9, str(e.build_frames()[h["universe"]][at]))
+            check("...not without ARM", not e.act("fx_laser", heads=[1], down=True).get("ok"), "")
+            e.act("fx_arm", state=True)
+            r = e.act("fx_laser", heads=[1], down=True)
+            v = e.build_frames()[h["universe"]][at]
+            check("...armed and fired: DMX mode, and the 3D draws it", r.get("ok") and 220 <= v <= 255
+                  and (e._looks()[0].get("fx") or {}).get("laser"), f"{r.get('error')} {v}")
+            e.act("fx_kill")
+            check("...killed: Blackout again", e.build_frames()[h["universe"]][at] <= 9, "")
+        finally:
+            e.shutdown()
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the 3D aims a standing laser out over the crowd, a hung one down",
+          'body.type === "laser"' in sj and "a laser shoots over the crowd" in sj, "")
+
+
+def test_locate_takes_over() -> None:
+    """Locate: full, open white AND centred (as the button says), and it
+    takes the lights back from the effects you started on them; a cue's or
+    a button's effect keeps playing and Locate says so."""
+    print("locate: centred, over your own effects")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            e.act("select_all")
+            e.act("run_fx", name="rainbow")
+            r = e.act("locate")
+            check("the rainbow you started stops: Locate shows white", r.get("ok") and not e.fx
+                  and all(x["hex"].lower() in ("#ffffff",) for x in e._looks()[:2]), str([x["hex"] for x in e._looks()]))
+            check("a mover is centred", e.programmer[3].get("pan") == 128 and e.programmer[3].get("tilt") == 128, str(e.programmer[3]))
+            e.act("quick_set", page=1, slot=1, button={"kind": "fx", "fx": "rainbow", "label": "Rainbow", "mode": "latch",
+                                                         "target": {"heads": [1, 2]}})
+            e.act("quick_press", id="q1-1", down=True)
+            r = e.act("locate")
+            check("a button's effect keeps playing, and Locate says Highlight shows them", r.get("ok") and e.fx
+                  and "Highlight" in r["summary"], r.get("summary"))
+        finally:
+            e.shutdown()
+
+
+def test_fx_tweak_live() -> None:
+    """A running effect's speed and size change as it runs (the FX tab's
+    tap buttons): no restart, and the shape carries on from where it is."""
+    print("fx_tweak: speed / size live, no jump")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("run_fx", name="rainbow")
+            row = e.fx[0]
+            t = time.monotonic()
+            e._fx_values(t)
+            e._fx_values(t + 1.3)
+            before = e._fx_values(t + 1.3)
+            r = e.act("fx_tweak", id=row["id"], speed=3)
+            after = e._fx_values(t + 1.3)
+            check("the speed changes in place (same effect, no restart)", r.get("ok") and len(e.fx) == 1
+                  and e.fx[0] is row and row["params"]["speed"] == 3, str(r))
+            check("no jump: the colours at that moment are the same", before == after, f"{before} vs {after}")
+            e.act("fx_tweak", id=row["id"], times=0.5)
+            check("½× halves it", abs(row["params"]["speed"] - 1.5) < 1e-9, str(row["params"]))
+            check("clamped to the effect's range", e.act("fx_tweak", id=row["id"], speed=999).get("ok")
+                  and row["params"]["speed"] == 20.0, str(row["params"]))
+            check("an unknown knob is refused", not e.act("fx_tweak", id=row["id"], params={"bogus": 1}).get("ok"))
+            e.act("select_heads", heads=[4])
+            e.act("run_fx", name="circle", params={"speed": 0.125, "size": 20})
+            mv = e.fx[-1]
+            r = e.act("fx_tweak", id=mv["id"], speed=0.25, size=45)
+            check("a movement: speed and size", r.get("ok") and mv["params"]["speed"] == 0.25 and mv["params"]["size"] == 45, str(r))
+            check("a missing effect is an error", not e.act("fx_tweak", id=999, speed=1).get("ok"))
+        finally:
+            e.shutdown()

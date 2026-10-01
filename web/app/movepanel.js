@@ -5,7 +5,8 @@
 // Built from the venue (spots come from its dance floor and zones) and the
 // engine's movement effects (app/motion.py): a shape of a given size around
 // the aim, fitted inside each light's range, never faster than its motor.
-import { beatSelect, spaceSelect } from "./programmer.js";
+import { beatSelect, spaceSelect, fxKnobs } from "./programmer.js";
+import { knob, TURN_PRESETS } from "./speedpick.js";
 import { tap as tapTempo, tempo } from "./tempo.js";
 import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
@@ -13,7 +14,7 @@ import { run } from "./actions.js";
 import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
 import { openCueDialog } from "./dialogs.js";
 import { focusedPlayback } from "./playbacks.js";
-import { aimBlock } from "./aimfollow.js";
+import { aimBlock, followGlide } from "./aimfollow.js";
 import { shapesRow, setShapeKnobs, shapes } from "./shapeeditor.js";
 
 const MOVES = [
@@ -193,12 +194,12 @@ function spotsBlock() {
   return h("div.mv-spotbox",
     h("div.mv-spots", ...spots.map((s) => h("button.btn.mv-spot", {
       title: `Every selected mover points at ${s.label}, each from where it hangs`,
-      onclick: () => run("aim_spot", { spot: s.key }, { toast: true }),
+      onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
     }, s.label))),
     floor ? h("div.mv-row", h("span.k", "Formation"),
-      h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan" }, { toast: true }) }, "Fan out"),
-      h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross" }, { toast: true }) }, "Cross"),
-      h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split" }, { toast: true }) }, "Split")) : null);
+      h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan", glide: followGlide() }, { toast: true }) }, "Fan out"),
+      h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross", glide: followGlide() }, { toast: true }) }, "Cross"),
+      h("button.chip", { title: "Left half to the left, right half to the right", onclick: () => run("aim_spot", { formation: "split", glide: followGlide() }, { toast: true }) }, "Split")) : null);
 }
 
 // Roam: the selected movers wander inside the zones picked (each light on
@@ -221,7 +222,7 @@ function roamBlock() {
       onclick: () => { roamSpeed = v; render(true); } }, l))),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
       onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
-    roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => buttonForNow() }, "Make a button") : null,
+    roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…") : null,
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }
 
@@ -312,28 +313,6 @@ async function makeButton(button, label) {
   if (r.ok) toast(`Button “${label}” made for ${who} - ${r.summary.replace(/^button /, "Buttons page ").replace(/:.*$/, "")}`, "ok", 4000);
 }
 
-// the button for what the selected lights are doing now: a roam, a shape
-// or a movement with its knobs
-function buttonForNow() {
-  const heads = movers().map((x) => x.head_no);
-  const on = (f) => f.heads.some((n) => heads.includes(n));
-  const roam = ((state.snap && state.snap.fx) || []).find((f) => f.lib === "roam" && on(f));
-  if (roam) {
-    const p = roam.params || {};
-    return makeButton({ kind: "fx", fx: "roam", params: { zones: (roam.zones || []).map((z) => z.id), speed: p.speed, size: p.size, beats: p.beats } },
-      roam.label || "Roam");
-  }
-  const mine = running().find(on);
-  if (mine && mine.lib === "shape") {
-    const p = mine.params || {};
-    return makeButton({ kind: "fx", fx: `shape:${p.shape}`, params: { speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, beats: p.beats } },
-      mine.label.replace(/^Shape: /, ""));
-  }
-  const lib = mine ? mine.lib : canRun(lastLib) ? lastLib : (MOVES.find(([n]) => canRun(n)) || ["tilt_bounce"])[0];
-  return makeButton({ kind: "fx", fx: lib, params: { ...params(), ...(mine && mine.params && mine.params.beats ? { beats: mine.params.beats } : {}) } },
-    (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
-}
-
 function speedMaster() {
   const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master) || 1;
   const input = h("input", { type: "range", min: 10, max: 200, step: 5, value: Math.round(cur * 100) });
@@ -362,15 +341,16 @@ function speedMaster() {
 
 function movementBlock() {
   const act = running();
-  const secs = h("input", { type: "range", min: 2, max: 30, step: 1, value: knobs.secs, title: "Seconds for one turn" });
-  const secsOut = h("span.mono.small", `${knobs.secs} s`);
-  let t = 0;
-  secs.addEventListener("input", () => {
-    knobs.secs = +secs.value;
-    secsOut.textContent = `${knobs.secs} s`;
-    clearTimeout(t);
-    t = setTimeout(reapply, 250);
-  });
+  // tap or type the seconds for one turn; what runs changes as it runs
+  const secs = knob({ label: "Speed", unit: "s / turn", value: knobs.secs, min: 0.5, max: 200, presets: TURN_PRESETS, invert: true,
+    minusTitle: "Faster (fewer seconds)", plusTitle: "Slower (more seconds)",
+    onSet: (v) => {
+      knobs.secs = v;
+      const heads = movers().map((x) => x.head_no);
+      for (const f of running().filter((x) => x.heads.some((n) => heads.includes(n)))) {
+        run("fx_tweak", { id: f.id, speed: +(1 / v).toFixed(4) }, { silentError: true });
+      }
+    } });
   return section("Movement",
     myMoves(act),
     h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
@@ -384,7 +364,7 @@ function movementBlock() {
       ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
       ...chips(SIZES.map(([l, v]) => [l, v, `${v}° around the aim`]), (v) => knobs.size === v, (v) => { knobs.size = v; }))),
-    h("div.mv-row", h("span.k", "Speed"), secs, secsOut, h("span.muted.small", "per turn")),
+    secs,
     h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
       ...chips([["together", false], ["wave", true]], (v) => knobs.wave === v, (v) => { knobs.wave = v; }))),
     multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
@@ -397,7 +377,8 @@ function movementBlock() {
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
       spaceSelect(f), beatSelect(f),
-      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
+      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
+      fxKnobs(f))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
 }
@@ -434,7 +415,7 @@ function myMoves(act) {
     h("div.mv-row", h("span.k", "My moves"),
       h("button.btn.small", { title: "Save the movement and knobs as a named move", onclick: () => saveMove() }, "+ Save this as my move"),
       h("button.btn.small", { title: "A button (on / off) right now that plays what these lights are doing - the roam, shape or movement with its knobs - on these lights only (or their group)",
-        onclick: () => buttonForNow() }, "Make a button"),
+        onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…"),
       h("button.btn.small", { title: "Record the movement (and the rest of the programmer) as a cue",
         onclick: () => openCueDialog(focusedPlayback()) }, "Record as a cue…")),
     list.length ? h("div.mv-mytiles", ...list.map((m) => {
@@ -548,7 +529,7 @@ function render(force = false) {
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib, f.move]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
+    running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
     moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
     state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],

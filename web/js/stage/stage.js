@@ -49,6 +49,8 @@ function lookFrom(row, scratch) {
     hz: +row.hz || 0,            // the real strobe rate, 0 = steady
     mv: row.mv || null,          // {p, t: full-travel seconds, s: speed 0..1}
     fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
+    prog: row.prog || null,      // running a program of its own ("Program 3")
+    spin: row.spin || null,      // endless pan / tilt rotation: {pan: ±speed}
     // each head of a multi-head light: its own colour and tilt
     cells: Array.isArray(row.cells) ? row.cells.map((c) => {
       const cc = hexLinear(c.hex, scratch);
@@ -73,7 +75,7 @@ function mixLook(a, b, t) {
   return {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
-    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx,
+    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx, prog: b.prog, spin: b.spin,
     cells: b.cells ? b.cells.map((c, i) => {
       const o = (a.cells && a.cells[i]) || c;
       return { r: lerp(o.r, c.r, t), g: lerp(o.g, c.g, t), b: lerp(o.b, c.b, t),
@@ -418,6 +420,11 @@ export class Stage {
       target = new THREE.Vector3(0, 1.4, front * 0.6);
     } else if (body.type === "blinder") {
       target = new THREE.Vector3(p.x, 1.6, p.z + 8);
+    } else if (body.type === "laser") {
+      // a laser shoots over the crowd: hung, down onto the floor in front;
+      // standing (floor, booth, on a truss), out and a little up over heads
+      target = inst.hung ? new THREE.Vector3(p.x * 0.8, 0, Math.max(p.z, front) + 4)
+        : new THREE.Vector3(p.x * 0.8, Math.max(p.y + 0.6, 2.6), Math.max(p.z, front) + 10);
     } else if (!inst.hung) {
       // floor lights: uplight the back wall from the rear of the stage,
       // otherwise lift into the room
@@ -1167,8 +1174,18 @@ export class Stage {
       const px = motorStep(m.pan, L.pan, mv.p || dp, mv.s, dt);
       const tx = motorStep(m.tilt, L.tilt, mv.t || dtl, mv.s, dt);
       inst.moving = (L.pan !== null && px !== L.pan) || (L.tilt !== null && tx !== L.tilt);
-      const pan = px === null ? 0 : lerp(pr[0], pr[1], px) * DEG;
-      const tilt = tx === null ? 0 : lerp(tr[0], tr[1], tx) * DEG;
+      let pan = px === null ? 0 : lerp(pr[0], pr[1], px) * DEG;
+      let tilt = tx === null ? 0 : lerp(tr[0], tr[1], tx) * DEG;
+      // its own program: we can't know the real one - a slow wander says
+      // "it's running something of its own"; endless rotation turns
+      if (L.prog) {
+        pan += Math.sin(time * 0.55 + inst.head) * 28 * DEG;
+        tilt += Math.sin(time * 0.83 + inst.head * 1.7) * 14 * DEG;
+      }
+      if (L.spin) {
+        if (L.spin.pan) pan += time * L.spin.pan * 200 * DEG;
+        if (L.spin.tilt) tilt += time * L.spin.tilt * 160 * DEG;
+      }
       if (sk.gdtf) {
         if (moving) { sk.setPan(pan); sk.setTilt(tilt); }
       } else {
@@ -1184,6 +1201,14 @@ export class Stage {
       }
     }
     let a = L.a;
+    if (L.prog) {
+      // a program runs its own colours and often its own level: a slow
+      // colour cycle, visibly lit
+      a = Math.max(a, 0.6);
+      const hue = (time * 0.12 + inst.head * 0.13) % 1;
+      const c = this._c.setHSL(hue, 1, 0.5);
+      L.r = c.r; L.g = c.g; L.b = c.b;
+    }
     if (L.hz > 0 && (time * L.hz) % 1 > 0.3) a = 0;      // a real strobe only
     inst.level = a;
     const col = this._c.setRGB(L.r, L.g, L.b);
@@ -1326,6 +1351,8 @@ export class Stage {
   _drawLabels() {
     // rings mark a big selection; a cloud of tags would hide the rig
     const want = new Set(this.options.labels && this.selected.size <= 12 ? this.selected : []);
+    // a light running its own program says so (its colours and moves are a stand-in)
+    if (this.options.labels) for (const inst of this.fixtures.values()) if (inst.cur && inst.cur.prog && want.size < 16) want.add(inst.head);
     if (this.options.labels && this.hover !== null && this.hover !== undefined) want.add(this.hover);
     const w = this.el.clientWidth, h = this.el.clientHeight;
     for (const [head, tag] of this.tags) {
@@ -1353,7 +1380,8 @@ export class Stage {
       // the full name only where there is room for it: the light under the
       // pointer, or a single selected light; otherwise just its number
       const full = head === this.hover || want.size === 1;
-      const text = full ? `#${head}  ${brand}${d.model || ""}`.trim() : `#${head}`;
+      const prog = inst.cur && inst.cur.prog ? `  ▶ ${inst.cur.prog}` : "";
+      const text = (full ? `#${head}  ${brand}${d.model || ""}`.trim() : `#${head}`) + prog;
       const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "");
       if (tag.textContent !== text) tag.textContent = text;
       if (tag.className !== cls) tag.className = cls;

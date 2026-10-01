@@ -140,7 +140,47 @@ function renderGroupMasters() {
   }
 }
 
+// The bottom dock's height: drag its top edge (double-click: back to the
+// default), remembered per mode - the buttons want room, the faders less
+const DOCK_MIN = 140;
+function dockHeight(mode, px) {
+  const ws = document.querySelector(".workspace");
+  if (!ws) return;
+  const key = "jarvis.dockh." + mode;
+  if (px === undefined) {
+    try { px = +localStorage.getItem(key) || 0; } catch (e) { px = 0; }
+  } else {
+    try { if (px) localStorage.setItem(key, String(px)); else localStorage.removeItem(key); } catch (e) { /* private window */ }
+  }
+  if (px) ws.style.setProperty("--pb-h", Math.max(DOCK_MIN, Math.min(window.innerHeight * 0.75, px)) + "px");
+  else ws.style.removeProperty("--pb-h");
+}
+
+function wireGrip() {
+  const grip = $("#pb-grip");
+  if (!grip) return;
+  const pb = grip.parentElement;
+  let y0 = 0, h0 = 0, on = false;
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    on = true;
+    y0 = e.clientY;
+    h0 = pb.getBoundingClientRect().height;
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("on");
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!on) return;
+    dockHeight(document.body.dataset.bottom || "faders", Math.round(h0 + (y0 - e.clientY)));
+  });
+  const end = () => { if (on) { on = false; grip.classList.remove("on"); window.dispatchEvent(new Event("resize")); } };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { dockHeight(document.body.dataset.bottom || "faders", 0); window.dispatchEvent(new Event("resize")); });
+}
+
 function wireModes() {
+  wireGrip();
   const modes = [...document.querySelectorAll("#pb-mode button")];
   const set = (mode) => {
     modes.forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
@@ -150,6 +190,7 @@ function wireModes() {
     setTimelineVisible(mode === "timeline");
     document.body.dataset.bottom = mode;
     try { localStorage.setItem("jarvis.bottom", mode); } catch (e) { /* ignore */ }
+    dockHeight(mode);
     window.dispatchEvent(new Event("resize"));
   };
   modes.forEach((b) => b.addEventListener("click", () => set(b.dataset.mode)));

@@ -381,9 +381,14 @@ class ProgrammerMixin:
         for u, (i, h, k) in enumerate(units):
             n = h["head_no"]
             centre, limits = [], []
+            own = (row.get("centre") or {}).get(n) or {}       # a button's captured aim
             for role in ("pan", "tilt"):
                 dom = attr_domain(h, role) if role in h["map"] else 255
-                v = (prog.get(n) or {}).get(f"{role}@{k}") if k and role == "tilt" else None
+                v = own.get(f"{role}@{k}") if k and role == "tilt" else None
+                if v is None:
+                    v = own.get(role)
+                if v is None and k and role == "tilt":
+                    v = (prog.get(n) or {}).get(f"{role}@{k}")
                 if v is None:
                     v = (prog.get(n) or {}).get(role)
                 if v is None:
@@ -555,6 +560,63 @@ class ProgrammerMixin:
         row.pop("_cap", None)
         b = params["beats"]
         return {"fx": tid, "beats": b, "summary": f"effect {tid}: one cycle every {b:g} beat{'s' if b != 1 else ''}"}
+
+    def _a_fx_tweak(self, id=None, params=None, speed=None, size=None, times=None, **_):
+        """Change a running effect while it runs: its speed (or `times`=2 /
+        0.5 to double / halve it), size or any of its knobs - no restart, no
+        jump: the shape carries on from where it is."""
+        try:
+            tid = int(id)
+        except (TypeError, ValueError):
+            raise ValueError(f"bad effect id: {id!r}") from None
+        row = next((r for r in self.fx if r["id"] == tid), None)
+        if row is None:
+            raise ValueError(f"no effect {tid} running")
+        want = dict(params) if isinstance(params, dict) else {}
+        if speed is not None:
+            want["speed"] = speed
+        if size is not None:
+            want["size"] = size
+        p = row.setdefault("params", {})
+        lib = row.get("lib")
+        spec = {k: (lo, hi) for (k, _l, _d, lo, hi) in fxlib_mod.FX[lib]["params"]} if lib in fxlib_mod.FX else {}
+        wave = not lib and not row.get("steps") and not row.get("pix") and "speed" in row
+        old = float(p.get("speed") or row.get("speed") or 1.0) if not wave else float(row["speed"])
+        if times is not None:
+            try:
+                want["speed"] = old * float(times)
+            except (TypeError, ValueError):
+                raise ValueError(f"not a number: {times!r}") from None
+        if not want:
+            raise ValueError("nothing to change - give speed, size, times or params")
+        done = []
+        for k, v in want.items():
+            if k in ("beats", "space", "shape"):
+                continue                    # fx_beats / fx_space / run_shape
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"not a number for {k}: {v!r}") from None
+            if k in spec:
+                v = max(spec[k][0], min(spec[k][1], v))
+            elif k == "speed":
+                v = max(0.005, min(20.0, v))
+            elif k not in p and not (wave and k in row):
+                raise ValueError(f"this effect has no {k}")
+            if wave and k in row:
+                if k == "speed" and v > 0:
+                    row["_v"] = row.get("_v", 0.0) * row["speed"] / v
+                row[k] = v
+            else:
+                if k == "speed" and v > 0 and (lib in fxlib_mod.FX and lib not in motion_mod.ALL_KINDS or row.get("pix")):
+                    # the shape's clock is _v x speed: keep the product, no jump
+                    row["_v"] = row.get("_v", 0.0) * old / v
+                p[k] = v
+            done.append(f"{k} {v:g}")
+        if "size" in want or "arc" in want or "speed" in want:
+            row.pop("_cap", None)           # a movement's motor limit, worked out again
+        return {"fx": tid, "params": {k: v for k, v in p.items() if not str(k).startswith("_")},
+                "summary": f"effect {tid}: " + ", ".join(done) if done else f"effect {tid}: nothing changed"}
 
     def _a_speed_master(self, value=None, pct=None, **_):
         """The Speed master: every running effect's speed x value (0.1 .. 4);

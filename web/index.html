@@ -193,6 +193,7 @@
         <button role="tab" data-tab="looks">Looks</button>
         <button role="tab" data-tab="tools" title="Setup: arrange, fan, limits, orientation">Setup</button>
       </nav>
+      <div class="prog-held" id="prog-held" hidden></div>
       <div class="prog-body" id="prog-body">
 
         <div class="tab-pane" data-pane="intensity">
@@ -219,6 +220,7 @@
         </div>
 
         <div class="tab-pane" data-pane="colour" hidden>
+          <div class="mode-hint" id="mode-hint" hidden></div>
           <div class="picker" id="picker">
             <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
           </div>
@@ -348,6 +350,7 @@
 
     <!-- ------------------------------------------------------ playbacks -->
     <section class="playbacks" id="playbacks" aria-label="Playbacks">
+      <div class="pb-grip" id="pb-grip" title="Drag to make this panel taller or shorter (double-click: back to normal)" role="separator" aria-orientation="horizontal"></div>
       <nav class="pb-mode" id="pb-mode" aria-label="Bottom panel">
         <button data-mode="faders" class="on" title="Playback faders" aria-label="Faders">
           <svg viewBox="0 0 16 16"><path d="M4 2v12M8 2v12M12 2v12"/><rect x="2.5" y="8" width="3" height="2.4" rx=".6"/><rect x="6.5" y="4" width="3" height="2.4" rx=".6"/><rect x="10.5" y="10" width="3" height="2.4" rx=".6"/></svg><span>Faders</span></button>

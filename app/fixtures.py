@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS modes (
 # "Shutter, strobe, reset" channel is the shutter, not maintenance).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 10
+PARSER_VERSION = 11
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than

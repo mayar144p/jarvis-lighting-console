@@ -180,6 +180,9 @@ class LooksMixin:
                     and r not in ("strobe", "shutter")}
             if beam:
                 row["beam"] = beam
+            own = self._own_program(head, values)
+            if own:
+                row.update(own)
             fxl = self._fx_look(head, values)
             if fxl:
                 row["fx"] = fxl
@@ -312,7 +315,8 @@ class LooksMixin:
         moves in the dark too), for the live stream (no sequence bump)."""
         with self.lock:
             return [row for row in self._looks()
-                    if row["a"] > 0 or "pan" in row or "tilt" in row or "fx" in row]
+                    if row["a"] > 0 or "pan" in row or "tilt" in row or "fx" in row
+                    or "prog" in row or "spin" in row]
 
     # every screen's live stream asks 30 times a second.  While the output
     # runs, its thread makes the answer once per DMX tick, just after the
@@ -372,23 +376,83 @@ class LooksMixin:
             return round(max(colour) * 100 / 255) if colour else 0
         return 100 if values.get(role, 0) >= self._open_value(head, role) else 0
 
-    @staticmethod
-    def _hex_for(head: dict, values: dict) -> str:
+    _PROG_NAME = re.compile(r"program|auto|macro|show|chase|sound|music|effect|pattern|run|mode", re.I)
+    _PROG_OFF = re.compile(r"^\s*(off|no ?function|none|normal|dmx|manual|disabled?|blackout|open|nothing)\b", re.I)
+    _SPIN = re.compile(r"(pan|tilt).*(continuous|rotation|endless|spin)|(continuous|endless).*(pan|tilt)", re.I)
+
+    def _own_program(self, head: dict, values: dict) -> dict:
+        """The light running something of its own: a built-in program /
+        auto show ("prog": its name - the 3D plays a stand-in and labels
+        it), or endless pan / tilt rotation ("spin")."""
+        out: dict = {}
+        ranges = self.head_ranges(head)
+        for role in head["map"]:
+            if not role.startswith("aux") or role not in values:
+                continue
+            rng = ranges.get(role) or {}
+            name = str(rng.get("name") or "")
+            v = int(values[role])
+            slot = next((x for x in rng.get("slots") or [] if x.get("from", 0) <= v <= x.get("to", 255)), None)
+            text = str(slot.get("name") if slot else "")
+            if self._SPIN.search(name):
+                if slot and not self._PROG_OFF.match(text) and re.search(r"clockwise|cw|rotat|left|right", text, re.I):
+                    axis = "pan" if "pan" in name.lower() else "tilt"
+                    sign = -1 if re.search(r"counter|ccw|anti|left", text, re.I) else 1
+                    span = max(1, int(slot.get("to", 255)) - int(slot.get("from", 0)))
+                    pos = (v - int(slot.get("from", 0))) / span
+                    fast_first = re.search(r"fast\s*-?>\s*slow|fast.*slow", text, re.I) is not None
+                    speed = round(0.15 + 0.85 * ((1 - pos) if fast_first else pos), 2)
+                    out.setdefault("spin", {})[axis] = sign * speed
+                continue
+            if self._PROG_NAME.search(name) and slot and v > 0 and not self._PROG_OFF.match(text) \
+                    and not re.search(r"speed|fade|sensitiv|reset", name, re.I):
+                out["prog"] = text[:40] or name[:40]
+        return out
+
+    # what each extra emitter adds to the colour on screen
+    _EMIT_RGB = {"white": (255, 255, 255), "amber": (255, 176, 32), "uv": (110, 40, 255),
+                 "lime": (168, 255, 60), "warm_white": (255, 214, 160), "cool_white": (225, 235, 255)}
+
+    def _hex_for(self, head: dict, values: dict) -> str:
+        """The colour the 3D shows: the emitters mixed (RGB, white, amber,
+        UV, lime), CMY, or the colour wheel's slot (its colour from the
+        fixture file, or a name it was taught)."""
         roles = set(head["map"])
-        if roles & {"red", "green", "blue"}:
-            r = values.get("red", 0)
-            g = values.get("green", 0)
-            b = values.get("blue", 0)
-            if r or g or b or "red" in values:
-                return f"#{r:02x}{g:02x}{b:02x}"
-        elif roles & {"cyan", "magenta", "yellow"}:
-            if any(k in values for k in ("cyan", "magenta", "yellow")):
-                r = 255 - values.get("cyan", 255)
-                g = 255 - values.get("magenta", 255)
-                b = 255 - values.get("yellow", 255)
-                return f"#{max(0, r):02x}{max(0, g):02x}{max(0, b):02x}"
-        elif "white" in values:
-            w = values["white"]
-            return f"#{w:02x}{w:02x}{w:02x}"
+        r = g = b = 0.0
+        lit = False
+        if roles & {"red", "green", "blue"} and any(k in values for k in ("red", "green", "blue")):
+            r, g, b = (float(values.get(k, 0)) for k in ("red", "green", "blue"))
+            lit = True
+        for role, rgb in self._EMIT_RGB.items():
+            v = values.get(role)
+            if role in roles and v:
+                k = float(v) / 255.0
+                r, g, b = r + rgb[0] * k, g + rgb[1] * k, b + rgb[2] * k
+                lit = True
+        if not lit and roles & {"cyan", "magenta", "yellow"} and any(k in values for k in ("cyan", "magenta", "yellow")):
+            r, g, b = (255.0 - values.get(k, 0) for k in ("cyan", "magenta", "yellow"))
+            lit = True
+        if lit and (r or g or b):
+            top = max(r, g, b)
+            if top > 255:
+                r, g, b = (c * 255.0 / top for c in (r, g, b))
+            return "#%02x%02x%02x" % tuple(int(round(max(0.0, min(255.0, c)))) for c in (r, g, b))
+        # a colour wheel (or a colour-macro channel): the slot it is on
+        if "wheel" in roles and "wheel" in values:
+            try:
+                slots = self._wheel_slots(head, "wheel")
+            except Exception:                  # noqa: BLE001 - a bare engine
+                slots = []
+            v = int(values["wheel"])
+            slot = next((x for x in slots if x.get("from", 0) <= v <= x.get("to", 255)), None)
+            if slot and slot.get("hex") and slot["hex"].lower() != "#000000":
+                return slot["hex"]
+            if slot and slot.get("name"):
+                from app.showdesign import _to_hex
+                hx = _to_hex(str(slot["name"]).split(" ")[0].lower()) or _to_hex(str(slot["name"]).lower())
+                if hx:
+                    return hx
+        if lit:
+            return "#000000"
         return ROLE_HEX.get(head.get("role") or "generic",
                             ROLE_HEX["generic"])

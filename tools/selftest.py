@@ -171,6 +171,13 @@ from tools.selftests.part09 import (  # noqa: E402
     test_shadows,
     test_ai_sees_3d,
     test_ai_operator,
+    test_hold_button,
+    test_aim_speed_everywhere,
+    test_colour_fixes,
+    test_own_programs,
+    test_laser_fixes,
+    test_locate_takes_over,
+    test_fx_tweak_live,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -322,6 +329,13 @@ def _standalone_suites():
     ("3D shadows from the crowd, objects and stage", test_shadows),
     ("AI assistant: sees the 3D after its changes", test_ai_sees_3d),
     ("AI operator: runs the lights live, you take over", test_ai_operator),
+    ("Hold button: a button of what the lights do now", test_hold_button),
+    ("Aim speed: spots, formations and the first aim glide", test_aim_speed_everywhere),
+    ("Colour: full-colour modes, slot names, named wheels, 3D colour", test_colour_fixes),
+    ("Built-in programs and endless rotation in the 3D", test_own_programs),
+    ("Lasers: control modes, mode-switch output, 3D aim", test_laser_fixes),
+    ("Locate: centred, over your own effects", test_locate_takes_over),
+    ("FX speed / size changed live", test_fx_tweak_live),
     )
 
 

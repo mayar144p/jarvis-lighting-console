@@ -5,6 +5,13 @@ import { run } from "./actions.js";
 import { $, h, menu, confirmBox, promptBox, toast } from "./ui.js";
 import { openShowMenu, openSettings, openHelp } from "./dialogs.js";
 
+// how an undo step reads in the top bar (the action's name otherwise)
+const UNDO_NAMES = {
+  quick_from_programmer: "make button", quick_set: "button edit", run_fx: "effect", set_position: "position",
+  set_colour: "colour", set_intensity: "level", attach_heads: "put on rig", venue_update: "venue edit",
+  venue_add: "venue add", aim_at: "aim", aim_spot: "aim", record_cue: "record cue", clear_programmer: "clear",
+};
+
 const LABELS = {
   blind: ["BLIND", "nothing leaves this computer"],
   armed: ["READY", "output stopped"],
@@ -58,7 +65,9 @@ function renderUndo() {
   const u = (state.snap && state.snap.undo) || {};
   const b = $("#undo-btn");
   b.disabled = !u.can_undo;
-  $("#undo-label").textContent = u.can_undo ? "Undo " + String(u.undo || "").replace(/_/g, " ") : "Undo";
+  const what = UNDO_NAMES[u.undo] || String(u.undo || "").replace(/_/g, " ");
+  $("#undo-label").textContent = u.can_undo ? "Undo " + (what.length > 22 ? what.slice(0, 21) + "…" : what) : "Undo";
+  $("#undo-btn").title = u.can_undo ? `Undo ${what} (Ctrl+Z)` : "Undo (Ctrl+Z)";
   b.title = u.can_undo ? `Undo ${String(u.undo || "").replace(/_/g, " ")} (Ctrl+Z)` : "Nothing to undo";
   $("#redo-btn").disabled = !u.can_redo;
   $("#redo-btn").title = u.can_redo ? `Redo ${String(u.redo || "").replace(/_/g, " ")} (Ctrl+Shift+Z)` : "Nothing to redo";
