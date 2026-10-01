@@ -51,8 +51,24 @@ export function openAddDialog(query = "") {
 
   preview = new FixturePreview(pv);
 
+  // the fixture shown on the right must be one of the results on the left:
+  // a pick left over from before the search was what "Add to stage" added
+  const sameItem = (a, b) => !!(a && b) && (a.id ?? a.key ?? a.rid) === (b.id ?? b.key ?? b.rid)
+    && a.manufacturer === b.manufacturer && (a.model || a.fixture) === (b.model || b.fixture);
+  function noPick() {
+    chosen = null;
+    addBtn.disabled = true;
+    right.classList.add("no-pick");
+    title.textContent = "Nothing picked";
+    meta.textContent = "Search above, then pick a fixture from the list.";
+  }
+  function keepOrFirst(items) {
+    showPick((chosen && items.find((x) => sameItem(x, chosen))) || items[0]);
+  }
+
   function showPick(item) {
     chosen = item;
+    right.classList.remove("no-pick");
     [...list.children].forEach((b) => b.classList.toggle("on", b._item === item));
     const b = item.body || {};
     pv.querySelector(".cap").replaceChildren(h("b", b.label || "Fixture"), " · ", b.brand_name || item.manufacturer || "");
@@ -111,9 +127,10 @@ export function openAddDialog(query = "") {
         return b;
       }));
       if (!rows.length) {
+        noPick();
         list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
           q ? "Nothing installed matches. Try the Libraries or GDTF Share tab." : "The library is empty. Search the Libraries tab (thousands of lights, offline) or GDTF Share, or drop .gdtf / .qxf files into fixtures_inbox/ and import them from Settings."));
-      } else if (!chosen) showPick(rows[0]);
+      } else keepOrFirst(rows);
     } catch (err) {
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, err.message));
     }
@@ -165,6 +182,7 @@ export function openAddDialog(query = "") {
     shareNote.textContent = libs.map((l) => `${l.name}: ${l.fixtures} fixtures (${l.licence})`).join(" · ");
     const rows = d.results || [];
     if (!rows.length) {
+      noPick();
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Nothing matches. Try fewer words, or the GDTF Share tab."));
       return;
     }
@@ -176,7 +194,7 @@ export function openAddDialog(query = "") {
       b._item = item;
       return b;
     }));
-    if (!chosen) showPick(list.firstChild._item);
+    if (list.firstChild && list.firstChild._item) keepOrFirst([...list.children].map((x) => x._item).filter(Boolean));
   }
 
   // "13 ch" / "6 or 12 ch": the channel counts tell two versions apart
@@ -215,9 +233,10 @@ export function openAddDialog(query = "") {
     }
     list.replaceChildren(...rows);
     if (!rows.length) {
+      noPick();
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
         q.length < 2 ? "Type a brand or model (e.g. \u201cfunfetti\u201d, \u201cwave 360\u201d)." : "Nothing matches in the installed fixtures or the libraries."));
-    } else if (!chosen) showPick(rows[0]._item);
+    } else keepOrFirst(rows.map((x) => x._item));
     if (q.length < 2) return;
     const st = await get("/api/gdtf/status").catch(() => ({}));
     if (!(st.signed_in || st.catalogue) || my !== seq) return;

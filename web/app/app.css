@@ -1229,3 +1229,4 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .qctl.qfader.qbig .qfader-in { writing-mode: vertical-lr; direction: rtl; flex: 1; width: 36px; min-height: 80px; }
 .qctl.qfader.qbig .qval { text-align: center; }
 .mv-roam { margin-top: 8px; row-gap: 6px; }
+.no-pick .preview3d, .no-pick .form-grid { display: none; }

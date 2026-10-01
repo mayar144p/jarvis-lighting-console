@@ -10,9 +10,13 @@ whoever picks it up starts from the diagnosis, not from scratch.
 ## Next, in this order (agreed 2026-09-30)
 
 1. **(DONE) Desktop only** (item A6 below): the phone / tablet features are out.
-2. **Review everything since PR #30** for bugs, then a full mock gig in the
-   browser (patch, venue, cues, buttons, timecode, roam, blackout); fix
-   what breaks.
+2. **(DONE) Review everything since PR #30** for bugs, then a full mock gig
+   in the browser (patch, venue, cues, buttons, timecode, roam, blackout);
+   fix what breaks.  Found: 7 review bugs (trim height, macro undo, bad OSC
+   packets, colour-match throttle, 0-255 positions, camera reframe, colour
+   calibration order); in the gig, the Add dialog kept a stale fixture after
+   a search, and Record cue was only reachable from the Level tab (now on the
+   programmer bar too).
 3. **Finish item 23** (AI that programs): 3D preview before a roam /
    effect is applied; "the back truss chases red and white on the beat
    during the drop"; "build me 8 buttons for this rig"; "a 32-bar

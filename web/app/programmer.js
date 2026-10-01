@@ -731,7 +731,9 @@ function renderProgIn() {
       { title: counts[g] ? `${label} on ${counts[g]} light(s)` : `${label}: a movement is running` },
       label, counts[g] ? h("small", ` ${counts[g]}`) : null,
       h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
-    h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all")] : []));
+    h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all"),
+    // on every tab: set a colour on the Colour tab and record it right there
+    h("button.btn.small.prog-rec", { title: "Record what is in the programmer as a cue (R)", onclick: () => openCueDialog() }, "Record cue…")] : []));
 }
 
 // --------------------------------------------------------------- effects
