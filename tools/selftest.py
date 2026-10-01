@@ -166,6 +166,8 @@ from tools.selftests.part09 import (  # noqa: E402
     test_drafting,
     test_align_rigging,
     test_ceiling_areas,
+    test_screen_media,
+    test_gobo_pictures,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -312,6 +314,8 @@ def _standalone_suites():
     ("Drafting: doors, pillars and balconies drawn on the plan", test_drafting),
     ("Align / distribute rigging and objects", test_align_rigging),
     ("Ceiling height per area", test_ceiling_areas),
+    ("LED screens: clips and pictures from this computer", test_screen_media),
+    ("Gobo pictures from the fixture files in the 3D", test_gobo_pictures),
     )
 
 

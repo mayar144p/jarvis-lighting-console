@@ -1,5 +1,6 @@
 // The 3D stage in the middle of the desk, and its HUD.
 import { Stage } from "/js/stage/stage.js";
+import { setScreenMediaLoader } from "/js/stage/venue.js";
 import { get, modelBytes, token } from "./api.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
@@ -17,7 +18,7 @@ function fixturesFor(p) {
     head_no: h.head_no, name: h.name || "", manufacturer: h.manufacturer || "",
     model: h.model || "", mode: h.mode || "", kind: h.kind,
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
-    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null,
+    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null,
   }));
 }
 
@@ -55,6 +56,22 @@ async function loadUnderlay(id) {
   return r.blob();
 }
 
+async function loadGobo(ref) {
+  const t = token();
+  const r = await fetch("/api/console/gobo?ref=" + encodeURIComponent(ref),
+    { headers: t ? { "X-Jarvis-Token": t } : {} });
+  if (!r.ok) throw new Error("gobo " + r.status);
+  return r.blob();
+}
+
+async function loadScreenMedia(id) {
+  const t = token();
+  const r = await fetch("/api/console/screen_media?id=" + encodeURIComponent(id),
+    { headers: t ? { "X-Jarvis-Token": t } : {} });
+  if (!r.ok) throw new Error("screen clip " + r.status);
+  return r.blob();
+}
+
 export function initStage() {
   const el = $("#stage");
   stage = new Stage(el, {
@@ -76,7 +93,9 @@ export function initStage() {
       }
     },
     loadUnderlay,
+    loadGobo,
   });
+  setScreenMediaLoader(loadScreenMedia);
   window.jarvisStage = stage;          // for the browser console and tests
   initVenuePanel(stage);
 

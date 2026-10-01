@@ -19,15 +19,102 @@ export const LIGHTS = {
   uAmbient: { value: new THREE.Color(0x0b0d12) },
   uTime: { value: 0 },
   uBounce: { value: 1 },                // crowd dancing, 0..1
+  uGobos: { value: null },              // the atlas of real gobo pictures
 };
+
+// Real gobo pictures (the fixture file's own, app/fixlib gobos.zip), drawn
+// into one atlas of 8 x 8 cells as they arrive.  A light's cone.z of 100 + n
+// samples cell n; 1..7 are the drawn patterns, for lights whose file names
+// no pictures.
+const CELL = 128, PER = 8;
+export class GoboAtlas {
+  constructor(load) {
+    this.load = load;                       // ref -> Promise<Blob>
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = this.canvas.height = CELL * PER;
+    const ctx = this.canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, CELL * PER, CELL * PER);
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.tex.colorSpace = THREE.NoColorSpace;
+    this.cells = new Map();                 // ref -> {cell, ready}
+    this.order = [];                        // least recently used first
+    this.onReady = null;
+    LIGHTS.uGobos.value = this.tex;
+  }
+
+  /** The cell for a picture; -1 while it is still loading, -2 if it can't be had. */
+  cell(ref) {
+    let e = this.cells.get(ref);
+    if (!e) {
+      if (this.cells.size >= PER * PER) this._evict();
+      const used = new Set([...this.cells.values()].map((x) => x.cell));
+      let n = 0;
+      while (used.has(n)) n++;
+      e = { cell: n, ready: false };
+      this.cells.set(ref, e);
+      this._fill(ref, e);
+    }
+    const i = this.order.indexOf(ref);
+    if (i >= 0) this.order.splice(i, 1);
+    this.order.push(ref);
+    return e.ready ? e.cell : e.failed ? -2 : -1;
+  }
+
+  _evict() {
+    const ref = this.order.shift();
+    if (ref) this.cells.delete(ref);
+  }
+
+  async _fill(ref, e) {
+    try {
+      const blob = await this.load(ref);
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url; });
+      URL.revokeObjectURL(url);
+      const tmp = document.createElement("canvas");
+      tmp.width = tmp.height = CELL;
+      const t = tmp.getContext("2d", { willReadFrequently: true });
+      t.drawImage(img, 0, 0, CELL, CELL);
+      const d = t.getImageData(0, 0, CELL, CELL);
+      const px = d.data;
+      // an outline drawing (metal drawn, holes clear) lets light through
+      // where it is clear; a glass picture by how bright it is
+      let clear = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i] < 250) clear++;
+      const byAlpha = clear > px.length / 4 * 0.02;
+      for (let i = 0; i < px.length; i += 4) {
+        const m = byAlpha ? 255 - px[i + 3] : Math.round(0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]);
+        px[i] = px[i + 1] = px[i + 2] = m;
+        px[i + 3] = 255;
+      }
+      if (this.cells.get(ref) !== e) return;          // evicted meanwhile
+      this.canvas.getContext("2d").putImageData(d, (e.cell % PER) * CELL, Math.floor(e.cell / PER) * CELL);
+      this.tex.needsUpdate = true;
+      e.ready = true;
+      if (this.onReady) this.onReady(ref);
+    } catch (err) {
+      e.failed = true;                                 // stays -1: the drawn pattern instead
+    }
+  }
+}
 
 // Gobo patterns, drawn analytically so no texture atlas is needed.  `uv`
 // is the position inside the beam, -1..1 across its diameter.
 const GOBO_GLSL = /* glsl */ `
+uniform sampler2D uGobos;
 float goboMask(float id, vec2 uv) {
   float r = length(uv);
   float a = atan(uv.y, uv.x);
   if (id < 0.5) return 1.0;
+  if (id > 99.5) {                                  // a real gobo picture
+    float n = id - 100.0;
+    vec2 cell = vec2(mod(n, ${PER}.0), floor(n / ${PER}.0));
+    vec2 p = clamp(uv * 0.5 + 0.5, 0.004, 0.996);
+    vec2 at = (cell + vec2(p.x, 1.0 - p.y)) / ${PER}.0;
+    return texture2D(uGobos, vec2(at.x, 1.0 - at.y)).r;
+  }
   if (id < 1.5) {                                   // dot ring
     float k = 0.0;
     for (int i = 0; i < 8; i++) {

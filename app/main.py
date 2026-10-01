@@ -10,6 +10,7 @@ import binascii
 import hashlib
 import json
 import mimetypes
+import os
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -136,6 +137,80 @@ def audio_path(ident: str) -> Path | None:
     return None
 
 
+# Clips and pictures for the LED screens of the 3D room: sent raw (not as
+# JSON - a clip is often hundreds of MB), streamed to disk, kept by content.
+SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+                ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
+SCREEN_MAX = 500 * 1024 * 1024
+UPLOAD_TYPE = "application/x-jarvis-upload"
+RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media"})
+
+
+def _screen_dir() -> Path:
+    return config.DATA / "screens"
+
+
+def screen_kind(head: bytes) -> str | None:
+    """The file type from its first bytes (never trust a name or a header)."""
+    if head[4:8] == b"ftyp":
+        return ".mov" if head[8:10] == b"qt" else ".mp4"
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return ".webm"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if head[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def save_screen_media(stream, length: int) -> dict:
+    """Write `length` bytes from `stream` to the screens folder."""
+    if length <= 0:
+        raise ValueError("no file sent")
+    if length > SCREEN_MAX:
+        raise ValueError(f"a screen clip or picture is at most {SCREEN_MAX // (1024 * 1024)} MB")
+    folder = _screen_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    tmp = folder / f".upload-{os.urandom(6).hex()}"
+    digest = hashlib.sha256()
+    head = b""
+    left = length
+    try:
+        with tmp.open("wb") as fh:
+            while left > 0:
+                chunk = stream.read(min(1 << 20, left))
+                if not chunk:
+                    raise ValueError("the upload stopped half-way")
+                if len(head) < 16:
+                    head += chunk[:16 - len(head)]
+                digest.update(chunk)
+                fh.write(chunk)
+                left -= len(chunk)
+        ext = screen_kind(head)
+        if ext is None:
+            raise ValueError("a screen shows MP4, WebM or MOV clips and PNG, JPEG or WebP pictures")
+        ident = digest.hexdigest()[:32]
+        tmp.replace(folder / (ident + ext))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    kind = "clip" if ext in (".mp4", ".webm", ".mov") else "image"
+    return {"id": ident, "kind": kind, "type": ext[1:], "bytes": length}
+
+
+def screen_media_path(ident: str) -> Path | None:
+    ident = "".join(ch for ch in ident if ch.isalnum())[:64]
+    if not ident:
+        return None
+    for ext in SCREEN_TYPES:
+        p = _screen_dir() / (ident + ext)
+        if p.is_file():
+            return p
+    return None
+
+
 def underlay_path(ident: str) -> Path | None:
     ident = "".join(ch for ch in ident if ch.isalnum())[:64]
     if not ident:
@@ -175,6 +250,43 @@ class Handler(BaseHTTPRequestHandler):
         self._security_headers()
         self.end_headers()
         self.wfile.write(body)
+
+    def _ranged(self, path: Path, mime: str) -> None:
+        """A large file, streamed, with byte ranges (video seeks and loops)."""
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self._security_headers()
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Cache-Control", "private, max-age=604800")
+        self._security_headers()
+        self.end_headers()
+        with path.open("rb") as fh:
+            fh.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = fh.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
@@ -292,8 +404,11 @@ class Handler(BaseHTTPRequestHandler):
             return "cross-origin request refused"
         if method == "POST":
             ctype = (self.headers.get("Content-Type") or "").split(";")[0]
-            if ctype.strip().lower() != "application/json":
-                return "requests must be application/json"
+            # a raw upload uses a type of its own: not one a plain HTML form
+            # can send either, so it still needs the CORS preflight
+            want = UPLOAD_TYPE if urlparse(self.path).path in RAW_UPLOAD_ROUTES else "application/json"
+            if ctype.strip().lower() != want:
+                return f"requests must be {want}"
         return None
 
     def _deny(self) -> None:
@@ -338,6 +453,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": refused}, 403)
         if self._needs_auth(route, "POST") and not self._authorised():
             return self._deny()
+        if route == "/api/console/screen_media":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                return self._json(save_screen_media(self.rfile, length))
+            except ValueError as exc:
+                self.close_connection = True            # the rest of the body is unread
+                return self._json({"error": str(exc)}, 400)
         try:
             body = self._read_body()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -964,6 +1086,26 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/console/network":
             # the adapters, the output target and whether it is reachable
             return self._json(self._engine().network_info())
+        if route == "/api/console/gobo":
+            got = fixlib.gobo_picture(str(query.get("ref", "")))
+            if not got:
+                return self._json({"error": "no such gobo picture"}, 404)
+            data, mime = got
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=604800")
+            # a picture, never a page: an SVG opened on its own runs nothing
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        if route == "/api/console/screen_media":
+            path = screen_media_path(str(query.get("id", "")))
+            if not path:
+                return self._json({"error": "no such clip or picture"}, 404)
+            return self._ranged(path, SCREEN_TYPES[path.suffix])
         if route == "/api/console/underlay":
             path = underlay_path(str(query.get("id", "")))
             if not path:

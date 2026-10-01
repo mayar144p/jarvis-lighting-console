@@ -2,6 +2,10 @@
 
     python tools/build_fixture_libraries.py              # fetch both, rebuild
     python tools/build_fixture_libraries.py --ofl DIR --qlc DIR   # from clones
+    python tools/build_fixture_libraries.py --gobos-only --ofl DIR --qlc DIR
+
+The gobo pictures the fixtures name (QLC+ resources/gobos, OFL
+resources/gobos) go in gobos.zip - only the ones a bundled fixture uses.
 
 Fetches the Open Fixture Library and the QLC+ fixture definitions with a
 shallow, sparse git clone (only their fixture folders), checks that every
@@ -32,6 +36,9 @@ REPOS = {
     "ofl": ("https://github.com/OpenLightingProject/open-fixture-library", "fixtures"),
     "qlc": ("https://github.com/mcallegari/qlcplus", "resources/fixtures"),
 }
+# where each library keeps its gobo pictures, from its fixtures folder
+GOBO_DIRS = {"ofl": Path("..") / "resources" / "gobos", "qlc": Path("..") / "gobos"}
+GOBO_SUBS = {"ofl": "resources/gobos", "qlc": "resources/gobos"}
 
 
 def _clone(src: str, into: Path) -> tuple[Path, str]:
@@ -39,7 +46,7 @@ def _clone(src: str, into: Path) -> tuple[Path, str]:
     dest = into / src
     subprocess.run(["git", "clone", "-q", "--depth", "1", "--filter=blob:none",
                     "--sparse", url, str(dest)], check=True)
-    subprocess.run(["git", "sparse-checkout", "set", sub], cwd=dest, check=True)
+    subprocess.run(["git", "sparse-checkout", "set", sub, GOBO_SUBS[src]], cwd=dest, check=True)
     return dest / sub, _commit(dest)
 
 
@@ -98,6 +105,48 @@ def build_qlc(folder: Path, commit: str, out: Path) -> dict:
     return {"fixtures": len(index), "skipped": skipped}
 
 
+def gobo_refs(parsed: list[dict]) -> set[str]:
+    """Every gobo picture ("qlc:Chauvet/gobo00001.svg", "ofl:10-circles")
+    a parsed fixture's wheels name."""
+    return {sl["img"] for item in parsed for m in item.get("modes") or [] for d in m.get("detail") or []
+            for sl in d.get("slots") or [] if sl.get("img")}
+
+
+def bundled_gobo_refs() -> set[str]:
+    """The gobo pictures the bundled fixtures use."""
+    refs: set[str] = set()
+    for src in ("ofl", "qlc"):
+        for row in fixlib.index(src):
+            try:
+                refs |= gobo_refs(fixlib.load(src, row["key"]))
+            except Exception:                      # noqa: BLE001 - it was checked at build
+                continue
+    return refs
+
+
+def build_gobos(refs: set[str], dirs: dict[str, Path], out: Path) -> dict:
+    """gobos.zip: qlc/<path> and ofl/<name>.<svg|png>, as in the libraries."""
+    found, missing = 0, []
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        for ref in sorted(refs):
+            src, _, name = ref.partition(":")
+            base = dirs.get(src)
+            if base is None:
+                continue
+            if src == "qlc":
+                path = base / name
+            else:
+                path = next((base / (name + ext) for ext in (".svg", ".png") if (base / (name + ext)).is_file()), base / name)
+            if not path.is_file() or ".." in Path(name).parts:
+                missing.append(ref)
+                continue
+            zf.writestr(f"{src}/{path.relative_to(base).as_posix()}", path.read_bytes())
+            found += 1
+        zf.writestr("meta.json", json.dumps({"gobos": found, "missing": len(missing),
+                                             "built": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
+    return {"gobos": found, "missing": missing}
+
+
 def _meta(src: str, commit: str, count: int) -> dict:
     return {"source": fixlib.SOURCES[src]["name"], "repository": REPOS[src][0],
             "commit": commit, "fixtures": count, "licence": fixlib.SOURCES[src]["licence"],
@@ -108,8 +157,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ofl", type=Path, help="an OFL checkout's fixtures/ folder")
     ap.add_argument("--qlc", type=Path, help="a QLC+ checkout's resources/fixtures/ folder")
+    ap.add_argument("--gobos-only", action="store_true", help="only rebuild gobos.zip for the bundled fixtures")
     args = ap.parse_args()
     fixlib.BUNDLE_DIR.mkdir(parents=True, exist_ok=True)
+    if args.gobos_only:
+        if not (args.ofl and args.qlc):
+            ap.error("--gobos-only needs --ofl and --qlc (checkouts with their gobos folders)")
+        return _gobos({"ofl": args.ofl, "qlc": args.qlc})
+    folders = {}
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         for src, given, build in (("ofl", args.ofl, build_ofl), ("qlc", args.qlc, build_qlc)):
@@ -119,12 +174,24 @@ def main() -> int:
                 print(f"* fetching {fixlib.SOURCES[src]['name']}...")
                 folder, commit = _clone(src, tmp)
             out = fixlib.BUNDLE_DIR / fixlib.SOURCES[src]["file"]
+            folders[src] = folder
             done = build(folder, commit, out)
             size = out.stat().st_size / 1e6
             print(f"* {fixlib.SOURCES[src]['name']}: {done['fixtures']} fixtures, "
                   f"{size:.1f} MB -> {out.relative_to(ROOT)}")
             for line in done["skipped"][:20]:
                 print(f"    skipped {line}")
+        fixlib._INDEX.clear()
+        return _gobos(folders)
+
+
+def _gobos(fixture_dirs: dict[str, Path]) -> int:
+    refs = bundled_gobo_refs()
+    dirs = {src: (d / GOBO_DIRS[src]).resolve() for src, d in fixture_dirs.items()}
+    out = fixlib.BUNDLE_DIR / "gobos.zip"
+    done = build_gobos(refs, dirs, out)
+    print(f"* gobos: {done['gobos']} pictures, {out.stat().st_size / 1e6:.1f} MB -> {out.relative_to(ROOT)}"
+          + (f"; {len(done['missing'])} named but not in the library" if done["missing"] else ""))
     return 0
 
 

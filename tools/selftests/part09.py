@@ -2289,3 +2289,130 @@ def test_ceiling_areas() -> None:
             check("undo brings it back", len(e.venue["room"]["areas"]) == 1, "")
         finally:
             e.shutdown()
+
+
+def test_screen_media() -> None:
+    """LED screens: a clip or picture from this computer, sent raw to the
+    desk, kept by its content, served back in ranges (a video seeks)."""
+    print("screen clips and pictures")
+    import threading
+    import urllib.error
+    import urllib.request
+    from app import main as main_mod
+    old = main_mod.config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        main_mod.config.DATA = Path(td)
+        srv = main_mod.ThreadingHTTPServer(("127.0.0.1", 0), main_mod.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}/api/console/screen_media"
+
+        def send(data: bytes):
+            req = urllib.request.Request(base, data=data, method="POST",
+                                         headers={"Content-Type": "application/x-jarvis-upload"})
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}")
+        try:
+            mp4 = b"\x00\x00\x00\x18ftypisom" + bytes(range(256)) * 40
+            code, d = send(mp4)
+            check("an MP4 clip is kept, typed by its bytes", code == 200 and d.get("kind") == "clip"
+                  and d.get("type") == "mp4" and (Path(td) / "screens" / (d["id"] + ".mp4")).is_file(), str(d))
+            again = send(mp4)[1]
+            check("...the same clip twice is one file", again.get("id") == d.get("id")
+                  and len(list((Path(td) / "screens").iterdir())) == 1, "")
+            png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+            code, p = send(png)
+            check("a PNG picture is a picture", code == 200 and p.get("kind") == "image", str(p))
+            code, bad = send(b"MZ\x90\x00 not a clip at all")
+            check("anything else is refused, and nothing is left behind", code == 400 and "MP4" in bad.get("error", "")
+                  and not [f for f in (Path(td) / "screens").iterdir() if f.name.startswith(".")], str(bad))
+            req = urllib.request.Request(base, data=mp4, method="POST", headers={"Content-Type": "application/octet-stream"})
+            try:
+                urllib.request.urlopen(req, timeout=15)
+                code = 200
+            except urllib.error.HTTPError as e:
+                code = e.code
+            check("...only with its own type (a plain form on another site can't send one)", code == 403, str(code))
+            req = urllib.request.Request(base + "?id=" + d["id"], headers={"Range": "bytes=10-19"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                part, status, cr = r.read(), r.status, r.headers.get("Content-Range")
+            check("served back in ranges (a video seeks and loops)", status == 206 and part == mp4[10:20]
+                  and cr == f"bytes 10-19/{len(mp4)}", f"{status} {cr}")
+            with urllib.request.urlopen(base + "?id=" + d["id"], timeout=15) as r:
+                check("...or whole", r.read() == mp4 and r.headers.get("Content-Type") == "video/mp4", "")
+            try:
+                urllib.request.urlopen(base + "?id=../../etc/passwd", timeout=15)
+                code = 200
+            except urllib.error.HTTPError as e:
+                code = e.code
+            check("a made-up id is not found (no paths)", code == 404, str(code))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            main_mod.config.DATA = old
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("the screen inspector offers a file from this computer",
+          "A clip or picture from this computer" in vp and "/api/console/screen_media" in vp, "")
+    check("the 3D fetches an uploaded clip once (with the token) and keeps it", "setScreenMediaLoader" in vj
+          and "mediaUrls" in vj, "")
+
+
+def test_gobo_pictures() -> None:
+    """The 3D shows each light's real gobos: the fixture file names the
+    pictures (QLC+ Res1, OFL wheel slot resource), gobos.zip holds them,
+    the snapshot carries [from, to, picture] and the desk serves them."""
+    print("gobo pictures")
+    import threading
+    import urllib.error
+    import urllib.request
+    from app import engine as eng, fixlib
+    from app import main as main_mod
+    q = fixlib.gobo_slots("qlc:Chauvet/Chauvet-Intimidator-Spot-100-IRC.qxf", "6 Channel")
+    check("a QLC+ file's gobo wheel names its pictures", len(q) == 7 and q[0] == [8, 15, "qlc:Chauvet/gobo00045.svg"], str(q[:2]))
+    o = fixlib.gobo_slots("ofl:chauvet-dj/intimidator-spot-160.json")
+    check("...and an OFL file's", o and o[0][2] == "ofl:10-circles", str(o[:2]))
+    check("open and spin ranges are not pictures", all("open" not in r[2].lower() for r in q + o), "")
+    pic = fixlib.gobo_picture(q[0][2])
+    check("gobos.zip has the picture", pic is not None and pic[1] == "image/svg+xml" and pic[0].startswith(b"<svg"), "")
+    check("...an OFL one by its name", (fixlib.gobo_picture("ofl:10-circles") or (b"", ""))[1] == "image/svg+xml", "")
+    check("...and nothing outside it", fixlib.gobo_picture("qlc:../../etc/passwd") is None
+          and fixlib.gobo_picture("qlc:/etc/passwd") is None and fixlib.gobo_picture("x:y") is None, "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = "Chauvet/Chauvet-Intimidator-Spot-100-IRC.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 100 IRC", qty=1)
+            e.act("add_heads", query="Moving Head", qty=1)
+            rows = {h["head_no"]: h.get("gobos") for h in e.snapshot()["patch"]}
+            check("the snapshot carries a light's gobo pictures", rows[1] and rows[1][0][2] == "qlc:Chauvet/gobo00045.svg", str(rows[1]))
+            check("...and none for a light whose file names none", rows[2] is None, str(rows[2]))
+        finally:
+            e.shutdown()
+    srv = main_mod.ThreadingHTTPServer(("127.0.0.1", 0), main_mod.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}/api/console/gobo?ref="
+    try:
+        with urllib.request.urlopen(base + "qlc:Chauvet/gobo00045.svg", timeout=15) as r:
+            csp = r.headers.get_all("Content-Security-Policy") or []
+            check("the desk serves it as a picture that runs nothing", r.status == 200
+                  and any("sandbox" in c and "default-src 'none'" in c for c in csp), str(csp))
+        try:
+            urllib.request.urlopen(base + "qlc:../../app/main.py", timeout=15)
+            code = 200
+        except urllib.error.HTTPError as ex:
+            code = ex.code
+        check("...and 404s anything else", code == 404, str(code))
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the 3D draws the pictures into an atlas the floor shader samples",
+          "class GoboAtlas" in mj and "uniform sampler2D uGobos" in mj and "_goboId(inst" in sj, "")

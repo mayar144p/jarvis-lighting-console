@@ -11,7 +11,7 @@ import json
 import re
 from pathlib import Path
 
-from app import config, fixture_kind, fixtures, merge, profiles
+from app import config, fixlib, fixture_kind, fixtures, merge, profiles
 from app import venue as venue_mod
 from app.engine_base import (
     _COLOUR_ROLES,
@@ -1688,6 +1688,18 @@ class PatchMixin:
         if not hasattr(self, "_range_cache"):     # a bare engine (tools)
             return []
         return list((self.head_ranges(head).get(role) or {}).get("slots") or [])
+
+    def _gobo_images(self, head: dict) -> list[list] | None:
+        """[[from, to, picture], ...] of the light's gobo wheel, for the 3D
+        to project its real gobos; None when the file names none."""
+        if not any(r == "gobo" for r in head.get("map") or []):
+            return None
+        rows = [[s["from"], s["to"], s["img"]] for s in self._wheel_slots(head, "gobo") if s.get("img")]
+        if not rows:
+            # installed before pictures were read: the library file says
+            src = (self._fixture_db(head.get("manufacturer"), head.get("model")) or {}).get("source") or ""
+            rows = fixlib.gobo_slots(src, head.get("mode") or "")
+        return rows or None
 
     def _nearest_slot(self, head: dict, hexcol: str) -> dict | None:
         """The colour-wheel slot closest to `hexcol`: a wheel can't mix,

@@ -222,7 +222,11 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
             or (colours[0] if colours else f"Slot {num}")
         hexcol = colours[0] if colours else ("#ffffff" if stype == "Open" else None)
         lo, hi = c["dmxRange"][:2]
-        found.append((byte(lo), byte(hi), {"name": sname, "hex": hexcol, "slot": num}))
+        slot = {"name": sname, "hex": hexcol, "slot": num}
+        res = sdef.get("resource")
+        if stype == "Gobo" and isinstance(res, str) and res.startswith("gobos/"):
+            slot["img"] = "ofl:" + res[6:]          # the gobo's picture (OFL resources)
+        found.append((byte(lo), byte(hi), slot))
     row["slots"] = _slot_rows(found)
     return row
 
@@ -474,7 +478,11 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
                     break
             if role == "wheel" and hexcol is None and re.match(r"^\s*(open|white)\b", text, re.I):
                 hexcol = "#ffffff"
-            found.append((lo, hi, {"name": text[:40], "hex": hexcol, "slot": i}))
+            slot = {"name": text[:40], "hex": hexcol, "slot": i}
+            img = (c.get("Res1") or c.get("Res") or "").strip()
+            if role == "gobo" and re.search(r"\.(svg|png)$", img, re.I) and not re.search(r"(^|/)open\.svg$", img, re.I):
+                slot["img"] = "qlc:" + img          # the gobo's picture (QLC+ gobos folder)
+            found.append((lo, hi, slot))
         row["slots"] = _slot_rows(found) if len(found) >= 2 else None
     return row
 
@@ -977,3 +985,57 @@ def physical(source: str) -> dict:
             out = {}
     _PHYS[source] = out
     return out
+
+
+# -- gobo pictures ----------------------------------------------------------
+_GOBO_SLOTS: dict = {}
+_GOBO_ZIP: list = []
+GOBO_TYPES = {".svg": "image/svg+xml", ".png": "image/png"}
+
+
+def gobo_slots(source: str, mode: str = "") -> list[list]:
+    """[[from, to, "qlc:Maker/gobo.svg"], ...] for a bundled fixture's first
+    gobo wheel, read from its own file ("ofl:key" / "qlc:key"); []."""
+    key = (str(source or ""), str(mode or ""))
+    if key in _GOBO_SLOTS:
+        return _GOBO_SLOTS[key]
+    out: list[list] = []
+    src, _, fkey = key[0].partition(":")
+    if src in ("ofl", "qlc") and fkey:
+        try:
+            parsed = load(src, fkey)
+        except (ValueError, OSError, KeyError, zipfile.BadZipFile):
+            parsed = []
+        modes = [m for item in parsed for m in item.get("modes") or []]
+        modes.sort(key=lambda m: m.get("name") != key[1])          # its own mode first
+        for m in modes:
+            rows = [[sl["from"], sl["to"], sl["img"]] for d in m.get("detail") or [] if d.get("role") == "gobo"
+                    for sl in d.get("slots") or [] if sl.get("img")]
+            if rows:
+                out = rows
+                break
+    _GOBO_SLOTS[key] = out
+    return out
+
+
+def gobo_picture(ref: str) -> tuple[bytes, str] | None:
+    """The picture for "qlc:Maker/gobo.svg" / "ofl:name" from gobos.zip."""
+    src, _, name = str(ref or "").partition(":")
+    if src not in ("ofl", "qlc") or not name or ".." in name or name.startswith("/"):
+        return None
+    path = BUNDLE_DIR / "gobos.zip"
+    if not path.is_file():
+        return None
+    with _LOCK:
+        if not _GOBO_ZIP:
+            try:
+                zf = zipfile.ZipFile(path)
+                _GOBO_ZIP.append((zf, set(zf.namelist())))
+            except (OSError, zipfile.BadZipFile):
+                return None
+        zf, names = _GOBO_ZIP[0]
+        for cand in ([f"{src}/{name}"] if src == "qlc" else [f"ofl/{name}.svg", f"ofl/{name}.png"]):
+            if cand in names:
+                return zf.read(cand), GOBO_TYPES.get(Path(cand).suffix.lower(), "application/octet-stream")
+    return None
+

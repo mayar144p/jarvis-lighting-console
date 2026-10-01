@@ -272,6 +272,25 @@ function buildRig(r, M, room) {
 // An LED screen's face: a live canvas (the rig's colours, drawn by the
 // stage each frame - a pixel-map mirror) or a clip / picture by URL.  Unlit:
 // a screen makes its own light.
+// Clips and pictures uploaded to the desk ("clip:upload:<id>") come through
+// a loader the app sets (it adds the access token); each is fetched once and
+// kept across rebuilds of the room.
+let mediaLoader = null;
+const mediaUrls = new Map();
+export function setScreenMediaLoader(fn) { mediaLoader = fn; }
+
+function mediaUrl(src) {
+  if (!src.startsWith("upload:")) return Promise.resolve(src);
+  const id = src.slice(7);
+  if (!mediaUrls.has(id)) {
+    if (!mediaLoader) return Promise.reject(new Error("no loader"));
+    const p = mediaLoader(id).then((blob) => URL.createObjectURL(blob));
+    p.catch(() => mediaUrls.delete(id));
+    mediaUrls.set(id, p);
+  }
+  return mediaUrls.get(id);
+}
+
 function screenMaterial(content, aspect) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   if (content === "rig") {
@@ -284,14 +303,17 @@ function screenMaterial(content, aspect) {
     mat.userData.canvas = canvas;
   } else if (content.startsWith("clip:")) {
     const video = document.createElement("video");
-    Object.assign(video, { src: content.slice(5), muted: true, loop: true, playsInline: true, crossOrigin: "anonymous" });
-    video.play().catch(() => { /* autoplay waits for a click on the page */ });
+    Object.assign(video, { muted: true, loop: true, playsInline: true, crossOrigin: "anonymous" });
+    mediaUrl(content.slice(5)).then((url) => {
+      video.src = url;
+      video.play().catch(() => { /* autoplay waits for a click on the page */ });
+    }).catch(() => { /* not reachable: the screen stays dark */ });
     const tex = new THREE.VideoTexture(video);
     tex.colorSpace = THREE.SRGBColorSpace;
     mat.map = tex;
     mat.userData.video = video;
   } else if (content.startsWith("image:")) {
-    new THREE.TextureLoader().loadAsync(content.slice(6)).then((tex) => {
+    mediaUrl(content.slice(6)).then((url) => new THREE.TextureLoader().loadAsync(url)).then((tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       mat.map = tex;
       mat.needsUpdate = true;
