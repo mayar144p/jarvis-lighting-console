@@ -3,6 +3,8 @@
 // two-point scale.  Every change is one engine action, so Ctrl+Z undoes it.
 import { openRoomDialog } from "./roomdialog.js";
 import { VenueEditor } from "/js/stage/editor.js";
+import { outlineOf } from "/js/stage/venue.js";
+import { doorFrom, balconyFrom, pillarAt } from "./drafting.js";
 import { post } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
@@ -164,6 +166,26 @@ async function onDrawn(kind, pts, opts) {
   if (kind === "outline") {
     const heightNow = (venue().room || {}).height || 5;
     await run("venue_room", { outline: pts, height: heightNow }, { toast: "Room outline traced" });
+  } else if (kind === "door" || kind === "balcony" || kind === "pillar") {
+    const H = (venue().room || {}).height || stage.room.h || 5;
+    const made = kind === "door" ? doorFrom(pts[0], pts[1], outlineOf(venue()))
+      : kind === "balcony" ? balconyFrom(pts[0], pts[1], H) : pillarAt(pts[0], H);
+    if (!made) { toast(kind === "balcony" ? "A balcony is at least 0.5 × 0.5 m" : "Draw it inside the room", "bad"); return; }
+    if (kind === "balcony" && H < 4.6) toast(`The ceiling is ${H} m: a balcony here leaves little head room`);
+    const n = (venue().objects || []).filter((o) => o.kind === kind).length + 1;
+    const label = { door: "Door", balcony: "Balcony", pillar: "Pillar" }[kind];
+    const r = await run("venue_add", { item: { kind, name: `${label} ${n}`, ...made } }, { toast: kind !== "pillar" });
+    if (kind === "pillar") {
+      hint(`Pillars: click where each one stands (${n} so far); Enter or Esc when done.`);
+      return;
+    }
+    if (r.ok && r.id) setTimeout(() => editor.select({ type: "item", id: r.id }), 250);
+  } else if (kind === "zone" && opts.kind === "ceiling") {
+    const roomH = (venue().room || {}).height || stage.room.h || 5;
+    const got = await promptBox("Ceiling here", `How high is the ceiling over this part, in metres? (The room's is ${roomH} m.)`, String(Math.max(2.4, r2(roomH - 1.5))), { ok: "Set" });
+    const hgt = parseFloat(String(got || "").replace(",", "."));
+    if (!(hgt > 0)) return;
+    await run("venue_ceiling", { points: pts, height: hgt }, { toast: true });
   } else if (kind === "zone") {
     const r = await run("venue_add", { item: { kind: opts.kind, name: opts.label || "", points: pts } }, { toast: true });
     if (r.ok && r.id) setTimeout(() => editor.select({ type: "item", id: r.id }), 250);
@@ -194,6 +216,40 @@ export function startPlanUpload() {
   $("#plan-file").click();
 }
 
+const DRAFT_HINT = {
+  door: "Draw a door: click where it starts on a wall, then where it ends (it goes in the nearest wall). Esc cancels.",
+  balcony: "Draw a balcony: click one corner, then the opposite corner. Its deck goes high enough to walk under. Esc cancels.",
+  pillar: "Pillars: click where each one stands; Enter or Esc when done.",
+};
+
+function drawDraft(kind) {
+  stage.view("top");
+  hint(DRAFT_HINT[kind]);
+  editor.startDraw(kind);
+}
+
+function drawCeiling() {
+  stage.view("top");
+  hint("Draw the part of the room with a ceiling of its own (under a mezzanine, over the dance floor): click its corners, then the first one again (or Enter).");
+  editor.startDraw("zone", { kind: "ceiling", label: "Ceiling area" });
+}
+
+function editArea(ar) {
+  const name = h("input", { type: "text", value: ar.name, maxlength: 40 });
+  const hgt = h("input", { type: "number", step: 0.1, min: 1.8, value: ar.height });
+  const close = modal({
+    title: ar.name,
+    body: h("div.form-grid", field("Name", name), field("Ceiling height (m)", hgt),
+      h("p.muted.small", "Rigging under a lower ceiling comes down below it, the lights on it too.")),
+    foot: [h("button.btn.danger", { onclick: async () => { await run("venue_ceiling", { id: ar.id, remove: true }, { toast: true }); close(); } }, "Take it away"),
+      h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("venue_ceiling", { id: ar.id, name: name.value, height: +hgt.value }, { toast: true });
+        if (r.ok) close();
+      } }, "Set")],
+  });
+}
+
 function drawZone(kind, label) {
   stage.view("top");
   stage.setOptions({ zones: true });
@@ -221,6 +277,35 @@ function rigOptions(current) {
   }
   s.value = current || "";
   return s;
+}
+
+// Several rigs / objects picked with Shift+click: line them up, spread them.
+const ALIGN = [
+  ["Across", [["left", "Left", "Their middles in line with the leftmost"], ["centre-x", "Centre", "In line across, at their middle"],
+    ["right", "Right", "In line with the rightmost"], ["spread-x", "Spread", "Evenly between the outermost two"]]],
+  ["In depth", [["back", "Back", "In line with the one nearest the back wall"], ["centre-z", "Centre", "In line in depth, at their middle"],
+    ["front", "Front", "In line with the one nearest the audience"], ["spread-z", "Spread", "Evenly between the outermost two"]]],
+  ["Height", [["height", "Same", "All at the same height (their middle)"], ["spread-height", "Spread", "Evenly between the lowest and the highest"]]],
+];
+
+function renderMulti(ids) {
+  const box = $("#venue-inspector");
+  if (!arranging || !ids.length) { if (!editor.sel) box.hidden = true; return; }
+  box.hidden = false;
+  const v = venue();
+  const names = ids.map((id) => {
+    const it = [...(v.rigging || []), ...(v.objects || [])].find((x) => x.id === id);
+    return it ? it.name || it.kind : id;
+  });
+  box.replaceChildren(
+    h("div.vi-title", `${ids.length} picked`),
+    h("div.vi-sub", names.join(", ")),
+    ...ALIGN.map(([label, ways]) => h("div.vi-align", h("span.k", label), ...ways.map(([how, text, tip]) => h("button.btn.small", {
+      title: tip, disabled: ids.length < (how.startsWith("spread") ? 3 : 2),
+      onclick: () => run("venue_align", { ids, how }, { toast: true }),
+    }, text)))),
+    h("p.muted.small", ids.length < 2 ? "Shift+click more rigging or objects to line them up." : "Shift+click to add or take out. A piece of a shape moves the whole shape; lights on a rig go with it."),
+    h("div.row-btns", h("button.btn.small.ghost", { onclick: () => editor.clearMulti() }, "Done")));
 }
 
 function renderInspector(sel) {
@@ -309,7 +394,7 @@ function renderInspector(sel) {
         } }, "Trim…"),
         h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
-      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it."),
+      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
@@ -326,6 +411,7 @@ function renderInspector(sel) {
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
       o.kind === "screen" ? screenContent(o, upd) : null,
+      h("p.muted.small", "Shift+click other objects or rigging to line them up."),
       h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
   } else if (s.type === "zone") {
     const z = (venue().zones || []).find((x) => x.id === s.id);
@@ -413,6 +499,12 @@ function openAdd(btn) {
     ...RIG_ADD.map(([k, l, hint]) => ({ label: l, hint, run: () => addItem(k, l) })),
     "-",
     ...OBJECT_ADD.map(([k, l]) => ({ label: l, run: () => addItem(k, l) })),
+    "-",
+    { label: "Draw a door…", hint: "two clicks along a wall", run: () => drawDraft("door") },
+    { label: "Draw pillars…", hint: "click where each one stands", run: () => drawDraft("pillar") },
+    { label: "Draw a balcony…", hint: "two corners", run: () => drawDraft("balcony") },
+    { label: "Draw a ceiling area…", hint: "a lower or higher ceiling over part of the room", run: () => drawCeiling() },
+    ...((venue().room || {}).areas || []).map((ar) => ({ label: `${ar.name} · ${ar.height} m…`, hint: "change its height, or take it away", run: () => editArea(ar) })),
     "-",
     { label: "Stage deck", disabled: !!venue().stage, run: () => run("venue_stage", { x: 0, z: 0, width: 8, depth: 4, height: 0.6 }, { toast: true }) },
   ]);
@@ -523,6 +615,7 @@ export function initVenuePanel(theStage) {
   stage = theStage;
   editor = new VenueEditor(stage, {
     onSelect: (sel) => renderInspector(sel),
+    onMulti: (ids) => renderMulti(ids),
     pickLight: (head, ev) => select([head], { add: ev.shiftKey || ev.ctrlKey || ev.metaKey }),
     selectedHeads: () => (state.snap && state.snap.selected) || [],
     moveLights: (moves, snap) => run("place_many", { moves, rig: snap ? snap.rig : null }, snap ? { toast: true } : {}),
@@ -533,7 +626,7 @@ export function initVenuePanel(theStage) {
     onMeasure,
     onDrawn,
     onDrawProgress: (kind, n, len, typed) => {
-      if (!kind) return;
+      if (!kind) { hint(null); return; }
       const box = $("#draw-hint");
       const base = box.dataset.base || box.textContent;
       box.dataset.base = base;

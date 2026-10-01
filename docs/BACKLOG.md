@@ -186,9 +186,25 @@ whoever picks it up starts from the diagnosis, not from scratch.
      on request - a branch + PR made by a coding agent, tests run, you
      review and merge, Jarvis updates itself (never patching the running
      app).
-10. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
-   ceiling height per area; align / distribute rigging; clip upload for
-   LED screens; gobo pictures; shadows.
+10. **Venue / 3D** (first part DONE):
+   * Arrange -> + More: **Draw a door** (two clicks along a wall: it goes in
+     the nearest wall, as wide as drawn, turned along it), **Draw pillars**
+     (click where each stands, floor to ceiling, until Enter / Esc),
+     **Draw a balcony** (two corners; the deck high enough to walk under).
+   * **Align / distribute:** Shift+click rigging and objects (blue marks),
+     then line their middles up left / centre / right, back / centre /
+     front, the same height, or spread them evenly across, in depth or in
+     height.  A piece of a shape moves the whole shape; lights on a rig go
+     with it; one undo step.
+   * **A ceiling height per area:** + More -> Draw a ceiling area (lower
+     under a mezzanine, higher over the floor).  The 3D cuts it out of the
+     room's ceiling and hangs it at its height with a drop round the edge;
+     rigging under a lower one comes down, drags snap to it, trims and
+     "hang under the ceiling" use it, the rigging report warns against it.
+   * Fixed on the way: a truss seen from above could not be clicked (the
+     click fell between its rods, or picked the stage under it) - an unseen
+     hull along each rig now takes the clicks.
+   **Left:** clip upload for LED screens; gobo pictures; shadows.
 11. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.

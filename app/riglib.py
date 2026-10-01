@@ -131,7 +131,7 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
     """Every piece (a shape counts as one), what hangs on it, its pick-up
     points and the load on each.  phys_of(head) -> {kg?, watts?}."""
     rigging = list(venue.get("rigging") or [])
-    ceiling = float(((venue.get("room") or {}).get("height")) or 0)
+    room_ceiling = float(((venue.get("room") or {}).get("height")) or 0)
     on: dict[str, list[dict]] = {}
     for h in patch:
         rid = (h.get("mount") or {}).get("rig")
@@ -176,10 +176,14 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
             points = max(2, math.ceil(length / 4) + 1)          # every ~4 m, both ends
         per = total / points if points else None
         warn = []
+        ceiling = room_ceiling
         if per and per > POINT_WARN_KG:
             warn.append(f"{per:.0f} kg on each point - check the motors / points")
         if spec.get("max_kg") and light_kg > spec["max_kg"] * len(items):
             warn.append(f"{light_kg:.0f} kg on a {spec['name'].lower()} made for {spec['max_kg']} kg")
+        if ceiling and horiz and (venue.get("room") or {}).get("areas"):
+            from app import venue as venue_mod     # a lower ceiling over part of the room
+            ceiling = min(venue_mod.ceiling_over(venue, [r["a"], r["b"]]) for r in horiz)
         if ceiling and trim is not None and trim > ceiling - 0.2:
             warn.append("hangs at the ceiling - no room for motors / chains")
         if guessed:

@@ -8,6 +8,7 @@
 // redraws the room from the engine's truth.
 import * as THREE from "three";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { ceilingAt } from "./venue.js";
 
 const SNAP_REACH = 0.6;
 
@@ -27,6 +28,9 @@ function nearestOnRig(rigs, p) {
 
 // rig ends closer than this join end to end
 const JOIN_M = 0.4;
+
+// drafted objects made from two clicks
+const TWO_CLICK = { door: 1, balcony: 1 };
 
 export class VenueEditor {
   constructor(stage, hooks = {}) {
@@ -72,6 +76,11 @@ export class VenueEditor {
     this.handleGeo = new THREE.SphereGeometry(0.14, 16, 12);
     this.raycaster = new THREE.Raycaster();
     this.enabled = false;
+    // Shift+click: several rigs / objects picked to line up (no gizmo)
+    this.multi = [];
+    this.multiMarks = new THREE.Group();
+    this.overlay.add(this.multiMarks);
+    this.multiMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa, toneMapped: false, depthTest: false });
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -79,6 +88,7 @@ export class VenueEditor {
     this.enabled = !!on;
     if (!on) {
       this.cancelDraw();
+      this.clearMulti();
       this.clear();
     }
   }
@@ -150,6 +160,11 @@ export class VenueEditor {
 
   /** Re-attach after the room was rebuilt from a new snapshot. */
   refresh() {
+    if (this.multi.length) {
+      this.multi = this.multi.filter((id) => this._item(id));
+      this._drawMulti();
+      if (this.hooks.onMulti) this.hooks.onMulti(this.multi);
+    }
     if (!this.sel) return;
     const s = this.sel;
     if (s.type === "light") {
@@ -169,8 +184,51 @@ export class VenueEditor {
     return null;
   }
 
+  // ------------------------------------------------------------ several
+  /** Shift+click: add a rig or object to the picked set, or take it out. */
+  toggleMulti(id) {
+    const s = this.sel;
+    if (!this.multi.length && s && (s.type === "rig" || s.type === "object") && s.id !== id) this.multi.push(s.id);
+    const i = this.multi.indexOf(id);
+    if (i >= 0) this.multi.splice(i, 1); else this.multi.push(id);
+    this.select(null, { silent: true, keepMulti: true });
+    this._drawMulti();
+    if (this.hooks.onMulti) this.hooks.onMulti(this.multi);
+  }
+
+  clearMulti() {
+    if (!this.multi.length) return;
+    this.multi = [];
+    this._drawMulti();
+    if (this.hooks.onMulti) this.hooks.onMulti([]);
+  }
+
+  _drawMulti() {
+    this.multiMarks.clear();
+    for (const id of this.multi) {
+      const f = this._item(id);
+      if (!f) continue;
+      const it = f.it;
+      const pos = f.key === "rigging" ? new THREE.Vector3(...it.a).add(new THREE.Vector3(...it.b)).multiplyScalar(0.5)
+        : new THREE.Vector3(it.x, (it.y || 0) + (it.h || 0) + 0.15, it.z);
+      const m = new THREE.Mesh(this.handleGeo, this.multiMat);
+      m.position.copy(pos);
+      m.scale.setScalar(1.4);
+      m.renderOrder = 11;
+      this.multiMarks.add(m);
+      if (f.key === "rigging") {
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...it.a), new THREE.Vector3(...it.b)]),
+          new THREE.LineBasicMaterial({ color: 0x60a5fa, toneMapped: false, depthTest: false }));
+        line.renderOrder = 11;
+        this.multiMarks.add(line);
+      }
+    }
+    this.stage.dirty = true;
+  }
+
   // ------------------------------------------------------------ selection
   select(sel, opts = {}) {
+    if (!opts.keepMulti) this.clearMulti();
     this.handles.clear();
     this.snapMark.visible = false;
     this.sel = sel;
@@ -264,7 +322,11 @@ export class VenueEditor {
     dd.x = fit(box.x0, box.x1, xs, dd.x);
     dd.z = fit(box.z0, box.z1, zs, dd.z);
     const size = +(it.size || 0.3);
-    const hangY = box.h - size / 2 - 0.05;                 // just under the ceiling
+    // just under the ceiling - a ceiling area's own where it is over the rig
+    const ends = [[it.a[0] + dd.x, it.a[2] + dd.z], [it.b[0] + dd.x, it.b[2] + dd.z]];
+    ends.push([(ends[0][0] + ends[1][0]) / 2, (ends[0][1] + ends[1][1]) / 2]);
+    const ceil = Math.min(...ends.map(([x, z]) => ceilingAt(this.venue, x, z, box.h)));
+    const hangY = ceil - size / 2 - 0.05;
     const top = Math.max(...ys) + dd.y;
     if (top > hangY - 0.35) dd.y = hangY - Math.max(...ys);  // snap up to the ceiling
     dd.y = Math.max(dd.y, -Math.min(...ys));                // never through the floor
@@ -501,6 +563,10 @@ export class VenueEditor {
     if (this.draw) return this._drawClick(ev);
     if (this.tc.object && this.tc.axis) return;  // the click was on the gizmo
     const got = this.pick(ev);
+    if (ev.shiftKey && got && got.type === "item") {
+      const f = this._item(got.id);
+      if (f && f.key !== "zones") return this.toggleMulti(got.id);
+    }
     if (!got) { this.select(null); return; }
     if (got.type === "handle") return this.selectHandle(got.key);
     if (got.type === "light" && this.hooks.pickLight) this.hooks.pickLight(got.head, ev);
@@ -508,11 +574,14 @@ export class VenueEditor {
   }
 
   // ------------------------------------------------------------ drawing
-  /** Start drawing: kind is "outline", "zone" or "measure". */
+  /** Start drawing: kind is "outline", "zone", "measure", or a drafted
+   *  object - "door" (two clicks along a wall), "balcony" (two corners),
+   *  "pillar" (each click places one, until Enter / Esc). */
   startDraw(kind, opts = {}) {
     this.cancelDraw();
     this.select(null);
-    const mat = new THREE.LineBasicMaterial({ color: kind === "measure" ? 0x22d3ee : 0xfbbf24, toneMapped: false, depthTest: false });
+    const mat = new THREE.LineBasicMaterial({ color: kind === "measure" ? 0x22d3ee : kind in TWO_CLICK || kind === "pillar" ? 0x60a5fa : 0xfbbf24,
+      toneMapped: false, depthTest: false });
     const line = new THREE.Line(new THREE.BufferGeometry(), mat);
     line.renderOrder = 20;
     this.overlay.add(line);
@@ -533,7 +602,7 @@ export class VenueEditor {
       const d = this.draw;
       if (!d) return;
       // a typed length: the next wall exactly this long, towards the pointer
-      if (/^[0-9.,]$/.test(ev.key) && d.points.length && d.kind !== "measure") {
+      if (/^[0-9.,]$/.test(ev.key) && d.points.length && (d.kind === "outline" || d.kind === "zone")) {
         ev.preventDefault(); ev.stopPropagation();
         d.typed = (d.typed || "") + (ev.key === "," ? "." : ev.key);
         this._updateLine(d.hover);
@@ -605,14 +674,20 @@ export class VenueEditor {
     dot.position.set(p.x, (d.opts.y || 0) + 0.03, p.z);
     d.dots.add(dot);
     this._updateLine(d.hover);
-    if (d.kind === "measure" && d.points.length === 2) this.finishDraw();
+    if ((d.kind === "measure" || d.kind in TWO_CLICK) && d.points.length === 2) this.finishDraw();
   }
 
   _updateLine(hover) {
     const d = this.draw;
     const pts = d.points.map((q) => new THREE.Vector3(q.x, (d.opts.y || 0) + 0.03, q.z));
     if (hover) pts.push(new THREE.Vector3(hover.x, (d.opts.y || 0) + 0.03, hover.z));
-    if (d.kind !== "measure" && pts.length > 2) pts.push(pts[0].clone());
+    if (d.kind === "balcony" && pts.length === 2) {
+      // the rectangle between the two corners
+      const [a, b] = pts;
+      pts.splice(1, 1, new THREE.Vector3(b.x, a.y, a.z), b, new THREE.Vector3(a.x, a.y, b.z), a.clone());
+    } else if (d.kind === "pillar") {
+      pts.length = 0;
+    } else if (d.kind !== "measure" && !(d.kind in TWO_CLICK) && pts.length > 2) pts.push(pts[0].clone());
     d.line.geometry.dispose();
     d.line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
     if (this.hooks.onDrawProgress) {
@@ -627,7 +702,12 @@ export class VenueEditor {
     const d = this.draw;
     const p = this._snapPoint(ev);
     if (!p) return;
-    if (d.kind !== "measure" && d.points.length >= 3) {
+    if (d.kind === "pillar") {
+      // one at a time: placed at once, and the tool stays on for the next
+      this.hooks.onDrawn && this.hooks.onDrawn("pillar", [[Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100]], d.opts);
+      return;
+    }
+    if (d.kind !== "measure" && !(d.kind in TWO_CLICK) && d.points.length >= 3) {
       const first = d.points[0];
       if (Math.hypot(p.x - first.x, p.z - first.z) < 0.3) return this.finishDraw();   // closed the shape
     }
@@ -642,6 +722,8 @@ export class VenueEditor {
     this.cancelDraw();
     if (kind === "measure" && pts.length === 2) {
       this.hooks.onMeasure && this.hooks.onMeasure(Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]), pts);
+    } else if (kind in TWO_CLICK) {
+      if (pts.length === 2) this.hooks.onDrawn && this.hooks.onDrawn(kind, pts, opts);
     } else if (pts.length >= 3) {
       this.hooks.onDrawn && this.hooks.onDrawn(kind, pts, opts);
     }

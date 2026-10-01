@@ -2124,3 +2124,168 @@ def test_ai_assistant() -> None:
         finally:
             cfg.DATA = saved_data
             e.shutdown()
+
+
+_DRAFT_SIM = r"""
+import { doorFrom, balconyFrom, pillarAt } from "MODULE";
+const walls = [[-5, -1], [5, -1], [5, 9], [-5, 9]];
+const L = [[0, 0], [8, 0], [8, 4], [4, 4], [4, 8], [0, 8]];
+console.log(JSON.stringify({
+  front: doorFrom([-1, 8.8], [0.6, 8.9], walls), side: doorFrom([4.8, 2], [4.9, 3.5], walls),
+  corner: doorFrom([4.8, 8.95], [4.8, 8.95], walls), wide: doorFrom([-9, -1], [9, -1], walls),
+  inner: doorFrom([6, 4.1], [7, 3.9], L),
+  balc: balconyFrom([-5, 6], [5, 9], 7), low: balconyFrom([0, 0], [3, 3], 4.5), tiny: balconyFrom([0, 0], [0.2, 3], 7),
+  pillar: pillarAt([1.234, 2.345], 6),
+}));
+"""
+
+
+def test_drafting() -> None:
+    """Drawing doors, pillars and balconies on the plan (web/app/drafting.js,
+    run under node), and the editor / Add menu that use it."""
+    print("drafting: doors, pillars, balconies")
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    web = ROOT / "web"
+    ed = (web / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    vp = (web / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("the editor draws doors and balconies with two clicks, pillars one by one",
+          "TWO_CLICK = { door: 1, balcony: 1 }" in ed and 'onDrawn("pillar"' in ed, "")
+    check("Arrange -> Add has Draw a door / pillars / a balcony",
+          all(f'drawDraft("{k}")' in vp for k in ("door", "pillar", "balcony")), "")
+    node = _which("node")
+    if node is None:
+        print("  skip  node not found")
+        return
+    mod = (web / "app" / "drafting.js").as_uri()
+    proc = _sp.run([node, "--input-type=module", "-e", _DRAFT_SIM.replace("MODULE", mod)], capture_output=True, text=True, timeout=30)
+    try:
+        g = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        g = {}
+    check("the drafting maths runs under node", bool(g), (proc.stderr or proc.stdout)[:200])
+    if not g:
+        return
+    f = g["front"]
+    check("a door goes in the nearest wall, as wide as drawn, just inside it",
+          f["rot"] == 0 and abs(f["w"] - 1.6) < 0.01 and abs(f["x"] + 0.2) < 0.01 and 8.9 <= f["z"] < 9, str(f))
+    s = g["side"]
+    check("...on a side wall it turns along it", abs(s["rot"]) == 90 and abs(s["x"] - 4.94) < 0.01 and abs(s["z"] - 2.75) < 0.01, str(s))
+    check("...a click is a 0.7 m door, kept inside its wall at a corner",
+          g["corner"]["w"] == 0.7 and g["corner"]["x"] <= 5 - 0.35 + 0.01, str(g["corner"]))
+    check("...never wider than the wall", g["wide"]["w"] == 10 and abs(g["wide"]["x"]) < 0.01, str(g["wide"]))
+    check("...an L-shaped room's inside corner wall works too",
+          g["inner"]["rot"] == 0 and abs(g["inner"]["z"] - 4) < 0.1 and 3.9 < g["inner"]["z"], str(g["inner"]))
+    b = g["balc"]
+    check("a balcony is the rectangle between two corners, its deck at most 3.2 m",
+          b == {"x": 0, "z": 7.5, "w": 10, "d": 3, "h": 0.3, "y": 3.2}, str(b))
+    check("...under a low ceiling at least 2.4 m to walk under; too thin is nothing",
+          g["low"]["y"] == 2.4 and g["tiny"] is None, str(g["low"]))
+    check("a pillar stands floor to ceiling where clicked",
+          g["pillar"] == {"x": 1.23, "z": 2.35, "w": 0.5, "d": 0.5, "h": 6}, str(g["pillar"]))
+
+
+def test_align_rigging() -> None:
+    """Arrange: line up and spread rigging and objects; a shape moves as
+    one, lights on a rig go with it, one undo step."""
+    print("align / distribute rigging")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=14, depth=16, height=6, layout=False)
+            t = [e.act("rig_add", preset="straight", length=4, x=x, z=z, trim=tr)["id"]
+                 for x, z, tr in ((-3, 2, 4.0), (1, 5, 4.5), (2, 11, 3.6))]
+            e.act("add_heads", query="Moving Head", qty=1)
+            e.act("attach_heads", heads=[1], rig=t[2])
+            mid = lambda r: [(r["a"][k] + r["b"][k]) / 2 for k in range(3)]  # noqa: E731
+            rig = lambda i: next(r for r in e.venue["rigging"] if r["id"] == i)  # noqa: E731
+            n_undo = len(e._undo)
+            r = e.act("venue_align", ids=t, how="spread-z")
+            zs = [round(mid(rig(i))[2], 3) for i in t]
+            check("spread in depth: evenly between the outermost", r.get("ok") and zs == [2.0, 6.5, 11.0], str(zs) + str(r.get("error")))
+            check("...in one undo step", len(e._undo) == n_undo + 1, "")
+            y0 = e.patch[0]["y"]
+            e.act("venue_align", ids=t, how="height")
+            ys = {round(mid(rig(i))[1], 3) for i in t}
+            check("same height: all at the middle one", len(ys) == 1, str(ys))
+            check("...the light on a rig goes with it", e.patch[0]["y"] != y0 and abs(e.patch[0]["y"] - list(ys)[0]) < 0.6, str(e.patch[0]["y"]))
+            e.act("venue_align", ids=t[:2], how="left")
+            check("left: the middles line up with the leftmost", abs(mid(rig(t[0]))[0] - mid(rig(t[1]))[0]) < 1e-6
+                  and abs(mid(rig(t[0]))[0] + 3) < 1e-6, str(mid(rig(t[1]))))
+            o = [e.act("venue_add", item={"kind": "speaker", "x": x, "z": 3})["id"] for x in (-4, 0.5, 4)]
+            e.act("venue_align", ids=o, how="spread-x")
+            xs = [next(q for q in e.venue["objects"] if q["id"] == i)["x"] for i in o]
+            check("objects spread across too", xs == [-4, 0, 4], str(xs))
+            c = e.act("rig_add", preset="circle", diameter=4, x=0, z=8, trim=4)
+            before = [dict(x) for x in e.venue["rigging"] if x.get("group") == c["group"]]
+            e.act("venue_align", ids=[c["ids"][0], c["ids"][3], t[0]], how="centre-x")
+            after = [x for x in e.venue["rigging"] if x.get("group") == c["group"]]
+            dx = after[0]["a"][0] - before[0]["a"][0]
+            check("a shape moves as one (its pieces count once)",
+                  all(abs(a["a"][0] - b["a"][0] - dx) < 1e-6 for a, b in zip(after, before)), str(dx))
+            check("too few, a zone, or an unknown way are refused",
+                  not e.act("venue_align", ids=t[:1], how="left").get("ok")
+                  and not e.act("venue_align", ids=t[:2], how="spread-x").get("ok")
+                  and not e.act("venue_align", ids=t, how="sideways").get("ok"), "")
+        finally:
+            e.shutdown()
+
+
+def test_ceiling_areas() -> None:
+    """A ceiling height per area: lower under a mezzanine, higher over the
+    floor; rigging under it comes down, snaps and trims to it, the report
+    warns against it."""
+    print("ceiling areas")
+    from app import engine as eng
+    from app import venue as venue_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=14, depth=16, height=6, layout=False)
+            t = e.act("rig_add", preset="straight", length=4, x=0, z=12, trim=5)["id"]
+            e.act("add_heads", query="Moving Head", qty=1)
+            e.act("attach_heads", heads=[1], rig=t)
+            y0 = e.patch[0]["y"]
+            r = e.act("venue_ceiling", points=[[-7, 10], [7, 10], [7, 15], [-7, 15]], height=3.5, name="Under the mezzanine")
+            check("a ceiling area is drawn with its height", r.get("ok") and e.venue["room"]["areas"][0]["height"] == 3.5
+                  and e.venue["room"]["areas"][0]["name"] == "Under the mezzanine", str(r.get("error")))
+            check("...the ceiling there is 3.5 m, elsewhere the room's 6",
+                  venue_mod.ceiling_at(e.venue, 0, 12) == 3.5 and venue_mod.ceiling_at(e.venue, 0, 4) == 6.0, "")
+            rr = venue_mod.rig(e.venue, t)
+            check("...the truss under it came down below it, its light too",
+                  max(rr["a"][1], rr["b"][1]) <= 3.4 + 1e-6 and e.patch[0]["y"] < y0, f"{rr['a']} {e.patch[0]['y']}")
+            bad = e.act("rig_trim", id=t, trim=4.5)
+            check("trim: above the area's ceiling is refused", not bad.get("ok"), str(bad))
+            e.act("venue_rig", id=t, ceiling=True)
+            rr = venue_mod.rig(e.venue, t)
+            check("hang under the ceiling: under the area's, not the room's", 3.0 < rr["a"][1] < 3.5, str(rr["a"]))
+            far = e.act("rig_add", preset="straight", length=20, x=0, z=9.8, trim=5.5)
+            fr = venue_mod.rig(e.venue, far["id"])
+            check("a truss on the edge of the area: the lowest ceiling over it counts",
+                  fr["a"][1] <= 6 and venue_mod.ceiling_over(e.venue, [[-3, 0, 9.8], [3, 0, 10.2]]) == 3.5, str(fr["a"]))
+            from app import riglib
+            vv = venue_mod.normalise(e.venue)
+            for x in vv["rigging"]:
+                if x["id"] == t:
+                    x["a"][1] = x["b"][1] = 3.45          # as if hung right at the area's ceiling
+            rows = riglib.report(vv, [], lambda h: {})["rigs"]
+            row = next(x for x in rows if t in x["ids"])
+            check("the report counts the area's ceiling", any("ceiling" in w for w in row["warnings"]), str(row["warnings"]))
+            e.act("venue_ceiling", id="c1", height=8)
+            check("raise it: 8 m over that part", venue_mod.ceiling_at(e.venue, 0, 12) == 8.0, "")
+            check("a height that isn't a ceiling is refused", not e.act("venue_ceiling", id="c1", height=1).get("ok")
+                  and not e.act("venue_ceiling", points=[[0, 0], [1, 1]], height=3).get("ok"), "")
+            e.act("venue_ceiling", id="c1", remove=True)
+            check("take it away: the room's ceiling again", not e.venue["room"]["areas"]
+                  and venue_mod.ceiling_at(e.venue, 0, 12) == 6.0, "")
+            e.act("undo")
+            check("undo brings it back", len(e.venue["room"]["areas"]) == 1, "")
+        finally:
+            e.shutdown()
