@@ -2922,3 +2922,58 @@ def test_fx_tweak_live() -> None:
             check("a missing effect is an error", not e.act("fx_tweak", id=999, speed=1).get("ok"))
         finally:
             e.shutdown()
+
+
+def test_hold_button_roam() -> None:
+    """A Wave 360 roaming the dance floor made into a button: the button
+    keeps the roam (and a saved shape), so the light keeps moving - it
+    was captured as a still position and held there."""
+    print("hold button: keeps a roam / shape moving (Wave 360)")
+    from app import engine as eng
+    from app import fixlib
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "lib.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                              "qlc:Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Intimidator Wave 360", mode="17 ch.", qty=1, universe=1, address=1)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1, universe=1, address=40)
+            h = e.patch[0]
+            at = [h["address"] - 1 + i for i, r in enumerate(h["map"]) if r in ("pan", "tilt")]
+
+            def frames(k=5):
+                out = []
+                for _ in range(k):
+                    buf = e.build_frames()[1]
+                    out.append(tuple(buf[i] for i in at))
+                    time.sleep(0.15)
+                return out
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            r = e.act("roam", zones=["dancefloor"], speed=3)
+            check("the Wave 360 roams the dance floor", r.get("ok") and len(set(frames())) > 1, str(r))
+            r = e.act("quick_from_programmer", label="hover dancefloor")
+            btn = next((b for b in e.quick if b["label"] == "hover dancefloor"), {})
+            check("the button keeps the roam with its zone", r.get("ok")
+                  and [i["name"] for i in btn.get("fx_list") or []] == ["roam"]
+                  and btn["fx_list"][0]["params"].get("zones"), str(btn.get("fx_list")))
+            check("held by the button, it keeps moving", len(set(frames())) > 1, str(frames(3)))
+            check("the programmer can't move it", not e.act("aim_spot", spot="dancefloor").get("ok"))
+            e.act("quick_off", id=btn["id"]) if "quick_off" in eng.ACTIONS else e.act("quick_press", id=btn["id"], down=True)
+            # a saved shape too
+            e.act("select_heads", heads=[2])
+            sh = e.act("shape_save", shape={"name": "Zig", "points": [[0, 0], [1, 1], [-1, 1], [1, -1]]})
+            if sh.get("ok"):
+                e.act("run_shape", id=sh.get("id") or sh.get("shape", {}).get("id"), heads=[2], speed=0.5)
+                r = e.act("quick_from_programmer", label="zig")
+                btn = next((b for b in e.quick if b["label"] == "zig"), {})
+                check("a shape is kept too", r.get("ok") and str((btn.get("fx_list") or [{}])[0].get("name", "")).startswith("shape:"),
+                      str(btn.get("fx_list")))
+            else:
+                check("shape_save works", False, str(sh))
+        finally:
+            e.shutdown()

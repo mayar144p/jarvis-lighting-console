@@ -214,7 +214,8 @@ function render(force = false) {
   if (!editing) {
     let last = 0;
     for (const [slot] of byslot) last = Math.max(last, Math.floor((slot - 1) / COLS) + (span.get(slot) || [1, 1])[1]);
-    if (last) shown = Math.min(total, last * COLS);
+    // (never fewer than three rows: two buttons don't fill the screen)
+    shown = Math.min(total, Math.max(3, last) * COLS);
   }
   box.style.setProperty("--qb-rows", String(Math.ceil(shown / COLS)));
   for (let slot = 1; slot <= shown; slot++) {

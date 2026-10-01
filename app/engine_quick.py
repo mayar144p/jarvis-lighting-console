@@ -156,45 +156,10 @@ class QuickMixin:
         if kind == "colour" and not btn["colour"]:
             raise ValueError("a colour button needs a colour")
         if kind == "fx":
-            name = str(raw.get("fx") or "")
-            rp = raw.get("params") if isinstance(raw.get("params"), dict) else {}
-            if name == "roam":
-                # a roam made on the Move tab: its zones, speed, size, beat
-                zones = rp.get("zones") if isinstance(rp.get("zones"), list) else [rp.get("zones")] if rp.get("zones") else []
-                zones = [str(z)[:40] for z in zones if z][:8]
-                if not zones:
-                    raise ValueError("a roam button needs its zones")
-                self._roam_zones(zones)                      # they must be in this room
-                btn["fx"] = "roam"
-                btn["params"] = {"zones": zones, "speed": _fclamp(rp.get("speed", 1.0), 0.05, 8),
-                                 "size": _fclamp(rp.get("size", 1.0), 0.2, 1.0)}
-                if rp.get("beats") not in (None, "", 0):
-                    btn["params"]["beats"] = self._clean_beats(rp["beats"])
-            elif name.startswith("shape:"):
-                if not any(s["id"] == name[6:] for s in self._shapes()):
-                    raise ValueError(f"no shape {name[6:]!r}")
-                btn["fx"] = name
-                btn["params"] = {"speed": _fclamp(rp.get("speed", 0.25), 0.005, 2.0),
-                                 "size": _fclamp(rp.get("size", 30), 1, 270),
-                                 "spread": _fclamp(rp.get("spread", 0), 0, 720),
-                                 "direction": -1.0 if float(rp.get("direction") or 1) < 0 else 1.0}
-                if rp.get("beats") not in (None, "", 0):
-                    btn["params"]["beats"] = self._clean_beats(rp["beats"])
-            elif name.startswith("step:"):
-                # one of the show's step effects (FX tab -> Step effects)
-                if not any(f["id"] == name[5:] for f in self._steps()):
-                    raise ValueError(f"no step effect {name[5:]!r}")
-                btn["fx"] = name
-                beats = (raw.get("params") or {}).get("beats") if isinstance(raw.get("params"), dict) else None
-                if beats not in (None, "", 0):
-                    btn["params"] = {"beats": self._clean_beats(beats)}
-            else:
-                if name not in fxlib_mod.FX:
-                    raise ValueError(f"unknown effect {name!r}")
-                btn["fx"] = name
-                params = self._quick_fx_params(name, raw.get("params"))
-                if params:
-                    btn["params"] = params
+            name, params = self._quick_fx_item(str(raw.get("fx") or ""), raw.get("params"))
+            btn["fx"] = name
+            if params:
+                btn["params"] = params
         if kind in ("go", "release"):
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
             if raw.get("cue") not in (None, ""):
@@ -308,6 +273,40 @@ class QuickMixin:
         mv["name"] = new
         return {"move": mv, "summary": f"renamed to {new!r}"}
 
+    def _quick_fx_item(self, name: str, rp) -> tuple[str, dict]:
+        """One effect a button runs, checked: a library effect with its
+        knobs, a roam (its zones), a saved shape or a step effect."""
+        rp = rp if isinstance(rp, dict) else {}
+        if name == "roam":
+            # a roam made on the Move tab: its zones, speed, size, beat
+            zones = rp.get("zones") if isinstance(rp.get("zones"), list) else [rp.get("zones")] if rp.get("zones") else []
+            zones = [str(z)[:40] for z in zones if z][:8]
+            if not zones:
+                raise ValueError("a roam button needs its zones")
+            self._roam_zones(zones)                      # they must be in this room
+            p = {"zones": zones, "speed": _fclamp(rp.get("speed", 1.0), 0.05, 8),
+                 "size": _fclamp(rp.get("size", 1.0), 0.2, 1.0)}
+        elif name.startswith("shape:"):
+            if not any(s["id"] == name[6:] for s in self._shapes()):
+                raise ValueError(f"no shape {name[6:]!r}")
+            p = {"speed": _fclamp(rp.get("speed", 0.25), 0.005, 2.0),
+                 "size": _fclamp(rp.get("size", 30), 1, 270),
+                 "spread": _fclamp(rp.get("spread", 0), 0, 720),
+                 "direction": -1.0 if float(rp.get("direction") or 1) < 0 else 1.0}
+        elif name.startswith("step:"):
+            # one of the show's step effects (FX tab -> Step effects)
+            if not any(f["id"] == name[5:] for f in self._steps()):
+                raise ValueError(f"no step effect {name[5:]!r}")
+            p = {}
+        else:
+            name = name.lower()
+            if name not in fxlib_mod.FX:
+                raise ValueError(f"unknown effect {name!r}")
+            return name, self._quick_fx_params(name, rp)
+        if rp.get("beats") not in (None, "", 0):
+            p["beats"] = self._clean_beats(rp["beats"])
+        return name, p
+
     def _quick_fx_params(self, name: str, params) -> dict:
         """The effect's own knobs a button keeps (speed, size, arc...)."""
         if not isinstance(params, dict):
@@ -358,16 +357,8 @@ class QuickMixin:
         for item in (raw.get("fx_list") or [])[:4]:
             if not isinstance(item, dict):
                 continue
-            name = str(item.get("name") or "")
-            if name.startswith("step:"):
-                if not any(f["id"] == name[5:] for f in self._steps()):
-                    raise ValueError(f"no step effect {name[5:]!r}")
-                fx_list.append({"name": name, "params": {}})
-                continue
-            name = name.lower()
-            if name not in fxlib_mod.FX:
-                raise ValueError(f"unknown effect {name!r}")
-            fx_list.append({"name": name, "params": self._quick_fx_params(name, item.get("params"))})
+            name, params = self._quick_fx_item(str(item.get("name") or ""), item.get("params"))
+            fx_list.append({"name": name, "params": params})
         if fx_list:
             btn["fx_list"] = fx_list
         if not any(k in btn for k in ("level", "dim", "hz", "kill", "attrs", "values", "fx_list")) \
@@ -394,10 +385,18 @@ class QuickMixin:
                 values[str(n)] = row
         fx_list = []
         for f in self.fx:
-            if f.get("lib") in fxlib_mod.FX and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
-                fx_list.append({"name": f["lib"], "params": dict(f.get("params") or {})})
-            elif f.get("steps") and set(f.get("heads") or []) & set(heads) and len(fx_list) < 4:
-                fx_list.append({"name": "step:" + f["steps"], "params": {}})
+            if not set(f.get("heads") or []) & set(heads) or len(fx_list) >= 4:
+                continue
+            p = {k: v for k, v in (f.get("params") or {}).items() if not str(k).startswith("_")}
+            if f.get("roam"):
+                # a roam keeps its zones (by id: they survive a rename)
+                fx_list.append({"name": "roam", "params": dict(p, zones=[z["id"] for z in f["roam"]])})
+            elif f.get("lib") == "shape" and p.get("shape"):
+                fx_list.append({"name": "shape:" + str(p.pop("shape")), "params": p})
+            elif f.get("lib") in fxlib_mod.FX:
+                fx_list.append({"name": f["lib"], "params": p})
+            elif f.get("steps"):
+                fx_list.append({"name": "step:" + f["steps"], "params": {k: v for k, v in p.items() if k == "beats"}})
         if not values and not fx_list:
             raise ValueError("nothing to capture - set a look or start an effect on the lights first")
         out = dict(raw, kind="custom", values=values, fx_list=fx_list)
@@ -1221,7 +1220,7 @@ class QuickMixin:
         moving = self._button_moves(btn)
         for src in (btn.get("attrs") or {}, (btn.get("values") or {}).get(str(n)) or {}):
             for role, v in src.items():
-                if moving and role.split("@")[0] in self.MOVE_ROLES:
+                if moving and role.split("@")[0].removesuffix("_fine") in self.MOVE_ROLES:
                     continue                    # its own movement drives these
                 if role in HTP_ROLES:
                     level = max(level or 0, int(v))
