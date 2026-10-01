@@ -2852,3 +2852,73 @@ def test_laser_fixes() -> None:
     sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
     check("the 3D aims a standing laser out over the crowd, a hung one down",
           'body.type === "laser"' in sj and "a laser shoots over the crowd" in sj, "")
+
+
+def test_locate_takes_over() -> None:
+    """Locate: full, open white AND centred (as the button says), and it
+    takes the lights back from the effects you started on them; a cue's or
+    a button's effect keeps playing and Locate says so."""
+    print("locate: centred, over your own effects")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            e.act("select_all")
+            e.act("run_fx", name="rainbow")
+            r = e.act("locate")
+            check("the rainbow you started stops: Locate shows white", r.get("ok") and not e.fx
+                  and all(x["hex"].lower() in ("#ffffff",) for x in e._looks()[:2]), str([x["hex"] for x in e._looks()]))
+            check("a mover is centred", e.programmer[3].get("pan") == 128 and e.programmer[3].get("tilt") == 128, str(e.programmer[3]))
+            e.act("quick_set", page=1, slot=1, button={"kind": "fx", "fx": "rainbow", "label": "Rainbow", "mode": "latch",
+                                                         "target": {"heads": [1, 2]}})
+            e.act("quick_press", id="q1-1", down=True)
+            r = e.act("locate")
+            check("a button's effect keeps playing, and Locate says Highlight shows them", r.get("ok") and e.fx
+                  and "Highlight" in r["summary"], r.get("summary"))
+        finally:
+            e.shutdown()
+
+
+def test_fx_tweak_live() -> None:
+    """A running effect's speed and size change as it runs (the FX tab's
+    tap buttons): no restart, and the shape carries on from where it is."""
+    print("fx_tweak: speed / size live, no jump")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("run_fx", name="rainbow")
+            row = e.fx[0]
+            t = time.monotonic()
+            e._fx_values(t)
+            e._fx_values(t + 1.3)
+            before = e._fx_values(t + 1.3)
+            r = e.act("fx_tweak", id=row["id"], speed=3)
+            after = e._fx_values(t + 1.3)
+            check("the speed changes in place (same effect, no restart)", r.get("ok") and len(e.fx) == 1
+                  and e.fx[0] is row and row["params"]["speed"] == 3, str(r))
+            check("no jump: the colours at that moment are the same", before == after, f"{before} vs {after}")
+            e.act("fx_tweak", id=row["id"], times=0.5)
+            check("½× halves it", abs(row["params"]["speed"] - 1.5) < 1e-9, str(row["params"]))
+            check("clamped to the effect's range", e.act("fx_tweak", id=row["id"], speed=999).get("ok")
+                  and row["params"]["speed"] == 20.0, str(row["params"]))
+            check("an unknown knob is refused", not e.act("fx_tweak", id=row["id"], params={"bogus": 1}).get("ok"))
+            e.act("select_heads", heads=[4])
+            e.act("run_fx", name="circle", params={"speed": 0.125, "size": 20})
+            mv = e.fx[-1]
+            r = e.act("fx_tweak", id=mv["id"], speed=0.25, size=45)
+            check("a movement: speed and size", r.get("ok") and mv["params"]["speed"] == 0.25 and mv["params"]["size"] == 45, str(r))
+            check("a missing effect is an error", not e.act("fx_tweak", id=999, speed=1).get("ok"))
+        finally:
+            e.shutdown()

@@ -228,6 +228,45 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A7. Operator's debugging list (DONE, 2026-10-01)
+
+- **Button from your moves:** "Make a button…" on the programmer bar and
+  the Move tab captures what the picked lights do (aim, movement, colour),
+  frees the programmer and turns the button on.  While it is on, it
+  overrides everything and the programmer can't change those lights'
+  movement ("turn the button off to change them"; a strip on the
+  programmer says which button holds them, with Turn it off).  The
+  movement keeps running round the captured aim.
+- **Aim speed in 3D:** the visualiser follows the desk's glide (the Aim
+  speed chips work for spots, formations and Follow); a first aim glides
+  from home instead of jumping.  Instant / Fast are still limited by the
+  3D motor model, as the real motors are.
+- **Colour names, not Colour 1..6:** wheel slots get names from their
+  colour (and a colour from their name); unnamed wheels say so and offer
+  "Name the colours…".
+- **Lights that didn't change colour:** default modes prefer RGB modes over
+  1-channel macro modes; amber / UV / lime / white mix into the 3D colour;
+  orphan fine channels (Lixada) fixed; Already-patched lights are re-read
+  at start-up (PARSER_VERSION 11); a light in a poor mode shows "Use the …
+  mode".  Sweep of 1,624 library lights: 89 failures -> 7 (truly unnamed
+  wheels, now explained).
+- **Built-in programs** (auto / sound / program channels) now show in 3D
+  (hue wander, spin) and are labelled on the light.
+- **Lasers:** standing lasers aimed up and back (now over the crowd); lasers
+  defaulted to 1-channel auto modes or had no output channel (mode-switch
+  "laser on/off" now found): fireable lasers 21 -> 54 of 81.  27 still
+  have no channel that can be fired safely.
+- **Locate vs Highlight:** Locate now centres pan / tilt and takes the
+  lights back from effects you started; a cue's or button's effect keeps
+  playing and Locate says Highlight shows them anyway.
+- **FX tab:** bigger cards and rows; every running effect has Speed (and a
+  movement Size) as Slow / Medium / Fast, − / +, ½× / 2× and a typed
+  number, changed live with no restart or jump (`fx_tweak`).  The Move
+  tab's speed is the same (seconds per turn).
+- **Buttons screen:** the dock is taller in Buttons mode, its top edge
+  drags to resize (remembered per mode, double-click resets), empty rows
+  under the last button are hidden while playing, bigger text.
+
 ## A6. Desktop only (DONE)
 
 Done: tablet.js, the manifest and home-screen icons, the remote page,

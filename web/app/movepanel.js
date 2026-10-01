@@ -5,7 +5,8 @@
 // Built from the venue (spots come from its dance floor and zones) and the
 // engine's movement effects (app/motion.py): a shape of a given size around
 // the aim, fitted inside each light's range, never faster than its motor.
-import { beatSelect, spaceSelect } from "./programmer.js";
+import { beatSelect, spaceSelect, fxKnobs } from "./programmer.js";
+import { knob, TURN_PRESETS } from "./speedpick.js";
 import { tap as tapTempo, tempo } from "./tempo.js";
 import { get } from "./api.js";
 import { state, on, selectionHeads } from "./store.js";
@@ -340,15 +341,16 @@ function speedMaster() {
 
 function movementBlock() {
   const act = running();
-  const secs = h("input", { type: "range", min: 2, max: 30, step: 1, value: knobs.secs, title: "Seconds for one turn" });
-  const secsOut = h("span.mono.small", `${knobs.secs} s`);
-  let t = 0;
-  secs.addEventListener("input", () => {
-    knobs.secs = +secs.value;
-    secsOut.textContent = `${knobs.secs} s`;
-    clearTimeout(t);
-    t = setTimeout(reapply, 250);
-  });
+  // tap or type the seconds for one turn; what runs changes as it runs
+  const secs = knob({ label: "Speed", unit: "s / turn", value: knobs.secs, min: 0.5, max: 200, presets: TURN_PRESETS, invert: true,
+    minusTitle: "Faster (fewer seconds)", plusTitle: "Slower (more seconds)",
+    onSet: (v) => {
+      knobs.secs = v;
+      const heads = movers().map((x) => x.head_no);
+      for (const f of running().filter((x) => x.heads.some((n) => heads.includes(n)))) {
+        run("fx_tweak", { id: f.id, speed: +(1 / v).toFixed(4) }, { silentError: true });
+      }
+    } });
   return section("Movement",
     myMoves(act),
     h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
@@ -362,7 +364,7 @@ function movementBlock() {
       ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
       ...chips(SIZES.map(([l, v]) => [l, v, `${v}° around the aim`]), (v) => knobs.size === v, (v) => { knobs.size = v; }))),
-    h("div.mv-row", h("span.k", "Speed"), secs, secsOut, h("span.muted.small", "per turn")),
+    secs,
     h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
       ...chips([["together", false], ["wave", true]], (v) => knobs.wave === v, (v) => { knobs.wave = v; }))),
     multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
@@ -375,7 +377,8 @@ function movementBlock() {
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
       spaceSelect(f), beatSelect(f),
-      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
+      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
+      fxKnobs(f))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
 }
@@ -526,7 +529,7 @@ function render(force = false) {
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib, f.move]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
+    running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
     moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
     state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],

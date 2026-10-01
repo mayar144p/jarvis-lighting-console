@@ -3,6 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
+import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 
@@ -915,18 +916,39 @@ function startFx(fx) {
   const params = {};
   for (const p of fx.params || []) params[p.key] = p.default;
   run("run_fx", { name: fx.name, params, heads: sel(), across: fxAcross }, { toast: true }).then(() => renderFx());
-  $("#fx-params").replaceChildren(...(fx.params || []).filter((p) => p.key !== "phase").map((p) => {
-    const input = h("input", { type: "range", min: p.min, max: p.max, step: (p.max - p.min) / 100, value: p.default });
-    const out = h("output.muted.small", String(p.default));
-    input.addEventListener("input", () => { out.textContent = (+input.value).toFixed(2); });
-    input.addEventListener("change", async () => {
-      params[p.key] = +input.value;
-      const running = ((state.snap && state.snap.fx) || []).filter((f) => f.lib === fx.name);
-      for (const f of running) await run("stop_fx", { id: f.id }, { silentError: true });
-      run("run_fx", { name: fx.name, params, heads: sel() });
-    });
-    return h("label.field", h("span", p.label, " ", out), input);
-  }));
+  // its other knobs (speed is on the running row below): tap or type, and
+  // the running effect changes as it runs - no restart, no jump
+  const mine = () => ((state.snap && state.snap.fx) || []).filter((f) => f.lib === fx.name && (f.from || "programmer") === "programmer");
+  $("#fx-params").replaceChildren(...(fx.params || []).filter((p) => !["phase", "speed"].includes(p.key)).map((p) => knob({
+    label: p.label.replace(/^./, (c) => c.toUpperCase()), value: p.default, min: p.min, max: p.max,
+    step: { add: Math.max(0.01, +((p.max - p.min) / 20).toPrecision(2)) }, halves: false,
+    onSet: (v) => {
+      params[p.key] = v;
+      for (const f of mine()) run("fx_tweak", { id: f.id, params: { [p.key]: v } }, { silentError: true });
+    },
+  })));
+}
+
+// A running effect's speed (and a movement's size), as taps and a number:
+// changed while it runs, carrying on from where it is
+const isMove = (f) => f.lib in MOVE_SET || f.lib === "shape";
+const MOVE_SET = Object.fromEntries([...MOVE_FX].map((k) => [k, 1]));
+const fxSpeed = (f) => +((f.params && f.params.speed) ?? f.speed ?? 1);
+export function fxKnobs(f) {
+  if (f.steps || f.lib === "roam" || fxBeats(f)) {
+    return fxBeats(f) ? h("p.muted.small.fx-locked", "Locked to the beat - set it back to free to change its speed here") : null;
+  }
+  const tweak = (args) => run("fx_tweak", { id: f.id, ...args }, { silentError: true });
+  if (isMove(f)) {
+    return h("div.fx-knobs",
+      knob({ label: "Speed", unit: "s / turn", value: +(1 / Math.max(0.005, fxSpeed(f))).toFixed(1), min: 0.5, max: 200,
+        presets: TURN_PRESETS, invert: true, minusTitle: "Faster (fewer seconds)", plusTitle: "Slower (more seconds)",
+        onSet: (v) => tweak({ speed: +(1 / v).toFixed(4) }) }),
+      knob({ label: "Size", unit: "°", value: +((f.params && f.params.size) || 20), min: 1, max: 270, presets: SIZE_PRESETS,
+        halves: false, onSet: (v) => tweak({ size: v }) }));
+  }
+  return h("div.fx-knobs", knob({ label: "Speed", unit: "×", value: fxSpeed(f), min: 0.01, max: 20, presets: SPEED_PRESETS,
+    minusTitle: "Slower", plusTitle: "Faster", onSet: (v) => tweak({ speed: v }) }));
 }
 
 // Lock a running effect to the beat clock: one cycle per 1, 2, 4 ... beats,
@@ -960,7 +982,8 @@ function renderRunning(force = false) {
   const box = $("#fx-running");
   // redraw only when the list changes: rebuilt on every live update, Stop
   // flickered and a click could land on a button already replaced
-  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, f.from, (f.heads || []).length, fxBeats(f), fxSpace(f)]));
+  const key = JSON.stringify(list.map((f) => [f.id, f.label, f.kind, f.role, f.from, (f.heads || []).length, fxBeats(f), fxSpace(f),
+    fxSpeed(f).toPrecision(3), f.params && f.params.size]));
   if (!force && key === runningKey) return;
   runningKey = key;
   if (!list.length) { box.replaceChildren(h("p.muted.small", "No effects running.")); return; }
@@ -969,7 +992,8 @@ function renderRunning(force = false) {
     h("small", `${(f.heads || []).length} heads` + (f.from && f.from !== "programmer" ? ` · from a ${f.from}` : "")),
     f.lib ? spaceSelect(f) : null,
     beatSelect(f),
-    h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
+    h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
+    fxKnobs(f))),
   list.some((f) => (f.from || "programmer") === "programmer")
     ? h("button.btn.small.ghost", { title: "Stop the effects you started; cues' and buttons' effects keep playing", onclick: () => run("stop_fx", { programmer: true }) }, "Stop mine") : null,
   h("button.btn.small.ghost", { title: "Stop every effect, cues' and buttons' too", onclick: () => run("stop_fx", {}) }, "Stop all"));

@@ -39,6 +39,7 @@ EXTRA = {
     "stop_fx": ("id", "fx", "programmer"),
     "fx_beats": ("id", "beats"),
     "fx_space": ("id", "space"),
+    "fx_tweak": ("id", "speed", "size", "times", "params"),
     "run_gradient": ("colours", "space", "speed", "beats", "heads", "group"),
     "run_shape": ("id", "heads", "group", "speed", "size", "spread", "direction", "beats"),
     "shape_save": ("shape", "id"),
