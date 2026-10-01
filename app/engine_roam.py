@@ -130,3 +130,8 @@ class RoamMixin:
             row_out = out.setdefault(n, {})
             row_out["pan"] = int(round(max(0.0, min(1.0, fp)) * top_p))
             row_out["tilt"] = int(round(max(0.0, min(1.0, ft)) * top_t))
+            # a multi-head light (Wave 360): its heads fan out along the throw
+            # and breathe in and out, each on its own tilt
+            per = self._aim_heads(h, x, zs[k]["y"], z, near=near.get(n),
+                                  spread=0.4 + 0.5 * (1 + math.sin(s * 9.0 + ph)))
+            row_out.update(per)

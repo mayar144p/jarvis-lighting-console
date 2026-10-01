@@ -1243,3 +1243,49 @@ def test_roam() -> None:
                   and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "DJ"], str(p["steps"]))
         finally:
             e.shutdown()
+
+
+def test_multihead_aim() -> None:
+    """A multi-head light (heads on a bar that pans, each tilting): aim /
+    follow move the heads picked on their own, or fan every head to its own
+    spot along the throw; roam fans them too."""
+    print("Multi-head lights follow per head")
+    import time as _time
+
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        key = "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", key), source=f"qlc:{key}")
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("add_heads", query="Intimidator Wave 360", qty=1)
+            if not r.get("ok") or e.patch[0]["map"].count("tilt") < 2:
+                check("a Wave 360 to test with", False, str(r.get("error")) + str(e.patch and e.patch[0]["map"]))
+                return
+            e.act("set_place", head=1, x=0, y=4.5, z=2)
+            e.act("select_all")
+            e.act("aim_at", x=0, y=0, z=8)
+            check("together: one tilt for every head", set(e.programmer[1]) >= {"pan", "tilt"}
+                  and not any("@" in k for k in e.programmer[1]), str(e.programmer[1]))
+            e.act("aim_at", x=0, y=0, z=8, spread=1.5)
+            t = [e.programmer[1][f"tilt@{k}"] for k in range(1, 5)]
+            check("fanned: each head its own tilt, further away head by head", t == sorted(t) and len(set(t)) == 4, str(t))
+            e.act("set_attribute", attribute="tilt", value=10)
+            e.act("aim_at", x=0, y=0, z=10, cell=[2])
+            row = e.programmer[1]
+            check("the head picked follows alone, the others stay", row.get("tilt") == 10 and "tilt@2" in row
+                  and not any(f"tilt@{k}" in row for k in (1, 3, 4)), str(row))
+            e.act("venue_template", name="club")
+            e.act("set_place", head=1, x=0, y=4.5, z=4)
+            e.act("select_all")
+            e.act("roam", zones=["dancefloor"])
+            v = e._fx_values(_time.monotonic() + 0.5)[1]
+            check("roam fans the heads", len({v[f"tilt@{k}"] for k in range(1, 5)}) == 4, str(v))
+        finally:
+            e.shutdown()

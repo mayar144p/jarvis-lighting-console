@@ -11,8 +11,10 @@ const SVGNS = "http://www.w3.org/2000/svg";
 let following = false;
 let target = null;                      // {x, z}: the last spot aimed at
 let pending = null, timer = 0, last = 0;
+let fan = 0;                            // multi-head lights: metres between their heads' spots
 const RATE_MS = 70;
 
+const multiHead = () => selectionHeads().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
 
 /** Aim at (x, y, z), at most every RATE_MS; the last one always goes. */
@@ -20,6 +22,10 @@ export function aimTo(p, final = false) {
   target = { x: p.x, z: p.z };
   drawTarget();
   pending = { x: +p.x.toFixed(2), y: +(p.y || 0).toFixed(2), z: +p.z.toFixed(2) };
+  // a Wave 360 and the like: the heads picked follow on their own, or all
+  // of them fan out along the throw
+  if (state.cells && state.cells.length) pending.cell = [...state.cells];
+  if (fan && multiHead()) pending.spread = fan;
   const send = () => {
     timer = 0;
     if (!pending) return;
@@ -139,7 +145,12 @@ export function aimBlock(...after) {
   const map = h("div.aim-map", { title: "Drag on the floor plan: the selected lights follow (stage at the top)" });
   map.append(floorMap());
   queueMicrotask(drawTarget);
-  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, ...after.filter(Boolean));
+  const heads = multiHead() ? h("div.mv-row", h("span.k", "Heads"),
+    h("span.chip-row", ...[[0, "Together"], [0.8, "Fan out"], [2, "Wide fan"]].map(([v, l]) => h("button.chip" + (fan === v ? ".on" : ""), {
+      title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar)",
+      onclick: (e) => { fan = v; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); },
+    }, l))), h("span.muted.small", "or pick heads (Heads: 1 2 3 4) to move them alone")) : null;
+  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, heads, ...after.filter(Boolean));
 }
 
 export const isFollowing = () => following;
