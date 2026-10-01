@@ -181,6 +181,14 @@ button is never an undo step; setting one up is. Buttons save with the show.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### Follow me speed
+
+Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on
+the floor map or the 3D floor. **Instant** goes straight there, as fast as
+the lights can move. **Fast**, **Medium** and **Slow** make the beams glide
+after it and carry on to where you let go (a dashed ring shows where they
+are aimed right now). Remembered on this computer.
+
 ### Painting the rig and shapes
 
 * **FX tab -> Paint the rig.** A **gradient** of 2 to 6 colours across

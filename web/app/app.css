@@ -1175,6 +1175,7 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .am-head.on { fill: #fbbf24; stroke: #000; stroke-width: .04; }
 .am-ring { fill: none; stroke: var(--accent); stroke-width: .1; }
 .am-dot { fill: var(--accent); }
+.am-now { fill: none; stroke: #fbbf24; stroke-width: .08; stroke-dasharray: .12 .08; }
 .mv-spotbox .mv-spots { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
 .mv-spotbox .mv-spot { padding: 7px 4px; }
 .mv-pt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }

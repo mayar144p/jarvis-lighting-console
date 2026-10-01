@@ -1612,6 +1612,9 @@ def test_on_the_beat() -> None:
             e._sound_size = 1.0
         finally:
             e.shutdown()
+        aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+        check("follow-me has a speed: instant / fast / medium / slow, gliding by time",
+              "Follow speed" in aj and "Math.exp(-dt / glide)" in aj and '"Slow"' in aj)
 
         # Ableton Link: the pure part
         node = b"peer0001"
