@@ -24,6 +24,38 @@ class LLMError(RuntimeError):
 
 
 _RETRY_STATUS = (429, 500, 502, 503, 504)
+# a free plan answers 429 "retry in 46s": wait that long (up to this) and go on
+RATE_WAIT_MAX_S = 70.0
+_rate_lock = __import__("threading").Lock()
+_sent: list[float] = []            # when the last requests went out
+_rpm: int | None = None            # requests a minute the service allows (learned from a 429)
+
+
+def _retry_after(detail: str) -> float | None:
+    """Seconds to wait from a 429 body ("retryDelay": "46s" / "retry in 46.8s")."""
+    m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', detail) or re.search(r"retry in (\d+(?:\.\d+)?)\s*s", detail)
+    return float(m.group(1)) if m else None
+
+
+def _learn_rpm(detail: str) -> None:
+    global _rpm
+    m = re.search(r'"quotaValue"\s*:\s*"(\d+)"', detail) or re.search(r"limit:\s*(\d+)", detail)
+    if m and "minute" in detail.lower() or (m and "PerMinute" in detail):
+        _rpm = max(1, int(m.group(1)))
+
+
+def _pace() -> None:
+    """Keep under the service's requests-a-minute (once it has told us)."""
+    with _rate_lock:
+        now = time.monotonic()
+        del _sent[:len([t for t in _sent if now - t > 60.0])]
+        if _rpm and len(_sent) >= _rpm:
+            wait = 60.0 - (now - _sent[0]) + 0.3
+            if 0 < wait <= RATE_WAIT_MAX_S:
+                time.sleep(wait)
+                now = time.monotonic()
+                del _sent[:len([t for t in _sent if now - t > 60.0])]
+        _sent.append(time.monotonic())
 
 
 def available() -> bool:
@@ -42,7 +74,8 @@ def chat(messages: list[dict], tools: list[dict] | None = None,
         body["tool_choice"] = tool_choice or "auto"
     data = json.dumps(body).encode("utf-8")
     last = None
-    for attempt in range(2):
+    for attempt in range(4):
+        _pace()
         request = urllib.request.Request(
             f"{config.LLM_BASE_URL}/chat/completions", data=data,
             headers={"Content-Type": "application/json",
@@ -53,7 +86,18 @@ def chat(messages: list[dict], tools: list[dict] | None = None,
                 payload = json.loads(resp.read().decode("utf-8"))
             break
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:400]
+            full = exc.read().decode("utf-8", "replace")
+            detail = full[:400]
+            if exc.code == 429:
+                _learn_rpm(full)
+                wait = _retry_after(full)
+                if wait is not None and wait <= RATE_WAIT_MAX_S and attempt < 3:
+                    time.sleep(wait + 0.5)             # the free plan's limit: wait it out
+                    continue
+                last = LLMError("the AI service's limit is reached"
+                                + (f" ({_rpm} requests a minute on this plan)" if _rpm else "")
+                                + (f" - try again in {int(wait)} s" if wait else "") + ".")
+                raise last from exc
             last = LLMError(f"AI service HTTP {exc.code}: {detail}")
             if exc.code in _RETRY_STATUS and attempt == 0:
                 time.sleep(1.5)

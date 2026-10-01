@@ -95,7 +95,7 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "set_place": ("head", "heads", "x", "y", "z", "rig", "t", "stance", "snap"),
     "run_command": ("text",),
     # the room, the buttons and the timeline
-    "aim_at": ("x", "y", "z", "mark", "heads"),
+    "aim_at": ("x", "y", "z", "mark", "zone", "heads"),
     "roam": ("zones", "speed", "size", "beats", "heads", "group"),
     "chase_colours": ("colours", "rig", "beats", "section", "name", "heads"),
     "attach_heads": ("heads", "head", "rig", "spacing", "stance"),

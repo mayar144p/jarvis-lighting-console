@@ -167,8 +167,16 @@ whoever picks it up starts from the diagnosis, not from scratch.
      step.  An AI failure half-way leaves nothing behind.
    * It sees: a small JPEG of the 3D view with each message (switchable),
      and a photo you attach, paste or drop.
-   * Tested with a scripted model and with a stand-in OpenAI-compatible
-     service end to end in the browser; not yet against Gemini itself.
+   * Tested with a scripted model, with a stand-in OpenAI-compatible
+     service end to end in the browser, and against Gemini itself (free
+     plan) on a club rig: sunset on the dance floor, "the drop needs to hit
+     harder", "why is head 2 dark?".  What that taught:
+     - the free plan allows 15 requests a minute: Jarvis now paces its
+       requests, and on "too many" waits the time the service names (up
+       to 70 s) and tries again, else says plainly when to try again;
+     - aim_at takes a zone ("Dance floor"), not only a mark;
+     - `do` accepts the action's settings flat as well as in params;
+     - a question is answered, not acted on: it checks, then says.
    * Fixed on the way: the pad's pad_info and venue_info became undo steps
      ("Undo pad info"); every read-only action is now outside undo.
    **Left:** the "AI operator" mode (it plays the show live with the music,

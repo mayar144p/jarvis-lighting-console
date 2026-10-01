@@ -767,7 +767,7 @@ class FxLayerMixin:
 
     # -- follow speed: the engine glides the aim, at the full DMX rate --------
     def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
-                  cell=None, spread=None, glide=None, **_):
+                  cell=None, spread=None, glide=None, zone=None, **_):
         """Point every selected moving head at one spot in the room.
 
         Solved per head from where it hangs and which way up it is, through
@@ -776,6 +776,23 @@ class FxLayerMixin:
         `glide` (seconds): don't jump - glide there, the engine moving the
         aim every frame (Move tab -> Follow speed), whatever the browser does.
         """
+        if zone is not None or (mark and not any(
+                o.get("kind") == "mark" and str(o.get("name") or "").lower() == str(mark).lower()
+                for o in (self.venue.get("objects") or []))):
+            # a zone by name or kind ("dance floor", "bar"): its middle
+            want = str(zone if zone is not None else mark).strip().lower()
+            key = want.replace(" ", "")
+            zs = [zn for zn in (self.venue.get("zones") or []) if zn.get("points")
+                  and (str(zn.get("name") or "").lower().replace(" ", "") == key or zn.get("kind") == key
+                       or zn.get("id") == want)]
+            if zs:
+                pts = zs[0]["points"]
+                x = sum(p[0] for p in pts) / len(pts)
+                z = sum(p[1] for p in pts) / len(pts)
+                y = float(zs[0].get("y") or 0)
+                mark = None
+            elif zone is not None:
+                raise ValueError(f"no zone {zone!r}")
         try:
             g = float(glide or 0)
         except (TypeError, ValueError):
