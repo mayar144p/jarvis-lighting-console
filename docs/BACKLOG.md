@@ -82,10 +82,41 @@ whoever picks it up starts from the diagnosis, not from scratch.
      some of its units can't use. To do: audit every panel per unit type,
      hide what a unit lacks, and say which selected lights a control won't
      reach.
-8. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+8. **A real AI assistant** (asked 2026-10-01; replaces "more copilot
+   commands").  Today the copilot is one shot: one message in, one list of
+   allowed steps out, Apply.  Without a key it is the offline keyword
+   compiler, which really is hard-coded.  It should work like an assistant:
+   * **A loop, not one shot.**  Tools (read the rig / programmer / cues /
+     DMX, set lights, record, make buttons, a 3D snapshot...) that the
+     model chooses and chains itself, many steps a request.  It sees the
+     result (DMX values, the 3D picture) and corrects itself ("the movers
+     hit the ceiling" -> it checks the aim, re-aims, checks again).
+   * **Feelings, not commands.**  "Make the drop hit harder", "more
+     sunset", "calmer for the speeches", "this looks cheap, fix it".  It
+     chooses colour / level / movement / timing and says why in a line.
+   * **It talks back.**  It asks when unclear ("back truss or upstage
+     truss?"), suggests ("a blackout hit on the 1?"), and answers about the
+     show ("why is head 7 dark?" -> "parked since cue 3").
+   * **It sees.**  The 3D view as a picture ("the left side looks empty");
+     a dropped-in photo to match.
+   * **It remembers.**  Your style, the venue, what you kept or undid
+     ("warm white for speeches"), per show and per user.
+   * **With the music.**  Optional: it follows tempo, sections and drops,
+     suggests the next look, or runs an "AI operator" mode you can take
+     over at any moment.
+   * **Safety stays.**  3D preview first, one Ctrl+Z, never arms the
+     output / fires pyro or CO2 / deletes without asking; the offline
+     compiler stays as the fallback with no key.
+   * Works with the Gemini key in `.env` (tool use); a stronger model is
+     smarter.  The key stays in `.env`, never in the repo.
+   * Later, separate (not planned yet): the AI changing Jarvis's own code
+     on request - a branch + PR made by a coding agent, tests run, you
+     review and merge, Jarvis updates itself (never patching the running
+     app).
+9. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
-9. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+10. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
 
@@ -236,7 +267,7 @@ Fixed:
     Shift+H), park dark or as it is (Fixtures ⋯; saved with the show),
     group masters (a fader per group next to the GM), macros (command
     lines in one go, one undo step; buttons), OSC in (Settings -> MIDI),
-    the DJ-booth remote page (/remote.html), MIDI timecode (the timeline
+    the DJ-booth remote page (removed with Desktop only), MIDI timecode (the timeline
     follows MTC from the desk's MIDI in: MTC in the timeline bar, with
     the timecode where the timeline starts), tracking or cue only per
     cue list (+ block, record cue only), move in black, cue actions
