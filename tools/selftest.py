@@ -179,6 +179,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_locate_takes_over,
     test_fx_tweak_live,
     test_hold_button_roam,
+    test_hold_button_keeps_everything,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -338,6 +339,7 @@ def _standalone_suites():
     ("Locate: centred, over your own effects", test_locate_takes_over),
     ("FX speed / size changed live", test_fx_tweak_live),
     ("Hold button keeps a roam / shape", test_hold_button_roam),
+    ("Hold button keeps brightness, colour, rainbow", test_hold_button_keeps_everything),
     )
 
 
