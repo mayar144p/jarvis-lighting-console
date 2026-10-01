@@ -2000,3 +2000,113 @@ def test_only_what_it_can() -> None:
     mj = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     check("tabs count real lights; the pad greys what they can't reach; movements need their axes",
           "lightRoles" in pj and "pad-out" in pj and "pad_info" in pj and "canRun(name)" in mj)
+
+
+def test_ai_assistant() -> None:
+    """Plan step 9: the assistant works the desk in a loop of tools - look,
+    act, check the real lights, fix, ask, remember - in blind until kept,
+    all of it one undo step.  A scripted model stands in for the AI."""
+    print("AI assistant: tool loop, check, ask, remember, preview, one undo")
+    from app import assistant, config as cfg
+    from app import engine as eng
+
+    def tool(name, **args):
+        return {"id": f"c{name}{len(args)}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    def scripted(replies):
+        seen = []
+
+        def chat(messages, tools=None, **_):
+            seen.append(messages)
+            return replies.pop(0)
+        return chat, seen
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        saved_data = cfg.DATA
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("select_heads", head=1, head_end=2)
+            e.act("attach_heads", rig=e._rig_named("front truss")["id"])
+            e.act("clear_selection")
+            undo_before = len(e._undo)
+            chat, seen = scripted([
+                {"content": "", "tool_calls": [tool("look_at_rig")]},
+                {"content": "", "tool_calls": [tool("do", action="select_heads", params={"head": 3, "head_end": 6}),
+                                               tool("do", action="set_intensity", params={"level": 80}),
+                                               tool("do", action="set_colour", params={"colour": "orange"})]},
+                {"content": "", "tool_calls": [tool("do", action="select_heads", params={"head": 1, "head_end": 2}),
+                                               tool("do", action="set_intensity", params={"level": 100}),
+                                               tool("do", action="aim_at", params={"x": 0, "y": 0, "z": 9})]},
+                {"content": "", "tool_calls": [tool("check_lights", heads=[1, 3])]},
+                {"content": "", "tool_calls": [tool("remember", note="likes warm sunsets")]},
+                {"content": "A warm sunset: the PARs in orange at 80%, the movers on the dance floor."},
+            ])
+            r = assistant.run_turn(e, "make it feel like a sunset", session="t", chat=chat)
+            check("the loop runs its tools and answers", r.get("ok") and r["reply"].startswith("A warm sunset")
+                  and len([s for s in r["steps"] if s["action"] != "remember"]) == 6, json.dumps(r)[:300])
+            check("the rig and the room were in its instructions", "THE RIG NOW" in seen[0][0]["content"]
+                  and "Rear truss" in seen[0][0]["content"])
+            tool_msgs = [m for m in seen[-1] if m["role"] == "tool" and m.get("name") == "check_lights"]
+            lights = json.loads(tool_msgs[-1]["content"])
+            by = {x["head"]: x for x in lights.get("lights", [])}
+            check("it can check the real lights: level, colour, where a beam lands (the zone)",
+                  by.get(3, {}).get("level") == 80 and by[3].get("colour") in ("orange", "amber", "red", "gold")
+                  and "Dance floor" in by.get(1, {}).get("beam", ""), json.dumps(lights)[:400])
+            check("it's a preview: blind, the rig unchanged", r["preview"] and e.blind_public()["on"]
+                  and e.build_frames(time.monotonic())[1][e.patch[2]["address"] - 1] == 0)
+            check("everything it did is one undo step", len(e._undo) == undo_before + 1
+                  and e._undo[-1]["label"].startswith("AI:"), str([u.get("label") or u["action"] for u in e._undo[-3:]]))
+            check("it remembered a preference", assistant.notes() == ["likes warm sunsets"])
+            e.act("blind", state=False, keep=True)
+            check("kept: the rig has it", e.build_frames(time.monotonic())[1][e.patch[2]["address"] - 1] > 0)
+            e.act("undo")
+            check("one Ctrl+Z takes all of it back", not e.programmer.get(3), str(e.programmer.get(3)))
+            # the next turn: the conversation and the notes come along
+            chat, seen = scripted([{"content": "Calmer: the PARs are at 30%."}])
+            assistant.run_turn(e, "calmer please", session="t", chat=chat)
+            msgs = seen[0]
+            check("the conversation continues, with what it remembered",
+                  any(m.get("content") == "make it feel like a sunset" for m in msgs)
+                  and "likes warm sunsets" in msgs[0]["content"])
+            # it may not fire effects or delete; it asks
+            chat, _ = scripted([
+                {"content": "", "tool_calls": [tool("do", action="fx_fire", params={"heads": [1]}),
+                                               tool("do", action="delete_cue", params={"playback": 1, "cue": 1})]},
+                {"content": "", "tool_calls": [tool("ask", question="Which truss - front or rear?", options=["Front", "Rear"])]},
+            ])
+            r = assistant.run_turn(e, "fire the CO2 and chase the truss", session="t", chat=chat)
+            check("no pyro, no deleting: refused", all(not s["ok"] for s in r["steps"]), str(r["steps"]))
+            check("it asks, with answers to tap", r["question"] == "Which truss - front or rear?" and r["options"] == ["Front", "Rear"])
+            check("nothing changed: no preview, no undo step", not r["preview"] and not r["changed"] and not e.blind_public()["on"])
+            # the AI service failing leaves nothing behind
+            def broken(*a, **k):
+                raise assistant.llm.LLMError("AI service HTTP 503")
+            chat, _ = scripted([{"content": "", "tool_calls": [tool("do", action="select_all"), tool("do", action="set_intensity", params={"level": 100})]}])
+            calls = {"n": 0}
+
+            def flaky(messages, tools=None, **k):
+                calls["n"] += 1
+                return chat(messages, tools) if calls["n"] == 1 else broken()
+            depth = len(e._undo)
+            r = assistant.run_turn(e, "everything up", session="t", chat=flaky)
+            check("the AI failing half way: nothing left behind", not r["ok"] and "503" in r["error"]
+                  and not e.blind_public()["on"] and len(e._undo) == depth
+                  and not any((e.programmer.get(n) or {}).get("dimmer") for n in (3, 4)), str(r)[:200])
+            check("the extra actions are all real", not [a for a in assistant.EXTRA if a not in eng.ACTIONS])
+            from app import engine_base
+            check("a read-only query never becomes an undo step (\"Undo pad info\")",
+                  not [a for a in engine_base._READ_ONLY if a not in engine_base.UNDO_EXCLUDED])
+            depth = len(e._undo)
+            e.act("pad_info")
+            check("pad_info leaves undo alone", len(e._undo) == depth)
+        finally:
+            cfg.DATA = saved_data
+            e.shutdown()

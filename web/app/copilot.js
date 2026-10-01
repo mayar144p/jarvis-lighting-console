@@ -94,6 +94,105 @@ function planView(plan, onApply) {
   return h("div", list, bar);
 }
 
+// ---------------------------------------------------------- the assistant
+// With an AI key: a loop of tools on the desk (it looks, acts, checks the
+// real lights, asks, remembers).  Without one: the plan-first copilot below.
+let session = "";
+try { session = sessionStorage.getItem("jarvis.ai.session") || ""; } catch (e) { /* ignore */ }
+if (!session) {
+  session = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  try { sessionStorage.setItem("jarvis.ai.session", session); } catch (e) { /* ignore */ }
+}
+let attached = null;           // a photo to match (data URL), for the next message
+
+const assistantOn = () => !!(state.status && state.status.llm_configured) && !$("#ai-offline").checked;
+
+// a small JPEG: the 3D view, or a photo, shrunk to at most `side` pixels
+function shrink(url, side = 768) {
+  return new Promise((ok) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, side / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      ok(c.toDataURL("image/jpeg", 0.72));
+    };
+    img.onerror = () => ok(null);
+    img.src = url;
+  });
+}
+
+async function viewShot() {
+  try {
+    const m = await import("./stagepanel.js");
+    const st = m.getStage && m.getStage();
+    return st ? await shrink(st.photo(1024)) : null;
+  } catch (e) { return null; }
+}
+
+function setAttached(url) {
+  attached = url;
+  const el = $("#ai-att");
+  el.hidden = !url;
+  el.replaceChildren(...(url ? [h("img", { src: url, alt: "" }), h("button.x", { title: "Remove the photo", onclick: () => setAttached(null) }, "×")] : []));
+}
+
+async function assist(text) {
+  const btn = $("#ai-send");
+  btn.disabled = true;
+  btn.textContent = "…";
+  const t0 = performance.now();
+  const thinking = say("bot", "Working…");
+  const tick = setInterval(() => { thinking.firstChild.textContent = `Working… ${Math.round((performance.now() - t0) / 1000)} s`; }, 1000);
+  try {
+    const image = attached || ($("#ai-see").checked ? await viewShot() : null);
+    setAttached(null);
+    const r = await post("/api/console/assistant", { message: text, session, image, preview: true });
+    clearInterval(tick);
+    thinking.remove();
+    if (r.no_key) { $("#ai-offline").checked = true; say("bot", r.error); plan(text); return; }
+    if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
+    const extra = h("div");
+    if (r.steps && r.steps.length) {
+      extra.append(h("details.ai-steps", h("summary", `What I did (${r.steps.length})`),
+        ...r.steps.map((s) => h("div.plan-step" + (s.ok ? ".ok" : ".bad"), h("span.n", s.ok ? "✓" : "✕"), s.summary || s.action))));
+    }
+    if (r.question) {
+      extra.append(h("div.ai-q", h("b", r.question),
+        h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => { say("user", o); assist(o); } }, o)))));
+    }
+    if (r.preview) {
+      const keep = h("button.btn.primary.small", "Keep");
+      const drop = h("button.btn.small", "Throw away");
+      const bar = h("div.plan-actions", h("span.small.plan-previewing", "Previewing in 3D only - the real lights haven't changed."), keep, drop);
+      const done = (t) => bar.replaceChildren(h("span.muted.small", t));
+      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
+      drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); done("Thrown away - the rig never saw it."); });
+      extra.append(bar);
+    } else if (r.changed) {
+      extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
+    }
+    const box = say("bot", r.reply || (r.question ? "" : "Done."), extra);
+    box.firstChild.after(h("span.src", "AI"));
+  } catch (err) {
+    clearInterval(tick);
+    thinking.remove();
+    say("bot", "Could not reach the AI: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send";
+  }
+}
+
+async function showMemory() {
+  const r = await post("/api/console/assistant", { notes: true });
+  const list = r.notes || [];
+  say("bot", list.length ? "What I remember about how you like things:" : "I haven't noted anything yet - tell me how you like things and I'll remember.",
+    list.length ? h("div", ...list.map((n, i) => h("div.ai-note", h("span", `${i + 1}. ${n}`),
+      h("button.x", { title: "Forget this", onclick: async (e) => { await post("/api/console/assistant", { notes: true, forget: i }); e.currentTarget.parentNode.remove(); } }, "×")))) : null);
+}
+
 async function plan(text) {
   const offline = $("#ai-offline").checked;
   const btn = $("#ai-send");
@@ -279,8 +378,30 @@ export function initCopilot() {
     if (!text) return;
     $("#ai-text").value = "";
     say("user", text);
-    plan(text);
+    if (assistantOn()) assist(text); else plan(text);
   });
+  $("#ai-attach").addEventListener("click", () => $("#ai-photo").click());
+  $("#ai-photo").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (f) setAttached(await shrink(URL.createObjectURL(f)));
+  });
+  $("#ai-text").addEventListener("paste", async (e) => {
+    const f = [...(e.clipboardData ? e.clipboardData.files : [])].find((x) => x.type.startsWith("image/"));
+    if (f) { e.preventDefault(); setAttached(await shrink(URL.createObjectURL(f))); }
+  });
+  $("#ai-text").addEventListener("drop", async (e) => {
+    const f = [...(e.dataTransfer ? e.dataTransfer.files : [])].find((x) => x.type.startsWith("image/"));
+    if (f) { e.preventDefault(); setAttached(await shrink(URL.createObjectURL(f))); }
+  });
+  $("#ai-new").addEventListener("click", async () => {
+    await post("/api/console/assistant", { reset: true, session });
+    $("#ai-log").replaceChildren();
+    say("bot", "New conversation. What would you like?");
+  });
+  $("#ai-memory").addEventListener("click", showMemory);
+  const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan"; };
+  $("#ai-offline").addEventListener("change", syncTools);
   $("#ai-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); }
   });
@@ -292,5 +413,8 @@ export function initCopilot() {
   const st = state.status;
   $("#ai-status").textContent = st && st.llm_configured ? st.model : "offline compiler";
   if (!(st && st.llm_configured)) $("#ai-offline").checked = true;
-  say("bot", "Tell me the look you want in plain words. I'll show you the plan first - nothing touches the rig until you press Apply, and one Ctrl+Z undoes it.");
+  syncTools();
+  say("bot", assistantOn()
+    ? "Tell me what you want - a look, a feeling (\"the drop needs to hit harder\"), or a question about the show. I'll work the desk, check the real lights, and show it in 3D first; one Ctrl+Z undoes it."
+    : "Tell me the look you want in plain words. I'll show you the plan first - nothing touches the rig until you press Apply, and one Ctrl+Z undoes it.");
 }

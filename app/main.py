@@ -467,7 +467,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm",
                          "/api/console/look", "/api/console/room", "/api/console/sound",
-                         "/api/console/media_frame"):
+                         "/api/console/media_frame", "/api/console/assistant"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             return self._json({"error": str(exc)}, 500)
@@ -684,6 +684,27 @@ class Handler(BaseHTTPRequestHandler):
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
             return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/assistant":
+            # The AI assistant: a loop of tool calls (look, act, check, ask)
+            # off the engine lock; everything it does is one undo step and,
+            # with preview, 3D only until the operator keeps it.
+            from app import assistant
+            session = str(body.get("session") or "")[:64]
+            if body.get("reset"):
+                assistant.forget_session(session)
+                return self._json({"ok": True})
+            if body.get("notes") is not None:
+                if isinstance(body.get("forget"), int):
+                    lst = assistant.notes()
+                    if 0 <= body["forget"] < len(lst):
+                        lst.pop(body["forget"])
+                        assistant._save_notes(lst)
+                return self._json({"ok": True, "notes": assistant.notes()})
+            if not llm.available():
+                return self._json({"ok": False, "no_key": True,
+                                   "error": "no AI key - put LLM_API_KEY in .env and restart (the offline copilot still works)"})
+            return self._json(assistant.run_turn(eng, str(body.get("message") or ""), session,
+                                                 image=body.get("image"), preview=body.get("preview") is not False))
         if route == "/api/console/media_frame":
             # A video playing in a browser, ~25 frames a second, shrunk to
             # at most 96 x 96: not an action, the engine keeps the latest.
