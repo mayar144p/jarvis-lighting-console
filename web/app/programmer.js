@@ -30,14 +30,21 @@ const COLOUR_ROLES = ["red", "green", "blue", "white", "amber", "uv", "cyan", "m
 const BEAM_ROLES = ["zoom", "focus", "iris", "gobo", "gobo_rot", "prism", "frost", "shutter", "strobe", "prism_rot", "gobo2"];
 
 function capabilities() {
-  const roles = new Set();
-  for (const hd of selectionHeads()) for (const r of hd.map || []) roles.add(r);
+  // a laser's or an effect machine's own colour / beam channels are in the
+  // Laser and SFX tabs (colour and level don't reach them): the light tabs
+  // count real lights only.  Moving counts anything that pans or tilts (a
+  // CO2 jet that tilts).
+  const roles = new Set(), lightRoles = new Set();
+  for (const hd of selectionHeads()) {
+    const isLight = !hd.body || !hd.body.class || hd.body.class === "light";
+    for (const r of hd.map || []) { roles.add(r); if (isLight) lightRoles.add(r); }
+  }
   return {
-    roles,
+    roles, lightRoles,
     position: roles.has("pan") || roles.has("tilt"),
-    colour: COLOUR_ROLES.some((r) => roles.has(r)),
-    mixing: ["red", "cyan"].some((r) => roles.has(r)),
-    beam: BEAM_ROLES.some((r) => roles.has(r)),
+    colour: COLOUR_ROLES.some((r) => lightRoles.has(r)),
+    mixing: ["red", "cyan"].some((r) => lightRoles.has(r)),
+    beam: BEAM_ROLES.some((r) => lightRoles.has(r)),
   };
 }
 
@@ -47,7 +54,7 @@ function applyTabVisibility() {
   // only SFX machines / hazers / lasers selected: no Level or colour-effect
   // tabs (they did nothing for a confetti cannon)
   const LIGHTISH = new Set(["dimmer", "shutter", "strobe", ...COLOUR_ROLES]);
-  const light = [...cap.roles].some((r) => LIGHTISH.has(r));
+  const light = [...cap.lightRoles].some((r) => LIGHTISH.has(r));
   const show = { intensity: !any || light, fx: !any || light,
     position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
     laser: any && [...cap.roles].some((r) => r.startsWith("laser_")),
@@ -292,19 +299,71 @@ function slotButtons(role, entry) {
 }
 
 // ------------------------------------------------------------ position
-const sendPad = throttle((pan, tilt) => run("set_position", { pan, tilt, unit: "255" }), 70);
+const sendPad = throttle((pan, tilt) => {
+  const p = { unit: "255" };
+  if (pan !== null) p.pan = pan;
+  if (tilt !== null) p.tilt = tilt;
+  run("set_position", p);
+}, 70);
+
+// What the selection can do (from the desk): which axes, their degrees,
+// the part every selected light can reach.  The pad shows just that.
+let padInfo = null, padKey = "";
+async function loadPadInfo() {
+  const k = JSON.stringify([sel(), state.snap && state.snap.patch_rev, state.snap && state.snap.floor_lock]);
+  if (k === padKey) return;
+  padKey = k;
+  const r = hasSel() ? await run("pad_info", {}, { silentError: true }) : null;
+  padInfo = r && r.ok && r.heads.length ? r : null;
+  drawPadFrame();
+  renderPad();
+}
+
+const degAt = (role, f) => {
+  const d = padInfo && padInfo.deg[role];
+  return d ? Math.round(d[0] + f * (d[1] - d[0])) : null;
+};
+
+function drawPadFrame() {
+  const pad = $("#pad");
+  if (!pad) return;
+  const info = padInfo;
+  pad.classList.toggle("no-pan", !!info && !info.pan);
+  pad.classList.toggle("no-tilt", !!info && !info.tilt);
+  for (const el of pad.querySelectorAll(".pad-out, .pad-ax")) el.remove();
+  if (!info) return;
+  const rp = info.reach.pan || [0, 1], rt = info.reach.tilt || [0, 1];
+  // grey where these lights can't go (their limits, the dance floor lock)
+  const out = (style) => h("div.pad-out", { style });
+  pad.append(
+    out({ left: "0", top: "0", bottom: "0", width: `${rp[0] * 100}%` }),
+    out({ right: "0", top: "0", bottom: "0", width: `${(1 - rp[1]) * 100}%` }),
+    out({ left: `${rp[0] * 100}%`, right: `${(1 - rp[1]) * 100}%`, top: "0", height: `${(1 - rt[1]) * 100}%` }),
+    out({ left: `${rp[0] * 100}%`, right: `${(1 - rp[1]) * 100}%`, bottom: "0", height: `${rt[0] * 100}%` }));
+  // the lights' own degrees at the edges
+  const ax = (cls, text) => text === null ? null : h("span.pad-ax." + cls, text);
+  const d = (role, f) => { const v = degAt(role, f); return v === null ? null : `${v}°`; };
+  pad.append(...[info.pan ? ax("l", d("pan", 0)) : null, info.pan ? ax("r", d("pan", 1)) : null,
+    info.tilt ? ax("b", d("tilt", 0)) : null, info.tilt ? ax("t", d("tilt", 1)) : null].filter(Boolean));
+  pad.title = !info.pan ? "These lights only tilt: drag up and down"
+    : !info.tilt ? "These lights only pan: drag left and right"
+      : "Drag: pan left-right, tilt up-down" + (info.mixed ? " (the selected models travel differently: degrees are the first one's)" : "");
+}
 
 function renderPad() {
   const first = sel()[0];
   const look = first !== undefined ? state.looks[first] : null;
   const dot = $("#pad-dot");
-  if (look && typeof look.pan === "number") {
-    dot.style.left = look.pan * 100 + "%";
-    dot.style.top = (1 - (look.tilt ?? 0.5)) * 100 + "%";
-    $("#pad-read").textContent = `pan ${Math.round(look.pan * 255)} · tilt ${Math.round((look.tilt ?? 0) * 255)}`
-      + (look.deg && look.deg.pan ? `  (${Math.round(look.deg.pan[0] + look.pan * (look.deg.pan[1] - look.deg.pan[0]))}°, ${Math.round(look.deg.tilt[0] + (look.tilt ?? 0) * (look.deg.tilt[1] - look.deg.tilt[0]))}°)` : "");
+  if (look && (typeof look.pan === "number" || typeof look.tilt === "number")) {
+    const pan = look.pan ?? 0.5, tilt = look.tilt ?? 0.5;
+    dot.style.left = pan * 100 + "%";
+    dot.style.top = (1 - tilt) * 100 + "%";
+    const parts = [];
+    if (!padInfo || padInfo.pan) { const dg = degAt("pan", pan); parts.push(`pan ${dg !== null ? dg + "°" : Math.round(pan * 255)}`); }
+    if (!padInfo || padInfo.tilt) { const dg = degAt("tilt", tilt); parts.push(`tilt ${dg !== null ? dg + "°" : Math.round(tilt * 255)}`); }
+    $("#pad-read").textContent = parts.join(" · ");
   } else {
-    $("#pad-read").textContent = hasSel() ? "not driven - drag the pad to aim" : "select moving heads to aim them";
+    $("#pad-read").textContent = hasSel() ? (padInfo ? "not driven - drag the pad to aim" : "the selected lights can't pan or tilt") : "select moving heads to aim them";
   }
 }
 
@@ -343,11 +402,14 @@ function wirePad() {
   let dragging = false;
   const at = (e) => {
     const r = pad.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-    $("#pad-dot").style.left = x * 100 + "%";
-    $("#pad-dot").style.top = y * 100 + "%";
-    sendPad(Math.round(x * 255), Math.round((1 - y) * 255));
+    const rp = (padInfo && padInfo.reach.pan) || [0, 1], rt = (padInfo && padInfo.reach.tilt) || [0, 1];
+    // only where these lights can go, and only the axes they have
+    const x = Math.max(rp[0], Math.min(rp[1], (e.clientX - r.left) / r.width));
+    const t = Math.max(rt[0], Math.min(rt[1], 1 - (e.clientY - r.top) / r.height));
+    const hasPan = !padInfo || padInfo.pan, hasTilt = !padInfo || padInfo.tilt;
+    if (hasPan) $("#pad-dot").style.left = x * 100 + "%";
+    if (hasTilt) $("#pad-dot").style.top = (1 - t) * 100 + "%";
+    sendPad(hasPan ? Math.round(x * 255) : null, hasTilt ? Math.round(t * 255) : null);
   };
   pad.addEventListener("pointerdown", (e) => { dragging = true; pad.setPointerCapture(e.pointerId); at(e); });
   pad.addEventListener("pointermove", (e) => { if (dragging) at(e); });
@@ -1099,5 +1161,7 @@ export function initProgrammer() {
     if (tab === "position") renderPad();
   });
   on("looks", () => { if (tab === "position") renderPad(); });
+  on("selection", () => loadPadInfo());
+  on("snapshot", () => loadPadInfo());
   void patch; void select;
 }

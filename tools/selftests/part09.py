@@ -1946,3 +1946,57 @@ def test_move_buttons_and_glide() -> None:
                   and not any(not f.get("cue_pb") for f in e.fx))
         finally:
             e.shutdown()
+
+
+def test_only_what_it_can() -> None:
+    """Plan step 8: the pad shows a light's real travel (degrees, what it
+    can reach, one axis for a light that only tilts); lasers and effect
+    machines are not counted as lights by the Colour / Level / Beam tabs."""
+    print("Show only what a light can do")
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf"),
+                         ("qlc", "Laserworld/Laserworld-PRO-800RGB.qxf")):
+            fixtures.store_parsed(db, fixlib.load(src, key), source=f"{src}:{key}")
+        fixtures.invalidate_cache()
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", qty=2)
+            e.act("add_heads", query="Psyco2Jet", qty=1)
+            e.act("add_heads", query="PRO-800RGB", qty=1)
+            spot, jet, laser = 1, 3, 4
+            e.act("select_heads", heads=[spot])
+            r = e.act("pad_info")
+            check("a mover: both axes, its own degrees, all of its travel",
+                  r.get("ok") and r["pan"] and r["tilt"] and r["deg"].get("pan") and r["deg"].get("tilt")
+                  and r["reach"]["pan"] == [0.0, 1.0], json.dumps(r)[:300])
+            e.act("set_limits", head=spot, role="pan", low=64, high=192)
+            r = e.act("pad_info")
+            check("its limits: only that part is reachable", r["reach"]["pan"] == [round(64 / 255, 4), round(192 / 255, 4)]
+                  or abs(r["reach"]["pan"][0] - 0.25) < 0.01, str(r["reach"]))
+            e.act("select_heads", heads=[spot, 2])
+            r = e.act("pad_info")
+            check("two lights: the part they share", r["reach"]["pan"][0] > 0.2 and r["reach"]["pan"][1] < 0.8, str(r["reach"]))
+            e.act("select_heads", heads=[jet])
+            r = e.act("pad_info")
+            check("a CO2 jet that only tilts: a tilt-only pad", r["tilt"] and not r["pan"] and not r["both"], json.dumps(r)[:200])
+            e.act("select_heads", heads=[laser])
+            r = e.act("pad_info")
+            check("a laser has no pan / tilt for the pad", r.get("ok") and not r["heads"], json.dumps(r)[:200])
+            body = {h["head_no"]: h["body"] for h in e.snapshot()["patch"]}
+            check("the screens know a laser and an effect machine aren't lights",
+                  body[laser].get("class") == "laser" and body[jet].get("class") == "sfx" and body[spot].get("class") == "light",
+                  str({k: v.get("class") for k, v in body.items()}))
+            check("colour doesn't reach a laser (its colour channels are on the Laser tab)",
+                  not e.act("set_colour", hex="#ff0000").get("ok"))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    mj = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("tabs count real lights; the pad greys what they can't reach; movements need their axes",
+          "lightRoles" in pj and "pad-out" in pj and "pad_info" in pj and "canRun(name)" in mj)

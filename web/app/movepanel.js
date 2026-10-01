@@ -126,6 +126,15 @@ function ownBlock() {
 }
 
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
+// what the selected lights can do: some only tilt (a CO2 jet, a bar), some only pan
+const axes = () => {
+  const ms = movers();
+  return { pan: ms.some((x) => x.map.includes("pan")), tilt: ms.some((x) => x.map.includes("tilt")),
+    both: ms.some((x) => x.map.includes("pan") && x.map.includes("tilt")) };
+};
+// a movement needs these axes
+const NEEDS = { circle: "both", figure_eight: "both", pan_sweep: "pan", fan_pan: "pan", tilt_bounce: "tilt" };
+const canRun = (name, ax = axes()) => { const n = NEEDS[name]; return !n || (n === "both" ? ax.both : ax[n]); };
 const lasers = () => selectionHeads().filter((x) => (x.map || []).some((r) => r === "laser_on" || r === "laser_y" || r.startsWith("laser_beam")));
 const EYE_SAFE_M = 3;                      // beams stay at least this high over a crowd
 const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
@@ -320,7 +329,7 @@ function buttonForNow() {
     return makeButton({ kind: "fx", fx: `shape:${p.shape}`, params: { speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, beats: p.beats } },
       mine.label.replace(/^Shape: /, ""));
   }
-  const lib = mine ? mine.lib : lastLib;
+  const lib = mine ? mine.lib : canRun(lastLib) ? lastLib : (MOVES.find(([n]) => canRun(n)) || ["tilt_bounce"])[0];
   return makeButton({ kind: "fx", fx: lib, params: { ...params(), ...(mine && mine.params && mine.params.beats ? { beats: mine.params.beats } : {}) } },
     (MOVES.find((x) => x[0] === lib) || [0, "Movement"])[1]);
 }
@@ -364,10 +373,11 @@ function movementBlock() {
   });
   return section("Movement",
     myMoves(act),
-    h("div.mv-tiles", ...MOVES.map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
+    h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
       title: `${label} around where the lights point now`, onclick: () => startMove(name),
     }, h("b", icon), h("span", label)))),
-    shapesRow(),
+    axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
+      : "These lights only pan: Sweep and Fan are the movements they can do."),
     h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
       ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
     h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
@@ -568,7 +578,9 @@ function render(force = false) {
     return;
   }
   show(true);
-  if (aim) aim.replaceChildren(aimBlock(spotsBlock(), roamBlock()));
+  // aiming at a spot (follow me, the floor map, spots, roam) needs pan and tilt
+  if (aim) aim.replaceChildren(axes().both ? aimBlock(spotsBlock(), roamBlock())
+    : h("div.mv-sec", h("h3", "Aim"), h("p.muted.small", `The selected lights only ${axes().tilt ? "tilt" : "pan"}, so they can't be aimed at a spot: use the pad below.`)));
   if (nudge) nudge.replaceChildren(nudgeBlock());
   box.replaceChildren(...[movementBlock(), ownBlock(), floorBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
   loadOwn();

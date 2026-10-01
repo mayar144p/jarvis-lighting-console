@@ -204,6 +204,16 @@ The FX tab's Running list says where each effect comes from; **Stop mine**
 and **Stop all** are there too. **Clear all** no longer stops the effects
 of cues and buttons.
 
+### Only what a light can do
+
+The pan / tilt pad shows the selected lights' real travel: their degrees
+on the edges, the readout in degrees, and the part they can't reach (their
+limits, the dance floor when it's locked) greyed out. A drag stops at the
+limit. A light that only tilts (a CO2 jet, some bars) gets a tilt-only pad,
+only the movements it can do (Bounce), and no aim tools. The Level, Colour,
+Beam and FX tabs are for lights. A laser's or effect machine's own colour
+and settings are on its Laser or SFX tab.
+
 ### Painting the rig and shapes
 
 * **FX tab -> Paint the rig.** A **gradient** of 2 to 6 colours across
