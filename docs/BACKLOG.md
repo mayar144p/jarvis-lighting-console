@@ -66,10 +66,26 @@ whoever picks it up starts from the diagnosis, not from scratch.
    only become a button through a cue and a GO button. The Move tab's
    "Make a button" covers only preset movements and saved moves, and
    targets the movers rather than the group.
-7. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
+7. **Show only what a light can do** (asked 2026-10-01):
+   * The pan / tilt pad (Move tab, programmer) shows a light's real travel.
+     That means its pan and tilt degrees from the fixture file (a 180° pan
+     scanner, a tilt-only bar, a head with limited tilt) rather than the
+     full square for everyone. Places it can't reach are greyed out, and
+     the readout is in its own degrees. With several lights selected, the
+     pad shows the range they share.
+   * The 3D view, the aim tools (Follow me, the floor map, spots) and the
+     movement effects respect the same limits.
+   * No colour or movement controls on a unit that hasn't got them. The
+     tabs already hide by channel for the whole selection, but the Laser
+     and SFX panels can still show colour and move controls for a laser or
+     CO2 that has no such channels, and a mixed selection shows controls
+     some of its units can't use. To do: audit every panel per unit type,
+     hide what a unit lacks, and say which selected lights a control won't
+     reach.
+8. **Venue / 3D:** doors, pillars and balconies in the drafting mode; a
    ceiling height per area; align / distribute rigging; clip upload for
    LED screens; gobo pictures; shadows.
-8. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+9. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
 
 Dropped for now (maybe later): the phone room scan.
 
