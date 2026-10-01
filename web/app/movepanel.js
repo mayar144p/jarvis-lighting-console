@@ -14,12 +14,13 @@ import { $, h, toast, promptBox, confirmBox, menu } from "./ui.js";
 import { openCueDialog } from "./dialogs.js";
 import { focusedPlayback } from "./playbacks.js";
 import { aimBlock } from "./aimfollow.js";
+import { shapesRow, setShapeKnobs, shapes } from "./shapeeditor.js";
 
 const MOVES = [
   ["circle", "Circle", "↻"], ["pan_sweep", "Sweep", "↔"], ["tilt_bounce", "Bounce", "↕"],
   ["figure_eight", "Figure 8", "∞"], ["fan_pan", "Fan", "⋔"],
 ];
-const MOVE_KINDS = new Set(MOVES.map((m) => m[0]));
+const MOVE_KINDS = new Set([...MOVES.map((m) => m[0]), "shape"]);
 const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 
 // the knobs, remembered while the page is open
@@ -134,6 +135,7 @@ const params = () => ({
 });
 
 let lastLib = "circle";
+setShapeKnobs(() => params());
 
 async function startMove(name) {
   lastLib = name;
@@ -154,6 +156,11 @@ async function reapply() {
   const mine = running().filter((f) => f.heads.some((n) => heads.includes(n)));
   for (const f of mine) {
     await run("stop_fx", { id: f.id }, { silentError: true });
+    if (f.lib === "shape") {
+      const p = params();
+      await run("run_shape", { id: f.params.shape, heads: f.heads, speed: p.speed, size: p.size, spread: p.spread, direction: p.direction }, { silentError: true });
+      continue;
+    }
     await run("run_fx", { name: f.lib, params: params(), heads: f.heads, across: knobs.across && multiTilt() }, { silentError: true });
   }
 }
@@ -325,6 +332,7 @@ function movementBlock() {
     h("div.mv-tiles", ...MOVES.map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
       title: `${label} around where the lights point now`, onclick: () => startMove(name),
     }, h("b", icon), h("span", label)))),
+    shapesRow(),
     h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
       ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
     h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
@@ -342,7 +350,7 @@ function movementBlock() {
         (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
-      h("span", `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
+      h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
       spaceSelect(f), beatSelect(f),
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
@@ -501,7 +509,7 @@ function render(force = false) {
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
     running().map((f) => [f.id, f.lib, f.move]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
-    moves(), knobs, fine, own.key, own.attrs.length, own.rev,
+    moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
     state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],
     ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z])]);

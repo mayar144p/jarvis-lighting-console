@@ -567,7 +567,15 @@ function editButton(slot, btn) {
     }
     if (d === "fx") {
       kids.push(row("Effect", chips(FX, s.fx, (v) => { s.fx = v; s.params = {}; draw(); })));
-      if (MOVES.has(s.fx)) {
+      // the show's own step effects (FX tab -> Step effects)
+      const steps = (state.snap && state.snap.step_fx) || [];
+      if (steps.length) {
+        kids.push(row("Or a step effect", chips(steps.map((f) => [`step:${f.id}`, f.name]), s.fx, (v) => { s.fx = v; s.params = {}; draw(); })));
+      }
+      if (s.fx.startsWith("step:")) {
+        kids.push(row("On the beat", chips([[0, "Its own times"], [1, "A round a beat"], [2, "2 beats"], [4, "A bar"], [8, "2 bars"]],
+          s.params.beats ?? 0, (v) => { s.params = v ? { beats: v } : {}; draw(); })));
+      } else if (MOVES.has(s.fx)) {
         kids.push(row("Direction", chips([[1, "↻ Clockwise"], [-1, "↺ Counter-clockwise"]], s.params.direction ?? 1,
           (v) => { s.params.direction = v; draw(); })));
         kids.push(row("Arc", chips([[90, "90°"], [180, "180°"], [270, "270°"], [360, "Full"]], s.params.arc ?? 360,

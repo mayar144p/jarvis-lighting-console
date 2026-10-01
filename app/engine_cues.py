@@ -26,7 +26,20 @@ class CueMixin:
         owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
         items, ids = [], []
         for f in self.fx:
-            if not f.get("lib") or f["id"] in owned or f.get("cue_pb") or not set(f.get("heads") or []) & heads:
+            if not (f.get("lib") or f.get("pix") or f.get("steps")) or f["id"] in owned or f.get("cue_pb") \
+                    or f.get("live") or not set(f.get("heads") or []) & heads:
+                continue
+            params = {k: v for k, v in (f.get("params") or {}).items() if not k.startswith("_")}
+            if f.get("pix"):
+                items.append({"name": "pix:" + f["pix"], "pix": f["pix"], "params": params, "heads": list(f["heads"]),
+                              "label": "Gradient" if f["pix"] == "gradient" else "Picture"})
+                ids.append(f["id"])
+                continue
+            if f.get("steps"):
+                st = next((s for s in self._steps() if s["id"] == f["steps"]), None)
+                items.append({"name": "step:" + f["steps"], "steps": f["steps"], "params": params,
+                              "heads": list(f["heads"]), "label": st["name"] if st else "Step effect"})
+                ids.append(f["id"])
                 continue
             item = {"name": f["lib"], "params": dict(f.get("params") or {}), "heads": list(f["heads"])}
             if f.get("across"):
@@ -65,6 +78,14 @@ class CueMixin:
                 if item.get("roam"):
                     r = self._a_roam(zones=item["roam"], heads=heads, **(item.get("params") or {}))
                     r["fx"] = r["id"]
+                elif item.get("name") == "shape":
+                    r = {"fx": self._shape_start(item.get("params") or {}, heads)}
+                elif item.get("pix"):
+                    r = {"fx": self._pix_start(item["pix"], item.get("params") or {}, heads)}
+                elif item.get("steps"):
+                    p = item.get("params") or {}
+                    r = self._a_step_fx_run(id=item["steps"], heads=heads, speed=p.get("speed", 1.0),
+                                            beats=p.get("beats"), space=p.get("space"))
                 else:
                     r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
                                              heads, None, across=bool(item.get("across")))
@@ -121,8 +142,11 @@ class CueMixin:
         fx_list = list((old or {}).get("fx") or []) if old is not None and mode == "merge" else []
         for item in fx_items:
             # merge: a new effect replaces one of the same kind on the same lights
-            group = (fxlib_mod.FX.get(item["name"]) or {}).get("group")
-            fx_list = [x for x in fx_list if not ((fxlib_mod.FX.get(x["name"]) or {}).get("group") == group
+            def family(x):
+                return "pix" if x.get("pix") else ("step:" + x["steps"]) if x.get("steps") \
+                    else (fxlib_mod.FX.get(x["name"]) or {}).get("group") or x["name"]
+            group = family(item)
+            fx_list = [x for x in fx_list if not (family(x) == group
                                                   and set(x.get("heads") or []) & set(item["heads"]))]
             fx_list.append(item)
         if fx_list:

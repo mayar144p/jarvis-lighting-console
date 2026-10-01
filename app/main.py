@@ -162,7 +162,8 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:  # quieter than default
         line = str(args[0]) if args else ""
         # the live feeds (sound readings, lite polls) would drown the log
-        if "/api/" in line and "/api/console/sound" not in line and "lite=1" not in line:
+        if "/api/" in line and "/api/console/sound" not in line and "/api/console/media_frame" not in line \
+                and "lite=1" not in line:
             print(f"[http] {self.address_string()} {fmt % args}")
 
     def _json(self, obj, status: int = 200) -> None:
@@ -465,7 +466,8 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm",
-                         "/api/console/look", "/api/console/room", "/api/console/sound"):
+                         "/api/console/look", "/api/console/room", "/api/console/sound",
+                         "/api/console/media_frame"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             return self._json({"error": str(exc)}, 500)
@@ -682,6 +684,13 @@ class Handler(BaseHTTPRequestHandler):
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
             return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/media_frame":
+            # A video playing in a browser, ~25 frames a second, shrunk to
+            # at most 96 x 96: not an action, the engine keeps the latest.
+            try:
+                return self._json(eng.media_frame(body.get("id"), body.get("w"), body.get("h"), body.get("data")))
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
         if route == "/api/console/room":
             # A room from words.  The AI (when there is a key) fills the
             # same spec the offline reader does - off the engine lock -

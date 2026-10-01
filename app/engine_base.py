@@ -318,6 +318,17 @@ def default_mode(modes: list[dict]) -> dict:
     return min(pool, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
 
 
+def _fclamp(value, low: float, high: float) -> float:
+    """_clamp for numbers that aren't whole (speeds, sizes)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"not a number: {value!r}") from None
+    if v != v:
+        raise ValueError("not a number")
+    return low if v < low else (high if v > high else v)
+
+
 def _clamp(value, low: int, high: int) -> int:
     try:
         v = int(round(float(value)))
@@ -635,6 +646,8 @@ ACTIONS = (
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "fx_beats",
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
     "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build", "quick_quant",
+    "run_gradient", "run_media", "media_save", "media_delete",
+    "shape_save", "shape_delete", "run_shape",
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",

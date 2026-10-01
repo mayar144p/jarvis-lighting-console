@@ -17,6 +17,9 @@ import math
 
 # the movement effects this module drives (fxlib names)
 KINDS = ("circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan")
+# and a shape of your own: key points the heads go round (Move tab -> Shapes)
+ALL_KINDS = KINDS + ("shape",)
+MAX_POINTS = 32
 
 # seconds for a FULL pan / tilt at top speed until a model is calibrated
 # (the same numbers the visualiser's motor model uses)
@@ -58,6 +61,8 @@ def shape(kind: str, cycles: float, p: dict, index: int = 0, count: int = 1) -> 
     t = cycles + spread + phase
     direction = -1.0 if float(p.get("direction", 1.0)) < 0 else 1.0
     arc = max(10.0, min(360.0, float(p.get("arc", 360.0))))
+    if kind == "shape":
+        return key_frames(p.get("points") or (), direction * t, bool(p.get("smooth", 1)))
     if kind == "circle":
         if arc >= 359.0:
             a = direction * 2.0 * math.pi * t
@@ -99,6 +104,48 @@ def max_rate(kinds_amp: list[tuple[str, float, float]], travel_s: list[tuple[flo
             if amp > 1e-6 and secs > 0:
                 best = min(best, _MOTOR_HEADROOM / (secs * 2.0 * math.pi * amp))
     return best
+
+
+def clean_points(raw) -> list[list[float]]:
+    """A shape's key points: [[pan, tilt], ...] each -1..1 (tilt up), 2..32."""
+    pts = []
+    for pt in raw or []:
+        try:
+            x, y = float(pt[0]), float(pt[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if math.isnan(x) or math.isnan(y):
+            continue
+        pts.append([round(max(-1.0, min(1.0, x)), 3), round(max(-1.0, min(1.0, y)), 3)])
+    if len(pts) < 2:
+        raise ValueError("a shape needs at least 2 points")
+    return pts[:MAX_POINTS]
+
+
+def key_frames(points, t: float, smooth: bool = True) -> tuple[float, float]:
+    """Round a closed loop of key points once per cycle: straight from
+    point to point, or a smooth curve through them (Catmull-Rom), at an
+    even pace per point."""
+    pts = [(float(x), float(y)) for x, y in points]
+    n = len(pts)
+    if n == 0:
+        return 0.0, 0.0
+    if n == 1:
+        return pts[0]
+    u = (t % 1.0) * n
+    i = int(u) % n
+    f = u - int(u)
+    p1, p2 = pts[i], pts[(i + 1) % n]
+    if not smooth:
+        return p1[0] + (p2[0] - p1[0]) * f, p1[1] + (p2[1] - p1[1]) * f
+    p0, p3 = pts[(i - 1) % n], pts[(i + 2) % n]
+    f2, f3 = f * f, f * f * f
+    out = []
+    for k in range(2):
+        v = 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * f + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * f2
+                   + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * f3)
+        out.append(max(-1.0, min(1.0, v)))
+    return out[0], out[1]
 
 
 def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
