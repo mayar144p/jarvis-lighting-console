@@ -1,7 +1,7 @@
 // Aim in the Move tab: point the selected movers by where you are
 // pointing.  "Follow me" - press and drag on the 3D view and the lights
 // follow the pointer over the floor (a ring marks the spot); the floor map
-// does the same from above, for a tablet or when the 3D angle is awkward.
+// does the same from above, when the 3D angle is awkward.
 // Both send aim_at: each light solves its own pan/tilt from where it hangs.
 import { run } from "./actions.js";
 import { state, selectionHeads } from "./store.js";

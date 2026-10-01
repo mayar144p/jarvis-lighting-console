@@ -3,7 +3,7 @@
 // uses it).
 //
 // A microphone needs a secure page: https, or the desk computer itself
-// (http://localhost).  From a tablet on plain http the browser refuses.
+// (http://localhost).  From another computer on plain http the browser refuses.
 import { post } from "./api.js";
 import { createAnalysis } from "./soundanalysis.js";
 
@@ -34,7 +34,7 @@ async function send() {
   sending = true;
   const body = { level: reading.level, bass: reading.bass, mid: reading.mid, high: reading.high,
     beat: pending.beat, drop: pending.drop, bpm: reading.bpm, confidence: reading.confidence,
-    device: /Mobile|iPad|Android/.test(navigator.userAgent) ? "a phone / tablet" : "this computer" };
+    device: "this computer" };
   pending = { beat: false, drop: false };
   try { await post("/api/console/sound", body); failures = 0; } catch (e) { failures++; }
   sending = false;

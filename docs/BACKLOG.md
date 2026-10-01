@@ -9,7 +9,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 ## Next, in this order (agreed 2026-09-30)
 
-1. **Desktop only** (item A6 below): take the phone / tablet features out.
+1. **(DONE) Desktop only** (item A6 below): the phone / tablet features are out.
 2. **Review everything since PR #30** for bugs, then a full mock gig in the
    browser (patch, venue, cues, buttons, timecode, roam, blackout); fix
    what breaks.
@@ -29,7 +29,14 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
-## A6. Desktop only
+## A6. Desktop only (DONE)
+
+Done: tablet.js, the manifest and home-screen icons, the remote page,
+the Settings rows, gig mode on by itself for touch screens and every
+narrow-screen layout are gone; the window is at least 1280 px wide (the
+page scrolls below that).  Also fixed while there: multi-head lights
+(Wave 360) now follow per head - the heads picked alone, or fanned out.
+
 
 Jarvis runs on a desktop / laptop screen only.  Remove what exists for
 phones and tablets:

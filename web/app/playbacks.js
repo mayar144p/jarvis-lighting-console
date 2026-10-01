@@ -113,7 +113,6 @@ function render() {
   gm.set(s.master ?? 100);
   $("#gm-num").textContent = s.master ?? 100;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
-  $("#mobile-bo").classList.toggle("on", !!s.blackout);
 }
 
 // A fader per group (the first eight): its lights at that share of
@@ -167,7 +166,6 @@ export function initPlaybacks() {
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
   // on a phone the faders are one tab away: Blackout stays in the bottom bar
-  $("#mobile-bo").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
   on("snapshot", render);
   on("lite", render);
 }

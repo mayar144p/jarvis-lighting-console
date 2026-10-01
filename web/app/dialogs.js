@@ -4,7 +4,6 @@ import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
-import { wakeSupported, wakeOn, wakeHeld, wakeError, setWake, canInstall, installed, install } from "./tablet.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
@@ -852,11 +851,7 @@ export async function openSettings() {
         onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
       }, "Resize room"))),
     h("h3", "Screen"),
-    h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere (on by itself on phones and tablets)")),
-    wakeRow(),
-    installRow(),
-    h("p.small", "DJ booth remote: open ", h("a", { href: "/remote.html", target: "_blank", rel: "noopener" }, location.host + "/remote.html"),
-      h("span.muted", " on a phone or tablet - the buttons, tap tempo, autopilot, master and blackout, nothing else.")),
+    h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
     h("h3", "3D view"),
     h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
     h("h3", "Output"),
@@ -882,36 +877,6 @@ export async function openSettings() {
   modal({ title: "Settings", body, wide: false });
 }
 
-// Keep this screen on while the console is open.
-function wakeRow() {
-  const box = h("input", { type: "checkbox" });
-  box.checked = wakeOn();
-  const note = h("span.muted.small", "");
-  const show = () => {
-    note.textContent = !wakeSupported()
-      ? (window.isSecureContext ? "This browser can't keep the screen on: turn auto-lock off in the tablet's settings."
-        : "Browsers only keep the screen on for https pages: turn auto-lock off in the tablet's settings.")
-      : !box.checked ? "" : wakeHeld() ? "The screen stays on while Jarvis is open." : (wakeError() || "Tap anywhere to keep the screen on.");
-  };
-  box.disabled = !wakeSupported();
-  box.addEventListener("change", async () => { await setWake(box.checked); show(); });
-  show();
-  return h("div", h("label.check", box, h("span", "Keep this screen awake")), note);
-}
-
-// Install as an app: full screen, its own icon, no browser bars.
-function installRow() {
-  if (installed()) return h("p.muted.small", "Running as an installed app.");
-  if (canInstall()) {
-    return h("div.row-btns", h("button.btn", {
-      onclick: async (e) => { if (await install()) e.target.replaceWith(h("span.muted.small", "Installed: open Jarvis from the home screen.")); },
-    }, "Install as an app"), h("span.muted.small", "full screen, its own icon, no browser bars"));
-  }
-  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  return h("p.muted.small", ios ? "To install: Share → Add to Home Screen. It then opens full screen."
-    : "To install: the browser menu → Install app / Add to Home screen.");
-}
-
 // OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
 function oscRow() {
   const o = (state.snap && state.snap.osc) || {};
@@ -931,7 +896,7 @@ function oscRow() {
     h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
 }
 
-// MIDI on this device: a controller plugged into the tablet / laptop the
+// MIDI on this device: a controller plugged into the computer the
 // browser runs on plays the buttons given its notes.
 function webMidiRow() {
   const box = h("input", { type: "checkbox" });
@@ -949,7 +914,7 @@ function webMidiRow() {
     show();
   });
   show();
-  return h("div", h("label.check", box, h("span", "MIDI on this device: a controller plugged into this computer or tablet plays the buttons")), note);
+  return h("div", h("label.check", box, h("span", "MIDI in the browser: a controller plugged into the computer this screen runs on plays the buttons")), note);
 }
 
 // ================================================================== help

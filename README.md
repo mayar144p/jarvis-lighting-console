@@ -68,7 +68,7 @@ Python 3.10+ is required. Node is only needed to run the full test suite.
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
 | **Status bar** | output target and rate, network, feed health, last save |
 
-It adapts to a 1024 px tablet and to a phone, where the regions become tabs.
+It is made for a desktop or laptop screen (1280 px wide and up).
 
 ### The venue
 
