@@ -123,7 +123,7 @@ from tools.selftests.part07 import (  # noqa: E402
     test_rig_tools,
     test_room_fit,
     test_steady_dmx,
-    test_tablets,
+    test_desktop_only,
     test_virtual_dimmer,
 )
 from tools.selftests.part08 import (  # noqa: E402
@@ -154,6 +154,10 @@ from tools.selftests.part09 import (  # noqa: E402
     test_teach_wheel,
     test_control_tiles,
     test_roam,
+    test_multihead_aim,
+    test_review_fixes_oct,
+    test_plan_preview,
+    test_ai_programs,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -267,7 +271,7 @@ def _standalone_suites():
     ("RGB-only lights: a virtual dimmer; modes that can be controlled", test_virtual_dimmer),
     ("review of PR #28: undo / load / unpatch with cue effects, queries, Ready?", test_review_fixes),
     ("steady DMX: ArtSync / sACN sync, shared looks, effect lookups cached", test_steady_dmx),
-    ("tablets: screen stays awake, installs as an app, reconnects at once", test_tablets),
+    ("desktop only: no phone / tablet parts; reconnects at once", test_desktop_only),
     ("virtual node: the whole output and RDM with no hardware", test_virtual_node),
     ("MIDI monitor: every message and what it did", test_midi_monitor),
     ("making a room: shapes, words, starter layouts, drafting", test_room_making),
@@ -288,6 +292,10 @@ def _standalone_suites():
     ("Teach the wheel; spin channels", test_teach_wheel),
     ("Buttons page: control tiles", test_control_tiles),
     ("Roam inside zones; AI that programs", test_roam),
+    ("Multi-head lights follow per head", test_multihead_aim),
+    ("Review fixes (Oct)", test_review_fixes_oct),
+    ("Copilot plan preview in 3D", test_plan_preview),
+    ("AI that programs: chases, buttons, build-ups", test_ai_programs),
     )
 
 

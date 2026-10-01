@@ -5,12 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0e14">
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Jarvis">
-<link rel="apple-touch-icon" href="/icons/icon-180.png">
 <title>Jarvis</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e14'/%3E%3Cpath d='M16 5 L23 24 L16 20 L9 24 Z' fill='%2338bdf8'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/app/app.css">
@@ -367,7 +361,7 @@
           <span class="grow"></span>
           <button class="btn small ghost" id="qb-release" title="Let go of every latched button">Release all</button>
           <button class="btn small ghost" id="qb-lock" title="Lock the layout on this device: the buttons play, nothing can be moved or edited">Lock</button>
-          <button class="btn small ghost" id="qb-full" title="The buttons page on the whole screen (a tablet at the DJ booth)">⛶ Full screen</button>
+          <button class="btn small ghost" id="qb-full" title="The buttons page on the whole screen">⛶ Full screen</button>
           <button class="btn small" id="qb-edit" title="Set buttons up">Edit</button>
         </div>
         <div class="qb-grid" id="qb-grid"></div>
@@ -422,14 +416,6 @@
     <span id="st-save"></span>
   </footer>
 
-  <!-- mobile section switcher -->
-  <nav class="mobile-tabs" id="mobile-tabs">
-    <button data-mview="stage" aria-selected="true">Stage</button>
-    <button data-mview="fixtures">Fixtures</button>
-    <button data-mview="programmer">Program</button>
-    <button data-mview="playbacks">Playback</button>
-    <button class="mobile-bo" id="mobile-bo" title="Blackout - everything off (press again to bring it back)">Blackout</button>
-  </nav>
 </div>
 
 <!-- =========================================================== overlays -->

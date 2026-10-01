@@ -361,8 +361,8 @@ def test_hardening(tmp: Path) -> None:
                    headers={"Host": "attacker.example:%d" % port}) == 403, "")
         check("a malformed GET answers 400 instead of dropping the connection",
               call("/api/gdtf/search?limit=abc") == 400, "")
-        check("the app manifest is served (install as an app)",
-              call("/manifest.webmanifest") == 200 and call("/icons/icon-512.png") == 200, "")
+        check("desktop only: no app manifest, no phone remote page",
+              call("/manifest.webmanifest") == 404 and call("/remote.html") == 404, "")
         check("the network check answers (Settings -> Output)",
               call("/api/console/network") == 200, "")
         check("the open libraries are searchable over HTTP",

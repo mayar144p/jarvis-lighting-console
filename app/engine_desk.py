@@ -44,7 +44,7 @@ class DeskMixin:
             now = time.monotonic()
             prog = self._programmer_now(now)
             pbs = self._active_playbacks(now)
-            fxv = self._fx_values(now)
+            fxv = self._fx_values(now, rig=True)
             over = self._override_vals(skip_parked=True)
             for n in nums:
                 vals = self._resolve_head(by_no[n], prog, pbs, fxv.get(n), over.get(n))
@@ -195,7 +195,16 @@ class DeskMixin:
         if m is None:
             raise ValueError(f"no macro {id!r}")
         before = self._undo_state()
-        n0 = len(self._undo)
+        # the entry on top before the macro, by identity: with a full stack
+        # every line's step pushes the oldest out, so the LENGTH never grows
+        # and counting would leave one undo step per line
+        top = self._undo[-1] if self._undo else None
+
+        def drop_lines():
+            k = next((i for i in range(len(self._undo) - 1, -1, -1) if self._undo[i] is top), -1) if top else -1
+            added = len(self._undo) - (k + 1)
+            del self._undo[k + 1:]
+            return added
         said = []
         try:
             for line in m["lines"]:
@@ -203,11 +212,10 @@ class DeskMixin:
                 said += r.get("transcript") or []
         except ValueError as exc:
             self._restore_state(before)
-            del self._undo[n0:]
+            drop_lines()
             raise ValueError(f"{m['name']}: {exc}") from None
-        if len(self._undo) > n0:
+        if drop_lines():
             # the lines' own steps become the macro's one
-            del self._undo[n0:]
             self._undo.append({"action": "macro", "label": m["name"], "state": before, "at": self._clock()})
             if len(self._undo) > UNDO_LIMIT:
                 del self._undo[0]

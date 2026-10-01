@@ -131,7 +131,7 @@ def test_button_midi() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
     wm = (ROOT / "web" / "app" / "webmidi.js").read_text(encoding="utf-8")
-    check("a controller on the tablet plays buttons too (Web MIDI, off until switched on)",
+    check("a controller on this computer plays buttons too (Web MIDI, off until switched on)",
           "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
     check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
 
@@ -516,33 +516,26 @@ def test_steady_dmx() -> None:
             e.shutdown()
 
 
-def test_tablets() -> None:
-    """A tablet at a gig: the screen doesn't sleep, the console installs as
-    a full-screen app, and a dead link (slept, changed Wi-Fi) is noticed in
-    seconds and re-synced with a full snapshot."""
-    print("tablets")
+def test_desktop_only() -> None:
+    """Desktop only: the phone / tablet parts are gone (wake lock, install
+    as an app, the phone layout, the DJ-booth remote page); a dead link
+    (the computer slept, changed Wi-Fi) is still noticed and re-synced."""
+    print("desktop only")
     web = ROOT / "web"
-    man = json.loads((web / "manifest.webmanifest").read_text(encoding="utf-8"))
-    sizes = {i["sizes"] for i in man["icons"] if i["type"] == "image/png"}
-    check("the manifest opens full screen with 192 and 512 px icons",
-          man["display"] == "fullscreen" and {"192x192", "512x512"} <= sizes
-          and any("maskable" in i.get("purpose", "") for i in man["icons"]), str(man))
-    check("every icon the manifest names exists",
-          all((web / i["src"].lstrip("/")).is_file() for i in man["icons"]), "")
     html = (web / "index.html").read_text(encoding="utf-8")
-    check("the page links the manifest and a home-screen icon",
-          'rel="manifest"' in html and 'rel="apple-touch-icon"' in html
-          and (web / "icons" / "icon-180.png").is_file(), "")
-    from app import main as main_mod
-    check("the manifest is served as a manifest", main_mod._MIME.get(".webmanifest") == "application/manifest+json", "")
-    tj = (web / "app" / "tablet.js").read_text(encoding="utf-8")
-    check("the wake lock is taken, and taken again when the tab comes back",
-          'wakeLock.request("screen")' in tj and "visibilitychange" in tj and "beforeinstallprompt" in tj, "")
+    css = (web / "app" / "app.css").read_text(encoding="utf-8")
+    check("no manifest, tablet module or remote page",
+          not (web / "manifest.webmanifest").exists() and not (web / "app" / "tablet.js").exists()
+          and not (web / "remote.html").exists() and 'rel="manifest"' not in html and "apple-touch-icon" not in html, "")
+    check("no phone layout: no bottom tabs, no narrow-screen rules, a desktop minimum width",
+          "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: 1280px" in css
+          and "(max-width: 820px)" not in css, "")
     api = (web / "app" / "api.js").read_text(encoding="utf-8")
     check("a quiet stream is dropped and re-opened; coming back online retries at once",
           "watchdog" in api and '"online"' in api and "wakeWait" in api, "")
     dj = (web / "app" / "dialogs.js").read_text(encoding="utf-8")
-    check("Settings has keep-awake and install", "wakeRow()" in dj and "installRow()" in dj, "")
+    check("Settings has no keep-awake / install / remote rows", "wakeRow" not in dj and "installRow" not in dj
+          and "remote.html" not in dj, "")
 
 
 def test_room_fit() -> None:
@@ -1209,11 +1202,10 @@ def test_big_rig_groups() -> None:
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    check("gig mode: 44 px controls, on by itself on touch screens, a switch in Settings",
-          "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" in mj
+    check("gig mode: 44 px controls, a switch in Settings (not on by itself)",
+          "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" not in mj
           and "jarvis.gig" in (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8"), "")
-    check("a phone keeps Blackout in its bottom bar on every tab", 'id="mobile-bo"' in html
-          and "button[data-mview]" in mj, "")
+    del html
 
 
 def test_looks() -> None:

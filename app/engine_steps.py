@@ -7,12 +7,142 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import copy
 import time
 
+from app import showdesign
 from app import stepfx as stepfx_mod
+from app import timeline as tl_mod
+from app import venue as venue_mod
+
+
+# "the back truss" in a room whose truss is called "Rear truss"
+_RIG_WORDS = {"back": ("back", "rear", "upstage"), "rear": ("rear", "back", "upstage"),
+              "upstage": ("upstage", "rear", "back"), "front": ("front", "downstage", "fob"),
+              "downstage": ("downstage", "front"), "middle": ("mid", "middle", "centre", "center"),
+              "mid": ("mid", "middle", "centre", "center"), "left": ("left", "sl", "stage left"),
+              "right": ("right", "sr", "stage right")}
 
 
 class StepsMixin:
+    def _rig_named(self, name) -> dict | None:
+        """A rig by id or by what people call it: exact name, then the name
+        inside it, then the same with back = rear = upstage and so on."""
+        want = str(name or "").strip().lower()
+        for pre in ("the ", "on the ", "on "):
+            if want.startswith(pre):
+                want = want[len(pre):]
+        if not want:
+            return None
+        rigs = venue_mod.normalise(self.venue)["rigging"]
+        for r in rigs:
+            if r["id"].lower() == want or (r["name"] or "").lower() == want:
+                return r
+        for r in rigs:
+            if want in (r["name"] or "").lower():
+                return r
+        words = want.split()
+        kind = next((w for w in words if w in venue_mod.RIG_KINDS), None)
+        place = [w for w in words if w in _RIG_WORDS]
+        best, score = None, None
+        for r in rigs if place else []:
+            low = (r["name"] or "").lower()
+            if kind and kind not in low and r["kind"] != kind:
+                continue
+            ranks = []
+            for w in place:
+                hit = next((i for i, alt in enumerate(_RIG_WORDS[w]) if alt in low), None)
+                if hit is None:
+                    break
+                ranks.append(hit)
+            else:
+                # the nearest word wins: "back" is the rear truss before the upstage one
+                if score is None or sum(ranks) < score:
+                    best, score = r, sum(ranks)
+        return best
+
+    def rig_heads(self, name) -> tuple[dict, list[int]]:
+        """(rig, the lights on it) - a shape (circle, frame) counts whole."""
+        r = self._rig_named(name)
+        if r is None:
+            raise ValueError(f"no rig called {name!r} in this room")
+        ids = {r["id"]}
+        if r.get("group"):
+            ids |= {x["id"] for x in venue_mod.normalise(self.venue)["rigging"] if x.get("group") == r["group"]}
+        nums = sorted(h["head_no"] for h in self.patch if (h.get("mount") or {}).get("rig") in ids
+                      and self._head_class(h) == "light")
+        if not nums:
+            raise ValueError(f"no lights hang on {r['name'] or r['id']}")
+        return r, nums
+
+    def _a_chase_colours(self, colours=None, heads=None, rig=None, beats=1, section=None,
+                         name=None, run=True, **_):
+        """A chase between colours ("red and white"): every light takes the
+        next colour each step, neighbours apart - saved as a step effect of
+        the show.  `beats`: beats a step (on the beat = 1).  `rig`: the
+        lights on that truss.  `section` ("drop"): a clip over that part of
+        the timeline instead of running now."""
+        names = dict(showdesign.COLOR_NAMES)
+        raw = colours if isinstance(colours, (list, tuple)) else str(colours or "").replace(" and ", ",").split(",")
+        hexes, labels = [], []
+        for c in raw:
+            c = str(c).strip().lower()
+            if not c:
+                continue
+            hx = c if c.startswith("#") and len(c) in (4, 7) else names.get(c)
+            if hx is None:
+                raise ValueError(f"which colour is {c!r}?")
+            hexes.append(hx)
+            labels.append(c if not c.startswith("#") else showdesign._name_of(c).lower())
+        if not 2 <= len(hexes) <= 8:
+            raise ValueError("a chase needs 2 to 8 colours")
+        if rig:
+            where, nums = self.rig_heads(rig)
+            where = where["name"] or where["id"]
+        elif heads:
+            nums, where = [int(n) for n in heads], None
+        else:
+            nums, where = [h["head_no"] for h in self._require_selection()], None
+        by_no = {h["head_no"]: h for h in self.patch}
+        rows = [by_no[n] for n in nums if n in by_no and self._colour_values(by_no[n], hexes[0])]
+        if not rows:
+            raise ValueError("none of those lights can change colour")
+        step_beats = self._clean_beats(beats or 1)
+        k = len(hexes)
+        steps = []
+        for st in range(k):
+            vals = {}
+            for i, h in enumerate(rows):
+                row = dict(self._colour_values(h, hexes[(i + st) % k]))
+                if "dimmer" in h["map"]:
+                    row["dimmer"] = 255
+                vals[str(h["head_no"])] = row
+            steps.append({"values": vals, "time": 0.5, "fade": 0})
+        label = str(name or (" / ".join(labels) + " chase").capitalize())[:40]
+        saved = self._a_step_fx_save(fx={"name": label, "steps": steps, "curve": "snap", "spread": 0})
+        ident = saved["id"]
+        who = f"{len(rows)} light(s)" + (f" on {where}" if where else "")
+        if section:
+            span = tl_mod.section_span(self.timeline, section)
+            if span is None:
+                raise ValueError(f"no {section!r} on the timeline - put a marker called {section} where it starts")
+            doc = copy.deepcopy(self.timeline)
+            track = next((t for t in doc["tracks"] if t["kind"] == "fx" and t["name"] == "Copilot"), None)
+            if track is None:
+                track = {"kind": "fx", "name": "Copilot", "clips": []}
+                doc["tracks"].append(track)
+            track["clips"].append({"t": span[0], "dur": round(span[1] - span[0], 3), "step": ident,
+                                   "beats": step_beats * k, "label": label,
+                                   "target": {"heads": [h["head_no"] for h in rows]}})
+            self._tl_set_doc(doc)
+            return {"id": ident, "clip": [span[0], span[1]],
+                    "summary": f"{label} on {who}, {span[0]:.0f}-{span[1]:.0f} s on the timeline"}
+        if not run:
+            return {"id": ident, "summary": f"{label} saved"}
+        r = self._a_step_fx_run(id=ident, heads=[h["head_no"] for h in rows], beats=step_beats * k)
+        return {"id": ident, "fx": r["fx"],
+                "summary": f"{label} on {who}, {step_beats:g} beat(s) a step"}
+
     def _steps(self) -> list[dict]:
         lst = self.__dict__.get("step_fx")
         if lst is None:

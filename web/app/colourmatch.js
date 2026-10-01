@@ -19,7 +19,13 @@ export async function openColourMatch() {
   if (!r.ok) { toast(r.error || "Can't match this light", "bad"); return; }
   if (!r.emitters.length) { toast("This light has no colour emitters to match", "bad"); return; }
   const cal = { ...r.cal };
-  const send = throttle((role, v) => run("colour_cal", { head: first.head_no, [role]: v }, { silentError: true }), 120);
+  // one throttle per colour: a shared one dropped Red's last value when
+  // Green was moved straight after
+  const senders = {};
+  const send = (role, v) => {
+    if (!senders[role]) senders[role] = throttle((x) => run("colour_cal", { head: first.head_no, [role]: x }, { silentError: true }), 120);
+    senders[role](v);
+  };
   const rows = r.emitters.map((role) => {
     const out = h("output.mono", `${cal[role]}%`);
     const s = h("input", { type: "range", min: 40, max: 100, step: 1, value: cal[role] });

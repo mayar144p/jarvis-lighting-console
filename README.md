@@ -68,7 +68,7 @@ Python 3.10+ is required. Node is only needed to run the full test suite.
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
 | **Status bar** | output target and rate, network, feed health, last save |
 
-It adapts to a 1024 px tablet and to a phone, where the regions become tabs.
+It is made for a desktop or laptop screen (1280 px wide and up).
 
 ### The venue
 
@@ -217,7 +217,21 @@ Typing in a field never fires the rig.
   figure eight, pan sweep, breathe, dimmer chase, sparks), aim, beam, fades,
   and targets like *movers* or *pars*. The copilot also knows the room: it can
   aim at a spot or mark, hang lights on a named truss, pick a venue template
-  and play the timeline.
+  and play the timeline. It also programs:
+  * *"The back truss chases red and white on the beat during the drop"*: a
+    step effect of the show on the lights of that truss (back = rear =
+    upstage), placed as a clip over the drop on the timeline (a marker, or
+    a section of an AI show).
+  * *"Build me 8 buttons"*: the most useful buttons for the rig on the
+    first empty page, or a focus (*"6 strobe buttons"*).
+  * *"A 32-bar build-up"*: a chase that doubles its speed every quarter,
+    pulsing in sixteenths in the last bar, with the master climbing. It ends
+    where the drop starts.
+
+  **Preview in 3D** runs a plan in blind: the 3D view shows it, effects
+  included, and the real lights keep what they have. **Keep** hands it to
+  the rig, **Throw away** drops it. Cues, blackout, the master and the
+  timeline still go live.
 * **Design a show → Build the whole show.** The copilot reads the rig in the
   3D view and the song on the timeline, then designs and builds the whole
   show:

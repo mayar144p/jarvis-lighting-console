@@ -1,6 +1,6 @@
 import { act } from "./api.js";
 // MIDI in the browser (Web MIDI): a controller plugged into THIS device -
-// a tablet or a laptop running only the browser - plays the buttons.  The
+// a computer running only the browser - plays the buttons.  The
 // desk's own MIDI input (app/midi.py) is separate; this one is off until
 // switched on in Settings, so one controller heard by both never plays a
 // button twice.  Remembered per device.

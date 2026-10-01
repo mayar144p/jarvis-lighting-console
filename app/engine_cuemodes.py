@@ -202,11 +202,30 @@ class CueModesMixin:
         return {"on": self.__dict__.get("_blind_live") is not None,
                 "playback": b[0] if b else None, "cue": b[1] if b else None}
 
-    def _a_blind(self, state=None, playback=None, cue=None, **_):
-        """Blind: the programmer shows in 3D only - the rig keeps what it
-        has.  With a cue: that cue's values come into the programmer to
-        edit (Record puts them back).  Off: the programmer is as it was
-        before - anything not recorded is dropped."""
+    def _blind_fx_from(self):
+        """Effects with a higher id were started in blind: 3D only (but see
+        _blind_hidden)."""
+        return self.__dict__.get("_blind_fx") if self.__dict__.get("_blind_live") is not None else None
+
+    @staticmethod
+    def _blind_hidden(row: dict, seq) -> bool:
+        """Started in blind from the programmer side.  A cue's effects, a
+        quick button's and a timeline clip's play on the live rig even in
+        blind - those reach the wire."""
+        return seq is not None and row["id"] > seq and not (row.get("cue_pb") or row.get("live"))
+
+    def _fx_live(self, fid) -> None:
+        for f in self.fx:
+            if f["id"] == fid:
+                f["live"] = True
+
+    def _a_blind(self, state=None, playback=None, cue=None, keep=False, **_):
+        """Blind: the programmer and any effect started now show in 3D
+        only - the rig keeps what it has.  With a cue: that cue's values
+        come into the programmer to edit (Record puts them back).  Off:
+        the programmer is as it was before and the blind effects stop -
+        anything not recorded is dropped; `keep`: the rig gets all of it
+        (a previewed copilot plan, applied)."""
         on = self.__dict__.get("_blind_live") is not None
         want = (not on) if state is None and cue is None else (True if cue is not None else _truthy(state))
         if want:
@@ -214,6 +233,7 @@ class CueModesMixin:
                 import time as _t
                 self._blind_live = {h: dict(r) for h, r in self._programmer_now(_t.monotonic()).items()}
                 self._blind_prog = {h: dict(r) for h, r in self.programmer.items()}
+                self._blind_fx = self._fx_seq
             self._blind_cue = None
             if cue is not None:
                 pb = self._playback(playback if playback is not None else 1)
@@ -226,9 +246,15 @@ class CueModesMixin:
                 return {"blind": self.blind_public(),
                         "summary": f"preview: editing cue {num} on PB{pb['n']} in 3D only - the rig doesn't see it; Record to keep"}
             return {"blind": self.blind_public(), "summary": "preview: the programmer shows in 3D only"}
+        if on and _truthy(keep):
+            self._blind_live = self._blind_prog = self._blind_cue = None
+            return {"blind": self.blind_public(), "summary": "preview applied: the rig has it now"}
         if on:
             self.programmer = self.__dict__.get("_blind_prog") or {}
             self._prog_fade = None
+            seq = self.__dict__.get("_blind_fx")
+            if seq is not None:
+                self.fx = [r for r in self.fx if not self._blind_hidden(r, seq)]
         self._blind_live = None
         self._blind_prog = None
         self._blind_cue = None

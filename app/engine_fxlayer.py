@@ -9,7 +9,7 @@ import math
 import re
 import time
 
-from app import fixture_kind, fixtures
+from app import fixture_kind, fixtures, merge
 from app.engine_base import _LEVELS_CACHE, _OFFISH, _clamp, _truthy, attr_domain
 from app.engine_support import HTP_ROLES, LASER_ROLES
 
@@ -738,8 +738,33 @@ class FxLayerMixin:
             return fp, ft, p, t, "clamped"
         return fp, ft, p, t
 
+    def _aim_heads(self, h: dict, tx: float, ty: float, tz: float, near=None,
+                   spread: float = 0.0, cells=None):
+        """Per-head tilts for a multi-head light (a Wave 360: one bar that
+        pans, each head tilting about the bar).  Its heads can't converge on
+        one point - their beams stay in parallel planes - but each can reach
+        its own spot along the throw: `spread` metres apart on a line through
+        the target, away from the light.  {"tilt@k": value} for the heads
+        `cells` (all when empty), or {} for a one-head light."""
+        copies = merge._repeated(h["map"]).get("tilt", 0)
+        if copies < 2 or (not spread and not cells):
+            return {}
+        dx, dz = tx - float(h["x"]), tz - float(h["z"])
+        n = math.hypot(dx, dz) or 1.0
+        ux, uz = dx / n, dz / n
+        top_t = 65535 if "tilt_fine" in h["map"] else 255
+        out = {}
+        for k in (cells or range(1, copies + 1)):
+            if not 1 <= k <= copies:
+                continue
+            off = (k - (copies + 1) / 2) * float(spread or 0)
+            s = self._aim_solve(h, tx + ux * off, ty, tz + uz * off, near=near, closest=True)
+            if s is not None:
+                out[f"tilt@{k}"] = int(round(max(0.0, min(1.0, s[1])) * top_t))
+        return out
+
     def _a_aim_at(self, x=None, y=None, z=None, mark=None, heads=None,
-                  **_):
+                  cell=None, spread=None, **_):
         """Point every selected moving head at one spot in the room.
 
         Solved per head from where it hangs and which way up it is, through
@@ -774,9 +799,19 @@ class FxLayerMixin:
             # 16-bit value on an 8-bit tilt pinned it at full tilt
             top_p = 65535 if "pan_fine" in h["map"] else 255
             top_t = 65535 if "tilt_fine" in h["map"] else 255
-            self._a_set_position(pan=round(max(0, min(1, fp)) * top_p),
-                                 tilt=round(max(0, min(1, ft)) * top_t),
-                                 unit="logical", head=h["head_no"])
+            # a multi-head light: the heads picked (Heads: 1 2 3 4) follow on
+            # their own, or every head to its own spot when fanned out
+            per = self._aim_heads(h, tx, ty, tz, near=(solved[2], solved[3]),
+                                  spread=float(spread or 0), cells=self._cells(cell))
+            if per:
+                self._a_set_position(pan=round(max(0, min(1, fp)) * top_p),
+                                     unit="logical", head=h["head_no"])
+                for role, v in per.items():
+                    self._set_programmer(h["head_no"], role, v)
+            else:
+                self._a_set_position(pan=round(max(0, min(1, fp)) * top_p),
+                                     tilt=round(max(0, min(1, ft)) * top_t),
+                                     unit="logical", head=h["head_no"])
             aimed.append(h["head_no"])
         if not aimed:
             raise ValueError("none of those lights can pan and tilt"

@@ -9,7 +9,6 @@ import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
 import { initWebMidi } from "./webmidi.js";
-import { initTablet } from "./tablet.js";
 import { initTempo } from "./tempo.js";
 import { initStepFx } from "./stepfx.js";
 import { initFxPanel } from "./fxpanel.js";
@@ -19,20 +18,11 @@ import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initKeys } from "./keys.js";
 
-function wireMobile() {
-  const app = $("#app");
-  // gig mode (big buttons and text): saved per device; touch screens get it
-  // from their own CSS rules anyway
+function wireGig() {
+  // gig mode (big buttons and text for a laptop at a gig): saved per computer
   let gig = null;
   try { gig = localStorage.getItem("jarvis.gig"); } catch (e) { /* ignore */ }
-  const touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-  if (gig === "1" || (gig === null && touch)) document.body.classList.add("gig");
-  $$("#mobile-tabs button[data-mview]").forEach((b) => b.addEventListener("click", () => {
-    app.dataset.view = b.dataset.mview;
-    $$("#mobile-tabs button[data-mview]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
-    const st = window.jarvisStage;
-    if (st) setTimeout(() => st.resize(), 20);
-  }));
+  if (gig === "1") document.body.classList.add("gig");
 }
 
 async function boot() {
@@ -49,7 +39,6 @@ async function boot() {
   initPlaybacks();
   initQuickButtons();
   initWebMidi();
-  initTablet();
   initTempo();
   initStepFx();
   initFxPanel();
@@ -57,7 +46,7 @@ async function boot() {
   initCmdbar();
   initCopilot();
   initKeys();
-  wireMobile();
+  wireGig();
   openStream({
     snapshot: setSnapshot,
     snapdiff: applySnapDiff,

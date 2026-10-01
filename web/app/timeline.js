@@ -137,9 +137,10 @@ function clipLabel(tr, c) {
     return b ? b.label : c.button;
   }
   if (tr.kind === "fx") {
-    const name = (FX.find(([k]) => k === c.fx) || [c.fx, c.fx])[1];
+    const step = c.step && ((state.snap && state.snap.step_fx) || []).find((x) => x.id === c.step);
+    const name = c.step ? (c.label || (step && step.name) || "Step effect") : (FX.find(([k]) => k === c.fx) || [c.fx, c.fx])[1];
     const t = c.target || {};
-    const who = t.type ? (TARGETS.find(([k]) => k === t.type) || [0, t.type])[1] : t.group ? `group ${t.group}` : "all";
+    const who = t.type ? (TARGETS.find(([k]) => k === t.type) || [0, t.type])[1] : t.group ? `group ${t.group}` : t.heads ? `${t.heads.length} light(s)` : "all";
     return `${name} · ${who}`;
   }
   return "";

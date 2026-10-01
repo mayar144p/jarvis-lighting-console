@@ -1,6 +1,6 @@
 // The copilot drawer: plain English -> a plan you can read -> apply as one
 // undoable edit.  Also: design a show from a brief, and diagnose the rig.
-import { get, post } from "./api.js";
+import { get, post, act } from "./api.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, $$, h, toast, confirmBox } from "./ui.js";
@@ -20,6 +20,9 @@ function label(step) {
     case "add_heads": return `Add ${a.qty || 1} × ${a.query || "fixture"}`;
     case "record_cue": return `Record cue${a.name ? ` “${a.name}”` : ""} on PB${a.playback || 1}`;
     case "cue_go": return `GO${a.playback ? ` PB${a.playback}` : ""}`;
+    case "quick_defaults": return `Make ${a.count || "a page of"} ${a.focus ? a.focus + " " : ""}buttons${a.page ? ` on page ${a.page}` : ""}`;
+    case "timeline_build": return `${a.bars || 16}-bar build-up on the timeline${a.start != null ? ` at ${a.start} s` : ` before the ${a.before || "drop"}`}`;
+    case "chase_colours": return `Chase ${(a.colours || []).join(" / ")}${a.beats ? `, ${a.beats} beat(s) a step` : ""}${a.section ? ` during the ${a.section}` : " now"}${a.rig ? ` → ${a.rig}` : tgt}`;
     default: return step.action.replace(/_/g, " ") + tgt;
   }
 }
@@ -33,19 +36,59 @@ function say(kind, text, extra) {
   return box;
 }
 
+// Steps the 3D-only preview can't hold back: these reach the rig at once.
+const LIVE_ALWAYS = new Set(["cue_go", "cue_back", "cue_forward", "playback_level", "playback_release",
+  "playback_activate", "blackout", "master", "timeline_play", "timeline_seek", "timeline_from_playback"]);
+
 function planView(plan, onApply) {
   const steps = plan.steps || [];
   if (!steps.length) return null;
   const list = h("div.plan", ...steps.map((s, i) => h("div.plan-step", h("span.n", i + 1), label(s))));
   const apply = h("button.btn.primary.small", "Apply");
+  const preview = h("button.btn.small.plan-preview", {
+    title: "Run it in the 3D view only - the real lights keep what they have until you press Keep",
+  }, "Preview in 3D");
   const discard = h("button.btn.small", "Discard");
-  const bar = h("div.plan-actions", apply, discard);
-  apply.addEventListener("click", async () => {
-    apply.disabled = discard.disabled = true;
-    const res = await onApply();
+  const bar = h("div.plan-actions", apply, preview, discard);
+  const mark = (res) => {
     const runs = (res && res.steps_run) || [];
     [...list.children].forEach((row, i) => row.classList.add(runs[i] ? (runs[i].ok ? "ok" : "bad") : "bad"));
+  };
+  apply.addEventListener("click", async () => {
+    apply.disabled = preview.disabled = discard.disabled = true;
+    const res = await onApply();
+    mark(res);
     bar.replaceChildren(h("span.muted.small", res && res.ok ? "Applied - Ctrl+Z undoes all of it." : `Nothing changed: ${(res && res.error) || "failed"}`));
+  });
+  preview.addEventListener("click", async () => {
+    if (state.snap && state.snap.blind && state.snap.blind.on) { toast("Already in preview - Apply runs it in 3D only"); return; }
+    apply.disabled = preview.disabled = discard.disabled = true;
+    const on = await act("blind", { state: true });
+    if (!on.ok) { toast(on.error || "Can't preview", "bad"); apply.disabled = preview.disabled = discard.disabled = false; return; }
+    const res = await onApply();
+    mark(res);
+    if (!(res && res.ok)) {
+      await act("blind", { state: false });
+      bar.replaceChildren(h("span.muted.small", `Nothing changed: ${(res && res.error) || "failed"}`));
+      return;
+    }
+    const live = steps.filter((s) => LIVE_ALWAYS.has(s.action)).length;
+    const keep = h("button.btn.primary.small", "Keep");
+    const drop = h("button.btn.small", "Throw away");
+    const done = (text) => bar.replaceChildren(h("span.muted.small", text));
+    keep.addEventListener("click", async () => {
+      keep.disabled = drop.disabled = true;
+      await act("blind", { state: false, keep: true });
+      done("Kept - the rig has it now. Ctrl+Z undoes all of it.");
+    });
+    drop.addEventListener("click", async () => {
+      keep.disabled = drop.disabled = true;
+      await act("undo");
+      await act("blind", { state: false });
+      done("Thrown away - the rig never saw it.");
+    });
+    bar.replaceChildren(h("span.small.plan-previewing", "Previewing in 3D only - the real lights haven't changed."
+      + (live ? ` (${live} step(s) - cues, blackout, master, timeline - went live anyway.)` : "")), keep, drop);
   });
   discard.addEventListener("click", () => bar.replaceChildren(h("span.muted.small", "Discarded.")));
   return h("div", list, bar);

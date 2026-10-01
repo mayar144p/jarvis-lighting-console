@@ -1871,6 +1871,14 @@ class PatchMixin:
                         degrees[role] = _deg(_logical_to_phys(
                             _clamp(round(logical), 0, full),
                             rng["min"], rng["max"], full))
+                    elif want in ("255", "65535"):
+                        # a fraction of the travel, given as 0-255 (the pad,
+                        # an XY tile, Home) or 0-65535: scaled to THIS head's
+                        # own resolution - taken as-is it moved a 16-bit
+                        # mover 0.4% of its travel
+                        top = 255.0 if want == "255" else 65535.0
+                        logical = _clamp(float(value), 0, top) / top * attr_domain(h, role)
+                        degrees = {}
                     else:
                         logical = float(value)
                         degrees = {}

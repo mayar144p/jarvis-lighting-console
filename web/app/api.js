@@ -83,7 +83,7 @@ export function openStream(handlers, onStatus) {
   let lastData = 0;
   let wakeWait = null;           // cuts a reconnect back-off short
 
-  // A tablet that slept or changed Wi-Fi keeps a dead connection that
+  // A computer that slept or changed Wi-Fi keeps a dead connection that
   // never errors.  The server sends something at least every 100 ms
   // (lite), so 3 s of silence means the link is gone: drop it and
   // reconnect (the new connection starts with a full snapshot).

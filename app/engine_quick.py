@@ -615,6 +615,7 @@ class QuickMixin:
                     r = self._a_run_fx_named(item["name"], item.get("params") or {}, None,
                                              run["heads"], None)
                     run["fx_ids"].append(r.get("fx"))
+                    self._fx_live(r.get("fx"))
                 except ValueError:
                     pass
             self._quick_pace(btn, run)
@@ -761,9 +762,19 @@ class QuickMixin:
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"buttons": len(made), "summary": f"page {page}: {len(made)} FX buttons"}
 
-    def _a_quick_defaults(self, page=1, replace=False, **_):
+    def _a_quick_defaults(self, page=None, replace=False, count=None, focus=None, free=False, **_):
         """Fill a page with buttons that suit this rig: flash and strobe
-        per type of light, colour bumps, a kill, effects and GO."""
+        per type of light, colour bumps, a kill, effects and GO.  `count`:
+        only the N most useful ("build me 8 buttons"); `focus`: strobe /
+        colour / effects / movement.  `free`: on the first empty page
+        (else page 1)."""
+        if page in (None, "", 0) and not _truthy(free):
+            page = 1
+        if page in (None, "", 0):
+            used = {b["page"] for b in self.quick}
+            page = next((p for p in range(1, self.QUICK_PAGES + 1) if p not in used), None)
+            if page is None:
+                raise ValueError("every page has buttons - say which page to replace")
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         if any(b["page"] == page for b in self.quick) and not _truthy(replace):
             raise ValueError(f"page {page} already has buttons")
@@ -785,11 +796,16 @@ class QuickMixin:
         for hexc, nm in (("#ff0000", "Red"), ("#0033ff", "Blue"), ("#ffffff", "White"),
                          ("#ff00cc", "Magenta"), ("#00ffaa", "Cyan"), ("#ffb000", "Amber")):
             plan.append({"kind": "colour", "label": f"All {nm}", "colour": hexc, "mode": "hold"})
+        movers = any("pan" in h["map"] or "tilt" in h["map"] for h in self.patch)
+        if focus and count in (None, "", 0):
+            count = self.QUICK_SLOTS
         for fx_name in ("rainbow", "dimmer_chase", "sparks", "circle"):
-            if fx_name in fxlib_mod.FX:
+            if fx_name in fxlib_mod.FX and (fx_name != "circle" or movers or count is None):
                 plan.append({"kind": "fx", "label": fxlib_mod.FX[fx_name]["label"], "fx": fx_name})
         plan.append({"kind": "go", "label": "GO PB1", "playback": 1})
         plan.append({"kind": "blackout", "label": "Blackout (hold)"})
+        if count not in (None, "", 0):
+            plan = self._quick_ranked(plan, int(_clamp(count, 1, self.QUICK_SLOTS)), focus, movers)
         made = []
         for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
             btn = self._quick_clean(raw, page, slot)
@@ -803,6 +819,48 @@ class QuickMixin:
             r = self._a_quick_fx_defaults(page=fx_page)
             summary += f"; {r['summary']}"
         return {"buttons": len(made), "summary": summary}
+
+    FOCUS = {"strobe": ("strobe", "flash", "blackout", "kill"),
+             "colour": ("colour", "fx:colour"), "effects": ("fx",),
+             "movement": ("fx:position",)}
+
+    def _quick_ranked(self, plan: list[dict], count: int, focus, movers: bool) -> list[dict]:
+        """The `count` most useful of a page plan: the busking basics first
+        (flash, strobe, blackout), then colours, a chase, movement, the
+        same per type of light; `focus` keeps one family."""
+        def fam(b):
+            if b["kind"] == "fx":
+                return "fx:" + (fxlib_mod.FX.get(b["fx"]) or {}).get("group", "")
+            return b["kind"]
+        f = str(focus or "").strip().lower().rstrip("s")
+        f = {"color": "colour", "effect": "effects", "fx": "effects", "move": "movement", "mover": "movement",
+             "position": "movement", "flash": "strobe", "colour": "colour", "strobe": "strobe",
+             "movement": "movement"}.get(f, f)
+        if f and f not in self.FOCUS:
+            raise ValueError("focus is strobe, colour, effects or movement")
+        if f == "movement" and not movers:
+            raise ValueError("no moving lights are patched - nothing to move")
+        pool = list(plan)
+        if f == "movement" or (f == "effects" and movers):
+            for name in ("circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan"):
+                if movers and name in fxlib_mod.FX and not any(b.get("fx") == name for b in pool):
+                    pool.append({"kind": "fx", "label": fxlib_mod.FX[name]["label"], "fx": name})
+        if f == "colour":
+            for name in ("colour_chase", "alternate", "fan"):
+                if name in fxlib_mod.FX:
+                    pool.append({"kind": "fx", "label": fxlib_mod.FX[name]["label"], "fx": name})
+        if f:
+            keep = self.FOCUS[f]
+            pool = [b for b in pool if b["kind"] in keep or fam(b) in keep
+                    or (b["kind"] == "fx" and "fx" in keep)]
+        order = ["Flash all", "Strobe all", "Blackout (hold)", "All Red", "All Blue", "All White",
+                 "Dimmer chase", "Circle", "Rainbow", "Slow strobe", "All Magenta", "Kill all",
+                 "All Amber", "All Cyan", "Sparks", "GO PB1"]
+        rank = {name: i for i, name in enumerate(order)}
+        pool.sort(key=lambda b: rank.get(b["label"], len(order)))
+        if not pool:
+            raise ValueError("this rig has nothing for those buttons")
+        return pool[:count]
 
     def _override_vals(self, skip_parked: bool = False) -> dict:
         """Per-head overrides from the quick buttons that are held now,

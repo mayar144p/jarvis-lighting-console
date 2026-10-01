@@ -689,13 +689,15 @@ class Engine(PatchMixin, RigMixin, QuickMixin, FxLayerMixin, MoveMixin, Timeline
         now = time.monotonic() if now is None else now
         frames = merge.build_frames(self._frame_patch(), self._live_programmer(now),
                                     self._active_playbacks(now),
-                                    self._fx_values(now),
+                                    self._fx_values(now, rig=True),
                                     self.master, self.blackout,
                                     overrides=self._override_vals(), now=now,
                                     gates=self._gates(), rests=self._rests())
+        # colour matching scales what the looks / cues / effects ask for; a
+        # raw channel the operator holds is written after it, untouched
+        self._write_colour_cal(frames)
         if not self.blackout:
             self._write_raw(frames)
-        self._write_colour_cal(frames)
         return frames
 
     def _raw_holds(self) -> dict:
