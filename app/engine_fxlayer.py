@@ -661,7 +661,9 @@ class FxLayerMixin:
         return {"buttons": [dict(b) for b in self.quick],
                 "active": sorted(self.quick_active),
                 "names": dict(getattr(self, "quick_names", {}) or {}),
-                "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS}
+                "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS,
+                "quant": float(self.__dict__.get("quick_quant", 0.0)),
+                "pending": sorted(self.__dict__.get("quick_pending") or {})}
 
     # height of the tilt axis above the base, per 3D model (web/js/stage/models.js)
     _AIM_PIVOT = {"moving_spot": 0.465, "moving_hybrid": 0.502, "moving_beam": 0.378,

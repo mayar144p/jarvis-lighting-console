@@ -104,7 +104,7 @@ UNDO_EXCLUDED = frozenset({
     "fx_status", "remember_open", "light_test", "light_tested", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
-    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats", "fx_space",
+    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "fx_beats", "fx_space",
     "step_fx_run", "highlight", "group_master",
     # a macro manages its own undo: its lines are ONE step
     "macro_run", "osc", "timecode", "blind",
@@ -632,9 +632,9 @@ ACTIONS = (
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
-    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "fx_beats",
+    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "fx_beats",
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",
-    "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build",
+    "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build", "quick_quant",
     "highlight", "park", "unpark", "group_master",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",

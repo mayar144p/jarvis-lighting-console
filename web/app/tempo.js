@@ -6,7 +6,7 @@ import { run } from "./actions.js";
 import { state, on } from "./store.js";
 import { $, h, menu, promptBox } from "./ui.js";
 
-const SRC = { manual: "", tap: "tap", midi: "MIDI", prodj: "CDJ", browser: "MIDI", audio: "audio" };
+const SRC = { manual: "", tap: "tap", midi: "MIDI", prodj: "CDJ", browser: "MIDI", audio: "audio", link: "Link" };
 let recv = { t: 0, beats: 0, bpm: 120 };        // the last word from the desk, in this page's clock
 let raf = 0;
 
@@ -67,6 +67,10 @@ function openMenu(anchor) {
     "-",
     { label: (t.follow ? "✓ " : "") + "Speed master follows the tempo", hint: "120 BPM = 1×", run: () => run("tempo_set", { follow: !t.follow }, { toast: true }) },
     { label: (t.prodj ? "✓ " : "") + "Listen to the CDJs (Pro DJ Link)", hint: "tempo + the bar from the decks", run: () => run("tempo_prodj", { state: !t.prodj }, { toast: true }) },
+    { label: (t.link ? "✓ " : "") + "Follow Ableton Link",
+      hint: t.link ? (t.link.peers ? `${t.link.peers} app(s) in the session${t.link.synced ? ", in time" : ", measuring…"}` : "no Link app found yet")
+        : "tempo + the bar from Live, Traktor, rekordbox, djay… on this network",
+      run: () => run("tempo_link", { state: !t.link }, { toast: true }) },
     { label: "MIDI clock", hint: "from the desk's MIDI, or Settings → MIDI on this device", disabled: true },
     "-",
     { label: "Sound: listen to the room…", hint: "the music plays the lights", run: () => import("./sounddialog.js").then((m) => m.openSoundDialog()) },

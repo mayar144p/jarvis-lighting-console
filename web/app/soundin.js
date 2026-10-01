@@ -56,14 +56,52 @@ function attach(mediaStream) {
   timer = setInterval(frame, 40);
 }
 
+// which input: the microphone the browser picks, or one chosen here (a
+// line in from the DJ mixer, an audio interface) - kept on this computer
+const INPUT_KEY = "jarvis.input";
+export function chosenInput() {
+  try { return localStorage.getItem(INPUT_KEY) || ""; } catch (e) { return ""; }
+}
+
+/** [{id, label}] of the audio inputs; the names show once the browser has
+ *  been allowed to listen. */
+export async function listInputs() {
+  if (!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices)) return [];
+  const all = await navigator.mediaDevices.enumerateDevices();
+  return all.filter((d) => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications")
+    .map((d, i) => ({ id: d.deviceId, label: d.label || `Input ${i + 1}` }));
+}
+
+const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
 export async function startListening() {
   if (stream) return true;
   if (!soundSupported()) throw new Error(window.isSecureContext ? "This browser can't listen (no microphone access)."
     : "Browsers only give a microphone to https pages or the desk computer itself (localhost).");
-  attach(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }));
+  const id = chosenInput();
+  let media;
+  try {
+    media = await navigator.mediaDevices.getUserMedia({ audio: id ? { ...RAW, deviceId: { exact: id } } : RAW });
+  } catch (e) {
+    if (!id || !/NotFound|Overconstrained/.test(e.name || "")) throw e;
+    media = await navigator.mediaDevices.getUserMedia({ audio: RAW });   // that input is unplugged: the default
+  }
+  attach(media);
   try { localStorage.setItem("jarvis.listen", "1"); } catch (e) { /* ignore */ }
   return true;
 }
+
+/** Listen to another input from now on (restarts if listening). */
+export async function chooseInput(id) {
+  try { localStorage.setItem(INPUT_KEY, id || ""); } catch (e) { /* ignore */ }
+  if (stream) {
+    stopListening();
+    await startListening();
+  }
+}
+
+/** The input actually in use, by name. */
+export const inputLabel = () => (stream && stream.getAudioTracks()[0] && stream.getAudioTracks()[0].label) || "";
 
 export function stopListening() {
   clearInterval(timer);

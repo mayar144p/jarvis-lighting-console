@@ -267,6 +267,7 @@ class ShowMixin:
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
                 "step_fx": json.loads(json.dumps(self._steps(), default=str)),
                 "parked": json.loads(json.dumps(self.__dict__.get("parked") or {}, default=str)),
@@ -609,6 +610,11 @@ class ShowMixin:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
+            try:
+                qq = float(payload.get("quick_quant") or 0.0)
+            except (TypeError, ValueError):
+                qq = 0.0
+            self.quick_quant = qq if qq in self.QUANTS else 0.0
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
             self.step_fx = self._clean_step_list(payload.get("step_fx"))
             self.parked = self._clean_parked(payload.get("parked"))

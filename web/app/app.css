@@ -482,6 +482,10 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
 .qbtn:hover { border-color: var(--tint); }
 .qbtn.down, .qbtn.on { background: var(--tint); color: #06080c; border-color: var(--tint); box-shadow: 0 0 18px color-mix(in srgb, var(--tint) 60%, transparent); }
 .qbtn.down small, .qbtn.on small { color: rgba(6, 8, 12, .7); }
+.qbtn.pending { outline: 2px dashed var(--tint); outline-offset: -4px; animation: qb-wait .25s steps(2) infinite; }
+@keyframes qb-wait { 50% { outline-color: transparent; } }
+.qb-quant { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.qb-quant .select { padding: 2px 6px; }
 /* timeline */
 body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .tl { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px 8px 2px; gap: 4px; }
@@ -1134,6 +1138,8 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .snd-row input[type=number] { width: 56px; }
 .snd-k { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--muted); }
 .snd-k input[type=range] { width: 90px; }
+.snd-in { margin: 4px 0 8px; }
+.snd-in select { max-width: 360px; }
 .tempo.auto .tempo-tap::after { content: "AUTO"; font-size: 9px; font-weight: 800; color: #04121c; background: #fbbf24; border-radius: 3px; padding: 1px 4px; }
 .ap { display: flex; flex-direction: column; gap: 10px; }
 .fx-run, .mv-run { flex-wrap: wrap; }

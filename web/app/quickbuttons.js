@@ -110,6 +110,9 @@ const held = new Set();
 
 const quick = () => (state.snap && state.snap.quick) || { buttons: [], active: [], names: {}, pages: 8, slots: 24 };
 const activeIds = () => new Set((state.lite && state.lite.quick_active) || quick().active || []);
+const pendingIds = () => new Set((state.lite && state.lite.quick_pending) || quick().pending || []);
+// buttons that act the moment they're touched, whatever the beat setting
+const NO_QUANT = new Set(["fxkill", "arm", "estop", "tempo", "fader", "xy"]);
 const groups = () => (state.snap && state.snap.groups) || [];
 const autoGroups = () => (state.snap && state.snap.auto_groups) || [];
 
@@ -303,6 +306,8 @@ function render(force = false) {
   updateControls();
   const empty = !q.buttons.some((b) => b.page === page);
   $("#qb-suggest").hidden = !empty;
+  const qs = $("#qb-quant");
+  if (qs && document.activeElement !== qs) qs.value = String(q.quant || 0);
 }
 
 // ---------------------------------------------------------------- control tiles
@@ -424,6 +429,7 @@ function fromButton(b) {
   const s = {
     does: b ? b.kind : "flash", label: b ? b.label : "", tint: b ? b.tint || null : null,
     mode: b ? b.mode : "hold", seconds: b && b.seconds ? b.seconds : "", exclusive: b ? b.exclusive || "" : "",
+    quant: b && b.quant !== undefined ? b.quant : "",
     target: b ? { ...(b.target || { all: true }) } : { all: true },
     colour: b ? b.colour || null : null, level: b && b.level !== undefined ? b.level : 100,
     dim: b && b.dim !== undefined ? b.dim : 30, hz: b ? b.hz || 10 : 10,
@@ -457,6 +463,7 @@ function toButton(s) {
   if (s.size) b.size = s.size;
   if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
+  if (s.quant !== "" && !NO_QUANT.has(kind)) b.quant = +s.quant;
   if (!NO_TARGET.has(d)) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
@@ -642,6 +649,11 @@ function editButton(slot, btn) {
     const midiNote = h("span.qe-note", "A pad or key on a MIDI controller. Press Learn, then hit the pad.");
     const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
     kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
+    if (!NO_QUANT.has(d)) {
+      kids.push(row("Fires", chips([["", "Like the page"], [0, "As pressed"], [1, "On the beat"], [4, "On the bar"]],
+        s.quant, (v) => { s.quant = v; draw(); }),
+      h("span.qe-note", "On the beat: a press waits for the next beat (or bar) of the tempo, so a strobe hit or a GO lands on it.")));
+    }
     // behaviour
     if (!ONE_SHOT.has(d)) {
       const modes = [["hold", "Hold", "On while pressed"], ["latch", "On / off", "Press on, press again off"],
@@ -801,10 +813,15 @@ export function initQuickButtons() {
     await run(fxOnly ? "quick_fx_defaults" : "quick_defaults", { page }, { toast: true });
   });
   $("#qb-release").addEventListener("click", () => run("quick_release_all"));
+  $("#qb-quant").addEventListener("change", (e) => run("quick_quant", { beats: +e.target.value }, { toast: true }));
   on("snapshot", () => render());
   on("lite", () => {
     const active = activeIds();
-    $$("#qb-grid .qbtn[data-id]").forEach((el) => el.classList.toggle("on", active.has(el.dataset.id)));
+    const waiting = pendingIds();
+    $$("#qb-grid .qbtn[data-id]").forEach((el) => {
+      el.classList.toggle("on", active.has(el.dataset.id));
+      el.classList.toggle("pending", waiting.has(el.dataset.id));     // waiting for its beat
+    });
     updateControls();
   });
   // a held button must never stay stuck on if the window loses focus

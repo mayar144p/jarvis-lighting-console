@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 
+from app import link as link_mod
 from app import tempo as tempo_mod
 from app.engine_base import _truthy
 
@@ -38,6 +39,10 @@ class TempoMixin:
         out = self._tempo().public(time.monotonic())
         out["follow"] = bool(self.__dict__.get("tempo_follow", True))
         out["prodj"] = bool(self.__dict__.get("_prodj_thread"))
+        fol = self.__dict__.get("_link_follower")
+        if self.__dict__.get("_link_thread") and fol is not None:
+            now_us = int(time.monotonic() * 1e6)
+            out["link"] = {"peers": fol.connected(now_us), "synced": fol.offset is not None}
         dj = self.__dict__.get("_prodj_last")
         if dj:
             out["deck"] = dj
@@ -98,6 +103,18 @@ class TempoMixin:
             return self._tempo_result("listening to the CDJs (Pro DJ Link)")
         self._prodj_stop()
         return self._tempo_result("stopped listening to the CDJs")
+
+    def _a_tempo_link(self, state=None, **_):
+        """Follow an Ableton Link session on the network: its tempo and
+        its beat (UDP multicast 224.76.78.75:20808)."""
+        want = (not self.__dict__.get("_link_thread")) if state is None else _truthy(state)
+        if want:
+            err = self._link_start()
+            if err:
+                raise ValueError(err)
+            return self._tempo_result("following Ableton Link")
+        self._link_stop()
+        return self._tempo_result("stopped following Ableton Link")
 
     # -- feeds that are not actions (no undo step, no reload per tick) ---------
     def tempo_midi(self, status: int) -> None:
@@ -168,6 +185,101 @@ class TempoMixin:
         if th and th is not threading.current_thread():
             th.join(1.0)
         self._prodj_thread = self._prodj_stopper = None
+
+    # -- Ableton Link listener -----------------------------------------------------
+    def tempo_link_feed(self, fol: link_mod.Follower) -> None:
+        """The session's tempo (and beat, once measured) into the clock."""
+        bpm = fol.bpm()
+        if not bpm:
+            return
+        with self.lock:
+            t = self._tempo()
+            # a CDJ or MIDI clock that is playing right now wins
+            if t.live(time.monotonic()) and t.source in ("midi", "prodj"):
+                return
+            before = round(t.bpm, 1)
+            now = time.monotonic()
+            t.link_sync(now, bpm, fol.beats(int(now * 1e6)))
+            if round(t.bpm, 1) != before:
+                self._tempo_changed()
+
+    def _link_start(self, port: int | None = None, group: str | None = None) -> str | None:
+        if self.__dict__.get("_link_thread"):
+            return None
+        port = int(port or link_mod.PORT)
+        try:
+            disc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            disc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                disc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)    # Live on this computer listens too
+            except (AttributeError, OSError):
+                pass
+            disc.bind(("0.0.0.0", port))
+            try:
+                mreq = socket.inet_aton(group or link_mod.GROUP) + socket.inet_aton("0.0.0.0")
+                disc.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            except OSError:
+                pass                       # no multicast route: peers that answer directly still count
+            meas = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            meas.bind(("0.0.0.0", 0))
+        except OSError as exc:
+            return f"can't listen for Ableton Link on UDP {port}: {exc}"
+        stop = threading.Event()
+        fol = self._link_follower = link_mod.Follower()
+
+        def loop():
+            import select
+            next_ping = 0.0
+            prev_ghost = 0
+            while not stop.is_set():
+                try:
+                    ready, _w, _x = select.select([disc, meas], [], [], 0.1)
+                except (OSError, ValueError):
+                    break
+                now_us = int(time.monotonic() * 1e6)
+                for s in ready:
+                    try:
+                        pkt, _peer = s.recvfrom(2048)
+                    except OSError:
+                        continue
+                    if s is disc:
+                        msg = link_mod.parse_discovery(pkt)
+                        if msg:
+                            fol.alive(msg, now_us)
+                    else:
+                        msg = link_mod.parse_pong(pkt)
+                        if msg:
+                            fol.pong(msg, int(time.monotonic() * 1e6))
+                            prev_ghost = msg["ghost"]
+                # measure the clocks: a few pings a second to the session's peers
+                if time.monotonic() >= next_ping:
+                    next_ping = time.monotonic() + (0.05 if fol.offset is None else 0.5)
+                    for ep in fol.endpoints(now_us)[:3]:
+                        try:
+                            meas.sendto(link_mod.build_ping(int(time.monotonic() * 1e6), prev_ghost), ep)
+                        except OSError:
+                            pass
+                if fol.timeline and fol.connected(now_us):
+                    try:
+                        self.tempo_link_feed(fol)
+                    except Exception:              # noqa: BLE001 - never stop listening
+                        pass
+            disc.close()
+            meas.close()
+
+        th = threading.Thread(target=loop, name="jarvis-link", daemon=True)
+        self._link_thread, self._link_stopper = th, stop
+        th.start()
+        return None
+
+    def _link_stop(self) -> None:
+        stop = self.__dict__.get("_link_stopper")
+        th = self.__dict__.get("_link_thread")
+        if stop:
+            stop.set()
+        if th and th is not threading.current_thread():
+            th.join(1.0)
+        self._link_thread = self._link_stopper = None
 
     # -- MIDI timecode: the timeline follows it ---------------------------------
     def _tc(self) -> tempo_mod.Timecode:

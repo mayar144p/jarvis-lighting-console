@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import math
 import os
 import time
 
@@ -47,6 +48,12 @@ class QuickMixin:
     QUICK_PAGES = 8
 
     QUICK_SIZES = ("wide", "tall", "big")
+    # on the beat: a press waits for the next half beat / beat / 2 beats / bar
+    QUANTS = (0.0, 0.5, 1.0, 2.0, 4.0)
+    # these act the moment they are touched, whatever the setting
+    NO_QUANT = frozenset({"fxkill", "arm", "estop", "tempo", "fader", "xy"})
+    # pressed this late after the beat still counts as on it (seconds)
+    QUANT_LATE_S = 0.08
 
     QUICK_ICONS = ("bolt", "sun", "moon", "star", "heart", "fire", "snow", "drop", "music",
                    "strobe", "spin", "sparkle", "eye", "stop", "up", "down")
@@ -104,6 +111,14 @@ class QuickMixin:
             if raw["size"] not in self.QUICK_SIZES:
                 raise ValueError(f"size is one of normal, {', '.join(self.QUICK_SIZES)}")
             btn["size"] = raw["size"]
+        if raw.get("quant") not in (None, "", "page", "desk"):
+            try:
+                q = float(raw["quant"])
+            except (TypeError, ValueError):
+                q = -1.0
+            if q not in self.QUANTS:
+                raise ValueError("quant (fire on the beat) is 0 (as pressed), 0.5, 1, 2 or 4 beats")
+            btn["quant"] = q
         if raw.get("icon") not in (None, ""):
             if raw["icon"] not in self.QUICK_ICONS:
                 raise ValueError(f"icon is one of {', '.join(self.QUICK_ICONS)}")
@@ -494,13 +509,80 @@ class QuickMixin:
                     or fixture_kind.design_role(h) == want]
         return patched
 
-    def _a_quick_press(self, id=None, page=None, slot=None, down=True, **_):
-        """Press (down=True) or release (down=False) a quick button."""
+    def _quant_of(self, btn: dict) -> float:
+        """Beats a press of this button waits for: its own setting, else
+        the desk's (Buttons page -> On the beat)."""
+        if btn["kind"] in self.NO_QUANT:
+            return 0.0
+        q = btn.get("quant")
+        return float(self.__dict__.get("quick_quant", 0.0) if q is None else q)
+
+    def _a_quick_quant(self, beats=0, **_):
+        """Every button (that doesn't say otherwise) fires on the next
+        beat (1), bar (4), half beat or 2 beats; 0 = as pressed."""
+        try:
+            q = float(beats or 0)
+        except (TypeError, ValueError):
+            q = -1.0
+        if q not in self.QUANTS:
+            raise ValueError("beats is 0 (as pressed), 0.5, 1, 2 or 4")
+        self.quick_quant = q
+        word = {0.0: "as pressed", 0.5: "on the next half beat", 1.0: "on the next beat",
+                2.0: "on the next 2 beats", 4.0: "on the next bar"}[q]
+        return {"quant": q, "summary": f"buttons fire {word}"}
+
+    def _quick_pending_tick(self, now: float | None = None) -> None:
+        """Fire the presses waiting for their beat, and let go of the ones
+        released before it came (after a quarter beat on)."""
+        pend = self.__dict__.get("quick_pending")
+        rel = self.__dict__.get("quick_rel")
+        if not pend and not rel:
+            return
+        now = time.monotonic() if now is None else now
+        b = self._tempo().beats(now)
+        rel = self.__dict__.setdefault("quick_rel", {})
+        for key, p in list((pend or {}).items()):
+            if b + 1e-9 >= p["at"]:
+                pend.pop(key, None)
+                try:
+                    self._a_quick_press(id=key, down=True, immediate=True)
+                except ValueError:
+                    continue
+                if p.get("up"):
+                    rel[key] = p["at"] + 0.25
+        for key, at in list(rel.items()):
+            if b + 1e-9 >= at:
+                rel.pop(key, None)
+                try:
+                    self._a_quick_press(id=key, down=False, immediate=True)
+                except ValueError:
+                    pass
+
+    def _a_quick_press(self, id=None, page=None, slot=None, down=True, immediate=False, **_):
+        """Press (down=True) or release (down=False) a quick button.  With
+        a beat setting (quant) the press waits for the next beat / bar."""
         key = str(id) if id else f"q{int(page)}-{int(slot)}"
         btn = next((b for b in self.quick if b["id"] == key), None)
         if not btn:
             raise ValueError(f"no button {key}")
         down = _truthy(down)
+        q = 0.0 if immediate else self._quant_of(btn)
+        pend = self.__dict__.setdefault("quick_pending", {})
+        if q > 0:
+            if down:
+                clock = self._tempo()
+                b = clock.beats(time.monotonic())
+                late = self.QUANT_LATE_S * clock.bpm / 60.0
+                since = b - math.floor(b / q) * q              # beats since the last grid line
+                if since > late:
+                    pend[key] = {"at": math.floor(b / q) * q + q, "up": False}
+                    word = "bar" if q >= 4 else "beat" if q >= 1 else "half beat"
+                    return {"id": key, "active": key in self.quick_active, "pending": True,
+                            "summary": f"{btn['label']} on the next {word}"}
+                # just after the beat: that was meant to be on it - now
+            elif key in pend:
+                pend[key]["up"] = True                          # a tap: on the beat, then off
+                return {"id": key, "active": key in self.quick_active, "pending": True}
         kind, mode = btn["kind"], btn["mode"]
         if kind == "fxkill":
             if down:
@@ -713,6 +795,8 @@ class QuickMixin:
                 self._quick_stop_fx(run)
 
     def _a_quick_release_all(self, **_):
+        self.__dict__["quick_pending"] = {}
+        self.__dict__["quick_rel"] = {}
         for key in list(self.quick_active):
             run = self.quick_active.pop(key)
             if run.get("fx_layer"):
@@ -867,6 +951,7 @@ class QuickMixin:
         from the FX layer (the only way an effect's output moves), from
         the sound, group masters, highlight and park - park last: a parked
         light stays where it was parked whatever else is going on."""
+        self._quick_pending_tick()
         out = self._quick_override_vals()
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():

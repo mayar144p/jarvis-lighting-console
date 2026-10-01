@@ -181,6 +181,25 @@ button is never an undo step; setting one up is. Buttons save with the show.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### On the beat
+
+The tempo pill in the top bar is the desk's beat clock: tap it, type a BPM,
+or follow MIDI clock, the CDJs (Pro DJ Link), the room's sound, or
+**Ableton Link** (tempo menu -> *Follow Ableton Link*: Live, Traktor,
+rekordbox, djay and the rest on the same network; the desk listens to the
+session's tempo and its place in the bar, and joins no session of its own).
+
+* **Buttons on the beat** (Buttons page -> *On the beat*: off, half beat,
+  beat, 2 beats or bar). A press waits for the next one, and the tile blinks
+  while it waits. Pressed just after the beat, it fires at once. A quick tap
+  between beats still gives a hit on the beat. Each button can say
+  otherwise in Edit (*Fires*: like the page, as pressed, on the beat, on the
+  bar). Kill, ARM, E-stop, tempo, faders and XY pads always act at once.
+* **The sound** (tempo menu -> *Sound*): pick the input (a line in from the
+  mixer is steadier than a microphone). A link can move the effects' **size**
+  as well as their speed and the brightness: loud is the effect as made,
+  quiet shrinks the movements and the dimmer effects' depth.
+
 ### Keyboard
 
 | key | does | key | does |
@@ -560,5 +579,4 @@ CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
 
 * Validation against physical nodes and fixtures.
 * Show file management (rename, duplicate, delete) beyond save and load.
-* OSC input, MIDI clock and tap tempo.
 * A packaged desktop build.
