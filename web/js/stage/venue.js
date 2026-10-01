@@ -80,6 +80,14 @@ export function outlineOf(v) {
   return [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]];
 }
 
+/** The ceiling's height over (x, z): a ceiling area's own, else the room's
+ *  (app/venue.py ceiling_at). */
+export function ceilingAt(v, x, z, roomH) {
+  const areas = (v && v.room && v.room.areas) || [];
+  for (let i = areas.length - 1; i >= 0; i--) if (inPolygon(x, z, areas[i].points)) return areas[i].height;
+  return roomH;
+}
+
 function inPolygon(x, z, pts) {
   let c = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -89,8 +97,9 @@ function inPolygon(x, z, pts) {
   return c;
 }
 
-function polygonGeo(pts, y, flip = false) {
+function polygonGeo(pts, y, flip = false, holes = []) {
   const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
+  for (const hp of holes) shape.holes.push(new THREE.Path(hp.map(([x, z]) => new THREE.Vector2(x, -z))));
   const geo = new THREE.ShapeGeometry(shape);
   geo.rotateX(flip ? Math.PI / 2 : -Math.PI / 2);
   if (flip) geo.scale(1, 1, -1);
@@ -188,6 +197,8 @@ function mats(v) {
 // ---------------------------------------------------------------------------
 // rigging
 // ---------------------------------------------------------------------------
+const PICK_HULL = new THREE.MeshBasicMaterial({ visible: false });
+
 function buildRig(r, M, room) {
   const a = new THREE.Vector3(...r.a), b = new THREE.Vector3(...r.b);
   const g = new THREE.Group();
@@ -245,6 +256,12 @@ function buildRig(r, M, room) {
   const m2 = merged(dark, M.chain);
   if (m1) g.add(m1);
   if (m2) g.add(m2);
+  // a truss is open lattice: a click between its rods would miss it, so an
+  // unseen solid hull along it takes the clicks
+  if (r.kind !== "base") {
+    const hull = rod(a, b, Math.max(0.15, (r.size || 0.3) * 0.6), 8);
+    if (hull) g.add(new THREE.Mesh(hull, PICK_HULL));
+  }
   g.traverse((o) => { if (o.isMesh) o.userData = { venueId: r.id, venueKind: r.kind }; });
   return g;
 }
@@ -607,8 +624,32 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   // ceiling: flat, or an open roof structure of beams
   let ceiling = null;
+  const areas = (v.room.areas || []).filter((a) => a.points && a.points.length >= 3 && Math.abs(a.height - R.h) > 0.02);
+  const areaBoxes = [];
   if (v.room.ceiling === "flat") {
-    ceiling = new THREE.Mesh(polygonGeo(outline, R.h, true), M.ceiling);
+    // parts with a ceiling of their own are cut out of the room's and hung
+    // at their height, with a drop (or a recess) round their edge
+    ceiling = new THREE.Group();
+    ceiling.add(new THREE.Mesh(polygonGeo(outline, R.h, true, areas.map((a) => a.points)), M.ceiling));
+    for (const a of areas) {
+      ceiling.add(new THREE.Mesh(polygonGeo(a.points, a.height, true), M.ceiling));
+      const lo = Math.min(a.height, R.h), hi = Math.max(a.height, R.h);
+      for (let i = 0; i < a.points.length; i++) {
+        const [ax, az] = a.points[i], [bx, bz] = a.points[(i + 1) % a.points.length];
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 0.05) continue;
+        const drop = new THREE.Mesh(new THREE.PlaneGeometry(len, hi - lo), M.ceiling);
+        drop.position.set((ax + bx) / 2, (lo + hi) / 2, (az + bz) / 2);
+        drop.rotation.y = Math.atan2(-(bz - az), bx - ax);
+        ceiling.add(drop);
+        edgeParts.push(ax, a.height, az, bx, a.height, bz);
+      }
+      if (a.height < R.h) {
+        const xs = a.points.map((q) => q[0]), zs = a.points.map((q) => q[1]);
+        areaBoxes.push(new THREE.Box3(new THREE.Vector3(Math.min(...xs), a.height, Math.min(...zs)),
+          new THREE.Vector3(Math.max(...xs), a.height + 0.05, Math.max(...zs))));
+      }
+    }
     group.add(ceiling);
   } else if (v.room.ceiling === "open") {
     const beams = [];
@@ -701,7 +742,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   const screens = [];
   group.traverse((m) => { if (m.userData && m.userData.screen) screens.push(m); });
-  return { group, venue: v, room: R, planes, segments, boxes: blockers(v), walls, ceiling, zones, people,
+  return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
     crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens };
 }
 

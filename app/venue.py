@@ -98,6 +98,50 @@ def _next_id(v: dict, prefix: str) -> str:
     return f"{prefix}{v['seq']}"
 
 
+MAX_AREAS = 12
+
+
+def _clean_areas(raw) -> list[dict]:
+    """Parts of the room with a ceiling of their own (lower under a
+    mezzanine, higher over the dance floor): [{id, name, points, height}]."""
+    out = []
+    for i, a in enumerate(raw if isinstance(raw, list) else []):
+        if not isinstance(a, dict):
+            continue
+        pts = _polygon(a.get("points"))
+        if not pts:
+            continue
+        ident = _text(a.get("id"), "", 12) or f"c{i + 1}"
+        while any(x["id"] == ident for x in out):
+            ident += "b"
+        out.append({"id": ident, "name": _text(a.get("name"), f"Ceiling {i + 1}", 40) or f"Ceiling {i + 1}",
+                    "points": pts, "height": round(_num(a.get("height"), 3.0, 1.8, 60), 3)})
+        if len(out) >= MAX_AREAS:
+            break
+    return out
+
+
+def ceiling_at(v: dict, x: float, z: float) -> float:
+    """The ceiling's height over (x, z): an area's own (the last drawn
+    wins where they overlap), else the room's."""
+    room = (v or {}).get("room") or {}
+    h = float(room.get("height") or 0) or bounds(v)["h"]
+    for a in reversed(room.get("areas") or []):
+        if point_in_polygon(x, z, a["points"]):
+            return float(a["height"])
+    return h
+
+
+def ceiling_over(v: dict, pts) -> float:
+    """The lowest ceiling over any of `pts` ([x, y, z] or (x, z)) and the
+    line between the first two (a truss may cross a lower area)."""
+    xz = [(p[0], p[2]) if len(p) >= 3 else (p[0], p[1]) for p in pts]
+    if len(xz) >= 2:
+        (ax, az), (bx, bz) = xz[0], xz[1]
+        xz += [(ax + (bx - ax) * k / 8, az + (bz - az) * k / 8) for k in range(1, 8)]
+    return min(ceiling_at(v, x, z) for x, z in xz)
+
+
 def _clean_room(raw: dict) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     ceiling = str(raw.get("ceiling") or "flat")
@@ -111,6 +155,7 @@ def _clean_room(raw: dict) -> dict:
         "ceiling": ceiling if ceiling in CEILINGS else "flat",
         "floor": _text(raw.get("floor"), "concrete", 20),
         "wall_colour": _colour(raw.get("wall_colour"), "#3a3d45"),
+        "areas": _clean_areas(raw.get("areas")),
     }
     if room["outline"]:
         # A traced room: its box is the outline's extent.
@@ -469,7 +514,7 @@ def fit_inside(v: dict, margin: float = 0.2) -> int:
     if not w or not d:
         return 0
     b = bounds(v)
-    top = b["h"] - 0.1
+    top = lambda a, bb: ceiling_over(v, [a, bb]) - 0.1  # noqa: E731
     outline = [(float(p[0]), float(p[1])) for p in ((v.get("room") or {}).get("outline") or [])
                if isinstance(p, (list, tuple)) and len(p) >= 2]
     lo_x, hi_x, lo_z, hi_z = b["x0"] + margin, b["x1"] - margin, b["z0"] + margin, b["z1"] - margin
@@ -532,7 +577,7 @@ def _room_fns(v: dict, margin: float = 0.2):
     if not w or not d:
         return None
     b = bounds(v)
-    top = b["h"] - 0.1
+    top = lambda a, bb: ceiling_over(v, [a, bb]) - 0.1  # noqa: E731
     outline = [(float(p[0]), float(p[1])) for p in ((v.get("room") or {}).get("outline") or [])
                if isinstance(p, (list, tuple)) and len(p) >= 2]
     lo_x, hi_x, lo_z, hi_z = b["x0"] + margin, b["x1"] - margin, b["z0"] + margin, b["z1"] - margin
@@ -563,6 +608,8 @@ def _fit_rig(r: dict, inside, pull, box, top) -> int:
     lo_x, hi_x, lo_z, hi_z = box
     if True:
         a, bb = list(r["a"]), list(r["b"])
+        if callable(top):
+            top = top(a, bb)
         if inside(a[0], a[2]) and inside(bb[0], bb[2]) and max(a[1], bb[1]) <= top:
             return 0
         # slide the whole piece in first, so it keeps its length
@@ -602,7 +649,8 @@ def rig_transform(v: dict, r: dict, turn: float | None = None, length: float | N
         if orient == "vertical" or abs(half[1]) > max(abs(half[0]), abs(half[2])):
             mid[1] = max(mid[1], abs(half[1]))   # a pole keeps its foot on the floor
     if ceiling:
-        h = dims(v)[2] or 6.0
+        h = (ceiling_over(v, [[mid[i] - half[i] for i in range(3)], [mid[i] + half[i] for i in range(3)]])
+             if dims(v)[2] else 6.0)
         mid[1] = h - float(r.get("size") or 0.3) / 2 - 0.05 - abs(half[1])
     a = [round(mid[i] - half[i], 3) for i in range(3)]
     b = [round(mid[i] + half[i], 3) for i in range(3)]

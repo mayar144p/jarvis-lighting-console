@@ -600,6 +600,134 @@ class RigMixin:
         self._set_venue_doc(v)
         return self._venue_result(f"{n - 1} copies, {abs(step):g} m apart along {axis}", ids=made)
 
+    ALIGN_HOW = ("left", "right", "centre-x", "back", "front", "centre-z", "height",
+                 "spread-x", "spread-z", "spread-height")
+
+    def _a_venue_align(self, ids=None, how="centre-x", **_):
+        """Line up rigging and objects: their middles to the leftmost /
+        rightmost / middle one across (x), the back / front / middle one in
+        depth (z), or the same height; or spread them evenly between the
+        two outermost ones.  A piece of a shape (frame, circle...) moves
+        the whole shape; lights on a rig go with it."""
+        how = str(how or "")
+        if how not in self.ALIGN_HOW:
+            raise ValueError(f"how is one of {', '.join(self.ALIGN_HOW)}")
+        v = venue_mod.normalise(self.venue)
+        rigs = {r["id"]: r for r in v.get("rigging") or []}
+        objs = {o["id"]: o for o in v.get("objects") or []}
+        # the units that move: a shape counts once, with all its pieces
+        units, seen = [], set()
+        for ident in [str(i) for i in (ids or [])]:
+            if ident in rigs:
+                r = rigs[ident]
+                g = r.get("group")
+                key = ("g", g) if g else ("r", ident)
+                if key in seen:
+                    continue
+                seen.add(key)
+                members = [x for x in rigs.values() if x.get("group") == g] if g else [r]
+                pts = [p for m in members for p in (m["a"], m["b"])]
+                units.append({"rigs": members, "c": [sum(p[k] for p in pts) / len(pts) for k in range(3)]})
+            elif ident in objs:
+                if ("o", ident) in seen:
+                    continue
+                seen.add(("o", ident))
+                o = objs[ident]
+                units.append({"obj": o, "c": [float(o["x"]), float(o.get("y") or 0), float(o["z"])]})
+            else:
+                raise ValueError(f"no rigging or object {ident!r} (zones can't be lined up)")
+        if len(units) < (3 if how.startswith("spread") else 2):
+            raise ValueError("pick at least " + ("three things to spread" if how.startswith("spread") else "two things to line up"))
+        axis = 1 if how.endswith("height") else 0 if how.endswith("-x") or how in ("left", "right") else 2
+        vals = [u["c"][axis] for u in units]
+        if how.startswith("spread"):
+            order = sorted(range(len(units)), key=lambda i: vals[i])
+            lo, hi = vals[order[0]], vals[order[-1]]
+            targets = {i: lo + (hi - lo) * k / (len(units) - 1) for k, i in enumerate(order)}
+        else:
+            to = {"left": min, "back": min, "right": max, "front": max}.get(how)
+            t = to(vals) if to else sum(vals) / len(vals)
+            targets = {i: t for i in range(len(units))}
+        moved = 0
+        for i, u in enumerate(units):
+            d = round(targets[i] - u["c"][axis], 3)
+            if abs(d) < 1e-4:
+                continue
+            moved += 1
+            if "obj" in u:
+                key = ("x", "y", "z")[axis]
+                v, _o = venue_mod.update_item(v, u["obj"]["id"], {key: round(float(u["obj"].get(key) or 0) + d, 3)})
+                continue
+            for m in u["rigs"]:
+                ch = {}
+                for end in ("a", "b"):
+                    p = list(m[end])
+                    p[axis] = round(p[axis] + d, 3)
+                    ch[end] = p
+                v, _r = venue_mod.update_item(v, m["id"], ch)
+        if how.endswith("height"):
+            top = float((v.get("room") or {}).get("height") or 60)
+            if any(c > top for c in targets.values()):
+                raise ValueError("that would put something above the ceiling")
+        self._set_venue_doc(v)
+        words = {"left": "lined up on the left", "right": "lined up on the right", "centre-x": "centred across",
+                 "back": "lined up at the back", "front": "lined up at the front", "centre-z": "centred in depth",
+                 "height": "at the same height", "spread-x": "spread evenly across",
+                 "spread-z": "spread evenly in depth", "spread-height": "spread evenly in height"}[how]
+        return self._venue_result(f"{len(units)} {words}" + ("" if moved else " (already were)"), ids=[str(i) for i in ids])
+
+    def _a_venue_ceiling(self, id=None, points=None, height=None, name=None, remove=False, **_):
+        """A part of the room with a ceiling of its own: lower under a
+        mezzanine or a bulkhead, higher over the dance floor.  Draw it
+        (points [[x, z], ...]) with its height, change its height or name
+        (id), or take it away (remove).  Rigging under a lowered ceiling
+        comes down below it, its lights with it."""
+        v = venue_mod.normalise(self.venue)
+        room = dict(v["room"])
+        areas = [dict(a) for a in room.get("areas") or []]
+        if id:
+            cur = next((a for a in areas if a["id"] == str(id)), None)
+            if cur is None:
+                raise ValueError(f"no ceiling area {id!r}")
+            if _truthy(remove):
+                areas.remove(cur)
+                room["areas"] = areas
+                v["room"] = room
+                v = venue_mod.normalise(v)
+                self._set_venue_doc(v)
+                return self._venue_result(f"{cur['name']} taken away: the room's ceiling there again")
+            if points is not None:
+                cur["points"] = points
+            if height is not None:
+                cur["height"] = height
+            if name is not None:
+                cur["name"] = name
+        else:
+            if not points or height is None:
+                raise ValueError("draw the area (points) and give its ceiling height")
+            if len(areas) >= venue_mod.MAX_AREAS:
+                raise ValueError(f"at most {venue_mod.MAX_AREAS} ceiling areas")
+            n = 1 + max([int(a["id"][1:]) for a in areas if a["id"][1:].isdigit()] or [0])
+            cur = {"id": f"c{n}", "name": name or f"Ceiling {n}", "points": points, "height": height}
+            areas.append(cur)
+        try:
+            h = float(cur["height"])
+        except (TypeError, ValueError):
+            raise ValueError("the height is in metres, e.g. 3.2") from None
+        if not 1.8 <= h <= 60:
+            raise ValueError("a ceiling is 1.8 to 60 m high")
+        room["areas"] = areas
+        v["room"] = room
+        v = venue_mod.normalise(v)
+        got = next((a for a in v["room"]["areas"] if a["id"] == cur["id"]), None)
+        if got is None:
+            raise ValueError("an area needs at least 3 corners")
+        pulled = venue_mod.fit_inside(v)
+        self._set_venue_doc(v)
+        return self._venue_result(f"{got['name']}: ceiling {got['height']:g} m"
+                                  + (f"; {pulled} piece(s) of rigging brought down under it" if pulled else ""),
+                                  id=got["id"])
+
     def _a_venue_room(self, width=None, depth=None, height=None, back=None,
                       ceiling=None, floor=None, wall_colour=None,
                       outline=None, name=None, **_):
@@ -694,8 +822,11 @@ class RigMixin:
         """Add a rigging shape from the library: a straight run, a corner, a
         frame, a circle, a goal post, a pole or a stand, made of that piece.
         `trim`: the height it hangs at (default: under the ceiling)."""
-        room = (venue_mod.normalise(self.venue).get("room") or {})
+        nv = venue_mod.normalise(self.venue)
+        room = (nv.get("room") or {})
         top = float(room.get("height") or 6.0)
+        if room.get("height") and z is not None:
+            top = venue_mod.ceiling_at(nv, float(x or 0), float(z))      # a ceiling area of its own
         # trim = the height of its UNDERSIDE (as riggers give it, and as Trim…
         # and the report use it); the piece's line runs through its middle
         half = float((riglib.PIECES.get(str(piece)) or {}).get("size") or 0.3) / 2
@@ -731,8 +862,12 @@ class RigMixin:
         r = venue_mod.rig(self.venue, str(id or ""))
         if not r:
             raise ValueError(f"no rig {id!r}")
-        room = venue_mod.normalise(self.venue).get("room") or {}
+        nv = venue_mod.normalise(self.venue)
+        room = nv.get("room") or {}
         top = float(room.get("height") or 60)
+        if room.get("height"):
+            top = min(venue_mod.ceiling_over(nv, [m["a"], m["b"]]) for m in nv["rigging"]
+                      if (r.get("group") and m.get("group") == r["group"]) or m["id"] == r["id"])
         t = float(trim)
         if not 0.3 <= t <= top - 0.1:
             raise ValueError(f"a trim is 0.3 to {top - 0.1:g} m in this room")

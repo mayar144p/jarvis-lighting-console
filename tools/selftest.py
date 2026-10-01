@@ -163,6 +163,9 @@ from tools.selftests.part09 import (  # noqa: E402
     test_move_buttons_and_glide,
     test_only_what_it_can,
     test_ai_assistant,
+    test_drafting,
+    test_align_rigging,
+    test_ceiling_areas,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -306,6 +309,9 @@ def _standalone_suites():
     ("Move tab: instant buttons; follow speed in the engine", test_move_buttons_and_glide),
     ("Show only what a light can do", test_only_what_it_can),
     ("AI assistant: tool loop, check, ask, remember, preview, one undo", test_ai_assistant),
+    ("Drafting: doors, pillars and balconies drawn on the plan", test_drafting),
+    ("Align / distribute rigging and objects", test_align_rigging),
+    ("Ceiling height per area", test_ceiling_areas),
     )
 
 

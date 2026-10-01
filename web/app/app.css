@@ -308,6 +308,9 @@ body.arranging #arrange-btn { color: #fbbf24; border-color: rgba(251, 191, 36, .
 .vi-sub { color: var(--muted); font-size: 11.5px; margin-top: -6px; }
 .vi-row { display: flex; gap: 6px; align-items: flex-end; }
 .vi-row .vi-field { flex: 1; min-width: 0; }
+.vi-align { display: flex; gap: 4px; align-items: center; margin: 4px 0; }
+.vi-align .k { width: 50px; flex: none; font-size: 11px; color: var(--muted); }
+.vi-align .btn { flex: 1; min-width: 0; padding-left: 3px; padding-right: 3px; font-size: 11.5px; }
 .vi-k { width: 44px; flex: none; color: var(--muted); font-size: 11px; padding-bottom: 7px; }
 .vi-field { display: flex; flex-direction: column; gap: 3px; }
 .vi-field > span { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
