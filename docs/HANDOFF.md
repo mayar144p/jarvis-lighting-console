@@ -16,10 +16,12 @@ context of the long session that built the full debugging tools.
   gitignored (fixtures DB, shows, memory).  Back it up before browser
   tests that touch a running server; restore after.
 - Desktop only (no phone / tablet layouts).
-- Use the project's plugins (`.claude/settings.json`) for the work:
+- Use the project's skills (copied into `.claude/skills/`, so no plugin
+  download is needed - see `.claude/skills/_licenses/README.md`):
   - **ui-ux-pro-max** and **design-for-ai** for anything on screen;
   - **agent-skills** for debugging, tests, review and git;
   - **ponytail** for review, audit and debt.
+  Before each part of the work, open the matching SKILL.md and follow it.
 
 ## The debugging tools (all in `tools/`)
 
