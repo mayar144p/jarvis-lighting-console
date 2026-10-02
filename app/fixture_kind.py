@@ -299,6 +299,15 @@ def _describe(manufacturer: str, model: str, mode: str,
     }
 
 
+def head_class(head: dict) -> str:
+    """'light', 'laser' or 'sfx' - describe()'s class without the copy
+    (asked for every light, every frame)."""
+    roles = tuple(str(r) for r in (head.get("map") or []))
+    return _describe(str(head.get("manufacturer") or ""), str(head.get("model") or ""),
+                     str(head.get("mode") or ""), roles,
+                     int(head.get("channels") or len(roles))).get("class", "light")
+
+
 def describe(head: dict) -> dict:
     """The physical description of one patched head (cached per type)."""
     roles = tuple(str(r) for r in (head.get("map") or []))

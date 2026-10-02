@@ -48,6 +48,14 @@ HTP_ROLES = frozenset({"dimmer", "zone_dimmer"})
 COLOUR_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv",
                           "cyan", "magenta", "yellow"})
 
+
+
+def cmy_are_leds(roles) -> bool:
+    """Cyan / magenta / yellow are LED emitters, not filters, on a light
+    that also has red / green / blue (an ETC Source Four LED's cyan)."""
+    return bool(set(roles) & {"red", "green", "blue"})
+
+
 # Special-effect and laser roles.  A flash, a strobe, Full, Locate, an
 # effect, the auto show and the copilot never touch these: an SFX machine
 # fires only from its own armed buttons, and a laser's output likewise.
@@ -106,6 +114,8 @@ _LABEL_ROLE = {
 }
 # "Colour1"/"Color 1" and similar - a trailing index on a wheel name.
 _WHEEL_INDEX_RE = re.compile(r"^(?:colou?r)\s*(\d)$")
+_EMITTER_LEVEL_RE = re.compile(r"(?:intensity|dimmer)\s+(red|green|blue|white|amber|uv)"
+                               r"|(red|green|blue|white|amber|uv)\s+(?:intensity|dimmer)")
 _ZONE_RE = re.compile(r"zone\s*(\d+)\s*(dimmer|red|green|blue|white|amber|uv)",
                       re.IGNORECASE)
 
@@ -186,6 +196,10 @@ def channel_role(label) -> str:
     if ((("function" in s or "maintenance" in s or re.search(r"(?<!p)reset", s)) and not gate)
             or (s.startswith("dimmer") and ("speed" in s or "curve" in s))):
         return "unused"
+    # "Intensity red" / "Red dimmer": one emitter's brightness - the colour
+    both = _EMITTER_LEVEL_RE.fullmatch(s)
+    if both:
+        return both.group(1) or both.group(2)
     if "dimmer" in s or "intensity" in s:
         return "dimmer"
     if "shutter" in s:
@@ -213,9 +227,10 @@ def channel_role(label) -> str:
         return "macro"
     if ("colour" in s or "color" in s) and ("wheel" in s or "index" in s):
         return "wheel"
+    # whole words only: "Textured glass" is not red, "Bluetooth" not blue
     for word in ("red", "green", "blue", "white", "amber", "uv",
                  "cyan", "magenta", "yellow"):
-        if word in s:
+        if re.search(rf"(?<![a-z]){word}(?![a-z])", s):
             return word
     if s.strip() in ("indigo", "royal", "violet") and "wheel" not in s:
         return "blue"                 # ETC ColorSource "Deep Blue": its blue emitter is "Indigo"

@@ -11,7 +11,7 @@ import time
 
 from app import config, fixtures, merge
 from app.engine_base import _BEAM_LOOK_ROLES, _COLOUR_ROLES, _FIXTURE_CACHE
-from app.engine_support import FX_ROLES, HTP_ROLES, ROLE_HEX, split_16bit
+from app.engine_support import FX_ROLES, HTP_ROLES, ROLE_HEX, cmy_are_leds, split_16bit
 from app.engine_support import curve_pct as _curve_pct
 from app.engine_support import logical16 as _logical16
 
@@ -48,6 +48,12 @@ class LooksMixin:
                     head.get("manufacturer"), head.get("model"),
                     head.get("mode"), head.get("channels"))
                 if mapping == before:
+                    continue
+                if (self._fixture_db(head.get("manufacturer"), head.get("model")) is None
+                        and any(r != "raw" for r in before)):
+                    # the profile isn't in this library (any more): keep the
+                    # roles the light was patched with - an "unknown" map
+                    # left a restored rig that nothing could drive
                     continue
                 # A role that vanished from the profile cannot be merged
                 # into a frame, so its value is dead weight.
@@ -327,16 +333,19 @@ class LooksMixin:
     def look_text(self) -> str:
         """look_rows as JSON, one answer shared by every screen."""
         self._look_wanted = time.monotonic()
+        # shared only while nothing was changed: an operator's edit is seen
+        # on the next ask, whatever the clock (Windows' ticks every 16 ms)
+        rev = self.act_rev
         cached = self._look_cache
         now = time.monotonic()
-        if cached and now - cached[0] < self.LOOK_SHARE_S:
+        if cached and now - cached[0] < self.LOOK_SHARE_S and cached[2] == rev:
             return cached[1]
         with self._look_cache_lock:
             cached = self._look_cache
-            if cached and time.monotonic() - cached[0] < self.LOOK_SHARE_S:
+            if cached and time.monotonic() - cached[0] < self.LOOK_SHARE_S and cached[2] == rev:
                 return cached[1]
             text = json.dumps(self.look_rows(), separators=(",", ":"))
-            self._look_cache = (time.monotonic(), text)
+            self._look_cache = (time.monotonic(), text, rev)
             return text
 
     def _look(self, now: float | None = None) -> list[dict]:
@@ -422,6 +431,25 @@ class LooksMixin:
         lit = False
         if roles & {"red", "green", "blue"} and any(k in values for k in ("red", "green", "blue")):
             r, g, b = (float(values.get(k, 0)) for k in ("red", "green", "blue"))
+            lit = True
+        leds = cmy_are_leds(roles) and roles & {"cyan", "magenta", "yellow"}
+        if leds and any(values.get(k) for k in ("cyan", "magenta", "yellow")):
+            # cyan / magenta / yellow LEDs beside RGB: the light is built so
+            # that all of them at full make white, so the mix is balanced
+            # against that (or a white Locate would look cyan)
+            hue = {"red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+                   "cyan": (0, 255, 255), "magenta": (255, 0, 255), "yellow": (255, 255, 0)}
+            mix, full = [0.0] * 3, [0.0] * 3
+            for role, rgb in hue.items():
+                if role in roles:
+                    k = float(values.get(role, 0)) / 255.0
+                    for i in range(3):
+                        mix[i] += rgb[i] * k
+                        full[i] += rgb[i]
+            top = max(mix)
+            bal = [mix[i] / full[i] * 255.0 if full[i] else 0.0 for i in range(3)]
+            peak = max(bal) or 1.0
+            r, g, b = (c * min(255.0, top) / peak for c in bal)
             lit = True
         for role, rgb in self._EMIT_RGB.items():
             v = values.get(role)

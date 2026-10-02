@@ -38,7 +38,9 @@ class Clock:
 
     # -- reading --------------------------------------------------------------
     def beats(self, now: float) -> float:
-        return (now - self.anchor) * self.bpm / 60.0
+        # rounded to a billionth of a beat: lined up on a beat, the sums
+        # land a hair under it (0.999999...) and read the beat before
+        return round((now - self.anchor) * self.bpm / 60.0, 9)
 
     def beat_in_bar(self, now: float) -> int:
         """1..4"""
@@ -90,6 +92,11 @@ class Clock:
         BPM once there is one."""
         if self._taps and now - self._taps[-1] > 2.0:
             self._taps = []
+        if self._taps and now - self._taps[-1] < 0.06:
+            # a bounce (a doubled key or MIDI message, or two taps inside one
+            # tick of Windows' 16 ms clock): 1000 BPM is not a tempo, and a
+            # zero gap divided by zero
+            return self.bpm if len(self._taps) > 1 else None
         self._taps.append(now)
         self._taps = self._taps[-8:]
         if len(self._taps) < 2:

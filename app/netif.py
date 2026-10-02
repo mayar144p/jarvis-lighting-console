@@ -20,9 +20,15 @@ import socket
 import subprocess
 
 
+# Listing the adapters must never hold up "Find nodes": on some machines
+# (GitHub's Ubuntu runners, a laptop mid-Wi-Fi-change) `ip` / `ifconfig`
+# hang until killed, and a scan runs up to two of them.
+RUN_TIMEOUT_S = 1.5
+
+
 def _run(cmd: list[str]) -> str:
     try:
-        out = subprocess.run(cmd, capture_output=True, timeout=3,
+        out = subprocess.run(cmd, capture_output=True, timeout=RUN_TIMEOUT_S,
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return out.stdout.decode(errors="replace")
     except (OSError, subprocess.SubprocessError):

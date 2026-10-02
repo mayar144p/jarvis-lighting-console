@@ -76,6 +76,7 @@ _COLOURS: tuple[tuple[str, tuple[int, int, int]], ...] = (
     ("magenta", (255, 0, 255)), ("cyan", (0, 255, 255)),
     ("yellow", (255, 255, 0)), ("uv", (180, 0, 255)),
 )
+_RGB_OF = {**dict(_COLOURS), "lime": (168, 255, 60)}
 _COLOUR_ORDER = ("red", "green", "blue", "white", "amber",
                  "magenta", "cyan", "yellow", "uv")
 _EMITTERS = ("white", "amber", "uv", "lime")
@@ -83,16 +84,21 @@ _CMY = ("cyan", "magenta", "yellow")
 
 
 def _palette(have) -> list[str]:
+    return list(_palette_of(frozenset(have)))
+
+
+@functools.lru_cache(maxsize=256)
+def _palette_of(have: frozenset) -> tuple:
     """The colours a light can really MAKE, in chase order.  RGB lights:
     their own emitters (as before).  A CMY light mixes every colour - by
     subtracting.  A light with only white / amber / UV channels has just
     those.  Picking from the channel NAMES alone made a CMY light "chase"
     magenta / cyan / yellow while nothing wrote those channels."""
     if any(r in have for r in RGB):
-        return [c for c in _COLOUR_ORDER if c in have]
+        return tuple(c for c in _COLOUR_ORDER if c in have)
     if any(r in have for r in _CMY):
-        return ["red", "green", "blue", "magenta", "cyan", "yellow"]
-    return [c for c in _EMITTERS if c in have]
+        return ("red", "green", "blue", "magenta", "cyan", "yellow")
+    return tuple(c for c in _EMITTERS if c in have)
 
 
 
@@ -158,13 +164,10 @@ def _rainbow(base, have, p, elapsed, index, count):
     a = order[int(pos) % len(order)]
     b = order[(int(pos) + 1) % len(order)]
     f = pos - int(pos)
-    for role in ("red", "green", "blue"):
+    ca, cb = _RGB_OF[a], _RGB_OF[b]
+    for i, role in enumerate(("red", "green", "blue")):
         if role in have:
-            ca = next(c[1] for c in _COLOURS if c[0] == a)[
-                "red green blue".split().index(role)]
-            cb = next(c[1] for c in _COLOURS if c[0] == b)[
-                "red green blue".split().index(role)]
-            base[role] = int(ca + (cb - ca) * f)
+            base[role] = int(ca[i] + (cb[i] - ca[i]) * f)
 
 
 def _colour_chase(base, have, p, elapsed, index, count):
@@ -597,7 +600,12 @@ def why_not(roles, name: str) -> str:
 
 
 def defaults(name: str) -> dict:
-    return {k: d for (k, _l, d, _lo, _hi) in FX[name]["params"]}
+    return dict(_defaults(name))
+
+
+@functools.lru_cache(maxsize=None)
+def _defaults(name: str) -> tuple:
+    return tuple((k, d) for (k, _l, d, _lo, _hi) in FX[name]["params"])
 
 
 def apply(name: str, base: dict, roles, params: dict | None = None,

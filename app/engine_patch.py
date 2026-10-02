@@ -31,7 +31,7 @@ from app.engine_base import (
     attr_domain,
     default_mode,
 )
-from app.engine_support import HTP_ROLES, SLOTS, channel_role
+from app.engine_support import HTP_ROLES, SLOTS, channel_role, cmy_are_leds
 from app.engine_support import pos as _pos
 from app.engine_support import pos_to_ua as _pos_to_ua
 from app.merge import FX_OUTPUT_ROLES
@@ -209,7 +209,7 @@ class PatchMixin:
             return (["raw"] * count, str(mode_name or ""), False)
         chosen = None
         for m in fx.get("modes") or []:
-            if mode_name and m.get("name") == mode_name:
+            if mode_name and str(m.get("name") or "").strip() == str(mode_name).strip():
                 chosen = m
                 break
         if chosen is None and count:
@@ -280,6 +280,13 @@ class PatchMixin:
         mapping, mode_name, mapped = self._resolve_map(
             f.get("manufacturer", ""), f.get("model", ""),
             f.get("mode"), f.get("channels"))
+        saved = f.get("map")
+        if (isinstance(saved, list) and saved and any(r != "raw" for r in saved)
+                and self._fixture_db(f.get("manufacturer", ""), f.get("model", "")) is None):
+            # not in the installed library (patched from the built-in list of
+            # common lights): the roles saved with it are the best there are -
+            # all-"raw" brought a restarted rig back dead
+            mapping, mode_name = [str(r) for r in saved], str(f.get("mode") or mode_name)
         head = dict(f)
         head.update({"map": mapping, "mode": mode_name,
                      "mapped": mapped, "curve": head.get("curve", "linear")})
@@ -314,7 +321,7 @@ class PatchMixin:
         if mode is not None and str(mode) != "":
             want = str(mode).strip().lower()
             for m in modes:
-                if (m["name"].lower() == want
+                if (m["name"].strip().lower() == want   # files pad names: "8 Channel "
                         or str(m.get("channel_count")) == want):
                     chosen = m
                     break
@@ -1786,6 +1793,11 @@ class PatchMixin:
             for extra in ("amber", "uv", "lime", "indigo"):
                 if extra in roles:
                     out[extra] = 0
+            # cyan / magenta / yellow LEDs beside red, green and blue: each
+            # gives what its two primaries share beyond the third
+            for role, v in (("cyan", min(g, b) - r), ("magenta", min(r, b) - g), ("yellow", min(r, g) - b)):
+                if role in roles:
+                    out[role] = min(r, g, b) if neutral else max(0, v)
         elif roles & {"cyan", "magenta", "yellow"}:
             for role, v in (("cyan", 255 - r), ("magenta", 255 - g),
                             ("yellow", 255 - b)):
@@ -1808,7 +1820,7 @@ class PatchMixin:
                 out[role] = 255
         for role in ("cyan", "magenta", "yellow"):
             if role in roles:
-                out[role] = 0
+                out[role] = 255 if cmy_are_leds(roles) else 0   # LEDs on, filters out
         # Wheel fixtures: slot 1 (DMX 0) is the open/clear slot on both the
         # colour and the gobo wheel, so 0 == "no colour, full beam" - that
         # is this fixture's white.  A light that mixes AND has a wheel (a

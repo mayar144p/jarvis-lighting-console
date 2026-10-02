@@ -45,7 +45,14 @@ export async function request(path, body, opts = {}) {
     ? { headers: headers(false) }
     : { method: "POST", headers: headers(true), body: JSON.stringify(body) };
   if (opts.signal) init.signal = opts.signal;
-  const resp = await fetch(path, init);
+  let resp;
+  try {
+    resp = await fetch(path, init);
+  } catch (e) {
+    if (e && e.name === "AbortError") throw e;
+    // the browser's own words for this are "Failed to fetch"
+    throw new ApiError("The desk isn't answering - nothing was sent. Reconnecting…");
+  }
   if (resp.status === 401) {
     if (askToken()) return request(path, body, opts);
     throw new ApiError("this desk needs its access token");

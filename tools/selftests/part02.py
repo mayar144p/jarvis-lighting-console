@@ -941,7 +941,12 @@ def test_scan_simulated() -> None:
     started = _time.monotonic()
     result3 = artnet.scan(timeout=0.4, port=port3, net=0)
     elapsed3 = _time.monotonic() - started
-    check("silent wire returns promptly", elapsed3 < 2.0, f"{elapsed3:.2f}s")
+    # listening (0.4 s) + the unicast sweep (1.5 s) + listing this computer's
+    # adapters (up to two commands, each capped; on GitHub's Ubuntu runners
+    # both run into the cap): within those bounds it is prompt, not hanging
+    from app import netif
+    check("silent wire returns promptly", elapsed3 < 0.4 + 1.5 + 2 * netif.RUN_TIMEOUT_S + 1.0,
+          f"{elapsed3:.2f}s {result3.get('took')} subnets {result3.get('subnets')}")
     check("silent wire: empty result, no error, polls still sent",
           result3["nodes"] == [] and result3["universes"] == []
           and not result3.get("error") and result3["polls_sent"] >= 2,

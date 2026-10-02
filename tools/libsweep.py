@@ -6,6 +6,7 @@ and in what the 3D view is told?
     python tools/libsweep.py --limit 200     # the first 200 (a quick look)
     python tools/libsweep.py --only "moover" # names containing this
     python tools/libsweep.py --out report.json
+    python tools/libsweep.py --all-modes     # every mode of every light, not just the default
 
 Per light (only the controls it has; the rest are "skip"):
   light    Full (set_intensity 100) reaches the DMX and the 3D view shows it lit
@@ -37,7 +38,8 @@ sys.path.insert(0, str(ROOT))
 CONTROLS = ("light", "colour", "gobo", "move", "locate", "effects", "sfx")
 
 
-def lights(only: str = "", limit: int = 0) -> list[tuple[str, str, str]]:
+def lights(only: str = "", limit: int = 0, all_modes: bool = False) -> list[tuple]:
+    """(src, key, name) per light - or (src, key, name, mode) per mode."""
     from app import fixlib
     out = []
     for src in ("qlc", "ofl", "jarvis"):
@@ -49,7 +51,10 @@ def lights(only: str = "", limit: int = 0) -> list[tuple[str, str, str]]:
             name = f"{row['manufacturer']} {row['model']}"
             if only and only.lower() not in name.lower():
                 continue
-            out.append((src, row["key"], name))
+            if all_modes:
+                out += [(src, row["key"], name, m[0]) for m in row.get("modes") or [] if m]
+            else:
+                out.append((src, row["key"], name))
     return out[:limit] if limit else out
 
 
@@ -268,7 +273,7 @@ def probe(e, n: int) -> dict[str, tuple[str, str]]:
     return res
 
 
-def worker(batch: list[tuple[str, str, str]]) -> list[dict]:
+def worker(batch: list[tuple]) -> list[dict]:
     from app import engine as eng, fixlib, fixtures
     out = []
     with tempfile.TemporaryDirectory() as td:
@@ -278,7 +283,8 @@ def worker(batch: list[tuple[str, str, str]]) -> list[dict]:
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("venue_template", name="club")
-            for src, key, name in batch:
+            for src, key, name, *mode in batch:
+                mode = mode[0] if mode else None
                 row = {"src": src, "key": key, "name": name}
                 try:
                     parsed = fixlib.load(src, key)
@@ -288,7 +294,7 @@ def worker(batch: list[tuple[str, str, str]]) -> list[dict]:
                         continue
                     got = fixtures.store_parsed(db, parsed, f"{src}:{key}")
                     fid = (got.get("imported") or [{}])[0].get("fixture_id")
-                    r = e.act("add_heads", fixture_id=fid, qty=1, universe=1, address=1)
+                    r = e.act("add_heads", fixture_id=fid, qty=1, universe=1, address=1, mode=mode)
                     if not r.get("ok") or not r.get("heads"):
                         row["error"] = f"does not patch: {r.get('error')}"
                         out.append(row)
@@ -296,6 +302,11 @@ def worker(batch: list[tuple[str, str, str]]) -> list[dict]:
                     n = r["heads"][0]
                     h = e._head(n)
                     row["mode"], row["channels"] = h.get("mode"), h.get("channels")
+                    if mode and h.get("mode") != mode:
+                        row["error"] = f"asked for mode {mode!r}, got {h.get('mode')!r}"
+                        e.act("remove_heads", heads=[n])
+                        out.append(row)
+                        continue
                     row["res"] = probe(e, n)
                     e.act("remove_heads", heads=[n])
                 except Exception as exc:     # noqa: BLE001 - a crash is a finding
@@ -316,8 +327,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--jobs", type=int, default=max(1, (mp.cpu_count() or 2) - 1))
     ap.add_argument("--out", default="")
+    ap.add_argument("--all-modes", action="store_true")
     a = ap.parse_args()
-    todo = lights(a.only, a.limit)
+    todo = lights(a.only, a.limit, a.all_modes)
     print(f"{len(todo)} lights, {a.jobs} workers")
     size = max(1, min(60, len(todo) // (a.jobs * 4) or 1))
     batches = [todo[i:i + size] for i in range(0, len(todo), size)]
