@@ -69,9 +69,8 @@ const addr = (hd) => `${hd.universe}.${String(hd.address).padStart(3, "0")}`;
 function headRow(hd, child = false) {
   const b = hd.body || {};
   return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""), { dataset: { head: hd.head_no } },
-    h("td.c-no", hd.head_no),
-    h("td", h("div.f-name",
-      h("i.lamp"),
+    h("td.c-no", h("i.lamp"), h("span", hd.head_no)),
+    h("td.c-name", h("div.f-name",
       iconFor(b),
       h("div.f-text",
         h("b", { title: hd.name || hd.model }, hd.name || hd.model),
@@ -87,16 +86,14 @@ function foldRow(c) {
   const b = first.body || {};
   const open = expanded.has(first.head_no);
   return h("tr.fold" + (open ? ".open" : ""), { dataset: { fold: c.heads.map((x) => x.head_no).join(","), head: first.head_no } },
-    h("td.c-no", `${first.head_no}–${lastHd.head_no}`),
-    h("td", h("div.f-name",
-      h("i.lamp"),
+    h("td.c-no", h("button.fold-btn", { title: open ? "Fold" : "Show each light", "aria-label": open ? "Fold" : "Show each light",
+        "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"), h("span", `${first.head_no}–${lastHd.head_no}`)),
+    h("td.c-name", h("div.f-name",
       iconFor(b),
       h("div.f-text",
-        h("b", { title: first.model }, `${first.model} × ${c.heads.length}`),
+        h("b", { title: first.model }, first.model, h("em.f-qty", ` × ${c.heads.length}`)),
         h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
-          .filter(Boolean).join(" · "))),
-      h("button.btn.ghost.small.icon.fold-btn", { title: open ? "Fold" : "Show each light", "aria-label": open ? "Fold" : "Show each light",
-        "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"))),
+          .filter(Boolean).join(" · "))))),
     h("td.c-addr", h("span", addr(first)), h("small", "–" + addr(lastHd))));
 }
 

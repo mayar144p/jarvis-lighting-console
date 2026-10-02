@@ -528,7 +528,7 @@ check the table, then save it to your library.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `APP_NAME` / `APP_SUBTITLE` | JARVIS / Lighting Assistant | branding |
+| `APP_NAME` / `APP_SUBTITLE` | JARVIS / Lighting Assistant | branding: the name in the title and top bar (the screens' own words say "the desk") |
 | `HOST` / `PORT` | 127.0.0.1 / 8787 | bind address and web port |
 | `AUTO_UPDATE` | true | `run.bat` / `run.sh` fetch the latest version on launch |
 | `CONSOLE_TOKEN` | *(empty)* | required when `HOST` is not loopback; sent as `X-Jarvis-Token` |
@@ -550,6 +550,7 @@ check the table, then save it to your library.
 | `CONSOLE_AUTOSAVE` / `CONSOLE_AUTORESTORE` | true / true | autosave the desk and restore it on start |
 | `FIXTURE_DB` | data/fixtures.db | fixture database |
 | `FIXTURE_SEED_BUILTINS` | false | seed generic profiles (their channel maps are guesses) |
+| `CONSOLE_DATA_DIR` | `data/` | move the whole data folder (the tests use a scratch one) |
 | `GDTF_SHARE_USER` / `GDTF_SHARE_PASSWORD` | *(empty)* | optional; you can also sign in from the app |
 
 ## Tests
@@ -573,6 +574,22 @@ module imports, element ids exist, colour picker maths and the 3DS parser
 executed under node). Suites run isolated, so one crash cannot hide the rest.
 
 CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
+
+The other checks (all in `tools/`, all on scratch data - `data/` is never
+touched):
+
+| Check | What it proves | Time |
+|---|---|---|
+| `gigcheck.py` | a whole gig, then save, reload, compare (CI) | <1 s |
+| `oddcheck.py` | odd inputs: empty rig, 12,900 nonsense values, 520 lights, corrupt shows and autosaves, a restart, Undo all the way (CI) | ~1 min |
+| `libsweep.py [--all-modes]` | every library light (and every mode: 8,093) x Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D | ~3 min |
+| `uicheck.mjs [--big]` | every screen and dialog at 1280 / 1440 / 1920: spills, tiny or off-screen controls, page errors; `--big` with 124 lights | ~20 min |
+| `vischeck.mjs` | 124 real lights programmed through the screen: DMX, the 3D's targets and the drawn models agree for every light | ~5 min |
+| `oddcheck_ui.mjs` | two browsers on one desk; the server dropping out and coming back | ~1 min |
+| `frametiming.py` | DMX on a steady 40 Hz with a big rig and three screens (CI) | 5 s |
+
+The browser checks need Node and Playwright.  `docs/REAL_LIGHT_CHECKLIST.md`
+is the 15-minute check with real lights.
 
 ## Project layout
 

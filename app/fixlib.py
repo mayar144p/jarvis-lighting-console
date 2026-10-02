@@ -35,8 +35,8 @@ BUNDLE_DIR = Path(__file__).resolve().parent / "fixlib"
 SOURCES = {
     # Jarvis's own profiles, written from the manufacturers' manuals, for
     # what no open library carries yet (confetti launchers first).
-    "jarvis": {"name": "Jarvis library", "file": "jarvis.json",
-               "licence": "part of Jarvis", "url": "app/fixlib/jarvis.json"},
+    "jarvis": {"name": "Built-in library", "file": "jarvis.json",
+               "licence": "part of this desk", "url": "app/fixlib/jarvis.json"},
     "ofl": {"name": "Open Fixture Library", "file": "ofl.zip",
             "licence": "MIT", "url": "https://open-fixture-library.org"},
     "qlc": {"name": "QLC+ fixture library", "file": "qlcplus.zip",

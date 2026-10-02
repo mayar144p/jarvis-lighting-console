@@ -1,7 +1,6 @@
-# Handoff: where the work stands (2026-10-02)
+# Handoff: where the work stands (2026-10-02, second session)
 
-Read this first in a new Claude Code session on this repo.  It carries the
-context of the long session that built the full debugging tools.
+Read this first in a new Claude Code session on this repo.
 
 ## How the operator works
 
@@ -10,92 +9,77 @@ context of the long session that built the full debugging tools.
 - Merge flow, after each finished batch of work:
   1. Push to the session branch.
   2. Open a PR to `main`.
-  3. Merge it (merge commit).
+  3. Merge it (merge commit) once CI is green.
   4. Reset the branch to `origin/main`.
 - `.env` holds the AI key: never commit it, never print it.  `data/` is
-  gitignored (fixtures DB, shows, memory).  Back it up before browser
-  tests that touch a running server; restore after.
+  gitignored.  Tests and tools run on scratch data (`CONSOLE_DATA_DIR`),
+  never on `data/`.
 - Desktop only (no phone / tablet layouts).
-- Use the project's skills (copied into `.claude/skills/`, so no plugin
-  download is needed - see `.claude/skills/_licenses/README.md`):
-  - **ui-ux-pro-max** and **design-for-ai** for anything on screen;
+- The name is subject to change: it is `APP_NAME` in `.env` (title and top
+  bar).  The screens' own sentences say "the desk", never the name.
+- Use the project's skills (in `.claude/skills/`) and say which one you use
+  for each part:
+  - **ui-ux-pro-max** and **design-for-ai** (usability, clarify, prototype)
+    for anything on screen;
   - **agent-skills** for debugging, tests, review and git;
-  - **ponytail** for review, audit and debt.
-  Before each part of the work, open the matching SKILL.md and follow it.
+  - **ponytail** for the simplest fix, review, audit and debt.
+- Line endings: the repo checks files out CRLF.  `git stash` rewrites the
+  working files CRLF, which breaks exact-text edit scripts; strip `\r`
+  first (`sed -i 's/\r$//' file`).
 
-## The debugging tools (all in `tools/`)
+## The checks (all in `tools/`, see the README's Tests section)
 
-| Tool | What it does | Time |
-|---|---|---|
-| `selftest.py` | 2,921 engine / server / web checks (CI) | ~40 s |
-| `gigcheck.py` | A whole gig, then save → reload → compare (CI) | <1 s |
-| `libsweep.py` | All 2,424 library lights × every control, DMX vs 3D | ~20 s |
-| `uicheck.mjs` | Every screen and dialog in a browser at 1280 / 1440 / 1920; flags page errors, spills, tiny or off-screen controls, empty panels; screenshots | ~20 min at one width with `--widths 1440` |
-| `rigcheck.py`, `rigcheck_3d.mjs` | Every light type placed every way; beam lands where aimed | |
+| Check | What it proves |
+|---|---|
+| `selftest.py` | 2,918 engine / server / web checks (CI, Linux + Windows) |
+| `gigcheck.py` | a whole gig, saved, reloaded, compared (CI) |
+| `oddcheck.py` | empty rig, 12,900 nonsense values, 520 lights, 23 corrupt shows / autosaves, restart, Undo all the way (CI) |
+| `libsweep.py [--all-modes]` | every library light / mode (8,093): Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D |
+| `uicheck.mjs [--big]` | every screen at 1280 / 1440 / 1920; `--big` with 124 lights |
+| `vischeck.mjs` | 124 real lights driven through the screen: DMX, 3D targets and the drawn models agree |
+| `oddcheck_ui.mjs` | two browsers at once; the server dropping out and back |
+| `frametiming.py` | steady 40 Hz with a big rig and three screens (CI) |
 
-`uicheck.mjs` starts its own server on a scratch database, so it never
-touches `data/`.  Run it with an output folder, e.g.
-`node tools/uicheck.mjs /tmp/uic --widths 1440`.
+The browser checks use software rendering here: with 124 lights the 3D is
+slow, so they set the 3D to Fast.  Never run two browser checks at once on
+one machine - the page never settles and every click times out.
 
-## Done in this session (all merged unless noted)
+Windows' clock ticks every 16 ms: anything timed by `time.monotonic()`
+can see "no time passed".  `coarse.py`-style runs (monkeypatch
+`time.monotonic` to 1/64 s steps) reproduce Windows CI failures on Linux.
 
-- **Hold buttons ("Make a button…").**  A button now keeps everything the
-  lights show: brightness, colour or a colour effect (rainbow), gobo and
-  beam, movement or roam, and what a cue gives them.  It holds the lights
-  until turned off, and the tile says what it keeps.
-- **FX tab.**  Speed and size are set with tap buttons
-  (Slow / Medium / Fast, − / +, ½× / 2×, a typed number) and change live
-  (`fx_tweak`).
-- **Buttons screen.**  The dock is taller and can be resized by dragging.
-- **Library sweep fixes:**
-  - colour effects work on CMY and white-only lights;
-  - brightness effects work on shutter-only lights;
-  - LED lights are no longer mistaken for effect machines;
-  - fog and haze outputs are found;
-  - Locate on CMY lights comes out white.
-- **Show files keep their tempo.**  Pushed to the session branch, not
-  merged yet (it goes with this handoff).
+## Done in this session (PRs #48-#52)
+
+1. **Screens** (#48): the top bar fits at any width (labels fold into
+   icons only when needed); bigger click targets; Esc in Arrange closes a
+   menu first; Copilot "Forget this" fixed.
+2. **Odd inputs** (#49): the checks above, and the bugs they found - a
+   broken autosave stopped the desk starting; a damaged show broke every
+   frame; lights from the built-in list came back dead after a restart;
+   channel names ("Textured" read as red); CMY LEDs on RGB lights;
+   "Failed to fetch" wording; frame time on 520 lights.  CI was red on
+   main before the session (Windows clock: glide, beat, tempo tap, shared
+   look; Ubuntu: "Find nodes" waited 6 s sending polls) - all fixed.
+3. **Real-light checklist and backlog A8** (#50):
+   `docs/REAL_LIGHT_CHECKLIST.md`, `docs/BACKLOG.md` A8.
+4. **Redesign** (#51): "graphite" look (neutral greys, indigo for
+   selection, red live, amber blind, green go, rose AI), sentence-case
+   labels, one-row programmer tabs with icons, a wider fixture list,
+   grouped top bar with a new logo, Settings in sections, readable
+   bottom-panel switch, neutral 3D room light, reduced-motion support.
+5. **Debug with 124 lights** (#52): Blackout left lights whose only "off"
+   is a colour channel's "Blackout" slot shining (a Swarm) - fixed on the
+   wire and in 3D; Full / Out / Locate drive that slot; lights with all
+   colours at 0 no longer show lit; a colour channel described only by
+   ranges is read as slots; the libsweep has a Blackout check (0 fail).
 
 ## Left to do
 
-1. **Fix the screen-check findings at 1440**, then run all three widths.
-   Real problems first:
-   - **Top bar overflows.**  Help (?), Settings and Design run off the right
-     edge and the page scrolls sideways (7 screens).  The bar needs to
-     shrink or wrap: hide labels into icons, or move items into a menu.
-   - **Too small to click:**
-     - the Help and Settings icons;
-     - the × on chips;
-     - the link buttons "Teach the gobo…", "Move tab" and
-       "Delete from library";
-     - the timeline length;
-     - checkboxes (13 px).
-   - **Text spills** on the laser mode chips (two lines in a 22 px chip)
-     and on the "GDTF Share" tab.
-   - **Script fixes:**
-     - the Venues menu and Arrange "Done" steps time out (over 20 s);
-     - the off-screen chips under the command bar and the profile
-       editor are behind a modal (left of x=0).
-
-   Check both of the last two before "fixing" anything.
-2. **Odd inputs** (not built yet):
-   - empty rig;
-   - 500+ lights;
-   - unusual modes;
-   - a corrupt show file;
-   - dropped connection;
-   - two browsers at once;
-   - Undo after everything.
-3. **Real-light checklist** for the operator: about 15 minutes with their
-   Art-Net node.  Check each light, colours, Locate, movement speed,
-   lasers and fog, and blackout.  They report back with notes or
-   screenshots.
-4. **Backlog** (`docs/BACKLOG.md`), add as A8:
-   - **Combo lights with a laser (33):** the laser module has no "on"
-     channel the console finds.  This is a safety question, so don't
-     guess an output; it stays ARM-gated.
-   - **Vari-Lite "Blue / Amber / Magenta Mixer"** subtractive channels
-     (2 lights).
-   - **A CMY-only light with no dimmer and no shutter** shows dark in 3D on
-     Full (1 light).
-   - **Shutter flicker / random strobe** never change on 3 lights.
+- The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
+  sends notes; each note becomes a fix.
+- `docs/BACKLOG.md` A8 (library leftovers) and A7/11 (output extras).
+- The ui-ux-pro-max skill's search data is in the repo now (operator's OK,
+  2026-10-02): `python .claude/skills/ui-ux-pro-max/scripts/search.py ...`.
+- 72 old lamp scanners can't be closed from DMX at all; the 3D shows them
+  lit in Blackout (true to the real light).  A notice in the Ready? check
+  would warn about them.

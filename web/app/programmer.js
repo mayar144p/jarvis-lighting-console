@@ -63,8 +63,9 @@ function applyTabVisibility() {
   $$("#prog-tabs button").forEach((b) => {
     const t = b.dataset.tab;
     const visible = show[t] === undefined ? true : show[t];
+    if (b.dataset.title === undefined) b.dataset.title = b.title;   // kept while hidden
     b.hidden = !visible;
-    b.title = visible ? (b.dataset.title || b.title) : "";
+    b.title = visible ? b.dataset.title : "";
   });
   if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : show.intensity ? "intensity" : "looks");
 }
@@ -123,7 +124,7 @@ function renderOpenWarning() {
   const models = [...new Set(bad.map((x) => x.model))];
   if (box.dataset.key === models.join("|")) return;     // unchanged: keep the button clickable
   box.dataset.key = models.join("|");
-  box.replaceChildren(h("span", `${models.join(", ")}: Jarvis doesn't know which value opens the shutter, so Full may leave it dark. `),
+  box.replaceChildren(h("span", `${models.join(", ")}: the desk doesn't know which value opens the shutter, so Full may leave it dark. `),
     h("button.btn.small.primary", { onclick: () => openLightTest(bad[0]) }, "Test this light"), " ",
     h("button.btn.small", { onclick: () => showTab("beam") }, "Find it in Beam"));
 }
@@ -526,7 +527,7 @@ function renderBeamQuick() {
     rows.push(h("div.open-find" + (strobe.open_known ? "" : ".unknown"),
       h("div.small", strobe.open_known
         ? `Opens at ${openV}. If the real light stays dark on Full, find its open value:`
-        : "Jarvis doesn't know which value opens this light's shutter, so Full may leave it dark. Put the dimmer up, slide until the REAL light comes on, then press This is open:"),
+        : "The desk doesn't know which value opens this light's shutter, so Full may leave it dark. Put the dimmer up, slide until the REAL light comes on, then press This is open:"),
       h("div.fx-row", h("span.k", strobe.role === "shutter" ? "Shutter" : "Strobe"), find, val),
       h("button.btn.small.primary", {
         onclick: () => first && run("remember_open", { head: first.head_no, value: +find.value }, { toast: true }).then(loadAttributes),

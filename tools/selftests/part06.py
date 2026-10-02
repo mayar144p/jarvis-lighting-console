@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import zipfile
@@ -1344,11 +1345,11 @@ def test_motion() -> None:
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("tidy: an 'In the programmer' bar, FX tab without movements, keyed Stop / Record",
           '"clear_attrs"' in pj and "MOVE_FX.has(fx.name)" in pj and "runningKey" in pj and "looksKey" in pj
-          and 'id="prog-in"' in html and 'data-tab="tools"' in html and ">Setup<" in html, "")
+          and 'id="prog-in"' in html and 'data-tab="tools"' in html and "<span>Setup</span>" in html, "")
     check("the Move tab has a laser safe zone", "Laser safe zone" in js and '"laser_size", "max"' in js, "")
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
-          and 'data-tab="position">Move<' in html and 'id="move-panel"' in html, "")
+          and re.search(r'data-tab="position"[^>]*>.*?<span>Move</span>', html) and 'id="move-panel"' in html, "")
 
 
 def test_custom_buttons() -> None:

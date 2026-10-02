@@ -10,6 +10,7 @@ and in what the 3D view is told?
 
 Per light (only the controls it has; the rest are "skip"):
   light    Full (set_intensity 100) reaches the DMX and the 3D view shows it lit
+  blackout then BLACKOUT darkens it
   colour   red then blue: the DMX changes and the 3D colour is red, then blue
            (a wheel: the nearest slot - as long as red and blue differ)
   gobo     the second gobo: the gobo channel moves and the 3D view is told
@@ -35,7 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-CONTROLS = ("light", "colour", "gobo", "move", "locate", "effects", "sfx")
+CONTROLS = ("light", "blackout", "colour", "gobo", "move", "locate", "effects", "sfx")
 
 
 def lights(only: str = "", limit: int = 0, all_modes: bool = False) -> list[tuple]:
@@ -130,8 +131,21 @@ def probe(e, n: int) -> dict[str, tuple[str, str]]:
             res["light"] = ("fail", f"Full: the 3D view shows it dark (DMX {f[:12]})")
         else:
             res["light"] = ("ok", "")
+        # blackout: lit at Full, then BLACKOUT must darken it (on the wire,
+        # which the look is built from)
+        if res["light"][0] == "ok":
+            e.act("blackout", state=1)
+            dark = p.look()
+            e.act("blackout", state=0)
+            if e._lamp_only(e._head(n)):
+                res["blackout"] = ("skip", "a lamp DMX can't close")
+            else:
+                res["blackout"] = ("ok", "") if not dark.get("a") else ("fail", f"still lit in BLACKOUT (DMX {p.frame()[:12]})")
+        else:
+            res["blackout"] = ("skip", "")
     else:
         res["light"] = ("skip", "")
+        res["blackout"] = ("skip", "")
 
     # colour
     mixes = any(r in m for r in ("red", "cyan", "hue"))

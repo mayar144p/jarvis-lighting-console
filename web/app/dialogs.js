@@ -17,14 +17,14 @@ export function openAddDialog(query = "") {
   const list = h("div.lib-list");
   const search = h("input", { type: "search", placeholder: "Search: brand, model, type…", value: query, autocomplete: "off" });
   const tabs = h("div.lib-tabs",
-    h("button", { "aria-selected": "true", dataset: { src: "all" }, title: "Installed, the Jarvis library, Open Fixture Library, QLC+ and GDTF Share at once" }, "All"),
+    h("button", { "aria-selected": "true", dataset: { src: "all" }, title: "Installed, the built-in library, Open Fixture Library, QLC+ and GDTF Share at once" }, "All"),
     h("button", { "aria-selected": "false", dataset: { src: "lib" } }, "Installed"),
-    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "Jarvis library + Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"),
+    h("button", { "aria-selected": "false", dataset: { src: "open" }, title: "The built-in library + Open Fixture Library + QLC+: thousands of lights, offline" }, "Libraries"),
     h("button", { "aria-selected": "false", dataset: { src: "share" } }, "GDTF Share"));
   const shareNote = h("div.muted.small", { style: { padding: "8px 12px" } });
   const pv = h("div.preview3d", h("div.cap"));
   const title = h("div.pick-title", "Pick a fixture");
-  const meta = h("div.pick-meta", "One search covers everything: your installed fixtures, the Jarvis library, Open Fixture Library, QLC+ and (signed in) GDTF Share.");
+  const meta = h("div.pick-meta", "One search covers everything: your installed fixtures, the built-in library, Open Fixture Library, QLC+ and (signed in) GDTF Share.");
   const mode = h("select.select", { style: { width: "100%" } });
   const qty = h("input", { type: "number", min: 1, max: 64, value: 1 });
   const uni = h("input", { type: "number", min: 1, placeholder: "auto" });
@@ -229,7 +229,7 @@ export function openAddDialog(query = "") {
     for (const r of lib.results || []) {
       const item = { ...r, _origin: "open", modes: (r.modes || []).map(([n, c]) => ({ name: n, channel_count: c })) };
       rows.push(row(item, `${r.manufacturer} ${r.model}`, [r.close ? "close match" : "", r.type || "", chCounts(item.modes)],
-        r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Jarvis"));
+        r.src === "ofl" ? "OFL" : r.src === "qlc" ? "QLC+" : "Built-in"));
     }
     list.replaceChildren(...rows);
     if (!rows.length) {
@@ -850,50 +850,68 @@ export async function openSettings() {
     try { localStorage.setItem("jarvis.gig", gigBox.checked ? "1" : "0"); } catch (e) { /* ignore */ }
   });
   const midi = status.midi || {};
-  const body = h("div",
-    h("h3", "Venue"),
-    h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
-      : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
-    h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
-      h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
-    h("div.form-grid",
-      h("label.field", h("span", "Start from"), tpl),
-      h("div.field", h("span", " "), h("button.btn", {
-        onclick: async () => {
-          if (!(await confirmBox("Replace the venue", "Start from this template? The room, rigging and zones are replaced; your lights stay where they are (Ctrl+Z undoes it).", { ok: "Replace" }))) return;
-          run("venue_template", { name: tpl.value, width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true });
-        },
-      }, "Use template"))),
-    h("div.form-grid",
-      h("label.field", h("span", "Width m"), w), h("label.field", h("span", "Depth m"), d), h("label.field", h("span", "Ceiling m"), ht),
-      h("div.field", h("span", " "), h("button.btn", {
-        onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
-      }, "Resize room"))),
-    h("h3", "Screen"),
-    h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
-    h("h3", "3D view"),
-    h("div.form-grid", h("label.field", h("span", "Quality"), quality)),
-    h("h3", "Output"),
-    outputSection(con),
-    h("h3", "Fixture library"),
-    h("div.row-btns",
-      h("span.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
-      h("button.btn", {
+  // one section at a time, its name down the side: output first, it is
+  // what matters at a gig
+  const sections = [
+    ["output", "Output", [outputSection(con)]],
+    ["venue", "Venue", [
+      h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
+        : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
+      h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
+        h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
+      h("h3", "Start from a template"),
+      h("div.form-grid",
+        h("label.field", h("span", "Template"), tpl),
+        h("div.field", h("span", " "), h("button.btn", {
+          onclick: async () => {
+            if (!(await confirmBox("Replace the venue", "Start from this template? The room, rigging and zones are replaced; your lights stay where they are (Ctrl+Z undoes it).", { ok: "Replace" }))) return;
+            run("venue_template", { name: tpl.value, width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true });
+          },
+        }, "Use template"))),
+      h("h3", "Room size"),
+      h("div.form-grid",
+        h("label.field", h("span", "Width (m)"), w), h("label.field", h("span", "Depth (m)"), d), h("label.field", h("span", "Ceiling (m)"), ht),
+        h("div.field", h("span", " "), h("button.btn", {
+          onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
+        }, "Resize room")))]],
+    ["screen", "Screen & 3D", [
+      h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
+      h("h3", "3D view"),
+      h("div.form-grid", h("label.field", h("span", "Quality"), quality))]],
+    ["midi", "MIDI & OSC", [
+      h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
+      webMidiRow(),
+      h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
+        h("span.muted.small", "see what a controller sends and what it did")),
+      h("h3", "OSC"),
+      oscRow()]],
+    ["library", "Fixtures", [
+      h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
+      h("div.row-btns", h("button.btn", {
         onclick: async () => {
           const r = await post("/api/fixtures/import", {}).catch((e) => ({ error: e.message }));
           if (r.error) toast(r.error, "bad");
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
-      }, "Import fixture files from fixtures_inbox/ (.gdtf, .qxf, OFL .json)")),
-    h("h3", "MIDI"),
-    h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
-    webMidiRow(),
-    h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
-      h("span.muted.small", "see what a controller sends and what it did")),
-    oscRow(),
-    h("h3", "AI"),
-    h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot."));
-  modal({ title: "Settings", body, wide: false });
+      }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
+    ["ai", "AI", [
+      h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot.")]],
+  ];
+  let last = "output";
+  try { last = localStorage.getItem("jarvis.settingsTab") || last; } catch (e) { /* fine */ }
+  if (!sections.some(([k]) => k === last)) last = "output";
+  const nav = h("nav.set-nav", { role: "tablist", "aria-orientation": "vertical", "aria-label": "Settings sections" });
+  const pane = h("div.set-pane");
+  const show = (key) => {
+    for (const b of nav.children) b.setAttribute("aria-selected", String(b.dataset.k === key));
+    const sec = sections.find(([k]) => k === key);
+    pane.replaceChildren(h("h2.set-title", sec[1]), ...sec[2]);
+    try { localStorage.setItem("jarvis.settingsTab", key); } catch (e) { /* fine */ }
+  };
+  for (const [k, label] of sections) nav.append(h("button", { role: "tab", dataset: { k }, onclick: () => show(k) }, label));
+  show(last);
+  const body = h("div.settings", nav, pane);
+  modal({ title: "Settings", body, wide: true });
 }
 
 // OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
@@ -953,7 +971,7 @@ const SYNTAX = [
 export function openHelp() {
   const dl = (rows) => h("dl", ...rows.flatMap(([k, v]) => [h("dt", h("kbd", k)), h("dd", v)]));
   modal({
-    title: "Jarvis help", wide: true,
+    title: "Help", wide: true,
     body: h("div.help-grid",
       h("div", h("h3", "Keys"), dl(KEYS)),
       h("div", h("h3", "Command bar syntax"), dl(SYNTAX),
@@ -1156,7 +1174,7 @@ export function openManualFixture(onSaved) {
       h("div.form-grid", h("label.field", h("span", "Manufacturer"), maker), h("label.field", h("span", "Model"), model),
         h("label.field", h("span", "Manual (PDF or text)"), file)),
       text, h("div.row-btns", readBtn, status), review),
-    foot: [h("span.muted.small.grow", "Jarvis stores exactly this table. Effects fire only from their armed FX buttons."),
+    foot: [h("span.muted.small.grow", "The desk stores exactly this table. Effects fire only from their armed FX buttons."),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
         onclick: async () => {
@@ -1309,7 +1327,7 @@ export async function openLightTest(hd) {
   const r = await run("light_tested", { head, light: !!res.light, move: res.move, colour: res.colour }, { silentError: true });
   const ok = r.ok && r.tested;
   box.replaceChildren(
-    h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves and changes colour as Jarvis expects. Every ${hd.model} is ready.`
+    h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves and changes colour as expected. Every ${hd.model} is ready.`
       : `⚠ ${hd.model} needs attention.`),
     ...((r.advice || []).map((t) => h("p.small", t))),
     ok ? null : h("div.row-btns", h("button.btn", { onclick: () => { close(); openChannels([head]); } }, "Show its DMX channels")));

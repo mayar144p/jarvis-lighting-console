@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -311,12 +312,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _file(self, path: Path, status: int = 200) -> None:
-        """Serve a static file; `no-cache` + ETag so clients revalidate."""
+    def _file(self, path: Path, status: int = 200, fill: dict | None = None) -> None:
+        """Serve a static file; `no-cache` + ETag so clients revalidate.
+        `fill`: placeholders replaced in the text (the desk's name)."""
         if not path.is_file():
             self._json({"error": "not found"}, 404)
             return
         data = path.read_bytes()
+        if fill:
+            text = data.decode("utf-8")
+            for key, value in fill.items():
+                text = text.replace(key, html.escape(str(value)))
+            data = text.encode("utf-8")
         # Explicit web types: Windows registry often maps .js to text/plain.
         mime = _MIME.get(path.suffix.lower()) or \
             mimetypes.guess_type(str(path))[0]
@@ -421,7 +428,7 @@ class Handler(BaseHTTPRequestHandler):
         route = url.path
 
         if route in ("/", "/index.html", "/console.html"):
-            return self._file(config.WEB / "index.html")
+            return self._file(config.WEB / "index.html", fill={"{{APP_NAME}}": config.APP_NAME})
         if route == "/" + config.APP_LOGO:
             logo = config.logo_path()
             return self._file(logo) if logo else self._json({"error": "not found"}, 404)
@@ -1262,7 +1269,7 @@ def main() -> None:
         server = ThreadingHTTPServer((config.HOST, config.PORT), Handler)
     except OSError as exc:
         print(f"* Cannot open port {config.PORT}: {exc}")
-        print("  Is another Jarvis already running? Close it (or change PORT in .env) and retry.")
+        print(f"  Is another {config.APP_NAME} already running? Close it (or change PORT in .env) and retry.")
         sys.exit(1)
     server.daemon_threads = True
     if config.requires_token():

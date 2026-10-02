@@ -13,5 +13,8 @@ MIT-licensed; each licence is in this folder.
 
 Changed from the originals: ui-ux-pro-max's script paths point at
 `.claude/skills/ui-ux-pro-max/` instead of the plugin root, and its
-plugin-only tests are left out.  To update, copy the skill folders again
+plugin-only tests are left out.  Its search data (`data/`, and the
+`design` / `design-system` skills' `data/`) is included as published
+(MIT, nextlevelbuilder/ui-ux-pro-max-skill, commit 09170ee); `.gitignore`
+lets these `data/` folders and their `.csv` files through.  To update, copy the skill folders again
 from those repositories.

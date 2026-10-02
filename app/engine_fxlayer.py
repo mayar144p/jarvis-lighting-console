@@ -571,7 +571,7 @@ class FxLayerMixin:
             advice.append("It never lit: check its DMX address and cable, that it is in DMX mode, "
                           "and (on a discharge lamp) that the lamp is struck.")
         if not _truthy(move) or not _truthy(colour):
-            advice.append(f"Moved or coloured wrongly: the light's channel mode must match Jarvis "
+            advice.append(f"Moved or coloured wrongly: the light's channel mode must match the desk's "
                           f"({h.get('mode')}, {len(h['map'])} channels) - set it on the light's "
                           f"menu, or re-add it in the mode the light shows.")
         return {"tested": ok, "advice": advice,

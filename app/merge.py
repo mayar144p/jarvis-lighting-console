@@ -55,7 +55,7 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
                  master: int = 100, blackout: bool = False,
                  over: dict | None = None, now: float | None = None,
                  gate_closed: int | None = 0,
-                 rest: dict | None = None) -> dict:
+                 rest: dict | None = None, dark: dict | None = None) -> dict:
     """Final per-role values for one head.
 
     Intensity roles (dimmer / zone dimmer) are 0-100 after blackout and
@@ -250,6 +250,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
         for role in COLOUR_ROLES:
             if role in resolved:
                 resolved[role] = resolved[role] * scale // 100
+        if scale == 0 and dark:
+            # no shutter that closes and no colour LEDs: its colour channel's
+            # "Blackout" slot is the only way to dark (a Swarm) - without it
+            # BLACKOUT left the real light shining
+            for role, v in dark.items():
+                if role in resolved or role in head["map"]:
+                    resolved[role] = int(v)
     # PER-FIXTURE LIMITS AND ORIENTATION, applied HERE and not on write.
     #
     # This is the frame boundary, which is the only place where "what the
@@ -369,7 +376,7 @@ def build_frames(patch: list[dict], prog: dict,
                  defaults=None, overrides: dict | None = None,
                  now: float | None = None,
                  gates: dict | None = None,
-                 rests: dict | None = None) -> dict[int, bytearray]:
+                 rests: dict | None = None, darks: dict | None = None) -> dict[int, bytearray]:
     """Merge programmer + playbacks + effects into 512-byte frames.
 
     `defaults` is an optional {role: value} map of what an UN-driven
@@ -381,6 +388,7 @@ def build_frames(patch: list[dict], prog: dict,
     overrides = overrides or {}
     gates = gates or {}
     rests = rests or {}
+    darks = darks or {}
     frames: dict[int, bytearray] = {}
     for head in patch:
         universe = head["universe"]
@@ -393,7 +401,7 @@ def build_frames(patch: list[dict], prog: dict,
                               master, blackout,
                               overrides.get(head["head_no"]), now,
                               gates.get(head["head_no"], 0),
-                              rests.get(head["head_no"]))
+                              rests.get(head["head_no"]), darks.get(head["head_no"]))
         curve = head.get("curve", "linear")
         roles = head["map"]
         fine_of, base_of = pair_map(roles)

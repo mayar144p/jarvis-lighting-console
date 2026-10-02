@@ -414,7 +414,7 @@ class ShowMixin:
             add("bad", f"{len(clashes)} DMX clash(es): two lights share channels.", "Fixtures → the red warning → Move")
         raw = [h["head_no"] for h in self.patch if not h.get("mapped", True)]
         if raw:
-            add("warn", f"{len(raw)} light(s) have channels Jarvis can't name ({', '.join(f'#{n}' for n in raw[:6])}).",
+            add("warn", f"{len(raw)} light(s) have channels the desk can't name ({', '.join(f'#{n}' for n in raw[:6])}).",
                 "Edit fixture profile")
         gone = self._stale_heads(self.patch, self.playbacks)
         if gone:
