@@ -233,7 +233,9 @@ async function fit(rig) {
     const has = new Set(hd.map);
     const bad = (what, detail = "") => check(false, `${who}: ${what}`, detail);
     // --- the 3D body is the kind of product it is
-    const rule = LIB_3D.find(([re]) => re.test(it.type || ""));
+    // the library's first type is what the product is ("Color Changer,
+    // Dimmer, Effect" is a PAR that has effects)
+    const rule = LIB_3D.find(([re]) => re.test((it.type || "").split(",")[0].trim()));
     // (a combo with a laser in it - Stairville All FX Bar - is a laser for
     // safety; a combined bar + laser model is in docs/BACKLOG.md)
     if (rule && !rule[1](hd.body) && !(hd.body.type === "laser" && hd.map.some((r) => r.startsWith("laser_")))) bad(`the 3D draws it as "${hd.body.type}", the library says ${rule[2]}`, it.type);
