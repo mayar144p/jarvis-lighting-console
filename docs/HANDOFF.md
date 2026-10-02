@@ -78,9 +78,8 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.
 - `docs/BACKLOG.md` A8 (library leftovers) and A7/11 (output extras).
-- The ui-ux-pro-max skill's search data (`data/*.csv`) is not in the repo:
-  `.gitignore` drops every `.csv`.  Adding it needs the operator's OK
-  (third-party files); until then the skill's built-in rule books are used.
+- The ui-ux-pro-max skill's search data is in the repo now (operator's OK,
+  2026-10-02): `python .claude/skills/ui-ux-pro-max/scripts/search.py ...`.
 - 72 old lamp scanners can't be closed from DMX at all; the 3D shows them
   lit in Blackout (true to the real light).  A notice in the Ready? check
   would warn about them.

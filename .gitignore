@@ -112,3 +112,8 @@ docs/backup/
 .netrc
 .npmrc
 .pypirc
+
+# ...except the design skills' own data tables (ui-ux-pro-max, design,
+# design-system): third-party MIT data, see .claude/skills/_licenses/
+!.claude/skills/*/data/
+!.claude/skills/*/data/**
