@@ -228,6 +228,51 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A8. Leftovers from the library sweeps (open, 2026-10-02)
+
+Found by `tools/libsweep.py` (default modes) and `--all-modes` (all 8,093
+modes).  None is a crash; each is one light type behaving oddly.  The
+counts are modes, not lights.
+
+1. **Combo lights with a laser (33 lights, 60 modes):** the laser module
+   has no "on" channel the console finds ("nothing fires it").  This is
+   a **safety** question, so no output is guessed: the laser part stays
+   dark and ARM-gated until someone with the light confirms which
+   channel and value turn it on.  Examples: American DJ Boom Box Fx2,
+   Stinger, Fusion FX Bar 5; Chauvet GigBar IRC, COLORstrip Mini FX;
+   Briteq Spectra 3D Laser 2CH; Cameo Wookie 3-channel modes.
+2. **Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
+   Wash, 6 modes): subtractive mixers the console doesn't treat as CMY,
+   so Locate comes out blue.  Needs a "mixer flag" kind of colour, like
+   CMY with different filters.
+3. **CMY-only light with no dimmer and no shutter** (Generic CMY Fader,
+   3 modes): Full shows dark in 3D.  With no way to dim, "Full" on such a
+   light should mean "flags out" and the 3D should draw it lit.
+4. **Shutter flicker / random strobe / alternate never change the DMX**
+   (Studio Due Shark 150C x4 modes, Mac Mah Mac Follow 1200, BoomToneDJ
+   Strob LED 18 2ch, Pro-Lights Ra 2000Profile 44ch alternate / fan).
+   The effect is offered but finds no range to move on that channel.
+5. **Locate not white, from odd files** (still 18 modes):
+   - ETC Source Four LED Series 2 Daylight / Tungsten HD "Direct": the file
+     names two channels "Red" and one "Mint", so the white mix is off;
+   - Blizzard Rocklite RGBAW 4-channel (red, amber, white only): Locate
+     should use the white emitter alone, not red + white (pink);
+   - Cameo CLBAR10RGBA 2-channel (dimmer + colour macro): slot 0 is not
+     white; the macro's white slot isn't named in the file;
+   - Varytec Typhoon 10 / 13 channel: Locate is cyan-ish (white + green +
+     blue, red is called "Intensity red" in one mode only).
+6. **Colour wheels whose slots have no names** (Vizi Beam 5RX, Martin
+   RoboColor III / Roboscan 812, High End Trackspot HR, Lite-Works
+   ColorChanger, PR Pilot 575): red and blue land on the same slot.  Fix
+   per light with **Teach the wheel** (Colour tab); a library-wide fix
+   would need the slot colours from the manufacturers.
+7. **Not wrong, the sweep should skip:** Cameo P2 FC CCT modes are
+   white-only (red and blue *should* give the same DMX); Chauvet
+   ColorStrip Mini "Default" has one channel for "speed / red / fade".
+8. **Tell the operator when the autosave was unreadable.**  The desk now
+   starts empty and keeps the file as `autosave.broken.json` (batch 2),
+   but only the log says so; a one-time notice on screen would be kinder.
+
 ## A7. Operator's debugging list (DONE, 2026-10-01)
 
 - **Button from your moves:** "Make a button…" on the programmer bar and
