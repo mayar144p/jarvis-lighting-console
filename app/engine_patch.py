@@ -1574,6 +1574,19 @@ class PatchMixin:
             # colour is set (merge.resolve_head).  "Full" used to do
             # nothing at all on these, the commonest DJ lights.
             out[VDIM] = int(pct)
+        elif "wheel" in head["map"]:
+            # its colour channel is its on / off (a Swarm: 0 = "Blackout"):
+            # Full leaves the blackout slot for its white / first colour,
+            # Out goes back to it
+            now_v = int((self.programmer.get(head["head_no"]) or {}).get("wheel", 0))
+            dark_slot = next((x for x in self._wheel_slots(head) if self._DARK_SLOT.match(str(x.get("name") or ""))), None)
+            if dark_slot is not None:
+                if pct > 0 and self._wheel_dark(head, {"wheel": now_v}):
+                    lit = self._white_values(head).get("wheel")
+                    if lit is not None and not self._wheel_dark(head, {"wheel": lit}):
+                        out["wheel"] = int(lit)
+                elif pct <= 0:
+                    out["wheel"] = int(dark_slot["value"])
         role = self._shutter_role(head)
         if role is None:
             return out
@@ -1698,7 +1711,13 @@ class PatchMixin:
         is named by its colour ("Light cyan")."""
         if not hasattr(self, "_range_cache"):     # a bare engine (tools)
             return []
-        slots = list((self.head_ranges(head).get(role) or {}).get("slots") or [])
+        rng = self.head_ranges(head).get(role) or {}
+        slots = list(rng.get("slots") or [])
+        if not slots and role.startswith("wheel") and rng.get("caps"):
+            # a colour channel the file describes only by its ranges
+            # ("0-51 Blackout, 52-102 Red..."): those are its slots
+            slots = [{"from": int(c[0]), "to": int(c[1]), "value": int(c[0]), "name": str(c[2] or "")}
+                     for c in rng["caps"] if isinstance(c, (list, tuple)) and len(c) >= 3]
         if role.startswith("wheel") and any(not x.get("hex") for x in slots):
             # a slot named "Red" with no colour in the file: the colour of
             # its name, so the picker can land on it and the 3D shows it
@@ -1827,13 +1846,29 @@ class PatchMixin:
         # CMY wash's colour wheel) needs its wheel open too, or the wheel
         # tints the white it mixed.
         if True:
+            dark = self._DARK_SLOT
             for role in ("wheel", "gobo"):
                 if role in roles:
                     out[role] = 0
-                    for s in self._wheel_slots(head, role):
+                    slots = self._wheel_slots(head, role)
+                    for s in slots:
                         if s["name"].strip().lower() in ("open", "white", "clear"):
                             out[role] = int(s["value"])
                             break
+                    else:
+                        # slot 0 is "Blackout" on some lights (a Swarm's colour
+                        # channel): white is then the first slot that lights
+                        first = next((s for s in slots if int(s["value"]) <= 0 or s.get("from", 1) == 0), None)
+                        if first and dark.match(str(first["name"])):
+                            # a slot that says white ("Full white", "RGBW white")
+                            # before the first that merely lights (often red)
+                            rgb = lambda n: all(re.search(rf"\b{c}\b", n, re.I) for c in ("red", "green", "blue"))  # noqa: E731
+                            lit = next((s for s in slots if re.search(r"\b(white|open|clear)\b", str(s["name"]), re.I)
+                                        and not dark.match(str(s["name"]))), None) \
+                                or next((s for s in slots if rgb(str(s["name"]))), None) \
+                                or next((s for s in slots if not dark.match(str(s["name"]))), None)
+                            if lit:
+                                out[role] = int(lit["value"])
         return out
 
     def _a_set_colour(self, hex=None, colour=None, value=None, cell=None, **_):

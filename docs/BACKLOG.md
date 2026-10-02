@@ -272,6 +272,15 @@ counts are modes, not lights.
 8. **Tell the operator when the autosave was unreadable.**  The desk now
    starts empty and keeps the file as `autosave.broken.json` (batch 2),
    but only the log says so; a one-time notice on screen would be kinder.
+9. **Lamps DMX can't close** (72 modes, mostly old scanners and HMI
+   moving heads in short modes): no dimmer, no shutter, no colour LEDs.
+   BLACKOUT can't darken them on the wire, so the 3D shows them lit in
+   BLACKOUT too (true to the real light).  The Ready? check could list
+   them before doors.  (Found 2026-10-02 by the libsweep Blackout check.)
+10. **Lights whose only on / off is a colour-macro channel** (1- and
+    2-channel modes): Full, Out and Locate now use a slot named
+    "Blackout" when the file has one; a file that names nothing leaves the
+    desk guessing.  Worth a "Test this light" question for these.
 
 ## A7. Operator's debugging list (DONE, 2026-10-01)
 

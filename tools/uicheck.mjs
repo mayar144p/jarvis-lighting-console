@@ -12,7 +12,7 @@
 // and saves a screenshot per step, to look through by eye.
 // At 1440 it also presses every (safe) button of every tab and dialog.
 //
-//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click] [--only regex]
+//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click] [--only regex] [--big]
 //
 // It starts its own server on a scratch fixture database and show folder,
 // so your shows and patch are never touched.  Needs Playwright.
@@ -21,6 +21,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RIG } from "./bigrig.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -30,6 +31,8 @@ const WIDTHS = opt("--widths", "1280,1440,1920").split(",").map(Number);
 const CLICK = !args.includes("--no-click");
 // --only <regex>: run just the steps whose name matches (plus the start)
 const ONLY = opt("--only", "") ? new RegExp(opt("--only", "")) : null;
+// --big: the 124-light rig (tools/bigrig.mjs) instead of the small one
+const BIG = args.includes("--big");
 const PORT = +(process.env.UICHECK_PORT || 8811);
 const BASE = `http://127.0.0.1:${PORT}/`;
 mkdirSync(outDir, { recursive: true });
@@ -158,6 +161,19 @@ async function buildRig(p) {
   const { post, install } = await setup(p);
   await post("patch_clear");
   await post("venue_template", { name: "club" });
+  if (BIG) {
+    for (const [src, key, query, qty] of RIG) {
+      await install(src, key);
+      const r = await post("add_heads", { query, qty });
+      if (!r.ok) finding(0, "setup", "setup", `add_heads ${query}`, r.error || "");
+    }
+    await post("select_all");
+    await post("set_intensity", { level: 100 });
+    await post("record_cue", { playback: 1 });
+    await post("quick_defaults", {});
+    await post("clear_programmer");
+    return;
+  }
   for (const [src, key] of [["qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"], ["qlc", "Laserworld/Laserworld-RS400G.qxf"],
     ["ofl", "stairville/af-180-led-fogger.json"], ["qlc", "Showtec/Showtec-Pixel-Bar-12.qxf"], ["qlc", "Nicols/Nicols-Moover-Spot-120.qxf"]]) {
     await install(src, key);
@@ -238,6 +254,7 @@ async function clickAll(p, width, step, scope) {
       pressed++;
     } catch (e) {
       // covered by something, or gone: not an error of the button itself
+      if (process.env.UICHECK_DEBUG) console.log("    could not press", info, String(e.message).split("\n").slice(0, 6).join(" | "));
     }
     await p.waitForTimeout(160);
     if (pageErrors.length > before) finding(width, step, "page-error", `pressing “${info}” in ${scope}`, pageErrors.at(-1));
@@ -258,6 +275,11 @@ const sel = (heads) => async (p) => {
   await post("select_heads", { heads });
   await p.waitForTimeout(500);
 };
+// light numbers per rig: movers, a Wave 360, two of a colour-wheel spot,
+// a pixel bar, the laser, the fogger
+const H = BIG
+  ? { movers: [1, 2, 3, 4], wave: [25], wheel: [27, 28], pix: [97], laser: [121], sfx: [123], teach: [27], few: [31, 32, 33, 34] }
+  : { movers: [7, 8, 9, 10], wave: [11], wheel: [12, 13], pix: [16], laser: [17], sfx: [18], teach: [12], few: [1, 2, 3, 4] };
 const STEPS = [
   ["01-start", async () => {}],
   ["02-select-all", async (p) => { const { post } = await setup(p); await post("select_all"); await p.waitForTimeout(600); }],
@@ -267,14 +289,14 @@ const STEPS = [
   ["06-fx", tab("fx"), { click: '.tab-pane[data-pane="fx"]' }],
   ["07-looks", tab("looks"), { click: '.tab-pane[data-pane="looks"]' }],
   ["08-setup", tab("tools"), { click: '.tab-pane[data-pane="tools"]' }],
-  ["09-movers", sel([7, 8, 9, 10])],
+  ["09-movers", sel(H.movers)],
   ["10-move", tab("position"), { click: '.tab-pane[data-pane="position"]' }],
-  ["11-wave360-move", async (p) => { await sel([11])(p); await tab("position")(p); }],
-  ["12-moover-colour", async (p) => { await sel([12, 13])(p); await tab("colour")(p); }],
-  ["13-pixelbar-fx", async (p) => { await sel([16])(p); await tab("fx")(p); }],
-  ["14-laser", async (p) => { await sel([17])(p); await p.click('#prog-tabs [data-tab="laser"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="laser"]' }],
-  ["15-sfx", async (p) => { await sel([18])(p); await p.click('#prog-tabs [data-tab="sfx"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="sfx"]' }],
-  ["16-faders", async (p) => { await sel([1, 2, 3])(p); await p.click('#pb-mode [data-mode="faders"]'); await p.waitForTimeout(500); }, { click: "#pb-strip" }],
+  ["11-wave360-move", async (p) => { await sel(H.wave)(p); await tab("position")(p); }],
+  ["12-moover-colour", async (p) => { await sel(H.wheel)(p); await tab("colour")(p); }],
+  ["13-pixelbar-fx", async (p) => { await sel(H.pix)(p); await tab("fx")(p); }],
+  ["14-laser", async (p) => { await sel(H.laser)(p); await p.click('#prog-tabs [data-tab="laser"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="laser"]' }],
+  ["15-sfx", async (p) => { await sel(H.sfx)(p); await p.click('#prog-tabs [data-tab="sfx"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="sfx"]' }],
+  ["16-faders", async (p) => { await sel(H.few.slice(0, 3))(p); await p.click('#pb-mode [data-mode="faders"]'); await p.waitForTimeout(500); }, { click: "#pb-strip" }],
   ["17-buttons", async (p) => { await p.click('#pb-mode [data-mode="buttons"]'); await p.waitForTimeout(600); }],
   ["18-buttons-edit", async (p) => { await p.click("#qb-edit"); await p.waitForTimeout(500); }],
   ["19-timeline", async (p) => { await p.click("#qb-edit"); await p.click('#pb-mode [data-mode="timeline"]'); await p.waitForTimeout(700); }, { click: "#tl" }],
@@ -314,9 +336,9 @@ const STEPS = [
   ["52-node-monitor", async (p) => { await closeAll(p); await mod(p, "monitors.js", "openNodeMonitor"); await p.waitForTimeout(600); }],
   ["53-midi-monitor", async (p) => { await closeAll(p); await mod(p, "monitors.js", "openMidiMonitor"); await p.waitForTimeout(400); }],
   ["54-sound", async (p) => { await closeAll(p); await mod(p, "sounddialog.js", "openSoundDialog"); await p.waitForTimeout(500); }],
-  ["55-step-editor", async (p) => { await closeAll(p); await sel([1, 2, 3, 4])(p); await mod(p, "stepfx.js", "openStepEditor"); await p.waitForTimeout(400); }],
+  ["55-step-editor", async (p) => { await closeAll(p); await sel(H.few)(p); await mod(p, "stepfx.js", "openStepEditor"); await p.waitForTimeout(400); }],
   ["56-shape-editor", async (p) => { await closeAll(p); await mod(p, "shapeeditor.js", "openShapeEditor"); await p.waitForTimeout(400); }],
-  ["57-teach-wheel", async (p) => { await closeAll(p); await sel([12])(p); await mod(p, "teachwheel.js", "openTeachWheel", "wheel"); await p.waitForTimeout(400); }],
+  ["57-teach-wheel", async (p) => { await closeAll(p); await sel(H.teach)(p); await mod(p, "teachwheel.js", "openTeachWheel", "wheel"); await p.waitForTimeout(400); }],
   ["58-colour-match", async (p) => { await closeAll(p); await mod(p, "colourmatch.js", "openColourMatch"); await p.waitForTimeout(400); }],
   ["59-autopilot", async (p) => { await closeAll(p); await mod(p, "autopilot.js", "openAutopilot"); await p.waitForTimeout(400); }],
   ["60-rig-dialog", async (p) => { await closeAll(p); await mod(p, "rigdialog.js", "openRigDialog", "add"); await p.waitForTimeout(500); }],
@@ -333,9 +355,9 @@ for (const width of WIDTHS) {
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String(e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
-  await p.addInitScript(() => {
-    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); } catch { /* fine */ }
-  });
+  await p.addInitScript((big) => {
+    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (big) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
+  }, BIG);
   await p.goto(BASE);
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }

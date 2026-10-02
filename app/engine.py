@@ -177,7 +177,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
         # Monotonic look-feed sequence (see look_feed); the visualiser
         # interpolates between ticks instead of stepping.
         self._look_seq = 0
-        self._look_cache: tuple[float, str] | None = None
+        self._look_cache: tuple[float, str, int] | None = None
         self._look_cache_lock = threading.Lock()
         self._look_wanted = -1e9
         # Bumped by every successful edit, so a live client knows when the
@@ -668,7 +668,8 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
         return merge.resolve_head(head, prog, pb_vals, fx_row,
                                   self.master, self.blackout, over, None,
                                   self._gates().get(head["head_no"], 0),
-                                  self._rests().get(head["head_no"]))
+                                  self._rests().get(head["head_no"]),
+                                  self._darks().get(head["head_no"]))
 
     def _programmer_now(self, now: float) -> dict:
         """The programmer as it is at `now`, mid-fade if one is running."""
@@ -703,7 +704,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                     self._fx_values(now, rig=True),
                                     self.master, self.blackout,
                                     overrides=self._override_vals(now=now), now=now,
-                                    gates=self._gates(), rests=self._rests())
+                                    gates=self._gates(), rests=self._rests(), darks=self._darks())
         # colour matching scales what the looks / cues / effects ask for; a
         # raw channel the operator holds is written after it, untouched
         self._write_colour_cal(frames)

@@ -129,6 +129,11 @@ class LooksMixin:
                 # 3-channel RGB par, ...): the lamp is either passing
                 # light or it is not, so report the gate state, not 0.
                 intensity = self._gate_intensity(head, values)
+            if self.blackout and not self._lamp_only(head):
+                # BLACKOUT: the wire carries the darkest this light can be
+                # sent; the 3D shows it dark (a lamp nothing can close
+                # still shows lit - the real one is too)
+                intensity = 0
             pct = _curve_pct(intensity or 0, head.get("curve", "linear"))
             row = {"n": head["head_no"],
                    "a": round(max(0, min(100, pct)) / 100.0, 3),
@@ -379,11 +384,45 @@ class LooksMixin:
                 # a lamp light with nothing that can dim or close it (an old
                 # scanner: pan, tilt, colour wheel, gobo): the lamp is simply
                 # on, whatever the desk does - show it that way
-                return 100 if self._lamp_only(head) else 0
+                return 100 if self._lamp_only(head) and not self._wheel_dark(head, values) else 0
             colour = [v for r, v in values.items()
                       if r in _COLOUR_ROLES]
             return round(max(colour) * 100 / 255) if colour else 0
-        return 100 if values.get(role, 0) >= self._open_value(head, role) else 0
+        if values.get(role, 0) < self._open_value(head, role) or self._wheel_dark(head, values):
+            return 0
+        # open - and on a light with colour LEDs (an RGB PAR with a strobe
+        # channel) the colours are its brightness: all at 0 is dark, not
+        # "open, so full".  CMY flags on a lamp are filters, not LEDs.
+        leds = self._emitters(head)
+        if leds:
+            colour = [v for r, v in values.items() if r in leds]
+            return round(max(colour) * 100 / 255) if colour else 0
+        return 100
+
+    @staticmethod
+    def _emitters(head: dict) -> set:
+        """The light's colour LEDs (CMY only when beside RGB: then LEDs too)."""
+        roles = set(head.get("map") or [])
+        leds = roles & _COLOUR_ROLES
+        return leds if cmy_are_leds(roles) else leds - {"cyan", "magenta", "yellow"}
+
+    # "Off" is not here: on a colour-macro channel it means "macro off, the
+    # RGB channels rule", not dark
+    _DARK_SLOT = re.compile(r"^\s*(black ?out|dark|no light)\b", re.I)
+
+    def _wheel_dark(self, head: dict, values: dict) -> bool:
+        """The colour wheel sits on a slot the file calls "Blackout" (a
+        Swarm's colour channel at 0): the light is dark, whatever else."""
+        roles = set(head.get("map") or [])
+        if "wheel" not in roles or self._emitters(head):
+            return False                       # colour LEDs decide on their own
+        v = int(values.get("wheel", 0))
+        try:
+            slots = self._wheel_slots(head, "wheel")
+        except Exception:                      # noqa: BLE001 - a bare engine
+            return False
+        slot = next((x for x in slots if x.get("from", 0) <= v <= x.get("to", 255)), None)
+        return bool(slot and self._DARK_SLOT.match(str(slot.get("name") or "")))
 
     _PROG_NAME = re.compile(r"program|auto|macro|show|chase|sound|music|effect|pattern|run|mode", re.I)
     _PROG_OFF = re.compile(r"^\s*(off|no ?function|none|normal|dmx|manual|disabled?|blackout|open|nothing)\b", re.I)

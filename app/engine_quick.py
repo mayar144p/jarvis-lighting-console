@@ -1336,6 +1336,22 @@ class QuickMixin:
         self._gate_cache = (self.patch_rev, gates)
         return gates
 
+    def _darks(self) -> dict:
+        """{head_no: {"wheel": its "Blackout" slot}} for lights whose only way
+        to dark is their colour channel (no dimmer, no colour LEDs)."""
+        cache = getattr(self, "_dark_cache", None)
+        if cache and cache[0] == self.patch_rev:
+            return cache[1]
+        darks = {}
+        for h in self.patch:
+            if self._intensity_roles(h) or self._emitters(h) or "wheel" not in (h.get("map") or []):
+                continue
+            slot = next((x for x in self._wheel_slots(h) if self._DARK_SLOT.match(str(x.get("name") or ""))), None)
+            if slot is not None:
+                darks[h["head_no"]] = {"wheel": int(slot["value"])}
+        self._dark_cache = (self.patch_rev, darks)
+        return darks
+
     def _rests(self) -> dict:
         """{head_no: {gate role: open value}} for heads that HAVE a dimmer
         and a shutter whose open value is not 0: the shutter rests open
