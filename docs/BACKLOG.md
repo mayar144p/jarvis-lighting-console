@@ -289,6 +289,10 @@ counts are modes, not lights.
     Example from the brand debug: Showtec Dynamic LED v3 "d-P2" (Programs:
     0 "No function", then Red, Green...; a strobe with no ranges) - the
     3D shows it lit white at rest; the real light is probably dark there.
+    Same with Varytec LED Derby ST 4-channel (colour channel: 0-5 "No
+    Function", then Red, Green, Blue, White): on an LED light "No function"
+    at 0 is likely dark, on a lamp light's wheel it is open white - the
+    file can't tell which, so ask once with the real light.
 11. **Combo bars drawn as one thing** (Stairville All FX Bar: PARs,
     derbys, strobe and a laser on one bar): the desk treats it as a laser
     (so the laser part needs ARM), and the 3D draws a laser projector.  A
