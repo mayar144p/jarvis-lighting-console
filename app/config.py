@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent      # jarvis/
 WEB = ROOT / "web"
-DATA = ROOT / "data"
+# CONSOLE_DATA_DIR moves the whole data folder (tests run on a scratch one)
+DATA = Path(os.environ["CONSOLE_DATA_DIR"]) if os.environ.get("CONSOLE_DATA_DIR") else ROOT / "data"
 INBOX = ROOT / "fixtures_inbox"
 
 

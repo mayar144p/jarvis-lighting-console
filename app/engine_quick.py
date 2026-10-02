@@ -542,7 +542,7 @@ class QuickMixin:
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
-        return fixture_kind.describe(h).get("class", "light")
+        return fixture_kind.head_class(h)
 
     def _lights_only(self, heads) -> list[int]:
         by = {h["head_no"]: h for h in self.patch}

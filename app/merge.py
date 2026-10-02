@@ -21,7 +21,7 @@ from .engine_support import (COLOUR_ROLES, HTP_ROLES, SLOTS,  # noqa: I001
                              SFX_ROLES as _SFX, LASER_ROLES as _LASER,
                              LASER_BEAM_ROLES as _BEAMS, curve_pct as _curve_pct,
                              is_fine_role, logical16 as _logical16,
-                             split_16bit)
+                             cmy_are_leds, split_16bit)
 
 VDIM = "_vdim"       # a dimmer-less light's virtual intensity (0-100), never on the wire
 
@@ -205,7 +205,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # (cyan / magenta / yellow are filters, not emitters: a CMY light with
     # no dimmer can't be dimmed by its colour, and driving one to "full"
     # tinted Locate's white)
-    emitters = [r for r in COLOUR_ROLES if r in head["map"] and r not in ("cyan", "magenta", "yellow")]
+    emitters = [r for r in COLOUR_ROLES if r in head["map"]
+                and (r not in ("cyan", "magenta", "yellow") or cmy_are_leds(head["map"]))]
     if dimmerless and emitters:
         # the VIRTUAL dimmer of a light with colour emitters and no dimmer
         # (a 3-channel RGB PAR): intensity, cues and flash buttons scale
@@ -330,6 +331,9 @@ def _repeated(roles) -> dict[str, int]:
     return got
 
 
+_PAIR_CACHE: dict[tuple, tuple[dict[int, int], dict[int, int]]] = {}
+
+
 def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
     """(base index -> fine index, fine index -> base index) for 16-bit pairs.
 
@@ -340,6 +344,10 @@ def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
     them.  Fixtures without a fine channel get empty maps and keep the
     unchanged 8-bit path.
     """
+    key = tuple(roles)
+    got = _PAIR_CACHE.get(key)          # 40 times a second per light: remembered per layout
+    if got is not None:
+        return got
     fine_of: dict[int, int] = {}
     base_of: dict[int, int] = {}
     for i, role in enumerate(roles):
@@ -349,6 +357,8 @@ def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
                     fine_of[j] = i
                     base_of[i] = j
                     break
+    if len(_PAIR_CACHE) < 512:
+        _PAIR_CACHE[key] = (fine_of, base_of)   # read only by callers
     return fine_of, base_of
 
 

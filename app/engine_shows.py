@@ -207,69 +207,117 @@ class ShowMixin:
         if text is not None and path is not None:
             self._write_autosave(text, path)
 
+    @staticmethod
+    def _clean_payload(payload) -> dict:
+        """A show / autosave read from disk, made the right shape.
+
+        The file is trusted for its values, never for its shape: a show
+        cut short, a hand edit or a file from another program must be
+        refused or tidied - never loaded half-way into a desk that then
+        fails every frame.  Lists keep only their records, records that
+        must be records are, and a group's lights are light numbers.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("this file is not a show")
+        out = dict(payload)
+        for key in ("patch", "groups", "presets", "playbacks", "quick", "moves"):
+            v = payload.get(key)
+            out[key] = [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+        for key in ("meta", "palettes", "quick_names", "programmer"):
+            if not isinstance(payload.get(key), dict):
+                out[key] = {}
+        out["palettes"] = {k: v for k, v in out["palettes"].items() if isinstance(v, list)}
+        groups, taken = [], set()
+        for g in out["groups"]:
+            heads = g.get("heads") if isinstance(g.get("heads"), list) else []
+            n = g.get("n")
+            if not isinstance(n, int) or n < 1 or n in taken:
+                n = max(taken | {0}) + 1               # a group's number, unique
+            taken.add(n)
+            groups.append(dict(g, n=n, name=str(g.get("name") or f"Group {n}")[:60],
+                               heads=[int(h) for h in heads if isinstance(h, (int, float)) or str(h).isdigit()]))
+        out["groups"] = groups
+        out["selected"] = payload.get("selected") if isinstance(payload.get("selected"), list) else []
+        for key in ("timeline", "venue"):
+            if not isinstance(payload.get(key), dict):
+                out.pop(key, None)
+        return out
+
     def _restore_autosave(self) -> bool:
-        """Load the autosaved progress on boot.  Silent no-op when absent."""
+        """Load the autosaved progress on boot.  Silent no-op when absent.
+
+        Never stops the desk from starting: an autosave that can't be read
+        (cut short by a power cut, garbage) is kept beside it as
+        <name>.broken.json for a look later, and the desk starts empty."""
         if self.autosave_path is None or not self.autosave_path.is_file():
             return False
+        before = self._undo_state()
         try:
-            payload = json.loads(self.autosave_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return False
-        try:
-            heads = [self._head_from_layout(h)
-                     for h in payload.get("patch") or []]
-            self._replace_patch(heads)
-            self.groups = list(payload.get("groups") or [])
-            saved_palettes = self._normalize_palettes(payload.get("palettes"))
-            for key in self.palettes:
-                self.palettes[key] = list(saved_palettes.get(key) or [])
-            self.presets = [dict(q) for q in (payload.get("presets") or [])
-                            if isinstance(q, dict)]
-            self.playbacks = _normalize_playbacks(
-                payload.get("playbacks") or [])
-            self._resync_cue_fx()
-            patched = {h["head_no"] for h in self.patch}
-            self.programmer = {}
-            for k, row in (payload.get("programmer") or {}).items():
-                try:
-                    head_no = int(k)
-                except (TypeError, ValueError):
-                    continue
-                if head_no in patched and isinstance(row, dict):
-                    # 0-65535: 16-bit parameters (pan/tilt fine pairs)
-                    # must survive a restart unchanged.
-                    self.programmer[head_no] = {
-                        str(role): _clamp(v, 0, 65535)
-                        for role, v in row.items()}
-            self.selected = [n for n in (int(x) for x in
-                                         payload.get("selected") or [])
-                             if n in patched]
-            meta = payload.get("meta") or {}
-            self.master = _clamp(meta.get("master", 100), 0, 100)
-            self._tempo_restore(meta)
-            self.show_file = meta.get("show_file") or self.show_file
-            self.timeline = tl_mod.normalise(payload.get("timeline") or {})
-            self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
-            self.step_fx = self._clean_step_list(payload.get("step_fx"))
-            self._load_media_shapes(payload)
-            self.parked = self._clean_parked(payload.get("parked"))
-            self.macros = self._clean_macro_list(payload.get("macros"))
-            if isinstance(payload.get("output_target"), dict):
-                self.dmx_target = clean_dmx_target(payload["output_target"])
-            for b in payload.get("quick") or []:
-                try:
-                    self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
-                except (KeyError, TypeError, ValueError):
-                    continue
-            venue = payload.get("venue")
-            if isinstance(venue, dict):
-                try:
-                    self.venue = venue_mod.normalise(venue)
-                except (ValueError, TypeError):
-                    self.venue = venue_mod.empty()  # never block boot
-        except (ValueError, TypeError, KeyError):
+            payload = self._clean_payload(json.loads(self.autosave_path.read_text(encoding="utf-8")))
+            self._restore_payload(payload)
+        except Exception as exc:              # noqa: BLE001 - boot must go on
+            self._restore_state(before)
+            try:
+                self.autosave_path.replace(self.autosave_path.with_suffix(".broken.json"))
+            except OSError:
+                pass
+            self._log("restore_autosave", False, f"the autosave could not be read and was kept aside: {exc}"[:200])
             return False
         return True
+
+    def _restore_payload(self, payload: dict) -> None:
+        """The autosave's show onto this (empty, booting) desk."""
+        heads = [self._head_from_layout(h)
+                 for h in payload.get("patch") or []]
+        self._replace_patch(heads)
+        self.groups = list(payload.get("groups") or [])
+        saved_palettes = self._normalize_palettes(payload.get("palettes"))
+        for key in self.palettes:
+            self.palettes[key] = list(saved_palettes.get(key) or [])
+        self.presets = [dict(q) for q in (payload.get("presets") or [])
+                        if isinstance(q, dict)]
+        self.playbacks = _normalize_playbacks(
+            payload.get("playbacks") or [])
+        self._resync_cue_fx()
+        patched = {h["head_no"] for h in self.patch}
+        self.programmer = {}
+        for k, row in (payload.get("programmer") or {}).items():
+            try:
+                head_no = int(k)
+            except (TypeError, ValueError):
+                continue
+            if head_no in patched and isinstance(row, dict):
+                # 0-65535: 16-bit parameters (pan/tilt fine pairs)
+                # must survive a restart unchanged.
+                self.programmer[head_no] = {
+                    str(role): _clamp(v, 0, 65535)
+                    for role, v in row.items()}
+        self.selected = [n for n in (int(x) for x in
+                                     payload.get("selected") or [])
+                         if n in patched]
+        meta = payload.get("meta") or {}
+        self.master = _clamp(meta.get("master", 100), 0, 100)
+        self._tempo_restore(meta)
+        self.show_file = meta.get("show_file") or self.show_file
+        self.timeline = tl_mod.normalise(payload.get("timeline") or {})
+        self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
+        self.step_fx = self._clean_step_list(payload.get("step_fx"))
+        self._load_media_shapes(payload)
+        self.parked = self._clean_parked(payload.get("parked"))
+        self.macros = self._clean_macro_list(payload.get("macros"))
+        if isinstance(payload.get("output_target"), dict):
+            self.dmx_target = clean_dmx_target(payload["output_target"])
+        for b in payload.get("quick") or []:
+            try:
+                self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        venue = payload.get("venue")
+        if isinstance(venue, dict):
+            try:
+                self.venue = venue_mod.normalise(venue)
+            except (ValueError, TypeError):
+                self.venue = venue_mod.empty()  # never block boot
 
     def _a_save_show(self, name="", **_):
         label = self._safe_name(name or "show")
@@ -619,8 +667,9 @@ class ShowMixin:
         # until the commit block.
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"cannot read show {label!r}: {exc}") from exc
+        except (OSError, ValueError) as exc:          # ValueError: bad JSON or not text
+            raise ValueError(f"cannot read show {label!r}: it is damaged ({exc})") from exc
+        payload = self._clean_payload(payload)
         heads = [self._head_from_layout(h) for h in payload.get("patch") or []]
         groups = list(payload.get("groups") or [])
         palettes = self._normalize_palettes(payload.get("palettes"))

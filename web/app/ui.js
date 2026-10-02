@@ -44,10 +44,13 @@ export function h(tag, attrs, ...children) {
 // ------------------------------------------------------------------ toasts
 export function toast(text, kind = "", ms = 2600) {
   const box = $("#toasts");
+  // the same words already showing: one toast, kept a little longer
+  const same = [...box.children].find((x) => x.textContent === String(text));
+  if (same) { clearTimeout(same._t); same._t = setTimeout(() => same.remove(), kind === "bad" ? Math.max(ms, 5000) : ms); return; }
   const t = h("div.toast" + (kind ? "." + kind : ""), text);
   box.append(t);
   while (box.children.length > 4) box.firstChild.remove();
-  setTimeout(() => t.remove(), kind === "bad" ? Math.max(ms, 5000) : ms);
+  t._t = setTimeout(() => t.remove(), kind === "bad" ? Math.max(ms, 5000) : ms);
 }
 
 // ------------------------------------------------------------------ modals
