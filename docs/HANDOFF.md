@@ -22,7 +22,9 @@ Read this first in a new Claude Code session on this repo.
   - **ui-ux-pro-max** and **design-for-ai** (usability, clarify, prototype)
     for anything on screen;
   - **agent-skills** for debugging, tests, review and git;
-  - **ponytail** for the simplest fix, review, audit and debt.
+  - **ponytail** for the simplest fix, review, audit and debt;
+  - **fixture-debug** when the operator names a brand or a product to
+    debug ("debug Chauvet", "the Antari Z-1000").
 - Line endings: the repo checks files out CRLF.  `git stash` rewrites the
   working files CRLF, which breaks exact-text edit scripts; strip `\r`
   first (`sed -i 's/\r$//' file`).
@@ -37,6 +39,8 @@ Read this first in a new Claude Code session on this repo.
 | `libsweep.py [--all-modes]` | every library light / mode (8,093): Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D |
 | `uicheck.mjs [--big]` | every screen at 1280 / 1440 / 1920; `--big` with 124 lights |
 | `vischeck.mjs` | 124 real lights driven through the screen: DMX, 3D targets and the drawn models agree |
+| `brands.py [--brand X / --product "words"] --check` | top 20 brands x 15 products (effects machines first): sweep + "armed only", even with channels programmed |
+| `vischeck.mjs --brands / --brand X / --product "words"` | the same through the screen, brand by brand, with the effects in 3D |
 | `oddcheck_ui.mjs` | two browsers at once; the server dropping out and back |
 | `frametiming.py` | steady 40 Hz with a big rig and three screens (CI) |
 

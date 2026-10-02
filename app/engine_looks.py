@@ -231,6 +231,7 @@ class LooksMixin:
         if not FX_ROLES.intersection(m):
             return None
         out: dict = {}
+        switch = self._laser_switch(head)
 
         def off(role):
             return int((self.head_ranges(head).get(role) or {}).get("off_value") or 0)
@@ -244,7 +245,9 @@ class LooksMixin:
         beams = sorted((r for r in m if r.startswith("laser_beam")), key=lambda r: int(r[10:]))
         beam_on = [1 if int(values.get(r, 0) or 0) > off(r) else 0 for r in beams]
         if ("laser_on" in m and int(values.get("laser_on", off("laser_on"))) != off("laser_on")) \
-                or any(beam_on):
+                or any(beam_on) \
+                or (switch and all(not (lo <= int(values.get(r, off_v)) <= hi)
+                                   for r, (off_v, lo, hi, _on) in switch.items())):
             out["laser"] = True
             if beams:
                 out["beams"] = beam_on

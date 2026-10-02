@@ -2855,6 +2855,66 @@ def test_laser_fixes() -> None:
           'body.type === "laser"' in sj and "a laser shoots over the crowd" in sj, "")
 
 
+
+def test_beam_switch_lasers() -> None:
+    """A laser with no output channel (Laserworld RS400G: its Colour
+    channel's "No beam" is its off) stays dark disarmed whatever the
+    programmer says, fires armed, and the 3D agrees; an Antari Fazer's
+    "Volume control" is its fog output (it was filed as a mode)."""
+    print("lasers switched by a colour / mode channel; fog 'volume control'")
+    from app import engine as eng, fixlib
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        for k in ("Laserworld/Laserworld-RS400G.qxf", "Antari/Antari-X-310-Pro-Fazer.qxf",
+                  "Robe/Robe-Fog-1500-FT.qxf"):
+            fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Laserworld RS400G", qty=1, universe=1, address=1)
+            h = e.patch[0]
+            col = h["map"].index("laser_colour")
+
+            def wire():
+                return list(e.build_frames()[1][:len(h["map"])])
+
+            def drawn():
+                return bool((next(x for x in e._looks() if x["n"] == 1).get("fx") or {}).get("laser"))
+            check("it has no output channel, its colour channel switches the beam",
+                  "laser_on" not in h["map"] and e._laser_switch(h).get("laser_colour"), str(h["map"]))
+            e.act("select_heads", heads=[1])
+            e.act("set_attribute", attribute="fx_mode", value=255)       # Manual mode
+            e.act("set_attribute", attribute="laser_colour", value=255)  # "On"
+            check("disarmed, Manual mode + colour 'On' programmed: still 'No beam'",
+                  wire()[col] <= 63 and not drawn(), str(wire()))
+            check("...not without ARM", not e.act("fx_laser", heads=[1], down=True).get("ok"), "")
+            e.act("fx_arm", state=True)
+            r = e.act("fx_laser", heads=[1], down=True)
+            check("armed and fired: the programmed colour, and the 3D draws it",
+                  r.get("ok") and wire()[col] == 255 and drawn(), f"{r.get('error')} {wire()}")
+            e.act("clear_programmer")
+            check("...with nothing programmed: its 'On'", 193 <= wire()[col] <= 255 and drawn(), str(wire()))
+            e.act("blackout", state=1)
+            check("Blackout: 'No beam' (still armed)", wire()[col] <= 63 and not drawn(), str(wire()))
+            e.act("blackout", state=0)
+            e.act("fx_kill")
+            check("killed: 'No beam' again", wire()[col] <= 63 and not drawn(), str(wire()))
+            for q in ("Antari X-310 Pro Fazer", "Robe Fog 1500 FT"):
+                e.act("patch_clear")
+                e.act("add_heads", query=q, qty=1, universe=1, address=1)
+                h = e.patch[0]
+                check(f"{q}: its volume channel is the fog output", "fog" in h["map"], str(h["map"]))
+                at = h["map"].index("fog")
+                rest = e.build_frames()[1][at]
+                r = e.act("fx_fog", heads=[h["head_no"]], level=80, seconds=5)
+                check(f"{q}: the fog button drives it (no ARM needed)",
+                      r.get("ok") and e.build_frames()[1][at] > rest, f"{r.get('error')} {rest}")
+                e.act("fx_kill")
+        finally:
+            e.shutdown()
+
+
 def test_locate_takes_over() -> None:
     """Locate: full, open white AND centred (as the button says), and it
     takes the lights back from the effects you started on them; a cue's or

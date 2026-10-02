@@ -392,7 +392,11 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
                 # zero is not even that - the file declares no range - so
                 # it goes back to "raw" rather than pretending.
                 unit = "position" if span else "raw"
+        # a role on two channels (a laser's "Colour" and "Colour speed"):
+        # the last one's details win, but every channel's ranges are kept
+        each = (out.get(role) or {}).get("caps_each") or []
         out[role] = {
+            "caps_each": each + [d.get("caps") or []],
             "min": lo, "max": hi, "unit": unit,
             "bits": d.get("bits") or 8,
             "wheel": d.get("wheel") or "",

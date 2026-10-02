@@ -829,6 +829,12 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
         return "FX Fan"                       # ("Faze and Fan" on one channel is the output)
     if re.search(r"height|size|level of spark", name):
         return "FX Height"
+    # a fog / haze machine's "Volume control" or "Output control" is its
+    # output (the word "control" filed an Antari Fazer's as a mode: the fog
+    # button could not reach it, and any programmed value fogged)
+    if kind in ("fog", "haze") and re.search(r"volume|output|pump", name) \
+            and not re.search(r"\bmode\b|program|preset|\bauto\b|sound|timer|interval|duration|delay|fan", name):
+        return "Fog Output"
     if re.search(r"\bmode\b|program|preset|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
         return "FX Mode" if re.search(r"mode|program|preset|auto|sound|control", name) else "FX Setting"
     if role in ("pan", "tilt", "speed", "pan_fine", "tilt_fine"):

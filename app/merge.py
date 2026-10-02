@@ -184,8 +184,23 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             for r in mix:                      # an untouched LED head: white
                 resolved[r] = 255
         for role, value in rest.items():
-            if role != "_mix":
+            if not role.startswith("_"):
                 resolved.setdefault(role, int(value))
+    # A LASER WITH NO OUTPUT CHANNEL switches its beam with a mode / colour
+    # channel ("No beam" at the bottom): that channel is held at its off
+    # unless the FX layer says the laser is on (armed + its own button).
+    # A programmed mode / colour is kept aside and used while it is on.
+    switch = (rest or {}).get("_laser_switch")
+    if switch:
+        live = ((over or {}).get("set") or {}).get("_laser_live") and not blackout
+        for role, (off, lo, hi, on) in switch.items():
+            for key in [k for k in resolved if k.startswith(role + "@")]:
+                del resolved[key]
+            v = resolved.get(role)
+            if not live:
+                resolved[role] = int(off)
+            elif v is None or lo <= int(v) <= hi:
+                resolved[role] = int(on)
     # A BEAM BAR'S DIODES follow the laser's output: which beams is
     # programmable (the look, in cues), but every beam is dark unless the
     # FX layer says the laser is on (armed + its own button).  On, with no
