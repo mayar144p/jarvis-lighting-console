@@ -88,12 +88,40 @@ A pixel bar's default mode is often one cell. For its pixel modes use
 `node tools/pixcheck.mjs <src> <key> <mode>`: it gives every cell its own
 colour on the wire and confirms the 3D draws each one.
 
+### The 3D model must match the product
+
+After the fit check, look at each product's 3D model, not only its
+numbers. Take a screenshot with the light selected and **Frame** pressed,
+then compare it with the product (its name, library type, channels, and
+a photo or manual if the operator has one):
+
+- **Kind and shape.** Head on a yoke, mirror scanner, dome, bar, panel,
+  strobe box, blinder, laser, fog / haze machine, confetti / CO2 / flame.
+- **How it moves.** Pan and tilt, tilt only (a tilting bar), or fixed.
+  Every moving channel moves the model, and nothing else does.
+- **Count.** Number of heads, cells, pixels, bulbs and beams, as the
+  light really has (a 2-cell blinder has 2 bulbs, a 12-pixel bar 12).
+- **Colour.** Each cell glows its own colour from the wire, and only
+  the colours the light can make.
+- **Beam.** It's on exactly when the light is lit, and its width follows
+  zoom. A laser draws a fan only when armed and fired.
+
+If any of it is wrong, redo the model:
+
+- If the right model exists, pick it in `app/fixture_kind.py` (name,
+  channels, the library type via `lib_type`).
+- If it's close, fix the builder in `web/js/stage/models.js`, for
+  example cell count, per-cell colour via `pixelMesh` / `sk.pixels`,
+  bulbs, or emitters with `cell`.
+- If nothing fits, build a new model there and add it to `BUILDERS`.
+
+Then re-run the fit check and pixcheck, and screenshot it again. Only
+when a model is a large job (a combo bar with a laser) does it go to
+`docs/BACKLOG.md` A8 with what's missing.
+
 When the fit is wrong, fix the desk, not the test. Use ui-ux-pro-max /
-design-for-ai for the programmer (show only what the light can do). For
-the 3D: `app/fixture_kind.py` picks the body (name, channels, and the
-library's own type via `lib_type`), and `web/js/stage/models.js` draws it.
-If the product needs a body that doesn't exist (a combo bar with a laser),
-add a model; if it's too big for the round, put it in `docs/BACKLOG.md` A8.
+design-for-ai for the programmer (show only what the light can do) and for
+the 3D models.
 
 ## 3. When something fails
 
