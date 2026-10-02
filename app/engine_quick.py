@@ -1029,16 +1029,18 @@ class QuickMixin:
             raise ValueError("this rig has nothing for those buttons")
         return pool[:count]
 
-    def _override_vals(self, skip_parked: bool = False) -> dict:
+    def _override_vals(self, skip_parked: bool = False, now: float | None = None) -> dict:
         """Per-head overrides from the quick buttons that are held now,
         from the FX layer (the only way an effect's output moves), from
         the sound, group masters, highlight and park - park last: a parked
         light stays where it was parked whatever else is going on."""
         self._quick_pending_tick()
+        # the frame's own time: Windows' clock ticks every ~16 ms, so reading
+        # it here saw "no time passed" right after an aim and the glide stood
         if self.__dict__.get("_glide"):
-            self._aim_glide_tick()
+            self._aim_glide_tick(now)
         if self.__dict__.get("_pt_glides"):
-            self._pt_glide_tick()
+            self._pt_glide_tick(now)
         out = self._quick_override_vals()
         if self.fx_runs or self.fx_armed_until:
             for n, sets in self._sfx_override_vals().items():

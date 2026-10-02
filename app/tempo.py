@@ -38,7 +38,9 @@ class Clock:
 
     # -- reading --------------------------------------------------------------
     def beats(self, now: float) -> float:
-        return (now - self.anchor) * self.bpm / 60.0
+        # rounded to a billionth of a beat: lined up on a beat, the sums
+        # land a hair under it (0.999999...) and read the beat before
+        return round((now - self.anchor) * self.bpm / 60.0, 9)
 
     def beat_in_bar(self, now: float) -> int:
         """1..4"""

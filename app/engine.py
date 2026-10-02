@@ -702,7 +702,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                     self._active_playbacks(now),
                                     self._fx_values(now, rig=True),
                                     self.master, self.blackout,
-                                    overrides=self._override_vals(), now=now,
+                                    overrides=self._override_vals(now=now), now=now,
                                     gates=self._gates(), rests=self._rests())
         # colour matching scales what the looks / cues / effects ask for; a
         # raw channel the operator holds is written after it, untouched
