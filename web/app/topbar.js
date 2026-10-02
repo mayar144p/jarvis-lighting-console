@@ -165,7 +165,7 @@ function renderLink() {
   const banner = $("#banner");
   if (!state.connected && state.linkError && state.everConnected) {
     banner.className = "banner";
-    banner.textContent = "Lost contact with the Jarvis server - reconnecting. Nothing you do here reaches the rig until it is back.";
+    banner.textContent = "Lost contact with the desk's server - reconnecting. Nothing you do here reaches the rig until it is back.";
   } else if (banner.textContent.startsWith("Lost contact")) {
     banner.className = "banner hidden";
     banner.textContent = "";

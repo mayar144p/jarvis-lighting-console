@@ -1190,7 +1190,7 @@ def test_console_only() -> None:
     # reads prose as a route.
     code = "\n".join(ln for ln in main_src.splitlines()
                      if not ln.lstrip().startswith("#"))
-    serve_root = re.search(r'if route in \(([^)]*)\):\s*\n\s*return self\._file\(config\.WEB / "index\.html"\)', code)
+    serve_root = re.search(r'if route in \(([^)]*)\):\s*\n\s*return self\._file\(config\.WEB / "index\.html"[,)]', code)
     check("/ serves the console page itself, not a redirect",
           bool(serve_root) and '"/"' in serve_root.group(1), "")
 

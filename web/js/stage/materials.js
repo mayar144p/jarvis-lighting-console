@@ -16,7 +16,7 @@ export const LIGHTS = {
   uCol: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
   // x = cos(outer), y = cos(inner), z = gobo id (0 = open), w = gobo angle
   uCone: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0.9, 0.95, 0, 0)) },
-  uAmbient: { value: new THREE.Color(0x0b0d12) },
+  uAmbient: { value: new THREE.Color(0x0c0c0e) },
   uTime: { value: 0 },
   uBounce: { value: 1 },                // crowd dancing, 0..1
   uGobos: { value: null },              // the atlas of real gobo pictures

@@ -174,7 +174,7 @@ export class Stage {
     container.appendChild(this.labels);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x040508);
+    scene.background = new THREE.Color(0x050506);
     this.scene = scene;
     this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
     this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
@@ -545,10 +545,10 @@ export class Stage {
   /** House lights: how much of the room you see with the rig dark. */
   _applyHouse() {
     const k = Math.max(0, Math.min(1, this.options.house));
-    LIGHTS.uAmbient.value.setRGB(0.5, 0.53, 0.6).multiplyScalar(0.03 + Math.pow(k, 1.1) * 1.9);
+    LIGHTS.uAmbient.value.setRGB(0.55, 0.55, 0.58).multiplyScalar(0.03 + Math.pow(k, 1.1) * 1.9);
     this.hemi.intensity = 0.12 + k * 1.5;
     this.key.intensity = 0.15 + k * 1.1;
-    this.scene.background.setRGB(0.012, 0.014, 0.02).lerp(new THREE.Color(0.05, 0.056, 0.07), k);
+    this.scene.background.setRGB(0.014, 0.014, 0.016).lerp(new THREE.Color(0.055, 0.055, 0.06), k);
     this.dirty = true;
   }
 

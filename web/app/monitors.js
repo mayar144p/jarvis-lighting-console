@@ -83,7 +83,7 @@ export function openNodeMonitor() {
     tick();
   });
   const body = h("div.nm",
-    h("p.muted.small", "A pretend Art-Net node inside Jarvis, with an RDM light for every patched light. Try the whole output - "
+    h("p.muted.small", "A pretend Art-Net node inside the desk, with an RDM light for every patched light. Try the whole output - "
       + "Go live, cues, effects, Fixtures ⋯ → Ask the lights (RDM) - with no hardware."),
     h("div.row-btns", toggle, live, where),
     unis, grid, hover,
