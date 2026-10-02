@@ -2915,6 +2915,55 @@ def test_beam_switch_lasers() -> None:
             e.shutdown()
 
 
+
+def test_product_fit() -> None:
+    """The 3D body is the kind of product the library says it is (a
+    scanner, a flower, a pixel bar, a strobe); a moving fogger is never an
+    always-lit lamp; MagicFX Stadium blasters are confetti and a hazer
+    called "Dragon" is not a flame machine."""
+    print("product fit: 3D body from the library type, effects machines")
+    from app import engine as eng, fixlib, fixture_kind
+
+    def body(src, key):
+        it = fixlib.apply_fx(fixlib.load(src, key)[0])
+        m = it["modes"][0]
+        roles = [d.get("role") or "raw" for d in m.get("detail") or []]
+        return it, fixture_kind.describe({"manufacturer": it["manufacturer"], "model": it["model"],
+                                          "mode": m["name"], "map": roles, "channels": len(roles)})
+    for key, want in (("SGM/SGM-Victory-250.qxf", "scanner"), ("Martin/Martin-Destroyer.qxf", "effect"),
+                      ("Clay_Paky/Clay-Paky-Stormy-CC.qxf", "strobe")):
+        _it, b = body("qlc", key)
+        check(f"{key.split('/')[1][:-4]} is drawn as: {want}", b["type"] == want, b["type"])
+    it, b = body("qlc", "MagicFX/MagicFX-StadiumBlaster.qxf")
+    check("MagicFX StadiumBlaster is confetti (needs ARM)", it["fx_kind"] == "confetti" and b["type"] == "confetti",
+          f"{it['fx_kind']} {b['type']}")
+    it, b = body("qlc", "Showtec/Showtec-Dragon-F-350.qxf")
+    check("Showtec Dragon F-350 is a hazer, not a flame machine", it["fx_kind"] == "haze" and b["type"] == "atmos",
+          f"{it['fx_kind']} {b['type']}")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = "American_DJ/American-DJ-Accu-Fog-1000.qxf"
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Accu Fog 1000", qty=1)
+            check("a moving fogger (pan, tilt, no dimmer) is not drawn as a lit lamp",
+                  e._looks()[0]["a"] == 0 and not e._lamp_only(e.patch[0]), str(e._looks()[0]))
+            e.act("blackout", state=1)
+            check("...nor in Blackout", e._looks()[0]["a"] == 0, "")
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the colour picker is for lights that mix any colour (all of RGB or CMY)",
+          '["red", "green", "blue"].every((r) => lightRoles.has(r))' in pj, "")
+    check("a light that can't mix gets its own colours as buttons", "const MAKES = [" in pj and "These lights make" in pj, "")
+    mj = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a pixel bar's cells are each coloured in 3D", "sk.pixels = inst" in mj and "if (sk.pixels)" in sj, "")
+
+
 def test_locate_takes_over() -> None:
     """Locate: full, open white AND centred (as the button says), and it
     takes the lights back from the effects you started on them; a cue's or

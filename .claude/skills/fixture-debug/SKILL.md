@@ -1,6 +1,6 @@
 ---
 name: fixture-debug
-description: Debug the desk against real fixtures - a brand ("debug Chauvet"), a product ("debug the Antari Z-1000", "the Sharpy"), or the top 20 brands one by one. Use when the operator names a brand, model or fixture type that misbehaves, asks for a "debug session" on lights / effects machines (confetti, CO2, flame, smoke, haze, lasers), or asks whether the 3D matches what a light does.
+description: Debug the desk against real fixtures - a brand ("debug Chauvet"), a product ("debug the Antari Z-1000", "the Sharpy"), or the top 20 brands one by one. Checks the DMX, the safety rules for effects and lasers, whether the programmer offers exactly what the light can do (pan / tilt, how many colours, wheel or mixing), and whether the 3D model matches the product. Use when the operator names a brand, model or fixture type that misbehaves, asks for a "debug session" on lights / effects machines (confetti, CO2, flame, smoke, haze, lasers), or asks whether the 3D or the programmer matches a light.
 ---
 
 # Fixture debug: a brand or a product, end to end
@@ -63,6 +63,38 @@ everything. Screenshots and `report.md` go to `<outDir>`.
 - A brand of effects machines only (Laserworld, Antari, MagicFX) skips the
   light steps.
 
+## 2b. Fit check: does the desk offer what the product can do, and only that?
+
+`vischeck.mjs --brand / --product / --brands` starts each brand with step
+**0. programmer and 3D fit**. It selects each product alone, opens every tab
+it shows, and compares that with the light's channels:
+
+- **Tabs.** Move only if it pans or tilts. Colour only if it has colour.
+  Laser / SFX only for lasers / effects machines.
+- **Colour.** The picker, hue swatches and white temperature only appear
+  for a light that mixes ANY colour (all of R+G+B or C+M+Y). A light that
+  can't mix gets one button per colour it makes (each emitter, red + green
+  = yellow...) and a slider per colour channel. A wheel light gets exactly
+  its wheel's colours. The line under the picker never says "mixes any
+  colour" for a light that can't.
+- **Move.** A pan-only or tilt-only light gets a pad with only that axis.
+- **3D body.** It must be the kind of product the library says: moving
+  head, scanner (mirror), flower / effect light, bar, strobe / blinder,
+  laser, fog / haze.
+- **3D cells.** A light with several colour cells (pixel bar, multi-head)
+  is coloured cell by cell in the 3D.
+
+A pixel bar's default mode is often one cell. For its pixel modes use
+`node tools/pixcheck.mjs <src> <key> <mode>`: it gives every cell its own
+colour on the wire and confirms the 3D draws each one.
+
+When the fit is wrong, fix the desk, not the test. Use ui-ux-pro-max /
+design-for-ai for the programmer (show only what the light can do). For
+the 3D: `app/fixture_kind.py` picks the body (name, channels, and the
+library's own type via `lib_type`), and `web/js/stage/models.js` draws it.
+If the product needs a body that doesn't exist (a combo bar with a laser),
+add a model; if it's too big for the round, put it in `docs/BACKLOG.md` A8.
+
 ## 3. When something fails
 
 Use agent-skills `debugging-and-error-recovery` and ponytail for the
@@ -89,6 +121,9 @@ smallest root-cause fix:
 
 ## 4. Rules
 
+- Before changing how channels or bodies are classified, snapshot every
+  library product and diff afterwards (the fog / effects / 3D-body diffs
+  in past sessions caught side effects before they shipped).
 - Safety first. Fire and lasers move only from their armed buttons:
   programmer, cues, looks and the AI never reach them. Blackout and KILL FX
   stop them. Fog and haze need no ARM.

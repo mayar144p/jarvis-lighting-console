@@ -102,6 +102,9 @@ async function build(rig) {
   await act("fx_kill");
   await act("patch_clear");
   await act("clear_programmer");
+  // the last brand's cues: gone (GO must play this brand's look)
+  for (let i = 0; i < 50 && (await act("delete_cue", { playback: 1, cue: 1 })).ok; i++);
+  await act("playback_level", { playback: 1, level: 0 });
   for (const it of rig.items) {
     const inst = await post("api/fixtures/library/install", { src: it.src, key: it.key });
     const fid = inst.fixture && inst.fixture.id;
@@ -194,15 +197,128 @@ const lights = (V) => Object.entries(V).filter(([, v]) => v.cls === "light").map
 const roles = (h) => (patch.find((x) => x.head_no === +h) || {}).map || [];
 // a light that can make red (RGB, or CMY): a wheel's slots vary by model
 const canRed = (h) => roles(h).includes("red") || (roles(h).includes("magenta") && roles(h).includes("yellow"));
+// a light nothing on DMX can darken (an old lamp scanner: no dimmer, shutter
+// or colour): lit always, like the real one (the Ready? check warns)
+const DIMS = ["dimmer", "zone_dimmer", "shutter", "strobe", "red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "lime"];
+const lampOnly = (h) => !roles(h).some((r) => DIMS.includes(r)) && roles(h).some((r) => ["pan", "tilt", "wheel", "gobo", "gobo_rot", "prism", "zoom", "focus"].includes(r));
 const name = (h) => `#${h} ${(patch.find((x) => x.head_no === +h) || {}).model || ""}`;
 
 // --------------------------------------------------------------- steps
+
+// ------------------------------------------------------------ fit check
+// Does the programmer offer what each product CAN do, and only that?  And is
+// its 3D model the kind of light it is?  One product at a time, selected
+// alone, every tab it shows opened and read.
+const LIB_3D = [                      // the library's own type -> the 3D body it should get
+  [/moving head/i, (b) => b.moving, "a moving head"],
+  [/scanner/i, (b) => b.type === "scanner", "a scanner (mirror)"],
+  [/flower|effect/i, (b) => ["effect", "scanner"].includes(b.type) || b.moving, "an effect light"],
+  [/^(strobe|blinder)/i, (b) => ["strobe", "blinder", "bar", "matrix", "tube"].includes(b.type), "a strobe / blinder"],
+  [/led bar|pixel bar/i, (b) => ["bar", "moving_bar", "tube", "matrix", "strobe", "blinder"].includes(b.type), "a bar"],
+  [/laser/i, (b) => b.type === "laser", "a laser"],
+  [/smoke|hazer/i, (b) => ["atmos", "co2"].includes(b.type), "a fog / haze machine"],
+  [/^dimmer$/i, (b) => !b.moving, "a fixed light"],
+];
+const FULL_HUES = ["Red", "Green", "Blue"];
+async function fit(rig) {
+  console.log("0. programmer and 3D fit, product by product");
+  const byName = Object.fromEntries(rig.items.map((it) => [it.name, it]));
+  const info = await p.evaluate(async () => {
+    const st = (await import("/app/store.js")).state;
+    return ((st.snap && st.snap.patch) || []).map((h) => ({ n: h.head_no, model: h.model, manufacturer: h.manufacturer, map: h.map || [], body: h.body || {} }));
+  });
+  for (const hd of info) {
+    const it = byName[`${hd.manufacturer} ${hd.model}`] || rig.items.find((x) => x.name.endsWith(hd.model)) || {};
+    const who = `${tag}${hd.manufacturer} ${hd.model}`;
+    const has = new Set(hd.map);
+    const bad = (what, detail = "") => check(false, `${who}: ${what}`, detail);
+    // --- the 3D body is the kind of product it is
+    const rule = LIB_3D.find(([re]) => re.test(it.type || ""));
+    // (a combo with a laser in it - Stairville All FX Bar - is a laser for
+    // safety; a combined bar + laser model is in docs/BACKLOG.md)
+    if (rule && !rule[1](hd.body) && !(hd.body.type === "laser" && hd.map.some((r) => r.startsWith("laser_")))) bad(`the 3D draws it as "${hd.body.type}", the library says ${rule[2]}`, it.type);
+    if (hd.body.class === "light") {
+      // each colour cell (a pixel bar's pixels, a multi-head light's heads)
+      // is coloured on its own in the 3D
+      const reds = hd.map.filter((r) => r === "red").length;
+      const cells = await p.evaluate((n) => {
+        const i = window.jarvisStage.fixtures.get(n);
+        if (!i) return -1;
+        const sk = i.sk;
+        return Math.max(sk.pixels ? sk.pixels.count : 0, (sk.cells || []).length,
+          new Set((sk.emitters || []).map((e) => e.cell).filter((c) => c !== undefined)).size);
+      }, hd.n);
+      if (cells >= 0 && reds > 1 && cells < Math.min(reds, 32)) bad(`the 3D colours ${cells} cell(s) on their own, the light has ${reds} colour cells`);
+    }
+    // --- the programmer, selected alone
+    await act("select_heads", { heads: [hd.n] });
+    await sleep(500);
+    const tabs = await p.evaluate(() => [...document.querySelectorAll("#prog-tabs button")].filter((b) => !b.hidden).map((b) => b.dataset.tab));
+    const light = hd.body.class === "light";
+    const rgb = ["red", "green", "blue"].filter((r) => has.has(r));
+    const cmy = ["cyan", "magenta", "yellow"].filter((r) => has.has(r));
+    const fullMix = rgb.length === 3 || cmy.length === 3;
+    const anyColour = light && ["red", "green", "blue", "cyan", "magenta", "yellow", "wheel", "white", "amber", "uv", "lime", "cto"].some((r) => has.has(r));
+    const want = { position: has.has("pan") || has.has("tilt"), colour: anyColour,
+      laser: [...has].some((r) => r.startsWith("laser_")), sfx: !light && hd.body.class === "sfx" };
+    for (const [t, w] of Object.entries(want)) if (tabs.includes(t) !== w) bad(`${w ? "no" : "a"} ${t} tab`, `tabs: ${tabs.join(", ")}`);
+    if (tabs.includes("colour")) {
+      await click('#prog-tabs [data-tab="colour"]', "Colour tab");
+      const attrs = await getj(`api/console/attributes?heads=${hd.n}`);
+      const wheel = (attrs.pages || []).flatMap((pg) => pg.attrs || []).find((a) => a.role === "wheel");
+      // the tab reloads the light's details after a selection: give it up to
+      // 3 s to show THIS light's wheel (a lag is fine, a wrong wheel is not)
+      let c;
+      for (let i = 0; i < 10; i++) {
+        await sleep(300);
+        c = await p.evaluate(() => {
+        const vis = (el) => !!el && !el.hidden && !!el.offsetParent;
+        const pane = document.querySelector('[data-pane="colour"]');
+        return { picker: vis(document.querySelector("#picker")) && !pane.classList.contains("wheel-only"),
+          swatches: vis(document.querySelector("#swatches")) ? [...document.querySelectorAll("#swatches button")].filter(vis).map((b) => b.title) : [],
+          kelvin: vis(document.querySelector("#kelvin-row")),
+          wheel: vis(document.querySelector("#wheel-steps")), slots: [...document.querySelectorAll("#wheel-steps .chip.slot")].filter(vis).length,
+          reach: (document.querySelector("#colour-reach") || {}).textContent || "" };
+        });
+        if (!(wheel && wheel.slots && wheel.slots.length) || c.slots === wheel.slots.length) break;
+      }
+      if (fullMix && !c.picker) bad("mixes any colour but has no colour picker");
+      if (!fullMix && c.picker) bad(`the colour picker is offered, but it ${rgb.length || cmy.length ? `only mixes ${[...rgb, ...cmy].join(" + ")}` : has.has("wheel") ? "has a colour wheel only" : "has no colour mixing"}`);
+      if (!fullMix && c.swatches.some((t) => FULL_HUES.includes(t))) {
+        const cant = c.swatches.filter((t) => FULL_HUES.includes(t) && !(rgb.includes(t.toLowerCase())));
+        if (cant.length) bad(`colour buttons it can't make: ${cant.join(", ")}`);
+      }
+      if (has.has("wheel") && !c.wheel) bad("has a colour wheel, the Colour tab shows no wheel colours");
+      if (!fullMix && c.swatches.length) bad(`hue swatches for a light that can't mix them: ${c.swatches.slice(0, 4).join(", ")}…`);
+      if (wheel && wheel.slots && wheel.slots.length && c.slots !== wheel.slots.length) bad(`the wheel shows ${c.slots} colours, the light has ${wheel.slots.length}`);
+      // a light that can't mix: one button per colour it makes (each
+      // emitter, and red / green / blue in pairs), no more, no less
+      if (!fullMix && !has.has("wheel")) {
+        const em = ["red", "green", "blue", "white", "amber", "uv", "lime"].filter((r) => has.has(r));
+        const makes = em.length + (rgb.length === 2 ? 1 : 0);
+        if (makes && c.slots !== makes) bad(`it makes ${makes} colours, the Colour tab offers ${c.slots}`);
+      }
+      if (!fullMix && /mixes any colour/.test(c.reach)) bad(`says "${c.reach}"`);
+      if (c.kelvin && !fullMix) bad("a white-temperature slider, but it can't mix white");
+    }
+    if (tabs.includes("position")) {
+      await click('#prog-tabs [data-tab="position"]', "Move tab");
+      await sleep(300);
+      const pad = await p.evaluate(() => { const el = document.querySelector("#pad"); return el ? { noPan: el.classList.contains("no-pan"), noTilt: el.classList.contains("no-tilt") } : null; });
+      if (pad && pad.noPan === has.has("pan")) bad(has.has("pan") ? "pans, the pad says it doesn't" : "doesn't pan, the pad offers pan");
+      if (pad && pad.noTilt === has.has("tilt")) bad(has.has("tilt") ? "tilts, the pad says it doesn't" : "doesn't tilt, the pad offers tilt");
+    }
+  }
+  await act("clear_selection");
+}
+
 async function steps() {
   await shot(`${tag}01-start`);
   console.log("1. start: everything dark");
   let { F, V } = await layers("start");
   console.log("  covering:", await p.evaluate(() => [...document.querySelectorAll(".modal-scrim, .menu, .cmdbar-scrim:not(.hidden)")].map((x) => (x.innerText || "").slice(0, 120)).join(" | ")));
-  check(lights(V).every((h) => !(F[h] && +F[h].a > 0.01)), `${tag}start: no light is lit`);
+  const litAtStart = lights(V).filter((h) => !lampOnly(h) && F[h] && +F[h].a > 0.01);
+  check(!litAtStart.length, `${tag}start: no light is lit`, litAtStart.map(name).join(", "));
   if (!lights(V).length) {                 // a brand of effects only (Laserworld)
     console.log("  no lights: effects only");
     if (BRANDS) await effects();
@@ -297,7 +413,7 @@ async function steps() {
   console.log("7. Blackout and back");
   await click("#bo-btn", "BLACKOUT");
   ({ F, V } = await layers("blackout"));
-  const stillLit = Object.entries(V).filter(([, v]) => v.level > 0.01).map(([h]) => +h);
+  const stillLit = Object.entries(V).filter(([, v]) => v.level > 0.01).map(([h]) => +h).filter((h) => !lampOnly(h));
   check(!stillLit.length, `${tag}blackout: nothing is lit in 3D`, stillLit.slice(0, 10).map(name).join(", "));
   await click("#bo-btn", "BLACKOUT off");
   ({ F, V } = await layers("after blackout"));
@@ -386,6 +502,7 @@ for (const rig of RIGS) {
   console.log(rig.brand ? `\n== ${rig.brand} (${rig.items.length} products)` : "building the rig");
   await build(rig);
   const before = fails.length;
+  if (BRANDS) await fit(rig);
   await steps();
   if (rig.brand) console.log(`  ${rig.brand}: ${fails.length - before} failed`);
 }

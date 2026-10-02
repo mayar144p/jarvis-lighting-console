@@ -9,7 +9,7 @@ import json
 import re
 import time
 
-from app import config, fixtures, merge
+from app import config, fixture_kind, fixtures, merge
 from app.engine_base import _BEAM_LOOK_ROLES, _COLOUR_ROLES, _FIXTURE_CACHE
 from app.engine_support import FX_ROLES, HTP_ROLES, ROLE_HEX, cmy_are_leds, split_16bit
 from app.engine_support import curve_pct as _curve_pct
@@ -365,8 +365,12 @@ class LooksMixin:
 
     @staticmethod
     def _lamp_only(head: dict) -> bool:
-        """A light whose lamp can't be dimmed or closed from DMX at all."""
+        """A light whose lamp can't be dimmed or closed from DMX at all (an
+        effects machine is never one: a moving fogger has pan and tilt and
+        no dimmer, and it was drawn lit through Blackout)."""
         m = set(head.get("map") or [])
+        if fixture_kind.head_class(head) != "light":
+            return False
         return not m & (HTP_ROLES | {"shutter", "strobe"} | _COLOUR_ROLES) and bool(
             m & {"pan", "tilt", "wheel", "gobo", "gobo_rot", "prism", "zoom", "focus"})
 

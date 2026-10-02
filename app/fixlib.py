@@ -692,7 +692,7 @@ FX_KINDS = {
 }
 
 _KIND_PATTERNS = [
-    ("confetti", r"confetti|funfetti|streamer|stadium shot|swirl fan"),
+    ("confetti", r"confetti|funfetti|streamer|stadium ?(shot|blaster|blower)|swirl fan"),
     ("co2", r"\bco2\b|co\s?2 jet|cryo|psyco2|eco2"),
     ("flame", r"\bflames?\b|flamer|fire\s*(jet|machine|effect|burst)|g-flame|dragon"),
     ("spark", r"\bsparks?\b|cold\s*(fire|spark)|sparkular"),
@@ -715,8 +715,11 @@ def fx_kind(manufacturer: str, model: str, type_text: str, labels: list[str]) ->
     text = f"{manufacturer} {model} {type_text}".lower()
     if "laser" in type_text.lower() or re.search(r"\blaser", text):
         return "laser"
+    hazer = re.search(r"smoke|hazer|fog", str(type_text).lower())
     for kind, pattern in _KIND_PATTERNS:
         if re.search(pattern, text):
+            if hazer and kind in ("flame", "spark"):
+                continue                 # a hazer named "Dragon" is not a flame machine
             if kind in ("fog", "haze") and re.search(_LIGHT_WORDS, text) \
                     and not re.search(r"\bfog|\bhaze", str(type_text).lower()):
                 return ""
@@ -824,6 +827,8 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     # past 200, armed or not
     if re.search(r"^go$|\bgo\b|\btrigger\b|\bfire\b|\bshoot\b", orig):
         return "FX Fire"
+    if kind == "confetti" and re.search(r"\bhopper|\bfeeder", name):
+        return "FX Fire"                      # a confetti blower's hoppers feed it (MagicFX StadiumBlower)
     if (re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name)) \
             and not re.search(r"fog|smoke|haze|faze", orig):
         return "FX Fan"                       # ("Faze and Fan" on one channel is the output)

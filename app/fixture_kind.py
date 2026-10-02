@@ -199,6 +199,25 @@ def _cells(roles: list[str]) -> int:
     return max(1, reds, dims if reds == 0 else 1)
 
 
+@lru_cache(maxsize=1)
+def _lib_types() -> dict:
+    """{(maker, model): the library's own type} - "Scanner", "Flower",
+    "LED Bar (Pixels)" - for the bundled libraries (Jarvis, QLC+, OFL)."""
+    from .fixlib import index
+    out: dict = {}
+    for src in ("jarvis", "qlc", "ofl"):
+        try:
+            for r in index(src):
+                out.setdefault((str(r["manufacturer"]).lower(), str(r["model"]).lower()), r.get("type") or "")
+        except Exception:                  # a library missing: guess from the name
+            continue
+    return out
+
+
+def lib_type(manufacturer: str, model: str) -> str:
+    return _lib_types().get((str(manufacturer or "").lower(), str(model or "").lower()), "")
+
+
 def _fx_type(manufacturer: str, model: str, has: set) -> str:
     """The physical type of a laser or SFX machine, or '' for a light."""
     from .engine_support import LASER_ROLES, SFX_ROLES
@@ -211,7 +230,7 @@ def _fx_type(manufacturer: str, model: str, has: set) -> str:
         # still a light: Full, colour and Locate must reach it
         return ""
     from .fixlib import fx_kind
-    kind = fx_kind(manufacturer, model, "", [])
+    kind = fx_kind(manufacturer, model, lib_type(manufacturer, model), [])
     if "fog" in has or kind in ("fog", "haze", "bubble", "snow"):
         return "atmos"
     return {"confetti": "confetti", "co2": "co2", "flame": "flame",
@@ -275,6 +294,23 @@ def _describe(manufacturer: str, model: str, mode: str,
             kind = "par"
         else:
             kind = "generic"
+    # the library says what the product is: a scanner, a flower, a bar or a
+    # strobe drawn as a moving head or a PAR looked nothing like the light
+    lt = lib_type(manufacturer, model).lower()
+    if roles and lt:
+        if lt.startswith("moving head"):
+            if not TYPES[kind]["moving"] and has & {"pan", "tilt"}:
+                kind = _MOVING_FALLBACK.get(kind, "moving_spot")
+        elif lt.startswith("scanner"):
+            kind = "scanner"
+        elif TYPES[kind]["moving"] and not re.match(r"(led|pixel) bar", lt):
+            pass                           # a moving flower / strobe still moves
+        elif re.match(r"(flower|effect)\b", lt) and kind not in ("effect", "scanner"):
+            kind = "effect"
+        elif re.match(r"(led|pixel) bar", lt) and kind not in ("bar", "moving_bar", "tube", "matrix"):
+            kind = "moving_bar" if TYPES[kind]["moving"] else "bar"
+        elif lt.startswith("strobe") and kind not in ("strobe", "blinder", "bar", "matrix", "tube"):
+            kind = "strobe"
     t = TYPES[kind]
     brand = brand_of(manufacturer)
     b = BRANDS[brand]

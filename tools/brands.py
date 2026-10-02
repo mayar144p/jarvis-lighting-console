@@ -104,7 +104,7 @@ def pick(brand: str | None = None, product: str | None = None) -> list[dict]:
                 dedupe = re.sub(r"[^a-z0-9]", "", name.lower())
                 if all(w in flat or w in flat.replace(" ", "") for w in words) and dedupe not in seen:
                     seen.add(dedupe)
-                    found.append({"src": src, "key": r["key"], "name": name, "kind": kind_of(r)})
+                    found.append({"src": src, "key": r["key"], "name": name, "kind": kind_of(r), "type": r.get("type") or ""})
         return [{"brand": f"Products: {product}", "items": found[:PER_BRAND]}]
     rows = defaultdict(list)
     alias = {a: b for b, names in brands for a in names}
@@ -119,7 +119,8 @@ def pick(brand: str | None = None, product: str | None = None) -> list[dict]:
             if (brand, dedupe) in seen:                # the same light in two libraries
                 continue
             seen.add((brand, dedupe))
-            rows[brand].append({"src": src, "key": r["key"], "name": name, "kind": kind_of(r)})
+            rows[brand].append({"src": src, "key": r["key"], "name": name, "kind": kind_of(r),
+                               "type": r.get("type") or ""})
     out = []
     for brand, _names in brands:
         items = sorted(rows.get(brand, []), key=lambda x: x["name"])

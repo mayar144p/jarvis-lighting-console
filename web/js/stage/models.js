@@ -599,13 +599,11 @@ function batten(body) {
   sk.lenses.push(lens);
   const geo = new THREE.PlaneGeometry(len / n * 0.78, 0.055);
   geo.rotateX(-Math.PI / 2);
-  const inst = new THREE.InstancedMesh(geo, lens, n);
-  const m = new THREE.Matrix4();
-  for (let i = 0; i < n; i++) {
-    m.makeTranslation(-len / 2 + (i + 0.5) * len / n, 0.036, 0);
-    inst.setMatrixAt(i, m);
-  }
+  // each cell its own colour (a pixel chase runs along the bar): the stage
+  // colours the instances from the light's cells
+  const inst = pixelMesh(geo, n, (i, m) => m.makeTranslation(-len / 2 + (i + 0.5) * len / n, 0.036, 0));
   sk.tilt.add(inst);
+  sk.pixels = inst;
   const plate = logo(body, 0.2, 0.05);
   if (plate) {
     plate.position.set(len / 2 - 0.14, 0, 0.0405);
@@ -615,6 +613,7 @@ function batten(body) {
   for (let i = 0; i < beams; i++) {
     const e = emitter(sk.tilt, 0.037, 0.04);
     e.node.position.x = -len / 2 + (i + 0.5) * len / beams;
+    if ((body.cells || 1) > 1) e.cell = Math.floor((i + 0.5) * body.cells / beams);   // the beam of its cells
     sk.emitters.push(e);
   }
   sk.height = 0.2;
@@ -652,6 +651,21 @@ function strobe(body, family) {
   return sk;
 }
 
+/** n LED cells / bulbs as one instanced mesh, each coloured on its own by
+ *  the stage (sk.pixels): unlit, so a cell glows its colour. */
+function pixelMesh(geo, n, place) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const inst = new THREE.InstancedMesh(geo, mat, n);
+  const m = new THREE.Matrix4();
+  const dark = new THREE.Color(0.04, 0.04, 0.045);
+  for (let i = 0; i < n; i++) {
+    place(i, m);
+    inst.setMatrixAt(i, m);
+    inst.setColorAt(i, dark);
+  }
+  return inst;
+}
+
 function blinder(body) {
   const sk = skeleton();
   bracket(sk, body, 0.32, 0.12);
@@ -660,16 +674,33 @@ function blinder(body) {
   sk.tilt.add(box);
   const lens = lensMaterial();
   sk.lenses.push(lens);
-  for (const [x, z] of [[-0.15, -0.075], [0.15, -0.075], [-0.15, 0.075], [0.15, 0.075]]) {
-    const cup = lathe([[0.001, 0.02], [0.05, 0.03], [0.065, 0.051]],
-      new THREE.MeshStandardMaterial({ color: 0xd5d8de, roughness: 0.2, metalness: 1 }));
+  // its own number of bulbs (a 2-cell COB blinder has two), in two rows
+  const n = (body.cells || 1) > 1 ? Math.min(8, body.cells) : 4;
+  const cols = n <= 2 ? n : Math.ceil(n / 2), rows = n <= 2 ? 1 : 2;
+  const spots = [];
+  for (let i = 0; i < n; i++) {
+    const c = i % cols, r = Math.floor(i / cols);
+    spots.push([(c - (cols - 1) / 2) * (0.6 / Math.max(cols, 2)), rows === 1 ? 0 : (r - 0.5) * 0.15]);
+  }
+  const cupMat = new THREE.MeshStandardMaterial({ color: 0xd5d8de, roughness: 0.2, metalness: 1 });
+  for (const [x, z] of spots) {
+    const cup = lathe([[0.001, 0.02], [0.05, 0.03], [0.065, 0.051]], cupMat);
     cup.position.set(x, 0, z);
     sk.tilt.add(cup);
-    const bulb = disc(0.045, lens);
-    bulb.position.set(x, 0.049, z);
-    sk.tilt.add(bulb);
   }
-  sk.emitters.push(emitter(sk.tilt, 0.052, 0.2, { warm: true }));
+  const bulbGeo = new THREE.CircleGeometry(0.045, 24);
+  bulbGeo.rotateX(-Math.PI / 2);
+  sk.pixels = pixelMesh(bulbGeo, n, (i, m) => m.makeTranslation(spots[i][0], 0.049, spots[i][1]));
+  sk.tilt.add(sk.pixels);
+  if ((body.cells || 1) > 1) {
+    for (let i = 0; i < n; i++) {
+      const e = emitter(sk.tilt, 0.052, 0.2 / Math.sqrt(n / 2), { warm: true });
+      e.node.position.x = spots[i][0];
+      e.node.position.z = spots[i][1];
+      e.cell = i;
+      sk.emitters.push(e);
+    }
+  } else sk.emitters.push(emitter(sk.tilt, 0.052, 0.2, { warm: true }));
   sk.height = 0.3;
   sk.radius = 0.35;
   return sk;
@@ -922,7 +953,8 @@ function effectLight(body) {
     const node = new THREE.Object3D();
     node.position.copy(dir).multiplyScalar(R * 0.97);
     spin.add(node);
-    sk.emitters.push({ node, radius: 0.03, dir });
+    // a multi-head effect (a 4-head derby): each cluster its head's colour
+    sk.emitters.push({ node, radius: 0.03, dir, ...((body.cells || 1) > 1 ? { cell: k % body.cells } : {}) });
   }
   void up;
   sk.height = 0.36;
