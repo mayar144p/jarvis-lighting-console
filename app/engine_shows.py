@@ -98,7 +98,7 @@ class ShowMixin:
             "timeline": self.timeline,
             "output_target": self.dmx_target,
             "meta": {"master": self.master,
-                     "show_file": self.show_file},
+                     "show_file": self.show_file, **self._tempo_saved()},
         }
         return json.dumps(payload, indent=2)
 
@@ -246,6 +246,7 @@ class ShowMixin:
                              if n in patched]
             meta = payload.get("meta") or {}
             self.master = _clamp(meta.get("master", 100), 0, 100)
+            self._tempo_restore(meta)
             self.show_file = meta.get("show_file") or self.show_file
             self.timeline = tl_mod.normalise(payload.get("timeline") or {})
             self.sound_cfg = sound_mod.clean_config(payload.get("sound"))
@@ -300,7 +301,7 @@ class ShowMixin:
                 "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
-                "meta": {"master": self.master},
+                "meta": {"master": self.master, **self._tempo_saved()},
             }
             text = json.dumps(payload, indent=2)
             self.show_file = label
@@ -537,6 +538,24 @@ class ShowMixin:
             out[str(key)] = fixed
         return out
 
+    def _tempo_saved(self) -> dict:
+        """The show's tempo: a timeline built at 128 BPM came back at 120."""
+        t = self.__dict__.get("tempo")
+        if t is None:
+            return {}
+        return {"bpm": round(float(t.bpm), 3), "tempo_follow": bool(self.__dict__.get("tempo_follow", True))}
+
+    def _tempo_restore(self, meta: dict) -> None:
+        try:
+            bpm = float(meta.get("bpm") or 0)
+        except (TypeError, ValueError):
+            return
+        if not 20 <= bpm <= 400:
+            return
+        self._tempo().set_bpm(bpm, time.monotonic(), "show")
+        self.tempo_follow = bool(meta.get("tempo_follow", True))
+        self._tempo_changed()
+
     @staticmethod
     def _pb_saved(pb: dict) -> dict:
         f = pb["follow"]
@@ -630,6 +649,7 @@ class ShowMixin:
             self.playbacks = playbacks
             self._resync_cue_fx()
             self.master = master
+            self._tempo_restore(payload.get("meta") or {})
             self.show_file = label
             self.quick = quick
             self.quick_names = {str(k): str(v)[:16] for k, v in

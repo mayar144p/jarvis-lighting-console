@@ -3085,3 +3085,24 @@ def test_library_sweep_fixes() -> None:
                   f"{cmyv} {look['hex']}")
         finally:
             e.shutdown()
+
+
+def test_show_keeps_tempo() -> None:
+    """A show keeps its tempo: a timeline built at 128 BPM came back at 120."""
+    print("show file: the tempo comes back")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=1)
+            e.act("tempo_set", bpm=128)
+            e.act("save_show", name="t")
+            e2.act("load_show", name="t")
+            check("128 BPM saved and loaded", abs(e2._tempo().bpm - 128) < 0.01, str(e2._tempo().bpm))
+        finally:
+            e.shutdown()
+            e2.shutdown()
