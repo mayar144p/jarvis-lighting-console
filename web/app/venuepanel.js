@@ -698,6 +698,7 @@ export function initVenuePanel(theStage) {
 
   document.addEventListener("keydown", (ev) => {
     if (!arranging || typingInField(ev) || anyModal()) return;
+    if (document.querySelector(".menu")) return;    // Esc closes the open menu first
     if (editor.drawing) return;                      // the editor takes its own keys
     const k = ev.key.toLowerCase();
     if (k === "w") { editor.setMode("translate"); modeButtons(); ev.stopImmediatePropagation(); }
