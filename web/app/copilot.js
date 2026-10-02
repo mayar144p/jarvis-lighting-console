@@ -194,10 +194,17 @@ async function assist(text) {
 
 async function showMemory() {
   const r = await post("/api/console/assistant", { notes: true });
+  const box = h("div");
+  // forgetting renumbers the notes, so the list is redrawn from the answer
+  const draw = (list) => box.replaceChildren(...list.map((n, i) => h("div.ai-note", h("span", `${i + 1}. ${n}`),
+    h("button.x", { title: "Forget this", "aria-label": "Forget this", onclick: async () => {
+      const r2 = await post("/api/console/assistant", { notes: true, forget: i });
+      draw(r2.notes || []);
+    } }, "×"))));
   const list = r.notes || [];
+  draw(list);
   say("bot", list.length ? "What I remember about how you like things:" : "I haven't noted anything yet - tell me how you like things and I'll remember.",
-    list.length ? h("div", ...list.map((n, i) => h("div.ai-note", h("span", `${i + 1}. ${n}`),
-      h("button.x", { title: "Forget this", onclick: async (e) => { await post("/api/console/assistant", { notes: true, forget: i }); e.currentTarget.parentNode.remove(); } }, "×")))) : null);
+    list.length ? box : null);
 }
 
 async function plan(text) {

@@ -12,7 +12,7 @@
 // and saves a screenshot per step, to look through by eye.
 // At 1440 it also presses every (safe) button of every tab and dialog.
 //
-//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click]
+//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click] [--only regex]
 //
 // It starts its own server on a scratch fixture database and show folder,
 // so your shows and patch are never touched.  Needs Playwright.
@@ -28,6 +28,8 @@ const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const outDir = args.find((a, i) => !a.startsWith("--") && !(i && args[i - 1].startsWith("--"))) || join(ROOT, "uicheck-out");
 const WIDTHS = opt("--widths", "1280,1440,1920").split(",").map(Number);
 const CLICK = !args.includes("--no-click");
+// --only <regex>: run just the steps whose name matches (plus the start)
+const ONLY = opt("--only", "") ? new RegExp(opt("--only", "")) : null;
 const PORT = +(process.env.UICHECK_PORT || 8811);
 const BASE = `http://127.0.0.1:${PORT}/`;
 mkdirSync(outDir, { recursive: true });
@@ -93,7 +95,7 @@ const AUDIT = () => {
     }
     return null;
   };
-  const top = document.querySelector(".modal-scrim:last-of-type") || null;
+  const top = document.querySelector(".modal-scrim:last-of-type") || document.querySelector(".cmdbar-scrim:not(.hidden)") || null;
   const inScope = (el) => !top || top.contains(el) || el.closest(".menu, .toasts");
   // 1. text spilling out of its box
   for (const el of document.querySelectorAll("button, .chip, label, h2, h3, h4, th, .k, .tb-btn, .hud-btn, .qbtn b, .fx-card b, .knob-k, .tab-pane [class] > b, small, .out-state")) {
@@ -111,7 +113,9 @@ const AUDIT = () => {
   // 2. controls too small to click
   for (const el of document.querySelectorAll("button, select, input:not([type=hidden]):not([type=range]):not([type=file]), [role=button], [role=tab], a[href]")) {
     if (!inScope(el) || el.disabled) continue;
-    const r = vis(el);
+    // a checkbox inside its label: the whole label is the target
+    const lab = /checkbox|radio/.test(el.type) && el.closest("label");
+    const r = vis(lab || el);
     if (!r) continue;
     if (el.closest(".menu") && r.height >= 24) continue;
     if (r.width < 20 || r.height < 20) out.push(["tiny", name(el), `${Math.round(r.width)}x${Math.round(r.height)}`]);
@@ -280,7 +284,7 @@ const STEPS = [
   ["23-views-menu", async (p) => { await closeAll(p); await p.click("#views-more"); await p.waitForTimeout(300); }],
   ["24-crowd-menu", async (p) => { await closeAll(p); await p.click("#people-btn"); await p.waitForTimeout(300); }],
   ["25-zones", async (p) => { await closeAll(p); await p.click("#zones-btn"); await p.waitForTimeout(500); }],
-  ["26-arrange", async (p) => { await closeAll(p); await p.click("#zones-btn").catch(() => {}); await p.click("#arrange-btn"); await p.waitForTimeout(700); }, { click: "#venue-tools" }],
+  ["26-arrange", async (p) => { await closeAll(p); await p.click("#zones-btn").catch(() => {}); if (!(await p.evaluate(() => document.body.classList.contains("arranging")))) await p.click("#arrange-btn"); await p.waitForTimeout(700); }, { click: "#venue-tools" }],
   ["27-room-dialog", async (p) => { await closeAll(p); await p.click("#vt-room"); await p.waitForTimeout(600); }, { click: ".modal-scrim:last-of-type .modal" }],
   ["28-rigging-dialog", async (p) => { await closeAll(p); await p.click("#vt-rigging"); await p.waitForTimeout(600); }, { click: ".modal-scrim:last-of-type .modal" }],
   ["29-more-dialog", async (p) => { await closeAll(p); await p.click("#vt-add"); await p.waitForTimeout(500); }],
@@ -293,7 +297,8 @@ const STEPS = [
   ["36-copilot", async (p) => { await p.keyboard.press("Escape"); await closeAll(p); await p.click("#ai-btn"); await p.waitForTimeout(600); }],
   ["37-copilot-design", async (p) => { await p.click('#copilot-tabs [data-ctab="design"]'); await p.waitForTimeout(400); }],
   ["38-copilot-doctor", async (p) => { await p.click('#copilot-tabs [data-ctab="doctor"]'); await p.waitForTimeout(400); }],
-  ["39-ai-memory", async (p) => { await p.click('#copilot-tabs [data-ctab="chat"]'); await p.click("#ai-memory").catch(() => {}); await p.waitForTimeout(500); }],
+  // "What I remember" is shown only with an AI key
+  ["39-ai-memory", async (p) => { await p.click('#copilot-tabs [data-ctab="chat"]'); if (await p.isVisible("#ai-memory")) await p.click("#ai-memory"); await p.waitForTimeout(500); }],
   ["40-copilot-close", async (p) => { await closeAll(p); await p.click("#copilot-close"); await p.waitForTimeout(400); }],
   ["41-cue-dialog", async (p) => mod(p, "dialogs.js", "openCueDialog", 1), { click: ".modal-scrim:last-of-type .modal" }],
   ["42-cue-list", async (p) => { await closeAll(p); await mod(p, "dialogs.js", "openCueList", 1); }, { click: ".modal-scrim:last-of-type .modal" }],
@@ -337,6 +342,7 @@ for (const width of WIDTHS) {
   const dir = join(outDir, String(width));
   mkdirSync(dir, { recursive: true });
   for (const [name, run, o = {}] of STEPS) {
+    if (ONLY && name !== "01-start" && !ONLY.test(name)) continue;
     const before = pageErrors.length;
     try {
       await Promise.race([run(p), new Promise((_, no) => setTimeout(() => no(new Error("step took over 20 s")), 20000))]);

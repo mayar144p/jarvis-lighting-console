@@ -188,7 +188,25 @@ function syncOperator() {
   el.textContent = o.on ? (o.busy ? "AI RUNNING · thinking…" : "AI RUNNING" + (o.last ? " · " + o.last : "")) : "";
 }
 
+// Fold the bar a stage at a time (undo's words, then the Copilot / Design
+// words, then the rest) only while it doesn't fit the window.
+let fitQueued = false;
+function fitTopbar() {
+  if (fitQueued) return;
+  fitQueued = true;
+  requestAnimationFrame(() => {
+    fitQueued = false;
+    const tb = $(".topbar");
+    const stage = (n) => { if (tb.dataset.fit !== String(n)) tb.dataset.fit = String(n); };
+    stage(0);
+    for (let n = 1; n <= 3 && tb.scrollWidth > tb.clientWidth + 1; n++) stage(n);
+  });
+}
+
 export function initTopbar() {
+  addEventListener("resize", fitTopbar);
+  new MutationObserver(fitTopbar).observe($(".topbar"), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+  fitTopbar();
   on("snapshot", syncBlind);
   on("lite", syncBlind);
   on("lite", syncOperator);
