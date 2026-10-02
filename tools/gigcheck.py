@@ -40,14 +40,14 @@ def check(ok, what, detail=""):
     return ok
 
 
-def act(e, name, ok=True, **p):
+def act(e, action_, ok=True, **p):
     try:
-        r = e.act(name, **p)
+        r = e.act(action_, **p)
     except Exception as exc:                  # noqa: BLE001 - act() must never raise
-        check(False, f"{name} raised", "".join(traceback.format_exception_only(type(exc), exc)).strip())
+        check(False, f"{action_} raised", "".join(traceback.format_exception_only(type(exc), exc)).strip())
         return {}
     if ok:
-        check(r.get("ok"), f"{name} {json.dumps(p)[:80]}", str(r.get("error")))
+        check(r.get("ok"), f"{action_} {json.dumps(p)[:80]}", str(r.get("error")))
     return r
 
 
@@ -133,7 +133,7 @@ def main() -> int:
             act(e, "set_colour", colour="#0066ff")
             act(e, "record_palette", kind="colour", name="Deep blue")
             act(e, "select_heads", heads=spots)
-            act(e, "aim_spot", spot="dancefloor")
+            act(e, "aim_spot", spot="floor")
             act(e, "record_palette", kind="position", name="Floor")
             act(e, "select_all")
             act(e, "set_intensity", level=80)
@@ -216,6 +216,9 @@ def main() -> int:
 
             print("8. save, reload, compare")
             before = state_of(e)
+            # the programmer is a scratchpad, not part of a show (a desk's
+            # too): compare what the show itself plays
+            act(e, "clear_programmer")
             act(e, "playback_release", playback=1, ok=False)
             act(e, "cue_go", playback=1)
             ref = frame(e, time.monotonic() + 5)
@@ -226,11 +229,19 @@ def main() -> int:
                 after = state_of(e2)
                 d = diff(before, after)
                 check(not d, "the reloaded show is the same", "; ".join(d[:8]))
+                # (a show comes back where each playback was - after a crash
+                # it carries on; from the top here, like the reference)
+                act(e2, "playback_release", playback=1, ok=False)
                 act(e2, "playback_level", playback=1, level=100)
                 act(e2, "cue_go", playback=1)
                 again = frame(e2, time.monotonic() + 5)
-                check(ref == again, "...and its first cue puts out the same DMX",
-                      f"{sum(x != y for x, y in zip(ref, again))} channels differ")
+                bad = [i for i, (x, y) in enumerate(zip(ref, again)) if x != y]
+                where = []
+                for i in bad[:6]:
+                    u, ch = divmod(i, 512)
+                    h = next((h for h in e2.patch if h["address"] - 1 <= ch < h["address"] - 1 + h["channels"]), None)
+                    where.append(f"{h['model'] if h else '?'}#{h['head_no'] if h else '?'} {h['map'][ch - h['address'] + 1] if h else ch}: {ref[i]}->{again[i]}")
+                check(ref == again, "...and its first cue puts out the same DMX", f"{len(bad)} channels differ: " + "; ".join(where))
             finally:
                 e2.shutdown()
         finally:

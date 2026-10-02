@@ -25,6 +25,8 @@ jobs:
           node-version: 22
       - name: Self-test (engine, HTTP, web modules, picker maths, 3DS parser)
         run: python tools/selftest.py
+      - name: A whole gig, rehearsed (build, run, save, reload, compare)
+        run: python tools/gigcheck.py
 
   frame-timing:
     # DMX on a steady beat with a big rig and three screens watching
