@@ -258,7 +258,9 @@ def _describe(manufacturer: str, model: str, mode: str,
     fx = _fx_type(manufacturer, model, has)
     if fx:
         return _describe_fx(fx, manufacturer, has)
-    moving = "pan" in has and "tilt" in has
+    # a light that tilts with several cells (Robe Tetra: tilt only) is a
+    # moving bar, not a fixed PAR
+    moving = "pan" in has and "tilt" in has or ("tilt" in has and _cells(list(roles)) >= 2)
     kind = ""
     for pattern, typ, _family in FAMILIES:
         if re.search(pattern, name):
@@ -271,6 +273,8 @@ def _describe(manufacturer: str, model: str, mode: str,
         kind = kind or "generic"
         if re.search(_MOVING_NAMES, name) and not TYPES[kind]["moving"]:
             kind = _MOVING_FALLBACK.get(kind, "moving_spot")
+    elif moving and "pan" not in has:
+        kind = "moving_bar"                # tilts only, several cells: a tilting bar
     elif moving:
         if kind and not TYPES[kind]["moving"]:
             kind = _MOVING_FALLBACK.get(kind, "")

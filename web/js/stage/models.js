@@ -385,14 +385,16 @@ function movingBar(body) {
   const n = Math.max(4, Math.min(12, body.cells));
   const geo = new THREE.CircleGeometry(0.04, 18);
   geo.rotateX(-Math.PI / 2);
-  const cells = new THREE.InstancedMesh(geo, lens, n);
-  const m = new THREE.Matrix4();
-  for (let i = 0; i < n; i++) {
-    m.makeTranslation(-len / 2 + (i + 0.5) * len / n, 0.071, 0);
-    cells.setMatrixAt(i, m);
-  }
+  // each cell its own colour (a Robe Tetra's zones), beams follow theirs
+  const cells = pixelMesh(geo, n, (i, m) => m.makeTranslation(-len / 2 + (i + 0.5) * len / n, 0.071, 0));
   sk.tilt.add(cells);
-  for (const x of [-len / 3, 0, len / 3]) sk.emitters.push(emitter(sk.tilt, 0.072, 0.05, { x }));
+  sk.pixels = cells;
+  const zones = body.cells || 1;
+  [-len / 3, 0, len / 3].forEach((x, i) => {
+    const e = emitter(sk.tilt, 0.072, 0.05, { x });
+    if (zones > 1) e.cell = Math.min(zones - 1, Math.floor((i + 0.5) * zones / 3));
+    sk.emitters.push(e);
+  });
   sk.emitters.forEach((e) => { e.node.position.x = e.x; });
   sk.height = axis + 0.3;
   sk.radius = 0.5;
