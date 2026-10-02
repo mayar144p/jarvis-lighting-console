@@ -382,8 +382,9 @@ class OutputMixin:
                     # next tick is a whole period away, so screens never make
                     # the DMX wait for the lock (only while someone watches)
                     if time.monotonic() - self._look_wanted < 1.0:
+                        rev = self.act_rev
                         self._look_cache = (time.monotonic(),
-                                            json.dumps(self.look_rows(), separators=(",", ":")))
+                                            json.dumps(self.look_rows(), separators=(",", ":")), rev)
                 except Exception as exc:            # never die silently
                     self.output["errors"] += 1
                     self.output["last_error"] = str(exc)

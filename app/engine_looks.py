@@ -333,16 +333,19 @@ class LooksMixin:
     def look_text(self) -> str:
         """look_rows as JSON, one answer shared by every screen."""
         self._look_wanted = time.monotonic()
+        # shared only while nothing was changed: an operator's edit is seen
+        # on the next ask, whatever the clock (Windows' ticks every 16 ms)
+        rev = self.act_rev
         cached = self._look_cache
         now = time.monotonic()
-        if cached and now - cached[0] < self.LOOK_SHARE_S:
+        if cached and now - cached[0] < self.LOOK_SHARE_S and cached[2] == rev:
             return cached[1]
         with self._look_cache_lock:
             cached = self._look_cache
-            if cached and time.monotonic() - cached[0] < self.LOOK_SHARE_S:
+            if cached and time.monotonic() - cached[0] < self.LOOK_SHARE_S and cached[2] == rev:
                 return cached[1]
             text = json.dumps(self.look_rows(), separators=(",", ":"))
-            self._look_cache = (time.monotonic(), text)
+            self._look_cache = (time.monotonic(), text, rev)
             return text
 
     def _look(self, now: float | None = None) -> list[dict]:

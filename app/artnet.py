@@ -432,8 +432,10 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
     were polled) and `subnets`, so a caller can report exactly what was
     tried when nothing is found.
     """
+    t_start = time.monotonic()
     if subnets is None:
         subnets = local_subnets()
+    t_subnets = time.monotonic() - t_start
     subnets = [s for s in subnets if s]
     targets: list[str] = []
     for prefix in subnets:
@@ -465,6 +467,7 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
             if per_address:
                 time.sleep(0.002)
 
+        t_sent = time.monotonic() - t_start - t_subnets
         universes: dict[int, dict] = {}
         nodes: dict[str, dict] = {}
         node_by_ip: dict[str, str] = {}
@@ -554,7 +557,10 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
     return {"universes": rows, "nodes": list(nodes.values()), "error": None,
             "polls_sent": sent, "replies": replies, "frames": frames,
             "swept": sent, "subnets": subnets, "bound_port": bound_port,
-            "bind_note": bind_note, "message": message}
+            "bind_note": bind_note, "message": message,
+            # seconds per stage, to see where a slow "Find nodes" went
+            "took": {"subnets": round(t_subnets, 2), "send": round(t_sent, 2),
+                     "listen": round(time.monotonic() - t_start - t_subnets - t_sent, 2)}}
 
 
 def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
@@ -720,9 +726,12 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
     # /24s by unicast before reporting a negative.
     swept = 0
     subnets: list[str] = []
+    took: dict = {"broadcast": round(time.monotonic() - (deadline - timeout), 2)}
     if sweep_subnets and not rows:
         tried.append("unicast sweep")
+        t_sweep = time.monotonic()
         found = sweep(timeout=sweep_timeout, port=port, net=net)
+        took.update(found.get("took") or {}, sweep_total=round(time.monotonic() - t_sweep, 2))
         # count the sweep's polls whether or not anything answered: a
         # negative result is only meaningful if we say how hard we looked
         swept = int(found.get("polls_sent") or 0)
@@ -751,7 +760,7 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
                    "network to sweep)")
     return {"universes": rows, "nodes": list(nodes.values()), "error": None,
             "polls_sent": polled + swept, "replies": replies, "frames": frames,
-            "tried": tried, "swept": swept, "subnets": subnets,
+            "tried": tried, "swept": swept, "subnets": subnets, "took": took,
             "message": message}
 
 
