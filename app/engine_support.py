@@ -217,6 +217,8 @@ def channel_role(label) -> str:
                  "cyan", "magenta", "yellow"):
         if word in s:
             return word
+    if s.strip() in ("indigo", "royal", "violet") and "wheel" not in s:
+        return "blue"                 # ETC ColorSource "Deep Blue": its blue emitter is "Indigo"
     return "raw"
 
 

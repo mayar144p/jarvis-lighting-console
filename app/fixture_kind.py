@@ -203,8 +203,12 @@ def _fx_type(manufacturer: str, model: str, has: set) -> str:
     """The physical type of a laser or SFX machine, or '' for a light."""
     from .engine_support import LASER_ROLES, SFX_ROLES
     if has & LASER_ROLES:
-        return "laser"
+        return "laser"                 # (a combo light's laser still needs ARM)
     if not has & SFX_ROLES:
+        return ""
+    if has & {"dimmer", "red", "green", "blue", "white"} and not has & {"fx_fire", "fog"}:
+        # a light with its own "FX mode" (built-in programs) channel is
+        # still a light: Full, colour and Locate must reach it
         return ""
     from .fixlib import fx_kind
     kind = fx_kind(manufacturer, model, "", [])

@@ -1809,10 +1809,12 @@ class PatchMixin:
         for role in ("cyan", "magenta", "yellow"):
             if role in roles:
                 out[role] = 0
-        if not out:
-            # Wheel fixtures: slot 1 (DMX 0) is the open/clear slot on
-            # both the colour and the gobo wheel, so 0 == "no colour,
-            # full beam" - that is this fixture's white.
+        # Wheel fixtures: slot 1 (DMX 0) is the open/clear slot on both the
+        # colour and the gobo wheel, so 0 == "no colour, full beam" - that
+        # is this fixture's white.  A light that mixes AND has a wheel (a
+        # CMY wash's colour wheel) needs its wheel open too, or the wheel
+        # tints the white it mixed.
+        if True:
             for role in ("wheel", "gobo"):
                 if role in roles:
                     out[role] = 0
