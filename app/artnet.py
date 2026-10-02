@@ -458,14 +458,29 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
 
         poll = build_artpoll()
         sent = 0
-        for target in targets:
-            try:
-                probe.socks[0].sendto(poll, (target, port))
-                sent += 1
-            except OSError:
-                pass                      # a dead host is the normal case
-            if per_address:
-                time.sleep(0.002)
+        # The polls go out without waiting: a send to an address nobody
+        # owns can block while the computer asks the network who has it
+        # (6 s for 508 addresses on GitHub's Ubuntu runners), and "Find
+        # nodes" would sit there.  What can't go straight out is skipped,
+        # and the whole burst gets a second at most.
+        sock = probe.socks[0]
+        sock.setblocking(False)
+        send_until = time.monotonic() + 1.0
+        try:
+            for target in targets:
+                if time.monotonic() > send_until:
+                    break
+                try:
+                    sock.sendto(poll, (target, port))
+                    sent += 1
+                except BlockingIOError:
+                    time.sleep(0.001)     # the queue is full: let it drain
+                except OSError:
+                    pass                  # a dead host is the normal case
+                if per_address:
+                    time.sleep(0.002)
+        finally:
+            sock.setblocking(True)
 
         t_sent = time.monotonic() - t_start - t_subnets
         universes: dict[int, dict] = {}
