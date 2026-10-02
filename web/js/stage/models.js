@@ -558,17 +558,14 @@ function panel(body, w, d, cells, cellR) {
   sk.lenses.push(lens);
   const nx = Math.max(1, Math.round(Math.sqrt(cells * w / d)));
   const nz = Math.max(1, Math.ceil(cells / nx));
-  const geo = new THREE.CircleGeometry(cellR, 14);
+  // few big cells (a GLP Matrix Eye 4 is 2 x 2) are drawn big
+  const r = Math.min(cellR * Math.max(1, 5 / Math.max(nx, nz)), Math.min(w / nx, d / nz) * 0.42);
+  const geo = new THREE.CircleGeometry(r, 18);
   geo.rotateX(-Math.PI / 2);
-  const inst = new THREE.InstancedMesh(geo, lens, nx * nz);
-  const m = new THREE.Matrix4();
-  let k = 0;
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < nz; j++) {
-      m.makeTranslation(-w / 2 + (i + 0.5) * w / nx, 0.041, -d / 2 + (j + 0.5) * d / nz);
-      inst.setMatrixAt(k++, m);
-    }
-  }
+  // each cell its own colour, in reading order (row by row)
+  const at = (k) => [-w / 2 + ((k % nx) + 0.5) * w / nx, -d / 2 + (Math.floor(k / nx) + 0.5) * d / nz];
+  const inst = pixelMesh(geo, nx * nz, (k, m) => { const [x, z] = at(k); m.makeTranslation(x, 0.041, z); });
+  sk.pixels = inst;
   sk.tilt.add(inst);
   const plate = logo(body, w * 0.4, w * 0.1);
   if (plate) {
@@ -577,7 +574,18 @@ function panel(body, w, d, cells, cellR) {
     plate.rotation.set(Math.PI / 2, 0, 0);
     sk.tilt.add(plate);
   }
-  sk.emitters.push(emitter(sk.tilt, 0.042, Math.min(w, d) * 0.45));
+  const own = body.cells || 1;
+  if (own > 1 && own <= 9) {
+    // a few big cells: a beam each, in its cell's colour
+    for (let k = 0; k < own; k++) {
+      const e = emitter(sk.tilt, 0.042, r);
+      const [x, z] = at(Math.floor(k * nx * nz / own));
+      e.node.position.x = x;
+      e.node.position.z = z;
+      e.cell = k;
+      sk.emitters.push(e);
+    }
+  } else sk.emitters.push(emitter(sk.tilt, 0.042, Math.min(w, d) * 0.45));
   sk.height = 0.3;
   sk.radius = Math.max(w, d) * 0.6;
   return sk;
@@ -980,7 +988,7 @@ const BUILDERS = {
   profile,
   fresnel,
   wash_panel: (b) => panel(b, 0.42, 0.3, Math.max(12, b.cells || 24), 0.018),
-  matrix: (b) => panel(b, 0.4, 0.4, 25, 0.03),
+  matrix: (b) => panel(b, 0.4, 0.4, (b.cells || 1) > 1 ? b.cells : 25, 0.03),
   cyc: (b) => panel(b, 0.36, 0.24, 8, 0.03),
   bar: batten,
   strobe: (b, fam) => strobe(b, fam),
