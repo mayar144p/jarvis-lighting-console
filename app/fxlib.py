@@ -78,6 +78,22 @@ _COLOURS: tuple[tuple[str, tuple[int, int, int]], ...] = (
 )
 _COLOUR_ORDER = ("red", "green", "blue", "white", "amber",
                  "magenta", "cyan", "yellow", "uv")
+_EMITTERS = ("white", "amber", "uv", "lime")
+_CMY = ("cyan", "magenta", "yellow")
+
+
+def _palette(have) -> list[str]:
+    """The colours a light can really MAKE, in chase order.  RGB lights:
+    their own emitters (as before).  A CMY light mixes every colour - by
+    subtracting.  A light with only white / amber / UV channels has just
+    those.  Picking from the channel NAMES alone made a CMY light "chase"
+    magenta / cyan / yellow while nothing wrote those channels."""
+    if any(r in have for r in RGB):
+        return [c for c in _COLOUR_ORDER if c in have]
+    if any(r in have for r in _CMY):
+        return ["red", "green", "blue", "magenta", "cyan", "yellow"]
+    return [c for c in _EMITTERS if c in have]
+
 
 
 def normalise(roles) -> set[str]:
@@ -120,8 +136,7 @@ def _bright(have: set[str]) -> bool:
     """
     return (_satisfies(have, BRIGHTNESS)
             or _satisfies(have, ("shutter",))
-            or bool(have & {"red", "green", "blue", "white", "amber", "uv",
-                            "cyan", "magenta", "yellow"}))
+            or bool(have & {"red", "green", "blue", "white", "amber", "uv"}))
 
 
 
@@ -132,7 +147,7 @@ def _bright(have: set[str]) -> bool:
 
 def _rainbow(base, have, p, elapsed, index, count):
     """Hue sweep.  Needs full colour, so a white-only fixture is skipped."""
-    order = [c for c in _COLOUR_ORDER if c in have]
+    order = _palette(have)
     if len(order) < 2:
         return
     t = elapsed * p["speed"] + p["phase"] * 0.01 * index
@@ -154,7 +169,7 @@ def _rainbow(base, have, p, elapsed, index, count):
 
 def _colour_chase(base, have, p, elapsed, index, count):
     """Hard steps through the colour wheel, one colour per head."""
-    order = [c for c in _COLOUR_ORDER if c in have]
+    order = _palette(have)
     if len(order) < 2:
         return
     step = int((elapsed * p["speed"] * p["rate"]) + index) % len(order)
@@ -163,7 +178,7 @@ def _colour_chase(base, have, p, elapsed, index, count):
 
 def _alternate(base, have, p, elapsed, index, count):
     """Two colours, alternating by head and flipping over time."""
-    order = [c for c in _COLOUR_ORDER if c in have]
+    order = _palette(have)
     if len(order) < 2:
         return
     pair = [order[0], order[1 % len(order)]]
@@ -180,7 +195,7 @@ def _fan(base, have, p, elapsed, index, count):
     flip is the movement, and each side alternates independently - which is
     what "fan" does on a desk.
     """
-    order = [c for c in _COLOUR_ORDER if c in have]
+    order = _palette(have)
     if len(order) < 2:
         return
     mid = (count - 1) / 2.0
@@ -192,10 +207,22 @@ def _fan(base, have, p, elapsed, index, count):
 
 
 def _write_colour(base, have, name, level):
+    """One named colour on whatever the light mixes with: RGB(W/A/UV),
+    CMY (subtractive) or single emitters (white / amber / UV on or off)."""
     vals = dict(_COLOURS)[name]
+    k = level / 100.0
+    rgb = any(r in have for r in RGB)
     for i, role in enumerate(("red", "green", "blue")):
         if role in have:
-            base[role] = int(vals[i] * level / 100.0)
+            base[role] = int(vals[i] * k)
+    for i, role in enumerate(_CMY):
+        if role in have and not rgb:
+            base[role] = int((255 - vals[i]) * k) if level else 255
+    for role in _EMITTERS:
+        if role in have:
+            # its own colour lights it; on an RGB light the white / amber /
+            # UV of another colour stays off so each step reads clearly
+            base[role] = int(255 * k) if role == name else 0
 
 
 def _breathe(base, have, p, elapsed, index, count):
@@ -231,9 +258,13 @@ def _apply_brightness(base, have, pct):
     # them scale together.  This is the path the Intimidator's 8ch mode
     # takes, and without it "only offer what the light can do" would mean
     # "offer it nothing".
-    for role in ("red", "green", "blue", "white"):
-        if role in have:
-            base[role] = int(max(0.0, min(100.0, pct)) * 2.55)
+    lit = [r for r in ("red", "green", "blue", "white", "amber", "uv") if r in have]
+    for role in lit:
+        base[role] = int(max(0.0, min(100.0, pct)) * 2.55)
+    if not lit and "shutter" in have:
+        # only a shutter: it is open or shut, and only the engine knows
+        # which value opens THIS light - it turns "_level" into that
+        base["_level"] = int(max(0.0, min(100.0, pct)) * 2.55)
 
 
 def _w(base, role, unit):
@@ -519,6 +550,11 @@ def _available_for(have: frozenset) -> tuple[str, ...]:
         spec = FX[name]
         if spec.get("bright"):
             if not _bright(have):
+                continue
+        elif spec.get("group") == "colour":
+            # two colours it can really make (a light with only a red
+            # channel can't run a rainbow)
+            if len(_palette(have)) < 2 or name == "rainbow" and sum(r in have for r in RGB) < 2:
                 continue
         else:
             if not all(_satisfies(have, g) for g in _groups(spec)):

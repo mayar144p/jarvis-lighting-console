@@ -202,7 +202,10 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             for r in beams:
                 resolved[r] = int((rest or {}).get(r, 0))
     dimmerless = not any(r in HTP_ROLES for r in head["map"])
-    emitters = [r for r in COLOUR_ROLES if r in head["map"]]
+    # (cyan / magenta / yellow are filters, not emitters: a CMY light with
+    # no dimmer can't be dimmed by its colour, and driving one to "full"
+    # tinted Locate's white)
+    emitters = [r for r in COLOUR_ROLES if r in head["map"] and r not in ("cyan", "magenta", "yellow")]
     if dimmerless and emitters:
         # the VIRTUAL dimmer of a light with colour emitters and no dimmer
         # (a 3-channel RGB PAR): intensity, cues and flash buttons scale

@@ -697,7 +697,7 @@ _KIND_PATTERNS = [
     ("flame", r"\bflames?\b|flamer|fire\s*(jet|machine|effect|burst)|g-flame|dragon"),
     ("spark", r"\bsparks?\b|cold\s*(fire|spark)|sparkular"),
     ("bubble", r"bubble"),
-    ("snow", r"\bsnow"),
+    ("snow", r"\bsnow(?!ball)"),
     ("haze", r"\bhaze|\bhazer|\bfaze\b"),
     ("fog", r"\bfog|\bsmoke|\bgeyser|\bsteam\b|\bjett?\b|\bmist\b"),
 ]
@@ -804,7 +804,7 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
         if re.search(r"mode|control|sound|auto|program|function", name) or role == "macro":
             return "FX Mode"
         if role in ("dimmer", "zone_dimmer", "shutter") or re.search(
-                r"on/off|output|power|enable|blackout|laser on", name):
+                r"on/off|output|power|enable|blackout|laser on", name) or (re.search(r"^lasers?$", orig.strip()) and role != "wheel"):
             return "Laser Output"
         if role == "strobe":
             return "FX Setting"
@@ -824,8 +824,9 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     # past 200, armed or not
     if re.search(r"^go$|\bgo\b|\btrigger\b|\bfire\b|\bshoot\b", orig):
         return "FX Fire"
-    if re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name):
-        return "FX Fan"
+    if (re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name)) \
+            and not re.search(r"fog|smoke|haze|faze", orig):
+        return "FX Fan"                       # ("Faze and Fan" on one channel is the output)
     if re.search(r"height|size|level of spark", name):
         return "FX Height"
     if re.search(r"\bmode\b|program|preset|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
@@ -838,11 +839,13 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     if has_rgb and role in ("dimmer", "zone_dimmer", "strobe") and not re.search(
             r"fog|smoke|haze|output|volume|pump|fire|flame|spark|co2|confetti", orig):
         return None                               # the LEDs' master dimmer / strobe
-    out_words = r"fog|smoke|haze|output|volume|pump|on/off|fire|shoot|shot|launch|valve|" \
+    out_words = r"fog|smoke|haze|faze|output|volume|pump|on/off|fire|shoot|shot|launch|valve|" \
                 r"flame|spark|co2|confetti|burst|blast|dimmer|intensity|trigger|\bon\b|" \
                 r"fountain|jet|effect|height"
     if role in ("dimmer", "zone_dimmer", "shutter", "strobe", "raw", "macro") and (
-            re.search(out_words, name) or role in ("dimmer", "zone_dimmer")):
+            re.search(out_words, name) or role in ("dimmer", "zone_dimmer")
+            or (role == "shutter" and kind in ("fog", "haze") and not has_rgb)):
+        # (a fogger's "Shutter" - ADJ Fog Storm - is its fog output)
         return "Fog Output" if kind in ("fog", "haze", "bubble", "snow") else "FX Fire"
     return "FX Setting" if role == "raw" else None
 

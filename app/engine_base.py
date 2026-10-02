@@ -303,11 +303,13 @@ def default_mode(modes: list[dict]) -> dict:
     if not modes:
         return {}
     moves = any({"pan", "tilt"} <= roles(m) for m in modes)
-    fires = any("fx_fire" in roles(m) for m in modes)
+    out = {"fx_fire", "fog"}
+    fires = any(roles(m) & out for m in modes)
     if fires:
         # an SFX machine: a mode that can actually fire (a Psyco2Jet's
-        # first "safety" mode has only its arm channel)
-        usable = [m for m in modes if "fx_fire" in roles(m)]
+        # first "safety" mode has only its arm channel; a fogger's timer
+        # mode has only its interval and duration)
+        usable = [m for m in modes if roles(m) & out]
         return min(usable, key=lambda m: (m.get("channel_count") or len(m.get("channels") or []), modes.index(m)))
     # a laser: the mode that controls it most (pattern, colour, size,
     # position...) - its 1-channel "auto / sound" mode can't be programmed,

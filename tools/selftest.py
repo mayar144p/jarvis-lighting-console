@@ -180,6 +180,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_fx_tweak_live,
     test_hold_button_roam,
     test_hold_button_keeps_everything,
+    test_library_sweep_fixes,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -340,6 +341,7 @@ def _standalone_suites():
     ("FX speed / size changed live", test_fx_tweak_live),
     ("Hold button keeps a roam / shape", test_hold_button_roam),
     ("Hold button keeps brightness, colour, rainbow", test_hold_button_keeps_everything),
+    ("Library sweep fixes", test_library_sweep_fixes),
     )
 
 

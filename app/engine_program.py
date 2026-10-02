@@ -98,7 +98,7 @@ class ProgrammerMixin:
             raise ValueError("nothing selected")
         per_head = {}
         for h in rows:
-            avail = fxlib_mod.available(h.get("map") or [])
+            avail = self._fx_can(h)
             per_head[str(h["head_no"])] = avail
         union: list[str] = []
         for avail in per_head.values():
@@ -107,9 +107,9 @@ class ProgrammerMixin:
                     union.append(n)
         return {
             "heads": [h["head_no"] for h in rows],
-            "available": fxlib_mod.describe(
+            "available": [x for x in fxlib_mod.describe(
                 # the union of roles, so describe() agrees with available()
-                sorted({r for h in rows for r in (h.get("map") or [])})),
+                sorted({r for h in rows for r in (h.get("map") or [])})) if x["name"] in union],
             "names": sorted(union),
             "per_head": per_head,
             "summary": "%d effect(s) available on %d head(s)"
@@ -254,7 +254,7 @@ class ProgrammerMixin:
             raise ValueError("nothing selected")
         capable, skipped = [], []
         for h in rows:
-            avail = fxlib_mod.available(h.get("map") or [])
+            avail = self._fx_can(h)
             (capable if name in avail else skipped).append(h)
         if not capable:
             # Nothing here can do it.  The reason is per head, because the
@@ -262,7 +262,8 @@ class ProgrammerMixin:
             # pan" is useless if the fixture has no pan channel to lack.
             why = "; ".join(
                 "head %d: %s" % (h["head_no"],
-                                 fxlib_mod.why_not(h.get("map") or [], name))
+                                 fxlib_mod.why_not(h.get("map") or [], name)
+                                 or "it has no dimmer and its shutter can't close, so it can't be dimmed")
                 for h in skipped[:4])
             raise ValueError(
                 "%s cannot run here - %s" % (
@@ -710,6 +711,7 @@ class ProgrammerMixin:
                                                    elapsed=elapsed, index=i, count=len(units))
                         except ValueError:
                             continue
+                        self._fx_gate(by_no.get(head_no), vals)
                         dst = o.setdefault(head_no, {})
                         for role, v in (vals or {}).items():
                             if k is None:
@@ -735,6 +737,7 @@ class ProgrammerMixin:
                         # 200 Hz; the effect stops being listed.
                         continue
                     if vals:
+                        self._fx_gate(by_no.get(head_no), vals)
                         o.setdefault(head_no, {}).update(vals)
                 continue
             for i, head_no in enumerate(heads):
@@ -748,6 +751,31 @@ class ProgrammerMixin:
         if len(keep) != len(self.fx):
             self.fx = keep
         return out
+
+    def _fx_can(self, h: dict) -> list[str]:
+        """The library effects this light can show: fxlib's answer, less
+        the brightness effects on a light whose only gate can't shut (no
+        dimmer, no colour, and a shutter where 0 is already open)."""
+        avail = fxlib_mod.available(h.get("map") or [])
+        m = set(h.get("map") or [])
+        if not m & {"dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber", "uv"}:
+            gate = self._shutter_role(h)
+            closed = self._gates().get(h["head_no"])
+            if gate is None or closed is None or self._open_value(h, gate) == int(closed):
+                avail = [n for n in avail if not fxlib_mod.FX[n].get("bright")]
+        return avail
+
+    def _fx_gate(self, head: dict | None, vals: dict) -> None:
+        """A brightness effect on a light whose only control is a shutter
+        (fxlib writes "_level"): open it above half, shut it below - at the
+        values that open and close THIS light."""
+        if not vals or "_level" not in vals:
+            return
+        lvl = vals.pop("_level")
+        gate = self._shutter_role(head) if head else None
+        if gate:
+            closed = self._gates().get(head["head_no"])
+            vals[gate] = self._open_value(head, gate) if lvl >= 128 else int(closed or 0)
 
     # --- palettes --------------------------------------------------------
     def _a_record_palette(self, kind=None, name="", palette=None, **_):

@@ -3035,3 +3035,53 @@ def test_hold_button_keeps_everything() -> None:
                   and (btn.get("values") or {}).get("2", {}).get("dimmer") == 100, f"{r.get('summary')} {btn.get('values')}")
         finally:
             e.shutdown()
+
+
+def test_library_sweep_fixes() -> None:
+    """What the library sweep (tools/libsweep.py) found: colour effects on
+    CMY / white-only lights, brightness effects that can't show, lights
+    taken for effect machines, haze / fog outputs not found, a CMY light's
+    Locate tinted, an "Indigo" blue channel."""
+    print("library sweep: colour fx, undimmable lights, light vs machine, fog outputs")
+    from app import engine as eng, fixlib, fixture_kind, fxlib
+    from app.engine_base import default_mode
+    from app.engine_support import channel_role
+    # colour effects on what the light can really make
+    cmy = ["dimmer", "cyan", "magenta", "yellow"]
+    check("a CMY light gets colour chase, and the chase moves its CMY flags",
+          "colour_chase" in fxlib.available(cmy)
+          and len({tuple(sorted(fxlib.apply("colour_chase", {}, cmy, elapsed=t).items())) for t in (0, 0.3, 0.6, 0.9, 1.2)}) > 1, "")
+    check("a dual-white light (two whites) gets no colour effects",
+          not {"colour_chase", "alternate", "fan", "rainbow"} & set(fxlib.available(["white", "white"])), "")
+    check("a light with only a red channel gets no rainbow", "rainbow" not in fxlib.available(["dimmer", "red", "wheel"]), "")
+    # light, not effect machine
+    check("a Snowball is a light, not a snow machine", fixlib.fx_kind("Blizzard Lighting", "Snowball", "", []) == "", "")
+    check("a light with its own FX-mode channel is still a light",
+          fixture_kind.describe({"manufacturer": "Ayra", "model": "ERO 506", "mode": "",
+                                 "map": ["pan", "tilt", "strobe", "red", "green", "blue", "white", "dimmer", "fx_mode"]})["class"] == "light", "")
+    check("an \"Indigo\" channel is blue", channel_role("Indigo") == "blue", "")
+    # fog / haze outputs, and the mode that has one
+    src, key = next((s, r["key"]) for s in ("qlc", "ofl") for r in fixlib.index(s) if "F-5D" in r["model"])
+    it = fixlib.apply_fx(fixlib.load(src, key)[0])
+    mode = default_mode([{"name": m["name"], "channel_count": m["channel_count"], "channels": m["channels"]} for m in it["modes"]])
+    check("Antari's \"Faze\" is a haze output, and a mode with it is patched", "fog" in {channel_role(c) for c in mode["channels"]},
+          str(mode))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        k = next(r["key"] for r in fixlib.index("qlc") if r["model"] == "Phantom 250 Wash")
+        fixtures.store_parsed(db, fixlib.load("qlc", k), "qlc:" + k)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Phantom 250 Wash", qty=1)
+            h = e.patch[0]
+            e.act("select_heads", heads=[1])
+            e.act("locate")
+            f = e.build_frames()[h["universe"]]
+            cmyv = [f[h["address"] - 1 + h["map"].index(r)] for r in ("cyan", "magenta", "yellow")]
+            look = next(x for x in e._looks() if x["n"] == 1)
+            check("Locate on a CMY light: every flag out (white), in 3D too", cmyv == [0, 0, 0] and look["hex"].lower() == "#ffffff",
+                  f"{cmyv} {look['hex']}")
+        finally:
+            e.shutdown()
