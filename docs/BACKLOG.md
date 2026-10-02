@@ -286,6 +286,9 @@ counts are modes, not lights.
     2-channel modes): Full, Out and Locate now use a slot named
     "Blackout" when the file has one; a file that names nothing leaves the
     desk guessing.  Worth a "Test this light" question for these.
+    Example from the brand debug: Showtec Dynamic LED v3 "d-P2" (Programs:
+    0 "No function", then Red, Green...; a strobe with no ranges) - the
+    3D shows it lit white at rest; the real light is probably dark there.
 11. **Combo bars drawn as one thing** (Stairville All FX Bar: PARs,
     derbys, strobe and a laser on one bar): the desk treats it as a laser
     (so the laser part needs ARM), and the 3D draws a laser projector.  A
