@@ -198,6 +198,14 @@ def sec_junk(tmp: Path) -> None:
                 for v in values:
                     call(e, a, timeout=4.0 if a in SLOW else 8.0, **{key: v})
             healthy(e, f"after junk to {a}")
+        # two taps in the same clock tick (Windows' clock ticks every 16 ms)
+        now = time.monotonic()
+        try:
+            e.tempo.tap(now)
+            e.tempo.tap(now)
+            check(True, "two tempo taps at the same instant")
+        except Exception as exc:                  # noqa: BLE001
+            check(False, "two tempo taps at the same instant", repr(exc))
         check(len(fails) == before, "junk: no action crashed or hung", f"{len(fails) - before} findings")
         undo_all(e, "after the junk", limit=400)
     finally:
