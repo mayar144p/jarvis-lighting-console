@@ -471,7 +471,10 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
         ranges = []
         for c in caps:
             text = (c.text or "").strip().lower()
-            if re.search(r"strobe|pulse|random|lightning|flash|^shutter \d", text) and not re.search(
+            # the file's own tag first ("StrobeFreqRange", "PulseFreqRange"), then
+            # its words - also as misspelled ("Stobe") or longer ("Pulsation")
+            tagged = re.match(r"(Strobe|Pulse)(?!.*Off)", c.get("Preset") or "")
+            if (tagged or re.search(r"strobe|stobe|puls|random|lightning|flash|^shutter \d", text)) and not re.search(
                     r"^(no strobe|strobe off|off|open|closed|shutter open|shutter closed)\b", text):
                 try:
                     ranges.append([int(c.get("Min") or 0), int(c.get("Max") or 0)])

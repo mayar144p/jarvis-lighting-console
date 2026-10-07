@@ -3722,3 +3722,26 @@ def test_real_bodies() -> None:
           'bodies.body_file(x.get("manufacturer") or "", x.get("model") or "")' in mj and '"/api/gdtf/bodies"' in mj, "")
     check("View → The makers' 3D bodies fetches them and reloads the models",
           "The makers' 3D bodies" in sp and 'post("/api/gdtf/bodies"' in sp and 'modelSig = "";' in sp, "")
+
+
+def test_lookcheck() -> None:
+    """Every range of every channel of the test rig's lights: the 3D shows
+    what the fixture file's words say (tools/lookcheck.py, no misses), and
+    a QLC+ strobe range is known by its tag even when misspelled."""
+    print("Every model, every range: the 3D shows what the file says")
+    import contextlib
+    import io
+
+    from app import fixlib
+    from tools import lookcheck
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = lookcheck.main([])
+    text = out.getvalue()
+    check("no range of the test rig's lights is MISSED in the 3D", code == 0 and "    MISSED" not in text,
+          "\n".join(x for x in text.splitlines() if "MISSED" in x)[:600])
+    check("the check really ran over the rig", "Sharpy Plus" in text and "MAC Aura" in text, text[-200:])
+    sharpy = fixlib.load("qlc", "Clay_Paky/Clay-Paky-Sharpy-Plus.qxf")[0]
+    rng = next(d for d in sharpy["modes"][0]["detail"] if d.get("role") == "strobe").get("strobe_ranges") or []
+    check("a Sharpy's 'Stobe (slow to fast)' and 'Pulsation' are strobe ranges (it strobes in 3D too)",
+          [4, 103] in rng and [108, 207] in rng, str(rng))

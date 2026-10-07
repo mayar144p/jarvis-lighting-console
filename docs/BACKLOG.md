@@ -335,12 +335,20 @@ it draws the same picture as WebGL 2.
    strobes.  The beam in the haze and the pool it lands on use the same
    frame, so a gobo or a split reads the same way round in both.
    Selftest `test_real_light_look`.
-3. **Real bodies (GDTF models from GDTF Share)** - next, needs the
-   operator's GDTF Share login in `.env`.
-4. **A per-model check** stepping every channel through its ranges - next.
+3. **Real bodies (GDTF models from GDTF Share) - DONE.**  View -> The
+   makers' 3D bodies: each light model in the rig is looked up on GDTF
+   Share (same model, same maker however it is spelled) and its file kept
+   for the 3D only, when it has a 3D model; the light's own profile,
+   channels and programming stay as they are.  Needs a (free) GDTF Share
+   sign-in on the desk.  Selftest `test_real_bodies`.
+4. **A per-model check - DONE.**  `tools/lookcheck.py` steps every channel
+   of the test rig's lights through every range its file lists; no range
+   may be MISSED (selftest `test_lookcheck`).  It found a Sharpy's
+   misspelled "Stobe" and "Pulsation" ranges not taken as strobes (fixed;
+   PARSER_VERSION 13 re-reads installed lights).
 
 Not yet: a second gobo wheel's pictures (a Sharpy's rotating gobos show
-open), animation wheels.
+open), animation wheels, random-colour and sound / snap colour macros.
 
 ### Step 3 (optional / future) - a separate pro visualiser (Unreal Engine)
 
