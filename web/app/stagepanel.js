@@ -6,6 +6,7 @@ import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, menu, promptBox, toast } from "./ui.js";
+import { atPointer, rowMenu } from "./fixtures.js";
 
 let stage = null;
 let rigSig = "";
@@ -76,6 +77,7 @@ async function loadScreenMedia(id) {
 export function initStage() {
   const el = $("#stage");
   stage = new Stage(el, {
+    onMenu: (head, ev) => rowMenu(atPointer(ev), head),        // right-click a light
     onBox: (heads, mods) => {
       if (!heads.length) { if (!mods.add) select([]); return; }
       select(heads, { add: mods.add });

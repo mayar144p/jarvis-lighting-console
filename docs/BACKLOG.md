@@ -392,7 +392,21 @@ Suggested order: the operator's top picks first (1-4), then the rest.
 11. **Help built in** - hover any control for a short explanation (and a
     short video link).
 
-## A11. Report a bug from the desk (agreed 2026-10-07)
+## A11. Report a bug from the desk (agreed 2026-10-07) - v1 DONE
+
+**Done (v1):** right-click a light (Fixtures list or 3D) or its ⋯ menu ->
+Report a problem with this light; Help -> Report a bug.  The form: what's
+wrong, where (DMX / 3D / programmer / effects / cues / crash), "attach the
+whole show" (ticked), and the list of files before anything is saved.  The
+desk saves `DATA/bug_reports/jarvis-report-....zip` (app/bugreport.py: the
+light's file and how it was read, its DMX, its light-feed row, a 3D
+picture, version, computer, recent server and page errors, the show),
+blanks every secret (AI key, desk token, GDTF login, anything shaped like
+a key) out of every file, downloads it and opens the matching GitHub form
+filled in (labels light-bug, brand:..., model:...).  The fixture-debug
+skill reads the zip for "fix issue #N".  Selftest `test_bug_report`.
+Next (v2, before outside testers): the relay so no GitHub account is
+needed.
 
 So problems arrive with the evidence attached instead of typed by hand.
 

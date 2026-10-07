@@ -844,6 +844,10 @@ export class Stage {
     };
     dom.addEventListener("pointerup", up);
     dom.addEventListener("pointercancel", () => { down = null; });
+    dom.addEventListener("contextmenu", (ev) => {
+      const inst = this.editing ? null : this._hit(ev);
+      if (inst && this.opts.onMenu) { ev.preventDefault(); this.opts.onMenu(inst.head, ev); }
+    });
     dom.addEventListener("dblclick", (ev) => {
       if (this.editing && this.editor && this.editor.drawing) { this.editor.finishDraw(); return; }
       const inst = this._hit(ev);

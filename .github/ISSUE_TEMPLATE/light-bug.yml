@@ -7,7 +7,8 @@ body:
     attributes:
       value: |
         Thanks! The more of the boxes below you fill in, the faster it gets fixed.
-        Later the desk will fill this in by itself: right-click a light → **Report a problem with this light…**
+        Easiest: on the desk, right-click the light → **Report a problem with this light…** - it fills this in
+        and saves a report (its fixture file, DMX, 3D, the show) for you to drag into the last box.
   - type: input
     id: light
     attributes:

@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
+from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, profiles, rdm, roomshape)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -577,6 +577,23 @@ class Handler(BaseHTTPRequestHandler):
                                    f"installed {first.get('manufacturer', '')} "
                                    f"{first.get('model', '')} from the "
                                    f"{fixlib.SOURCES[src]['name']}"})
+            if route == "/api/console/bug_report":
+                # A report with the evidence attached (app/bugreport.py):
+                # preview lists the files; otherwise it is saved and the
+                # pre-filled GitHub issue's link comes back.
+                pic = str(body.get("picture") or "")
+                try:
+                    picture = base64.b64decode(pic.split(",", 1)[1], validate=True) \
+                        if pic.startswith("data:image/png;base64,") else b""
+                except (binascii.Error, ValueError):
+                    picture = b""
+                head = body.get("head")
+                errs = body.get("page_errors") if isinstance(body.get("page_errors"), list) else []
+                return self._json(bugreport.report(
+                    self._engine(), int(head) if str(head or "").isdigit() else None,
+                    str(body.get("what") or ""), body.get("areas") if isinstance(body.get("areas"), list) else [],
+                    body.get("include_show", True) is not False, picture,
+                    [str(e)[:300] for e in errs], preview=bool(body.get("preview"))))
             if route == "/api/gdtf/bodies":
                 # The makers' 3D models for the lights in the patch whose
                 # profile has none: kept for the 3D only, the profile stays.
@@ -624,6 +641,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/media_frame", "/api/console/assistant"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
+            bugreport.note_error(route, exc)
             return self._json({"error": str(exc)}, 500)
 
         self._json({"error": "unknown endpoint"}, 404)
@@ -1132,6 +1150,19 @@ class Handler(BaseHTTPRequestHandler):
                 defs.append(pub)
             return self._json({"definitions": defs, "count": len(defs)})
 
+        if route == "/api/console/bug_report":
+            name = str(query.get("name", ""))
+            data = bugreport.read_saved(name)
+            if data is None:
+                return self._json({"error": "no such report"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Content-Length", str(len(data)))
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
         if route == "/api/console/audio":
             path = audio_path(str(query.get("id", "")))
             if not path:

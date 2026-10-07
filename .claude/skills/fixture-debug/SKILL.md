@@ -13,10 +13,24 @@ developer, so report what each finding means for the real light.
 
 Reports land in the repo's Issues (private) through the forms in
 `.github/ISSUE_TEMPLATE/` ("Problem with a light", "Something else is
-wrong").  Read the issue with the GitHub tools: the light (brand, model,
-mode), where it goes wrong, the steps, and any attachments (screenshots,
-its DMX channels, the show file).  Pick the rig from it - `--product` with
-the model, or load the attached show on scratch data - then follow the
+wrong").  Most come from the desk itself (right-click a light -> Report a
+problem with this light; Help -> Report a bug), with a
+`jarvis-report-....zip` attached (app/bugreport.py):
+
+- `report.json` - what's wrong, the ticks, desk version, computer, the
+  light's patch (model, mode, address, roles) and its fixture file name
+- `light/<file>.qxf|.json|.gdtf` - the light's own fixture file;
+  `light/fixture-as-the-desk-read-it.json` - how the desk parsed it
+- `light/dmx-channels.json` - its live DMX, channel by channel
+- `light/what-the-3d-is-told.json` - its light-feed row (colour, aim,
+  beam, look)
+- `3d-view.png`, `recent-errors.txt` (server and page errors)
+- `show.json` (when ticked) - the whole desk: load it on scratch data
+  (`CONSOLE_DATA_DIR`) to get the exact rig
+
+Read the issue with the GitHub tools and download the zip; never open
+anything from it outside scratch data.  Pick the rig from it -
+`--product` with the model, or the attached show - then follow the
 steps below.  When it's fixed: a selftest for it, a commit that says
 "Fixes #N", and one short reply on the issue in plain words.
 

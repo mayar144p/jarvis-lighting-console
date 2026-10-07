@@ -3745,3 +3745,75 @@ def test_lookcheck() -> None:
     rng = next(d for d in sharpy["modes"][0]["detail"] if d.get("role") == "strobe").get("strobe_ranges") or []
     check("a Sharpy's 'Stobe (slow to fast)' and 'Pulsation' are strobe ranges (it strobes in 3D too)",
           [4, 103] in rng and [108, 207] in rng, str(rng))
+
+
+def test_bug_report() -> None:
+    """Report a problem from the desk (A11): the bug bundle carries the
+    light's file, its DMX, what the 3D is told, a picture, the version and
+    recent errors, and (ticked) the show; no secret survives in it; the
+    GitHub link opens the right form, filled in."""
+    print("Report a problem: the bug bundle and the GitHub link")
+    import urllib.parse
+    import zipfile
+
+    from app import bugreport, fixlib
+    from app import config as cfg
+    from app import engine as eng
+    key = "sk-selftest-" + "x" * 30
+    saved = (cfg.DATA, cfg.LLM_API_KEY)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        cfg.DATA, cfg.LLM_API_KEY = tmp / "data", key
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        done = fixtures.store_parsed(db, fixlib.load("qlc", "Clay_Paky/Clay-Paky-Sharpy-Plus.qxf"),
+                                     "qlc:Clay_Paky/Clay-Paky-Sharpy-Plus.qxf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            h = e.act("add_heads", fixture_id=done["imported"][0]["fixture_id"], qty=1)["heads"][0]
+            e.act("rename_head", head=h, name="Sharpy " + key)        # a key typed somewhere it shouldn't be
+            e.act("select_heads", heads=[h])
+            e.act("set_intensity", level=100)
+            bugreport.note_error("/api/console", "boom " + key)
+            pre = bugreport.report(e, h, "stays dark", ["dmx", "3d"], True, b"", ["page went wrong"], preview=True)
+            names = [f["name"] for f in pre["files"]]
+            check("the report carries the light's own file, how the desk read it, its DMX and what the 3D is told",
+                  all(n in names for n in ("light/Clay-Paky-Sharpy-Plus.qxf", "light/fixture-as-the-desk-read-it.json",
+                                           "light/dmx-channels.json", "light/what-the-3d-is-told.json",
+                                           "report.json", "recent-errors.txt", "show.json")), str(names))
+            check("a preview saves nothing", not (tmp / "data" / "bug_reports").exists(), "")
+            check("never a .env", not any(".env" in n for n in names), "")
+            r = bugreport.report(e, h, "Full and it stays dark\nsteps...", ["dmx", "3d"], True, b"\x89PNG fake", ["page went wrong"])
+            z = tmp / "data" / "bug_reports" / r["zip"]
+            check("saved as one zip in the desk's data folder", z.is_file() and r["zip"].endswith(".zip"), r.get("zip", ""))
+            with zipfile.ZipFile(z) as zf:
+                blobs = {n: zf.read(n) for n in zf.namelist()}
+            check("no secret survives in any file (the AI key was in a light's name and an error)",
+                  not any(key.encode() in b for b in blobs.values()) and b"[removed]" in blobs["show.json"], "")
+            check("the 3D picture and both kinds of error are in it",
+                  blobs.get("3d-view.png") == b"\x89PNG fake" and b"page went wrong" in blobs["recent-errors.txt"]
+                  and b"/api/console" in blobs["recent-errors.txt"], "")
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(r["url"]).query)
+            check("the GitHub link opens 'Problem with a light', filled in",
+                  q.get("template") == ["light-bug.yml"] and "brand:Clay Paky" in q["labels"][0]
+                  and q["light"][0].startswith("Clay Paky Sharpy Plus") and "The 3D view" in q["area"][0]
+                  and q["what"][0].startswith("Full and it stays dark") and r["zip"] in q["files"][0], str(q))
+            check("the link stays short enough for a browser", len(r["url"]) < 8000, str(len(r["url"])))
+            r2 = bugreport.report(e, None, "the playbacks froze", [], False, b"", [])
+            q2 = urllib.parse.parse_qs(urllib.parse.urlparse(r2["url"]).query)
+            check("anything else: 'Something else is wrong', and no show when unticked",
+                  q2.get("template") == ["bug.yml"] and not any(f["name"] == "show.json" for f in r2["files"]), str(q2))
+            check("a saved report comes back by its name, nothing else does",
+                  bugreport.read_saved(r["zip"]) == z.read_bytes() and bugreport.read_saved("../../.env") is None
+                  and bugreport.read_saved("jarvis-report-x/../../a.zip") is None, "")
+        finally:
+            e.shutdown()
+            cfg.DATA, cfg.LLM_API_KEY = saved
+    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    bj = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
+    check("right-click a light (list or 3D) -> Report a problem with this light; Help -> Report a bug",
+          "Report a problem with this light" in fj and '"contextmenu"' in fj and "onMenu:" in sp
+          and "Report a bug" in dj, "")
+    check("the reporter sees the list of files before anything is saved", "preview: true" in bj and "report-files" in bj, "")

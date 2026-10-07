@@ -4,6 +4,7 @@ import { run, select } from "./actions.js";
 import { $, h, menu, promptBox, confirmBox, toast, modal } from "./ui.js";
 import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration, openLightTest } from "./dialogs.js";
 import { post, get } from "./api.js";
+import { openBugReport } from "./bugreport.js";
 
 let anchor = null;                 // last plain-clicked head, for shift ranges
 let filterText = "";
@@ -317,7 +318,11 @@ function openChangeType(heads) {
   search.focus();
 }
 
-function rowMenu(btn, head) {
+/** Somewhere for a menu to open: where the mouse is. */
+export const atPointer = (e) => ({ getBoundingClientRect: () => ({ left: e.clientX, top: e.clientY, bottom: e.clientY }) });
+
+/** A light's menu (its ⋯ button, a right-click here or on the stage). */
+export function rowMenu(btn, head) {
   const hd = patch().find((x) => x.head_no === head);
   if (!hd) return;
   menu(btn, [
@@ -340,6 +345,7 @@ function rowMenu(btn, head) {
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
+    { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },
     "-",
     { label: "Remove from patch", danger: true, run: async () => {
       if (await confirmBox("Remove fixture", `Remove #${head} ${hd.name || hd.model} from the patch?\nCtrl+Z brings it back.`, { ok: "Remove", danger: true })) {
@@ -527,6 +533,12 @@ async function makeGroup() {
 
 export function initFixtures() {
   $("#fx-rows").addEventListener("click", rowClick);
+  $("#fx-rows").addEventListener("contextmenu", (e) => {
+    const tr = e.target.closest("tr[data-head]");
+    if (!tr || tr.dataset.fold) return;
+    e.preventDefault();
+    rowMenu(atPointer(e), +tr.dataset.head);
+  });
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");
     if (tr && window.jarvisStage) window.jarvisStage.frame([+tr.dataset.head]);
