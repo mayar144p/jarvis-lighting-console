@@ -59,7 +59,8 @@ jobs:
       - name: A Python of its own (python-build-standalone via uv; the engine needs only the standard library)
         run: |
           UV_PYTHON_INSTALL_DIR="$PWD/desktop/build/pyroot" uv python install 3.12
-          mv desktop/build/pyroot/cpython-3.12*/ desktop/build/python
+          D=$(ls -d desktop/build/pyroot/cpython-3.12.[0-9]*-*/ | head -n1)     # not the 3.12 shortcut uv also makes
+          mv "$D" desktop/build/python
           rm -rf desktop/build/pyroot
           desktop/build/python/bin/python3 -c "import sqlite3, json, http.server, sys; print('python ok', sys.version)"
       - name: Build the app
