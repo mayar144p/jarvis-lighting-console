@@ -1561,3 +1561,4 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .prog-acts .btn.rec { background: color-mix(in srgb, var(--live) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--live) 50%, transparent);
   color: #fecaca; font-weight: 700; }
 .prog-acts .btn.rec:hover:not(:disabled) { background: color-mix(in srgb, var(--live) 26%, var(--surface-2)); }
+.prog-in-chip .x { margin-right: 0; }   /* (the chip's × stays inside it) */
