@@ -72,15 +72,15 @@ export function aiPanel() {
           : "Not installed yet."),
       ...(off.models || []).map((m) => h("div.row-btns", h("span", m.file), h("span.muted.small", gb(m.bytes)),
         h("button.btn.small.danger", { onclick: () => local({ remove: m.file }) }, "Remove"))),
-      off.runtime && !(off.models || []).length && !dl.running ? h("div.row-btns",
+      (off.runtime || off.can_fetch_engine) && !(off.models || []).length && !dl.running ? h("div.row-btns",
         h("button.btn.primary", { disabled: !sug.ok, onclick: () => local({ download: pick.id }) },
-          `Download ${pick.label || "the offline AI"} (${pick.gb || "?"} GB)`),
+          `Download ${pick.label || "the offline AI"} (${pick.gb || "?"} GB${off.runtime ? "" : " + its engine"})`),
         h("span.muted.small", sug.ok ? `${pick.note || ""} · this computer: ${sug.ram_gb} GB memory, ${sug.free_gb} GB free`
           : `Not on this computer: ${sug.why}`)) : null,
       dlRow,
-      off.runtime ? h("div.row-btns", pack, h("button.btn", { onclick: () => pack.value.trim() && local({ import: pack.value.trim() }) }, "Use an AI pack"))
-        : h("p.muted.small", "The offline AI comes with the desktop app. Here in the browser, run Ollama or LM Studio on this computer and put its address below."),
-      h("details", { open: !off.runtime }, h("summary.muted.small", "Use Ollama or LM Studio instead"),
+      off.runtime || off.can_fetch_engine ? h("div.row-btns", pack, h("button.btn", { onclick: () => pack.value.trim() && local({ import: pack.value.trim() }) }, "Use an AI pack"))
+        : h("p.muted.small", "There's no offline AI engine for this kind of computer: run Ollama or LM Studio and put its address below."),
+      h("details", { open: !off.runtime && !off.can_fetch_engine }, h("summary.muted.small", "Use Ollama or LM Studio instead"),
         h("div.row-btns", ollama, h("button.btn", { onclick: () => save({ local_url: ollama.value.trim() }) }, "Save"))));
     if (dl.running) timer = setTimeout(refresh, 1000);
   };
