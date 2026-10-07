@@ -402,6 +402,42 @@ an AI running on the laptop has none and works without internet.
   with Ollama installed by hand); the bundled runtime and the one-click /
   AI-pack download come with A9 step 1 (the desktop app).
 
+## A13. The AI runs the whole desk - and only the desk (agreed 2026-10-07)
+
+Example the operator wants to just work: "add Chauvet something something,
+put it on the truss in the middle, make it flash yellow and hover over the
+dance floor at a slow speed, 20% for now."
+
+Today (app/assistant.py): 67 desk actions, look / do / check, ask,
+remember.  Placing on a truss, colour, flash / strobe effects and roaming a
+zone at a speed already work.  Missing:
+
+1. **Desk only.** Anything not about the show, lights, room or desk gets
+   one polite line ("I only run the desk - try: 'warm wash on the
+   movers'"): no essays, no general chat.
+2. **Honest about each light, from the desk not the model's memory.**
+   Before acting, the AI gets what every selected light CAN do (tilt, pan,
+   colour mixing / wheel only / no colour, gobo, zoom, strobe - the same
+   facts as the programmer fit check); it does what's possible and says
+   what isn't: "Done on 8 movers; the 6 PARs can't tilt, so they stay."
+   Actions that partly fail report per light, never silently.
+3. **Every part of the desk as a tool:**
+   - the fixture library: fuzzy search ("chauvet something spot"), install,
+     patch; several matches -> ask with tap answers;
+   - placement in words: "middle of the front truss", "left side", "both
+     ends", "6 m high";
+   - the room: add truss / pole, zones, marks;
+   - groups, cues, playbacks, buttons, timeline, palettes: make, edit,
+     rename, delete (delete asks first);
+   - safe settings; save the show (asks first).
+4. **Safety stays with the operator:** going live, ARM, firing confetti /
+   CO2 / flame / lasers - the AI prepares it, the operator taps to confirm.
+5. **A test list of ~50 real sentences** (like the example) run against the
+   desk: after each, the result is checked (patched, placed on the right
+   truss, flashing yellow, roaming the dance floor at 20%); impossible and
+   off-topic requests get the right short answer.  Run with Gemini and
+   with the local AI (A12) - small models need the tools kept simple.
+
 ## A8. Leftovers from the library sweeps (open, 2026-10-02)
 
 Found by `tools/libsweep.py` (default modes) and `--all-modes` (all 8,093

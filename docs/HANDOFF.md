@@ -128,6 +128,10 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
 - **A12** plug-and-play offline AI (bundled runtime, one-click or USB "AI
   pack" model) with an Online (Gemini) / Local / Auto switch and automatic
   fallback when Gemini hits its limit.
+- **A13** the AI runs the whole desk and only the desk: library search +
+  patch + place in words, honest per-light abilities ("the PARs can't
+  tilt"), every screen as a tool, safety taps stay with the operator, a
+  50-sentence test list.
 
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.
