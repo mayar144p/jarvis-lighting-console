@@ -295,6 +295,10 @@ class ProgrammerMixin:
         space = params.get("space") if isinstance(params, dict) else None
         if space:
             p["space"] = self._clean_space(space)
+        zone = params.get("zone") if isinstance(params, dict) else None
+        if zone and name in motion_mod.KINDS:
+            # drawn on a zone's floor (the dance floor...) instead of round the aim
+            p["zone"] = self._roam_zones([zone])[0]["id"]
         self._fx_seq += 1
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
@@ -406,8 +410,11 @@ class ProgrammerMixin:
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))
             where = spatial.get(h["head_no"], u) if spatial and k is None else u
-            vals = motion_mod.position(kind, row["_turns"], sized, tuple(centre), tuple(limits),
-                                       cap[2][i], where, len(units))
+            if p.get("zone"):
+                vals = self._zone_move(row, kind, sized, h, k, where, len(units))
+            else:
+                vals = motion_mod.position(kind, row["_turns"], sized, tuple(centre), tuple(limits),
+                                           cap[2][i], where, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():
                 if role not in h["map"]:

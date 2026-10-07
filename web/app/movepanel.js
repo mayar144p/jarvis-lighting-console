@@ -25,7 +25,7 @@ const MOVE_KINDS = new Set([...MOVES.map((m) => m[0]), "shape"]);
 const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 
 // the knobs, remembered while the page is open
-const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0, across: false };
+const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0, across: false, zone: "" };
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -142,7 +142,17 @@ const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_K
 const params = () => ({
   speed: +(1 / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
   direction: knobs.direction, spread: knobs.wave ? 360 : 0, lock: knobs.lock,
+  ...(knobs.zone && zoneKinds().some(([k]) => k === knobs.zone) ? { zone: knobs.zone } : {}),
 });
+// the room's zones (dance floor, DJ booth...) a movement can be kept on
+export const zoneKinds = () => [...new Map((((state.snap && state.snap.venue) || {}).zones || [])
+  .map((z) => [z.kind, z.name || z.kind])).entries()];
+const zoneName = () => ((zoneKinds().find(([k]) => k === knobs.zone) || [])[1] || "zone").toLowerCase();
+// "· on the dance floor" for a running movement kept on a zone (by its id)
+const onZone = (f) => {
+  const z = f.params && f.params.zone && ((((state.snap && state.snap.venue) || {}).zones || []).find((x) => x.id === f.params.zone));
+  return z ? ` · on the ${(z.name || z.kind).toLowerCase()}` : "";
+};
 
 let lastLib = "circle";
 setShapeKnobs(() => params());
@@ -168,7 +178,7 @@ async function reapply() {
     await run("stop_fx", { id: f.id }, { silentError: true });
     if (f.lib === "shape") {
       const p = params();
-      await run("run_shape", { id: f.params.shape, heads: f.heads, speed: p.speed, size: p.size, spread: p.spread, direction: p.direction }, { silentError: true });
+      await run("run_shape", { id: f.params.shape, heads: f.heads, speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, zone: p.zone }, { silentError: true });
       continue;
     }
     await run("run_fx", { name: f.lib, params: params(), heads: f.heads, across: knobs.across && multiTilt() }, { silentError: true });
@@ -354,16 +364,21 @@ function movementBlock() {
   return section("Movement",
     myMoves(act),
     h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
-      title: `${label} around where the lights point now`, onclick: () => startMove(name),
+      title: params().zone ? `${label} across the ${zoneName()}` : `${label} around where the lights point now`, onclick: () => startMove(name),
     }, h("b", icon), h("span", label)))),
     axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
       : "These lights only pan: Sweep and Fan are the movements they can do."),
+    zoneKinds().length ? h("div.mv-row", h("span.k", "Where"), h("span.chip-row",
+      ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
+        ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
+      (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
     h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
       ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
     h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
       ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
-      ...chips(SIZES.map(([l, v]) => [l, v, `${v}° around the aim`]), (v) => knobs.size === v, (v) => { knobs.size = v; }))),
+      ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
+        (v) => knobs.size === v, (v) => { knobs.size = v; }))),
     secs,
     h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
       ...chips([["together", false], ["wave", true]], (v) => knobs.wave === v, (v) => { knobs.wave = v; }))),
@@ -375,7 +390,7 @@ function movementBlock() {
         (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
-      h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} · ${f.heads.length} light(s)`),
+      h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
       spaceSelect(f), beatSelect(f),
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
       fxKnobs(f))),

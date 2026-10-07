@@ -3271,3 +3271,120 @@ def test_show_keeps_tempo() -> None:
         finally:
             e.shutdown()
             e2.shutdown()
+
+
+def test_shape_in_zone() -> None:
+    """A movement shape kept on a zone: circle, sweep, bounce, figure 8 and
+    fan drawn on the dance floor - every beam lands on it, from a truss and
+    from the floor; size S / M / L covers less or more of it; a cue keeps
+    the zone; a shape of your own takes one too; a deleted zone holds."""
+    print("Movement shapes kept on a zone")
+    import time as _time
+
+    import math
+
+    from app import engine as eng
+    from app import fixture_kind
+    from app.engine_roam import _inside
+
+    def floor_hit(e, h, v):
+        """Where the beam meets the floor, worked FORWARD from the DMX the
+        desk sends (the inverse of the aim solver), or None if it points up."""
+        fp = v["pan"] / (65535 if "pan_fine" in h["map"] else 255)
+        ft = v["tilt"] / (65535 if "tilt_fine" in h["map"] else 255)
+        rg = e.head_ranges(h)
+        pr, tr = rg.get("pan") or {}, rg.get("tilt") or {}
+        pmin, pmax = (pr["min"], pr["max"]) if pr.get("unit") == "degree" and pr.get("min") is not None else (-270.0, 270.0)
+        tmin, tmax = (tr["min"], tr["max"]) if tr.get("unit") == "degree" and tr.get("min") is not None else (-135.0, 135.0)
+        p, t = math.radians(pmin + fp * (pmax - pmin)), math.radians(tmin + ft * (tmax - tmin))
+        lx, ly, lz = math.sin(t) * math.sin(p), math.cos(t), math.sin(t) * math.cos(p)
+        hung = h.get("stance") == "hang" if h.get("stance") else h.get("kind") == "truss"
+        dx, dy, dz = (-lx, -ly, lz) if hung else (lx, ly, lz)
+        d = fixture_kind.describe(h)
+        pivot = 0.372 if d.get("heads") else e._AIM_PIVOT.get(d["type"], 0.4)
+        oy = h["y"] + (-pivot if hung else pivot)
+        if dy >= -1e-6:
+            return None
+        k = -oy / dy
+        return h["x"] + dx * k, h["z"] + dz * k
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            tr = [r for r in e.venue["rigging"] if r["kind"] == "truss"]
+            a = e.act("add_heads", query="Moving Head", qty=2)["heads"]
+            e.act("attach_heads", heads=a, rig=tr[1]["id"], stance="hang")
+            b = e.act("add_heads", query="Moving Head", qty=1)["heads"]
+            # on a stand: a light on the floor aims nearly flat at a far floor,
+            # where one DMX step moves the beam a metre
+            e.act("set_place", head=b[0], x=-5, y=2.5, z=6)
+            heads = a + b
+            by = {h["head_no"]: h for h in e.patch}
+            floor = next(z for z in e.venue["zones"] if z["kind"] == "dancefloor")
+            # grown a hair: DMX rounding (8-bit pan / tilt) moves a beam a few cm
+            xs, zs = [p[0] for p in floor["points"]], [p[1] for p in floor["points"]]
+            box = (min(xs) - 0.25, max(xs) + 0.25, min(zs) - 0.25, max(zs) + 0.25)
+
+            def lands(kind, size=40, frames=10):
+                e.act("stop_fx")
+                r = e.act("run_fx", name=kind, heads=heads, params={"zone": "dancefloor", "size": size, "speed": 0.2})
+                check(f"{kind} on the dance floor starts", r.get("ok"), str(r))
+                t0 = _time.monotonic() + 0.2
+                out, seen = 0, {}
+                for k in range(frames):
+                    vals = e._fx_values(t0 + k * 0.7)
+                    for n in heads:
+                        hit = floor_hit(e, by[n], vals[n])
+                        if hit is None or not (box[0] <= hit[0] <= box[1] and box[2] <= hit[1] <= box[3]):
+                            out += 1
+                            continue
+                        seen.setdefault(n, set()).add((round(hit[0], 1), round(hit[1], 1)))
+                return out, seen
+
+            for kind in ("circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan"):
+                out, seen = lands(kind)
+                check(f"{kind}: every beam lands on the dance floor", out == 0, f"{out} off it")
+                check(f"{kind}: the beams move", all(len(v) > 2 for v in seen.values()), str({n: len(v) for n, v in seen.items()}))
+
+            def spread(size):
+                _, seen = lands("circle", size, 16)
+                return max(max(x for x, _ in v) - min(x for x, _ in v) for v in seen.values())
+            check("size L covers more of the floor than S", spread(40) > spread(10) * 2, f"{spread(10)} vs {spread(40)}")
+
+            row = next(f for f in e.fx if f.get("lib") == "circle")
+            check("the effect carries the zone", row["params"].get("zone") == floor["id"], str(row["params"]))
+            e.act("select_heads", heads=heads)
+            e.act("record_cue", playback=1, name="Floor circle")
+            e.act("stop_fx")
+            e.act("cue_go", playback=1, cue=1)
+            row = next((f for f in e.fx if f.get("lib") == "circle"), None)
+            check("a cue plays it on the zone again", row is not None and row["params"].get("zone") == floor["id"],
+                  str(row and row["params"]))
+
+            check("an unknown zone says what there is",
+                  "Dance floor" in (e.act("run_fx", name="circle", heads=heads, params={"zone": "kitchen"}).get("error") or ""), "")
+            e.act("stop_fx")
+            sh = e.act("shape_save", shape={"name": "Box", "points": [[-1, -1], [1, -1], [1, 1], [-1, 1]]})
+            sid = sh["shapes"][-1]["id"]
+            r = e.act("run_shape", id=sid, heads=heads, zone="dancefloor", size=40)
+            check("a shape of your own takes a zone", r.get("ok") and next(f for f in e.fx if f.get("lib") == "shape")["params"].get("zone") == floor["id"], str(r))
+            vals = e._fx_values(_time.monotonic() + 1)
+            hit = floor_hit(e, by[a[0]], vals[a[0]])
+            check("and lands on it", hit is not None and (_inside(floor["points"], *hit)
+                                                          or (box[0] <= hit[0] <= box[1] and box[2] <= hit[1] <= box[3])), str(hit))
+            # the zone deleted while it runs: the lights hold, the desk goes on
+            e.venue["zones"] = [z for z in e.venue["zones"] if z["id"] != floor["id"]]
+            for f in e.fx:
+                f.pop("_zone", None)
+            try:
+                e._fx_values(_time.monotonic() + 2)
+                ok = True
+            except Exception as ex:          # noqa: BLE001
+                ok = str(ex)
+            check("a deleted zone doesn't stop the desk", ok is True, str(ok))
+        finally:
+            e.shutdown()

@@ -68,7 +68,7 @@ class MoveMixin:
         return self._fx_seq
 
     def _a_run_shape(self, id=None, heads=None, group=None, speed=0.25, size=30.0, spread=0.0,
-                     direction=1, beats=None, space=None, **_):
+                     direction=1, beats=None, space=None, zone=None, **_):
         """Run a shape on the selected moving lights: `size` degrees round
         where each is aimed, `speed` rounds a second (or a round per
         `beats`), `spread` degrees round the shape between the lights."""
@@ -86,6 +86,8 @@ class MoveMixin:
             p["beats"] = self._clean_beats(beats)
         if space:
             p["space"] = self._clean_space(space)
+        if zone:
+            p["zone"] = self._roam_zones([zone])[0]["id"]
         fid = self._shape_start(p, nums)
         return {"fx": fid, "heads": len(nums), "summary": f"{shp['name']} on {len(nums)} light(s)"}
 
