@@ -37,8 +37,8 @@ Read this first in a new Claude Code session on this repo.
 | `gigcheck.py` | a whole gig, saved, reloaded, compared (CI) |
 | `oddcheck.py` | empty rig, 12,900 nonsense values, 520 lights, 23 corrupt shows / autosaves, restart, Undo all the way (CI) |
 | `libsweep.py [--all-modes]` | every library light / mode (8,093): Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D |
-| `uicheck.mjs [--big]` | every screen at 1280 / 1440 / 1920; `--big` with 124 lights |
-| `vischeck.mjs` | 124 real lights driven through the screen: DMX, 3D targets and the drawn models agree |
+| `uicheck.mjs [--big]` | every screen at 1280 / 1440 / 1920; `--big` with the 20-light rig (`BIG_RIG=1`: 124) |
+| `vischeck.mjs` | 20 real lights (`BIG_RIG=1`: 124) driven through the screen: DMX, 3D targets and the drawn models agree |
 | `brands.py [--brand X / --product "words"] --check` | top 20 brands x 15 products (effects machines first): sweep + "armed only", even with channels programmed |
 | `vischeck.mjs --brands / --brand X / --product "words"` | the same through the screen, brand by brand, with the effects in 3D |
 | `oddcheck_ui.mjs` | two browsers at once; the server dropping out and back |

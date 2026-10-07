@@ -1,8 +1,9 @@
 // The big test rig: 124 lights of 19 real models (moving heads, washes,
 // beams, PARs, Source Four LEDs, pixel bars, strobes, effect lights,
 // lasers, foggers), shared by vischeck.mjs and uicheck.mjs --big.
-// [library, file, what add_heads searches for, how many]
-export const RIG = [
+// Tests use one of each model (20 lights) to save time; BIG_RIG=1 builds
+// all 124.  [library, file, what add_heads searches for, how many]
+const FULL = [
   ["qlc", "Martin/Martin-MAC-Aura.qxf", "MAC Aura", 8],
   ["qlc", "Clay_Paky/Clay-Paky-Sharpy-Plus.qxf", "Sharpy Plus", 8],
   ["qlc", "Chauvet/Chauvet-Rogue-R2-wash.qxf", "Rogue R2 Wash", 8],
@@ -23,3 +24,4 @@ export const RIG = [
   ["qlc", "Stairville/Stairville-AF-180-LED-Fogger-Co2-FX.qxf", "AF-180", 1],
   ["qlc", "Chauvet/Chauvet-Hurricane-1800-Flex.qxf", "Hurricane 1800", 1],
 ];
+export const RIG = process.env.BIG_RIG ? FULL : FULL.map(([l, f, n, q], i) => [l, f, n, i === 0 ? 2 : 1]);

@@ -31,7 +31,7 @@ const WIDTHS = opt("--widths", "1280,1440,1920").split(",").map(Number);
 const CLICK = !args.includes("--no-click");
 // --only <regex>: run just the steps whose name matches (plus the start)
 const ONLY = opt("--only", "") ? new RegExp(opt("--only", "")) : null;
-// --big: the 124-light rig (tools/bigrig.mjs) instead of the small one
+// --big: the test rig (tools/bigrig.mjs; 20 lights, 124 with BIG_RIG=1)
 const BIG = args.includes("--big");
 const PORT = +(process.env.UICHECK_PORT || 8811);
 const BASE = `http://127.0.0.1:${PORT}/`;

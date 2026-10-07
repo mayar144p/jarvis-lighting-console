@@ -294,7 +294,7 @@ haze, lenses mirrored in shiny floors (per floor type), 8 shadow-casting
 beams on High, quality named High / Medium / Low (Low leaves the new detail
 out and is exactly as fast as before), a light whose file names gobo slots
 but has no pictures shows a drawn gobo instead of an open beam, and
-`tools/fpscheck.mjs` (the 124-light rig at each quality).
+`tools/fpscheck.mjs` (the 20-light test rig, `BIG_RIG=1` for 124 at each quality).
 **Then (operator's call, 2026-10-07): the WebGPU renderer, DONE** - the 3D
 runs on three.js's WebGPURenderer; every custom shader (beam-lit surfaces
 with gobos, prisms, focus, reflections and shadows; the crowd; beams with

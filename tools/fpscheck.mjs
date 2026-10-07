@@ -1,4 +1,4 @@
-// How smooth the 3D view runs with the big rig (124 real lights, tools/
+// How smooth the 3D view runs with the test rig (20 real lights, 124 with BIG_RIG=1, tools/
 // bigrig.mjs) all lit, moving and changing colour, at each quality:
 // High, Medium (auto) and Low.  Frames a second and the slowest frames.
 //
