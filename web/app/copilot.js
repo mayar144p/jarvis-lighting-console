@@ -177,6 +177,21 @@ async function assist(text) {
       extra.append(h("div.ai-q", h("b", r.question),
         h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => { say("user", o); assist(o); } }, o)))));
     }
+    // what the AI prepared but only the operator may do: going live, ARM,
+    // firing effects, saving / opening, deleting - one tap each
+    for (const c of r.confirm || []) {
+      const yes = h("button.btn.primary.small", "Do it");
+      const no = h("button.btn.small", "No");
+      const row = h("div.plan-actions.ai-confirm", h("span.small", c.label), yes, no);
+      const answer = async (ok) => {
+        yes.disabled = no.disabled = true;
+        const res = await post("/api/console/assistant", { confirm: c.id, yes: ok }).catch((e) => ({ error: e.message }));
+        row.replaceChildren(h("span.muted.small", res.error ? `Not done: ${res.error}` : (res.summary || (ok ? "Done" : "Not done"))));
+      };
+      yes.addEventListener("click", () => answer(true));
+      no.addEventListener("click", () => answer(false));
+      extra.append(row);
+    }
     if (r.preview) {
       const keep = h("button.btn.primary.small", "Keep");
       const drop = h("button.btn.small", "Throw away");

@@ -54,7 +54,9 @@ transport = None                     # tests: fn(url, headers) -> (status, heade
 
 
 def folder() -> Path:
-    p = config.DATA / "ai"
+    # CONSOLE_AI_DIR: the model folder of another data folder (tools/aicheck.py
+    # runs on scratch data but uses the offline AI already downloaded)
+    p = Path(os.environ["CONSOLE_AI_DIR"]) if os.environ.get("CONSOLE_AI_DIR") else config.DATA / "ai"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

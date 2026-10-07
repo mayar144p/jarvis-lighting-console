@@ -905,6 +905,10 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("reset"):
                 assistant.forget_session(session)
                 return self._json({"ok": True})
+            if body.get("confirm"):
+                # the operator's tap on something the AI prepared (A13)
+                from app import aitools
+                return self._json(aitools.confirm(eng, str(body.get("confirm")), body.get("yes") is not False))
             if body.get("notes") is not None:
                 if isinstance(body.get("forget"), int):
                     lst = assistant.notes()

@@ -2083,7 +2083,8 @@ def test_ai_assistant() -> None:
                 {"content": "", "tool_calls": [tool("ask", question="Which truss - front or rear?", options=["Front", "Rear"])]},
             ])
             r = assistant.run_turn(e, "fire the CO2 and chase the truss", session="t", chat=chat)
-            check("no pyro, no deleting: refused", all(not s["ok"] for s in r["steps"]), str(r["steps"]))
+            check("pyro and deleting: only prepared for the operator's tap (A13)",
+                  [c["action"] for c in r["confirm"]] == ["fx_fire", "delete_cue"] and not r["changed"], str(r)[:400])
             check("it asks, with answers to tap", r["question"] == "Which truss - front or rear?" and r["options"] == ["Front", "Rear"])
             check("nothing changed: no preview, no undo step", not r["preview"] and not r["changed"] and not e.blind_public()["on"])
             # the AI service failing leaves nothing behind
@@ -4050,3 +4051,122 @@ def test_ai_engine_fetch() -> None:
                 os.environ["LLAMA_SERVER"] = llama
             if llama_dir:
                 os.environ["CONSOLE_LLAMA_DIR"] = llama_dir
+
+
+def test_ai_runs_desk() -> None:
+    """Backlog A13: the AI has a hand on every part of the desk - what each
+    light can really do (from its file), lights placed in words, the room,
+    and the actions that go live, arm, fire, save or delete PREPARED for
+    the operator's tap, never done.  The 50-sentence harness's checks are
+    run here against a scripted AI (tools/aicheck.py runs them for real)."""
+    print("The AI runs the whole desk: honest lights, placing in words, the operator confirms")
+    import os
+
+    from app import aitools, assistant
+    from app import config as cfg
+    from tools import aicheck
+
+    def tool(name, i=0, **a):
+        return {"id": f"c{name}{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(a)}}
+
+    def scripted(replies):
+        return lambda messages, tools=None, **_: replies.pop(0)
+
+    with tempfile.TemporaryDirectory() as td:
+        saved = cfg.DATA
+        cfg.DATA = Path(td)
+        d = aicheck.Desk(Path(td))
+        e = d.e
+        try:
+            # what each light can do, from its own file
+            caps = {m["model"]: m for m in aitools.capabilities(e)["models"]}
+            par = next(v for k, v in caps.items() if "Mega PAR" in k)
+            sharpy = next(v for k, v in caps.items() if "Sharpy" in k)
+            fog = next(v for k, v in caps.items() if "AF-180" in k)
+            check("each model's real abilities: the PAR mixes but can't move, the Sharpy moves, the fogger is a machine",
+                  "any colour (it mixes)" in par["can"] and any("move" in c for c in par["cannot"])
+                  and "moves (pan + tilt)" in sharpy["can"] and "effects machine" in fog["can"][0], json.dumps(caps)[:400])
+            got = aitools.cant_do(e, "set_attribute", {"attribute": "tilt", "heads": d.pars})
+            check("asking the PARs to tilt names them and why", len(got) == 1 and "6 x" in got[0] and "no tilt" in got[0], str(got))
+            check("lights that can do it aren't listed", aitools.cant_do(e, "set_position", {"heads": d.movers}) == [])
+            # placing in words, on the club's trusses
+            rigs = {w: (aitools.find_rig(e, w) or {}).get("id") for w in ("front truss", "rear", "upstage", "mid truss", "left tower")}
+            check("trusses found by name and by where they are", rigs == {"front truss": "r2", "rear": "r4", "upstage": "r1",
+                                                                         "mid truss": "r3", "left tower": "r5"}, str(rigs))
+            r = aitools.place_lights(e, heads=d.pars[:2], on="mid truss", where="both ends")
+            ts = sorted(e._head(n)["mount"]["t"] for n in d.pars[:2])
+            check("two lights at both ends of a truss", r["ok"] and e._head(d.pars[0])["mount"]["rig"] == "r3"
+                  and ts[0] < 0.1 and ts[1] > 0.9, f"{r} {ts}")
+            r = aitools.place_lights(e, heads=d.pars[:2], on="mid truss", height=6)
+            check("a truss can't be hung above the room (the desk's own limit, said back)", not r["ok"] and "5.4" in r["error"], str(r))
+            check("an unknown place is a question, not a guess",
+                  not aitools.place_lights(e, heads=d.pars[:1], on="the moon")["ok"])
+            n_rigs = len(e.venue["rigging"])
+            r1 = aitools.add_to_room(e, "pole", "Pole L", "left")
+            r2 = aitools.add_to_room(e, "vip", "VIP", "front left")
+            check("a pole and a zone added to the room in words", r1["ok"] and r2["ok"] and len(e.venue["rigging"]) == n_rigs + 1
+                  and any(z["kind"] == "vip" for z in e.venue["zones"]), f"{r1} {r2}")
+            # the tiers: never / prepared / done
+            check("calibration, locking, the network and undo are not the AI's",
+                  not set(aitools.NEVER) & (set(assistant.ALLOWED) | set(assistant.CONFIRMABLE)))
+            check("going live, arming, firing, saving and deleting only prepared",
+                  {"set_output", "fx_arm", "fx_fire", "save_show", "delete_cue", "group_delete"} <= set(assistant.CONFIRMABLE)
+                  and not {"set_output", "fx_fire", "save_show", "delete_cue"} & set(assistant.ALLOWED))
+            d.reset()
+            waiting: list = []
+            r = assistant._do(e, "delete_cue", {"playback": 1, "cue": 2}, waiting)
+            check("a delete is held, not done", r["ok"] and d.cue_names() == ["Look 1", "Look 2"] and len(waiting) == 1, str(r))
+            check("'No' leaves it", aitools.confirm(e, waiting[0]["id"], False)["ok"] and d.cue_names() == ["Look 1", "Look 2"])
+            check("an answered tap can't be used twice", not aitools.confirm(e, waiting[0]["id"])["ok"])
+            assistant._do(e, "delete_cue", {"playback": 1, "cue": 2}, waiting)
+            r = aitools.confirm(e, waiting[-1]["id"])
+            check("'Do it' does it", r["ok"] and d.cue_names() == ["Look 1"], f"{r} {d.cue_names()}")
+            r = assistant._do(e, "lock", {}, [])
+            check("an action that's never the AI's is refused", not r["ok"], str(r))
+            # the harness's own checks, against a scripted AI
+            ex = aicheck.CASES[0]
+            plays = {
+                ex["text"]: [
+                    {"content": "", "tool_calls": [tool("find_fixtures", query="chauvet intimidator spot 260")]},
+                    {"content": "", "tool_calls": [tool("add_fixture", src="ofl", key="chauvet-dj/intimidator-spot-260.json")]},
+                    {"content": "", "tool_calls": [tool("place_lights", heads=[14], on="front truss", where="middle")]},
+                    {"content": "", "tool_calls": [
+                        tool("do", 1, action="select_heads", params={"head": 14}),
+                        tool("do", 2, action="set_colour", params={"colour": "yellow"}),
+                        tool("do", 3, action="set_intensity", params={"level": 20}),
+                        tool("do", 4, action="run_fx", params={"attribute": "dimmer", "wave": "square", "speed": 2}),
+                        tool("do", 5, action="roam", params={"zones": ["Dance floor"], "speed": 0.3})]},
+                    {"content": "Added it in the middle of the front truss: yellow, flashing, roaming the dance floor slowly."}],
+                "make the pars tilt up": [
+                    {"content": "", "tool_calls": [tool("do", 1, action="select_heads", params={"heads": d.pars}),
+                                                   tool("do", 2, action="set_attribute", params={"attribute": "tilt", "value": 200})]},
+                    {"content": "The PARs can't tilt: they have no pan or tilt."}],
+                "delete cue 2": [
+                    {"content": "", "tool_calls": [tool("do", action="delete_cue", params={"playback": 1, "cue": 2})]},
+                    {"content": "Cue 2 is ready to delete: tap Do it."}],
+                "fire the confetti": [
+                    {"content": "", "tool_calls": [tool("do", action="fx_fire", params={"head": 12})]},
+                    {"content": "Ready: tap Do it to fire."}],
+                "what's the weather tomorrow?": [{"content": "I only run the lighting desk."}],
+            }
+            for text, play in plays.items():
+                d.reset()
+                case = next(c for c in aicheck.CASES if c["text"] == text)
+                r = assistant.run_turn(e, text, session="a13" + text[:8], preview=False, chat=scripted(list(play)))
+                ok, why = case["check"](r, d)
+                check(f"harness: {text[:60]}", ok, f"{why} {r.get('steps')}")
+            d.reset()
+            r = assistant.run_turn(e, "make the pars tilt up", session="a13t", preview=False,
+                                   chat=scripted(list(plays["make the pars tilt up"])))
+            check("the step the operator reads says the PARs couldn't", "no tilt" in r["steps"][-1]["summary"], str(r["steps"]))
+            check("a lazy answer fails the harness (it isn't fooled by doing nothing)",
+                  not aicheck.CASES[0]["check"]({"ok": True, "reply": "done", "steps": []}, d)[0]
+                  and not next(c for c in aicheck.CASES if c["text"] == "all pars red")["check"]({"ok": True}, d)[0])
+            check("about 50 sentences", 45 <= len(aicheck.CASES) <= 60, str(len(aicheck.CASES)))
+            prompt = assistant._system(e)
+            check("its instructions: desk only, each light's abilities, the operator confirms",
+                  "DESK ONLY" in prompt and "WHAT EACH LIGHT CAN DO" in prompt and "THE OPERATOR CONFIRMS" in prompt)
+        finally:
+            e.shutdown()
+            cfg.DATA = saved
+            os.environ.pop("CONSOLE_AI_DIR", None)
