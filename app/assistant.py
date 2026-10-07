@@ -84,6 +84,23 @@ TOOLS = [
             "params": {"type": "object", "description": "the action's keyword arguments, e.g. {\"level\": 80}"}},
             "required": ["action"]}}},
     {"type": "function", "function": {
+        "name": "find_fixtures",
+        "description": "Search the WHOLE fixture library (thousands of real lights, typos are fine) and "
+                       "the lights already installed, by brand / model / type words: \"chauvet spot\", "
+                       "\"intimidator 360\", \"robe pointe\". Returns the best matches with their "
+                       "type and modes. Use it before adding a light.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"}}, "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "add_fixture",
+        "description": "Install one match from find_fixtures (its src and key) and patch it: qty lights, "
+                       "in a mode (leave out for the best one). New lights hang where that kind of light "
+                       "goes; move them after (attach_heads / set_place).",
+        "parameters": {"type": "object", "properties": {
+            "src": {"type": "string"}, "key": {"type": "string"},
+            "qty": {"type": "integer"}, "mode": {"type": "string"}},
+            "required": ["src", "key"]}}},
+    {"type": "function", "function": {
         "name": "ask",
         "description": "Ask the operator something and stop here (when the request is unclear, or "
                        "before anything risky). Give 2-4 short answers they can tap.",
@@ -113,6 +130,12 @@ How you work:
 * Be quick: put ALL the `do` calls for a step in ONE round (several tool calls at
   once), check once at the end, and stop.  Each round costs time.
 * Aim at a zone by its name: aim_at {{"zone": "Dance floor"}}; marks with "mark".
+* Adding lights: find_fixtures with the operator's words first.  One clear match
+  (or they named the exact model): add_fixture.  Several different models fit
+  ("chauvet spot" -> Rogue R1 Spot, Rogue R2 Spot...): ask which, with the
+  model names as the options (up to 4, the closest first).  No exact match (the
+  result says so): never add a near model in its place - say that model isn't in
+  the library and ask, offering the nearest names.
 * Ask (ask) when the request is unclear or could mean very different things
   ("the back truss or the upstage one?"), and before anything you aren't sure of.
 * Suggest a next idea when it would help, in one line.
@@ -289,6 +312,61 @@ def _do(eng, action: str, params: dict) -> dict:
     return out
 
 
+def find_fixtures(eng, query: str, limit: int = 8) -> dict:
+    """The best library + installed matches for some words (for the AI)."""
+    from . import fixlib, fixtures
+    query = str(query or "").strip()
+    if not query:
+        return {"matches": [], "error": "say what to look for"}
+    seen, out = set(), []
+    try:
+        with fixtures.db(eng.db_path) as conn:
+            installed = {(str(r["manufacturer"]).lower(), str(r["model"]).lower())
+                         for r in conn.execute("SELECT manufacturer, model FROM fixtures")}
+    except Exception:                                  # (the badge is a nicety)
+        installed = set()
+    from . import searchmatch
+    for r in fixlib.search(query, limit=40):
+        name = f"{r['manufacturer']} {r['model']}"
+        hit = searchmatch.score(query, r["manufacturer"], r["model"], r.get("type", "")) or (9, 9, 9)
+        if name.lower() in seen:                       # one row per model (several libraries)
+            continue
+        seen.add(name.lower())
+        out.append({"name": name, "type": r.get("type") or "", "src": r["src"], "key": r["key"],
+                    "modes": [f"{m[0]} ({m[1]} ch)" for m in (r.get("modes") or [])][:6],
+                    "installed": (r["manufacturer"].lower(), r["model"].lower()) in installed,
+                    # every word they said is in the name (typos allowed); not
+                    # exact = a word is missing: a near model, never the one
+                    # they named
+                    "exact": hit[0] == 0})
+        if len(out) >= limit:
+            break
+    exact = [m for m in out if m["exact"]]
+    note = ("" if exact else
+            "NO EXACT MATCH: none of these is the light they named - say so, and ask with the nearest names"
+            if out else "nothing in the library matches - say so")
+    return {"matches": exact or out, "exact": len(exact), "note": note}
+
+
+def add_fixture(eng, src: str, key: str, qty=1, mode=None) -> dict:
+    """Install a library fixture (as the Add dialog does) and patch it."""
+    from . import engine as engine_mod, fixlib, fixtures
+    try:
+        parsed = fixlib.load(str(src), str(key))
+        done = fixtures.store_parsed(eng.db_path, parsed, f"{src}:{key}")
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "error": str(exc)}
+    fixtures.invalidate_cache()
+    engine_mod._FIXTURE_CACHE.clear()
+    fid = ((done.get("imported") or [{}])[0]).get("fixture_id")
+    if not fid:
+        return {"ok": False, "error": "that fixture could not be installed"}
+    params = {"fixture_id": fid, "qty": max(1, min(64, int(qty or 1)))}
+    if mode:
+        params["mode"] = str(mode)
+    return _do(eng, "add_heads", params)
+
+
 # ---------------------------------------------------------------------------
 # a turn
 # ---------------------------------------------------------------------------
@@ -415,6 +493,16 @@ def _go(eng, st: dict, chat) -> dict:
                         result = _do(eng, args.get("action"), params)
                         steps.append({"action": args.get("action"), "params": params,
                                       "ok": result["ok"], "summary": result.get("summary")})
+                        st["changed"] = st["changed"] or result["ok"]
+                elif name == "find_fixtures":
+                    result = find_fixtures(eng, args.get("query"))
+                elif name == "add_fixture":
+                    if len(steps) >= MAX_ACTIONS:
+                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
+                    else:
+                        result = add_fixture(eng, args.get("src"), args.get("key"), args.get("qty") or 1, args.get("mode"))
+                        steps.append({"action": "add_heads", "params": {"src": args.get("src"), "key": args.get("key"),
+                                      "qty": args.get("qty") or 1}, "ok": result["ok"], "summary": result.get("summary")})
                         st["changed"] = st["changed"] or result["ok"]
                 elif name == "ask":
                     question = str(args.get("question") or "").strip()[:300] or "Which one?"

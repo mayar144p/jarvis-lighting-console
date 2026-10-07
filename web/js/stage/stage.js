@@ -1224,13 +1224,20 @@ export class Stage {
     }
     if (sk.pixels) {
       // a bar's cells / a blinder's bulbs: each its own cell's colour
+      // (sent to the graphics card only when a colour changed: 124 lights
+      // re-uploading every frame slowed the whole page)
       const px = sk.pixels, n = px.count, cs = L.cells && L.cells.length > 1 ? L.cells : null;
-      const k = a * 3;
+      const k = a * 3, arr = px.instanceColor.array;
+      let changed = false;
       for (let i = 0; i < n; i++) {
         const cc = cs ? cs[Math.min(cs.length - 1, Math.floor(i * cs.length / n))] : L;
-        px.setColorAt(i, this._c2.setRGB(0.04 + cc.r * k, 0.04 + cc.g * k, 0.045 + cc.b * k));
+        const r = 0.04 + cc.r * k, g = 0.04 + cc.g * k, b = 0.045 + cc.b * k, j = i * 3;
+        if (Math.abs(arr[j] - r) > 1e-3 || Math.abs(arr[j + 1] - g) > 1e-3 || Math.abs(arr[j + 2] - b) > 1e-3) {
+          arr[j] = r; arr[j + 1] = g; arr[j + 2] = b;
+          changed = true;
+        }
       }
-      px.instanceColor.needsUpdate = true;
+      if (changed) px.instanceColor.needsUpdate = true;
     }
     if (sk.spin && a > 0.002) sk.spin.rotation.y = time * 0.9;   // a derby turns while lit
     void lights;

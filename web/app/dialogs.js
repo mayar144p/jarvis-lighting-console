@@ -586,20 +586,23 @@ export function openCueList(n) {
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),
-          h("button.btn.small.ghost", { title: "Move up", disabled: i === 0, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n - 1 }).then(refresh) }, "↑"),
-          h("button.btn.small.ghost", { title: "Move down", disabled: i === stack.length - 1, onclick: () => run("move_cue", { playback: n, cue: c.n, to: c.n + 1 }).then(refresh) }, "↓"),
-          h("button.btn.small.ghost", { title: "Update this cue from the programmer: merge or replace", onclick: (e) => menu(e.currentTarget, [
+          // everything else about the cue in one menu (drag the ⋮⋮ to move it)
+          h("button.btn.small.ghost.icon", { title: "Update, move, insert, delete…", "aria-label": `Cue ${c.n} options`, onclick: (e) => menu(e.currentTarget, [
             { label: "Merge the programmer into it", hint: "adds the changes, keeps the rest", run: () => run("record_cue", { playback: n, cue: c.n, mode: "merge" }, { toast: true }) },
             { label: "Replace it with the programmer", hint: "exactly what the programmer holds", run: () => run("record_cue", { playback: n, cue: c.n, mode: "replace" }, { toast: true }) },
             { label: "Record a new cue before it", run: () => run("record_cue", { playback: n, cue: c.n, mode: "insert" }, { toast: true }) },
             { label: "Merge, cue only", hint: "tracking: the change stops at this cue", disabled: !pb.tracking, run: () => run("record_cue", { playback: n, cue: c.n, mode: "merge", cue_only: true }, { toast: true }) },
             "-",
+            { label: "Move up", disabled: i === 0, run: () => run("move_cue", { playback: n, cue: c.n, to: c.n - 1 }).then(refresh) },
+            { label: "Move down", disabled: i === stack.length - 1, run: () => run("move_cue", { playback: n, cue: c.n, to: c.n + 1 }).then(refresh) },
+            { label: "Insert an empty cue below", run: () => run("insert_cue", { playback: n, at: c.n + 1 }).then(refresh) },
+            "-",
             { label: "Preview edit…", hint: "edit it in 3D only - the rig doesn't see", run: () => run("blind", { playback: n, cue: c.n }, { toast: true }) },
             { label: (c.block ? "✓ " : "") + "Block", hint: "tracking: start afresh here", disabled: !pb.tracking, run: () => run("cue_set", { playback: n, cue: c.n, block: !c.block }, { toast: true }).then(refresh) },
             { label: `Actions… ${(c.actions || []).length ? "(" + c.actions.length + ")" : ""}`, hint: "buttons, macros, other lists, timeline, tempo", run: () => openCueActions(n, c, refresh) },
-          ]) }, "Update ▾"),
-          h("button.btn.small.ghost", { title: "Insert an empty cue below", onclick: () => run("insert_cue", { playback: n, at: c.n + 1 }).then(refresh) }, "+"),
-          h("button.btn.small.ghost", { title: "Delete", onclick: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) }, "×"))));
+            "-",
+            { label: "Delete", danger: true, hint: "Ctrl+Z brings it back", run: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) },
+          ]) }, "⋯"))));
       // drag a row onto another to move the cue there
       tr.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(c.n)); tr.classList.add("dragging"); });
       tr.addEventListener("dragend", () => tr.classList.remove("dragging"));

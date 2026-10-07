@@ -79,7 +79,11 @@ await act("venue_template", { name: "club" });
 await act("add_heads", { query: "LED PAR 4ch", qty: 8 });
 await act("add_heads", { query: "Moving Head Spot 16ch", qty: 4 });
 
-const browser = await chromium.launch({ executablePath: exe, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+// CHECKS_GPU=1: a visible window on the computer's graphics card (fast, and you
+// can watch); otherwise software drawing (servers / cloud with no GPU)
+const GPU = process.env.CHECKS_GPU === "1";
+const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
+  args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const open = async (who) => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage();
@@ -167,7 +171,7 @@ check(/Lost contact/.test(banner), "a banner says nothing reaches the rig", bann
 await B.click('#pb-mode [data-mode="faders"]').catch(() => {});
 const errsBefore = errors.A.length + errors.B.length;
 // press things while the desk is gone: nothing must break
-for (const sel of ['#int-quick [data-level="100"]', "#locate-btn", "#clear-btn", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
+for (const sel of ['#int-quick [data-level="100"]', "#locate-btn", "#prog-clear", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
   await A.click(sel, { timeout: 1500 }).catch(() => {});
   await sleep(150);
 }

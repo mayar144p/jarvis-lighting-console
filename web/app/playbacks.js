@@ -1,4 +1,5 @@
-// The playback strip: ten faders with GO, and the grand master.
+// The executor wing: ten playbacks, always in their place, each with its
+// fader and GO / Flash / Back / Stop; the group masters and the grand master.
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
@@ -20,19 +21,27 @@ function build() {
   strip.replaceChildren();
   cards.clear();
   for (let n = 1; n <= count; n++) {
+    // an executor: its number and name, what is on and what is next, its
+    // fader, and GO / Flash / Back / Stop - always in the same place
     const fader = h("div.vfader", { "aria-label": `Playback ${n} level` });
     const name = h("span.name", { title: "Cue list" });
     const cue = h("div.pb-cue");
     const prog = h("div.pb-prog", h("i"));
+    const flash = h("button.flash", { title: "Flash: full while held" }, "Flash");
+    const rec = h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue",
+      onclick: () => openCueDialog(n) }, h("b", String(n)), h("span", "Record here"));
     const card = h("div.pb", { dataset: { pb: n } },
       fader,
-      h("div.pb-top", h("span.n", `PB${n}`), name,
+      h("div.pb-top", h("span.n", String(n)), name,
         h("button.btn.ghost.small.icon", { title: "Playback options", onclick: (e) => pbMenu(e.currentTarget, n) }, "⋯")),
-      h("div", cue, prog),
+      h("div.pb-mid", cue, prog),
       h("div.pb-btns",
-        h("button", { title: "Back one cue", onclick: () => { focusPb = n; run("cue_back", { playback: n }); } }, "◀"),
         h("button.go", { title: "GO: next cue", onclick: () => { focusPb = n; run("cue_go", { playback: n }); } }, "GO"),
-        h("button", { title: "Release this playback", onclick: () => run("playback_release", { playback: n }) }, "■")));
+        flash,
+        h("button", { title: "Back one cue", onclick: () => { focusPb = n; run("cue_back", { playback: n }); } }, "◀"),
+        h("button", { title: "Stop: release this playback", onclick: () => run("playback_release", { playback: n }) }, "■")),
+      rec);
+    wireFlash(flash, n);
     name.addEventListener("click", () => openCueList(n));
     card.addEventListener("pointerdown", () => setFocus(n));
     const send = throttle((level) => run("playback_level", { playback: n, level }, { silentError: true }), 60);
@@ -41,6 +50,34 @@ function build() {
     strip.append(card);
   }
   setFocus(focusPb);
+}
+
+// Flash: held, the playback runs at full; let go, it goes back to where it
+// was (and stops again if it wasn't running)
+function wireFlash(btn, n) {
+  let was = null;
+  const down = (e) => {
+    e.preventDefault();
+    const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
+    if (!(pb.stack || []).length) return;
+    was = { active: !!pb.active, level: pb.level ?? 100 };
+    btn.setPointerCapture?.(e.pointerId);
+    btn.classList.add("on");
+    if (!was.active) run("playback_activate", { playback: n }, { silentError: true });
+    run("playback_level", { playback: n, level: 100 }, { silentError: true });
+  };
+  const up = () => {
+    if (!was) return;
+    const w = was;
+    was = null;
+    btn.classList.remove("on");
+    run("playback_level", { playback: n, level: w.level }, { silentError: true });
+    if (!w.active) run("playback_release", { playback: n }, { silentError: true });
+  };
+  btn.addEventListener("pointerdown", down);
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("pointercancel", up);
+  btn.addEventListener("lostpointercapture", up);
 }
 
 function setFocus(n) {
@@ -73,13 +110,8 @@ function pbMenu(btn, n) {
 function render() {
   build();
   const pbs = (state.snap && state.snap.playbacks) || [];
-  // show the playbacks in use and ONE empty slot to record into - ten
-  // "Record a cue here" boxes were noise
-  const firstEmpty = (pbs.find((pb) => !(pb.stack || []).length && !pb.active) || {}).n;
-  for (const pb of pbs) {
-    const cc = cards.get(pb.n);
-    if (cc) cc.card.hidden = !(pb.stack || []).length && !pb.active && pb.n !== firstEmpty;
-  }
+  // every executor stays in its place (muscle memory); an empty one is a
+  // quiet "Record here"
   for (const pb of pbs) {
     const c = cards.get(pb.n);
     if (!c) continue;
@@ -88,13 +120,11 @@ function render() {
     const next = stack[pb.index + 1] || (pb.follow && pb.follow.loop ? stack[0] : null);
     c.card.classList.toggle("active", !!pb.active);
     c.card.classList.toggle("empty", !stack.length);
-    c.name.textContent = pb.name || (stack.length ? `${stack.length} cue${stack.length > 1 ? "s" : ""}` : "Empty");
-    if (!stack.length) {
-      c.cue.replaceChildren(h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue",
-        onclick: () => openCueDialog(pb.n) }, "+ Record a cue"));
-    } else {
+    c.name.textContent = pb.name || (stack.length ? (stack.length === 1 ? cueLabel(stack[0]) : `${stack.length} cues`) : "Empty");
+    c.card.title = stack.length ? "" : `Playback ${pb.n}: empty`;
+    if (stack.length) {
       c.cue.replaceChildren(
-        h("b", cur ? `${pb.index + 1}  ${cueLabel(cur)}` : "Not started"),
+        h("b", cur ? `${pb.index + 1}/${stack.length}  ${cueLabel(cur)}` : "ready"),
         h("span.next", next ? `next: ${cueLabel(next)}` : "end of list"));
     }
     const f = pb.follow || {};

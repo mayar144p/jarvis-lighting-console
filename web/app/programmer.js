@@ -809,7 +809,7 @@ function renderProgCells() {
 // ------------------------------------------------------ in the programmer
 // What the programmer holds, by kind, each with its own x: clear just the
 // colour (or the position...) without losing the rest.
-const IN_GROUPS = [["intensity", "Level"], ["colour", "Colour"], ["position", "Move"], ["beam", "Beam"], ["other", "Other"]];
+const IN_GROUPS = [["intensity", "Dimmer"], ["colour", "Colour"], ["position", "Position"], ["beam", "Beam"], ["other", "Other"]];
 const GROUP_OF = (() => {
   const m = {};
   for (const r of ["dimmer", "zone_dimmer", "shutter", "strobe"]) m[r] = "intensity";
@@ -853,20 +853,22 @@ function renderProgIn() {
   progInKey = key;
   const groups = IN_GROUPS.filter(([g]) => g in counts).map(([g, l]) => [g, g === "other" ? otherName : l]);
   box.hidden = !groups.length && !mineFx.length;
-  box.replaceChildren(...(groups.length || mineFx.length ? [h("span.muted.small", "In the programmer:"),
-    ...groups.map(([g, label]) => h("span.chip.prog-in-chip",
-      { title: counts[g] ? `${label} on ${counts[g]} light(s)` : `${label}: a movement is running` },
+  box.replaceChildren(...(groups.length || mineFx.length ? [
+    // what is in the programmer, by family (each in its colour): × clears it
+    ...groups.map(([g, label]) => h("span.chip.prog-in-chip", { dataset: { g },
+      title: counts[g] ? `${label} on ${counts[g]} light(s) - in the programmer` : `${label}: a movement is running` },
       label, counts[g] ? h("small", ` ${counts[g]}`) : null,
       h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
-    mineFx.length ? h("span.chip.prog-in-chip.prog-fx", { title: mineFx.map((f) => f.label).join(", ") },
+    mineFx.length ? h("span.chip.prog-in-chip.prog-fx", { dataset: { g: "fx" }, title: mineFx.map((f) => f.label).join(", ") },
       "Effects", h("small", ` ${mineFx.length}`),
       h("button.x", { title: "Stop the effects you started - the lights keep their colour, level and position (cues' and buttons' effects keep playing)",
-        onclick: () => run("stop_fx", { programmer: true }, { toast: true }) }, "×")) : null,
-    h("button.btn.small.ghost", { title: "Clear everything", onclick: () => run("clear_programmer") }, "Clear all"),
-    // on every tab: set a colour on the Colour tab and record it right there
-    h("button.btn.small.prog-rec", { title: "Record what is in the programmer as a cue (R)", onclick: () => openCueDialog() }, "Record cue…"),
-    h("button.btn.small.primary.prog-btn", { title: "A button (on / off) of what the selected lights do now - position, colour, beam and the movement running. It turns on and holds those lights: change them again by turning it off.",
-      onclick: makeHoldButton }, "Make a button…")] : []));
+        onclick: () => run("stop_fx", { programmer: true }, { toast: true }) }, "×")) : null] : []));
+  // the actions at the foot of the programmer (Make a button… sits next to
+  // Record cue… on every tab): live only when there is something to keep
+  const any = groups.length > 0 || mineFx.length > 0;
+  $("#prog-clear").disabled = !any;
+  $("#prog-record").disabled = !any;
+  $("#prog-make").disabled = !any || !hasSel();
 }
 
 // a button holding some of the selected lights: say so, with a Turn off
@@ -928,7 +930,7 @@ function renderFx() {
       selectionHeads().some((x) => headCount(x) > 1) ? h("button.chip.fx-across" + (fxAcross ? ".on" : ""), {
         title: "Run the effect across each light's own heads (a Wave 360's four cells) as if each were a light",
         onclick: () => { fxAcross = !fxAcross; fxGridKey = ""; renderFx(); } }, "Across each light's heads") : null,
-      h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Move tab"), "."));
+      h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Position tab"), "."));
     }
   }
   renderRunning();
@@ -1048,8 +1050,21 @@ function renderLooks(force = false) {
     }, "+ Record")),
     h("div.pal-items", ...(pals[kind] || []).map((p) => palButton(kind, p)),
       (pals[kind] || []).length ? null : h("span.muted.small", "none yet")))));
-  const strip = $(".palette-strip[data-kind=position]");
-  strip.replaceChildren(...(pals.position || []).map((p) => palButton("position", p)));
+  // each family's own palettes, as tiles at the top of its tab, with a
+  // tile to save the current one
+  for (const kind of kinds) {
+    const strip = $(`.palette-strip[data-kind=${kind}]`);
+    if (!strip) continue;
+    strip.replaceChildren(...(pals[kind] || []).map((p) => palButton(kind, p)),
+      h("button.pal-item.pal-save", {
+        title: `Save the selection's ${kind} as a palette`,
+        onclick: async () => {
+          if (!hasSel()) { toast("Select fixtures and set a look first"); return; }
+          const name = await promptBox(`Save ${kind} palette`, "Name", "", { ok: "Save" });
+          if (name) run("record_palette", { kind, name }, { toast: true });
+        },
+      }, "+ Save"));
+  }
   const presets = (state.snap && state.snap.presets) || [];
   // a search box once there are enough looks to need one
   const search = $("#look-search");
@@ -1185,7 +1200,7 @@ function showTab(name) {
   renderHeader();
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
-  if (name === "looks") renderLooks(true);
+  if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
@@ -1198,14 +1213,20 @@ function showTab(name) {
 
 export function focusTab(name) { showTab(name); }
 
+function wireActs() {
+  $("#prog-clear").addEventListener("click", () => run("clear_programmer"));
+  $("#prog-record").addEventListener("click", () => openCueDialog());
+  $("#prog-make").addEventListener("click", makeHoldButton);
+}
+
 export function initProgrammer() {
+  wireActs();
   intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
   $$("#int-quick button").forEach((b) => b.addEventListener("click", () => {
     if (!hasSel()) { toast("Select fixtures first"); return; }
     sendIntensity(+b.dataset.level);
   }));
   $("#locate-btn").addEventListener("click", () => run("locate"));
-  $("#clear-btn").addEventListener("click", () => run("clear_programmer"));
   const hl = $("#hl-btn");
   hl.addEventListener("click", (e) => {
     const cur = (state.snap && state.snap.highlight) || {};
@@ -1217,10 +1238,6 @@ export function initProgrammer() {
     hl.textContent = cur.on && cur.solo ? "Solo" : "Highlight";
   };
   on("snapshot", syncHl);
-  const rec = $("#highlight-btn");
-  rec.textContent = "Record cue…";
-  rec.title = "Record the programmer as a cue (R)";
-  rec.addEventListener("click", () => openCueDialog());
 
   picker = createPicker($("#picker-canvas"), (hex, final) => {
     if (!hasSel()) return;
@@ -1266,7 +1283,7 @@ export function initProgrammer() {
     renderIntensity();
     if (tab === "colour") renderColour();
     if (tab === "fx") renderRunning();
-    if (tab === "looks") renderLooks();
+    if (["looks", "colour", "position", "beam"].includes(tab)) renderLooks();
   };
   on("snapshot", () => {
     refresh();

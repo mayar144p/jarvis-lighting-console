@@ -89,7 +89,11 @@ if (BRANDS) {
 }
 
 await act("venue_template", { name: "club" });
-const browser = await chromium.launch({ executablePath: exe, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+// CHECKS_GPU=1: a visible window on the computer's graphics card (fast, and you
+// can watch); otherwise software drawing (servers / cloud with no GPU)
+const GPU = process.env.CHECKS_GPU === "1";
+const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
+  args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e.message || e)));
@@ -428,7 +432,8 @@ async function steps() {
   console.log("8. Record a cue, clear, GO");
   await act("record_cue", { playback: 1, name: "Big look" });
   await click('#prog-tabs [data-tab="intensity"]', "Level tab");
-  await click("#clear-btn", "Clear");
+  // (recording empties the programmer: Clear is then rightly greyed out)
+  if (await p.evaluate(() => !document.querySelector("#prog-clear").disabled)) await click("#prog-clear", "Clear");
   ({ F, V } = await layers("cleared"));
   await click('#pb-mode [data-mode="faders"]', "Faders");
   await p.evaluate(() => fetch("/api/console", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "playback_level", params: { playback: 1, level: 100 } }) }));

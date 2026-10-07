@@ -669,3 +669,41 @@ is the 15-minute check with real lights.
 * Validation against physical nodes and fixtures.
 * Show file management (rename, duplicate, delete) beyond save and load.
 * A packaged desktop build.
+
+## Reporting a bug
+
+Open the repo's **Issues** tab → **New issue** and pick a form:
+
+- **Problem with a light** - a fixture does the wrong thing on the rig, in
+  3D or in the programmer (say which light, which mode, what happened).
+- **Something else is wrong** - screens, playbacks, output, saving...
+
+Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)
+and, if you can, the show file so the exact rig can be loaded.  Never
+attach `.env`.  A "Report a problem with this light…" button in the desk
+itself is planned (docs/BACKLOG.md A11).
+
+## Running the visual checks on your own PC (graphics card)
+
+The screen and 3D checks are much faster - and closer to a real show - on
+a computer with a graphics card.  Once, in the project folder (PowerShell):
+
+```
+npm install playwright
+npx playwright install chromium
+```
+
+Then, each time (PowerShell; `CHECKS_GPU=1` opens a visible window on the
+graphics card - you can watch it work):
+
+```
+$env:CHECKS_GPU = "1"
+node tools/uicheck.mjs uicheck-out --big          # every screen, 124 lights
+node tools/vischeck.mjs vischeck-out              # 124 lights: DMX, 3D, drawing
+node tools/vischeck.mjs --brand Chauvet out-chauvet
+node tools/pixcheck.mjs ofl chauvet-dj/colorband-pix.json 36-channel
+```
+
+Each writes a `report.md` (and screenshots) in its folder: paste the report
+back into the Claude session, or run Claude Code on this PC and it runs and
+reads them itself.  Run one check at a time.

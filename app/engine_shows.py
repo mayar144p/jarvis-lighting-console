@@ -428,7 +428,7 @@ class ShowMixin:
                 "Pick a mode with a dimmer / shutter, or fix the profile")
         movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
         if movers and not self.floor_safe:
-            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Move tab → Stay on the floor")
+            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Position tab → Stay on the floor")
         lasers = [h for h in self.patch if any(r in LASER_ROLES for r in h["map"])]
         if lasers:
             add("info", f"{len(lasers)} laser(s): output only while ARMED; KILL FX stops everything.", "")

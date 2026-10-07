@@ -73,7 +73,8 @@ function headRow(hd, child = false) {
     h("td.c-name", h("div.f-name",
       iconFor(b),
       h("div.f-text",
-        h("b", { title: hd.name || hd.model }, hd.name || hd.model),
+        h("b", { title: [hd.name || hd.model, ...[b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
+          .filter(Boolean)].join(" · ") }, hd.name || hd.model),
         h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
           .filter(Boolean).join(" · "))),
       hd.unverified ? h("span.warn-ic", { title: "Generic channel layout - check it matches the real fixture" }, "⚠") : null,
@@ -91,7 +92,8 @@ function foldRow(c) {
     h("td.c-name", h("div.f-name",
       iconFor(b),
       h("div.f-text",
-        h("b", { title: first.model }, first.model, h("em.f-qty", ` × ${c.heads.length}`)),
+        h("b", { title: [first.model, b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
+          .filter(Boolean).join(" · ") }, first.model, h("em.f-qty", ` × ${c.heads.length}`)),
         h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
           .filter(Boolean).join(" · "))))),
     h("td.c-addr", h("span", addr(first)), h("small", "–" + addr(lastHd))));

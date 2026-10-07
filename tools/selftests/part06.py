@@ -1349,7 +1349,7 @@ def test_motion() -> None:
     check("the Move tab has a laser safe zone", "Laser safe zone" in js and '"laser_size", "max"' in js, "")
     check("the Move tab: spots, nudge, movement tiles, speed master, range",
           all(k in js for k in ('"aim_spot"', '"nudge"', '"run_fx"', '"speed_master"', '"move_range"'))
-          and re.search(r'data-tab="position"[^>]*>.*?<span>Move</span>', html) and 'id="move-panel"' in html, "")
+          and re.search(r'data-tab="position"[^>]*>.*?<span>Position</span>', html) and 'id="move-panel"' in html, "")
 
 
 def test_custom_buttons() -> None:

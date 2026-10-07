@@ -228,6 +228,219 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A9. Desktop app and a better visualiser (agreed 2026-10-07)
+
+In this order.  Steps 1 and 2 are the plan; step 3 is optional / future.
+
+### Step 1 - the desk as a desktop app (Electron)
+
+Nothing is rewritten: the Python engine and the screens stay as they are,
+wrapped in a program with its own icon.  The engine still listens on
+localhost, hidden inside the app (the operator never sees an address).
+
+- **One icon starts everything:** the app starts the engine (packed with
+  PyInstaller, so no Python install) and stops it on close.
+- **Windows across monitors** (the real fix for "everything on one page"):
+  - the visualiser, full screen;
+  - programmer + fixtures;
+  - playbacks + buttons (a touch screen);
+  - each remembers its monitor and size; a "Show mode" opens the set.
+- **Safe during a show:** Ctrl+W / F5 / Ctrl+R / Backspace belong to the
+  desk (nothing closes or reloads by accident); closing asks first; the
+  computer and screen stay awake while the app is open.
+- **Same graphics everywhere** (Electron's Chrome), so the 3D looks the same
+  on every computer.
+- **USB DMX interfaces and MIDI** directly; real menus; one installer that
+  updates itself (Windows first, then Mac).
+- **localhost, tightened:**
+  - the engine answers only this computer by default;
+  - the app and engine share a private key at start-up;
+  - a free port is picked automatically;
+  - phone / tablet remotes become a setting ("Allow phones and tablets")
+    with a pairing code.
+- Checks: the existing ones (selftest, uicheck, vischeck, brands) run
+  against the app's windows too; a packaging check on Windows.
+
+### Step 2 - the visualiser upgraded to WebGPU (same code, inside the app)
+
+The three.js visualiser moves to its WebGPU renderer; nothing is thrown
+away, and the same desk feeds it.
+
+- **Haze and beams:** beams that light up real haze (volumes, soft edges),
+  brighter where they cross.
+- **Gobos** projected onto the floor, set, truss and people, sharp or soft
+  with focus; prisms and frost visible on the projection.
+- **Shadows** from every beam; reflections on shiny floors and set.
+- **Quality settings** Low / Medium / High (and the current one as the
+  fallback for weak laptops or no WebGPU), so 124+ moving lights stay
+  smooth.
+- Checks: vischeck and the fixture-debug fit check stay green; a
+  frame-rate check with the 124-light rig on each quality.
+
+### Step 3 (optional / future) - a separate pro visualiser (Unreal Engine)
+
+Only if film-quality previs for clients is wanted, or a visualiser to offer
+on its own: an Unreal Engine program that listens to Art-Net / sACN like a
+real rig (so it also works with grandMA, Onyx...), with photographic haze,
+light bounce and GDTF / MVR fixtures.  A separate project measured in
+months (C++ / Blueprints), needs a gaming-class graphics card (RTX 3060 or
+better), ~300 MB+ to install.  Godot is the lighter, free alternative if
+the quality bar is lower.
+
+## A10. Premium features (agreed 2026-10-07, after A9)
+
+Suggested order: the operator's top picks first (1-4), then the rest.
+
+1. **Hardware controllers with feedback** - ready layouts for Akai APC40 /
+   APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
+   is on, motor faders follow the playbacks; plug in and play.
+2. **Show templates + first-run tour + demo show** - wedding, club night,
+   band, theatre, corporate: a ready rig, groups, palettes and buttons (a
+   new show starts 80% done); a tour and a demo show so a new user sees
+   lights moving within 30 seconds.
+3. **MVR / GDTF import and export** - a plot from Vectorworks or Capture
+   comes in with every light patched and placed; ours goes back out.
+4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
+   beat, bar and phrase, so the lights hit the drops without tapping.
+5. **More universes and sACN in Settings** - sACN output already exists
+   (`DMX_TRANSPORT=sacn` in `.env`); bring the choice and more universes
+   into Settings -> Output, for bigger rigs and pro nodes.
+6. **Customisable workspaces** - drag panels into your own layout per show
+   or per user (busking, theatre, programming); switch with one key.  (Pairs
+   with A9 step 1's windows.)
+7. **Offline programming with a video render** - program at home, export a
+   video of the 3D preview for the client.  (Pairs with A9 step 2.)
+8. **Fixture library updates** - new lights arrive automatically; a
+   "Request a fixture" button (it becomes an A11 report).
+9. **Fine / coarse rotary encoders on screen** for precise pan, tilt and
+   colour, like real desk wheels.
+10. **Themes and a "show dark" mode** - an extra-dim, red-safe screen for
+    dark venues; accent colours.
+11. **Help built in** - hover any control for a short explanation (and a
+    short video link).
+
+## A11. Report a bug from the desk (agreed 2026-10-07)
+
+So problems arrive with the evidence attached instead of typed by hand.
+
+- **Where:** right-click a light (fixture list or 3D) or its menu ->
+  "Report a problem with this light..."; Help -> "Report a bug" for
+  anything else; "Request a fixture" (A10/8) uses the same path.
+- **The form:** one line "what's wrong", ticks (DMX / 3D view /
+  programmer / effects / crash).
+- **Attached automatically (a "bug bundle"):**
+  - the light's fixture file, mode, address;
+  - its live DMX (channel report) and what the 3D thinks it does;
+  - screenshots of the 3D view and the screen;
+  - desk version, computer, recent log errors;
+  - optionally (ticked, can be unticked) the whole rig / show, so the
+    exact rig can be loaded for testing.
+- **Privacy:** `.env` and the AI key are never included; the reporter sees
+  the full list before sending.
+- **Lands in GitHub Issues**, labelled (`light-bug`, `brand:...`,
+  `model:...`), visible to the operator and Claude.
+  - v1: the desk saves the bundle and opens a pre-filled issue in the
+    browser (needs a GitHub account; drag the bundle in).
+  - v2: a small relay service with a bot key creates the issue directly,
+    so no GitHub account is needed (the key never ships inside the app).
+- **Decided (2026-10-07):** the repo stays **private**; bug reports go to
+  its own Issues tab (only the operator and Claude see them), with two
+  forms in `.github/ISSUE_TEMPLATE/`: "Problem with a light" and
+  "Something else is wrong".  The desk's report button (above) fills these
+  same forms.  Before a public release with outside testers: a separate
+  public "bug reports" repo + the v2 relay, so the code stays private.
+  (History checked 2026-10-07: no `.env`, keys or `data/`; all bundled
+  libraries are MIT / Apache 2.0, fine for a closed app with an
+  "Open-source licences" page.)
+- **Fixing:** the fixture-debug skill learns "fix issue #N" - download the
+  bundle, load the rig, reproduce with the checks (DMX, safety,
+  programmer fit, 3D), fix, add a test, link the fix to the issue.
+
+## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07)
+
+Today the copilot uses one online AI from `.env` (Gemini, any
+OpenAI-compatible service works).  Free online plans have daily limits;
+an AI running on the laptop has none and works without internet.
+
+- **Nothing to install.** The AI runtime ships inside the desk (llama.cpp
+  server - tens of MB - or Ollama in portable mode), started in the
+  background only when the copilot is used, stopped when the desk closes.
+  No installer, no admin rights.
+- **The model is one file** (e.g. `qwen3-8b.gguf`, ~5 GB) in the desk's
+  data folder (or a drive the operator picks):
+  - one click: "Download the offline AI (5 GB)?" with a progress bar,
+    pause / resume, checked when done;
+  - or an **"AI pack"** file - downloaded once at home or copied from a USB
+    stick - dropped onto the desk, for venues with no internet;
+  - "Remove" gives the space back.
+- **Install once, use it - no further action:** the desk's installer has a
+  ticked box "Include the offline AI (5 GB)"; the model downloads during
+  the install, so the copilot works the moment the install finishes.
+  (Unticked or offline while installing: the desk offers it later, or the
+  AI pack.)
+- **It survives updates:** the model file lives in the desk's data folder
+  (with the shows and settings), not in the app's folder, so an app update
+  never touches it; the small runtime is part of the app and updates with
+  it.  Only a better recommended model is ever offered - "download?" - and
+  the old one keeps working until the operator says yes.
+- **The desk suggests the model** from the computer (RAM, graphics card,
+  free disk): 8B for 16 GB laptops, 14B for 32 GB / a 12 GB graphics card.
+- **The switch:** an AI button in the copilot (and Settings -> AI) with
+  three positions, remembered:
+  - **Online (Gemini)** - the AI in the code today, smarter, needs
+    internet and has daily limits;
+  - **Local** - unlimited, offline, slower without a graphics card;
+  - **Auto** - Gemini first; when it hits its limit, has no internet or
+    doesn't answer, the desk carries on with Local and says so ("Gemini
+    limit reached - using the offline AI").
+  The AI settings live in the desk (no `.env` editing); the key stays
+  private as now.
+- **During a show:** no downloads while the output is live; the local AI
+  frees the graphics card when idle, so the 3D view keeps its speed.
+- **Needs:** 16 GB RAM and ~6 GB disk for the 8B model.
+- **When:** the switch and the fallback can come first (they also work
+  with Ollama installed by hand); the bundled runtime and the one-click /
+  AI-pack download come with A9 step 1 (the desktop app).
+
+## A13. The AI runs the whole desk - and only the desk (agreed 2026-10-07)
+
+Example the operator wants to just work: "add Chauvet something something,
+put it on the truss in the middle, make it flash yellow and hover over the
+dance floor at a slow speed, 20% for now."
+
+Today (app/assistant.py): 67 desk actions, look / do / check, ask,
+remember.  Placing on a truss, colour, flash / strobe effects and roaming a
+zone at a speed already work.  Missing:
+
+1. **Desk only.** Anything not about the show, lights, room or desk gets
+   one polite line ("I only run the desk - try: 'warm wash on the
+   movers'"): no essays, no general chat.
+2. **Honest about each light, from the desk not the model's memory.**
+   Before acting, the AI gets what every selected light CAN do (tilt, pan,
+   colour mixing / wheel only / no colour, gobo, zoom, strobe - the same
+   facts as the programmer fit check); it does what's possible and says
+   what isn't: "Done on 8 movers; the 6 PARs can't tilt, so they stay."
+   Actions that partly fail report per light, never silently.
+3. **Every part of the desk as a tool:**
+   - **(DONE 2026-10-07)** the fixture library: fuzzy search over the whole
+     library ("chauvet something spot", typos fine), install, patch;
+     several models fit -> ask with tap answers; a model not in the
+     library -> say so and offer the nearest (never a near model in its
+     place) - `find_fixtures` / `add_fixture` in app/assistant.py;
+   - placement in words: "middle of the front truss", "left side", "both
+     ends", "6 m high";
+   - the room: add truss / pole, zones, marks;
+   - groups, cues, playbacks, buttons, timeline, palettes: make, edit,
+     rename, delete (delete asks first);
+   - safe settings; save the show (asks first).
+4. **Safety stays with the operator:** going live, ARM, firing confetti /
+   CO2 / flame / lasers - the AI prepares it, the operator taps to confirm.
+5. **A test list of ~50 real sentences** (like the example) run against the
+   desk: after each, the result is checked (patched, placed on the right
+   truss, flashing yellow, roaming the dance floor at 20%); impossible and
+   off-topic requests get the right short answer.  Run with Gemini and
+   with the local AI (A12) - small models need the tools kept simple.
+
 ## A8. Leftovers from the library sweeps (open, 2026-10-02)
 
 Found by `tools/libsweep.py` (default modes) and `--all-modes` (all 8,093

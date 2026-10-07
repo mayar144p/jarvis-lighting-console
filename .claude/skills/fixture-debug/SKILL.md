@@ -9,6 +9,17 @@ Checks real library profiles at three levels, finds what's wrong, fixes the
 root cause, and proves the fix. The operator is a lighting operator, not a
 developer, so report what each finding means for the real light.
 
+## From a bug report ("fix issue #N")
+
+Reports land in the repo's Issues (private) through the forms in
+`.github/ISSUE_TEMPLATE/` ("Problem with a light", "Something else is
+wrong").  Read the issue with the GitHub tools: the light (brand, model,
+mode), where it goes wrong, the steps, and any attachments (screenshots,
+its DMX channels, the show file).  Pick the rig from it - `--product` with
+the model, or load the attached show on scratch data - then follow the
+steps below.  When it's fixed: a selftest for it, a commit that says
+"Fixes #N", and one short reply on the issue in plain words.
+
 ## 0. Pick the rig
 
 ```

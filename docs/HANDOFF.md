@@ -97,7 +97,41 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
    - Result: 279 products, engine check 0 failures; screen check clean
      except two lights whose "off" the file can't tell (BACKLOG A8/10).
 
+7. **Console redesign** (mockup: `docs/mockups/console-redesign.html`):
+   - **Top bar:** show, output pill, tempo, the command line in the middle
+     with "Ask AI" joined to it, quiet icons.
+   - **Families:** Dimmer yellow, Position blue, Colour rainbow, Beam
+     teal, FX violet - on the programmer tabs, the "in the programmer"
+     chips and the palette tiles (tokens `--f-*` in app.css).
+   - **Programmer:** palettes as tiles at the top of their family tab;
+     Clear / Make a button / Record cue at its foot on every tab.
+   - **Executor wing:** ten playbacks always in place, GO / Flash / Back
+     / Stop, empty ones a quiet "Record here"; masters and BLACKOUT at the
+     right; an empty buttons page is one invitation.
+   - **Fixtures:** groups first as tiles, then one-line rows; panels grow
+     with the screen.
+   - **Stage:** one View menu, crowd off by default, hint until used.
+   - **Dialogs:** one frame; the cue list keeps Go and puts the rest in a
+     ⋯ menu.
+
 ## Left to do
+
+- **Next (agreed 2026-10-07): `docs/BACKLOG.md` A9** - step 1 the desk as
+  a desktop app (Electron, engine still on a hidden localhost, windows
+  across monitors), step 2 the visualiser on WebGPU (haze, gobo
+  projection, shadows, quality settings).  Step 3, a separate Unreal
+  visualiser, is optional / future.
+- **Then: A10** premium features (controllers with feedback, templates +
+  tour + demo show, MVR / GDTF, DJ sync first) and **A11** report-a-bug
+  from the desk into GitHub Issues with a bug bundle (and "fix issue #N"
+  in the fixture-debug skill).
+- **A12** plug-and-play offline AI (bundled runtime, one-click or USB "AI
+  pack" model) with an Online (Gemini) / Local / Auto switch and automatic
+  fallback when Gemini hits its limit.
+- **A13** the AI runs the whole desk and only the desk: library search +
+  patch + place in words, honest per-light abilities ("the PARs can't
+  tilt"), every screen as a tool, safety taps stay with the operator, a
+  50-sentence test list.
 
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.

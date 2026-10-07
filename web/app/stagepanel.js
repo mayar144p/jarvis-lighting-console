@@ -41,6 +41,7 @@ function syncRig() {
   }
   stage.setSelected(state.snap.selected || []);
   const empty = !p.length;
+  $("#stage-hint").classList.toggle("must", empty || document.body.classList.contains("arranging"));
   $("#stage-hint").textContent = empty
     ? "The stage is empty - add fixtures and they appear here, modelled for their type and brand."
     : document.body.classList.contains("arranging")
@@ -139,7 +140,15 @@ export function initStage() {
   };
   toggle("#zones-btn", "zones", false);
   const dance = pref("dance", "1") === "1";
-  stage.setOptions({ people: pref("people", "1") === "1", dance, shadows: pref("shadows", "1") === "1" });
+  // the crowd is off until asked for: it hid the rig (the choice is remembered)
+  stage.setOptions({ people: pref("people", "0") === "1", dance, shadows: pref("shadows", "1") === "1" });
+  // the mouse hint shows until the 3D view has been used once (empty and
+  // arrange hints always show)
+  try { if (localStorage.getItem("jarvis.stagehint")) document.body.classList.add("hint-seen"); } catch (e) { /* private */ }
+  $("#stage").addEventListener("pointerdown", () => {
+    document.body.classList.add("hint-seen");
+    try { localStorage.setItem("jarvis.stagehint", "1"); } catch (e) { /* private */ }
+  }, { once: true });
   $("#people-btn").classList.toggle("on", stage.options.people);
   $("#people-btn").addEventListener("click", (e) => crowdMenu(e.currentTarget, keep));
   $("#views-more").addEventListener("click", (e) => viewsMenu(e.currentTarget));
