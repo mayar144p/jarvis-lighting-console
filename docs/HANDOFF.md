@@ -121,6 +121,10 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
   across monitors), step 2 the visualiser on WebGPU (haze, gobo
   projection, shadows, quality settings).  Step 3, a separate Unreal
   visualiser, is optional / future.
+- **Then: A10** premium features (controllers with feedback, templates +
+  tour + demo show, MVR / GDTF, DJ sync first) and **A11** report-a-bug
+  from the desk into GitHub Issues with a bug bundle (and "fix issue #N"
+  in the fixture-debug skill).
 
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.

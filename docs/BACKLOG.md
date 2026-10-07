@@ -287,6 +287,68 @@ months (C++ / Blueprints), needs a gaming-class graphics card (RTX 3060 or
 better), ~300 MB+ to install.  Godot is the lighter, free alternative if
 the quality bar is lower.
 
+## A10. Premium features (agreed 2026-10-07, after A9)
+
+Suggested order: the operator's top picks first (1-4), then the rest.
+
+1. **Hardware controllers with feedback** - ready layouts for Akai APC40 /
+   APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
+   is on, motor faders follow the playbacks; plug in and play.
+2. **Show templates + first-run tour + demo show** - wedding, club night,
+   band, theatre, corporate: a ready rig, groups, palettes and buttons (a
+   new show starts 80% done); a tour and a demo show so a new user sees
+   lights moving within 30 seconds.
+3. **MVR / GDTF import and export** - a plot from Vectorworks or Capture
+   comes in with every light patched and placed; ours goes back out.
+4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
+   beat, bar and phrase, so the lights hit the drops without tapping.
+5. **sACN output and more universes**, alongside Art-Net, for bigger rigs
+   and pro nodes.
+6. **Customisable workspaces** - drag panels into your own layout per show
+   or per user (busking, theatre, programming); switch with one key.  (Pairs
+   with A9 step 1's windows.)
+7. **Offline programming with a video render** - program at home, export a
+   video of the 3D preview for the client.  (Pairs with A9 step 2.)
+8. **Fixture library updates** - new lights arrive automatically; a
+   "Request a fixture" button (it becomes an A11 report).
+9. **Fine / coarse rotary encoders on screen** for precise pan, tilt and
+   colour, like real desk wheels.
+10. **Themes and a "show dark" mode** - an extra-dim, red-safe screen for
+    dark venues; accent colours.
+11. **Help built in** - hover any control for a short explanation (and a
+    short video link).
+
+## A11. Report a bug from the desk (agreed 2026-10-07)
+
+So problems arrive with the evidence attached instead of typed by hand.
+
+- **Where:** right-click a light (fixture list or 3D) or its menu ->
+  "Report a problem with this light..."; Help -> "Report a bug" for
+  anything else; "Request a fixture" (A10/8) uses the same path.
+- **The form:** one line "what's wrong", ticks (DMX / 3D view /
+  programmer / effects / crash).
+- **Attached automatically (a "bug bundle"):**
+  - the light's fixture file, mode, address;
+  - its live DMX (channel report) and what the 3D thinks it does;
+  - screenshots of the 3D view and the screen;
+  - desk version, computer, recent log errors;
+  - optionally (ticked, can be unticked) the whole rig / show, so the
+    exact rig can be loaded for testing.
+- **Privacy:** `.env` and the AI key are never included; the reporter sees
+  the full list before sending.
+- **Lands in GitHub Issues**, labelled (`light-bug`, `brand:...`,
+  `model:...`), visible to the operator and Claude.
+  - v1: the desk saves the bundle and opens a pre-filled issue in the
+    browser (needs a GitHub account; drag the bundle in).
+  - v2: a small relay service with a bot key creates the issue directly,
+    so no GitHub account is needed (the key never ships inside the app).
+- **Decision for the operator:** the repo is private today - public
+  reports need it public, or a separate public "bug reports" repo plus
+  the relay.
+- **Fixing:** the fixture-debug skill learns "fix issue #N" - download the
+  bundle, load the rig, reproduce with the checks (DMX, safety,
+  programmer fit, 3D), fix, add a test, link the fix to the issue.
+
 ## A8. Leftovers from the library sweeps (open, 2026-10-02)
 
 Found by `tools/libsweep.py` (default modes) and `--all-modes` (all 8,093
