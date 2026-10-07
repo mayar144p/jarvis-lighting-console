@@ -2969,6 +2969,57 @@ def test_product_fit() -> None:
     check("a pixel bar's cells are each coloured in 3D", "sk.pixels = inst" in mj and "if (sk.pixels)" in sj, "")
 
 
+
+def test_ai_fixture_library() -> None:
+    """The copilot searches the WHOLE fixture library (typos fine), adds a
+    clear match, asks "which?" when several models fit, and never adds a near
+    model when the one named isn't in the library."""
+    print("AI: find and add fixtures from the whole library")
+    from app import assistant, engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            r = assistant.find_fixtures(e, "intimdator scan 360")
+            check("a typo still finds the one light (Intimidator Scan 360)",
+                  r["exact"] == 1 and r["matches"][0]["name"].endswith("Intimidator Scan 360"), str(r)[:200])
+            r = assistant.find_fixtures(e, "chauvet spot")
+            check("several models fit: the AI gets a list to ask from",
+                  r["exact"] >= 3 and any("Rogue R2 Spot" in m["name"] for m in r["matches"]), str(r)[:200])
+            r = assistant.find_fixtures(e, "intimidator spot 360")
+            check("a model not in the library: no exact match, flagged so the AI says so",
+                  r["exact"] == 0 and "NO EXACT MATCH" in r["note"], str(r)[:200])
+            check("nothing at all: says so", not assistant.find_fixtures(e, "zzqx nothing")["matches"], "")
+            # a whole turn with a scripted AI: find, add, then reply
+            scan = assistant.find_fixtures(e, "intimidator scan 360")["matches"][0]
+            script = iter([
+                {"tool_calls": [{"id": "1", "function": {"name": "find_fixtures",
+                                                         "arguments": json.dumps({"query": "intimidator scan 360"})}}]},
+                {"tool_calls": [{"id": "2", "function": {"name": "add_fixture",
+                                                         "arguments": json.dumps({"src": scan["src"], "key": scan["key"], "qty": 2})}}]},
+                {"content": "Added 2 Intimidator Scan 360."},
+            ])
+            out = assistant.run_turn(e, "add two chauvet intimidator scan 360", chat=lambda msgs, tools=None: next(script),
+                                     preview=False)
+            models = [h["model"] for h in e.patch]
+            check("a turn: the AI searches, installs and patches the light",
+                  models.count("Intimidator Scan 360") == 2 and "Added" in (out.get("reply") or ""), f"{models} {out}")
+            # several fit: it asks with the model names
+            script2 = iter([{"tool_calls": [{"id": "1", "function": {"name": "ask", "arguments": json.dumps(
+                {"question": "Which Chauvet spot?", "options": ["Rogue R1 Spot", "Rogue R2 Spot"]})}}]}])
+            out = assistant.run_turn(e, "add a chauvet spot", chat=lambda msgs, tools=None: next(script2), preview=False)
+            check("several fit: the question and its tap answers reach the screen",
+                  out.get("question") == "Which Chauvet spot?" and out.get("options") == ["Rogue R1 Spot", "Rogue R2 Spot"],
+                  str(out)[:200])
+            check("the AI is told: search the library first, ask when several fit, never a near model",
+                  "find_fixtures" in assistant.SYSTEM and "never add a near model" in assistant.SYSTEM, "")
+        finally:
+            e.shutdown()
+
+
 def test_locate_takes_over() -> None:
     """Locate: full, open white AND centred (as the button says), and it
     takes the lights back from the effects you started on them; a cue's or

@@ -422,8 +422,11 @@ zone at a speed already work.  Missing:
    what isn't: "Done on 8 movers; the 6 PARs can't tilt, so they stay."
    Actions that partly fail report per light, never silently.
 3. **Every part of the desk as a tool:**
-   - the fixture library: fuzzy search ("chauvet something spot"), install,
-     patch; several matches -> ask with tap answers;
+   - **(DONE 2026-10-07)** the fixture library: fuzzy search over the whole
+     library ("chauvet something spot", typos fine), install, patch;
+     several models fit -> ask with tap answers; a model not in the
+     library -> say so and offer the nearest (never a near model in its
+     place) - `find_fixtures` / `add_fixture` in app/assistant.py;
    - placement in words: "middle of the front truss", "left side", "both
      ends", "6 m high";
    - the room: add truss / pole, zones, marks;
