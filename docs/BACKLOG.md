@@ -509,7 +509,28 @@ an AI running on the laptop has none and works without internet.
   with Ollama installed by hand); the bundled runtime and the one-click /
   AI-pack download come with A9 step 1 (the desktop app).
 
-## A13. The AI runs the whole desk - and only the desk (agreed 2026-10-07)
+## A13. The AI runs the whole desk - and only the desk (agreed 2026-10-07) - DONE (but a real-AI run on the operator's PC)
+
+**Done:** app/aitools.py and app/assistant.py.  139 desk actions the AI may
+do, 30 it may only PREPARE (going live, dry run, ARM, fire, fog, laser,
+save / open / restore a show, change the venue, every delete): they come
+back as **Do it** / **No** in the copilot and run only on the tap
+(`{"confirm": id, "yes": true}` to /api/console/assistant).  Network, lock,
+calibration, blind and undo are never the AI's.  New tools:
+`what_lights_can_do` (per model, from its file: moves, mixes or wheel-only
+with the slot names, dims, strobes, gobo / prism / zoom / focus, effects
+machines), `place_lights` (a rig by name or by where it is - front, rear,
+upstage, left tower...; middle / left / right / both ends / spread / 0-1;
+a height = the rig's trim, inside the room's limits) and `add_to_room`
+(truss, pole, zones, marks in words: front left, back, middle).  Every
+action reports the lights it couldn't touch, by model ("6 x Mega PAR: no
+tilt - left as they were"), to the AI and in the step the operator reads.
+The instructions say: desk only, one line otherwise.
+`tools/aicheck.py` = item 5: 52 sentences (the example first) on a scratch
+club rig, each checked on the desk afterwards; it asks the AI chosen in
+Settings -> AI (`--mode local|online`).  It can't run here (no key, no
+model): **run it on the PC with Gemini and with the local AI** and fix
+what fails.  The selftest runs its checks against a scripted AI.
 
 Example the operator wants to just work: "add Chauvet something something,
 put it on the truss in the middle, make it flash yellow and hover over the

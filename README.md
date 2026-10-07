@@ -345,9 +345,24 @@ preferences (**What I remember**, with a × to forget one). **AI sees the 3D
 view** sends a small picture of the view with each message, and **Photo…**
 (or paste / drop) gives it a picture to match.
 
+It works the whole desk in words: it adds lights from the library (*"add a
+Chauvet Intimidator Spot 260"*; it asks when several fit and says so when a
+model isn't there), places them (*"middle of the front truss"*, *"both
+ends"*, *"hang the rear truss at 4 m"*), changes the room (trusses, poles,
+zones, marks, its size), and makes, edits, renames and deletes groups, cues,
+playbacks, buttons, the timeline and palettes. It knows what each light can
+really do, from its own file, and says what it couldn't: *"the 6 PARs can't
+tilt, so they stay"*. It talks about the desk and nothing else.
+
 Everything it does runs in 3D first (**Keep** / **Throw away**) and is one
-Ctrl+Z. It can't arm the output, fire effects or lasers, save or load
-shows, or delete anything; it asks you instead. **New chat** starts over.
+Ctrl+Z. Going live, arming, firing confetti / CO2 / lasers / haze, saving or
+opening a show and every delete are only **prepared**: each shows up with
+**Do it** / **No**, and nothing happens until you tap. Calibration, the
+network, locks and undo stay yours. **New chat** starts over.
+
+`python tools/aicheck.py` asks your AI (Settings -> AI; `--mode local` or
+`--mode online`) about 50 real sentences on a scratch rig and checks the
+desk after each one.
 Tick *Offline compiler* (or have no key) for the keyword copilot described
 below.
 
@@ -551,7 +566,7 @@ beams programmed, firing lights them all.
 - light controls: Flash, Strobe, Full, colour, Locate, effects, the
   master and **Select all** (lights only);
 - cues, the programmer and the auto show;
-- the AI copilot, which is denied every effects action.
+- the AI copilot: it only prepares arming and firing, and you tap **Do it**.
 
 **Blackout** stops every effect.
 

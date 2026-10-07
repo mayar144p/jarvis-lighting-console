@@ -13,9 +13,10 @@ colours, levels and movement itself.
         undo step; with `preview` it all happens in blind first (3D only)
         and the operator keeps it or throws it away.
 
-SAFETY - the same allowlist as the copilot (plus a few edits that are
-undoable): it can never arm the output, fire pyro / CO2 / lasers, save or
-load shows, or delete anything; it is told to ask instead.
+SAFETY (A13): it may do what is undoable and previewed; going live, ARM,
+firing effects, saving / opening shows, replacing the room and every delete
+are only PREPARED - the operator taps to do them (app/aitools.py); network,
+the lock and calibration it never touches.
 """
 from __future__ import annotations
 
@@ -24,9 +25,10 @@ import os
 import threading
 import time
 
-from . import config, console_ai, llm, showdesign
+from . import aitools, config, console_ai, llm, showdesign
 from . import venue as venue_mod
 from .engine import ACTIONS as ENGINE_ACTIONS
+from .engine import Engine
 
 MAX_ROUNDS = 14
 MAX_ACTIONS = 40
@@ -50,7 +52,13 @@ EXTRA = {
     "step_fx_run": ("id", "heads", "speed", "beats", "space"),
 }
 ALLOWED = {**console_ai.PARAMS, **{k: v for k, v in EXTRA.items() if k not in console_ai.DENY_ACTIONS}}
-_UNKNOWN = [a for a in EXTRA if a not in ENGINE_ACTIONS]
+# the rest of the desk (A13): more the AI may simply do, and what it may only
+# prepare for the operator's tap (going live, arming, firing, saving, deleting)
+ALLOWED.update({a: aitools.params_of(Engine, a) for a in aitools.MORE})
+CONFIRMABLE = {a: aitools.params_of(Engine, a) for a in aitools.CONFIRM}
+for _a in aitools.NEVER:
+    ALLOWED.pop(_a, None)
+_UNKNOWN = [a for a in [*EXTRA, *aitools.MORE, *aitools.CONFIRM] if a not in ENGINE_ACTIONS]
 if _UNKNOWN:
     raise RuntimeError(f"assistant actions unknown to the engine: {_UNKNOWN}")
 
@@ -80,7 +88,7 @@ TOOLS = [
                        "Most act on the SELECTION: select first (select_heads / select_group / "
                        "select_all). Returns what happened or the error.",
         "parameters": {"type": "object", "properties": {
-            "action": {"type": "string", "enum": sorted(ALLOWED)},
+            "action": {"type": "string", "enum": sorted(set(ALLOWED) | set(CONFIRMABLE))},
             "params": {"type": "object", "description": "the action's keyword arguments, e.g. {\"level\": 80}"}},
             "required": ["action"]}}},
     {"type": "function", "function": {
@@ -100,6 +108,34 @@ TOOLS = [
             "src": {"type": "string"}, "key": {"type": "string"},
             "qty": {"type": "integer"}, "mode": {"type": "string"}},
             "required": ["src", "key"]}}},
+    {"type": "function", "function": {
+        "name": "what_lights_can_do",
+        "description": "What lights CAN and CAN'T do, per model, from the desk (never from memory): "
+                       "move, colour (mixing / wheel only / none), dim, strobe, gobo, zoom... Check before "
+                       "promising anything, and tell the operator what some lights can't do.",
+        "parameters": {"type": "object", "properties": {
+            "heads": {"type": "array", "items": {"type": "integer"}},
+            "group": {"type": "string", "description": "a group's number or name"}}}}},
+    {"type": "function", "function": {
+        "name": "place_lights",
+        "description": "Hang lights on a truss / pipe / pole in words: on=\"front truss\" (a name, an id, "
+                       "or where it is: front, back, left, right, middle), where=\"middle\" | \"left\" | "
+                       "\"right\" | \"both ends\" | \"spread\" | a number 0-1 along it; height_m hangs "
+                       "that rig at that height (or, without on, puts the lights at that height).",
+        "parameters": {"type": "object", "properties": {
+            "heads": {"type": "array", "items": {"type": "integer"}},
+            "group": {"type": "string"}, "on": {"type": "string"}, "where": {"type": "string"},
+            "height_m": {"type": "number"}}}}},
+    {"type": "function", "function": {
+        "name": "add_to_room",
+        "description": "Add to the room in words: a truss / pipe / pole / tower / stand, an object (dj_booth, "
+                       "bar, speaker, screen, riser, mark...) or a zone (dancefloor, standing, stage, bar, vip...), "
+                       "at where=\"front\" | \"back\" | \"left\" | \"right\" | \"middle\" | \"front left\"...; "
+                       "sizes in metres (a truss runs across the room unless across=false).",
+        "parameters": {"type": "object", "properties": {
+            "kind": {"type": "string"}, "name": {"type": "string"}, "where": {"type": "string"},
+            "length_m": {"type": "number"}, "width_m": {"type": "number"}, "depth_m": {"type": "number"},
+            "height_m": {"type": "number"}, "across": {"type": "boolean"}}, "required": ["kind"]}}},
     {"type": "function", "function": {
         "name": "ask",
         "description": "Ask the operator something and stop here (when the request is unclear, or "
@@ -146,11 +182,25 @@ How you work:
 * Keep replies short: what you did and why, in the operator's language.
 
 Rules:
-* Only real heads, groups, zones and effects from the rig.  Colour on lights with
-  colour, pan/tilt on movers.
-* You cannot arm the output, fire pyro / CO2 / confetti / lasers, save or load
-  shows, or delete anything - say so and suggest how the operator can.
-* Everything you do is previewed in 3D first and is one Ctrl+Z.
+* DESK ONLY.  You run this lighting desk: the lights, the show, the room, the music
+  for the show.  Anything else (general chat, homework, news, code, other apps) gets
+  ONE short line and nothing more, e.g. "I only run the desk - try: 'warm wash on the
+  movers'".  No essays.
+* HONEST ABOUT EACH LIGHT, FROM THE DESK.  What a light can do comes from the desk
+  (WHAT EACH LIGHT CAN DO below, what_lights_can_do), never from what you remember of
+  a model.  Do what is possible and say plainly what isn't: "Done on the 8 movers; the
+  6 PARs can't tilt, so they stay."  A `do` result's "cant" lists the lights it couldn't
+  touch - always pass that on.
+* Only real heads, groups, zones and effects from the rig.
+* Placing lights: place_lights ("middle of the front truss", "both ends", "6 m high").
+  The room: add_to_room (a truss, a pole, a zone, a mark), venue_update / venue_rig to
+  change one; groups, cues, playbacks, buttons, timeline, palettes, macros: `do` with
+  their actions (make, edit, rename, move).
+* THE OPERATOR CONFIRMS: going live, ARM, firing confetti / CO2 / flame / sparks /
+  fog / lasers, saving or opening a show or venue, replacing the room, changing a
+  light's type, and EVERY delete.  You may `do` these: they are PREPARED, not done -
+  the operator gets a button to tap.  Say what you prepared and that they tap to do it.
+* Everything else you do is previewed in 3D first and is one Ctrl+Z.
 
 ACTIONS (for `do`; most act on the selection):
 {actions}
@@ -292,21 +342,36 @@ def music(eng) -> dict:
     return out
 
 
-def _do(eng, action: str, params: dict) -> dict:
+def _do(eng, action: str, params: dict, waiting: list | None = None) -> dict:
     action = str(action or "")
-    if action in console_ai.DENY_ACTIONS or action not in ALLOWED:
-        return {"ok": False, "error": f"'{action}' is not something the assistant may do - ask the operator"}
     params = params if isinstance(params, dict) else {}
+    if action in CONFIRMABLE:
+        if waiting is None:
+            return {"ok": False, "error": f"'{action}' needs the operator - ask them"}
+        item = aitools.prepare(action, {k: v for k, v in params.items() if k in CONFIRMABLE[action]})
+        waiting.append(item)
+        return {"ok": True, "prepared": item["label"],
+                "summary": f"prepared for the operator to confirm: {item['label']}"}
+    if action in aitools.NEVER or action not in ALLOWED or \
+            (action in console_ai.DENY_ACTIONS and action not in aitools.MORE):
+        return {"ok": False, "error": f"'{action}' is not something the assistant may do - ask the operator"}
     keep = {k: v for k, v in params.items() if k in ALLOWED[action]}
     dropped = sorted(set(params) - set(keep))
     if action == "set_colour" and keep.get("hex") is None:
         hx = console_ai._colour_hex(params.get("colour") or params.get("value") or "")
         if hx:
             keep = {"hex": hx}
+    cant = aitools.cant_do(eng, action, keep)
     r = eng.act(action, **keep)
     out = {"ok": bool(r.get("ok")), "summary": r.get("summary") or r.get("error") or action}
     if not r.get("ok"):
         out["error"] = r.get("error")
+    elif cant:
+        out["cant"] = cant
+        out["summary"] += " - but " + "; ".join(cant)      # the operator reads it too
+    for k in ("cue", "contains", "report", "findings", "items", "info", "versions", "pieces", "id"):
+        if k in r and k not in out:                        # what a read-only action found
+            out[k] = r[k]
     if dropped:
         out["ignored"] = dropped
     return out
@@ -372,11 +437,18 @@ def add_fixture(eng, src: str, key: str, qty=1, mode=None) -> dict:
 # ---------------------------------------------------------------------------
 def _system(eng) -> str:
     ref = "\n".join(f"    {a}({', '.join(ALLOWED[a])})" for a in sorted(ALLOWED))
+    ref += "\n  prepared for the operator's tap:\n" + "\n".join(
+        f"    {a}({', '.join(CONFIRMABLE[a])})" for a in sorted(CONFIRMABLE))
     text = SYSTEM.format(actions=ref, colours=", ".join(n for n, _h in showdesign.COLOR_NAMES[:24]),
                          effects=", ".join(sorted(console_ai.fxlib.FX)))
     mem = notes()
     if mem:
         text += "\nWhat this operator likes (your notes):\n" + "\n".join(f"  {i + 1}. {n}" for i, n in enumerate(mem))
+    caps = aitools.capabilities(eng)["models"]
+    if caps:
+        text += "\n\nWHAT EACH LIGHT CAN DO (from the desk):\n" + "\n".join(
+            f"  {m['model']} (heads {', '.join(map(str, m['heads'][:24]))}): can {', '.join(m['can'])}"
+            + (f"; can't {', '.join(m['cannot'])}" if m["cannot"] else "") for m in caps)
     return text + "\n\nTHE RIG NOW:\n" + console_ai.rig_context(eng)
 
 
@@ -411,7 +483,7 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
               "msgs": [{"role": "system", "content": _system(eng)}, *hist[-MAX_HISTORY:], user],
               "before": eng._undo_state(), "top": eng._undo[-1] if eng._undo else None,
               "was_blind": eng.blind_public()["on"], "blind_started": False, "steps": [],
-              "changed": False, "rounds": 0, "views": 0, "t0": time.monotonic()}
+              "changed": False, "rounds": 0, "views": 0, "t0": time.monotonic(), "waiting": []}
     return _go(eng, st, chat or llm.chat)
 
 
@@ -484,16 +556,36 @@ def _go(eng, st: dict, chat) -> dict:
                     if len(steps) >= MAX_ACTIONS:
                         result = {"ok": False, "error": "that's enough steps for one request - finish up"}
                     else:
-                        if st["preview"] and not st["was_blind"] and not st["blind_started"]:
+                        held = args.get("action") in CONFIRMABLE        # prepared only: nothing changes
+                        if st["preview"] and not st["was_blind"] and not st["blind_started"] and not held:
                             eng.act("blind", state=True)           # 3D only until the operator keeps it
                             st["blind_started"] = True
                         # some models put the arguments next to "action" instead of in "params"
                         params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
                             else {k: v for k, v in args.items() if k not in ("action", "params")}
-                        result = _do(eng, args.get("action"), params)
+                        result = _do(eng, args.get("action"), params, st["waiting"])
                         steps.append({"action": args.get("action"), "params": params,
                                       "ok": result["ok"], "summary": result.get("summary")})
-                        st["changed"] = st["changed"] or result["ok"]
+                        st["changed"] = st["changed"] or (result["ok"] and not held)
+                elif name == "what_lights_can_do":
+                    result = aitools.capabilities(eng, args.get("heads"), args.get("group"))
+                elif name in ("place_lights", "add_to_room"):
+                    if len(steps) >= MAX_ACTIONS:
+                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
+                    else:
+                        try:
+                            if name == "place_lights":
+                                result = aitools.place_lights(eng, args.get("heads"), args.get("group"), args.get("on") or "",
+                                                              args.get("where") or "middle", args.get("height_m"))
+                            else:
+                                result = aitools.add_to_room(eng, args.get("kind") or "", args.get("name") or "",
+                                                             args.get("where") or "middle", args.get("length_m"),
+                                                             args.get("width_m"), args.get("depth_m"), args.get("height_m"),
+                                                             args.get("across") is not False)
+                        except (ValueError, TypeError) as exc:
+                            result = {"ok": False, "error": str(exc)}
+                        steps.append({"action": name, "params": args, "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
+                        st["changed"] = st["changed"] or bool(result.get("ok"))
                 elif name == "find_fixtures":
                     result = find_fixtures(eng, args.get("query"))
                 elif name == "add_fixture":
@@ -561,6 +653,7 @@ def _go(eng, st: dict, chat) -> dict:
     hist.append({"role": "assistant", "content": (reply or question or "")[:1500]})
     del hist[:-MAX_HISTORY * 2]
     return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps,
+            "confirm": st.get("waiting") or [],
             "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],
             "seconds": round(time.monotonic() - st["t0"], 1)}
 

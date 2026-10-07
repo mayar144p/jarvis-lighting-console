@@ -720,6 +720,8 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .plan-step.ok { box-shadow: inset 3px 0 0 var(--ok); }
 .plan-step.bad { box-shadow: inset 3px 0 0 var(--live); }
 .plan-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+.ai-confirm { margin-top: 6px; }
+.ai-confirm > span:first-child { flex: 1; min-width: 0; }
 .plan-previewing { color: var(--warn, #e0a030); flex-basis: 100%; }
 .ai-suggest { display: flex; flex-wrap: wrap; gap: 5px; }
 .ai-input { display: flex; gap: 8px; align-items: flex-end; }
