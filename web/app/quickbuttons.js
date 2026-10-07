@@ -307,7 +307,16 @@ function render(force = false) {
     }
     cells.push(el);
   }
-  box.replaceChildren(...cells);
+  if (!editing && !byslot.size) {
+    // an empty page: one calm invitation, not a wall of empty boxes
+    box.style.setProperty("--qb-rows", "1");
+    box.replaceChildren(h("div.qb-empty",
+      h("b", `Page ${page} has no buttons yet`),
+      h("span.muted.small", "Flash, strobe, colour bumps, effects and faders - one tap each, live."),
+      h("div.row-btns",
+        h("button.btn.primary", { onclick: () => $("#qb-suggest").click() }, "Suggest buttons for this rig"),
+        h("button.btn", { onclick: () => { editing = true; render(true); } }, "Set up buttons"))));
+  } else box.replaceChildren(...cells);
   renderPages();
   $("#qb-edit").classList.toggle("on", editing);
   $("#qb-edit").textContent = editing ? "Done" : "Edit";

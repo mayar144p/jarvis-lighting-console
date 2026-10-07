@@ -52,6 +52,18 @@
     </div>
 
     <div class="tb-spacer"></div>
+    <!-- the command line: console syntax runs, anything else goes to the AI -->
+    <div class="cmd-group" role="group" aria-label="Command line">
+      <button class="tb-btn palette-btn" id="palette-btn" title="Command line - type a command (1 thru 6 at 70) or ask in plain English (/ or Ctrl+K)">
+        <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+        <span>Type a command, or ask…</span><kbd>/</kbd>
+      </button>
+      <button class="tb-btn ai" id="ai-btn" title="The AI copilot: program, design a show, diagnose" aria-label="Copilot">
+        <svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></svg>
+        <span>Ask AI</span>
+      </button>
+    </div>
+    <div class="tb-spacer"></div>
 
     <button class="tb-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>
       <svg viewBox="0 0 16 16"><path d="M6 4L2 8l4 4M2.5 8H10a4 4 0 010 8"/></svg>
@@ -61,16 +73,6 @@
       <svg viewBox="0 0 16 16"><path d="M10 4l4 4-4 4M13.5 8H6a4 4 0 000 8"/></svg>
     </button>
 
-    <span class="tb-sep" aria-hidden="true"></span>
-    <button class="tb-btn palette-btn" id="palette-btn" title="Command bar - type a command or ask in plain English (/ or Ctrl+K)">
-      <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-      <span>Type a command or ask…</span><kbd>/</kbd>
-    </button>
-
-    <button class="tb-btn ai" id="ai-btn" title="AI copilot" aria-label="Copilot">
-      <svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></svg>
-      <span>Copilot</span>
-    </button>
     <span class="tb-sep" aria-hidden="true"></span>
     <button class="tb-btn lock" id="lock-btn" data-state="design" title="Design: edit anything">
       <svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg>

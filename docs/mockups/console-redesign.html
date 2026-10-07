@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console redesign mockup</title>
+<style>
+:root{
+  --bg:#0a0b0d;--s1:#111216;--s2:#171920;--s3:#1e2129;--line:#262a33;--line2:#323743;
+  --tx:#e9eaee;--tx2:#a4a9b4;--tx3:#737987;
+  --sel:#8b8dff;--live:#ff5c5c;--blind:#f5a524;--go:#3dd68c;--ai:#f472b6;
+  --f-dim:#f2c94c;--f-pos:#4ea1ff;--f-col:#ff6ad5;--f-beam:#2dd4bf;--f-fx:#b18cff;
+  --r:6px;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);
+}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);height:100vh;overflow:hidden}
+button{font:inherit;color:inherit;background:var(--s2);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--line2);background:var(--s3)}
+.app{display:grid;height:100vh;grid-template-rows:44px 1fr 196px 24px;grid-template-columns:272px 1fr 344px;
+  grid-template-areas:"top top top" "left stage prog" "wing wing wing" "status status status"}
+/* top */
+.top{grid-area:top;display:flex;align-items:center;gap:10px;padding:0 10px;background:var(--s1);border-bottom:1px solid var(--line)}
+.logo{width:22px;height:22px;border-radius:5px;background:linear-gradient(160deg,var(--sel),#4b4dc7)}
+.show{font-weight:600}
+.mode{display:flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden}
+.mode button{border:0;border-radius:0;padding:5px 14px;font-weight:700;letter-spacing:.04em;background:transparent;color:var(--tx3)}
+.mode .blind.on{background:color-mix(in srgb,var(--blind) 22%,transparent);color:var(--blind)}
+.mode .live.on{background:var(--live);color:#1a0505}
+.bpm{font-family:var(--mono);font-weight:700}
+.cmd{flex:1;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:6px 12px;color:var(--tx3)}
+.cmd b{color:var(--ai);font-weight:600}.cmd kbd{margin-left:auto;font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:4px;padding:0 5px}
+.menu{background:transparent;border:0;font-size:16px;padding:4px 8px;color:var(--tx2)}
+/* left */
+.left{grid-area:left;background:var(--s1);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 10px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3);text-transform:uppercase}
+.ph button{font-size:12px;padding:3px 8px;text-transform:none;letter-spacing:0}
+.pool{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 10px 10px}
+.tile{height:46px;border-radius:var(--r);background:var(--s2);border:1px solid var(--line);padding:6px;display:flex;flex-direction:column;justify-content:space-between;font-size:12px;font-weight:600;cursor:pointer}
+.tile small{color:var(--tx3);font-weight:500;font-family:var(--mono)}
+.tile.on{border-color:var(--sel);box-shadow:inset 0 0 0 1px var(--sel);background:color-mix(in srgb,var(--sel) 14%,var(--s2))}
+.tile.add{border-style:dashed;color:var(--tx3);align-items:center;justify-content:center}
+.search{margin:0 10px 6px;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);color:var(--tx3)}
+.rows{overflow:auto;flex:1}
+.row{display:grid;grid-template-columns:44px 1fr 56px;align-items:center;height:28px;padding:0 10px;border-bottom:1px solid #15171c;font-size:12px}
+.row .n{font-family:var(--mono);color:var(--tx3)}.row .a{font-family:var(--mono);color:var(--tx3);text-align:right}
+.row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row.on{background:color-mix(in srgb,var(--sel) 13%,transparent)}.row.on .n{color:var(--sel)}
+.selbar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-top:1px solid var(--line);color:var(--tx2)}
+.selbar span{margin-right:auto}.selbar button{padding:3px 8px;font-size:12px}
+/* stage */
+.stage{grid-area:stage;position:relative;background:radial-gradient(ellipse at 50% 20%,#1b1d2a,#07080a 70%);overflow:hidden}
+.truss{position:absolute;left:12%;right:12%;top:18%;height:10px;background:repeating-linear-gradient(90deg,#3a3f4a 0 3px,#22252d 3px 14px);border-radius:2px}
+.fixture{position:absolute;top:calc(18% + 12px);width:22px;height:28px;border-radius:5px;background:#2a2e38}
+.beam{position:absolute;top:calc(18% + 38px);width:0;height:0;border-left:60px solid transparent;border-right:60px solid transparent;border-top:340px solid rgba(80,110,255,.16);transform:translateX(-49px);filter:blur(2px)}
+.floor{position:absolute;left:0;right:0;bottom:0;height:22%;background:linear-gradient(#0d0e12,#121419)}
+.hud{position:absolute;display:flex;gap:6px}.hud button{background:rgba(17,18,22,.86);backdrop-filter:blur(6px);padding:5px 10px;font-size:12px}
+.hud.tl{top:10px;left:10px}.hud.tr{top:10px;right:10px}
+/* programmer */
+.prog{grid-area:prog;background:var(--s1);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.fam{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:4px 10px 8px}
+.fam button{padding:7px 0 6px;font-weight:600;font-size:12px;position:relative;border-color:var(--line);background:var(--s2)}
+.fam button::before{content:"";position:absolute;left:6px;right:6px;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--c)}
+.fam button.on{background:color-mix(in srgb,var(--c) 18%,var(--s2));border-color:color-mix(in srgb,var(--c) 60%,var(--line))}
+.fam button.touched::after{content:"";position:absolute;right:6px;top:7px;width:6px;height:6px;border-radius:50%;background:var(--c)}
+.fam .dim{--c:var(--f-dim)}.fam .pos{--c:var(--f-pos)}.fam .col{--c:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)}.fam .col{--c:linear-gradient(90deg,#ff4d4d,#ffd24d,#4dff88,#4dd2ff,#9a4dff,#ff4dd2)}.fam .bm{--c:var(--f-beam)}.fam .fxf{--c:var(--f-fx)}
+.pane{padding:0 10px;overflow:auto;flex:1}
+.lvl{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.lvl .bar{flex:1;height:30px;border-radius:var(--r);background:var(--s2);border:1px solid var(--line);position:relative;overflow:hidden}
+.lvl .bar i{position:absolute;inset:0 22% 0 0;background:linear-gradient(90deg,color-mix(in srgb,var(--f-dim) 30%,transparent),color-mix(in srgb,var(--f-dim) 70%,transparent))}
+.lvl output{font-family:var(--mono);font-size:20px;font-weight:700;width:52px;text-align:right}
+.quick{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:14px}.quick button{padding:8px 0;font-weight:600}
+.sub{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3);text-transform:uppercase;margin:12px 0 6px}
+.pal{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sw{height:44px;border-radius:var(--r);border:1px solid var(--line);display:flex;align-items:flex-end;padding:4px 6px;font-size:11px;font-weight:600;cursor:pointer}
+.acts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:10px;border-top:1px solid var(--line)}
+.acts .rec{background:color-mix(in srgb,var(--live) 18%,var(--s2));border-color:color-mix(in srgb,var(--live) 50%,var(--line));font-weight:700}
+/* wing */
+.wing{grid-area:wing;background:var(--s1);border-top:1px solid var(--line);display:grid;grid-template-columns:44px 1fr 74px 96px}
+.wtabs{display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.wtabs button{border:0;border-radius:0;background:transparent;color:var(--tx3);padding:12px 0;font-size:11px;writing-mode:vertical-rl;transform:rotate(180deg)}
+.wtabs button.on{color:var(--tx);background:var(--s2);box-shadow:inset -2px 0 0 var(--sel)}
+.slots{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;padding:8px}
+.slot{background:var(--s2);border:1px solid var(--line);border-radius:var(--r);display:grid;grid-template-rows:auto 1fr auto;padding:6px;gap:4px;min-width:0}
+.slot .hd{display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);font-family:var(--mono)}
+.slot .nm{font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .cue{font-size:11px;color:var(--tx2)}
+.slot .fd{display:flex;gap:6px;min-height:0}
+.slot .track{width:18px;border-radius:4px;background:var(--bg);border:1px solid var(--line);position:relative}
+.slot .track i{position:absolute;left:0;right:0;bottom:0;border-radius:3px;background:color-mix(in srgb,var(--sel) 55%,transparent)}
+.slot .btns{display:flex;flex-direction:column;gap:4px;flex:1}.slot .btns button{padding:4px 0;font-size:11px;font-weight:700}
+.slot .go{background:color-mix(in srgb,var(--go) 22%,var(--s2));border-color:color-mix(in srgb,var(--go) 55%,var(--line));color:var(--go)}
+.slot.live{border-color:color-mix(in srgb,var(--go) 60%,var(--line));box-shadow:inset 0 3px 0 var(--go)}
+.slot.empty{background:transparent;border-style:dashed;display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:11px;text-align:center}
+.gm{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:6px}
+.gm .track{flex:1;width:22px;border-radius:5px;background:var(--bg);border:1px solid var(--line);position:relative}
+.gm .track i{position:absolute;left:0;right:0;bottom:0;top:0;border-radius:4px;background:color-mix(in srgb,var(--tx) 30%,transparent)}
+.gm b{font-family:var(--mono);font-size:11px}
+.bo{margin:8px;border-radius:var(--r);background:#2a0f12;border:1px solid #5a1a20;color:var(--live);font-weight:800;letter-spacing:.06em}
+.status{grid-area:status;display:flex;gap:16px;align-items:center;padding:0 10px;background:var(--bg);border-top:1px solid var(--line);color:var(--tx3);font-size:11px}
+.status .b{color:var(--blind)}.status .g{color:var(--go)}
+.note{position:fixed;right:14px;bottom:34px;max-width:300px;background:#1b1530;border:1px solid #3b2f6b;border-radius:8px;padding:10px 12px;font-size:12px;color:#d9d3ff}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo"></div><span class="show">Friday club ▾</span>
+    <div class="mode"><button class="blind on" id="mb">BLIND</button><button class="live" id="ml">LIVE</button></div>
+    <span class="bpm">● 124 BPM</span>
+    <div class="cmd"><span>⌕</span>Type a command, or <b>ask</b>… “1 thru 6 at 70”, “warm wash on the movers”<kbd>/</kbd></div>
+    <button class="menu" title="Undo">↶</button><button class="menu" title="Settings, help, design mode">☰</button>
+  </header>
+
+  <aside class="left">
+    <div class="ph">Groups <button>+ Group</button></div>
+    <div class="pool">
+      <div class="tile on">All <small>54</small></div><div class="tile">Movers <small>24</small></div><div class="tile">Washes <small>12</small></div>
+      <div class="tile">PARs <small>18</small></div><div class="tile">Front <small>6</small></div><div class="tile add">+</div>
+    </div>
+    <div class="ph">Fixtures <button>+ Add</button></div>
+    <div class="search">Filter: name, type, U1…</div>
+    <div class="rows">
+      <div class="row on"><span class="n">1–6</span><span class="nm">MAC Aura ×6</span><span class="a">1.001</span></div>
+      <div class="row on"><span class="n">7–12</span><span class="nm">Sharpy Plus ×6</span><span class="a">1.085</span></div>
+      <div class="row on"><span class="n">13–18</span><span class="nm">Rogue R2 Wash ×6</span><span class="a">1.271</span></div>
+      <div class="row"><span class="n">19</span><span class="nm">Intimidator Wave 360</span><span class="a">1.361</span></div>
+      <div class="row"><span class="n">20</span><span class="nm">Intimidator Wave 360</span><span class="a">1.394</span></div>
+      <div class="row"><span class="n">21–24</span><span class="nm">Moover Spot 120 ×4</span><span class="a">1.427</span></div>
+      <div class="row"><span class="n">25–36</span><span class="nm">Mega PAR Profile Plus ×12</span><span class="a">1.507</span></div>
+      <div class="row"><span class="n">37–48</span><span class="nm">COLORado 1 Solo ×12</span><span class="a">2.001</span></div>
+      <div class="row"><span class="n">49–54</span><span class="nm">Source Four Lustr ×6</span><span class="a">2.121</span></div>
+    </div>
+    <div class="selbar"><span>18 selected</span><button>Odd</button><button>Even</button><button>None</button></div>
+  </aside>
+
+  <main class="stage">
+    <div class="truss"></div>
+    <div class="fixture" style="left:20%"></div><div class="fixture" style="left:32%"></div><div class="fixture" style="left:44%"></div>
+    <div class="fixture" style="left:56%"></div><div class="fixture" style="left:68%"></div><div class="fixture" style="left:78%"></div>
+    <div class="beam" style="left:20%"></div><div class="beam" style="left:44%"></div><div class="beam" style="left:68%"></div>
+    <div class="floor"></div>
+    <div class="hud tl"><button>View: Front ▾</button><button>Frame</button></div>
+    <div class="hud tr"><button>Set up the room…</button><button>⛶</button></div>
+  </main>
+
+  <aside class="prog">
+    <div class="ph">Programmer <span style="text-transform:none;letter-spacing:0;color:var(--tx2);font-weight:500">18 × 3 types</span></div>
+    <div class="fam" id="fam">
+      <button class="dim on touched" data-p="dim">Dimmer</button><button class="pos" data-p="pos">Position</button>
+      <button class="col touched" data-p="col">Colour</button><button class="bm" data-p="beam">Beam</button><button class="fxf" data-p="fx">FX</button>
+    </div>
+    <div class="pane" id="pane"></div>
+    <div class="acts"><button>Clear</button><button class="rec">● Record cue</button></div>
+  </aside>
+
+  <section class="wing">
+    <nav class="wtabs"><button class="on">Faders</button><button>Buttons</button><button>Timeline</button></nav>
+    <div class="slots">
+      <div class="slot live"><div class="hd"><span>1</span><span>2/5</span></div><div class="nm">Opening</div>
+        <div class="fd"><div class="track"><i style="top:0"></i></div><div class="btns"><button class="go">GO</button><button>Flash</button><button>■</button></div></div><div class="cue">next: Drop</div></div>
+      <div class="slot"><div class="hd"><span>2</span><span>0/3</span></div><div class="nm">Warm wash</div>
+        <div class="fd"><div class="track"><i style="top:60%"></i></div><div class="btns"><button class="go">GO</button><button>Flash</button><button>■</button></div></div><div class="cue">next: Amber</div></div>
+      <div class="slot"><div class="hd"><span>3</span><span>0/1</span></div><div class="nm">Strobe hits</div>
+        <div class="fd"><div class="track"><i style="top:100%"></i></div><div class="btns"><button class="go">GO</button><button>Flash</button><button>■</button></div></div><div class="cue">next: Hit</div></div>
+      <div class="slot empty">4<br>Record here</div><div class="slot empty">5<br>Record here</div><div class="slot empty">6<br>Record here</div>
+      <div class="slot empty">7<br>Record here</div><div class="slot empty">8<br>Record here</div><div class="slot empty">9<br>Record here</div><div class="slot empty">10<br>Record here</div>
+    </div>
+    <div class="gm"><div class="track"><i></i></div><b>GM 100</b></div>
+    <button class="bo">BLACK<br>OUT</button>
+  </section>
+
+  <footer class="status"><span class="b">● BLIND — nothing reaches the lights</span><span class="g">● node 2.0.0.10 connected</span><span>40 Hz</span><span style="margin-left:auto">Saved 12:04</span></footer>
+</div>
+<div class="note"><b>Mockup.</b> Click the five family tabs on the right, and BLIND / LIVE at the top. Colour bars mark each family everywhere; a dot means that family is in the programmer.</div>
+<script>
+const P = {
+  dim: `<div class="lvl"><div class="bar"><i></i></div><output>78</output></div>
+    <div class="quick"><button>Full</button><button>75</button><button>50</button><button>25</button><button>Out</button></div>
+    <div class="quick" style="grid-template-columns:repeat(2,1fr)"><button>Locate</button><button>Highlight</button></div>
+    <div class="sub">Fade</div><div class="quick"><button>0 s</button><button>1 s</button><button>3 s</button><button>5 s</button><button>…</button></div>`,
+  pos: `<div style="height:170px;border-radius:6px;background:var(--bg);border:1px solid var(--line);position:relative;margin-bottom:10px">
+      <i style="position:absolute;left:58%;top:40%;width:14px;height:14px;border-radius:50%;background:var(--f-pos);box-shadow:0 0 0 4px color-mix(in srgb,var(--f-pos) 30%,transparent)"></i></div>
+    <div class="sub">Position palettes</div><div class="pal">
+    ${["Home","Audience","Dance floor","DJ","Ceiling","Fan out","Cross","Band"].map((n)=>`<div class="sw" style="background:color-mix(in srgb,var(--f-pos) 14%,var(--s2))">${n}</div>`).join("")}</div>`,
+  col: `<div class="sub">Colour palettes</div><div class="pal">
+    ${[["Red","#ff3b30"],["Amber","#ffb000"],["Yellow","#ffd60a"],["Green","#34c759"],["Cyan","#22d3ee"],["Blue","#3b6cff"],["Magenta","#e83e8c"],["White","#f2f2ee"],["Warm","#ffcf9a"],["UV","#7c3aed"],["Pink","#ff7ab6"],["+ Save",""]].map(([n,c])=>`<div class="sw" style="background:${c?`linear-gradient(${c},${c}) top/100% 60% no-repeat,var(--s2)`:"var(--s2)"};color:${c?"#111":"var(--tx3)"}"><span style="background:rgba(255,255,255,.85);border-radius:3px;padding:0 4px">${n}</span></div>`).join("")}</div>
+    <div class="sub">Fine</div><div style="height:90px;border-radius:6px;background:linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta,red);border:1px solid var(--line)"></div>`,
+  beam: `<div class="sub">Gobo</div><div class="pal">${["Open","Dots","Star","Breakup","Cone","Shatter","Bars","Spiral"].map((n)=>`<div class="sw" style="background:color-mix(in srgb,var(--f-beam) 12%,var(--s2))">${n}</div>`).join("")}</div>
+    <div class="sub">Zoom · Focus · Prism · Strobe</div>${["Zoom","Focus","Frost","Strobe"].map((n,i)=>`<div class="lvl"><span style="width:52px;color:var(--tx2)">${n}</span><div class="bar"><i style="inset:0 ${20+i*15}% 0 0;background:color-mix(in srgb,var(--f-beam) 45%,transparent)"></i></div></div>`).join("")}`,
+  fx: `<div class="sub">Effects these lights can run</div><div class="pal" style="grid-template-columns:repeat(2,1fr)">
+    ${["Rainbow","Colour chase","Dimmer chase","Pulse","Circle","Fan sweep","Ballyhoo","Strobe on beat"].map((n)=>`<div class="sw" style="height:40px;background:color-mix(in srgb,var(--f-fx) 13%,var(--s2))">${n}</div>`).join("")}</div>
+    <div class="sub">Speed · Size · Spread</div>${["Speed","Size","Spread"].map((n)=>`<div class="lvl"><span style="width:52px;color:var(--tx2)">${n}</span><div class="bar"><i style="background:color-mix(in srgb,var(--f-fx) 45%,transparent)"></i></div></div>`).join("")}`,
+};
+const pane = document.getElementById("pane");
+const show = (k) => { pane.innerHTML = P[k]; document.querySelectorAll("#fam button").forEach((b) => b.classList.toggle("on", b.dataset.p === k)); };
+document.querySelectorAll("#fam button").forEach((b) => b.onclick = () => show(b.dataset.p));
+show("dim");
+const mb = document.getElementById("mb"), ml = document.getElementById("ml");
+mb.onclick = () => { mb.classList.add("on"); ml.classList.remove("on"); };
+ml.onclick = () => { ml.classList.add("on"); mb.classList.remove("on"); };
+</script>
+</body>
+</html>

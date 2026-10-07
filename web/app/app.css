@@ -1,4 +1,4 @@
-/* One design system for the whole desk ("graphite").
+/* One design system for the whole desk ("graphite console").
  *
  * Dark by necessity (it runs in a dark room), dense by design (a rig has
  * hundreds of heads), and loud only where it matters: the output state,
@@ -8,6 +8,10 @@
  *   indigo = selection / focus / the main action
  *   red    = live output / danger        amber = blind / careful
  *   green  = go / running / ok           rose  = the AI
+ * and, as on a pro console, each attribute family has its own colour on
+ * its tab, its palettes and wherever the programmer shows it:
+ *   dimmer = yellow   position = blue   colour = a rainbow   beam = teal
+ *   effects = violet
  * Every text colour is at least 4.5:1 on every surface it sits on.
  */
 :root {
@@ -34,21 +38,30 @@
   --ok-bg: rgba(61, 214, 140, 0.12);
   --ai: #f472b6;
   --ai-bg: rgba(244, 114, 182, 0.13);
+  /* attribute families */
+  --f-dim: #f2c94c;
+  --f-pos: #4ea1ff;
+  --f-col: linear-gradient(90deg, #ff4d4d, #ffd24d, #4dff88, #4dd2ff, #9a4dff, #ff4dd2);
+  --f-col-solid: #ff6ad5;
+  --f-beam: #2dd4bf;
+  --f-fx: #b18cff;
   --warn: var(--blind);
   --bad: var(--live);
   --radius: 8px;
   --radius-sm: 6px;
   --radius-lg: 12px;
   --gap: 10px;
-  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  /* the computer's own fonts: the desk often runs with no internet */
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Inter", sans-serif;
   --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   --ease: cubic-bezier(.2, .7, .3, 1);
-  --topbar-h: 52px;
-  --status-h: 28px;
-  --pb-h: 178px;
-  --fixtures-w: 300px;
-  --prog-w: 360px;
+  --topbar-h: 46px;
+  --status-h: 26px;
+  --pb-h: 196px;
+  --fixtures-w: 280px;
+  --prog-w: 352px;
+  --row-h: 30px;
 }
 
 * { box-sizing: border-box; }
@@ -136,7 +149,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .brand { display: flex; align-items: center; gap: 8px; padding-right: 4px; }
 .brand svg { width: 22px; height: 22px; fill: var(--accent); }
 .brand svg .beam { opacity: .45; }
-.brand-name { font-weight: 700; letter-spacing: .04em; font-size: 14px; color: var(--text); }
+.brand-name { font-weight: 700; letter-spacing: .04em; font-size: 13px; color: var(--text); }
 .tb-sep { width: 1px; height: 22px; background: var(--border-2); margin: 0 4px; }
 .tb-btn {
   display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px;
@@ -152,19 +165,28 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
    labels fold into their icons (the tooltip still names them). */
 .topbar > * { flex-shrink: 0; }
 .topbar > .tb-spacer { flex: 1 1 0; min-width: 0; }
-.topbar > .palette-btn { flex: 0 1 280px; min-width: 40px; overflow: hidden; }
 .palette-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tb-btn .chev { width: 12px; height: 12px; }
 .show-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .tb-spacer { flex: 1; }
 .palette-btn {
-  border: 1px solid var(--border-2); background: var(--surface);
+  border: 1px solid var(--border-2); background: var(--bg);
   color: var(--muted); font-weight: 500;
 }
 .palette-btn span { flex: 1; text-align: left; }
 .tb-btn.ai { color: var(--ai); }
 .tb-btn.ai svg { fill: var(--ai); stroke: none; }
 .tb-btn.ai.on { background: var(--ai-bg); }
+/* the command line sits in the middle: type a command, or ask the AI - one
+   place for both (the AI half is joined to it) */
+.topbar > .cmd-group { display: flex; flex: 0 1 560px; min-width: 0; }
+.cmd-group .palette-btn { flex: 1 1 auto; min-width: 40px; overflow: hidden; border-radius: 999px 0 0 999px; height: 32px; }
+.cmd-group .tb-btn.ai { height: 32px; border: 1px solid var(--border-2); border-left: 0; border-radius: 0 999px 999px 0;
+  background: color-mix(in srgb, var(--ai) 9%, var(--bg)); padding: 0 12px 0 10px; }
+.cmd-group .tb-btn.ai:hover { background: var(--ai-bg); color: var(--ai); }
+/* undo and the lock say their words in the tooltip: the bar stays quiet */
+#undo-label, #lock-label { display: none; }
+.tb-btn.lock { width: 34px; padding: 0; justify-content: center; }
 .tb-btn.lock[data-state=operate] { color: var(--blind); }
 .tb-btn.lock[data-state=locked] { color: var(--live); }
 
@@ -172,10 +194,10 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 /* state and action are one joined control: what goes out, and what to do */
 .output { display: flex; align-items: center; gap: 0; }
 .out-state {
-  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px;
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm); border: 1px solid; font-weight: 700; letter-spacing: .03em;
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px;
+  border-radius: 999px 0 0 999px; border: 1px solid; font-weight: 700; letter-spacing: .05em;
 }
-.output .tb-btn.arm { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: 0; height: 34px; }
+.output .tb-btn.arm { border-radius: 0 999px 999px 0; border-left: 0; height: 32px; padding: 0 14px; }
 .out-state .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
 .out-state small { font-weight: 500; opacity: .8; }
 .output[data-state=blind] .out-state { color: var(--blind); border-color: color-mix(in srgb, var(--blind) 45%, transparent); background: var(--blind-bg); }
@@ -568,38 +590,57 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .lvl-key { position: absolute; width: 11px; height: 11px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--ok); border: 2px solid #052e16; cursor: grab; touch-action: none; }
 .tl-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: #f43f5e; z-index: 3; pointer-events: none; box-shadow: 0 0 8px rgba(244,63,94,.7); }
 .tl-hint { margin: 0; color: var(--muted); font-size: 10.5px; }
+.qb-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 1px dashed var(--border-2); border-radius: var(--radius); color: var(--text-2); text-align: center; padding: 16px; }
+.qb-empty b { color: var(--text); font-size: 14px; }
 .qbtn.empty { background: transparent; border-style: dashed; border-color: var(--border-2); color: var(--muted); font-size: 18px; }
+/* executors: ten slots, always in their place */
 .pb {
-  background: var(--surface); display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto 1fr auto;
-  gap: 4px 8px; padding: 8px 8px 8px 6px; min-width: 0; position: relative;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 4px 6px; padding: 6px; min-width: 0; position: relative;
 }
-.pb .vfader { width: 30px; grid-row: 1 / 4; height: auto; }
+.pb .vfader { width: 20px; grid-row: 1 / 4; height: auto; }
 .pb-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.pb-top .btn.icon { width: 20px; height: 20px; margin-left: auto; flex: none; }
-.pb-top .n { font: 700 11px var(--mono); color: var(--muted); }
-.pb-top .name { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
+/* the options button shows on hover / focus, so the name has the room */
+.pb-top .btn.icon { width: 20px; height: 20px; flex: none; position: absolute; right: 4px; top: 4px; opacity: 0; background: var(--surface-3); }
+.pb:hover .pb-top .btn.icon, .pb-top .btn.icon:focus-visible { opacity: 1; }
+.pb-top .n { font: 700 11px var(--mono); color: var(--muted); flex: none; }
+.pb-top .name { font-weight: 700; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
 .pb-top .name:hover { color: var(--accent); }
+.pb-mid { min-height: 0; overflow: hidden; }
 .pb-cue { font-size: 11px; color: var(--muted); line-height: 1.35; overflow: hidden; }
-.pb-cue b { color: var(--text); font-weight: 600; }
+.pb-cue b { display: block; color: var(--text-2); font-weight: 600; font-family: var(--mono); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-cue .next { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-prog { height: 3px; background: var(--border-2); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .pb-prog i { display: block; height: 100%; width: 0; background: var(--ok); }
-.pb-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; }
-.pb-btns button { height: 30px; border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-2); font-weight: 700; font-size: 11px; padding: 0; }
+.pb-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.pb-btns button { height: 26px; border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-3); font-weight: 700; font-size: 11px; padding: 0; min-width: 0; }
 .pb-btns button:hover { border-color: #45454f; }
-.pb-btns .go { background: color-mix(in srgb, var(--ok) 16%, transparent); border-color: color-mix(in srgb, var(--ok) 50%, transparent); color: #86efac; grid-column: span 1; }
-.pb-btns .go:hover { background: color-mix(in srgb, var(--ok) 28%, transparent); }
-.pb.active { box-shadow: inset 0 2px 0 var(--ok); }
+.pb-btns .go, .pb-btns .flash { grid-column: 1 / -1; }
+.pb-btns .go { height: 30px; font-size: 12px; letter-spacing: .04em; background: color-mix(in srgb, var(--ok) 18%, var(--surface-2)); border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: #86efac; }
+.pb-btns .go:hover { background: color-mix(in srgb, var(--ok) 30%, var(--surface-2)); }
+.pb-btns .flash.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.pb.active { border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); box-shadow: inset 0 3px 0 var(--ok); }
 .pb.active .pb-top .n { color: var(--ok); }
-.pb.empty .pb-cue { font-style: italic; }
-.pb.focus { background: #111822; }
-.masters { display: flex; gap: 1px; background: var(--border); }
-.master { background: var(--surface); padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pb.focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.pb.active.focus { border-color: color-mix(in srgb, var(--ok) 70%, var(--accent)); }
+/* an empty executor: one quiet "Record here" in its place */
+.pb.empty { background: transparent; border-style: dashed; border-color: var(--border-2); padding: 0; }
+.pb.empty > :not(.pb-rec) { display: none; }
+.pb:not(.empty) > .pb-rec { display: none; }
+.pb-rec { grid-column: 1 / -1; grid-row: 1 / -1; background: none; border: 0; border-radius: var(--radius-sm); color: var(--muted);
+  font-size: 11px; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.pb-rec b { font: 700 13px var(--mono); color: var(--text-2); }
+.pb-rec:hover { color: var(--text); background: var(--accent-bg); }
+/* the masters: group masters, the grand master, BLACKOUT - always at the right */
+.masters { display: flex; gap: 6px; padding: 8px; background: transparent; border-left: 1px solid var(--border); }
+.master { background: transparent; padding: 0 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .master .vfader { flex: 1; height: auto; }
 .m-label { font: 700 11px var(--mono); color: var(--text-2); }
 .blackout {
-  width: 96px; border: 0; background: #1c0d0e; color: #ff8a8a; font-weight: 800; letter-spacing: .08em;
-  font-size: 13px; line-height: 1.3; border-left: 1px solid var(--border); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--live) 25%, transparent);
+  width: 88px; border: 1px solid color-mix(in srgb, var(--live) 35%, transparent); border-radius: var(--radius-sm);
+  background: #1c0d0e; color: #ff8a8a; font-weight: 800; letter-spacing: .08em; font-size: 13px; line-height: 1.3;
 }
 .blackout:hover { background: #2c1012; }
 .blackout.on { background: var(--live); color: #fff; animation: pulse 1s ease-in-out infinite; }
@@ -770,13 +811,13 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
   .show-name { max-width: 130px; }
 }
 /* topbar.js folds the bar a stage at a time, only while it doesn't fit */
-.topbar > .palette-btn { min-width: 170px; }
+.topbar > .cmd-group { min-width: 220px; }
 .topbar[data-fit="1"] #undo-label, .topbar[data-fit="2"] #undo-label, .topbar[data-fit="3"] #undo-label { display: none; }
 .topbar[data-fit="2"] #ai-btn span, .topbar[data-fit="2"] #lock-label,
 .topbar[data-fit="3"] #ai-btn span, .topbar[data-fit="3"] #lock-label { display: none; }
 .topbar[data-fit="2"] :is(#ai-btn, #lock-btn), .topbar[data-fit="3"] :is(#ai-btn, #lock-btn) { padding: 0 9px; }
 .topbar[data-fit="3"] #out-sub, .topbar[data-fit="3"] .brand-name { display: none; }
-.topbar[data-fit="3"] > .palette-btn { min-width: 40px; }
+.topbar[data-fit="3"] > .cmd-group { min-width: 120px; }
 
 /* whole-show designer */
 .autoshow h4 { margin: 0 0 4px; }
@@ -1043,11 +1084,9 @@ body.gig .stage-hud button { min-height: 42px; }
 body.gig .seg button { min-height: 40px; }
 body.gig .pb-mode button { min-height: 44px; }
 .pb[hidden] { display: none; }
-.pb-rec { background: none; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--text-2); font-weight: 600; padding: 6px 8px; cursor: pointer; width: 100%; }
-.pb-rec:hover { border-color: var(--accent); color: var(--text); }
-/* a few playbacks sit at the left at a sensible width, not stretched */
-.pb-strip { grid-auto-columns: minmax(130px, 190px); justify-content: start; background: transparent; gap: 0; }
-.pb-strip .pb { border-right: 1px solid var(--border); }
+/* the wing: ten executors across, every one the same width */
+.pb-strip { grid-auto-flow: row; grid-template-columns: repeat(10, minmax(0, 1fr)); grid-auto-columns: auto;
+  gap: 6px; padding: 8px; background: transparent; overflow: hidden; }
 /* SFX: big hold, quick shots, confetti hold-to-fire */
 .fx-hold.fire.big { min-height: 64px; flex: 1; font-size: 16px; }
 .fx-shots { margin: 8px 0; }
@@ -1399,7 +1438,6 @@ body[data-bottom="buttons"] .workspace { --pb-h: clamp(260px, 40vh, 460px); }
 .qbtn b { font-size: 14px; }
 .qbtn small { font-size: 10.5px; }
 .blind-pill small, #out-sub { white-space: nowrap; }
-#undo-label { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 @media (max-width: 1500px) { #out-sub { display: none; } }
 .qbtn small.qkeeps { white-space: normal; text-transform: none; letter-spacing: 0; font-size: 11px; line-height: 1.2;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
