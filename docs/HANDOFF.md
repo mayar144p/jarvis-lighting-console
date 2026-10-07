@@ -116,6 +116,12 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
 
 ## Left to do
 
+- **Next (agreed 2026-10-07): `docs/BACKLOG.md` A9** - step 1 the desk as
+  a desktop app (Electron, engine still on a hidden localhost, windows
+  across monitors), step 2 the visualiser on WebGPU (haze, gobo
+  projection, shadows, quality settings).  Step 3, a separate Unreal
+  visualiser, is optional / future.
+
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.
 - `docs/BACKLOG.md` A8 (library leftovers) and A7/11 (output extras).

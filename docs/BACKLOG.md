@@ -228,6 +228,65 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A9. Desktop app and a better visualiser (agreed 2026-10-07)
+
+In this order.  Steps 1 and 2 are the plan; step 3 is optional / future.
+
+### Step 1 - the desk as a desktop app (Electron)
+
+Nothing is rewritten: the Python engine and the screens stay as they are,
+wrapped in a program with its own icon.  The engine still listens on
+localhost, hidden inside the app (the operator never sees an address).
+
+- **One icon starts everything:** the app starts the engine (packed with
+  PyInstaller, so no Python install) and stops it on close.
+- **Windows across monitors** (the real fix for "everything on one page"):
+  - the visualiser, full screen;
+  - programmer + fixtures;
+  - playbacks + buttons (a touch screen);
+  - each remembers its monitor and size; a "Show mode" opens the set.
+- **Safe during a show:** Ctrl+W / F5 / Ctrl+R / Backspace belong to the
+  desk (nothing closes or reloads by accident); closing asks first; the
+  computer and screen stay awake while the app is open.
+- **Same graphics everywhere** (Electron's Chrome), so the 3D looks the same
+  on every computer.
+- **USB DMX interfaces and MIDI** directly; real menus; one installer that
+  updates itself (Windows first, then Mac).
+- **localhost, tightened:**
+  - the engine answers only this computer by default;
+  - the app and engine share a private key at start-up;
+  - a free port is picked automatically;
+  - phone / tablet remotes become a setting ("Allow phones and tablets")
+    with a pairing code.
+- Checks: the existing ones (selftest, uicheck, vischeck, brands) run
+  against the app's windows too; a packaging check on Windows.
+
+### Step 2 - the visualiser upgraded to WebGPU (same code, inside the app)
+
+The three.js visualiser moves to its WebGPU renderer; nothing is thrown
+away, and the same desk feeds it.
+
+- **Haze and beams:** beams that light up real haze (volumes, soft edges),
+  brighter where they cross.
+- **Gobos** projected onto the floor, set, truss and people, sharp or soft
+  with focus; prisms and frost visible on the projection.
+- **Shadows** from every beam; reflections on shiny floors and set.
+- **Quality settings** Low / Medium / High (and the current one as the
+  fallback for weak laptops or no WebGPU), so 124+ moving lights stay
+  smooth.
+- Checks: vischeck and the fixture-debug fit check stay green; a
+  frame-rate check with the 124-light rig on each quality.
+
+### Step 3 (optional / future) - a separate pro visualiser (Unreal Engine)
+
+Only if film-quality previs for clients is wanted, or a visualiser to offer
+on its own: an Unreal Engine program that listens to Art-Net / sACN like a
+real rig (so it also works with grandMA, Onyx...), with photographic haze,
+light bounce and GDTF / MVR fixtures.  A separate project measured in
+months (C++ / Blueprints), needs a gaming-class graphics card (RTX 3060 or
+better), ~300 MB+ to install.  Godot is the lighter, free alternative if
+the quality bar is lower.
+
 ## A8. Leftovers from the library sweeps (open, 2026-10-02)
 
 Found by `tools/libsweep.py` (default modes) and `--all-modes` (all 8,093
