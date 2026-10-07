@@ -125,6 +125,9 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
   tour + demo show, MVR / GDTF, DJ sync first) and **A11** report-a-bug
   from the desk into GitHub Issues with a bug bundle (and "fix issue #N"
   in the fixture-debug skill).
+- **A12** plug-and-play offline AI (bundled runtime, one-click or USB "AI
+  pack" model) with an Online (Gemini) / Local / Auto switch and automatic
+  fallback when Gemini hits its limit.
 
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.

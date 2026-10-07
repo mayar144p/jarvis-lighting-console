@@ -302,8 +302,9 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    comes in with every light patched and placed; ours goes back out.
 4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
    beat, bar and phrase, so the lights hit the drops without tapping.
-5. **sACN output and more universes**, alongside Art-Net, for bigger rigs
-   and pro nodes.
+5. **More universes and sACN in Settings** - sACN output already exists
+   (`DMX_TRANSPORT=sacn` in `.env`); bring the choice and more universes
+   into Settings -> Output, for bigger rigs and pro nodes.
 6. **Customisable workspaces** - drag panels into your own layout per show
    or per user (busking, theatre, programming); switch with one key.  (Pairs
    with A9 step 1's windows.)
@@ -354,6 +355,42 @@ So problems arrive with the evidence attached instead of typed by hand.
 - **Fixing:** the fixture-debug skill learns "fix issue #N" - download the
   bundle, load the rig, reproduce with the checks (DMX, safety,
   programmer fit, 3D), fix, add a test, link the fix to the issue.
+
+## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07)
+
+Today the copilot uses one online AI from `.env` (Gemini, any
+OpenAI-compatible service works).  Free online plans have daily limits;
+an AI running on the laptop has none and works without internet.
+
+- **Nothing to install.** The AI runtime ships inside the desk (llama.cpp
+  server - tens of MB - or Ollama in portable mode), started in the
+  background only when the copilot is used, stopped when the desk closes.
+  No installer, no admin rights.
+- **The model is one file** (e.g. `qwen3-8b.gguf`, ~5 GB) in the desk's
+  data folder (or a drive the operator picks):
+  - one click: "Download the offline AI (5 GB)?" with a progress bar,
+    pause / resume, checked when done;
+  - or an **"AI pack"** file - downloaded once at home or copied from a USB
+    stick - dropped onto the desk, for venues with no internet;
+  - "Remove" gives the space back.
+- **The desk suggests the model** from the computer (RAM, graphics card,
+  free disk): 8B for 16 GB laptops, 14B for 32 GB / a 12 GB graphics card.
+- **The switch:** an AI button in the copilot (and Settings -> AI) with
+  three positions, remembered:
+  - **Online (Gemini)** - the AI in the code today, smarter, needs
+    internet and has daily limits;
+  - **Local** - unlimited, offline, slower without a graphics card;
+  - **Auto** - Gemini first; when it hits its limit, has no internet or
+    doesn't answer, the desk carries on with Local and says so ("Gemini
+    limit reached - using the offline AI").
+  The AI settings live in the desk (no `.env` editing); the key stays
+  private as now.
+- **During a show:** no downloads while the output is live; the local AI
+  frees the graphics card when idle, so the 3D view keeps its speed.
+- **Needs:** 16 GB RAM and ~6 GB disk for the 8B model.
+- **When:** the switch and the fallback can come first (they also work
+  with Ollama installed by hand); the bundled runtime and the one-click /
+  AI-pack download come with A9 step 1 (the desktop app).
 
 ## A8. Leftovers from the library sweeps (open, 2026-10-02)
 
