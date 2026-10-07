@@ -54,15 +54,16 @@ def test_web_app() -> None:
           and (web / "vendor" / "pdfjs" / "pdf.worker.min.mjs").is_file(), "")
     check("the move gizmo is vendored",
           (web / "vendor" / "three" / "addons" / "controls" / "TransformControls.js").is_file(), "")
-    check("the page maps `three` and its addons to vendored files",
-          '"three": "/vendor/three/three.module.js"' in html
-          and (web / "vendor" / "three" / "three.module.js").is_file()
+    check("the page maps `three` (its WebGPU build), its node language and addons to vendored files",
+          '"three": "/vendor/three/three.webgpu.js"' in html and '"three/tsl": "/vendor/three/three.tsl.js"' in html
+          and (web / "vendor" / "three" / "three.webgpu.js").is_file()
+          and (web / "vendor" / "three" / "three.tsl.js").is_file()
           and (web / "vendor" / "three" / "three.core.js").is_file(), "")
     bad = []
     for m, s in srcs.items():
         for spec in re.findall(r'^\s*import\s[^;]*?from\s+"([^"]+)"', s, re.M):
-            if spec == "three":
-                continue
+            if spec in ("three", "three/tsl", "three/webgpu"):
+                continue                       # the import map (checked above)
             if spec.startswith("three/addons/"):
                 target = web / "vendor" / "three" / "addons" / spec[len("three/addons/"):]
             elif spec.startswith("/"):

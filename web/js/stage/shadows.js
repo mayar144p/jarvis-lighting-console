@@ -16,7 +16,7 @@ export class Shadows {
   constructor(renderer, scene) {
     this.renderer = renderer;
     this.scene = scene;
-    this.rt = new THREE.WebGLRenderTarget(CELL * 4, CELL * 2, { depthBuffer: true });
+    this.rt = new THREE.RenderTarget(CELL * 4, CELL * 2, { depthBuffer: true });
     this.rt.depthTexture = new THREE.DepthTexture(CELL * 4, CELL * 2, THREE.UnsignedIntType);
     this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.NearestFilter;
     this.cams = Array.from({ length: SHADOW_SLOTS }, () => new THREE.PerspectiveCamera(60, 1, 0.3, 45));
@@ -35,6 +35,14 @@ export class Shadows {
     LIGHTS.uShadowCount.value = n;
     if (!n) return;
     const r = this.renderer, s = this.scene;
+    // the depth range and texture rows the renderer uses (WebGPU: depth
+    // 0..1, rows top-down; its WebGL 2 fallback: -1..1, bottom-up - known
+    // once it has started), so the surface shader reads the pictures the
+    // way they were drawn
+    const gpu = r.coordinateSystem === THREE.WebGPUCoordinateSystem;
+    LIGHTS.uZ01.value = gpu ? 1 : 0;
+    LIGHTS.uFlipY.value = gpu ? 1 : 0;
+    for (const c of this.cams) c.coordinateSystem = r.coordinateSystem;
     const keep = { target: r.getRenderTarget(), bg: s.background, over: s.overrideMaterial, auto: r.autoClear };
     s.background = null;
     s.overrideMaterial = this.blank;
@@ -55,7 +63,8 @@ export class Shadows {
       this.rt.scissor.set(x, y, CELL, CELL);
       this.rt.scissorTest = true;
       r.setRenderTarget(this.rt);
-      r.clear(false, true, false);
+      // the first picture clears the whole atlas; the others draw beside it
+      r.autoClear = i === 0;
       r.render(s, cam);
     }
     r.setRenderTarget(keep.target);

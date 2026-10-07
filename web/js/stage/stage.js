@@ -9,10 +9,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { pass } from "three/tsl";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
@@ -22,6 +20,40 @@ import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, GoboAtlas,
   setDetail,
 } from "./materials.js";
+
+// Can this browser run three.js's WebGPU path?  Asked once, before the
+// first view is made: a WebGPU device that also takes the texture options
+// this three.js uses (an older Chromium has WebGPU but rejects them).  The
+// device that passed is the one the views then use (a second one, or
+// destroying this one, can lose the GPU).  No device: the same renderer
+// runs on WebGL 2.  localStorage jarvis.renderer = "webgl" forces WebGL 2.
+async function probeWebGPU() {
+  try {
+    if (localStorage.getItem("jarvis.renderer") === "webgl") return null;
+  } catch (e) { /* no storage */ }
+  if (!navigator.gpu) return null;
+  const timeout = new Promise((ok) => setTimeout(() => ok(null), 2500));
+  const probe = (async () => {
+    try {
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+      if (!adapter) return null;
+      // the limits and features three.js asks for, so it can use this device
+      const features = [...adapter.features].filter((f) => adapter.features.has(f));
+      const limits = {};
+      for (const k in adapter.limits) if (typeof adapter.limits[k] === "number") limits[k] = adapter.limits[k];
+      const device = await adapter.requestDevice({ requiredFeatures: features, requiredLimits: limits });
+      const tex = device.createTexture({ size: [1, 1], format: "rgba8unorm", usage: 4 /* TEXTURE_BINDING */ });
+      tex.createView({ swizzle: "rgba" });
+      tex.destroy();
+      return device;
+    } catch (e) {
+      return null;
+    }
+  })();
+  return Promise.race([probe, timeout]);
+}
+export const GPU_DEVICE = await probeWebGPU();
+const rendererOpts = (o) => (GPU_DEVICE ? { ...o, device: GPU_DEVICE } : { ...o, forceWebGL: true });
 
 const DEG = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -152,14 +184,17 @@ export class Stage {
     this.fetchModel = null;
     this.destroyed = false;
 
+    // WebGPU (the graphics card's modern interface); on a computer or
+    // browser without it, three.js falls back to WebGL 2 by itself
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer = new THREE.WebGPURenderer(rendererOpts({ antialias: true, powerPreference: "high-performance" }));
     } catch (e) {
       this.failed = true;
-      container.innerHTML = '<div class="stage-fallback">3D view needs WebGL, which this browser has turned off.</div>';
+      container.innerHTML = '<div class="stage-fallback">3D view needs WebGPU or WebGL, which this browser has turned off.</div>';
       return;
     }
+    this.ready = false;
     this.renderer = renderer;
     this.q.cap = Math.min(window.devicePixelRatio || 1, 1.5);
     this.q.ratio = this.q.cap;
@@ -180,8 +215,6 @@ export class Stage {
     this.scene = scene;
     this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
     this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
     scene.add(this.hemi);
     const key = new THREE.DirectionalLight(0xdfe7ff, 0.35);
@@ -205,11 +238,25 @@ export class Stage {
       if (this.opts.onCamera) this.opts.onCamera(this.cameraState());
     });
 
-    this.composer = new EffectComposer(renderer);
-    this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.4, 0.9);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    // the picture: the scene, plus a glow round the bright parts (bloom);
+    // tone mapping and colour space happen at the end of the pipeline
+    this.post = new THREE.RenderPipeline(renderer);
+    this._sceneCol = pass(scene, this.camera).getTextureNode("output");
+    this.bloom = bloom(this._sceneCol, 0.55, 0.4, 0.9);
+    this._bloomOn = null;
+    // the renderer starts asynchronously (it asks the graphics card first)
+    renderer.init().then(() => {
+      if (this.destroyed) return;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.backend = renderer.backend && renderer.backend.isWebGPUBackend ? "webgpu" : "webgl2";
+      this.ready = true;
+      this.dirty = true;
+    }).catch((e) => {
+      console.error(e);
+      this.failed = true;
+      container.insertAdjacentHTML("beforeend", '<div class="stage-fallback">3D view: this computer\'s graphics could not start.</div>');
+    });
 
     this.venueGroup = new THREE.Group();
     scene.add(this.venueGroup);
@@ -240,9 +287,6 @@ export class Stage {
     const h = Math.max(1, this.el.clientHeight);
     this.renderer.setPixelRatio(this.q.ratio);
     this.renderer.setSize(w, h, false);
-    this.composer.setPixelRatio(this.q.ratio);
-    this.composer.setSize(w, h);
-    this.bloom.setSize(Math.ceil(w * this.q.ratio / 2), Math.ceil(h * this.q.ratio / 2));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.dirty = true;
@@ -943,6 +987,7 @@ export class Stage {
     }
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
+    if (!this.ready) return;
     if (!this.dirty && !motion && !(this.anyLit && now - this.lastRender > 32)) return;
 
     const time = (now - this.t0) / 1000;
@@ -986,10 +1031,19 @@ export class Stage {
     this.dirty = false;
     this._adapt(now);
     this.lastRender = now;
-    this.bloom.enabled = !!this.options.bloom && this.q.ratio > 0.55;
-    this.composer.render();
+    this._present(!!this.options.bloom && this.q.ratio > 0.55);
     this._drawLabels();
     if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** Draw the frame: the scene, with or without the glow. */
+  _present(glow) {
+    if (glow !== this._bloomOn) {
+      this.post.outputNode = glow ? this._sceneCol.add(this.bloom) : this._sceneCol;
+      this.post.needsUpdate = true;
+      this._bloomOn = glow;
+    }
+    this.post.render();
   }
 
   /** A still of the view at print size (the long side `longSide` px), as
@@ -999,8 +1053,7 @@ export class Stage {
     const keep = this.q.ratio;
     this.q.ratio = Math.min(4, Math.max(1, longSide / Math.max(w, h)));
     this.resize();
-    this.bloom.enabled = !!this.options.bloom;
-    this.composer.render();
+    this._present(!!this.options.bloom);
     const url = this.renderer.domElement.toDataURL("image/png");
     this.q.ratio = keep;
     this.resize();
@@ -1455,18 +1508,23 @@ export class FixturePreview {
   constructor(container) {
     this.el = container;
     try {
-      this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      this.renderer = new THREE.WebGPURenderer(rendererOpts({ antialias: true, alpha: true }));
     } catch (e) {
       this.failed = true;
       return;
     }
+    this.ready = false;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.renderer.init().then(() => {
+      if (this.destroyed) return;
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.ready = true;
+    }).catch(() => { this.failed = true; });
     this.scene.add(new THREE.HemisphereLight(0xcfd8ea, 0x202028, 1.3));
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(2, 3, 4);
@@ -1499,7 +1557,7 @@ export class FixturePreview {
     if (this.destroyed) return;
     this._raf = requestAnimationFrame(this._loop);
     const w = this.el.clientWidth, h = this.el.clientHeight;
-    if (!w || !h) return;
+    if (!w || !h || !this.ready) return;
     if (this.renderer.domElement.width !== Math.round(w * this.renderer.getPixelRatio())) {
       this.renderer.setSize(w, h, false);
       this.camera.aspect = w / h;
