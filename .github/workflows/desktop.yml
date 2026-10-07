@@ -55,16 +55,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: A Python of its own (python-build-standalone; the engine needs only the standard library)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: astral-sh/setup-uv@v6
+      - name: A Python of its own (python-build-standalone via uv; the engine needs only the standard library)
         run: |
-          url=$(gh release view --repo astral-sh/python-build-standalone --json assets -q '.assets[].url' \
-            | grep -E 'cpython-3\.12\.[0-9]+\+[0-9]+-aarch64-apple-darwin-install_only\.tar\.gz$' | head -n1)
-          echo "$url"
-          curl -fsSL "$url" -o py.tgz
-          mkdir -p desktop/build && tar -xzf py.tgz -C desktop/build
-          desktop/build/python/bin/python3 -c "import sqlite3, json, http.server; print('python ok')"
+          UV_PYTHON_INSTALL_DIR="$PWD/desktop/build/pyroot" uv python install 3.12
+          mv desktop/build/pyroot/cpython-3.12*/ desktop/build/python
+          rm -rf desktop/build/pyroot
+          desktop/build/python/bin/python3 -c "import sqlite3, json, http.server, sys; print('python ok', sys.version)"
       - name: Build the app
         working-directory: desktop
         run: |
