@@ -3976,3 +3976,77 @@ def test_ai_switch() -> None:
     check("the copilot's header switches the AI and shows the fallback note", "setAiMode" in cj and "r.ai_note" in cj, "")
     check("the desktop app ships the offline AI's engine (llama.cpp's server)",
           "ggml-org/llama.cpp" in wf and "CONSOLE_LLAMA_DIR" in (ROOT / "desktop" / "main.js").read_text(encoding="utf-8"), "")
+
+
+def test_ai_engine_fetch() -> None:
+    """An app installed before the engine shipped with it (or run.bat): the
+    offline AI's download fetches llama.cpp's server first, from llama.cpp's
+    own releases, the build for this computer; an unsafe archive is refused."""
+    print("The offline AI's engine, fetched when the app has none")
+    import hashlib
+    import io
+    import json as _json
+    import os
+    import zipfile
+
+    from app import config as cfg
+    from app import localai
+    pat = localai.engine_pattern()
+    if not pat:
+        check("(no engine for this kind of computer: Ollama instead)", True, "")
+        return
+    name = {"nt": "llama-b9-bin-win-vulkan-x64.zip"}.get(os.name) or \
+        ("llama-b9-bin-macos-arm64.zip" if "arm64" in pat else "llama-b9-bin-macos-x64.zip" if "macos" in pat
+         else "llama-b9-bin-ubuntu-x64.zip")
+    exe = "llama-server.exe" if os.name == "nt" else "llama-server"
+
+    def zipped(files):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for n, b in files.items():
+                z.writestr(n, b)
+        return buf.getvalue()
+    good = zipped({f"build/bin/{exe}": b"engine", "build/bin/ggml.dll": b"x"})
+    evil = zipped({f"../../{exe}": b"evil"})
+    blob = b"GGUF" + b"m" * 500
+    listing = _json.dumps([{"path": "Qwen3-8B-Q4_K_M.gguf", "lfs": {"oid": hashlib.sha256(blob).hexdigest(), "size": len(blob)}}]).encode()
+    served = {"engine": good}
+
+    def fake(url, headers):
+        if "api.github.com" in url:
+            return 200, {}, iter([_json.dumps([
+                {"tag_name": "b10", "assets": [{"name": "llama-b10-xcframework.zip", "size": 1}]},
+                {"tag_name": "b9", "assets": [{"name": "cudart-llama-bin-win-cuda-x64.zip", "size": 1},
+                                              {"name": name, "size": len(served["engine"]), "browser_download_url": "https://x/" + name}]},
+            ]).encode()])
+        if url.endswith(name):
+            return 200, {}, iter([served["engine"]])
+        if "/api/models/" in url:
+            return 200, {}, iter([listing])
+        return 200, {}, iter([blob])
+    saved = (cfg.DATA, os.environ.pop("LLAMA_SERVER", None), os.environ.pop("CONSOLE_LLAMA_DIR", None), localai.transport)
+    with tempfile.TemporaryDirectory() as td:
+        cfg.DATA = Path(td)
+        localai.transport = fake
+        try:
+            no_engine = localai.runtime() is None or "desktop" in localai.runtime()[0]
+            st = localai.status()
+            check("no engine yet, but one can be fetched: the download is offered", st["can_fetch_engine"], str(st))
+            served["engine"] = evil
+            localai.download("qwen3-8b", background=False)
+            check("an archive that writes outside its folder is refused",
+                  "not safe" in localai.status()["download"].get("error", "")
+                  and not (Path(td).parent / exe).exists(), str(localai.status()["download"]))
+            served["engine"] = good
+            localai.download("qwen3-8b", background=False)
+            got = localai.runtime()
+            check("the engine comes first (the newest release with this computer's build), then the model",
+                  got and got[0].endswith(exe) and str(Path(td)) in got[0]
+                  and (Path(td) / "ai" / "Qwen3-8B-Q4_K_M.gguf").read_bytes() == blob, f"{got} {localai.status()['download']}")
+            check("(the test ran without an engine already installed)", no_engine, "")
+        finally:
+            cfg.DATA, llama, llama_dir, localai.transport = saved
+            if llama:
+                os.environ["LLAMA_SERVER"] = llama
+            if llama_dir:
+                os.environ["CONSOLE_LLAMA_DIR"] = llama_dir

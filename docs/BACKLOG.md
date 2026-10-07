@@ -457,7 +457,11 @@ desk; the model (Qwen3 8B, or 14B on 32 GB) downloads in Settings -> AI
 with pause / resume, checked against its SHA-256, never while live; an AI
 pack (.gguf) imports from a path; Remove frees it; the desk suggests the
 model from memory and free disk.  In the browser version: Ollama / LM
-Studio's address.  Selftest `test_ai_switch`.
+Studio's address.  An app installed before the engine shipped with it,
+or run.bat: the download fetches llama.cpp's server first (~30 MB, the
+build for this computer from llama.cpp's own releases, into DATA/ai/engine;
+an archive that writes outside it is refused).  Selftests
+`test_ai_switch`, `test_ai_engine_fetch`.
 **Not yet:** the installer's "include the offline AI" tick (it is offered
 in Settings -> AI on first use instead); a file picker for the AI pack.
 

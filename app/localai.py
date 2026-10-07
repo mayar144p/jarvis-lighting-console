@@ -69,7 +69,8 @@ def runtime() -> list[str] | None:
     if env:
         return [sys.executable, env] if env.endswith(".py") else [env]
     exe = "llama-server.exe" if os.name == "nt" else "llama-server"
-    for base in (os.environ.get("CONSOLE_LLAMA_DIR", ""), str(config.ROOT / "desktop" / "llama")):
+    for base in (os.environ.get("CONSOLE_LLAMA_DIR", ""), str(folder() / "engine"),
+                 str(config.ROOT / "desktop" / "llama")):
         if base:
             hit = next(iter(sorted(Path(base).rglob(exe))), None) if Path(base).is_dir() else None
             if hit:
@@ -258,8 +259,77 @@ def pause() -> dict:
     return status()
 
 
+# ------------------------------------------------------------------ the engine
+# An app installed before the engine shipped with it (or the browser
+# version, run.bat): the desk fetches llama.cpp's server itself, ~30 MB,
+# from llama.cpp's own releases, into DATA/ai/engine/.
+RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15"
+
+
+def engine_pattern() -> str | None:
+    """Which llama.cpp build fits this computer (None: none does)."""
+    import platform
+    arm = platform.machine().lower() in ("arm64", "aarch64")
+    if os.name == "nt":
+        return None if arm else r"win.*vulkan.*x64.*\.zip$"     # Vulkan: any graphics card, else the processor
+    if sys.platform == "darwin":
+        return r"macos.*arm64.*\.(zip|tar\.gz)$" if arm else r"macos.*x64.*\.(zip|tar\.gz)$"
+    return None if arm else r"ubuntu.*x64.*\.(zip|tar\.gz)$"
+
+
+def fetch_engine() -> None:
+    """Download and unpack llama.cpp's server into DATA/ai/engine/."""
+    import re
+    import tarfile
+    import zipfile
+    want = engine_pattern()
+    if not want:
+        raise ValueError("there is no offline AI engine for this kind of computer - use Ollama")
+    status_, _h, body = _get(RELEASES, {"Accept": "application/vnd.github+json"})
+    if status_ != 200:
+        raise ValueError(f"couldn't reach llama.cpp's releases ({status_})")
+    asset = next((a for r in json.loads(b"".join(body).decode("utf-8"))
+                  for a in r.get("assets") or [] if re.search(want, str(a.get("name") or ""))), None)
+    if not asset:
+        raise ValueError("no offline AI engine for this computer in llama.cpp's recent releases")
+    _dl.update(file=f"the AI engine ({asset['name']})", total=int(asset.get("size") or 0), done=0)
+    archive = folder() / asset["name"]
+    status_, _h, body = _get(asset["browser_download_url"])
+    if status_ != 200:
+        raise ValueError(f"the AI engine's download answered {status_}")
+    with archive.open("wb") as out:
+        for chunk in body:
+            out.write(chunk)
+            _dl["done"] += len(chunk)
+    dest = folder() / "engine"
+    shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True)
+    root = dest.resolve()
+    try:
+        if archive.name.endswith(".zip"):
+            with zipfile.ZipFile(archive) as zf:
+                for m in zf.namelist():                    # never outside engine/
+                    if not (dest / m).resolve().is_relative_to(root):
+                        raise ValueError("the AI engine's archive is not safe")
+                zf.extractall(dest)
+        else:
+            with tarfile.open(archive) as tf:
+                for m in tf.getmembers():
+                    if not (dest / m.name).resolve().is_relative_to(root) or m.issym() or m.islnk():
+                        raise ValueError("the AI engine's archive is not safe")
+                tf.extractall(dest)
+    finally:
+        archive.unlink(missing_ok=True)
+    exe = next(iter(dest.rglob("llama-server.exe" if os.name == "nt" else "llama-server")), None)
+    if exe is None:
+        raise ValueError("the AI engine's download has no llama-server in it")
+    exe.chmod(exe.stat().st_mode | 0o755)
+
+
 def _fetch(item: dict) -> None:
     try:
+        if runtime() is None:
+            fetch_engine()                    # first the engine, then the model
         info = resolve(item)
         _dl.update(file=info["file"], total=info["bytes"])
         target = folder() / info["file"]
@@ -303,6 +373,17 @@ def import_pack(path: str) -> dict:
         if f.read(4) != b"GGUF":
             raise ValueError("that file is not an AI model (.gguf)")
     shutil.copyfile(src, folder() / src.name)
+    if runtime() is None and engine_pattern() and not _dl.get("running"):
+        _dl.clear()                            # a pack, but no engine yet: fetch it
+        _dl.update(id="", running=True, done=0, total=0, error="", file="the AI engine")
+
+        def engine():
+            try:
+                fetch_engine()
+                _dl.update(running=False, finished=True)
+            except (OSError, ValueError, urllib.error.URLError) as exc:
+                _dl.update(running=False, error=str(exc))
+        threading.Thread(target=engine, daemon=True, name="localai-engine").start()
     return status()
 
 
@@ -319,5 +400,6 @@ def status() -> dict:
     with _lock:
         running = _proc is not None and _proc.poll() is None
     dl = {k: _dl.get(k) for k in ("id", "file", "running", "paused", "done", "total", "error", "finished") if k in _dl}
-    return {"runtime": runtime() is not None, "models": models(), "running": running,
+    return {"runtime": runtime() is not None, "can_fetch_engine": engine_pattern() is not None,
+            "models": models(), "running": running,
             "download": dl, "suggest": suggest(), "catalog": CATALOG}
