@@ -373,6 +373,16 @@ an AI running on the laptop has none and works without internet.
   - or an **"AI pack"** file - downloaded once at home or copied from a USB
     stick - dropped onto the desk, for venues with no internet;
   - "Remove" gives the space back.
+- **Install once, use it - no further action:** the desk's installer has a
+  ticked box "Include the offline AI (5 GB)"; the model downloads during
+  the install, so the copilot works the moment the install finishes.
+  (Unticked or offline while installing: the desk offers it later, or the
+  AI pack.)
+- **It survives updates:** the model file lives in the desk's data folder
+  (with the shows and settings), not in the app's folder, so an app update
+  never touches it; the small runtime is part of the app and updates with
+  it.  Only a better recommended model is ever offered - "download?" - and
+  the old one keeps working until the operator says yes.
 - **The desk suggests the model** from the computer (RAM, graphics card,
   free disk): 8B for 16 GB laptops, 14B for 32 GB / a 12 GB graphics card.
 - **The switch:** an AI button in the copilot (and Settings -> AI) with
