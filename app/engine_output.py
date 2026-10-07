@@ -234,7 +234,10 @@ class OutputMixin:
             return cur
         # The target changed (Settings, a loaded show, a cable plugged in
         # under auto): swap senders between two frames, no restart.
-        if transport == "sacn":
+        if transport == "usbpro":
+            from app.usbdmx import UsbProSender
+            new = UsbProSender(host, self.dry_run)
+        elif transport == "sacn":
             new = SacnSender(host, port, config.DMX_NET, self.dry_run,
                              priority=config.SACN_PRIORITY,
                              source_name=config.SACN_SOURCE_NAME,
@@ -260,6 +263,8 @@ class OutputMixin:
         OS for its adapters, runs on a helper thread and is cached.
         """
         t = self.dmx_target
+        if t.get("mode") == "usb":
+            return "usbpro", t["host"], 0
         transport = t.get("transport") or config.DMX_TRANSPORT
         if transport == config.DMX_TRANSPORT:
             port = config.DMX_PORT
@@ -312,7 +317,18 @@ class OutputMixin:
         if transport is not None:
             cur["transport"] = str(transport).lower()
         if cur["mode"] not in DMX_TARGET_MODES:
-            raise ValueError("mode is auto, node or broadcast")
+            raise ValueError("mode is auto, node, broadcast or usb")
+        if cur["mode"] == "usb":
+            # a USB DMX interface (Enttec DMX USB Pro and compatible) on a serial port
+            from app import usbdmx
+            if not usbdmx.valid_port(cur["host"]):
+                raise ValueError("give the USB interface's port, e.g. COM3 or /dev/ttyUSB0")
+            self.dmx_target = clean_dmx_target(cur)
+            return {"target": dict(self.dmx_target),
+                    "resolved": {"transport": "usbpro", "host": cur["host"], "port": 0},
+                    "summary": f"DMX output: USB interface on {cur['host']} (universe 1)"}
+        if cur["transport"] == "usbpro":
+            cur["transport"] = ""
         if cur["transport"] not in ("", "artnet", "sacn"):
             raise ValueError("transport is artnet or sacn")
         if cur["mode"] != "auto":
@@ -346,7 +362,13 @@ class OutputMixin:
             target = dict(self.dmx_target)
             transport, host, port = self._dmx_resolved()
         verdict = None
-        if host and host not in ("multicast", "255.255.255.255"):
+        from app import usbdmx
+        if transport == "usbpro":
+            ports = usbdmx.list_ports()
+            verdict = {"ok": host in ports, "via": None, "suggest": None,
+                       "message": "the USB interface is plugged in" if host in ports else
+                       f"no {host} on this computer - plug the interface in, or pick its port"}
+        elif host and host not in ("multicast", "255.255.255.255"):
             if target["mode"] == "node" or not host.endswith(".255"):
                 verdict = netif.check(host, ifaces)
             else:
@@ -359,6 +381,7 @@ class OutputMixin:
                 "target": target,
                 "resolved": {"transport": transport, "host": host, "port": port},
                 "env_host": None if config.DMX_HOST_IS_DEFAULT else config.DMX_HOST,
+                "usb_ports": usbdmx.list_ports(),
                 "check": verdict}
 
     def _run(self) -> None:

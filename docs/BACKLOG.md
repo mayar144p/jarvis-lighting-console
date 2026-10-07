@@ -240,12 +240,18 @@ loopback port with a private key, clean stop on close, Show mode (3D /
 programmer + fixtures / playbacks, each remembering its monitor), safe
 keys, close asks, screens stay awake, the desk runs without 3D on a
 computer whose graphics can't.  **The installer: DONE** - the
-"Desktop app (Windows installer)" workflow builds `Jarvis Setup.exe` with
+"Desktop app (installers)" workflow builds `Jarvis Setup.exe` with
 Windows' embeddable Python inside (the engine is stdlib-only, so no
 PyInstaller), checks the built app with desktopcheck, and keeps it as a
 private artifact; installed, data / `.env` / inbox live in `%APPDATA%\Jarvis`.
-**Still to do:** the app updating itself, phones / tablets as a setting with
-a pairing code, USB DMX / MIDI from the app, a Mac build.
+**Then DONE:** phones / tablets (Desk -> Phones and tablets: network on a
+fixed port, a 10-character pairing code, "New code" signs phones out),
+USB DMX (Enttec USB Pro protocol, Settings -> Output; `app/usbdmx.py`,
+stdlib serial), MIDI permitted in the app (nothing else), the app icon, a
+Mac build (python-build-standalone, unsigned dmg).  **Waiting on a
+decision:** the app updating itself needs a place to publish installers
+(a public releases repo or a download page); the operator chose to wait
+until Jarvis leaves testing.
 
 Nothing is rewritten: the Python engine and the screens stay as they are,
 wrapped in a program with its own icon.  The engine still listens on

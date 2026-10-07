@@ -3388,3 +3388,70 @@ def test_shape_in_zone() -> None:
             check("a deleted zone doesn't stop the desk", ok is True, str(ok))
         finally:
             e.shutdown()
+
+
+def test_usb_dmx() -> None:
+    """DMX out of a USB interface (Enttec DMX USB Pro and compatible): the
+    exact message bytes, the engine's output choosing it and sending the
+    light's channels through it (a pseudo-terminal stands in for the box),
+    a bad port refused, unplugged retried without stopping the desk."""
+    print("USB DMX interface (Enttec USB Pro protocol)")
+    import os
+    import time as _time
+
+    from app import engine as eng
+    from app import usbdmx
+
+    f = usbdmx.build_frame(bytes([255, 128] + [0] * 510))
+    check("a frame is 7E 06 len(513) 00 + 512 channels + E7",
+          f[:4] == bytes([0x7E, 6, 0x01, 0x02]) and f[4] == 0 and f[5:7] == bytes([255, 128])
+          and f[-1] == 0xE7 and len(f) == 518, f[:8].hex())
+    check("ports look like COM3 or /dev/ttyUSB0", usbdmx.valid_port("COM3") and usbdmx.valid_port("/dev/ttyUSB0")
+          and not usbdmx.valid_port("2.0.0.10") and not usbdmx.valid_port("COM3; rm -rf"), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("a bad port is refused", not e.act("set_dmx_target", mode="usb", host="nowhere").get("ok"), "")
+            if not hasattr(os, "openpty"):
+                return                                   # Windows: no pseudo-terminal to stand in
+            master, slave = os.openpty()
+            name = os.ttyname(slave)
+            r = e.act("set_dmx_target", mode="usb", host=name)
+            check("the output can be a USB interface", r.get("ok") and r["target"] == {"mode": "usb", "host": name, "transport": "usbpro"}, str(r))
+            heads = e.act("add_heads", query="Dimmer", qty=1)["heads"] or e.act("add_heads", query="PAR", qty=1)["heads"]
+            e.act("select_heads", heads=heads)
+            e.act("set_intensity", level=100)
+            sender = e._get_sender()
+            check("the engine sends through the USB sender", type(sender).__name__ == "UsbProSender", type(sender).__name__)
+            sender.dry_run = False
+            frames = e.build_frames()
+            e._dispatch(frames)
+            os.set_blocking(master, False)
+            _time.sleep(0.1)
+            got = b""
+            try:
+                while True:
+                    got += os.read(master, 4096)
+            except (BlockingIOError, OSError):
+                pass
+            want = usbdmx.build_frame(frames[1])
+            check("the box gets the frame byte for byte (the light's channels at full)",
+                  got == want and max(frames[1]) == 255, f"{len(got)} bytes")
+            os.close(slave)
+            os.close(master)
+            sender.close()
+            e.dmx_target["host"] = "/dev/does-not-exist"
+            e._sender = None
+            s2 = e._get_sender()
+            s2.dry_run = False
+            e._dispatch(e.build_frames())
+            check("unplugged: an error to show, the desk goes on, it tries again later",
+                  s2.errors == 1 and s2.last_error and e.output["errors"] >= 1, str(s2.stats()))
+            info = e.network_info()
+            check("Settings -> Output lists the USB ports and says this one isn't there",
+                  "usb_ports" in info and info["check"] and not info["check"]["ok"], str(info.get("check")))
+        finally:
+            e.shutdown()
