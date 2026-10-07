@@ -2658,7 +2658,8 @@ def test_hold_button() -> None:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("Make a button… sits next to Record cue… on every tab, with the held strip",
-          "Make a button…" in pj and "quick_from_programmer" in pj and "Turn it off" in pj, "")
+          "Make a button…" in (ROOT / "web" / "index.html").read_text(encoding="utf-8") and "prog-record" in pj
+          and "quick_from_programmer" in pj and "Turn it off" in pj, "")
 
 
 def test_aim_speed_everywhere() -> None:

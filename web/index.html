@@ -222,8 +222,6 @@
           <div class="chip-row" id="int-gate" hidden></div>
           <div class="row-btns">
             <button class="btn" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
-            <button class="btn" id="clear-btn" title="Clear the programmer (C)">Clear</button>
-            <button class="btn" id="highlight-btn" title="Flash the selection">Flash</button>
             <button class="btn" id="hl-btn" title="Highlight: the selection at full, open white until you turn it off (H); Shift: solo, everything else dark">Highlight</button>
           </div>
         </div>
@@ -356,6 +354,12 @@
             <button class="btn" data-query="gobo">With gobos</button>
           </div>
         </div>
+      </div>
+      <!-- the programmer's actions: always here, on every tab -->
+      <div class="prog-acts" id="prog-acts">
+        <button class="btn" id="prog-clear" title="Clear the programmer (C)">Clear</button>
+        <button class="btn" id="prog-make" title="A button (on / off) of what the selected lights do now - position, colour, beam and the movement running. It turns on and holds those lights: change them again by turning it off.">Make a button…</button>
+        <button class="btn rec" id="prog-record" title="Record what is in the programmer as a cue (R)">● Record cue…</button>
       </div>
     </section>
 

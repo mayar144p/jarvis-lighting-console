@@ -167,7 +167,7 @@ check(/Lost contact/.test(banner), "a banner says nothing reaches the rig", bann
 await B.click('#pb-mode [data-mode="faders"]').catch(() => {});
 const errsBefore = errors.A.length + errors.B.length;
 // press things while the desk is gone: nothing must break
-for (const sel of ['#int-quick [data-level="100"]', "#locate-btn", "#clear-btn", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
+for (const sel of ['#int-quick [data-level="100"]', "#locate-btn", "#prog-clear", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
   await A.click(sel, { timeout: 1500 }).catch(() => {});
   await sleep(150);
 }

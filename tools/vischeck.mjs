@@ -428,7 +428,7 @@ async function steps() {
   console.log("8. Record a cue, clear, GO");
   await act("record_cue", { playback: 1, name: "Big look" });
   await click('#prog-tabs [data-tab="intensity"]', "Level tab");
-  await click("#clear-btn", "Clear");
+  await click("#prog-clear", "Clear");
   ({ F, V } = await layers("cleared"));
   await click('#pb-mode [data-mode="faders"]', "Faders");
   await p.evaluate(() => fetch("/api/console", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "playback_level", params: { playback: 1, level: 100 } }) }));
