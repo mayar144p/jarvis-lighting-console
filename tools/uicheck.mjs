@@ -348,7 +348,11 @@ const STEPS = [
 ];
 
 // ---------------------------------------------------------------- the run
-const browser = await chromium.launch({ executablePath: exe, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+// CHECKS_GPU=1: a visible window on the computer's graphics card (fast, and you
+// can watch); otherwise software drawing (servers / cloud with no GPU)
+const GPU = process.env.CHECKS_GPU === "1";
+const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
+  args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 let rigBuilt = false;
 for (const width of WIDTHS) {
   const height = width >= 1900 ? 1080 : width >= 1440 ? 900 : 800;

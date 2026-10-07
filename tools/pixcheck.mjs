@@ -48,7 +48,11 @@ for (let k = 1; k <= reds; k++) {
   const [R, G, B] = HUES[(k - 1) % 6];
   for (const [role, v] of [["red", R], ["green", G], ["blue", B]]) await act("set_attribute", { attribute: role, value: v, cell: k });
 }
-const b = await chromium.launch({ executablePath: exe, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+// CHECKS_GPU=1: a visible window on the computer's graphics card (fast, and you
+// can watch); otherwise software drawing (servers / cloud with no GPU)
+const GPU = process.env.CHECKS_GPU === "1";
+const b = await chromium.launch({ executablePath: exe, headless: !GPU,
+  args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
 await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ } });
 await p.goto(BASE);
