@@ -44,7 +44,10 @@ function capabilities() {
     roles, lightRoles,
     position: roles.has("pan") || roles.has("tilt"),
     colour: COLOUR_ROLES.some((r) => lightRoles.has(r)),
-    mixing: ["red", "cyan"].some((r) => lightRoles.has(r)),
+    // mixes ANY colour: all three of red / green / blue (or of cyan /
+    // magenta / yellow).  A red + green light makes red, green and yellow,
+    // and nothing else: it gets its own colours, not the picker.
+    mixing: ["red", "green", "blue"].every((r) => lightRoles.has(r)) || ["cyan", "magenta", "yellow"].every((r) => lightRoles.has(r)),
     beam: BEAM_ROLES.some((r) => lightRoles.has(r)),
   };
 }
@@ -193,6 +196,15 @@ function currentHex() {
 // colour stays pure (no white mixed in), and white, amber or UV go on top
 // only when you ask for them.
 const EXTRA = [["white", "White", "#f5f5f0"], ["amber", "Amber", "#ffb000"], ["uv", "UV", "#8b5cf6"], ["lime", "Lime", "#b5ff4d"]];
+const OWN = [["red", "Red", "#ff3b30"], ["green", "Green", "#34c759"], ["blue", "Blue", "#3b6cff"],
+  ["cyan", "Cyan", "#22d3ee"], ["magenta", "Magenta", "#e83e8c"], ["yellow", "Yellow", "#ffd60a"], ...EXTRA];
+// the colours a light that can't mix everything CAN make: each emitter
+// alone, and red / green / blue in pairs (red + green is yellow)
+const MAKES = [["Red", { red: 255 }], ["Green", { green: 255 }], ["Blue", { blue: 255 }],
+  ["Yellow", { red: 255, green: 255 }], ["Magenta", { red: 255, blue: 255 }], ["Cyan", { green: 255, blue: 255 }],
+  ["White", { white: 255 }], ["Amber", { amber: 255 }], ["UV", { uv: 255 }], ["Lime", { lime: 255 }]];
+const MAKE_HEX = { Red: "#ff3b30", Green: "#34c759", Blue: "#3b6cff", Yellow: "#ffd60a", Magenta: "#e83e8c", Cyan: "#22d3ee",
+  White: "#f5f5f0", Amber: "#ffb000", UV: "#8b5cf6", Lime: "#b5ff4d" };
 let extraKey = "";
 let extraHeld = 0;
 
@@ -200,8 +212,10 @@ function renderColourExtra() {
   const box = $("#colour-extra");
   const heads = selectionHeads();
   const roles = new Set(heads.flatMap((x) => x.map || []));
-  const mixes = ["red", "cyan"].some((r) => roles.has(r));
-  const list = mixes ? EXTRA.filter(([r]) => roles.has(r)) : [];
+  const mixes = capabilities().mixing;
+  // a light that mixes any colour: its extra emitters on top of the picker;
+  // one that can't: every colour channel it has, each its own slider
+  const list = mixes ? EXTRA.filter(([r]) => roles.has(r)) : hasSel() ? OWN.filter(([r]) => roles.has(r)) : [];
   const vals = ((state.snap && state.snap.programmer) || {}).values || {};
   const cur = (r) => {
     const v = heads.map((x) => (vals[x.head_no] || {})[r]).filter((x) => x !== undefined);
@@ -210,7 +224,7 @@ function renderColourExtra() {
   const key = JSON.stringify([list.map(([r]) => [r, cur(r)]), heads.map((x) => x.head_no)]);
   if (key === extraKey || Date.now() < extraHeld) return;
   extraKey = key;
-  box.replaceChildren(...(list.length ? [h("span.muted.small", "Added on top of the colour:"), ...list.map(([role, label, tint]) => {
+  box.replaceChildren(...(list.length ? [h("span.muted.small", mixes ? "Added on top of the colour:" : "Its colour channels:"), ...list.map(([role, label, tint]) => {
     const input = h("input", { type: "range", min: 0, max: 255, value: cur(role), style: { accentColor: tint } });
     const out = h("output.mono.small", `${Math.round(cur(role) / 2.55)}%`);
     const send = throttle((v) => run("set_attribute", { attribute: role, value: v }, { silentError: true }), 60);
@@ -233,11 +247,12 @@ function renderColour() {
   $$("#swatches button").forEach((b) => b.classList.toggle("on", !!hex && b.dataset.hex === hex));
   renderWheel();
   const heads = selectionHeads();
-  const colourable = heads.filter((x) => (x.map || []).some((r) => ["red", "wheel", "cyan", "white"].includes(r))).length;
-  $("#colour-reach").textContent = heads.length
-    ? (colourable === heads.length ? (heads.length === 1 ? "this light mixes any colour" : `all ${heads.length} mix any colour`)
-      : `${colourable} of ${heads.length} mix colour - the rest have none`)
-    : "";
+  const full = (x) => { const m = x.map || []; return ["red", "green", "blue"].every((r) => m.includes(r)) || ["cyan", "magenta", "yellow"].every((r) => m.includes(r)); };
+  const mixers = heads.filter(full).length;
+  $("#colour-reach").textContent = !heads.length ? ""
+    : mixers === heads.length ? (heads.length === 1 ? "this light mixes any colour" : `all ${heads.length} mix any colour`)
+      : mixers ? `${mixers} of ${heads.length} mix any colour - the rest only make their own colours`
+        : "";
 }
 
 // Black-body colour for a white temperature (Tanner Helland's fit).
@@ -283,11 +298,26 @@ function renderWheel() {
   const cap = capabilities();
   $("#kelvin-row").hidden = !cap.mixing && hasSel();
   const box = $("#wheel-steps");
-  box.hidden = !cap.roles.has("wheel");
+  const makes = hasSel() && !cap.mixing ? MAKES.filter(([, set]) => Object.keys(set).every((r) => cap.lightRoles.has(r))) : [];
+  box.hidden = !cap.roles.has("wheel") && !makes.length;
   const wheelOnly = hasSel() && !box.hidden && !cap.mixing;
   const pane = $('[data-pane="colour"]');
-  pane.classList.toggle("wheel-only", wheelOnly && !pickerAnyway);
+  // a light that can't mix any colour: its own colours lead, no picker
+  pane.classList.toggle("wheel-only", hasSel() && !cap.mixing && (cap.roles.has("wheel") ? !pickerAnyway : makes.length > 0));
   if (box.hidden) return;
+  if (!cap.roles.has("wheel")) {
+    const key = "own|" + makes.map(([n]) => n).join(",");
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    const all = [...new Set(MAKES.flatMap(([, set]) => Object.keys(set)))].filter((r) => cap.lightRoles.has(r));
+    box.replaceChildren(h("span.muted.small", `These lights make ${makes.length === 1 ? "one colour" : `${makes.length} colours`}: tap one.`),
+      ...makes.map(([name, set]) => h("button.chip.slot", { title: Object.keys(set).join(" + "),
+        onclick: async () => {
+          for (const r of all) await run("set_attribute", { attribute: r, value: set[r] || 0 }, { silentError: true });
+          loadAttributes();
+        } }, h("i.slot-dot", { style: { background: MAKE_HEX[name] } }), name)));
+    return;
+  }
   const wheel = attrEntry("wheel");
   const key = [wheel && wheel.slots ? JSON.stringify(wheel.slots) : "guess", wheelOnly, pickerAnyway].join("|");
   if (box.dataset.key === key) return;

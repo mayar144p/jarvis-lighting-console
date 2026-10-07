@@ -10,6 +10,7 @@ import re
 import time
 
 from app import fixture_kind, fixtures, merge
+from app.merge import FX_OUTPUT_ROLES
 from app.engine_base import _LEVELS_CACHE, _OFFISH, _clamp, _truthy, attr_domain
 from app.engine_support import HTP_ROLES, LASER_ROLES
 
@@ -39,8 +40,10 @@ class FxLayerMixin:
         def can(h):
             if role in h["map"]:
                 return True
-            # a beam bar: no power channel, its diodes are the output
-            return kind == "laser" and any(r.startswith("laser_beam") for r in h["map"])
+            # a beam bar: no power channel, its diodes are the output; a
+            # laser with no power channel at all: its beam switch is
+            return kind == "laser" and (any(r.startswith("laser_beam") for r in h["map"])
+                                        or bool(self._laser_switch(h)))
         return [by[n] for n in heads or [] if n in by and can(by[n])]
 
     def _sfx_limit(self, h: dict, kind: str) -> float:
@@ -244,6 +247,40 @@ class FxLayerMixin:
         if not self._sfx_start(key, "laser", nums, owner, seconds=seconds, values=vals):
             raise ValueError("no laser selected")
         return {"summary": f"laser ON ({len(self.fx_runs[key]['heads'])})"}
+
+    # A laser with no output channel (a Laserworld RS400G, a Stairville DJ
+    # Lase) switches its beam with a mode / colour / pattern channel whose
+    # lowest range is "Laser off", "No beam", "Blackout" or "Blanking" (or
+    # "No function" on a "Red laser switched on" channel).  That channel IS
+    # its output: off unless armed and fired, like any laser's.
+    _SWITCH_OFF = re.compile(r"^\s*(laser\s+)?(off|blackout|blanking|no beam|beam off|no output)\b", re.I)
+    _SWITCH_SKIP = frozenset({"laser_x", "laser_y", "laser_rot", "laser_speed", "laser_size"})
+
+    def _laser_switch(self, h: dict) -> dict:
+        """{role: (off value, off from, off to, on value)} - the channels that
+        switch the beam of a laser with no output channel; {} otherwise."""
+        m = h["map"]
+        if "laser_on" in m or any(r.startswith("laser_beam") for r in m) \
+                or self._head_class(h) != "laser":
+            return {}
+        out = {}
+        for role, d in self.head_ranges(h).items():
+            if role not in m or role in self._SWITCH_SKIP or role in FX_OUTPUT_ROLES \
+                    or not role.startswith(("fx_", "laser_", "aux")):
+                continue
+            for raw in d.get("caps_each") or [d.get("caps") or []]:
+                caps = [(int(lo), int(hi), str(t)) for lo, hi, t in raw or []]
+                zero = next((c for c in caps if c[0] <= 0 <= c[1]), None)
+                others = [c for c in caps if c is not zero]
+                if zero is None or not others or not (
+                        self._SWITCH_OFF.search(zero[2])
+                        or (re.match(r"\s*no function", zero[2], re.I)
+                            and any(re.search(r"\blaser\b.*\bon\b", c[2], re.I) for c in others))):
+                    continue
+                on = next((c for c in others if re.search(r"^\s*on\b|switched on", c[2], re.I)), others[0])
+                out[role] = (zero[0], zero[0], zero[1], (on[0] + on[1]) // 2)
+                break
+        return out
 
     def _laser_min(self, h: dict) -> int:
         """The lowest value on a laser's output channel that is not OFF:

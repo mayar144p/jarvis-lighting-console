@@ -241,6 +241,11 @@ counts are modes, not lights.
    channel and value turn it on.  Examples: American DJ Boom Box Fx2,
    Stinger, Fusion FX Bar 5; Chauvet GigBar IRC, COLORstrip Mini FX;
    Briteq Spectra 3D Laser 2CH; Cameo Wookie 3-channel modes.
+   *Update (brand debug):* a laser whose beam is switched by a mode /
+   colour channel with "Laser off / No beam / Blackout / Blanking" (or
+   "No function" next to "Red laser switched on") now fires from its
+   armed button and is held off otherwise (Laserworld RS400G, Stairville
+   DJ Lase, All FX Bar...).  The rest still need a person with the light.
 2. **Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
    Wash, 6 modes): subtractive mixers the console doesn't treat as CMY,
    so Locate comes out blue.  Needs a "mixer flag" kind of colour, like
@@ -275,12 +280,25 @@ counts are modes, not lights.
 9. **Lamps DMX can't close** (72 modes, mostly old scanners and HMI
    moving heads in short modes): no dimmer, no shutter, no colour LEDs.
    BLACKOUT can't darken them on the wire, so the 3D shows them lit in
-   BLACKOUT too (true to the real light).  The Ready? check could list
-   them before doors.  (Found 2026-10-02 by the libsweep Blackout check.)
+   BLACKOUT too (true to the real light).  The Ready? check lists them
+   before doors.  (Found 2026-10-02 by the libsweep Blackout check.)
 10. **Lights whose only on / off is a colour-macro channel** (1- and
     2-channel modes): Full, Out and Locate now use a slot named
     "Blackout" when the file has one; a file that names nothing leaves the
     desk guessing.  Worth a "Test this light" question for these.
+    Example from the brand debug: Showtec Dynamic LED v3 "d-P2" (Programs:
+    0 "No function", then Red, Green...; a strobe with no ranges) - the
+    3D shows it lit white at rest; the real light is probably dark there.
+    Same with Varytec LED Derby ST 4-channel (colour channel: 0-5 "No
+    Function", then Red, Green, Blue, White): on an LED light "No function"
+    at 0 is likely dark, on a lamp light's wheel it is open white - the
+    file can't tell which, so ask once with the real light.
+11. **Combo bars drawn as one thing** (Stairville All FX Bar: PARs,
+    derbys, strobe and a laser on one bar): the desk treats it as a laser
+    (so the laser part needs ARM), and the 3D draws a laser projector.  A
+    combined model - a bar with its lenses and a laser fan - and Full /
+    colour reaching its LED part would match the product.  Found by the
+    fit check (`tools/vischeck.mjs --brands`).
 
 ## A7. Operator's debugging list (DONE, 2026-10-01)
 

@@ -182,6 +182,8 @@ from tools.selftests.part09 import (  # noqa: E402
     test_hold_button_keeps_everything,
     test_library_sweep_fixes,
     test_show_keeps_tempo,
+    test_beam_switch_lasers,
+    test_product_fit,
     test_midi_monitor,
     test_room_making,
     test_sound_analysis,
@@ -344,6 +346,8 @@ def _standalone_suites():
     ("Hold button keeps brightness, colour, rainbow", test_hold_button_keeps_everything),
     ("Library sweep fixes", test_library_sweep_fixes),
     ("Show keeps its tempo", test_show_keeps_tempo),
+    ("Lasers switched by a colour channel", test_beam_switch_lasers),
+    ("Product fit: 3D body, effects machines", test_product_fit),
     )
 
 

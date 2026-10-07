@@ -1396,6 +1396,9 @@ class QuickMixin:
             for role in FX_OUTPUT_ROLES.intersection(h["map"]):
                 off = (self.head_ranges(h).get(role) or {}).get("off_value") or 0
                 rests.setdefault(h["head_no"], {})[role] = int(off)
+            switch = self._laser_switch(h)
+            if switch:                          # a laser's beam switch: off
+                rests.setdefault(h["head_no"], {})["_laser_switch"] = switch
         self._rest_cache = (self.patch_rev, rests)
         return rests
 

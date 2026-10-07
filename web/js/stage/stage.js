@@ -143,6 +143,7 @@ export class Stage {
     this.lastRender = 0;
     this.tags = new Map();
     this._c = new THREE.Color();
+    this._c2 = new THREE.Color();
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._q = new THREE.Quaternion();
@@ -1220,6 +1221,16 @@ export class Stage {
         const cc = L.cells && L.cells[k];
         c.lens.emissive.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(a * 7);
       });
+    }
+    if (sk.pixels) {
+      // a bar's cells / a blinder's bulbs: each its own cell's colour
+      const px = sk.pixels, n = px.count, cs = L.cells && L.cells.length > 1 ? L.cells : null;
+      const k = a * 3;
+      for (let i = 0; i < n; i++) {
+        const cc = cs ? cs[Math.min(cs.length - 1, Math.floor(i * cs.length / n))] : L;
+        px.setColorAt(i, this._c2.setRGB(0.04 + cc.r * k, 0.04 + cc.g * k, 0.045 + cc.b * k));
+      }
+      px.instanceColor.needsUpdate = true;
     }
     if (sk.spin && a > 0.002) sk.spin.rotation.y = time * 0.9;   // a derby turns while lit
     void lights;

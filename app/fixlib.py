@@ -692,7 +692,7 @@ FX_KINDS = {
 }
 
 _KIND_PATTERNS = [
-    ("confetti", r"confetti|funfetti|streamer|stadium shot|swirl fan"),
+    ("confetti", r"confetti|funfetti|streamer|stadium ?(shot|blaster|blower)|swirl ?fan"),
     ("co2", r"\bco2\b|co\s?2 jet|cryo|psyco2|eco2"),
     ("flame", r"\bflames?\b|flamer|fire\s*(jet|machine|effect|burst)|g-flame|dragon"),
     ("spark", r"\bsparks?\b|cold\s*(fire|spark)|sparkular"),
@@ -704,7 +704,7 @@ _KIND_PATTERNS = [
 # Words that mean the fixture is really a light, whatever else it says.
 _LIGHT_WORDS = r"\bpar(\b|\d)|parcan|\bwash|\bspot(\b|\d)|\bbeam|\bbar\b|\bpanel|\bprofile"
 
-_OFF_TEXT = re.compile(r"\b(off|no function|closed|disabled?|safe|blackout|stop|none|idle)\b|^0$", re.I)
+_OFF_TEXT = re.compile(r"\b(off|no (function|output|effect|fire)|closed|disabled?|safe|blackout|stop|none|idle)\b|^0$", re.I)
 _FIRE_TEXT = re.compile(r"\b(on|fire|firing|shoot|shot|launch|burst|blast|output|valve open|open|go|max|full|trigger|ignit\w*)\b", re.I)
 _ARM_TEXT = re.compile(r"\b(enabled?|armed?|ready|safety off|active|on)\b", re.I)
 _DANGER_TEXT = re.compile(r"\btest\b|\breset\b|\bpurge\b|\bclean", re.I)
@@ -715,8 +715,11 @@ def fx_kind(manufacturer: str, model: str, type_text: str, labels: list[str]) ->
     text = f"{manufacturer} {model} {type_text}".lower()
     if "laser" in type_text.lower() or re.search(r"\blaser", text):
         return "laser"
+    hazer = re.search(r"smoke|hazer|fog", str(type_text).lower())
     for kind, pattern in _KIND_PATTERNS:
         if re.search(pattern, text):
+            if hazer and kind in ("flame", "spark"):
+                continue                 # a hazer named "Dragon" is not a flame machine
             if kind in ("fog", "haze") and re.search(_LIGHT_WORDS, text) \
                     and not re.search(r"\bfog|\bhaze", str(type_text).lower()):
                 return ""
@@ -824,11 +827,19 @@ def _fx_role(kind: str, row: dict, has_rgb: bool) -> str | None:
     # past 200, armed or not
     if re.search(r"^go$|\bgo\b|\btrigger\b|\bfire\b|\bshoot\b", orig):
         return "FX Fire"
+    if kind == "confetti" and re.search(r"\bhopper|\bfeeder", name):
+        return "FX Fire"                      # a confetti blower's hoppers feed it (MagicFX StadiumBlower)
     if (re.search(r"\bfan\b|blower|\bwind", name) and "speed" not in name or re.search(r"fan speed|blower", name)) \
             and not re.search(r"fog|smoke|haze|faze", orig):
         return "FX Fan"                       # ("Faze and Fan" on one channel is the output)
     if re.search(r"height|size|level of spark", name):
         return "FX Height"
+    # a fog / haze machine's "Volume control" or "Output control" is its
+    # output (the word "control" filed an Antari Fazer's as a mode: the fog
+    # button could not reach it, and any programmed value fogged)
+    if kind in ("fog", "haze") and re.search(r"volume|output|pump", name) \
+            and not re.search(r"\bmode\b|program|preset|\bauto\b|sound|timer|interval|duration|delay|fan", name):
+        return "Fog Output"
     if re.search(r"\bmode\b|program|preset|\bauto\b|sound|control|timer|interval|duration|\bdelay", name):
         return "FX Mode" if re.search(r"mode|program|preset|auto|sound|control", name) else "FX Setting"
     if role in ("pan", "tilt", "speed", "pan_fine", "tilt_fine"):
