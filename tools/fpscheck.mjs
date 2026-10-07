@@ -1,4 +1,4 @@
-// How smooth the 3D view runs with the big rig (124 real lights, tools/
+// How smooth the 3D view runs with the test rig (20 real lights, 124 with BIG_RIG=1, tools/
 // bigrig.mjs) all lit, moving and changing colour, at each quality:
 // High, Medium (auto) and Low.  Frames a second and the slowest frames.
 //
@@ -59,6 +59,8 @@ for (const [label, q] of [["High", "high"], ["Medium", "auto"], ["Low", "fast"]]
   await p.goto(BASE + "?window=stage");                // the 3D on its own, as in Show mode
   for (let i = 0; i < 60; i++) { if (await p.evaluate(() => window.jarvisStage && window.jarvisStage.fixtures.size > 100)) break; await sleep(500); }
   await sleep(4000);                                    // models and gobos loaded
+  // FPS_SETUP: options to try, e.g. FPS_SETUP='{"haze":0}' (stage.setOptions)
+  if (process.env.FPS_SETUP) { await p.evaluate((o) => window.jarvisStage.setOptions(JSON.parse(o)), process.env.FPS_SETUP); await sleep(1500); }
   const r = await p.evaluate(async (secs) => {
     const st = window.jarvisStage, gaps = [];
     let last = st.lastRender;

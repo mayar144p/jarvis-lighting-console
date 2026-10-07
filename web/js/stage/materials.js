@@ -1,33 +1,56 @@
-// Shaders for the stage: volumetric beams, and surfaces lit by those beams.
+// Shaders for the stage: volumetric beams, and surfaces lit by those beams,
+// written in three.js's node language (TSL) for its WebGPU renderer (which
+// falls back to WebGL 2 by itself on a computer without WebGPU).
 //
 // Every beam in the rig is a real light source for the floor, the walls,
-// the truss and the performers: `LIGHTS` is one uniform block shared by
+// the truss and the performers: `LIGHTS` is one set of uniforms shared by
 // every surface material, refreshed once per frame by the stage.  That is
 // what makes a beam LAND somewhere - a pool on the deck, a gobo on the
 // cyc - instead of fading into nothing.
 import * as THREE from "three";
+import {
+  Fn, If, Loop, Continue, uniform, uniformArray, texture, float, int, vec2, vec3, vec4,
+  positionWorld, positionLocal, positionGeometry, positionView, normalWorld, cameraPosition,
+  frontFacing, select, smoothstep, mix, max, min, abs, fract, floor, sin, cos, atan, sqrt, pow,
+  dot, cross, normalize, length, reflect, clamp, exp, mod, varying, instanceIndex, hash,
+  transformNormalToView,
+} from "three/tsl";
 
 export const MAX_LIGHTS = 32;
+const SHADOW_SLOTS = 8;
+
+// an array uniform the stage writes into in place (LIGHTS.uPos.value[i]...)
+const arrayOf = (n, make, type) => {
+  const value = Array.from({ length: n }, make);
+  return { value, node: uniformArray(value, type) };
+};
+// a white pixel until the real texture arrives
+const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+WHITE.needsUpdate = true;
 
 export const LIGHTS = {
-  uCount: { value: 0 },
-  uPos: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
-  uDir: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
-  uCol: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
+  uCount: uniform(0, "int"),
+  uPos: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(), "vec3"),
+  uDir: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(0, -1, 0), "vec3"),
+  uCol: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(), "vec3"),
   // x = cos(outer), y = cos(inner), z = gobo id (0 = open), w = gobo angle
-  uCone: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0.9, 0.95, 0, 0)) },
-  uAmbient: { value: new THREE.Color(0x0c0c0e) },
-  uTime: { value: 0 },
-  uBounce: { value: 1 },                // crowd dancing, 0..1
-  uGobos: { value: null },              // the atlas of real gobo pictures
+  uCone: arrayOf(MAX_LIGHTS, () => new THREE.Vector4(0.9, 0.95, 0, 0), "vec4"),
+  uAmbient: uniform(new THREE.Color(0x0c0c0e)),
+  uTime: uniform(0),
+  uBounce: uniform(1),                  // crowd dancing, 0..1
+  uGobos: { value: WHITE },             // the atlas of real gobo pictures
   // shadows (shadows.js): the first uShadowCount lights each have a depth
-  // picture in a quarter of uShadowMap, seen through uShadowMat[i]
+  // picture in a cell of uShadowMap, seen through uShadowMat[i]
   uShadowMap: { value: null },
-  uShadowMat: { value: Array.from({ length: 8 }, () => new THREE.Matrix4()) },
-  uShadowCount: { value: 0 },
+  uShadowMat: arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4"),
+  uShadowCount: uniform(0, "int"),
+  // the renderer's conventions (shadows.js sets them): depth 0..1 (WebGPU)
+  // or -1..1 (WebGL), and whether a texture's rows run top-down
+  uZ01: uniform(0),
+  uFlipY: uniform(0),
   // x = gobo blur (focus off the sharp point, frost), y = prism copies
   // (0 or 3), z = the prism's turn
-  uLook: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()) },
+  uLook: arrayOf(MAX_LIGHTS, () => new THREE.Vector4(), "vec4"),
 };
 
 // Real gobo pictures (the fixture file's own, app/fixlib gobos.zip), drawn
@@ -108,175 +131,149 @@ export class GoboAtlas {
   }
 }
 
-// Gobo patterns, drawn analytically so no texture atlas is needed.  `uv`
-// is the position inside the beam, -1..1 across its diameter.
-const GOBO_GLSL = /* glsl */ `
-uniform sampler2D uGobos;
-float goboShape(float id, vec2 uv) {
-  float r = length(uv);
-  float a = atan(uv.y, uv.x);
-  if (id < 0.5) return 1.0;
-  if (id > 99.5) {                                  // a real gobo picture
-    float n = id - 100.0;
-    vec2 cell = vec2(mod(n, ${PER}.0), floor(n / ${PER}.0));
-    vec2 p = clamp(uv * 0.5 + 0.5, 0.004, 0.996);
-    vec2 at = (cell + vec2(p.x, 1.0 - p.y)) / ${PER}.0;
-    return texture2D(uGobos, vec2(at.x, 1.0 - at.y)).r;
-  }
-  if (id < 1.5) {                                   // dot ring
-    float k = 0.0;
-    for (int i = 0; i < 8; i++) {
-      float t = float(i) * 0.785398;
-      k = max(k, 1.0 - smoothstep(0.13, 0.17, length(uv - 0.58 * vec2(cos(t), sin(t)))));
-    }
-    return max(k, 1.0 - smoothstep(0.16, 0.2, r));
-  }
-  if (id < 2.5) {                                   // star
-    float s = 0.35 + 0.45 * pow(abs(cos(a * 2.5)), 6.0);
-    return 1.0 - smoothstep(s - 0.04, s + 0.04, r);
-  }
-  if (id < 3.5) {                                   // bars
-    return smoothstep(0.35, 0.45, abs(fract(uv.x * 2.5) - 0.5) * 2.0);
-  }
-  if (id < 4.5) {                                   // rings
-    return smoothstep(0.3, 0.5, abs(fract(r * 3.0) - 0.5) * 2.0);
-  }
-  if (id < 5.5) {                                   // petals
-    return smoothstep(0.2, 0.35, abs(sin(a * 3.0)) * (1.0 - r * 0.6));
-  }
-  if (id < 6.5) {                                   // breakup
-    vec2 p = uv * 3.2;
-    float n = sin(p.x * 1.7 + sin(p.y * 2.3)) * cos(p.y * 1.3 + sin(p.x * 1.9));
-    return smoothstep(-0.05, 0.25, n);
-  }
-  float c = min(abs(uv.x), abs(uv.y));              // cross
-  return 1.0 - smoothstep(0.08, 0.12, c);
-}
+// Gobo patterns, drawn analytically, or a real picture from the atlas.
+// `uv` is the position inside the beam, -1..1 across its diameter.
+const goboShape = Fn(([id, uv]) => {
+  const r = length(uv);
+  const a = atan(uv.y, uv.x);
+  const out = float(1).toVar();
+  If(id.greaterThan(99.5), () => {                       // a real gobo picture
+    const n = id.sub(100);
+    const cell = vec2(mod(n, PER), floor(n.div(PER)));
+    const p = clamp(uv.mul(0.5).add(0.5), 0.004, 0.996);
+    const at = cell.add(vec2(p.x, p.y.oneMinus())).div(PER);
+    out.assign(texture(LIGHTS.uGobos.value, vec2(at.x, at.y.oneMinus())).r);
+  }).ElseIf(id.lessThan(0.5), () => {
+    out.assign(1);
+  }).ElseIf(id.lessThan(1.5), () => {                    // dot ring
+    const k = float(0).toVar();
+    Loop(8, ({ i }) => {
+      const t = float(i).mul(0.785398);
+      k.assign(max(k, smoothstep(0.13, 0.17, length(uv.sub(vec2(cos(t), sin(t)).mul(0.58)))).oneMinus()));
+    });
+    out.assign(max(k, smoothstep(0.16, 0.2, r).oneMinus()));
+  }).ElseIf(id.lessThan(2.5), () => {                    // star
+    const st = pow(abs(cos(a.mul(2.5))), 6).mul(0.45).add(0.35);
+    out.assign(smoothstep(st.sub(0.04), st.add(0.04), r).oneMinus());
+  }).ElseIf(id.lessThan(3.5), () => {                    // bars
+    out.assign(smoothstep(0.35, 0.45, abs(fract(uv.x.mul(2.5)).sub(0.5)).mul(2)));
+  }).ElseIf(id.lessThan(4.5), () => {                    // rings
+    out.assign(smoothstep(0.3, 0.5, abs(fract(r.mul(3)).sub(0.5)).mul(2)));
+  }).ElseIf(id.lessThan(5.5), () => {                    // petals
+    out.assign(smoothstep(0.2, 0.35, abs(sin(a.mul(3))).mul(r.mul(0.6).oneMinus())));
+  }).ElseIf(id.lessThan(6.5), () => {                    // breakup
+    const p = uv.mul(3.2);
+    const nn = sin(p.x.mul(1.7).add(sin(p.y.mul(2.3)))).mul(cos(p.y.mul(1.3).add(sin(p.x.mul(1.9)))));
+    out.assign(smoothstep(-0.05, 0.25, nn));
+  }).Else(() => {                                        // cross
+    out.assign(smoothstep(0.08, 0.12, min(abs(uv.x), abs(uv.y))).oneMinus());
+  });
+  return out;
+});
+
 // look: x = blur (focus off the sharp point, frost), y = prism copies, z =
 // the prism's turn.  Out of focus the picture's contrast melts into the
 // pool (one look at the picture, not several: this runs for every pixel of
 // the room).  A prism splits the beam into copies round its centre (an
-// open beam: three pools).
-float goboMask(float id, vec2 uv, vec4 look) {
-#ifndef DETAIL
-  return goboShape(id, uv);                 // Low quality: the picture as it is
-#else
-  float edge = 1.0;
-  if (look.y > 0.5) {
-    // the copy this point belongs to (they hardly overlap): one look at
-    // the picture, not three
-    float t = floor((atan(uv.y, uv.x) - look.z) / 2.0944 + 0.5) * 2.0944 + look.z;
-    uv = (uv - 0.45 * vec2(cos(t), sin(t))) * 1.9;
-    edge = 1.0 - smoothstep(0.9 - look.x * 0.3, 1.0, length(uv));
-  }
-  if (id < 0.5) return edge;
-  return mix(goboShape(id, uv), 0.55, min(0.85, look.x)) * edge;
-#endif
-}
-`;
+// open beam: three pools).  Low quality (detail off): the picture as it is.
+const goboMask = (id, uv0, look, detail) => {
+  if (!detail) return goboShape(id, uv0);
+  return Fn(() => {
+    const uv = vec2(uv0).toVar();
+    const edge = float(1).toVar();
+    If(look.y.greaterThan(0.5), () => {
+      // the copy this point belongs to (they hardly overlap)
+      const t = floor(atan(uv.y, uv.x).sub(look.z).div(2.0944).add(0.5)).mul(2.0944).add(look.z);
+      uv.assign(uv.sub(vec2(cos(t), sin(t)).mul(0.45)).mul(1.9));
+      edge.assign(smoothstep(look.x.mul(0.3).oneMinus().sub(0.1), 1.0, length(uv)).oneMinus());
+    });
+    const out = edge.toVar();
+    If(id.greaterThan(0.5), () => {
+      out.assign(mix(goboShape(id, uv), 0.55, min(0.85, look.x)).mul(edge));
+    });
+    return out;
+  })();
+};
 
-const SURFACE_VERT = /* glsl */ `
-varying vec3 vWorldPos;
-varying vec3 vWorldNormal;
-void main() {
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPos = wp.xyz;
-  vWorldNormal = normalize(mat3(modelMatrix) * normal);
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}
-`;
-
-const SURFACE_FRAG = /* glsl */ `
-#define MAX_LIGHTS ${MAX_LIGHTS}
-uniform int uCount;
-uniform vec3 uPos[MAX_LIGHTS];
-uniform vec3 uDir[MAX_LIGHTS];
-uniform vec3 uCol[MAX_LIGHTS];
-uniform vec4 uCone[MAX_LIGHTS];
-uniform vec3 uAmbient;
-uniform sampler2D uShadowMap;
-uniform mat4 uShadowMat[8];
-uniform int uShadowCount;
-uniform vec4 uLook[MAX_LIGHTS];
-uniform vec3 uAlbedo;
-uniform float uGrid;
-uniform float uSheen;
-varying vec3 vWorldPos;
-varying vec3 vWorldNormal;
-${GOBO_GLSL}
 // how much of light i reaches this point past the crowd, the objects and
-// the stage (1 = all of it); 2 x 2 taps for a soft edge
-float shadowAt(int i, vec3 wp) {
-  vec4 sp = uShadowMat[i] * vec4(wp, 1.0);
-  if (sp.w <= 0.0) return 1.0;
-  vec3 nd = sp.xyz / sp.w;
-  if (abs(nd.x) >= 1.0 || abs(nd.y) >= 1.0 || nd.z >= 1.0) return 1.0;
-  vec2 uv = nd.xy * 0.5 + 0.5;
-  // the atlas: 4 across, 2 down, 512 x 512 each
-  vec2 off = vec2(mod(float(i), 4.0) * 0.25, floor(float(i) / 4.0) * 0.5);
-  float d = nd.z * 0.5 + 0.5 - 0.0004;
-  float px = 1.0 / 512.0, k = 0.0;
-  for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) {
-    vec2 q = clamp(uv + (vec2(float(a), float(b)) - 0.5) * 1.5 * px, 0.002, 0.998);
-    k += d <= texture2D(uShadowMap, off + q * vec2(0.25, 0.5)).r ? 1.0 : 0.0;
-  }
-  return k * 0.25;
-}
-void main() {
-  vec3 N = normalize(vWorldNormal);
-  if (!gl_FrontFacing) N = -N;
-  vec3 light = uAmbient * (0.6 + 0.4 * max(N.y, 0.0));
-  vec3 gloss = vec3(0.0);
-  // a shiny floor mirrors the lenses lighting it: where this point would
-  // show a light reflected (worked out once, not per light)
-#ifdef DETAIL
-  vec3 R = uSheen > 0.0 ? reflect(normalize(vWorldPos - cameraPosition), N) : vec3(0.0);
-#endif
-  for (int i = 0; i < MAX_LIGHTS; i++) {
-    if (i >= uCount) break;
-    vec3 L = vWorldPos - uPos[i];
-    float along = dot(L, uDir[i]);
-    if (along <= 0.0) continue;                 // behind the lens
-    float d2 = dot(L, L);
-    vec4 cone = uCone[i];
-    if (along * along <= cone.x * cone.x * d2) continue;  // outside the cone
-    float d = sqrt(d2);
-    vec3 Ld = L / max(d, 1e-4);
-    float c = along / max(d, 1e-4);
-    float spot = smoothstep(cone.x, cone.y, c);
-    if (cone.z > 0.5 || uLook[i].y > 0.5) {
-      vec3 dir = uDir[i];
-      vec3 up = abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-      vec3 rt = normalize(cross(dir, up));
-      vec3 u2 = cross(rt, dir);
-      float t = dot(L, dir);
-      float tanO = sqrt(max(1.0 - cone.x * cone.x, 1e-5)) / cone.x;
-      vec2 uv = vec2(dot(L, rt), dot(L, u2)) / max(t * tanO, 1e-4);
-      float cs = cos(cone.w), sn = sin(cone.w);
-      uv = mat2(cs, -sn, sn, cs) * uv;
-      spot *= goboMask(cone.z, uv, uLook[i]);
+// the stage (1 = all of it); 2 x 2 taps for a soft edge.  The atlas: 4
+// across, 2 down, 512 x 512 each.
+const shadowAt = Fn(([i, wp]) => {
+  const k = float(1).toVar();
+  const sp = LIGHTS.uShadowMat.node.element(i).mul(vec4(wp, 1));
+  If(sp.w.greaterThan(0), () => {
+    const nd = sp.xyz.div(sp.w);
+    If(abs(nd.x).lessThan(1).and(abs(nd.y).lessThan(1)).and(nd.z.lessThan(1)), () => {
+      const v = nd.y.mul(0.5).add(0.5);
+      const uv = vec2(nd.x.mul(0.5).add(0.5), select(LIGHTS.uFlipY.greaterThan(0.5), v.oneMinus(), v));
+      const fi = float(i);
+      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.5));
+      const d = select(LIGHTS.uZ01.greaterThan(0.5), nd.z, nd.z.mul(0.5).add(0.5)).sub(0.0004);
+      const px = 1.5 / 512;
+      const sum = float(0).toVar();
+      for (const [ox, oy] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+        const q = clamp(uv.add(vec2(ox * px, oy * px)), 0.002, 0.998);
+        const z = texture(LIGHTS.uShadowMap.value, off.add(q.mul(vec2(0.25, 0.5)))).x;
+        sum.addAssign(select(d.lessThanEqual(z), float(1), float(0)));
+      }
+      k.assign(sum.mul(0.25));
+    });
+  });
+  return k;
+});
+
+/** The light every beam puts on a surface point (and, for a shiny one,
+ *  the lenses it mirrors). */
+const surfaceLight = (albedo, grid, sheen, detail) => Fn(() => {
+  const wp = positionWorld;
+  const N = select(frontFacing, normalize(normalWorld), normalize(normalWorld).negate()).toVar();
+  const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
+  const gloss = vec3(0).toVar();
+  // where this point would show a light reflected (once, not per light)
+  const R = detail ? reflect(normalize(wp.sub(cameraPosition)), N) : null;
+  Loop({ start: int(0), end: LIGHTS.uCount, type: "int", condition: "<" }, ({ i }) => {
+    const L = wp.sub(LIGHTS.uPos.node.element(i)).toVar();
+    const dir = LIGHTS.uDir.node.element(i);
+    const along = dot(L, dir);
+    If(along.lessThanEqual(0), () => { Continue(); });          // behind the lens
+    const d2 = dot(L, L);
+    const cone = LIGHTS.uCone.node.element(i);
+    If(along.mul(along).lessThanEqual(cone.x.mul(cone.x).mul(d2)), () => { Continue(); });  // outside the cone
+    const d = sqrt(d2);
+    const Ld = L.div(max(d, 1e-4));
+    const spot = smoothstep(cone.x, cone.y, along.div(max(d, 1e-4))).toVar();
+    const look = LIGHTS.uLook.node.element(i);
+    If(cone.z.greaterThan(0.5).or(look.y.greaterThan(0.5)), () => {
+      const up = select(abs(dir.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0));
+      const rt = normalize(cross(dir, up));
+      const u2 = cross(rt, dir);
+      const tanO = sqrt(max(cone.x.mul(cone.x).oneMinus(), 1e-5)).div(cone.x);
+      const uv0 = vec2(dot(L, rt), dot(L, u2)).div(max(along.mul(tanO), 1e-4));
+      const cs = cos(cone.w), sn = sin(cone.w);
+      const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
+      spot.mulAssign(goboMask(cone.z, uv, look, detail));
+    });
+    const lam = max(dot(N, Ld.negate()), 0);
+    const att = float(1).div(d2.mul(0.09).add(1));
+    If(i.lessThan(LIGHTS.uShadowCount).and(spot.mul(lam).greaterThan(0.001)), () => {
+      spot.mulAssign(shadowAt(i, wp));
+    });
+    const col = LIGHTS.uCol.node.element(i);
+    light.addAssign(col.mul(spot).mul(lam).mul(att));
+    if (detail) {
+      const rs = max(dot(R, Ld.negate()), 0);
+      gloss.addAssign(col.mul(spot).mul(pow(rs, 900).mul(6).add(pow(rs, 60).mul(0.12))));
     }
-    float lam = max(dot(N, -Ld), 0.0);
-    float att = 1.0 / (1.0 + 0.09 * d * d);
-    if (i < uShadowCount && spot * lam > 0.001) spot *= shadowAt(i, vWorldPos);
-    light += uCol[i] * spot * lam * att;
-#ifdef DETAIL
-    float rs = max(dot(R, -Ld), 0.0);
-    gloss += uCol[i] * spot * (pow(rs, 900.0) * 6.0 + pow(rs, 60.0) * 0.12);
-#endif
-  }
-  vec3 albedo = uAlbedo;
-  if (uGrid > 0.0) {                     // a faint metre grid on the deck
-    vec2 g = abs(fract(vWorldPos.xz) - 0.5);
-    float line = 1.0 - smoothstep(0.0, 0.012, 0.5 - max(g.x, g.y));
-    albedo *= 1.0 + uGrid * line;
-  }
-  vec3 col = albedo * light;
+  });
+  const alb = vec3(albedo).toVar();
+  If(grid.greaterThan(0), () => {                     // a faint metre grid on the deck
+    const g = abs(fract(wp.xz).sub(0.5));
+    const line = smoothstep(0.0, 0.012, max(g.x, g.y).oneMinus().sub(0.5)).oneMinus();
+    alb.mulAssign(line.mul(grid).add(1));
+  });
   // a hint of a gloss floor: the brightest pools bloom a little
-  col += uSheen * light * 0.04 + uSheen * gloss;
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
+  return alb.mul(light).add(light.mul(sheen).mul(0.04)).add(gloss.mul(sheen));
+})();
 
 // Medium and High draw the detail (focus and frost on gobos, prisms, lenses
 // mirrored in shiny floors); Low leaves it out - it costs every pixel of
@@ -286,9 +283,8 @@ export function setDetail(scene, on) {
   DETAIL.on = !!on;
   scene.traverse((o) => {
     for (const m of [].concat(o.material || [])) {
-      if (!m || !m.uniforms || !m.uniforms.uLook) continue;
-      if (on === ("DETAIL" in m.defines)) continue;
-      if (on) m.defines.DETAIL = 1; else delete m.defines.DETAIL;
+      if (!m || !m.userData.detail || m.userData.detailOn === DETAIL.on) continue;
+      m.userData.detail(DETAIL.on);
       m.needsUpdate = true;
     }
   });
@@ -296,165 +292,64 @@ export function setDetail(scene, on) {
 
 /** A diffuse surface that every beam in the rig lights. */
 export function surfaceMaterial(albedo, opts = {}) {
-  const uniforms = {
-    ...LIGHTS,
-    uAlbedo: { value: new THREE.Color(albedo) },
-    uGrid: { value: opts.grid || 0 },
-    uSheen: { value: opts.sheen || 0 },
+  const m = new THREE.MeshBasicNodeMaterial({ side: opts.side || THREE.FrontSide });
+  // the same handles the ShaderMaterial had: m.uniforms.uAlbedo.value...
+  m.uniforms = {
+    uAlbedo: uniform(new THREE.Color(albedo)),
+    uGrid: uniform(opts.grid || 0),
+    uSheen: uniform(opts.sheen || 0),
   };
-  return new THREE.ShaderMaterial({
-    uniforms, vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
-    side: opts.side || THREE.FrontSide, defines: DETAIL.on ? { DETAIL: 1 } : {},
-  });
+  m.userData.detail = (on) => {
+    m.userData.detailOn = on;
+    m.colorNode = surfaceLight(m.uniforms.uAlbedo, m.uniforms.uGrid, m.uniforms.uSheen, on);
+  };
+  m.userData.detail(DETAIL.on);
+  return m;
 }
 
-// People: the same beam-lit surface, instanced, one colour per person, with
-// a small per-person bounce so a dance floor looks like one.
-const CROWD_VERT = /* glsl */ `
-#define MAX_LIGHTS ${MAX_LIGHTS}
-uniform float uTime;
-uniform float uBounce;
-uniform int uCount;
-uniform vec3 uPos[MAX_LIGHTS];
-uniform vec3 uDir[MAX_LIGHTS];
-uniform vec3 uCol[MAX_LIGHTS];
-uniform vec4 uCone[MAX_LIGHTS];
-uniform vec3 uAmbient;
-uniform vec3 uAlbedo;
-varying vec3 vColour;
-// People are lit per vertex: they are small on screen, and a dense dance
+// People: the same beam-lit surface, instanced, one colour per person (the
+// instance colour), with a small per-person bounce so a dance floor looks
+// like one.  Lit per vertex: they are small on screen, and a dense dance
 // floor lit per pixel was the most expensive thing in the room.
-void main() {
-  mat4 im = mat4(1.0);
-#ifdef USE_INSTANCING
-  im = instanceMatrix;
-#endif
-  vec4 wp = modelMatrix * im * vec4(position, 1.0);
-  float ph = fract(sin(dot(im[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-  wp.y += uBounce * max(0.0, sin((uTime * (1.9 + ph * 0.4) + ph) * 6.2831)) * 0.05 * im[1][1];
-  vec3 N = normalize(mat3(modelMatrix) * mat3(im) * normal);
-  vec3 light = uAmbient * (0.6 + 0.4 * max(N.y, 0.0));
-  for (int i = 0; i < MAX_LIGHTS; i++) {
-    if (i >= uCount) break;
-    vec3 L = wp.xyz - uPos[i];
-    float along = dot(L, uDir[i]);
-    if (along <= 0.0) continue;
-    float d2 = dot(L, L);
-    vec4 cone = uCone[i];
-    if (along * along <= cone.x * cone.x * d2) continue;
-    float d = sqrt(d2);
-    float spot = smoothstep(cone.x, cone.y, along / d);
-    float lam = 0.35 + 0.65 * max(dot(N, -L / d), 0.0);
-    light += uCol[i] * spot * lam / (1.0 + 0.09 * d2);
-  }
-  vec3 tint = vec3(1.0);
-#ifdef USE_INSTANCING_COLOR
-  tint = instanceColor;
-#endif
-  vColour = uAlbedo * tint * light;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}
-`;
-
-const CROWD_FRAG = /* glsl */ `
-varying vec3 vColour;
-void main() { gl_FragColor = vec4(vColour, 1.0); }
-`;
+const crowdLight = Fn(() => {
+  const wp = positionWorld;
+  const N = normalize(normalWorld);
+  const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
+  Loop({ start: int(0), end: LIGHTS.uCount, type: "int", condition: "<" }, ({ i }) => {
+    const L = wp.sub(LIGHTS.uPos.node.element(i));
+    const along = dot(L, LIGHTS.uDir.node.element(i));
+    If(along.lessThanEqual(0), () => { Continue(); });
+    const d2 = dot(L, L);
+    const cone = LIGHTS.uCone.node.element(i);
+    If(along.mul(along).lessThanEqual(cone.x.mul(cone.x).mul(d2)), () => { Continue(); });
+    const d = sqrt(d2);
+    const spot = smoothstep(cone.x, cone.y, along.div(d));
+    const lam = max(dot(N, L.div(d).negate()), 0).mul(0.65).add(0.35);
+    light.addAssign(LIGHTS.uCol.node.element(i).mul(spot).mul(lam).div(d2.mul(0.09).add(1)));
+  });
+  return light;
+});
 
 const crowdCache = new Map();
 
 export function crowdMaterial(albedo) {
   const key = String(albedo);
   if (crowdCache.has(key)) return crowdCache.get(key);
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { ...LIGHTS, uAlbedo: { value: new THREE.Color(albedo) } },
-    vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
-  });
-  crowdCache.set(key, mat);
-  return mat;
+  const m = new THREE.MeshBasicNodeMaterial();
+  m.uniforms = { uAlbedo: uniform(new THREE.Color(albedo)) };
+  const ph = hash(instanceIndex);
+  const hop = max(0, sin(LIGHTS.uTime.mul(ph.mul(0.4).add(1.9)).add(ph).mul(6.2831))).mul(LIGHTS.uBounce).mul(0.05);
+  m.positionNode = positionLocal.add(vec3(0, hop, 0));
+  m.colorNode = vec3(m.uniforms.uAlbedo).mul(varying(crowdLight()));   // x the instance colour
+  crowdCache.set(key, m);
+  return m;
 }
 
 // ---------------------------------------------------------------------------
-// Beams: an open cone, scaled in the vertex shader so one geometry serves
+// Beams: an open cone, scaled in the vertex stage so one geometry serves
 // every beam.  Additive, depth-tested (a fixture body hides the beam behind
 // it), never depth-written (beams do not hide each other).
 // ---------------------------------------------------------------------------
-const BEAM_VERT = /* glsl */ `
-uniform float uLen;
-uniform float uR0;
-uniform float uR1;
-varying float vT;
-varying vec3 vWorldPos;
-varying vec3 vViewNormal;
-varying vec3 vViewPos;
-varying vec2 vRad;
-void main() {
-  float t = position.y;
-  float r = mix(uR0, uR1, t);
-  vec3 p = vec3(position.x * r, t * uLen, position.z * r);
-  vT = t;
-  vRad = position.xz;
-  vec4 wp = modelMatrix * vec4(p, 1.0);
-  vWorldPos = wp.xyz;
-  vec4 vp = viewMatrix * wp;
-  vViewPos = vp.xyz;
-  vViewNormal = normalize(normalMatrix * vec3(position.x, 0.0, position.z));
-  gl_Position = projectionMatrix * vp;
-}
-`;
-
-const BEAM_FRAG = /* glsl */ `
-uniform vec3 uColor;
-uniform float uIntensity;
-uniform float uSoft;
-uniform float uHaze;
-uniform float uTime;
-uniform float uLen;
-uniform float uGobo;
-uniform float uGoboRot;
-uniform vec4 uLook;
-varying float vT;
-varying vec3 vWorldPos;
-varying vec3 vViewNormal;
-varying vec3 vViewPos;
-varying vec2 vRad;
-${GOBO_GLSL}
-float hash(vec3 p) {
-  p = fract(p * 0.3183099 + 0.1);
-  p *= 17.0;
-  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-float noise(vec3 x) {
-  vec3 i = floor(x);
-  vec3 f = fract(x);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hash(i + vec3(0, 0, 0)), hash(i + vec3(1, 0, 0)), f.x),
-                 mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x),
-                 mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-}
-void main() {
-  float facing = abs(dot(normalize(vViewNormal), normalize(-vViewPos)));
-  float edge = pow(facing, uSoft);
-  float dist = vT * uLen;
-  float along = exp(-dist * 0.085) * smoothstep(0.0, 0.03, vT)
-                * (1.0 - smoothstep(0.93, 1.0, vT) * 0.6);
-  vec3 q = vWorldPos * 0.7 + vec3(uTime * 0.07, uTime * 0.03, uTime * 0.05);
-  float haze = 0.55 + 0.45 * (noise(q) * 0.65 + noise(q * 2.3) * 0.35);
-  float a = uIntensity * edge * along * mix(1.0, haze, 0.8) * uHaze;
-  if (uGobo > 0.5 || uLook.y > 0.5) {
-    // a gobo in haze: shafts.  The line of sight through this point of the
-    // cone passes the beam's axis at about sqrt(1 - facing^2) of its
-    // radius; the picture there lights it or leaves it dark
-    vec2 uv = normalize(vRad) * sqrt(max(0.0, 1.0 - facing * facing));
-    float cs = cos(uGoboRot), sn = sin(uGoboRot);
-    uv = mat2(cs, -sn, sn, cs) * uv;
-    a *= 0.2 + 0.95 * goboMask(uGobo, uv, uLook);
-  }
-  gl_FragColor = vec4(uColor * a, a);
-}
-`;
-
 let coneGeometry = null;
 
 /** The shared unit cone: unit circle in x/z, y from 0 (lens) to 1 (end). */
@@ -466,30 +361,78 @@ export function beamGeometry() {
   return g;
 }
 
-export function beamMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uColor: { value: new THREE.Color(1, 1, 1) },
-      uIntensity: { value: 0 },
-      uSoft: { value: 1.6 },
-      uHaze: { value: 0.6 },
-      uTime: LIGHTS.uTime,
-      uLen: { value: 5 },
-      uR0: { value: 0.05 },
-      uR1: { value: 1 },
-      uGobo: { value: 0 },
-      uGoboRot: { value: 0 },
-      uLook: { value: new THREE.Vector4() },
-      uGobos: LIGHTS.uGobos,
-    },
-    defines: DETAIL.on ? { DETAIL: 1 } : {},
-    vertexShader: BEAM_VERT,
-    fragmentShader: BEAM_FRAG,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
+// the haze's drift: cheap value noise (the old beams' own), not Perlin -
+// it runs for every pixel of every beam, twice
+const hash3 = Fn(([p0]) => {
+  const p = fract(p0.mul(0.3183099).add(0.1)).mul(17);
+  return fract(p.x.mul(p.y).mul(p.z).mul(p.x.add(p.y).add(p.z)));
+});
+const valueNoise = Fn(([x]) => {
+  const i = floor(x);
+  const f0 = fract(x);
+  const f = f0.mul(f0).mul(f0.mul(-2).add(3));
+  const h = (dx, dy, dz) => hash3(i.add(vec3(dx, dy, dz)));
+  return mix(mix(mix(h(0, 0, 0), h(1, 0, 0), f.x), mix(h(0, 1, 0), h(1, 1, 0), f.x), f.y),
+    mix(mix(h(0, 0, 1), h(1, 0, 1), f.x), mix(h(0, 1, 1), h(1, 1, 1), f.x), f.y), f.z);
+});
+
+const beamNodes = (u, detail) => {
+  const t = positionGeometry.y;
+  const r = mix(u.uR0, u.uR1, t);
+  const position = vec3(positionGeometry.x.mul(r), t.mul(u.uLen), positionGeometry.z.mul(r));
+  const vT = varying(t);
+  const vRad = varying(positionGeometry.xz);
+  const vViewNormal = varying(transformNormalToView(vec3(positionGeometry.x, 0, positionGeometry.z)));
+  const color = Fn(() => {
+    const facing = abs(dot(normalize(vViewNormal), normalize(positionView.negate())));
+    const edge = pow(facing, u.uSoft);
+    const dist = vT.mul(u.uLen);
+    const along = exp(dist.mul(-0.085)).mul(smoothstep(0, 0.03, vT)).mul(smoothstep(0.93, 1, vT).mul(0.6).oneMinus());
+    const q = positionWorld.mul(0.7).add(vec3(LIGHTS.uTime.mul(0.07), LIGHTS.uTime.mul(0.03), LIGHTS.uTime.mul(0.05)));
+    const n = valueNoise(q).mul(0.65).add(valueNoise(q.mul(2.3)).mul(0.35));
+    const haze = n.mul(0.45).add(0.55);
+    const a = u.uIntensity.mul(edge).mul(along).mul(mix(1, haze, 0.8)).mul(u.uHaze).toVar();
+    If(u.uGobo.greaterThan(0.5).or(u.uLook.y.greaterThan(0.5)), () => {
+      // a gobo in haze: shafts.  The line of sight through this point of
+      // the cone passes the beam's axis at about sqrt(1 - facing^2) of its
+      // radius; the picture there lights it or leaves it dark
+      const uv0 = normalize(vRad).mul(sqrt(max(0, facing.mul(facing).oneMinus())));
+      const cs = cos(u.uGoboRot), sn = sin(u.uGoboRot);
+      const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
+      a.mulAssign(goboMask(u.uGobo, uv, u.uLook, detail).mul(0.95).add(0.2));
+    });
+    return a;
   });
+  return { position, alpha: color() };
+};
+
+export function beamMaterial() {
+  const m = new THREE.MeshBasicNodeMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    forceSinglePass: true,              // additive light needs no back-then-front order
+  });
+  // the same handles the ShaderMaterial had (stage.js sets .value each frame)
+  m.uniforms = {
+    uColor: uniform(new THREE.Color(1, 1, 1)),
+    uIntensity: uniform(0),
+    uSoft: uniform(1.6),
+    uHaze: uniform(0.6),
+    uLen: uniform(5),
+    uR0: uniform(0.05),
+    uR1: uniform(1),
+    uGobo: uniform(0),
+    uGoboRot: uniform(0),
+    uLook: uniform(new THREE.Vector4()),
+  };
+  m.userData.detail = (on) => {
+    m.userData.detailOn = on;
+    const { position, alpha } = beamNodes(m.uniforms, on);
+    m.positionNode = position;
+    m.colorNode = vec3(m.uniforms.uColor).mul(alpha);
+    m.opacityNode = alpha;
+  };
+  m.userData.detail(DETAIL.on);
+  return m;
 }
 
 // A soft radial glow for lenses seen head-on.

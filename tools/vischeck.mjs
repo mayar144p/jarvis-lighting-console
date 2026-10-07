@@ -1,4 +1,4 @@
-// Does the 3D view show what the desk is doing?  A 124-light rig of real
+// Does the 3D view show what the desk is doing?  A 20-light rig (124 with BIG_RIG=1) of real
 // fixtures (MAC Aura, Sharpy, Rogue R2 Wash, Source Four LED, COLORado,
 // pixel bars, strobes, lasers, foggers...) is programmed through the
 // SCREEN - clicks on the fixture list, the programmer, the buttons - and
@@ -126,7 +126,7 @@ async function build(rig) {
     });
   }
   console.log(`  ${patch.length} lights`);
-  if (!BRANDS) check(patch.length >= 120, "a rig of 120+ lights", String(patch.length));
+  if (!BRANDS) check(patch.length >= (process.env.BIG_RIG ? 120 : 20), "the whole test rig is patched", String(patch.length));
   for (let i = 0; i < 60; i++) {
     const n = await p.evaluate(() => (window.jarvisStage && window.jarvisStage.fixtures ? window.jarvisStage.fixtures.size : 0));
     if (n >= patch.length) break;

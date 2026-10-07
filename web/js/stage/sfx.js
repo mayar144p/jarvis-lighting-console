@@ -3,10 +3,13 @@
 // which is exactly what the FX layer is sending the real machines - so a
 // confetti burst on screen means the launcher's fan is on right now.
 //
-// Particles are plain THREE.Points with a colour+alpha attribute, one
-// pool per effect head; a laser is a set of additive line segments fanned
-// around the beam axis by its pattern, size and rotation channels.
+// Particles are camera-facing sprites (one per particle, drawn in one go)
+// with a colour+alpha each, one pool per effect head - soft round puffs for
+// fog, CO2 and flame, crisp bits of paper for confetti; a laser is a set of
+// additive line segments fanned around the beam axis by its pattern, size
+// and rotation channels.
 import * as THREE from "three";
+import { instancedBufferAttribute, uv, length, smoothstep, float } from "three/tsl";
 
 const CONFETTI = [0xff3b6b, 0xffd23b, 0x3bb8ff, 0x62ff8a, 0xff8a1a, 0xb45cff, 0xffffff];
 
@@ -37,14 +40,22 @@ class Pool {
     this.max = new Float32Array(this.n);
     this.col = new Float32Array(this.n * 4);
     this.seed = new Float32Array(this.n).map(() => Math.random() * 6.28);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute("color", new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
-    const m = new THREE.PointsMaterial({
-      size: k.size, vertexColors: true, transparent: true, depthWrite: false, sizeAttenuation: true,
+    // WebGPU draws points one pixel wide, so each particle is a sprite of
+    // `size` (world units, smaller with distance) at its own position
+    this.posAttr = new THREE.InstancedBufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
+    this.colAttr = new THREE.InstancedBufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage);
+    const m = new THREE.PointsNodeMaterial({
+      transparent: true, depthWrite: false, sizeAttenuation: true,
       blending: k.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
-    this.points = new THREE.Points(g, m);
+    m.size = k.size;
+    m.positionNode = instancedBufferAttribute(this.posAttr);
+    const c = instancedBufferAttribute(this.colAttr);
+    const r = length(uv().sub(0.5)).mul(2);
+    m.colorNode = c.rgb;
+    m.opacityNode = c.a.mul(k.floor ? float(1) : smoothstep(0.25, 1, r).oneMinus());
+    this.points = new THREE.Sprite(m);
+    this.points.count = this.n;
     this.points.frustumCulled = false;
     scene.add(this.points);
     this.next = 0;
@@ -109,15 +120,13 @@ class Pool {
       this.col[i * 4 + 3] = k.floor ? Math.min(1, t * 4) * base : base * Math.min(1, t * 1.5);
     }
     this.alive = alive;
-    const g = this.points.geometry;
-    g.attributes.position.needsUpdate = true;
-    g.attributes.color.needsUpdate = true;
+    this.posAttr.needsUpdate = true;
+    this.colAttr.needsUpdate = true;
     return alive;
   }
 
   dispose(scene) {
     scene.remove(this.points);
-    this.points.geometry.dispose();
     this.points.material.dispose();
   }
 }

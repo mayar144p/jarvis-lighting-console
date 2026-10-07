@@ -294,11 +294,17 @@ haze, lenses mirrored in shiny floors (per floor type), 8 shadow-casting
 beams on High, quality named High / Medium / Low (Low leaves the new detail
 out and is exactly as fast as before), a light whose file names gobo slots
 but has no pictures shows a drawn gobo instead of an open beam, and
-`tools/fpscheck.mjs` (the 124-light rig at each quality).
-**Not done: the WebGPU renderer itself** - every custom shader (beams,
-surfaces, gobos, shadows) would be rewritten in three.js's node language
-for a speed-up only a graphics card shows; worth it once fpscheck on the
-operator's PC says High can't hold 30 fps.
+`tools/fpscheck.mjs` (the 20-light test rig, `BIG_RIG=1` for 124 at each quality).
+**Then (operator's call, 2026-10-07): the WebGPU renderer, DONE** - the 3D
+runs on three.js's WebGPURenderer; every custom shader (beam-lit surfaces
+with gobos, prisms, focus, reflections and shadows; the crowd; beams with
+haze and gobo shafts) is rewritten in TSL, bloom is a RenderPipeline, fog /
+CO2 / flame / confetti are sprites (soft round puffs).  A browser whose
+WebGPU can't run it (none, or an older Chromium that rejects this
+three.js's texture options) gets the same renderer on WebGL 2;
+`localStorage jarvis.renderer = "webgl"` forces that.  `tools/
+webgpucheck.mjs` runs the 3D on real WebGPU in the desktop app and checks
+it draws the same picture as WebGL 2.
 
 - **Haze and beams:** beams that light up real haze (volumes, soft edges),
   brighter where they cross.

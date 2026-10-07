@@ -2415,7 +2415,7 @@ def test_gobo_pictures() -> None:
     mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
     sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
     check("the 3D draws the pictures into an atlas the floor shader samples",
-          "class GoboAtlas" in mj and "uniform sampler2D uGobos" in mj and "_goboId(inst" in sj, "")
+          "class GoboAtlas" in mj and "texture(LIGHTS.uGobos.value" in mj and "_goboId(inst" in sj, "")
 
 
 def test_shadows() -> None:
@@ -2433,7 +2433,8 @@ def test_shadows() -> None:
           "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
           and "DepthTexture" in sh, "")
     check("the surface shader darkens what a caster hides from a beam",
-          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[8]" in mj, "")
+          "const shadowAt = Fn(([i, wp])" in mj and "i.lessThan(LIGHTS.uShadowCount)" in mj
+          and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 8" in mj, "")
     check("High: 8 beams cast shadows, Medium 4",
           'this.options.quality === "high" ? 8 : 4' in sj and "Math.min(SHADOW_SLOTS, slots, n)" in sh, "")
     check("the crowd, performers, objects (not marks) and the stage deck cast",
@@ -3477,13 +3478,23 @@ def test_3d_detail() -> None:
     check("each light carries blur (focus, frost) and prism to the shaders",
           "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
     check("gobos soften, a prism makes three copies (one look at the picture a pixel)",
-          "float goboMask(float id, vec2 uv, vec4 look)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "2.0944" in mj, "")
+          "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "2.0944" in mj, "")
     check("gobo shafts in the haze: the beam shader shows the same picture",
-          "a *= 0.2 + 0.95 * goboMask(uGobo, uv, uLook)" in mj and "u.uGobo.value = goboId" in sj, "")
+          "a.mulAssign(goboMask(u.uGobo, uv, u.uLook, detail).mul(0.95).add(0.2))" in mj and "u.uGobo.value = goboId" in sj, "")
     check("shiny floors mirror the lenses, by floor type",
-          "reflect(normalize(vWorldPos - cameraPosition), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
-    check("Low leaves the detail out (DETAIL define), Medium and High draw it",
-          "#ifdef DETAIL" in mj and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+          "reflect(normalize(wp.sub(cameraPosition)), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
+    check("Low leaves the detail out (the shaders are built without it), Medium and High draw it",
+          "if (!detail) return goboShape(id, uv0)" in mj and "m.userData.detail(DETAIL.on)" in mj
+          and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+    stage_dir = ROOT / "web" / "js" / "stage"
+    check("the 3D runs on three.js's WebGPU renderer, no WebGL renderer or GLSL left",
+          "new THREE.WebGPURenderer(rendererOpts(" in sj and "new THREE.RenderPipeline(renderer)" in sj
+          and not any("WebGLRenderer" in f.read_text(encoding="utf-8") or "ShaderMaterial(" in f.read_text(encoding="utf-8")
+                      for f in stage_dir.glob("*.js")), "")
+    check("a browser whose WebGPU can't run it (or has none) gets the same renderer on WebGL 2",
+          'tex.createView({ swizzle: "rgba" })' in sj and "forceWebGL: true" in sj and "export const GPU_DEVICE = await probeWebGPU()" in sj, "")
+    check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
+          "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
     check("quality is named High / Medium / Low",
           "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj, "")
     with tempfile.TemporaryDirectory() as td:
