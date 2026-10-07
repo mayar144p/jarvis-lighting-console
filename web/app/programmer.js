@@ -928,7 +928,7 @@ function renderFx() {
       selectionHeads().some((x) => headCount(x) > 1) ? h("button.chip.fx-across" + (fxAcross ? ".on" : ""), {
         title: "Run the effect across each light's own heads (a Wave 360's four cells) as if each were a light",
         onclick: () => { fxAcross = !fxAcross; fxGridKey = ""; renderFx(); } }, "Across each light's heads") : null,
-      h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Move tab"), "."));
+      h("p.muted.small.fx-move-note", "Movements (circle, sweep...) are on the ", h("button.linkish", { onclick: () => showTab("position") }, "Position tab"), "."));
     }
   }
   renderRunning();
@@ -1048,8 +1048,21 @@ function renderLooks(force = false) {
     }, "+ Record")),
     h("div.pal-items", ...(pals[kind] || []).map((p) => palButton(kind, p)),
       (pals[kind] || []).length ? null : h("span.muted.small", "none yet")))));
-  const strip = $(".palette-strip[data-kind=position]");
-  strip.replaceChildren(...(pals.position || []).map((p) => palButton("position", p)));
+  // each family's own palettes, as tiles at the top of its tab, with a
+  // tile to save the current one
+  for (const kind of kinds) {
+    const strip = $(`.palette-strip[data-kind=${kind}]`);
+    if (!strip) continue;
+    strip.replaceChildren(...(pals[kind] || []).map((p) => palButton(kind, p)),
+      h("button.pal-item.pal-save", {
+        title: `Save the selection's ${kind} as a palette`,
+        onclick: async () => {
+          if (!hasSel()) { toast("Select fixtures and set a look first"); return; }
+          const name = await promptBox(`Save ${kind} palette`, "Name", "", { ok: "Save" });
+          if (name) run("record_palette", { kind, name }, { toast: true });
+        },
+      }, "+ Save"));
+  }
   const presets = (state.snap && state.snap.presets) || [];
   // a search box once there are enough looks to need one
   const search = $("#look-search");
@@ -1185,7 +1198,7 @@ function showTab(name) {
   renderHeader();
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
-  if (name === "looks") renderLooks(true);
+  if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
@@ -1266,7 +1279,7 @@ export function initProgrammer() {
     renderIntensity();
     if (tab === "colour") renderColour();
     if (tab === "fx") renderRunning();
-    if (tab === "looks") renderLooks();
+    if (["looks", "colour", "position", "beam"].includes(tab)) renderLooks();
   };
   on("snapshot", () => {
     refresh();

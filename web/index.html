@@ -191,15 +191,15 @@
       <div class="prog-in" id="prog-in" hidden></div>
       <div class="prog-cells" id="prog-cells" hidden></div>
       <nav class="tabs prog-tabs" id="prog-tabs" role="tablist" aria-label="Programmer">
-        <button role="tab" data-tab="intensity" aria-selected="true" title="Intensity"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12"/><rect x="5" y="6.5" width="6" height="3.5" rx="1"/></svg><span>Level</span></button>
+        <button role="tab" data-tab="intensity" aria-selected="true" title="Intensity"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12"/><rect x="5" y="6.5" width="6" height="3.5" rx="1"/></svg><span>Dimmer</span></button>
         <button role="tab" data-tab="colour" aria-selected="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2s4.5 4.6 4.5 7.6a4.5 4.5 0 01-9 0C3.5 6.6 8 2 8 2z"/></svg><span>Colour</span></button>
-        <button role="tab" data-tab="position" aria-selected="false" title="Pan, tilt, aim and movement"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg><span>Move</span></button>
+        <button role="tab" data-tab="position" aria-selected="false" title="Position: pan, tilt, aim and movement"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg><span>Position</span></button>
         <button role="tab" data-tab="beam" aria-selected="false" title="Gobo, zoom, focus, strobe…"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 2h3L14 14H2z"/></svg><span>Beam</span></button>
         <button role="tab" data-tab="fx" aria-selected="false" title="Effects"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8.5c2-5 4-5 6.5 0s4.5 5 6.5 0"/></svg><span>FX</span></button>
         <button role="tab" data-tab="laser" aria-selected="false" title="Lasers" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13L14 3M2 13l12-3.5M2 13l9.5 1"/></svg><span>Laser</span></button>
         <button role="tab" data-tab="sfx" aria-selected="false" title="Special effects: confetti, CO2, fog, flame…" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 12h7.6a2.6 2.6 0 00.3-5.2A3.6 3.6 0 005.3 6 3 3 0 004.2 12z"/></svg><span>SFX</span></button>
-        <button role="tab" data-tab="looks" aria-selected="false" title="Saved looks and palettes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.2.6-3 3 .7 4.2L8 11.5l-3.8 2 .7-4.2-3-3 4.2-.6z"/></svg><span>Looks</span></button>
-        <button role="tab" data-tab="tools" aria-selected="false" title="Setup: arrange, fan, limits, orientation"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7"/><circle cx="10.75" cy="4.5" r="1.75"/><circle cx="5.25" cy="11.5" r="1.75"/></svg><span>Setup</span></button>
+        <button role="tab" data-tab="looks" aria-selected="false" aria-label="Looks" title="Looks: saved looks and palettes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.2.6-3 3 .7 4.2L8 11.5l-3.8 2 .7-4.2-3-3 4.2-.6z"/></svg><span>Looks</span></button>
+        <button role="tab" data-tab="tools" aria-selected="false" aria-label="Setup" title="Setup: arrange, fan, limits, orientation"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7"/><circle cx="10.75" cy="4.5" r="1.75"/><circle cx="5.25" cy="11.5" r="1.75"/></svg><span>Setup</span></button>
       </nav>
       <div class="prog-held" id="prog-held" hidden></div>
       <div class="prog-body" id="prog-body">
@@ -229,6 +229,7 @@
 
         <div class="tab-pane" data-pane="colour" hidden>
           <div class="mode-hint" id="mode-hint" hidden></div>
+          <div class="palette-strip" data-kind="colour"></div>
           <div class="picker" id="picker">
             <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
           </div>
@@ -272,6 +273,7 @@
         </div>
 
         <div class="tab-pane" data-pane="beam" hidden>
+          <div class="palette-strip" data-kind="beam"></div>
           <div class="beam-quick" id="beam-quick"></div>
           <div class="attr-list" id="attr-list"></div>
         </div>

@@ -22,7 +22,7 @@ const DOES = [
   ["strobe", "Strobe", "Strobes them"],
   ["kill", "Blackout lights", "Turns these lights off"],
   ["fx", "Effect", "Runs one effect (circle, rainbow, chase…)"],
-  ["move", "My move", "Plays one of your saved moves (Move tab)"],
+  ["move", "My move", "Plays one of your saved moves (Position tab)"],
   ["custom", "Mix", "Any mix of level, dim, colour, strobe and effects"],
   ["capture", "From the stage", "Whatever is on stage now: colours, positions, effects"],
   ["go", "GO", "GO on a playback"],
@@ -595,8 +595,8 @@ function editButton(slot, btn) {
       if (s.fx === "roam" || s.fx.startsWith("shape:")) {
         const p = s.params || {};
         const what = s.fx === "roam" ? `a roam over ${(p.zones || []).length} zone(s)` : "a shape";
-        kids.push(row("Movement", h("div.qe-note", `Made on the Move tab: ${what}, its speed and size${p.beats ? `, a round per ${p.beats} beat(s)` : ""}. `
-          + "To change it, set it up again on the Move tab and press Make a button - or pick another effect above.")));
+        kids.push(row("Movement", h("div.qe-note", `Made on the Position tab: ${what}, its speed and size${p.beats ? `, a round per ${p.beats} beat(s)` : ""}. `
+          + "To change it, set it up again on the Position tab and press Make a button - or pick another effect above.")));
       } else if (s.fx.startsWith("step:")) {
         kids.push(row("On the beat", chips([[0, "Its own times"], [1, "A round a beat"], [2, "2 beats"], [4, "A bar"], [8, "2 bars"]],
           s.params.beats ?? 0, (v) => { s.params = v ? { beats: v } : {}; draw(); })));
@@ -616,7 +616,7 @@ function editButton(slot, btn) {
       const mv = (state.snap && state.snap.moves) || [];
       if (!s.move && mv.length) s.move = mv[0].id;
       kids.push(row("Move", mv.length ? chips(mv.map((m) => [m.id, m.name]), s.move, (v) => { s.move = v; draw(); })
-        : h("div.qe-note", "No saved moves yet - make one on the Move tab and press “Save this as my move”.")));
+        : h("div.qe-note", "No saved moves yet - make one on the Position tab and press “Save this as my move”.")));
     }
     if (d === "custom" || d === "capture") {
       if (d === "capture") {
