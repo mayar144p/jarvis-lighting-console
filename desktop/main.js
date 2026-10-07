@@ -8,7 +8,7 @@
 //   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
 "use strict";
 const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, screen, session, shell } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
@@ -39,11 +39,33 @@ function freePort() {
   });
 }
 
+// The first Python that really runs.  Not just $PYTHON: on some computers
+// it names a folder (...\Python312\Scripts), and on Windows "python" can be
+// the Microsoft Store stand-in, which runs nothing.  JARVIS_PYTHON wins.
+function findPython() {
+  const win = process.platform === "win32";
+  const tries = [];
+  for (const v of [process.env.JARVIS_PYTHON, process.env.PYTHON]) {
+    if (!v) continue;
+    let p = v.replace(/^"|"$/g, "");
+    try { if (fs.statSync(p).isDirectory()) p = path.join(p, win ? "python.exe" : "python3"); } catch { continue; }
+    tries.push([p, []]);
+  }
+  tries.push(...(win ? [["python", []], ["py", ["-3"]], ["python3", []]] : [["python3", []], ["python", []]]));
+  for (const [cmd, pre] of tries) {
+    const r = spawnSync(cmd, [...pre, "-c", "import sys; print(sys.version_info[0])"], { windowsHide: true, encoding: "utf8", timeout: 15000 });
+    if (r.status === 0 && String(r.stdout).trim() === "3") return [cmd, pre];
+  }
+  return null;
+}
+
 async function startEngine() {
   const port = await freePort();
-  const py = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+  const found = findPython();
+  if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Jarvis again");
+  const [py, pre] = found;
   const log = fs.createWriteStream(path.join(app.getPath("userData"), "engine.log"), { flags: "w" });
-  engine = spawn(py, ["app/main.py"], {
+  engine = spawn(py, [...pre, "app/main.py"], {
     cwd: ROOT, windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
     // HOST: this computer only.  CONSOLE_TOKEN: the private key.  The
     // engine shuts down cleanly when our end of its stdin closes.
