@@ -1,0 +1,237 @@
+// Jarvis as a desktop app (docs/BACKLOG.md A9 step 1).
+//
+// Nothing is rewritten: this starts the same Python engine, hidden, on a
+// free port that only this computer can reach, with a private key shared
+// at start-up, and shows the same screens in the app's own windows - one
+// per monitor in Show mode.  Closing the app stops the engine cleanly.
+//
+//   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
+"use strict";
+const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, screen, session, shell } = require("electron");
+const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const net = require("node:net");
+const path = require("node:path");
+
+const ROOT = path.join(__dirname, "..");
+const TOKEN = crypto.randomBytes(24).toString("hex");
+const STATE_FILE = () => path.join(app.getPath("userData"), "windows.json");
+
+// the parts of the desk a window can show (?window=... in web/app/main.js)
+const PARTS = {
+  main: { q: "", title: "Jarvis" },
+  stage: { q: "stage", title: "Jarvis - 3D view" },
+  desk: { q: "desk", title: "Jarvis - Programmer" },
+  playbacks: { q: "playbacks", title: "Jarvis - Playbacks" },
+};
+
+let engine = null, base = "", quitting = false, saved = {};
+const open = new Map();                       // part -> BrowserWindow
+const reopen = new Set();                     // the windows to open next time
+
+// ---------------------------------------------------------------- engine
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); });
+  });
+}
+
+async function startEngine() {
+  const port = await freePort();
+  const py = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+  const log = fs.createWriteStream(path.join(app.getPath("userData"), "engine.log"), { flags: "w" });
+  engine = spawn(py, ["app/main.py"], {
+    cwd: ROOT, windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
+    // HOST: this computer only.  CONSOLE_TOKEN: the private key.  The
+    // engine shuts down cleanly when our end of its stdin closes.
+    env: { ...process.env, HOST: "127.0.0.1", PORT: String(port), CONSOLE_TOKEN: TOKEN, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+  });
+  engine.stdout.pipe(log);
+  engine.stderr.pipe(log);
+  let died = null;
+  engine.once("exit", (code) => {
+    died = code;
+    if (!quitting) {
+      dialog.showErrorBox("Jarvis stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
+      app.exit(1);
+    }
+  });
+  engine.once("error", (e) => {
+    dialog.showErrorBox("Jarvis can't start", `Python didn't start (${e.message}). Install Python 3 from python.org, then open Jarvis again.`);
+    app.exit(1);
+  });
+  base = `http://127.0.0.1:${port}/`;
+  for (let i = 0; i < 240 && died === null; i++) {          // up to a minute
+    try { if ((await fetch(base + "api/status")).ok) return; } catch { /* not yet */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error("the engine didn't answer");
+}
+
+function stopEngine() {
+  if (!engine || engine.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const hard = setTimeout(() => { try { engine.kill(); } catch { /* gone */ } resolve(); }, 8000);
+    engine.once("exit", () => { clearTimeout(hard); resolve(); });
+    engine.stdin.end();                       // the clean way: it saves and stops
+  });
+}
+
+// --------------------------------------------------------------- windows
+function loadState() {
+  try { saved = JSON.parse(fs.readFileSync(STATE_FILE(), "utf8")) || {}; } catch { saved = {}; }
+}
+function saveState() {
+  try { fs.writeFileSync(STATE_FILE(), JSON.stringify(saved, null, 1)); } catch { /* not fatal */ }
+}
+function onScreen(b) {
+  return b && screen.getAllDisplays().some(({ workArea: d }) =>
+    b.x < d.x + d.width && b.x + b.width > d.x && b.y < d.y + d.height && b.y + b.height > d.y);
+}
+
+// where a window goes the first time in Show mode: the 3D on the second
+// monitor (full screen), playbacks on the third, the programmer on the first
+function defaultPlace(part) {
+  const ds = screen.getAllDisplays();
+  const pick = { stage: ds[1], playbacks: ds[2], desk: ds[0], main: ds[0] }[part] || ds[0];
+  const d = pick.workArea;
+  return { bounds: { x: d.x + 40, y: d.y + 40, width: Math.min(1440, d.width - 80), height: Math.min(900, d.height - 80) },
+    full: part === "stage" && ds.length > 1 };
+}
+
+function openPart(part) {
+  if (open.has(part)) { open.get(part).focus(); return open.get(part); }
+  const mem = saved[part];
+  const place = mem && onScreen(mem.bounds) ? mem : defaultPlace(part);
+  const win = new BrowserWindow({
+    ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
+    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
+  });
+  open.set(part, win);
+  reopen.add(part);
+  win.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
+  win.once("ready-to-show", () => { if (place.full) win.setFullScreen(true); win.show(); });
+  const remember = () => {
+    if (win.isDestroyed()) return;
+    saved[part] = { bounds: win.isFullScreen() || win.isMaximized() ? win.getNormalBounds() : win.getBounds(), full: win.isFullScreen() };
+    saveState();
+  };
+  win.on("moved", remember);
+  win.on("resized", remember);
+  win.on("enter-full-screen", remember);
+  win.on("leave-full-screen", remember);
+  win.on("close", (e) => {
+    remember();
+    // the last window closes the desk: ask, so a stray click can't end a show
+    if (!quitting && open.size === 1 && !confirmQuit(win)) e.preventDefault();
+  });
+  win.on("closed", () => {
+    open.delete(part);
+    if (!quitting) reopen.delete(part);        // closing the last one keeps it for next time
+    if (!open.size) app.quit();
+  });
+  guard(win.webContents);
+  return win;
+}
+
+function confirmQuit(win) {
+  const r = dialog.showMessageBoxSync(win, {
+    type: "question", buttons: ["Keep the desk open", "Close Jarvis"], defaultId: 0, cancelId: 0,
+    message: "Close Jarvis?", detail: "The show is saved. The lights stop getting DMX from this computer.",
+  });
+  if (r === 1) quitting = true;
+  return r === 1;
+}
+
+// keys that would close or reload a window belong to the desk during a
+// show; links to other sites open in the normal browser
+function guard(wc) {
+  wc.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown") return;
+    const k = input.key.toLowerCase(), mod = input.control || input.meta;
+    if (k === "f5" || (mod && (k === "r" || k === "w"))) e.preventDefault();
+  });
+  wc.on("will-navigate", (e, url) => { if (!url.startsWith(base)) { e.preventDefault(); shell.openExternal(url); } });
+  wc.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(base)) return { action: "allow" };
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+}
+
+function showMode() {
+  for (const part of ["stage", "desk", "playbacks"]) openPart(part);
+  const all = open.get("main");
+  if (all) { reopen.delete("main"); quitting = true; all.close(); quitting = false; }
+}
+function oneWindow() {
+  openPart("main");
+  for (const part of ["stage", "desk", "playbacks"]) {
+    const w = open.get(part);
+    if (w) { reopen.delete(part); quitting = true; w.close(); quitting = false; }
+  }
+}
+
+function menu() {
+  const mac = process.platform === "darwin";
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(mac ? [{ role: "appMenu" }] : []),
+    { label: "Desk", submenu: [
+      { label: "Show mode (a window per monitor)", accelerator: "CmdOrCtrl+Shift+S", click: showMode },
+      { label: "Everything in one window", accelerator: "CmdOrCtrl+Shift+A", click: oneWindow },
+      { type: "separator" },
+      { label: "3D view", click: () => openPart("stage") },
+      { label: "Programmer and fixtures", click: () => openPart("desk") },
+      { label: "Playbacks and buttons", click: () => openPart("playbacks") },
+      { type: "separator" },
+      { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: () => { if (confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
+    ] },
+    { label: "View", submenu: [
+      { role: "togglefullscreen", accelerator: "F11" },
+      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
+      { type: "separator" },
+      { role: "toggleDevTools", accelerator: "CmdOrCtrl+Shift+I" },
+    ] },
+  ]));
+}
+
+// ------------------------------------------------------------------ start
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on("second-instance", () => { const w = [...open.values()][0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+
+app.whenReady().then(async () => {
+  loadState();
+  try {
+    await startEngine();
+  } catch (e) {
+    dialog.showErrorBox("Jarvis can't start", `${e.message}. Its log is in:\n${app.getPath("userData")}`);
+    await stopEngine();
+    app.exit(1);
+    return;
+  }
+  // every request to the engine carries the private key; nothing else can
+  // reach it (it only listens on this computer)
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [base + "*"] }, (d, cb) => {
+    d.requestHeaders["X-Jarvis-Token"] = TOKEN;
+    cb({ requestHeaders: d.requestHeaders });
+  });
+  powerSaveBlocker.start("prevent-display-sleep");    // the screens stay awake during a show
+  menu();
+  const parts = Object.keys(saved).filter((p) => saved[p] && saved[p].open);
+  if (parts.length) parts.forEach(openPart); else openPart("main");
+});
+
+// remember which windows were open, for next time
+app.on("before-quit", () => {
+  quitting = true;
+  for (const part of Object.keys(PARTS)) saved[part] = { ...(saved[part] || {}), open: reopen.has(part) };
+  saveState();
+});
+app.on("will-quit", (e) => {
+  if (!engine || engine.exitCode !== null) return;
+  e.preventDefault();
+  stopEngine().then(() => app.exit(0));
+});

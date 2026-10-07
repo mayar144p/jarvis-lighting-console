@@ -1562,3 +1562,17 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
   color: #fecaca; font-weight: 700; }
 .prog-acts .btn.rec:hover:not(:disabled) { background: color-mix(in srgb, var(--live) 26%, var(--surface-2)); }
 .prog-in-chip .x { margin-right: 0; }   /* (the chip's × stays inside it) */
+
+/* ------------------------------------------- desktop app: one part per window */
+/* (?window=... - see web/app/main.js; the app opens each on its own monitor) */
+[data-window] .app { grid-template-rows: var(--topbar-h) auto minmax(0, 1fr) 0; }
+[data-window] .statusbar { display: none; }
+[data-window="stage"] .app { grid-template-rows: 0 0 minmax(0, 1fr) 0; }
+[data-window="stage"] .topbar { display: none; }
+[data-window="stage"] .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "stage"; }
+[data-window="stage"] .fixtures, [data-window="stage"] .programmer, [data-window="stage"] .playbacks { display: none; }
+[data-window="desk"] .workspace { grid-template-columns: var(--fixtures-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "fixtures prog"; }
+[data-window="desk"] .stage-wrap, [data-window="desk"] .playbacks { display: none; }
+[data-window="playbacks"] .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "pb"; }
+[data-window="playbacks"] .fixtures, [data-window="playbacks"] .programmer, [data-window="playbacks"] .stage-wrap { display: none; }
+.stage-no3d { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; margin: 0; }

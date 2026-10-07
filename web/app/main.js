@@ -25,6 +25,12 @@ function wireGig() {
   if (gig === "1") document.body.classList.add("gig");
 }
 
+// The desktop app opens parts of the desk in their own windows (one per
+// monitor): ?window=stage (the 3D, full), desk (fixtures + programmer),
+// playbacks (playbacks + buttons, for a touch screen).  No window: all of it.
+const WINDOW = new URLSearchParams(location.search).get("window") || "";
+if (WINDOW) document.documentElement.dataset.window = WINDOW;
+
 async function boot() {
   try {
     state.status = await get("/api/status");
@@ -33,7 +39,15 @@ async function boot() {
   }
   initTopbar();
   initFixtures();
-  initStage();
+  if (WINDOW !== "desk" && WINDOW !== "playbacks") {   // one 3D per computer is plenty
+    // a computer whose graphics can't do 3D (no WebGL) still runs the desk
+    try { initStage(); } catch (e) {
+      console.error(e);
+      const box = $("#stage-wrap");
+      if (box) box.append(Object.assign(document.createElement("p"), { className: "stage-no3d muted",
+        textContent: "This computer's graphics can't draw the 3D view. Everything else works - the lights, the programmer and the playbacks." }));
+    }
+  }
   initProgrammer();
   initTimeline();
   initPlaybacks();

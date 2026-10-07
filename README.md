@@ -55,7 +55,30 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    LIVE**. Until then every frame is built and counted but nothing leaves the
    machine.
 
-Python 3.10+ is required. Node is only needed to run the full test suite.
+Python 3.10+ is required. Node is only needed to run the full test suite
+and the desktop app.
+
+### The desktop app (testing)
+
+**Windows:** double-click `run-desktop.bat`. **Mac/Linux:** `./run-desktop.sh`.
+The first time it fetches Electron (about 100 MB, needs
+[Node.js](https://nodejs.org)). It's the same desk, in its own windows:
+
+- **No address, no browser.** The engine starts hidden on a free port that
+  only this computer can reach, with a private key made at start-up; the
+  app stops it cleanly (show saved) when you close it.
+- **Desk → Show mode** (Ctrl+Shift+S) puts each part of the desk in its own
+  window: the 3D view (full screen on the second monitor), the programmer
+  and fixtures, the playbacks and buttons (a touch screen). Move them
+  where you want: each window remembers its monitor and size, and the same
+  set opens next time. **Desk → Everything in one window** goes back.
+- **Safe during a show:** Ctrl+R, F5 and Ctrl+W do nothing; closing the last
+  window asks first; the screens don't sleep while it's open.
+
+Your shows and `.env` are the same as with `run.bat` (it runs the same
+`data/` folder). Not done yet: a one-file installer with Python packed in,
+updates for the app itself, and phones / tablets as remotes (see
+`docs/BACKLOG.md` A9).
 
 ## The desk
 
@@ -589,6 +612,7 @@ touched):
 | `vischeck.mjs --brands \| --brand X \| --product "words"` | the same rigs through the screen, one brand at a time, plus the effects: disarmed nothing fires; armed, fire / fog / laser show in the 3D; KILL stops them | ~3 min a brand |
 | `oddcheck_ui.mjs` | two browsers on one desk; the server dropping out and coming back | ~1 min |
 | `frametiming.py` | DMX on a steady 40 Hz with a big rig and three screens (CI) | 5 s |
+| `desktopcheck.mjs` | the desktop app: engine hidden on a private port and key, Show mode's windows each show their part, Ctrl+R / F5 don't reload, closing stops the engine (`cd desktop && npm install` first) | ~1 min |
 
 The browser checks need Node and Playwright.  `docs/REAL_LIGHT_CHECKLIST.md`
 is the 15-minute check with real lights.

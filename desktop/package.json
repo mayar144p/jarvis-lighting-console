@@ -1,0 +1,14 @@
+{
+  "name": "jarvis-desk",
+  "productName": "Jarvis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jarvis lighting desk as a desktop app: the engine runs hidden, the desk opens in its own windows.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.6.0"
+  }
+}

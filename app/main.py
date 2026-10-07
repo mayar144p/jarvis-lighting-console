@@ -14,6 +14,7 @@ import mimetypes
 import os
 import re
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import hmac
@@ -1302,6 +1303,18 @@ def main() -> None:
         print("* midi: " + (f"open ({midi_info.get('device')})"
                             if midi_info.get("open")
                             else (midi_info.get("error") or "idle")))
+    if os.environ.get("JARVIS_DESKTOP") == "1":
+        # started by the desktop app: when it closes (or crashes) its end of
+        # our stdin closes, and the desk shuts down cleanly - the show saved,
+        # the outputs stopped - instead of being killed mid-write
+        def _parent_gone() -> None:
+            try:
+                while sys.stdin.buffer.read(1):
+                    pass
+            except (OSError, ValueError):
+                pass
+            server.shutdown()
+        threading.Thread(target=_parent_gone, name="desktop-parent", daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
