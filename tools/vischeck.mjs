@@ -212,7 +212,8 @@ const name = (h) => `#${h} ${(patch.find((x) => x.head_no === +h) || {}).model |
 const LIB_3D = [                      // the library's own type -> the 3D body it should get
   [/moving head/i, (b) => b.moving, "a moving head"],
   [/scanner/i, (b) => b.type === "scanner", "a scanner (mirror)"],
-  [/flower|effect/i, (b) => ["effect", "scanner"].includes(b.type) || b.moving, "an effect light"],
+  // ("Effect" is also what MagicFX calls its confetti / CO2 / flame machines)
+  [/flower|effect/i, (b) => ["effect", "scanner"].includes(b.type) || b.moving || b.class !== "light", "an effect light"],
   [/^(strobe|blinder)/i, (b) => ["strobe", "blinder", "bar", "matrix", "tube"].includes(b.type), "a strobe / blinder"],
   [/led bar|pixel bar/i, (b) => ["bar", "moving_bar", "tube", "matrix", "strobe", "blinder"].includes(b.type), "a bar"],
   [/laser/i, (b) => b.type === "laser", "a laser"],

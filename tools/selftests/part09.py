@@ -2937,6 +2937,10 @@ def test_product_fit() -> None:
     it, b = body("qlc", "MagicFX/MagicFX-StadiumBlaster.qxf")
     check("MagicFX StadiumBlaster is confetti (needs ARM)", it["fx_kind"] == "confetti" and b["type"] == "confetti",
           f"{it['fx_kind']} {b['type']}")
+    it, _b = body("qlc", "MagicFX/MagicFX-SwirlFan-II.qxf")
+    fire = next(d for d in it["modes"][0]["detail"] if d["role"] == "fx_fire")
+    check("MagicFX SwirlFan II is confetti, and fire sends 'Confetti output' (not 'No output')",
+          it["fx_kind"] == "confetti" and fire["on_value"] >= 10, f"{it['fx_kind']} {fire.get('on_value')}")
     it, b = body("qlc", "Showtec/Showtec-Dragon-F-350.qxf")
     check("Showtec Dragon F-350 is a hazer, not a flame machine", it["fx_kind"] == "haze" and b["type"] == "atmos",
           f"{it['fx_kind']} {b['type']}")

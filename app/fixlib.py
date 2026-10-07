@@ -692,7 +692,7 @@ FX_KINDS = {
 }
 
 _KIND_PATTERNS = [
-    ("confetti", r"confetti|funfetti|streamer|stadium ?(shot|blaster|blower)|swirl fan"),
+    ("confetti", r"confetti|funfetti|streamer|stadium ?(shot|blaster|blower)|swirl ?fan"),
     ("co2", r"\bco2\b|co\s?2 jet|cryo|psyco2|eco2"),
     ("flame", r"\bflames?\b|flamer|fire\s*(jet|machine|effect|burst)|g-flame|dragon"),
     ("spark", r"\bsparks?\b|cold\s*(fire|spark)|sparkular"),
@@ -704,7 +704,7 @@ _KIND_PATTERNS = [
 # Words that mean the fixture is really a light, whatever else it says.
 _LIGHT_WORDS = r"\bpar(\b|\d)|parcan|\bwash|\bspot(\b|\d)|\bbeam|\bbar\b|\bpanel|\bprofile"
 
-_OFF_TEXT = re.compile(r"\b(off|no function|closed|disabled?|safe|blackout|stop|none|idle)\b|^0$", re.I)
+_OFF_TEXT = re.compile(r"\b(off|no (function|output|effect|fire)|closed|disabled?|safe|blackout|stop|none|idle)\b|^0$", re.I)
 _FIRE_TEXT = re.compile(r"\b(on|fire|firing|shoot|shot|launch|burst|blast|output|valve open|open|go|max|full|trigger|ignit\w*)\b", re.I)
 _ARM_TEXT = re.compile(r"\b(enabled?|armed?|ready|safety off|active|on)\b", re.I)
 _DANGER_TEXT = re.compile(r"\btest\b|\breset\b|\bpurge\b|\bclean", re.I)
