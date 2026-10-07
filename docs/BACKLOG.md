@@ -342,9 +342,11 @@ So problems arrive with the evidence attached instead of typed by hand.
     browser (needs a GitHub account; drag the bundle in).
   - v2: a small relay service with a bot key creates the issue directly,
     so no GitHub account is needed (the key never ships inside the app).
-- **Decision for the operator:** the repo is private today - public
-  reports need it public, or a separate public "bug reports" repo plus
-  the relay.
+- **Decided (2026-10-07):** the repo goes public, so reports land in its
+  own Issues.  Checked before: no `.env`, keys or `data/` anywhere in the
+  history; the fixture libraries, three.js and pdf.js carry their licence
+  files.  Open: the project's own licence (none yet = all rights
+  reserved: people can read, not reuse).
 - **Fixing:** the fixture-debug skill learns "fix issue #N" - download the
   bundle, load the rig, reproduce with the checks (DMX, safety,
   programmer fit, 3D), fix, add a test, link the fix to the issue.
