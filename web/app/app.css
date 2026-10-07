@@ -59,8 +59,9 @@
   --topbar-h: 46px;
   --status-h: 26px;
   --pb-h: 196px;
-  --fixtures-w: 280px;
-  --prog-w: 352px;
+  /* the side panels grow with the screen (the stage keeps the middle) */
+  --fixtures-w: clamp(272px, 20vw, 340px);
+  --prog-w: clamp(340px, 24vw, 420px);
   --row-h: 30px;
 }
 
@@ -1499,3 +1500,47 @@ body[data-bottom="buttons"] .workspace { --pb-h: clamp(260px, 40vh, 460px); }
 /* a big rig makes a dozen group chips: three rows of them, the rest a
    scroll away, so the fixture list keeps its room */
 .group-chips { max-height: 96px; overflow-y: auto; overscroll-behavior: contain; }
+
+/* ---------------------------------------------- console: fixtures panel
+   Groups first, as a pool of tiles (tap selects, hold flashes); then the
+   fixture sheet, one line per row: number, type icon, name, address (brand,
+   type and mode are in the name's tooltip). */
+.sec-label { padding: 2px 12px 6px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.sec-label small { text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 4px; }
+.group-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; padding: 0 12px 10px; max-height: 148px; }
+.group-chips .chip-ic { position: absolute; right: 7px; bottom: 5px; margin: 0; }
+.group-chips .chip { height: 42px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+  padding: 5px 8px; border-radius: var(--radius-sm); font-weight: 600; font-size: 12px; min-width: 0; position: relative; text-align: left; }
+.group-chips .chip > :not(small):not(.x):not(.chip-ic) { overflow: hidden; text-overflow: ellipsis; }
+.group-chips .chip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.group-chips .chip small { font: 600 10.5px var(--mono); }
+.group-chips .chip .x { position: absolute; right: 2px; top: 2px; margin: 0; opacity: 0; }
+.group-chips .chip:hover .x { opacity: .6; }
+.group-chips .chip.on { box-shadow: inset 0 0 0 1px var(--accent); }
+.sec-label:has(+ .group-chips:empty) { display: none; }
+.fx-toolbar { padding-top: 0; }
+.fx-table td { height: var(--row-h); padding-top: 2px; padding-bottom: 2px; }
+.fx-table .f-sub { display: none; }
+.fx-table .f-name b { display: block; white-space: nowrap; text-overflow: ellipsis; -webkit-line-clamp: unset; }
+.fx-table tr.fold .c-addr small { display: none; }
+.fx-table .c-no { width: 54px; }
+body.gig .fx-table td { height: 40px; }
+
+/* ------------------------------------------------ console: stage chrome
+   One View menu (keys 1-6 still jump), the hint until the view is used. */
+#views { display: none; }
+body.hint-seen #stage-hint:not(.must) { display: none; }
+
+/* ------------------------------------------------- console: dialogs
+   One frame for every dialog: the title bar, the body that scrolls, the
+   actions at the bottom right (the main one last, coloured).  Section
+   headings inside read like the panels' (small capitals). */
+.modal { background: var(--surface); }
+.modal-head { padding: 12px 16px; background: var(--bg-2); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.modal-head h2 { font-size: 14px; }
+.modal-body { padding: 16px; }
+.modal-body > h3, .modal-body section > h3, .modal-body .sec-h {
+  font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.modal-body > h3:first-child, .modal-body section:first-child > h3:first-child { margin-top: 0; }
+.modal-foot { padding: 10px 16px; align-items: center; }
+.modal-foot .btn { min-width: 84px; }
