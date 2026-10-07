@@ -73,10 +73,12 @@ CREATE TABLE IF NOT EXISTS modes (
 # channels get their own controls - aux1..aux24; 8: also for fixtures whose
 # file is gone, upgraded in the database; 9: an SFX machine's GO / trigger
 # channel is its fire output, and "Preset" is not a reset channel; 10: a
-# "Shutter, strobe, reset" channel is the shutter, not maintenance).  On start, fixtures imported by an
+# "Shutter, strobe, reset" channel is the shutter, not maintenance; 13: a
+# QLC+ strobe range is known by its tag too - a Sharpy's "Stobe (slow to
+# fast)" and "Pulsation" strobed on the desk but looked steady in 3D).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 12
+PARSER_VERSION = 13
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than

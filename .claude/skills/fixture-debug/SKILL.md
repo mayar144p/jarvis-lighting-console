@@ -52,6 +52,13 @@ Locate, effects, SFX output: DMX vs the 3D look), plus the safety rules:
 
 For every mode of a model, use `python tools/libsweep.py --all-modes`.
 
+Does the 3D show every range of every channel (prism facets and turning,
+gobo shake / turn / scroll, split colours, a turning colour wheel, pulse /
+ramp / random strobes)?  `python tools/lookcheck.py [name]` steps each
+channel of the test rig's models through every range its file lists:
+MISSED is a bug in `app/beamlook.py` (or in how the file was read);
+"not drawn" lists what the 3D has nothing for yet.
+
 ## 2. Screen check (the real page, 3D included)
 
 ```

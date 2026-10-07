@@ -32,7 +32,7 @@ _DEG = re.compile(r"(-?\d+(?:\.\d+)?)\s*°?\s*(?:-|–|to|\.\.)\s*(-?\d+(?:\.\d+
 _CCW = re.compile(r"ccw|counter|anti|left|reverse|backward", re.I)
 _SLOW_FAST = re.compile(r"slow\s*(?:-|–|>|to|→)+\s*fast", re.I)
 _FAST_SLOW = re.compile(r"fast\s*(?:-|–|>|to|→)+\s*slow", re.I)
-_TURNING = re.compile(r"rotat|spin|scroll|rainbow|continuous|cycl", re.I)
+_TURNING = re.compile(r"rotat|spin|scroll|rainbow|continuous|cycl|flow", re.I)
 _SPLIT = re.compile(r"\s+(?:\+|/|&|-|–|and)\s+|\s*[+/&]\s*", re.I)
 _PLAIN = re.compile(r"^\s*(?:empty|open|white|no colou?r|empty position)\b", re.I)
 
@@ -145,6 +145,9 @@ def describe(ranges: dict, values: dict, shutter_role: str | None = None) -> dic
             out["prot"] = t
     for caps, v in _copies(ranges, values, "gobo_rot"):
         c = _cap(caps, v)
+        if c and re.search(r"shak|wobbl|vibrat", c[2], re.I):
+            out["gshake"] = round(_speed(c[0], c[1], v, c[2], 1.0) * 8, 2)   # a second wheel's gobo shaking
+            continue
         t = c and _turn(*c[:2], v, c[2])
         if t and "grot" not in out:
             out["grot"] = t
@@ -170,7 +173,7 @@ def describe(ranges: dict, values: dict, shutter_role: str | None = None) -> dic
             cols = [x["hex"] for x in wheel.get("slots") or [] if x.get("hex")][:16]
             if not cols:
                 cols = [hx for hx in (hex_from_name(str(k[2] or "")) for k in caps) if hx][:16]
-            if len(cols) < 2 and re.search(r"rainbow", words, re.I):
+            if len(cols) < 2:                  # a file that names no colours: a rainbow
                 cols = ["#ff2020", "#ffee22", "#22ff44", "#22ffee", "#2244ff", "#ff22dd"]
             if len(cols) >= 2:
                 out["cscroll"] = {"v": round((-s if _CCW.search(words) else s) * 3, 3), "cols": cols}
@@ -186,9 +189,9 @@ def describe(ranges: dict, values: dict, shutter_role: str | None = None) -> dic
                 break
             lo, hi, words = c
             mode = ("random" if re.search(r"random", words, re.I)
-                    else "ramp_up" if re.search(r"ramp\s*up|slow on|open slow|fade in", words, re.I)
-                    else "ramp_down" if re.search(r"ramp\s*down|slow off|close slow|fade out", words, re.I)
-                    else "pulse" if re.search(r"puls", words, re.I) else None)
+                    else "ramp_up" if re.search(r"ramp\s*(up|on)|slow on|open slow|fade in", words, re.I)
+                    else "ramp_down" if re.search(r"ramp\s*(down|off)|slow off|close slow|fade out", words, re.I)
+                    else "pulse" if re.search(r"puls|even on|gradual|fade on|breath", words, re.I) else None)
             if mode:
                 out["smode"] = mode
                 out["shz"] = round(_speed(lo, hi, v, words, 1.0) * 12, 2)

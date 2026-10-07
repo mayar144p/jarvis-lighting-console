@@ -402,14 +402,9 @@ class GdtfShare:
         }
 
     # -- 3. download ------------------------------------------------------
-    def download(self, rid: int) -> dict:
-        """Fetch one revision and install it into the fixture database.
-
-        Re-downloading the same rid is a no-op (the file name carries the
-        rid).  Downloading a *newer* revision of a fixture already in the
-        library replaces it, so the picker never shows the same model
-        twice with stale modes.
-        """
+    def _fetch(self, rid) -> tuple[int, bytes]:
+        """One revision's file from the Share (signing in again once if the
+        session ran out), or GdtfShareError - never a JSON error page."""
         try:
             rid = int(rid)
         except (TypeError, ValueError) as exc:
@@ -452,6 +447,17 @@ class GdtfShare:
             raise self._fail(GdtfShareError(
                 "bad_response", f"revision {rid} downloaded as an empty file"))
 
+        return rid, payload
+
+    def download(self, rid: int) -> dict:
+        """Fetch one revision and install it into the fixture database.
+
+        Re-downloading the same rid is a no-op (the file name carries the
+        rid).  Downloading a *newer* revision of a fixture already in the
+        library replaces it, so the picker never shows the same model
+        twice with stale modes.
+        """
+        rid, payload = self._fetch(rid)
         target = self.cache_dir / f"rev{rid}.gdtf"
         try:
             target.write_bytes(payload)
@@ -493,6 +499,63 @@ class GdtfShare:
             "summary": f"{verb} {maker} {model} "
                        f"({len(item['modes'])} mode(s)){note}",
         }
+
+    # -- 4. a real body for the 3D, the profile left alone ---------------
+    # A light patched from the QLC+ / Open Fixture libraries has no 3D
+    # model; the same light on the Share often has the maker's own.  Its
+    # file is kept for the 3D only (bodies.json: model -> file): the
+    # channels, modes and everything programmed stay the profile's own.
+    @property
+    def _bodies_file(self) -> Path:
+        return self.cache_dir / "bodies.json"
+
+    def _bodies(self) -> dict:
+        try:
+            return json.loads(self._bodies_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    @classmethod
+    def _body_key(cls, manufacturer: str, model: str) -> str:
+        return cls._squash(manufacturer) + "/" + cls._squash(model)
+
+    def body_file(self, manufacturer: str, model: str) -> str | None:
+        """The .gdtf (in the cache) whose 3D model this light uses, or None."""
+        got = self._bodies().get(self._body_key(manufacturer, model)) or {}
+        name = got.get("file") or ""
+        return name if name and (self.cache_dir / name).is_file() else None
+
+    def fetch_body(self, manufacturer: str, model: str) -> dict:
+        """Find this light on the Share and keep its file for the 3D, if it
+        carries a 3D model.  {ok, file?, fixture?, reason?}"""
+        from zipfile import BadZipFile, ZipFile
+
+        from .gdtf_geom import model_members
+        want_m, want = self._squash(manufacturer), self._squash(model)
+        found = self.search(q=model, limit=40).get("results") or []
+        # the same model by the same maker (the Share and the libraries spell
+        # makers differently: "Clay Paky" / "Claypaky", "Chauvet" / "CHAUVET DJ")
+        same = [r for r in found if self._squash(r.get("fixture")) == want
+                and (self._squash(r.get("manufacturer"))[:4] == want_m[:4] or not want_m)]
+        if not same:
+            return {"ok": False, "reason": "not on GDTF Share"}
+        best = same[0]
+        rid, payload = self._fetch(best["rid"])
+        name = f"body-rev{rid}.gdtf"
+        try:
+            from io import BytesIO
+            with ZipFile(BytesIO(payload)) as zf:
+                has_models = bool(model_members(zf))
+        except BadZipFile:
+            return {"ok": False, "reason": "the Share's file is not a GDTF"}
+        if not has_models:
+            return {"ok": False, "reason": "its GDTF has no 3D model"}
+        (self.cache_dir / name).write_bytes(payload)
+        bodies = self._bodies()
+        bodies[self._body_key(manufacturer, model)] = {"file": name, "rid": rid,
+                                                       "fixture": f"{best.get('manufacturer')} {best.get('fixture')}"}
+        self._bodies_file.write_text(json.dumps(bodies, indent=1), encoding="utf-8")
+        return {"ok": True, "file": name, "fixture": bodies[self._body_key(manufacturer, model)]["fixture"]}
 
     # -- status -----------------------------------------------------------
     def status(self) -> dict:

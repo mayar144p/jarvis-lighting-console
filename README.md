@@ -638,6 +638,7 @@ touched):
 | `oddcheck.py` | odd inputs: empty rig, 12,900 nonsense values, 520 lights, corrupt shows and autosaves, a restart, Undo all the way (CI) | ~1 min |
 | `libsweep.py [--all-modes]` | every library light (and every mode: 8,093) x Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D | ~3 min |
 | `uicheck.mjs [--big]` | every screen and dialog at 1280 / 1440 / 1920: spills, tiny or off-screen controls, page errors; `--big` with the 20-light test rig (`BIG_RIG=1` for all 124) | ~20 min |
+| `lookcheck.py [name]` | every channel of the test rig's lights stepped through every range its file lists: the 3D shows what the words say (prism facets and turn, gobo shake / turn / scroll, split colours, strobe kinds) (CI) | <1 s |
 | `vischeck.mjs` | 20 real lights (one of each model; `BIG_RIG=1` for 124) programmed through the screen: DMX, the 3D's targets and the drawn models agree for every light | ~5 min |
 | `brands.py [--brand X \| --product "words"] --check` | the top 20 brands, 15 products each (effects machines first): libsweep's checks plus "fire / lasers only when armed", even with their channels programmed | ~4 min |
 | `vischeck.mjs --brands \| --brand X \| --product "words"` | the same rigs through the screen, one brand at a time, plus the effects: disarmed nothing fires; armed, fire / fog / laser show in the 3D; KILL stops them | ~3 min a brand |
