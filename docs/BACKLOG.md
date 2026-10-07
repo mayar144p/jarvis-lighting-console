@@ -239,9 +239,13 @@ In this order.  Steps 1 and 2 are the plan; step 3 is optional / future.
 loopback port with a private key, clean stop on close, Show mode (3D /
 programmer + fixtures / playbacks, each remembering its monitor), safe
 keys, close asks, screens stay awake, the desk runs without 3D on a
-computer whose graphics can't.  **Still to do:** PyInstaller + one
-installer (Windows first), the app updating itself, phones / tablets as a
-setting with a pairing code, USB DMX / MIDI from the app.
+computer whose graphics can't.  **The installer: DONE** - the
+"Desktop app (Windows installer)" workflow builds `Jarvis Setup.exe` with
+Windows' embeddable Python inside (the engine is stdlib-only, so no
+PyInstaller), checks the built app with desktopcheck, and keeps it as a
+private artifact; installed, data / `.env` / inbox live in `%APPDATA%\Jarvis`.
+**Still to do:** the app updating itself, phones / tablets as a setting with
+a pairing code, USB DMX / MIDI from the app, a Mac build.
 
 Nothing is rewritten: the Python engine and the screens stay as they are,
 wrapped in a program with its own icon.  The engine still listens on

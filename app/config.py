@@ -10,11 +10,13 @@ ROOT = Path(__file__).resolve().parent.parent      # jarvis/
 WEB = ROOT / "web"
 # CONSOLE_DATA_DIR moves the whole data folder (tests run on a scratch one)
 DATA = Path(os.environ["CONSOLE_DATA_DIR"]) if os.environ.get("CONSOLE_DATA_DIR") else ROOT / "data"
-INBOX = ROOT / "fixtures_inbox"
+# the installed desktop app keeps these in the user's own folder, not in
+# Program Files (CONSOLE_INBOX / CONSOLE_ENV_FILE, set by desktop/main.js)
+INBOX = Path(os.environ.get("CONSOLE_INBOX") or ROOT / "fixtures_inbox")
 
 
 def _load_env() -> None:
-    env_file = ROOT / ".env"
+    env_file = Path(os.environ.get("CONSOLE_ENV_FILE") or ROOT / ".env")
     if not env_file.exists():
         return
     for line in env_file.read_text(encoding="utf-8").splitlines():
