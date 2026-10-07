@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, manual,  # noqa: E402
+from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, profiles, rdm, roomshape)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -45,6 +45,14 @@ _MIME = {
 # login every call and the operator would be asked to sign in again on
 # every search.  Created lazily so importing main does not touch disk.
 _SHARE: gdtfshare.GdtfShare | None = None
+
+
+def _ai_noted(result):
+    """An AI answer, with "Gemini limit reached - using the offline AI"
+    when the switch fell back (Auto)."""
+    if isinstance(result, dict) and llm.last_used == "local" and llm.last_note:
+        result = {**result, "ai_note": llm.last_note}
+    return result
 
 
 def gdtf_share() -> gdtfshare.GdtfShare:
@@ -577,6 +585,34 @@ class Handler(BaseHTTPRequestHandler):
                                    f"installed {first.get('manufacturer', '')} "
                                    f"{first.get('model', '')} from the "
                                    f"{fixlib.SOURCES[src]['name']}"})
+            if route == "/api/ai":
+                # the AI switch and the online key; the key is never sent back
+                try:
+                    return self._json(llm.save_settings(**{k: body[k] for k in (
+                        "mode", "key", "model", "local_url", "local_model") if k in body}))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if route == "/api/ai/local":
+                # the desk's own offline AI: download (pause / resume), an AI
+                # pack from a USB stick, remove; never downloads while live
+                eng = engine_mod.ENGINE
+                try:
+                    if body.get("download"):
+                        out = localai.download(str(body["download"]), live=bool(eng and eng.live))
+                    elif body.get("pause"):
+                        out = localai.pause()
+                    elif body.get("import"):
+                        out = localai.import_pack(str(body["import"]))
+                    elif body.get("remove"):
+                        out = localai.remove(str(body["remove"]))
+                    elif body.get("stop"):
+                        localai.stop()
+                        out = localai.status()
+                    else:
+                        out = localai.status()
+                except ValueError as exc:
+                    return self._json({"error": str(exc), **localai.status()}, 200)
+                return self._json({**out, "ai": llm.public()})
             if route == "/api/console/bug_report":
                 # A report with the evidence attached (app/bugreport.py):
                 # preview lists the files; otherwise it is saved and the
@@ -878,14 +914,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "notes": assistant.notes()})
             if not llm.available():
                 return self._json({"ok": False, "no_key": True,
-                                   "error": "no AI key - put LLM_API_KEY in .env and restart (the offline copilot still works)"})
+                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
             if body.get("operator"):
                 # the AI running the lights live: start / stop / status
                 from app import ai_operator
                 what = str(body.get("operator"))
                 if what == "start":
                     if not llm.available():
-                        return self._json({"ok": False, "no_key": True, "error": "no AI key - put LLM_API_KEY in .env and restart"})
+                        return self._json({"ok": False, "no_key": True, "error": "no AI yet - add a key or the offline AI in Settings -> AI"})
                     try:
                         return self._json({"ok": True, "operator": ai_operator.start(
                             eng, body.get("brief") or "", int(body.get("bars") or 16), body.get("drops") is not False)})
@@ -896,10 +932,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "operator": ai_operator.status(eng)})
             if body.get("resume"):
                 # the screen's picture of the 3D view the AI asked to see
-                return self._json(assistant.resume_turn(eng, str(body.get("resume")), body.get("image")))
-            return self._json(assistant.run_turn(eng, str(body.get("message") or ""), session,
+                return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))
+            return self._json(_ai_noted(assistant.run_turn(eng, str(body.get("message") or ""), session,
                                                  image=body.get("image"), preview=body.get("preview") is not False,
-                                                 can_see=bool(body.get("can_see"))))
+                                                 can_see=bool(body.get("can_see")))))
         if route == "/api/console/media_frame":
             # A video playing in a browser, ~25 frames a second, shrunk to
             # at most 96 x 96: not an action, the engine keeps the latest.
@@ -1019,6 +1055,11 @@ class Handler(BaseHTTPRequestHandler):
     def _api_get(self, route: str, query: dict) -> None:
         if route == "/api/status":
             status = config.status()
+            # the AI switch (Settings -> AI): online, local or auto
+            ai = llm.public()
+            status.update(llm_configured=ai["available"], ai=ai,
+                          model=ai["model"] if ai["mode"] != "local" or not ai["local_running"]
+                          else (ai["local_model"] or (ai["local_models"] or ["local AI"])[0]))
             status["fixtures"] = fixtures.count(config.DB_PATH)
             status["actions"] = sorted(engine_mod.ACTIONS)
             if engine_mod.ENGINE is not None:
@@ -1270,6 +1311,8 @@ class Handler(BaseHTTPRequestHandler):
                     "manufacturer": r["manufacturer"], "model": r["model"],
                     "mode": (r["modes"] or [["", 0]])[0][0], "map": []})
             return self._json({"results": rows, "libraries": fixlib.libraries()})
+        if route == "/api/ai":
+            return self._json({**llm.public(), "offline_ai": localai.status()})
         if route == "/api/gdtf/status":
             # Never raises; the status distinguishes signed-out, unreachable and empty.
             return self._json(gdtf_share().status())

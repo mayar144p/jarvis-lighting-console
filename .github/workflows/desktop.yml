@@ -1,7 +1,7 @@
 name: Desktop app (installers)
 
-# Builds the desktop app with the engine and a Python of its own inside
-# (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
+# Builds the desktop app with the engine, a Python of its own and the
+# offline AI's engine (llama.cpp) inside (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
 # Mac - then runs the app check on each built app.  The installer is kept as this run's artifact (Actions -> this
 # run -> Artifacts), private to the repo.  Run it by hand (Actions -> this
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
@@ -28,6 +28,16 @@ jobs:
           Invoke-WebRequest "https://www.python.org/ftp/python/$v/python-$v-embed-amd64.zip" -OutFile py.zip
           Expand-Archive py.zip -DestinationPath desktop/build/python
           desktop/build/python/python.exe -c "import sqlite3, json, http.server; print('python ok')"
+      - name: The offline AI's engine (llama.cpp's server, latest release; Vulkan runs on any graphics card, else the processor)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R ggml-org/llama.cpp --pattern "*bin-win-vulkan-x64.zip" -O llama.zip
+          Expand-Archive llama.zip -DestinationPath desktop/build/llama
+          $exe = Get-ChildItem desktop/build/llama -Recurse -Filter llama-server.exe | Select-Object -First 1
+          if (-not $exe) { throw "no llama-server.exe in the release" }
+          & $exe.FullName --version
       - name: Build the installer
         working-directory: desktop
         run: |
@@ -63,6 +73,15 @@ jobs:
           mv "$D" desktop/build/python
           rm -rf desktop/build/pyroot
           desktop/build/python/bin/python3 -c "import sqlite3, json, http.server, sys; print('python ok', sys.version)"
+      - name: The offline AI's engine (llama.cpp's server, latest release; Metal on Apple silicon)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R ggml-org/llama.cpp --pattern "*bin-macos-arm64.zip" -O llama.zip
+          mkdir -p desktop/build/llama && unzip -q llama.zip -d desktop/build/llama
+          EXE=$(find desktop/build/llama -name llama-server -type f | head -n1)
+          test -n "$EXE" || { echo "no llama-server in the release"; exit 1; }
+          chmod +x "$EXE" && "$EXE" --version
       - name: Build the app
         working-directory: desktop
         run: |

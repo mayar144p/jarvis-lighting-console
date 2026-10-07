@@ -3817,3 +3817,162 @@ def test_bug_report() -> None:
           "Report a problem with this light" in fj and '"contextmenu"' in fj and "onMenu:" in sp
           and "Report a bug" in dj, "")
     check("the reporter sees the list of files before anything is saved", "preview: true" in bj and "report-files" in bj, "")
+
+
+def test_ai_switch() -> None:
+    """The AI switch (A12): Online / Local / Auto - Auto carries on with the
+    local AI when the online one is at its limit, and says so; the desk
+    starts its own offline AI by itself; the model downloads (pause / resume,
+    checked), never while live; an AI pack imports; Remove frees it; the key
+    is never shown back and never in a bug report."""
+    print("The AI switch and the desk's own offline AI")
+    import hashlib
+    import json as _json
+    import os
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app import bugreport, llm, localai
+    from app import config as cfg
+
+    class Online(BaseHTTPRequestHandler):
+        limited = False
+
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            if Online.limited:
+                body, code = b'{"error":{"message":"Resource has been exhausted (e.g. check quota)."}}', 429
+            else:
+                body, code = _json.dumps({"choices": [{"message": {"role": "assistant", "content": "online says hi"}}]}).encode(), 200
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    srv = HTTPServer(("127.0.0.1", 0), Online)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    saved = (cfg.DATA, cfg.LLM_API_KEY, cfg.LLM_BASE_URL, os.environ.get("LLAMA_SERVER"), localai.transport)
+    msgs = [{"role": "user", "content": "hi"}]
+    with tempfile.TemporaryDirectory() as td:
+        cfg.DATA = Path(td)
+        cfg.LLM_API_KEY = ""
+        cfg.LLM_BASE_URL = f"http://127.0.0.1:{srv.server_address[1]}"
+        os.environ["LLAMA_SERVER"] = str(ROOT / "tools" / "selftests" / "fake_llama.py")
+        try:
+            check("no key, no offline AI: the copilot says the AI isn't there", not llm.available(), "")
+            key = "AIza" + "k" * 35
+            llm.save_settings(mode="online", key=key)
+            pub = llm.public()
+            check("the key is saved in the desk and never shown back", pub["has_key"] and key not in _json.dumps(pub), str(pub))
+            check("Online: the online AI answers", llm.chat(msgs)["content"] == "online says hi", "")
+            Online.limited = True
+            try:
+                llm.chat(msgs)
+                failed = False
+            except llm.LLMError as exc:
+                failed = "limit" in str(exc)
+            check("Online at its limit: says so (no offline AI on Online)", failed, "")
+            # the desk's own offline AI: an AI pack, then Auto
+            (cfg.DATA / "ai").mkdir(parents=True, exist_ok=True)
+            bad = Path(td) / "notes.gguf"
+            bad.write_bytes(b"hello")
+            pack = Path(td) / "tiny-pack.gguf"
+            pack.write_bytes(b"GGUF" + b"\0" * 64)
+            try:
+                localai.import_pack(str(bad))
+                refused = False
+            except ValueError:
+                refused = True
+            check("an AI pack that isn't a model is refused", refused, "")
+            localai.import_pack(str(pack))
+            check("an AI pack (.gguf from a USB stick) is copied in", [m["file"] for m in localai.models()] == ["tiny-pack.gguf"], "")
+            check("with a model and the engine, the offline AI is ready", localai.ready(), str(localai.runtime()))
+            llm.save_settings(mode="auto")
+            msg = llm.chat(msgs)
+            check("Auto at Gemini's limit: the desk starts its own AI and carries on",
+                  msg["content"] == "local says hi from tiny-pack" and llm.last_used == "local", str(msg))
+            check("...and says so", llm.last_note == "Gemini limit reached - using the offline AI", llm.last_note)
+            Online.limited = False
+            check("Auto with Gemini back: Gemini again, no note",
+                  llm.chat(msgs)["content"] == "online says hi" and not llm.last_note, "")
+            llm.save_settings(mode="local")
+            check("Local: always the offline AI", llm.chat(msgs)["content"].startswith("local says hi"), "")
+            check("the switch's status: running, its model", llm.public()["local_running"]
+                  and llm.public()["local_models"] == ["tiny-pack"], str(llm.public()))
+            localai.stop()
+            check("Stop frees it", localai.url() is None, "")
+            for bad_args in ({"mode": "sometimes"}, {"local_url": "javascript:alert(1)"}):
+                try:
+                    llm.save_settings(**bad_args)
+                    ok = False
+                except ValueError:
+                    ok = True
+                check(f"a bad setting is refused: {list(bad_args)[0]}", ok, "")
+            check("the desk's key never ends up in a bug report", key not in bugreport.scrub("my key " + key), "")
+            localai.remove("tiny-pack.gguf")
+            check("Remove gives the space back", localai.models() == [], "")
+            # the download: from the model's own listing, resumable, checked
+            blob = b"GGUF" + bytes(range(256)) * 40
+            sha = hashlib.sha256(blob).hexdigest()
+            listing = _json.dumps([{"path": "Qwen3-8B-Q4_K_M.gguf", "size": len(blob), "lfs": {"oid": sha, "size": len(blob)}},
+                                   {"path": "Qwen3-8B-Q8_0.gguf", "size": 9}]).encode()
+            state = {"pause_after": 3, "sent": 0, "damage": False}
+
+            def fake(url, headers):
+                if "/api/models/" in url:
+                    return 200, {}, iter([listing])
+                start = int(headers.get("Range", "bytes=0-")[6:].rstrip("-") or 0)
+                data = blob[start:]
+                if state["damage"]:
+                    data = data[:-1] + b"X"
+
+                def chunks():
+                    for i in range(0, len(data), 1000):
+                        state["sent"] += 1
+                        if state["sent"] == state["pause_after"]:
+                            localai.pause()
+                        yield data[i:i + 1000]
+                return (206 if start else 200), {}, chunks()
+            localai.transport = fake
+            try:
+                localai.download("qwen3-8b", live=True)
+                refused = False
+            except ValueError:
+                refused = True
+            check("no download while the output is live", refused, "")
+            localai.download("qwen3-8b", background=False)
+            st = localai.status()["download"]
+            check("Pause stops it part-way", st.get("done", 0) > 0 and not st.get("finished")
+                  and (cfg.DATA / "ai" / "Qwen3-8B-Q4_K_M.gguf.part").is_file(), str(st))
+            state["pause_after"] = -1
+            localai.download("qwen3-8b", background=False)
+            got = cfg.DATA / "ai" / "Qwen3-8B-Q4_K_M.gguf"
+            check("Resume carries on from where it stopped, and the file is checked",
+                  got.is_file() and got.read_bytes() == blob and localai.status()["download"].get("finished"), str(localai.status()["download"]))
+            got.unlink()
+            state["damage"] = True
+            localai.download("qwen3-8b", background=False)
+            check("a damaged download is thrown away, with a plain reason",
+                  not got.exists() and "damaged" in localai.status()["download"].get("error", ""), str(localai.status()["download"]))
+            sug = localai.suggest()
+            check("the desk suggests a model from the computer", sug["id"] in ("qwen3-8b", "qwen3-14b") and "ram_gb" in sug, str(sug))
+        finally:
+            localai.stop()
+            srv.shutdown()
+            cfg.DATA, cfg.LLM_API_KEY, cfg.LLM_BASE_URL, env, localai.transport = saved
+            if env is None:
+                os.environ.pop("LLAMA_SERVER", None)
+            else:
+                os.environ["LLAMA_SERVER"] = env
+            llm._local_seen["t"] = 0.0
+    js = (ROOT / "web" / "app" / "aisettings.js").read_text(encoding="utf-8")
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    wf = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
+    check("Settings -> AI: the switch, the key, download / pause / AI pack / remove",
+          all(k in js for k in ('"/api/ai"', '"/api/ai/local"', "Pause", "Use an AI pack", "Remove")), "")
+    check("the copilot's header switches the AI and shows the fallback note", "setAiMode" in cj and "r.ai_note" in cj, "")
+    check("the desktop app ships the offline AI's engine (llama.cpp's server)",
+          "ggml-org/llama.cpp" in wf and "CONSOLE_LLAMA_DIR" in (ROOT / "desktop" / "main.js").read_text(encoding="utf-8"), "")

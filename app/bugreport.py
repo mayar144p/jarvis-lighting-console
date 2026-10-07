@@ -47,7 +47,9 @@ def note_error(where: str, exc: BaseException | str) -> None:
 
 
 def _secrets() -> list[str]:
-    vals = [config.LLM_API_KEY, config.CONSOLE_TOKEN, config.GDTF_SHARE_PASSWORD, config.GDTF_SHARE_USER]
+    from app import llm
+    vals = [config.LLM_API_KEY, llm.settings()["key"], config.CONSOLE_TOKEN,
+            config.GDTF_SHARE_PASSWORD, config.GDTF_SHARE_USER]
     return sorted({str(v) for v in vals if v and len(str(v)) >= 4}, key=len, reverse=True)
 
 

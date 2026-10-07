@@ -697,7 +697,15 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 }
 .drawer-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .drawer-head h2 { color: var(--ai); }
-.ai-status { font-size: 11.5px; color: var(--muted); flex: 1; }
+.ai-status { font-size: 11.5px; color: var(--muted); flex: 1; background: none; border: 0; text-align: left; padding: 4px 6px; border-radius: 4px; cursor: pointer; min-height: 28px; }
+.ai-status:hover { color: var(--text); background: rgba(255, 255, 255, .06); }
+.ai-panel { display: flex; flex-direction: column; gap: 10px; }
+.ai-panel .seg { align-self: flex-start; }
+.ai-panel .seg button { height: 30px; padding: 0 14px; }
+.ai-panel input[type=text], .ai-panel input[type=password] { min-width: 0; flex: 1; width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; }
+.ai-panel .form-grid { grid-template-columns: 1fr 1fr; }
+.ai-bar { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.ai-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .icon-x { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; width: 30px; height: 30px; border-radius: 6px; }
 .icon-x:hover { background: var(--surface-2); color: var(--text); }
 .ctab { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; overflow-y: auto; min-height: 0; }
