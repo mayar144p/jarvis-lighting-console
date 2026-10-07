@@ -3477,10 +3477,10 @@ def test_3d_detail() -> None:
     dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
     check("each light carries blur (focus, frost) and prism to the shaders",
           "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
-    check("gobos soften, a prism makes three copies (one look at the picture a pixel)",
-          "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "2.0944" in mj, "")
+    check("gobos soften, a prism makes its copies (one look at the picture a pixel)",
+          "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
     check("gobo shafts in the haze: the beam shader shows the same picture",
-          "a.mulAssign(goboMask(u.uGobo, uv, u.uLook, detail).mul(0.95).add(0.2))" in mj and "u.uGobo.value = goboId" in sj, "")
+          "a.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail).mul(0.95).add(0.2))" in mj and "u.uGobo.value = goboId" in sj, "")
     check("shiny floors mirror the lenses, by floor type",
           "reflect(normalize(wp.sub(cameraPosition)), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
     check("Low leaves the detail out (the shaders are built without it), Medium and High draw it",
@@ -3514,3 +3514,145 @@ def test_3d_detail() -> None:
                   opens and opens[0][0] == 0 and len(drawn) >= 7 and drawn[0][0] == 4, str(rows[:4]))
         finally:
             e.shutdown()
+
+
+_REAL_SPOT = """<?xml version="1.0" encoding="UTF-8"?>
+<FixtureDefinition xmlns="http://www.qlcplus.org/FixtureDefinition">
+ <Manufacturer>Selftest</Manufacturer><Model>Real Spot</Model><Type>Moving Head</Type>
+ <Channel Name="Pan" Preset="PositionPan"/>
+ <Channel Name="Tilt" Preset="PositionTilt"/>
+ <Channel Name="Dimmer" Preset="IntensityDimmer"/>
+ <Channel Name="Shutter"><Group Byte="0">Shutter</Group>
+  <Capability Min="0" Max="7">Closed</Capability><Capability Min="8" Max="15">Open</Capability>
+  <Capability Min="16" Max="131">Strobe slow to fast</Capability><Capability Min="132" Max="139">Open</Capability>
+  <Capability Min="140" Max="181">Pulse slow to fast</Capability><Capability Min="182" Max="189">Open</Capability>
+  <Capability Min="190" Max="255">Random strobe slow to fast</Capability></Channel>
+ <Channel Name="Color Wheel"><Group Byte="0">Colour</Group>
+  <Capability Min="0" Max="9">Open</Capability><Capability Min="10" Max="19">Red</Capability>
+  <Capability Min="20" Max="29">Red + Blue</Capability><Capability Min="30" Max="39">Blue</Capability>
+  <Capability Min="40" Max="49">Green</Capability>
+  <Capability Min="200" Max="255">Rainbow CW slow to fast</Capability></Channel>
+ <Channel Name="Gobo Wheel"><Group Byte="0">Gobo</Group>
+  <Capability Min="0" Max="9">Open</Capability><Capability Min="10" Max="19">Gobo 1</Capability>
+  <Capability Min="20" Max="29">Gobo 1 shake slow to fast</Capability>
+  <Capability Min="200" Max="255">Gobo wheel rotation CW slow to fast</Capability></Channel>
+ <Channel Name="Gobo Rotation"><Group Byte="0">Gobo</Group>
+  <Capability Min="0" Max="127">Gobo indexing 0° - 360°</Capability>
+  <Capability Min="128" Max="255">Gobo rotation CCW slow to fast</Capability></Channel>
+ <Channel Name="Prism"><Group Byte="0">Prism</Group>
+  <Capability Min="0" Max="127">Prism out</Capability>
+  <Capability Min="128" Max="191">8-facet prism into the beam</Capability>
+  <Capability Min="192" Max="255">Linear 4-facet prism</Capability></Channel>
+ <Channel Name="Prism Rotation"><Group Byte="0">Prism</Group>
+  <Capability Min="0" Max="127">Prism indexing 0° - 360°</Capability>
+  <Capability Min="128" Max="255">Continuous prism CW rotation slow to fast</Capability></Channel>
+ <Mode Name="Std"><Channel Number="0">Pan</Channel><Channel Number="1">Tilt</Channel>
+  <Channel Number="2">Dimmer</Channel><Channel Number="3">Shutter</Channel><Channel Number="4">Color Wheel</Channel>
+  <Channel Number="5">Gobo Wheel</Channel><Channel Number="6">Gobo Rotation</Channel>
+  <Channel Number="7">Prism</Channel><Channel Number="8">Prism Rotation</Channel></Mode>
+</FixtureDefinition>"""
+
+_REAL_TRIO = """<?xml version="1.0" encoding="UTF-8"?>
+<FixtureDefinition xmlns="http://www.qlcplus.org/FixtureDefinition">
+ <Manufacturer>Selftest</Manufacturer><Model>Trio Bar</Model><Type>Moving Head</Type>
+ <Channel Name="Dimmer" Preset="IntensityDimmer"/>
+ <Channel Name="Pan" Preset="PositionPan"/>
+ <Channel Name="Tilt" Preset="PositionTilt"/>
+ <Channel Name="Red" Preset="IntensityRed"/><Channel Name="Green" Preset="IntensityGreen"/>
+ <Channel Name="Blue" Preset="IntensityBlue"/>
+ <Channel Name="Zoom" Preset="BeamZoomSmallBig"/>
+ <Mode Name="Per head">
+  <Channel Number="0">Dimmer</Channel>
+  <Channel Number="1">Pan</Channel><Channel Number="2">Tilt</Channel><Channel Number="3">Red</Channel>
+  <Channel Number="4">Green</Channel><Channel Number="5">Blue</Channel><Channel Number="6">Zoom</Channel>
+  <Channel Number="7">Pan</Channel><Channel Number="8">Tilt</Channel><Channel Number="9">Red</Channel>
+  <Channel Number="10">Green</Channel><Channel Number="11">Blue</Channel><Channel Number="12">Zoom</Channel>
+  <Channel Number="13">Pan</Channel><Channel Number="14">Tilt</Channel><Channel Number="15">Red</Channel>
+  <Channel Number="16">Green</Channel><Channel Number="17">Blue</Channel><Channel Number="18">Zoom</Channel>
+ </Mode>
+</FixtureDefinition>"""
+
+
+def test_real_light_look() -> None:
+    """The 3D shows what the light is really doing: each channel's range
+    read in the fixture file's own words (prism facets and turning, gobo
+    shake / turn / scroll, split colours, a turning colour wheel, pulse
+    and random strobes), also on a light's extra (Aux) channels, and each
+    head of a multi-head light its own pan, tilt and colour."""
+    print("Real-light 3D: the file's words, every head on its own")
+    from app import beamlook, fixlib
+    from app import engine as eng
+
+    rot = [[0, 127, "Prism indexing 0° - 360°"], [128, 255, "Continuous prism CW rotation slow to fast"]]
+    ins = [[0, 127, "Prism out"], [128, 255, "4-facet prism into the light beam"]]
+    R = {"prism": {"caps_each": [ins, rot]}}
+    check("a prism rotation channel is not read as a prism going in",
+          beamlook.describe(R, {"prism": 0, "prism@2": 200}) == {"prot": {"spin": round(0.05 + 1.45 * 72 / 127, 3)}},
+          str(beamlook.describe(R, {"prism": 0, "prism@2": 200})))
+    check("words with no meaning add nothing", beamlook.describe({"gobo": {"caps": [[0, 255, "Gobo 1"]]}}, {"gobo": 9}) == {}, "")
+    check("'LEE 790 - Moroccan pink' is one filter, not a split",
+          "split" not in beamlook.describe({"wheel": {"caps": [[0, 255, "LEE 790 - Moroccan pink"]]}}, {"wheel": 9}), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        fixtures.store_parsed(db, fixlib.parse_qxf(_REAL_SPOT) + fixlib.parse_qxf(_REAL_TRIO), "selftest")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            spot = e.act("add_heads", query="Real Spot", qty=1)["heads"]
+            trio = e.act("add_heads", query="Trio Bar", qty=1)["heads"]
+            check("both test lights patch", len(spot) == 1 and len(trio) == 1, f"{spot} {trio}")
+            e.act("select_heads", heads=spot)
+            e.act("set_intensity", level=100)
+
+            def look(**vals):
+                for k, v in vals.items():
+                    e.act("set_attribute", attribute=k, value=v, heads=spot)
+                row = next(r for r in e._looks() if r["n"] == spot[0])
+                return row.get("look") or {}
+            lk = look(prism=150, gobo_rot=200)
+            check("8-facet prism: the 3D gets 8 facets", lk.get("prism") == 8 and not lk.get("plin"), str(lk))
+            check("the gobo turning the other way (CCW)", (lk.get("grot") or {}).get("spin", 0) < 0, str(lk))
+            aux = next((r for r in e._head(spot[0])["map"] if r.startswith("aux")), None)
+            lk = look(**{aux: 200}) if aux else {}
+            check("the prism turning, from its rotation channel (stored as an Aux channel)",
+                  (lk.get("prot") or {}).get("spin", 0) > 0, f"{aux} {lk}")
+            lk = look(prism=220, gobo_rot=64)
+            check("linear prism", lk.get("prism") == 4 and lk.get("plin") is True, str(lk))
+            check("gobo indexed to about 180 degrees", abs((lk.get("grot") or {}).get("at", -1) - 181.4) < 2, str(lk))
+            lk = look(prism=0, gobo=25, wheel=25, shutter=160)
+            check("prism out: no prism", "prism" not in lk, str(lk))
+            check("gobo 1 shaking", lk.get("gshake", 0) > 0, str(lk))
+            check("half red, half blue", len(lk.get("split") or []) == 2, str(lk))
+            check("a pulse, at a speed", lk.get("smode") == "pulse" and lk.get("shz", 0) > 0, str(lk))
+            lk = look(gobo=230, wheel=230, shutter=230)
+            check("the gobo wheel scrolling", lk.get("gscroll", 0) > 0, str(lk))
+            check("the colour wheel turning through its colours",
+                  (lk.get("cscroll") or {}).get("v", 0) > 0 and len(lk["cscroll"]["cols"]) >= 2, str(lk))
+            check("a random strobe", lk.get("smode") == "random", str(lk))
+
+            e.act("select_heads", heads=trio)
+            e.act("set_intensity", level=100)
+            for k, (pan, tilt) in enumerate([(10, 20), (128, 128), (250, 240)], 1):
+                e.act("set_attribute", attribute="pan", value=pan, cell=k, heads=trio)
+                e.act("set_attribute", attribute="tilt", value=tilt, cell=k, heads=trio)
+            row = next(r for r in e._looks() if r["n"] == trio[0])
+            cells = row.get("cells") or []
+            check("three heads, each its own", len(cells) == 3, str(row))
+            if len(cells) == 3:
+                check("each head its own pan", [round(c.get("pan", -1), 2) for c in cells] == [round(10 / 255, 2), round(128 / 255, 2), round(250 / 255, 2)], str(cells))
+                check("each head its own tilt", cells[0].get("tilt", 0) < cells[2].get("tilt", 0), str(cells))
+            e.act("select_heads", heads=spot)
+            row = next(r for r in e._looks() if r["n"] == spot[0])
+            check("a one-head light sends no per-head list", "cells" not in row, str(row.get("cells")))
+        finally:
+            e.shutdown()
+
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
+    mo = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    check("the 3D reads the look: facets, turns, shake, scroll, split, strobe kinds",
+          all(k in sj for k in ("lk.prism", "lk.prot", "lk.grot", "lk.gshake", "lk.gscroll", "lk.cscroll", "lk.split", "lk.smode")), "")
+    check("prisms of any facet count, linear prisms, and half beams in the shader",
+          "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj and "uColor2" in mj, "")
+    check("each head of a multi-head model can pan", "sk.cells.push({ pan: p, tilt: t, lens })" in mo and "c.pan.rotation.y" in sj, "")

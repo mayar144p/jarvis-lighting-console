@@ -57,6 +57,7 @@ const rendererOpts = (o) => (GPU_DEVICE ? { ...o, device: GPU_DEVICE } : { ...o,
 
 const DEG = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 const DEFAULT_PAN = [-270, 270];
 const DEFAULT_TILT = [-135, 135];
 
@@ -68,10 +69,10 @@ function hexLinear(hex, out) {
   return out;
 }
 
-const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {}, hz: 0, mv: null, fx: null };
+const EMPTY_LOOK = { a: 0, r: 1, g: 1, b: 1, pan: null, tilt: null, beam: {}, look: {}, hz: 0, mv: null, fx: null };
 
 function lookFrom(row, scratch) {
-  if (!row) return { ...EMPTY_LOOK, beam: {} };
+  if (!row) return { ...EMPTY_LOOK, beam: {}, look: {} };
   const c = hexLinear(row.hex, scratch);
   return {
     a: +row.a || 0, r: c.r, g: c.g, b: c.b,
@@ -84,10 +85,15 @@ function lookFrom(row, scratch) {
     fx: row.fx || null,          // an effect firing: {fire, fog, laser, pattern...}
     prog: row.prog || null,      // running a program of its own ("Program 3")
     spin: row.spin || null,      // endless pan / tilt rotation: {pan: ±speed}
-    // each head of a multi-head light: its own colour and tilt
+    // what the beam is doing, in the fixture file's words (app/beamlook.py):
+    // prism facets and turn, gobo turn / shake / scroll, split colours,
+    // the colour wheel turning, the strobe's kind
+    look: row.look || {},
+    // each head of a multi-head light: its own colour and aim
     cells: Array.isArray(row.cells) ? row.cells.map((c) => {
       const cc = hexLinear(c.hex, scratch);
-      return { r: cc.r, g: cc.g, b: cc.b, tilt: typeof c.tilt === "number" ? c.tilt : null };
+      return { r: cc.r, g: cc.g, b: cc.b, tilt: typeof c.tilt === "number" ? c.tilt : null,
+        pan: typeof c.pan === "number" ? c.pan : null };
     }) : null,
   };
 }
@@ -108,11 +114,11 @@ function mixLook(a, b, t) {
   return {
     a: lerp(a.a, b.a, t), r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t),
     b: lerp(a.b, b.b, t), pan: ang(a.pan, b.pan), tilt: ang(a.tilt, b.tilt),
-    deg: b.deg || a.deg, beam, hz: b.hz, mv: b.mv || a.mv, fx: b.fx, prog: b.prog, spin: b.spin,
+    deg: b.deg || a.deg, beam, look: b.look, hz: b.hz, mv: b.mv || a.mv, fx: b.fx, prog: b.prog, spin: b.spin,
     cells: b.cells ? b.cells.map((c, i) => {
       const o = (a.cells && a.cells[i]) || c;
       return { r: lerp(o.r, c.r, t), g: lerp(o.g, c.g, t), b: lerp(o.b, c.b, t),
-        tilt: c.tilt === null ? null : c.tilt };
+        tilt: c.tilt, pan: c.pan };
     }) : null,
   };
 }
@@ -131,6 +137,33 @@ const TRAVEL = {
  * target - instead of snapping there in a tenth of a second.  Positions
  * are the look's 0..1 across the axis's travel.
  */
+/** How much light a strobing lamp lets out right now (1 = steady): a
+ *  plain strobe flashes, a pulse breathes, a ramp opens or closes, a
+ *  random strobe flashes when its dice say so (each light its own). */
+function flash(hz, mode, time, seed) {
+  if (!(hz > 0)) return 1;
+  const t = time * hz;
+  const f = t - Math.floor(t);
+  switch (mode) {
+    case "pulse": return 0.5 - 0.5 * Math.cos(f * 2 * Math.PI);
+    case "ramp_up": return f;
+    case "ramp_down": return 1 - f;
+    case "random": {
+      const k = Math.sin((Math.floor(t) + seed * 7.13) * 12.9898) * 43758.5453;
+      return k - Math.floor(k) > 0.55 && f < 0.3 ? 1 : 0;
+    }
+    default: return f > 0.3 ? 0 : 1;
+  }
+}
+
+/** An angle for a turning part: indexed {at: degrees}, spinning {spin:
+ *  turns a second}, or the plain reading when the file said nothing. */
+function turnOf(t, time, plain) {
+  if (!t) return plain;
+  if (t.at !== undefined) return t.at * DEG;
+  return time * (t.spin || 0) * 2 * Math.PI;
+}
+
 function motorStep(m, target, full, speed, dt) {
   if (target === null) { m.v = 0; return m.x; }          // not driven: hold
   if (m.x === null) { m.x = target; m.v = 0; return m.x; } // first sight
@@ -179,6 +212,7 @@ export class Stage {
     this._c2 = new THREE.Color();
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
+    this._m4 = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this.gdtfDefs = new Map();
     this.fetchModel = null;
@@ -1257,10 +1291,13 @@ export class Stage {
         sk.tilt.rotation.x = tilt;
       }
       if (sk.cells) {
-        // each head of a multi-head light tilts on its own (no motor model)
+        // each head of a multi-head light tilts (and pans, if it can) on
+        // its own (no motor model)
         sk.cells.forEach((c, k) => {
-          const ct = L.cells && L.cells[k] && L.cells[k].tilt !== null ? L.cells[k].tilt : tx;
+          const cl = L.cells && L.cells[k];
+          const ct = cl && cl.tilt !== null ? cl.tilt : tx;
           c.tilt.rotation.x = ct === null ? 0 : lerp(tr[0], tr[1], ct) * DEG;
+          if (c.pan) c.pan.rotation.y = cl && cl.pan !== null ? lerp(pr[0], pr[1], cl.pan) * DEG - pan : 0;
         });
       }
     }
@@ -1273,7 +1310,16 @@ export class Stage {
       const c = this._c.setHSL(hue, 1, 0.5);
       L.r = c.r; L.g = c.g; L.b = c.b;
     }
-    if (L.hz > 0 && (time * L.hz) % 1 > 0.3) a = 0;      // a real strobe only
+    const lk = L.look || {};
+    const scroll = lk.cscroll && lk.cscroll.cols && lk.cscroll.cols.length > 1 ? lk.cscroll : null;
+    if (scroll) {
+      // the colour wheel turning: its colours pass through the beam
+      const n = scroll.cols.length, x = ((time * scroll.v) % n + n) % n, i = Math.floor(x), f = x - i;
+      const c1 = hexLinear(scroll.cols[i], this._c), r1 = c1.r, g1 = c1.g, b1 = c1.b;
+      const c2 = hexLinear(scroll.cols[(i + 1) % n], this._c);
+      L.r = lerp(r1, c2.r, f); L.g = lerp(g1, c2.g, f); L.b = lerp(b1, c2.b, f);
+    }
+    a *= flash(L.hz || lk.shz, lk.smode, time, inst.head);   // a real strobe only
     inst.level = a;
     const col = this._c.setRGB(L.r, L.g, L.b);
     for (const lens of sk.lenses) {
@@ -1320,7 +1366,17 @@ export class Stage {
     // focus: sharp in the middle of its travel, softer either side (the
     // sharp point really depends on the throw); frost softens it all
     const blur = Math.min(1, (L.beam.focus === undefined ? 0 : Math.abs(L.beam.focus - 0.5) * 1.4) + frost * 1.2);
-    const prism = (L.beam.prism || 0) > 0.05 ? 3 : 0;
+    const lk = L.look || {};
+    // the prism: the facets the file says (a linear one as -n), turning
+    // as its rotation channel says; a file with no words: three
+    const facets = lk.prism !== undefined ? lk.prism : (L.beam.prism || 0) > 0.05 ? 3 : 0;
+    const prism = facets && lk.plin ? -facets : facets;
+    const prot = !facets ? 0 : turnOf(lk.prot, time, time * 0.6);
+    // the gobo: indexed, spinning, shaking
+    let rot = turnOf(lk.grot, time, (L.beam.gobo_rot || 0) > 0.03 ? time * (L.beam.gobo_rot - 0.03) * 6 : 0);
+    if (lk.gshake) rot += Math.sin(time * lk.gshake * 2 * Math.PI) * 0.35;
+    // half one colour, half another (a wheel between two filters)
+    const split = !lk.cscroll && lk.split ? lk.split.map((h) => { const c = hexLinear(h, this._c); return [c.r, c.g, c.b]; }) : null;
     for (const b of inst.beams) {
       const em = b.em;
       let angle = em.fieldAngle || (zoom === undefined
@@ -1339,13 +1395,25 @@ export class Stage {
       const r0 = Math.max(0.01, em.radius);
       const r1 = r0 + Math.tan(half) * len;
       b.mesh.position.copy(b.origin);
-      b.mesh.quaternion.setFromUnitVectors(UP, b.dir);
+      // the cone's own x / z are the same right / up the surface shader
+      // uses for this beam (materials.js), so a gobo or a split colour
+      // reads the same way round in the haze and where it lands
+      const rt = this._v1.crossVectors(b.dir, Math.abs(b.dir.y) < 0.99 ? UP : X_AXIS).normalize();
+      const u2 = this._v2.crossVectors(rt, b.dir);
+      b.mesh.quaternion.setFromRotationMatrix(this._m4.makeBasis(rt, b.dir, u2));
       const u = b.mat.uniforms;
       u.uLen.value = len;
       u.uR0.value = r0;
       u.uR1.value = r1;
       const cc = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
-      u.uColor.value.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b);
+      const cr = cc ? cc.r : L.r, cg = cc ? cc.g : L.g, cb = cc ? cc.b : L.b;
+      if (split) {
+        u.uColor.value.setRGB(...split[0]);
+        u.uColor2.value.setRGB(...split[1]);
+      } else {
+        u.uColor.value.setRGB(cr, cg, cb);
+        u.uColor2.value.setRGB(cr, cg, cb);
+      }
       const narrow = Math.min(3.2, Math.max(0.45, Math.sqrt(22 / Math.max(angle, 1))));
       u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
       u.uSoft.value = lerp(1.7, 0.55, frost);
@@ -1359,23 +1427,25 @@ export class Stage {
       b.glow.position.copy(b.origin).addScaledVector(b.dir, 0.01);
       const g = r0 * (3 + 12 * Math.pow(facing, 6)) * (0.4 + a);
       b.glow.scale.setScalar(g);
-      b.glow.material.color.setRGB(cc ? cc.r : L.r, cc ? cc.g : L.g, cc ? cc.b : L.b).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
+      b.glow.material.color.setRGB(cr, cg, cb).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
 
       if (inst.head === this.povHead) {            // looking down this beam
         b.mesh.visible = false;
         b.glow.visible = false;
       }
-      const goboId = this._goboId(inst, goboV);
-      const rot = (L.beam.gobo_rot || 0) > 0.03 ? time * (L.beam.gobo_rot - 0.03) * 6 : 0;
+      const goboId = lk.gscroll ? this._goboScroll(inst, lk.gscroll, time) : this._goboId(inst, goboV);
       u.uGobo.value = goboId;                     // the same picture in the haze
       u.uGoboRot.value = rot;
-      u.uLook.value.set(blur, prism, prism ? time * 0.6 : 0, 0);
+      u.uLook.value.set(blur, prism, prot, split ? 1 : 0);
       const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;
-      lights.push({
-        pos: b.origin, dir: b.dir, r: L.r * power, g: L.g * power, b: L.b * power,
-        cosO: Math.cos(half), cosI: Math.cos(half * lerp(0.72, 0.25, frost)),
-        gobo: goboId, rot, blur, prism, prot: prism ? time * 0.6 : 0, weight: power * (L.r + L.g + L.b),
-      });
+      const cone = { cosO: Math.cos(half), cosI: Math.cos(half * lerp(0.72, 0.25, frost)), gobo: goboId, rot, blur, prism, prot };
+      // a split beam lands as two half pools, each its own colour
+      for (const [side, c] of split ? [[1, split[0]], [2, split[1]]] : [[0, [cr, cg, cb]]]) {
+        lights.push({
+          pos: b.origin, dir: b.dir, r: c[0] * power, g: c[1] * power, b: c[2] * power, ...cone,
+          side, weight: power * (c[0] + c[1] + c[2]),
+        });
+      }
     }
   }
 
@@ -1397,6 +1467,14 @@ export class Stage {
     return v > 0.06 ? 1 + (Math.floor(v * 7.99) % 7) : 0;
   }
 
+  /** A gobo wheel turning: its gobos pass through the beam one by one. */
+  _goboScroll(inst, speed, time) {
+    const rows = (inst.data.gobos || []).filter((r) => r[2]);
+    if (!rows.length) return 1 + (Math.floor(Math.abs(time * speed)) % 7);
+    const n = rows.length, i = ((Math.floor(time * speed) % n) + n) % n;
+    return this._goboId(inst, (rows[i][0] + rows[i][1]) / 2 / 255);
+  }
+
   /**
    * Hand the brightest beams to the surface shader.  Beams that start
    * close together and point the same way (the cells of one bar, a row of
@@ -1408,12 +1486,12 @@ export class Stage {
     for (const l of lights) {
       const key = Math.round(l.pos.x / 1.2) + "," + Math.round(l.pos.y / 1.2) + "," + Math.round(l.pos.z / 1.2)
         + "," + Math.round(l.dir.x * 5) + "," + Math.round(l.dir.y * 5) + "," + Math.round(l.dir.z * 5)
-        + "," + l.gobo + "," + l.prism + "," + Math.round(l.cosO * 50);
+        + "," + l.gobo + "," + l.prism + "," + (l.side || 0) + "," + Math.round(l.cosO * 50);
       const g = groups.get(key);
       if (!g) {
         groups.set(key, { pos: l.pos.clone().multiplyScalar(l.weight), dir: l.dir.clone().multiplyScalar(l.weight),
           r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot,
-          blur: l.blur, prism: l.prism, prot: l.prot, weight: l.weight });
+          blur: l.blur, prism: l.prism, prot: l.prot, side: l.side || 0, weight: l.weight });
       } else {
         g.pos.addScaledVector(l.pos, l.weight);
         g.dir.addScaledVector(l.dir, l.weight);
@@ -1435,7 +1513,7 @@ export class Stage {
       LIGHTS.uDir.value[i].copy(l.dir).normalize();
       LIGHTS.uCol.value[i].set(l.r, l.g, l.b);
       LIGHTS.uCone.value[i].set(l.cosO, l.cosI, l.gobo, l.rot);
-      LIGHTS.uLook.value[i].set(l.blur || 0, l.prism || 0, l.prot || 0, 0);
+      LIGHTS.uLook.value[i].set(l.blur || 0, l.prism || 0, l.prot || 0, l.side || 0);
     }
     LIGHTS.uCount.value = n;
   }
