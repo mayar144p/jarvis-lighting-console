@@ -3720,7 +3720,7 @@ def test_real_bodies() -> None:
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("the 3D model list uses a fetched body when the profile has none",
           'bodies.body_file(x.get("manufacturer") or "", x.get("model") or "")' in mj and '"/api/gdtf/bodies"' in mj, "")
-    check("View → The makers' 3D bodies fetches them and reloads the models",
+    check("View -> The makers' 3D bodies fetches them and reloads the models",
           "The makers' 3D bodies" in sp and 'post("/api/gdtf/bodies"' in sp and 'modelSig = "";' in sp, "")
 
 

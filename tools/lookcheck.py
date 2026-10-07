@@ -54,6 +54,8 @@ def rig() -> list[tuple[str, str, str]]:
 
 def main(argv: list[str]) -> int:
     from app import beamlook
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")   # a file's "°" or "‘" on a Windows console
     from app import engine as eng
     from app import fixlib, fixtures
     only = " ".join(argv).lower()
