@@ -1,7 +1,7 @@
 // The 3D stage in the middle of the desk, and its HUD.
 import { Stage } from "/js/stage/stage.js";
 import { setScreenMediaLoader } from "/js/stage/venue.js";
-import { get, modelBytes, token } from "./api.js";
+import { get, modelBytes, post, token } from "./api.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
 import { run, select } from "./actions.js";
@@ -209,6 +209,26 @@ function crowdMenu(btn, keep) {
   ]);
 }
 
+/** Each light model's real body from GDTF Share (the maker's 3D model);
+ *  the profile and its channels stay exactly as they are. */
+async function realBodies() {
+  toast("Looking the rig up on GDTF Share…", "", 4000);
+  const d = await post("/api/gdtf/bodies", {}).catch((e) => ({ error: e.message }));
+  if (d.error) {
+    toast(d.code === "no_session" || d.code === "unauthorized"
+      ? "Sign in to GDTF Share first: Add fixtures → GDTF Share (a free gdtf-share.com account)"
+      : d.error, "bad", 7000);
+    return;
+  }
+  const got = (d.done || []).filter((x) => x.ok), miss = (d.done || []).filter((x) => !x.ok);
+  modelSig = "";                                   // load the new bodies
+  syncRig();
+  toast(!(d.done || []).length ? "Every light already uses its own GDTF file"
+    : `${got.length} of ${d.done.length} models now look like the real light`
+      + (miss.length ? ` · not available: ${miss.map((x) => `${x.model} (${x.reason})`).join(", ")}` : ""),
+  got.length ? "ok" : "", 9000);
+}
+
 function viewsMenu(btn) {
   const v = (state.snap && state.snap.venue) || {};
   const sel = (state.snap && state.snap.selected) || [];
@@ -234,6 +254,7 @@ function viewsMenu(btn) {
       a.click();
       toast("Photo saved", "ok");
     } },
+    { label: "The makers' 3D bodies", hint: "from GDTF Share, for the 3D only", run: realBodies },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
     { label: "Save this view…", run: async () => {

@@ -577,6 +577,30 @@ class Handler(BaseHTTPRequestHandler):
                                    f"installed {first.get('manufacturer', '')} "
                                    f"{first.get('model', '')} from the "
                                    f"{fixlib.SOURCES[src]['name']}"})
+            if route == "/api/gdtf/bodies":
+                # The makers' 3D models for the lights in the patch whose
+                # profile has none: kept for the 3D only, the profile stays.
+                client = gdtf_share()
+                eng = self._engine()
+                done, seen = [], set()
+                for h in eng.patch:
+                    key = (str(h.get("manufacturer") or ""), str(h.get("model") or ""))
+                    if key in seen or not key[1] or eng.model_source(h).lower().endswith(".gdtf"):
+                        continue
+                    seen.add(key)
+                    if client.body_file(*key):
+                        done.append({"model": " ".join(key).strip(), "ok": True, "had": True})
+                        continue
+                    try:
+                        got = client.fetch_body(*key)
+                    except gdtfshare.GdtfShareError as exc:
+                        if exc.code in ("no_session", "unauthorized", "network"):
+                            return self._json({"error": exc.message, "code": exc.code,
+                                               "done": done, **client.status()}, 200)
+                        got = {"ok": False, "reason": exc.message}
+                    done.append({"model": " ".join(key).strip(), **got})
+                gdtf_geom.clear_manifest_cache()
+                return self._json({"done": done, **client.status()})
             if route == "/api/gdtf/download":
                 client = gdtf_share()
                 try:
@@ -1082,8 +1106,16 @@ class Handler(BaseHTTPRequestHandler):
             eng = self._engine()
             out = config.DATA / "gdtf_models"
             seen, defs = set(), []
+            bodies = gdtf_share()
+
+            def sourced(x):
+                # its own GDTF, else the maker's 3D body fetched for it
+                src = eng.model_source(x)
+                if not src.lower().endswith(".gdtf"):
+                    src = bodies.body_file(x.get("manufacturer") or "", x.get("model") or "") or src
+                return dict(x, source=src)
             for h in eng.patch:
-                row = dict(h, source=eng.model_source(h))
+                row = sourced(h)
                 did = gdtf_geom.definition_id(row)
                 if did in seen:
                     continue
@@ -1095,8 +1127,7 @@ class Handler(BaseHTTPRequestHandler):
                                  else None))
                 pub = gdtf_geom.public_manifest(built)
                 pub["heads"] = [x["head_no"] for x in eng.patch
-                                if gdtf_geom.definition_id(
-                                    dict(x, source=eng.model_source(x))) == did]
+                                if gdtf_geom.definition_id(sourced(x)) == did]
                 pub["summary"] = gdtf_geom.summarise(built)
                 defs.append(pub)
             return self._json({"definitions": defs, "count": len(defs)})

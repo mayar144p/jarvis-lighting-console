@@ -3656,3 +3656,69 @@ def test_real_light_look() -> None:
     check("prisms of any facet count, linear prisms, and half beams in the shader",
           "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj and "uColor2" in mj, "")
     check("each head of a multi-head model can pan", "sk.cells.push({ pan: p, tilt: t, lens })" in mo and "c.pan.rotation.y" in sj, "")
+
+
+def test_real_bodies() -> None:
+    """The makers' 3D bodies from GDTF Share, for the 3D only: the same
+    model by the same maker (spelled the Share's way), kept only when its
+    file has a 3D model, and the light's own profile left alone."""
+    print("Real 3D bodies from GDTF Share (the profile stays)")
+    import io
+    import json as _json
+    import zipfile
+
+    from app import gdtfshare as gs
+    from tools.selftests.common import _share_login_ok
+
+    def gdtf(models: bool) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("description.xml", "<GDTF/>")
+            if models:
+                z.writestr("models/3ds/Body.3ds", b"3ds\x00" + b"\x00" * 32)
+        return buf.getvalue()
+    files = {21: gdtf(True), 22: gdtf(False)}
+    catalogue = _json.dumps({"result": True, "list": [
+        {"rid": 20, "fixture": "Sharpy Plus Wash", "manufacturer": "Clay Paky", "revision": "r1", "modes": []},
+        {"rid": 21, "fixture": "Sharpy Plus", "manufacturer": "Clay Paky", "revision": "r1", "modes": []},
+        {"rid": 22, "fixture": "Rogue R2 Wash", "manufacturer": "Chauvet Professional", "revision": "r1", "modes": []},
+    ]}).encode("utf-8")
+
+    def transport(method, url, *, body=None, headers=None, timeout=20.0):
+        if "login.php" in url:
+            return _share_login_ok()
+        if "getList.php" in url:
+            return (200, {"content-type": "application/json"}, catalogue)
+        rid = int(url.rsplit("=", 1)[-1])
+        return (200, {"content-type": "application/octet-stream"}, files[rid])
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        c = gs.GdtfShare(db, tmp / "cache", user="me", password="pw", transport=transport)
+        before = fixtures.model_sources(db, "Claypaky", "Sharpy Plus", loose=True)
+        r = c.fetch_body("Claypaky", "Sharpy Plus")
+        check("the same model by the same maker, spelled the Share's way (not 'Sharpy Plus Wash')",
+              r.get("ok") and r.get("file") == "body-rev21.gdtf", str(r))
+        check("its file is kept for the 3D", c.body_file("Claypaky", "Sharpy Plus") == "body-rev21.gdtf"
+              and (tmp / "cache" / "body-rev21.gdtf").is_file(), "")
+        check("the light's own profile is left alone (nothing installed or replaced)",
+              fixtures.model_sources(db, "Claypaky", "Sharpy Plus", loose=True) == before, "")
+        r = c.fetch_body("Chauvet", "Rogue R2 Wash")
+        check("a Share file with no 3D model is not used", not r.get("ok") and "no 3D model" in r.get("reason", "")
+              and c.body_file("Chauvet", "Rogue R2 Wash") is None, str(r))
+        r = c.fetch_body("Acme", "Nothing 9000")
+        check("a light that isn't on the Share says so", not r.get("ok") and "not on GDTF Share" in r.get("reason", ""), str(r))
+        anon = gs.GdtfShare(db, tmp / "cache2", transport=transport)
+        try:
+            anon.fetch_body("Claypaky", "Sharpy Plus")
+            refused = False
+        except gs.GdtfShareError as exc:
+            refused = exc.code == "no_session"
+        check("signed out: it asks for a sign-in, it doesn't half-work", refused, "")
+    mj = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("the 3D model list uses a fetched body when the profile has none",
+          'bodies.body_file(x.get("manufacturer") or "", x.get("model") or "")' in mj and '"/api/gdtf/bodies"' in mj, "")
+    check("View → The makers' 3D bodies fetches them and reloads the models",
+          "The makers' 3D bodies" in sp and 'post("/api/gdtf/bodies"' in sp and 'modelSig = "";' in sp, "")
