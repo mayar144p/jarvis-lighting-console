@@ -97,6 +97,23 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
    - Result: 279 products, engine check 0 failures; screen check clean
      except two lights whose "off" the file can't tell (BACKLOG A8/10).
 
+7. **Console redesign** (mockup: `docs/mockups/console-redesign.html`):
+   - **Top bar:** show, output pill, tempo, the command line in the middle
+     with "Ask AI" joined to it, quiet icons.
+   - **Families:** Dimmer yellow, Position blue, Colour rainbow, Beam
+     teal, FX violet - on the programmer tabs, the "in the programmer"
+     chips and the palette tiles (tokens `--f-*` in app.css).
+   - **Programmer:** palettes as tiles at the top of their family tab;
+     Clear / Make a button / Record cue at its foot on every tab.
+   - **Executor wing:** ten playbacks always in place, GO / Flash / Back
+     / Stop, empty ones a quiet "Record here"; masters and BLACKOUT at the
+     right; an empty buttons page is one invitation.
+   - **Fixtures:** groups first as tiles, then one-line rows; panels grow
+     with the screen.
+   - **Stage:** one View menu, crowd off by default, hint until used.
+   - **Dialogs:** one frame; the cue list keeps Go and puts the rest in a
+     ⋯ menu.
+
 ## Left to do
 
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
