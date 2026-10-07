@@ -285,6 +285,21 @@ localhost, hidden inside the app (the operator never sees an address).
 The three.js visualiser moves to its WebGPU renderer; nothing is thrown
 away, and the same desk feeds it.
 
+**Status (2026-10-07): the visible part DONE on the current (WebGL)
+renderer** - most of the list was already there (gobos projected onto every
+surface, shadows from the brightest beams, drifting haze, beams adding up
+where they cross, auto quality); added: gobos out of focus / frosted go
+soft, a prism splits the pool and the gobo into three, gobo shafts in the
+haze, lenses mirrored in shiny floors (per floor type), 8 shadow-casting
+beams on High, quality named High / Medium / Low (Low leaves the new detail
+out and is exactly as fast as before), a light whose file names gobo slots
+but has no pictures shows a drawn gobo instead of an open beam, and
+`tools/fpscheck.mjs` (the 124-light rig at each quality).
+**Not done: the WebGPU renderer itself** - every custom shader (beams,
+surfaces, gobos, shadows) would be rewritten in three.js's node language
+for a speed-up only a graphics card shows; worth it once fpscheck on the
+operator's PC says High can't hold 30 fps.
+
 - **Haze and beams:** beams that light up real haze (volumes, soft edges),
   brighter where they cross.
 - **Gobos** projected onto the floor, set, truss and people, sharp or soft

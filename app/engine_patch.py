@@ -1772,6 +1772,13 @@ class PatchMixin:
             # installed before pictures were read: the library file says
             src = (self._fixture_db(head.get("manufacturer"), head.get("model")) or {}).get("source") or ""
             rows = fixlib.gobo_slots(src, head.get("mode") or "")
+        if not rows:
+            # slots named but no pictures: "" = open, "-" = a gobo the 3D
+            # draws a stand-in pattern for (not a guess from the DMX value)
+            import re
+            rows = [[s["from"], s["to"], "" if re.search(r"\bopen\b|no gobo", s.get("name") or "", re.I) else "-"]
+                    for s in self._wheel_slots(head, "gobo")
+                    if not re.search(r"shake|scroll|rotat|spin|rainbow", s.get("name") or "", re.I)]
         return rows or None
 
     def _nearest_slot(self, head: dict, hexcol: str) -> dict | None:

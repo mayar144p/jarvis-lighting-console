@@ -2430,10 +2430,12 @@ def test_shadows() -> None:
     sj = (st / "stage.js").read_text(encoding="utf-8")
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("a depth atlas for the brightest beams, casters only, back faces",
-          "SHADOW_SLOTS = 4" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
+          "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
           and "DepthTexture" in sh, "")
     check("the surface shader darkens what a caster hides from a beam",
-          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[4]" in mj, "")
+          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[8]" in mj, "")
+    check("High: 8 beams cast shadows, Medium 4",
+          'this.options.quality === "high" ? 8 : 4' in sj and "Math.min(SHADOW_SLOTS, slots, n)" in sh, "")
     check("the crowd, performers, objects (not marks) and the stage deck cast",
           "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
@@ -3453,5 +3455,51 @@ def test_usb_dmx() -> None:
             info = e.network_info()
             check("Settings -> Output lists the USB ports and says this one isn't there",
                   "usb_ports" in info and info["check"] and not info["check"]["ok"], str(info.get("check")))
+        finally:
+            e.shutdown()
+
+
+def test_3d_detail() -> None:
+    """The 3D's detail (A9 step 2): gobos soften out of focus and with
+    frost, a prism splits the pool and the gobo into three, gobo shafts in
+    the haze, shiny floors mirror the lenses (per floor type), quality named
+    High / Medium / Low with Low leaving the detail out; a light whose file
+    names gobo slots but has no pictures gets a drawn gobo per slot."""
+    print("3D detail: focus, frost, prism, gobo shafts, reflections")
+    from app import engine as eng
+    from app import fixlib
+
+    st = ROOT / "web" / "js" / "stage"
+    mj = (st / "materials.js").read_text(encoding="utf-8")
+    sj = (st / "stage.js").read_text(encoding="utf-8")
+    vj = (st / "venue.js").read_text(encoding="utf-8")
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("each light carries blur (focus, frost) and prism to the shaders",
+          "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
+    check("gobos soften, a prism makes three copies (one look at the picture a pixel)",
+          "float goboMask(float id, vec2 uv, vec4 look)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "2.0944" in mj, "")
+    check("gobo shafts in the haze: the beam shader shows the same picture",
+          "a *= 0.2 + 0.95 * goboMask(uGobo, uv, uLook)" in mj and "u.uGobo.value = goboId" in sj, "")
+    check("shiny floors mirror the lenses, by floor type",
+          "reflect(normalize(vWorldPos - cameraPosition), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
+    check("Low leaves the detail out (DETAIL define), Medium and High draw it",
+          "#ifdef DETAIL" in mj and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+    check("quality is named High / Medium / Low",
+          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj, "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            done = fixtures.store_parsed(db, fixlib.load("qlc", "Robe/Robe-Pointe.qxf"), "qlc:Robe/Robe-Pointe.qxf")
+            fixtures.invalidate_cache()
+            fid = ((done.get("imported") or [{}])[0]).get("fixture_id")
+            h = e.act("add_heads", fixture_id=fid, qty=1)["heads"][0]
+            rows = e._gobo_images(next(x for x in e.patch if x["head_no"] == h)) or []
+            opens = [r for r in rows if r[2] == ""]
+            drawn = [r for r in rows if r[2] == "-"]
+            check("named gobo slots with no picture: Open stays open, each gobo drawn",
+                  opens and opens[0][0] == 0 and len(drawn) >= 7 and drawn[0][0] == 4, str(rows[:4]))
         finally:
             e.shutdown()

@@ -862,9 +862,9 @@ export async function openSettings() {
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
   const quality = h("select.select",
-    h("option", { value: "auto" }, "Auto (adapts to this computer)"),
-    h("option", { value: "high" }, "High (sharpest, needs a good GPU)"),
-    h("option", { value: "fast" }, "Fast (older laptops)"));
+    h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (a good graphics card)"),
+    h("option", { value: "auto" }, "Medium: adapts to this computer"),
+    h("option", { value: "fast" }, "Low: older laptops, no shadows"));
   try { quality.value = localStorage.getItem("jarvis.quality") || "auto"; } catch (e) { /* ignore */ }
   quality.addEventListener("change", () => {
     try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }

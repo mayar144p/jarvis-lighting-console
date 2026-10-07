@@ -23,8 +23,11 @@ export const LIGHTS = {
   // shadows (shadows.js): the first uShadowCount lights each have a depth
   // picture in a quarter of uShadowMap, seen through uShadowMat[i]
   uShadowMap: { value: null },
-  uShadowMat: { value: Array.from({ length: 4 }, () => new THREE.Matrix4()) },
+  uShadowMat: { value: Array.from({ length: 8 }, () => new THREE.Matrix4()) },
   uShadowCount: { value: 0 },
+  // x = gobo blur (focus off the sharp point, frost), y = prism copies
+  // (0 or 3), z = the prism's turn
+  uLook: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()) },
 };
 
 // Real gobo pictures (the fixture file's own, app/fixlib gobos.zip), drawn
@@ -109,7 +112,7 @@ export class GoboAtlas {
 // is the position inside the beam, -1..1 across its diameter.
 const GOBO_GLSL = /* glsl */ `
 uniform sampler2D uGobos;
-float goboMask(float id, vec2 uv) {
+float goboShape(float id, vec2 uv) {
   float r = length(uv);
   float a = atan(uv.y, uv.x);
   if (id < 0.5) return 1.0;
@@ -149,6 +152,27 @@ float goboMask(float id, vec2 uv) {
   float c = min(abs(uv.x), abs(uv.y));              // cross
   return 1.0 - smoothstep(0.08, 0.12, c);
 }
+// look: x = blur (focus off the sharp point, frost), y = prism copies, z =
+// the prism's turn.  Out of focus the picture's contrast melts into the
+// pool (one look at the picture, not several: this runs for every pixel of
+// the room).  A prism splits the beam into copies round its centre (an
+// open beam: three pools).
+float goboMask(float id, vec2 uv, vec4 look) {
+#ifndef DETAIL
+  return goboShape(id, uv);                 // Low quality: the picture as it is
+#else
+  float edge = 1.0;
+  if (look.y > 0.5) {
+    // the copy this point belongs to (they hardly overlap): one look at
+    // the picture, not three
+    float t = floor((atan(uv.y, uv.x) - look.z) / 2.0944 + 0.5) * 2.0944 + look.z;
+    uv = (uv - 0.45 * vec2(cos(t), sin(t))) * 1.9;
+    edge = 1.0 - smoothstep(0.9 - look.x * 0.3, 1.0, length(uv));
+  }
+  if (id < 0.5) return edge;
+  return mix(goboShape(id, uv), 0.55, min(0.85, look.x)) * edge;
+#endif
+}
 `;
 
 const SURFACE_VERT = /* glsl */ `
@@ -171,8 +195,9 @@ uniform vec3 uCol[MAX_LIGHTS];
 uniform vec4 uCone[MAX_LIGHTS];
 uniform vec3 uAmbient;
 uniform sampler2D uShadowMap;
-uniform mat4 uShadowMat[4];
+uniform mat4 uShadowMat[8];
 uniform int uShadowCount;
+uniform vec4 uLook[MAX_LIGHTS];
 uniform vec3 uAlbedo;
 uniform float uGrid;
 uniform float uSheen;
@@ -187,12 +212,13 @@ float shadowAt(int i, vec3 wp) {
   vec3 nd = sp.xyz / sp.w;
   if (abs(nd.x) >= 1.0 || abs(nd.y) >= 1.0 || nd.z >= 1.0) return 1.0;
   vec2 uv = nd.xy * 0.5 + 0.5;
-  vec2 off = vec2(mod(float(i), 2.0), floor(float(i) / 2.0)) * 0.5;
+  // the atlas: 4 across, 2 down, 512 x 512 each
+  vec2 off = vec2(mod(float(i), 4.0) * 0.25, floor(float(i) / 4.0) * 0.5);
   float d = nd.z * 0.5 + 0.5 - 0.0004;
-  float px = 1.0 / 1024.0, k = 0.0;
+  float px = 1.0 / 512.0, k = 0.0;
   for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) {
-    vec2 q = clamp(uv + (vec2(float(a), float(b)) - 0.5) * 1.5 * px * 2.0, 0.002, 0.998);
-    k += d <= texture2D(uShadowMap, off + q * 0.5).r ? 1.0 : 0.0;
+    vec2 q = clamp(uv + (vec2(float(a), float(b)) - 0.5) * 1.5 * px, 0.002, 0.998);
+    k += d <= texture2D(uShadowMap, off + q * vec2(0.25, 0.5)).r ? 1.0 : 0.0;
   }
   return k * 0.25;
 }
@@ -200,6 +226,12 @@ void main() {
   vec3 N = normalize(vWorldNormal);
   if (!gl_FrontFacing) N = -N;
   vec3 light = uAmbient * (0.6 + 0.4 * max(N.y, 0.0));
+  vec3 gloss = vec3(0.0);
+  // a shiny floor mirrors the lenses lighting it: where this point would
+  // show a light reflected (worked out once, not per light)
+#ifdef DETAIL
+  vec3 R = uSheen > 0.0 ? reflect(normalize(vWorldPos - cameraPosition), N) : vec3(0.0);
+#endif
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= uCount) break;
     vec3 L = vWorldPos - uPos[i];
@@ -212,7 +244,7 @@ void main() {
     vec3 Ld = L / max(d, 1e-4);
     float c = along / max(d, 1e-4);
     float spot = smoothstep(cone.x, cone.y, c);
-    if (cone.z > 0.5) {
+    if (cone.z > 0.5 || uLook[i].y > 0.5) {
       vec3 dir = uDir[i];
       vec3 up = abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
       vec3 rt = normalize(cross(dir, up));
@@ -222,12 +254,16 @@ void main() {
       vec2 uv = vec2(dot(L, rt), dot(L, u2)) / max(t * tanO, 1e-4);
       float cs = cos(cone.w), sn = sin(cone.w);
       uv = mat2(cs, -sn, sn, cs) * uv;
-      spot *= goboMask(cone.z, uv);
+      spot *= goboMask(cone.z, uv, uLook[i]);
     }
     float lam = max(dot(N, -Ld), 0.0);
     float att = 1.0 / (1.0 + 0.09 * d * d);
     if (i < uShadowCount && spot * lam > 0.001) spot *= shadowAt(i, vWorldPos);
     light += uCol[i] * spot * lam * att;
+#ifdef DETAIL
+    float rs = max(dot(R, -Ld), 0.0);
+    gloss += uCol[i] * spot * (pow(rs, 900.0) * 6.0 + pow(rs, 60.0) * 0.12);
+#endif
   }
   vec3 albedo = uAlbedo;
   if (uGrid > 0.0) {                     // a faint metre grid on the deck
@@ -237,10 +273,26 @@ void main() {
   }
   vec3 col = albedo * light;
   // a hint of a gloss floor: the brightest pools bloom a little
-  col += uSheen * light * 0.04;
+  col += uSheen * light * 0.04 + uSheen * gloss;
   gl_FragColor = vec4(col, 1.0);
 }
 `;
+
+// Medium and High draw the detail (focus and frost on gobos, prisms, lenses
+// mirrored in shiny floors); Low leaves it out - it costs every pixel of
+// the room on every light, and Low is for computers that can't spare it.
+export const DETAIL = { on: true };
+export function setDetail(scene, on) {
+  DETAIL.on = !!on;
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material || [])) {
+      if (!m || !m.uniforms || !m.uniforms.uLook) continue;
+      if (on === ("DETAIL" in m.defines)) continue;
+      if (on) m.defines.DETAIL = 1; else delete m.defines.DETAIL;
+      m.needsUpdate = true;
+    }
+  });
+}
 
 /** A diffuse surface that every beam in the rig lights. */
 export function surfaceMaterial(albedo, opts = {}) {
@@ -252,7 +304,7 @@ export function surfaceMaterial(albedo, opts = {}) {
   };
   return new THREE.ShaderMaterial({
     uniforms, vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
-    side: opts.side || THREE.FrontSide,
+    side: opts.side || THREE.FrontSide, defines: DETAIL.on ? { DETAIL: 1 } : {},
   });
 }
 
@@ -358,10 +410,15 @@ uniform float uSoft;
 uniform float uHaze;
 uniform float uTime;
 uniform float uLen;
+uniform float uGobo;
+uniform float uGoboRot;
+uniform vec4 uLook;
 varying float vT;
 varying vec3 vWorldPos;
 varying vec3 vViewNormal;
 varying vec3 vViewPos;
+varying vec2 vRad;
+${GOBO_GLSL}
 float hash(vec3 p) {
   p = fract(p * 0.3183099 + 0.1);
   p *= 17.0;
@@ -385,6 +442,15 @@ void main() {
   vec3 q = vWorldPos * 0.7 + vec3(uTime * 0.07, uTime * 0.03, uTime * 0.05);
   float haze = 0.55 + 0.45 * (noise(q) * 0.65 + noise(q * 2.3) * 0.35);
   float a = uIntensity * edge * along * mix(1.0, haze, 0.8) * uHaze;
+  if (uGobo > 0.5 || uLook.y > 0.5) {
+    // a gobo in haze: shafts.  The line of sight through this point of the
+    // cone passes the beam's axis at about sqrt(1 - facing^2) of its
+    // radius; the picture there lights it or leaves it dark
+    vec2 uv = normalize(vRad) * sqrt(max(0.0, 1.0 - facing * facing));
+    float cs = cos(uGoboRot), sn = sin(uGoboRot);
+    uv = mat2(cs, -sn, sn, cs) * uv;
+    a *= 0.2 + 0.95 * goboMask(uGobo, uv, uLook);
+  }
   gl_FragColor = vec4(uColor * a, a);
 }
 `;
@@ -411,7 +477,12 @@ export function beamMaterial() {
       uLen: { value: 5 },
       uR0: { value: 0.05 },
       uR1: { value: 1 },
+      uGobo: { value: 0 },
+      uGoboRot: { value: 0 },
+      uLook: { value: new THREE.Vector4() },
+      uGobos: LIGHTS.uGobos,
     },
+    defines: DETAIL.on ? { DETAIL: 1 } : {},
     vertexShader: BEAM_VERT,
     fragmentShader: BEAM_FRAG,
     transparent: true,

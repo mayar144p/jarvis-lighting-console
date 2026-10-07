@@ -638,6 +638,7 @@ touched):
 | `vischeck.mjs --brands \| --brand X \| --product "words"` | the same rigs through the screen, one brand at a time, plus the effects: disarmed nothing fires; armed, fire / fog / laser show in the 3D; KILL stops them | ~3 min a brand |
 | `oddcheck_ui.mjs` | two browsers on one desk; the server dropping out and coming back | ~1 min |
 | `frametiming.py` | DMX on a steady 40 Hz with a big rig and three screens (CI) | 5 s |
+| `fpscheck.mjs` | how smooth the 3D runs with the 124-light rig all lit and moving, at High / Medium / Low (`CHECKS_GPU=1` for your graphics card) | ~2 min |
 | `desktopcheck.mjs` | the desktop app: engine hidden on a private port and key, Show mode's windows each show their part, Ctrl+R / F5 don't reload, closing stops the engine (`cd desktop && npm install` first) | ~1 min |
 
 The browser checks need Node and Playwright.  `docs/REAL_LIGHT_CHECKLIST.md`
