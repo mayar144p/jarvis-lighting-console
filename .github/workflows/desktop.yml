@@ -1,0 +1,49 @@
+name: Desktop app (Windows installer)
+
+# Builds Jarvis-Setup.exe: the desktop app with the engine and a Python of
+# its own inside (nothing to install first), then runs the app check on the
+# built app.  The installer is kept as this run's artifact (Actions -> this
+# run -> Artifacts), private to the repo.  Run it by hand (Actions -> this
+# workflow -> Run workflow); a pull request that changes desktop/ runs it too.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop.yml", "tools/desktopcheck.mjs"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: A Python of its own (Windows' embeddable Python; the engine needs only the standard library)
+        shell: pwsh
+        run: |
+          $v = "3.12.10"
+          Invoke-WebRequest "https://www.python.org/ftp/python/$v/python-$v-embed-amd64.zip" -OutFile py.zip
+          Expand-Archive py.zip -DestinationPath desktop/build/python
+          desktop/build/python/python.exe -c "import sqlite3, json, http.server; print('python ok')"
+      - name: Build the installer
+        working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund
+          node stage.mjs
+          npx electron-builder --win --publish never
+      - name: Check the built app (engine, key, Show mode, safe keys, clean stop)
+        shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          $env:DESKTOP_EXE = (Resolve-Path desktop/dist/win-unpacked/Jarvis.exe).Path
+          node tools/desktopcheck.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jarvis-Windows-installer
+          path: desktop/dist/*.exe
+          retention-days: 14

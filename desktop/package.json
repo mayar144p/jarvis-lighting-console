@@ -6,9 +6,47 @@
   "description": "Jarvis lighting desk as a desktop app: the engine runs hidden, the desk opens in its own windows.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "stage": "node stage.mjs",
+    "dist": "node stage.mjs && electron-builder"
   },
   "devDependencies": {
-    "electron": "^44.6.0"
+    "electron": "^44.6.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.jarvis.desk",
+    "productName": "Jarvis",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/engine",
+        "to": "engine"
+      },
+      {
+        "from": "build/python",
+        "to": "python"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Jarvis"
+    },
+    "linux": {
+      "target": "dir"
+    },
+    "publish": null
   }
 }

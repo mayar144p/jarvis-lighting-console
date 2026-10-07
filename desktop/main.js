@@ -14,7 +14,10 @@ const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 
-const ROOT = path.join(__dirname, "..");
+// Installed: the engine's files and a Python of its own sit in the app's
+// resources (see .github/workflows/desktop.yml).  From the repo: the repo.
+const PACKED = app.isPackaged;
+const ROOT = PACKED ? path.join(process.resourcesPath, "engine") : path.join(__dirname, "..");
 const TOKEN = crypto.randomBytes(24).toString("hex");
 const STATE_FILE = () => path.join(app.getPath("userData"), "windows.json");
 
@@ -45,6 +48,8 @@ function freePort() {
 function findPython() {
   const win = process.platform === "win32";
   const tries = [];
+  const own = path.join(process.resourcesPath, "python", win ? "python.exe" : "bin/python3");
+  if (PACKED && fs.existsSync(own)) return [own, []];   // the installer's own Python
   for (const v of [process.env.JARVIS_PYTHON, process.env.PYTHON]) {
     if (!v) continue;
     let p = v.replace(/^"|"$/g, "");
@@ -59,6 +64,22 @@ function findPython() {
   return null;
 }
 
+// Installed, the shows, fixtures, settings (.env) and inbox live in the
+// user's own folder (AppData\Roaming\Jarvis): they survive updates and a
+// reinstall.  From the repo: the repo's data/ and .env, as run.bat uses.
+function userFolders() {
+  if (!PACKED) return {};
+  const ud = app.getPath("userData");
+  const env = path.join(ud, ".env");
+  if (!fs.existsSync(env)) {
+    try { fs.copyFileSync(path.join(ROOT, ".env.example"), env); } catch { /* none bundled */ }
+  }
+  const want = { CONSOLE_DATA_DIR: path.join(ud, "data"), CONSOLE_ENV_FILE: env,
+    CONSOLE_INBOX: path.join(ud, "fixtures_inbox"), AUTO_UPDATE: "false" };
+  // a value already set (the checks run on scratch data) wins
+  return Object.fromEntries(Object.entries(want).filter(([k]) => !process.env[k]));
+}
+
 async function startEngine() {
   const port = await freePort();
   const found = findPython();
@@ -69,7 +90,7 @@ async function startEngine() {
     cwd: ROOT, windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
     // HOST: this computer only.  CONSOLE_TOKEN: the private key.  The
     // engine shuts down cleanly when our end of its stdin closes.
-    env: { ...process.env, HOST: "127.0.0.1", PORT: String(port), CONSOLE_TOKEN: TOKEN, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+    env: { ...process.env, ...userFolders(), HOST: "127.0.0.1", PORT: String(port), CONSOLE_TOKEN: TOKEN, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);

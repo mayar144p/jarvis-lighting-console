@@ -5,6 +5,7 @@
 //
 //   cd desktop && npm install && cd .. && node tools/desktopcheck.mjs
 //   (Linux with no screen: xvfb-run -a node tools/desktopcheck.mjs)
+//   DESKTOP_EXE=path/to/Jarvis.exe node tools/desktopcheck.mjs   (a built app)
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -16,7 +17,9 @@ try { ({ _electron } = await import("playwright")); } catch {
 }
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DESK = join(ROOT, "desktop");
-const exe = join(DESK, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
+// DESKTOP_EXE: check an installed / built app (Jarvis.exe) instead of the repo's
+const PACKED = process.env.DESKTOP_EXE || "";
+const exe = PACKED || join(DESK, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
@@ -30,7 +33,7 @@ const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarv
 const GPU = process.env.CHECKS_GPU === "1";
 const args = [...(process.platform === "linux" ? ["--no-sandbox"] : []),
   ...(GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), "jarvis-desk-ud-"))}`, DESK];
+  `--user-data-dir=${mkdtempSync(join(tmpdir(), "jarvis-desk-ud-"))}`, ...(PACKED ? [] : [DESK])];
 const app = await _electron.launch({ executablePath: exe, args, env, timeout: 90000 });
 const win = await app.firstWindow({ timeout: 90000 });
 await win.waitForSelector("#app", { timeout: 60000 });
