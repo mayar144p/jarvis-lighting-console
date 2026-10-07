@@ -2430,10 +2430,12 @@ def test_shadows() -> None:
     sj = (st / "stage.js").read_text(encoding="utf-8")
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("a depth atlas for the brightest beams, casters only, back faces",
-          "SHADOW_SLOTS = 4" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
+          "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
           and "DepthTexture" in sh, "")
     check("the surface shader darkens what a caster hides from a beam",
-          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[4]" in mj, "")
+          "float shadowAt(int i, vec3 wp)" in mj and "i < uShadowCount" in mj and "uShadowMat[8]" in mj, "")
+    check("High: 8 beams cast shadows, Medium 4",
+          'this.options.quality === "high" ? 8 : 4' in sj and "Math.min(SHADOW_SLOTS, slots, n)" in sh, "")
     check("the crowd, performers, objects (not marks) and the stage deck cast",
           "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
@@ -3386,5 +3388,118 @@ def test_shape_in_zone() -> None:
             except Exception as ex:          # noqa: BLE001
                 ok = str(ex)
             check("a deleted zone doesn't stop the desk", ok is True, str(ok))
+        finally:
+            e.shutdown()
+
+
+def test_usb_dmx() -> None:
+    """DMX out of a USB interface (Enttec DMX USB Pro and compatible): the
+    exact message bytes, the engine's output choosing it and sending the
+    light's channels through it (a pseudo-terminal stands in for the box),
+    a bad port refused, unplugged retried without stopping the desk."""
+    print("USB DMX interface (Enttec USB Pro protocol)")
+    import os
+    import time as _time
+
+    from app import engine as eng
+    from app import usbdmx
+
+    f = usbdmx.build_frame(bytes([255, 128] + [0] * 510))
+    check("a frame is 7E 06 len(513) 00 + 512 channels + E7",
+          f[:4] == bytes([0x7E, 6, 0x01, 0x02]) and f[4] == 0 and f[5:7] == bytes([255, 128])
+          and f[-1] == 0xE7 and len(f) == 518, f[:8].hex())
+    check("ports look like COM3 or /dev/ttyUSB0", usbdmx.valid_port("COM3") and usbdmx.valid_port("/dev/ttyUSB0")
+          and not usbdmx.valid_port("2.0.0.10") and not usbdmx.valid_port("COM3; rm -rf"), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            check("a bad port is refused", not e.act("set_dmx_target", mode="usb", host="nowhere").get("ok"), "")
+            if not hasattr(os, "openpty"):
+                return                                   # Windows: no pseudo-terminal to stand in
+            master, slave = os.openpty()
+            name = os.ttyname(slave)
+            r = e.act("set_dmx_target", mode="usb", host=name)
+            check("the output can be a USB interface", r.get("ok") and r["target"] == {"mode": "usb", "host": name, "transport": "usbpro"}, str(r))
+            heads = e.act("add_heads", query="Dimmer", qty=1)["heads"] or e.act("add_heads", query="PAR", qty=1)["heads"]
+            e.act("select_heads", heads=heads)
+            e.act("set_intensity", level=100)
+            sender = e._get_sender()
+            check("the engine sends through the USB sender", type(sender).__name__ == "UsbProSender", type(sender).__name__)
+            sender.dry_run = False
+            frames = e.build_frames()
+            e._dispatch(frames)
+            os.set_blocking(master, False)
+            _time.sleep(0.1)
+            got = b""
+            try:
+                while True:
+                    got += os.read(master, 4096)
+            except (BlockingIOError, OSError):
+                pass
+            want = usbdmx.build_frame(frames[1])
+            check("the box gets the frame byte for byte (the light's channels at full)",
+                  got == want and max(frames[1]) == 255, f"{len(got)} bytes")
+            os.close(slave)
+            os.close(master)
+            sender.close()
+            e.dmx_target["host"] = "/dev/does-not-exist"
+            e._sender = None
+            s2 = e._get_sender()
+            s2.dry_run = False
+            e._dispatch(e.build_frames())
+            check("unplugged: an error to show, the desk goes on, it tries again later",
+                  s2.errors == 1 and s2.last_error and e.output["errors"] >= 1, str(s2.stats()))
+            info = e.network_info()
+            check("Settings -> Output lists the USB ports and says this one isn't there",
+                  "usb_ports" in info and info["check"] and not info["check"]["ok"], str(info.get("check")))
+        finally:
+            e.shutdown()
+
+
+def test_3d_detail() -> None:
+    """The 3D's detail (A9 step 2): gobos soften out of focus and with
+    frost, a prism splits the pool and the gobo into three, gobo shafts in
+    the haze, shiny floors mirror the lenses (per floor type), quality named
+    High / Medium / Low with Low leaving the detail out; a light whose file
+    names gobo slots but has no pictures gets a drawn gobo per slot."""
+    print("3D detail: focus, frost, prism, gobo shafts, reflections")
+    from app import engine as eng
+    from app import fixlib
+
+    st = ROOT / "web" / "js" / "stage"
+    mj = (st / "materials.js").read_text(encoding="utf-8")
+    sj = (st / "stage.js").read_text(encoding="utf-8")
+    vj = (st / "venue.js").read_text(encoding="utf-8")
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("each light carries blur (focus, frost) and prism to the shaders",
+          "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
+    check("gobos soften, a prism makes three copies (one look at the picture a pixel)",
+          "float goboMask(float id, vec2 uv, vec4 look)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "2.0944" in mj, "")
+    check("gobo shafts in the haze: the beam shader shows the same picture",
+          "a *= 0.2 + 0.95 * goboMask(uGobo, uv, uLook)" in mj and "u.uGobo.value = goboId" in sj, "")
+    check("shiny floors mirror the lenses, by floor type",
+          "reflect(normalize(vWorldPos - cameraPosition), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
+    check("Low leaves the detail out (DETAIL define), Medium and High draw it",
+          "#ifdef DETAIL" in mj and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+    check("quality is named High / Medium / Low",
+          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj, "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            done = fixtures.store_parsed(db, fixlib.load("qlc", "Robe/Robe-Pointe.qxf"), "qlc:Robe/Robe-Pointe.qxf")
+            fixtures.invalidate_cache()
+            fid = ((done.get("imported") or [{}])[0]).get("fixture_id")
+            h = e.act("add_heads", fixture_id=fid, qty=1)["heads"][0]
+            rows = e._gobo_images(next(x for x in e.patch if x["head_no"] == h)) or []
+            opens = [r for r in rows if r[2] == ""]
+            drawn = [r for r in rows if r[2] == "-"]
+            check("named gobo slots with no picture: Open stays open, each gobo drawn",
+                  opens and opens[0][0] == 0 and len(drawn) >= 7 and drawn[0][0] == 4, str(rows[:4]))
         finally:
             e.shutdown()

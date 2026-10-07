@@ -20,6 +20,7 @@ import { SfxSystem } from "./sfx.js";
 import { Shadows } from "./shadows.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, GoboAtlas,
+  setDetail,
 } from "./materials.js";
 
 const DEG = Math.PI / 180;
@@ -539,6 +540,7 @@ export class Stage {
         : this.options.quality === "fast" ? Math.min(dpr, 0.75) : Math.min(dpr, 1.5);
       this.q.ratio = this.q.cap;
       this.resize();
+      setDetail(this.scene, this.options.quality !== "fast");
     }
     this.dirty = true;
   }
@@ -977,7 +979,7 @@ export class Stage {
     this._uploadLights(lights);
     // shadows for the brightest beams, unless the view is kept light
     if (this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
-      this.shadows.update(LIGHTS.uCount.value);
+      this.shadows.update(LIGHTS.uCount.value, this.options.quality === "high" ? 8 : 4);
     } else this.shadows.off();
     this._drawScreens(now);
 
@@ -1254,6 +1256,10 @@ export class Stage {
     const iris = L.beam.iris || 0;
     const frost = L.beam.frost || 0;
     const goboV = L.beam.gobo || 0;
+    // focus: sharp in the middle of its travel, softer either side (the
+    // sharp point really depends on the throw); frost softens it all
+    const blur = Math.min(1, (L.beam.focus === undefined ? 0 : Math.abs(L.beam.focus - 0.5) * 1.4) + frost * 1.2);
+    const prism = (L.beam.prism || 0) > 0.05 ? 3 : 0;
     for (const b of inst.beams) {
       const em = b.em;
       let angle = em.fieldAngle || (zoom === undefined
@@ -1300,11 +1306,14 @@ export class Stage {
       }
       const goboId = this._goboId(inst, goboV);
       const rot = (L.beam.gobo_rot || 0) > 0.03 ? time * (L.beam.gobo_rot - 0.03) * 6 : 0;
+      u.uGobo.value = goboId;                     // the same picture in the haze
+      u.uGoboRot.value = rot;
+      u.uLook.value.set(blur, prism, prism ? time * 0.6 : 0, 0);
       const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;
       lights.push({
         pos: b.origin, dir: b.dir, r: L.r * power, g: L.g * power, b: L.b * power,
         cosO: Math.cos(half), cosI: Math.cos(half * lerp(0.72, 0.25, frost)),
-        gobo: goboId, rot, weight: power * (L.r + L.g + L.b),
+        gobo: goboId, rot, blur, prism, prot: prism ? time * 0.6 : 0, weight: power * (L.r + L.g + L.b),
       });
     }
   }
@@ -1318,6 +1327,8 @@ export class Stage {
       const dmx = Math.round(v * 255);
       const row = rows.find((r) => dmx >= r[0] && dmx <= r[1]);
       if (!row) return 0;                       // between pictures: open, or a spin range
+      if (!row[2]) return 0;                    // the file's "Open" slot
+      if (row[2] === "-") return 1 + (rows.indexOf(row) % 7);   // named, no picture: a drawn pattern
       const cell = this.gobos.cell(row[2]);
       if (cell >= 0) return 100 + cell;
       return cell === -1 ? 0 : 1 + (rows.indexOf(row) % 7);   // loading: open for a moment
@@ -1336,11 +1347,12 @@ export class Stage {
     for (const l of lights) {
       const key = Math.round(l.pos.x / 1.2) + "," + Math.round(l.pos.y / 1.2) + "," + Math.round(l.pos.z / 1.2)
         + "," + Math.round(l.dir.x * 5) + "," + Math.round(l.dir.y * 5) + "," + Math.round(l.dir.z * 5)
-        + "," + l.gobo + "," + Math.round(l.cosO * 50);
+        + "," + l.gobo + "," + l.prism + "," + Math.round(l.cosO * 50);
       const g = groups.get(key);
       if (!g) {
         groups.set(key, { pos: l.pos.clone().multiplyScalar(l.weight), dir: l.dir.clone().multiplyScalar(l.weight),
-          r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot, weight: l.weight });
+          r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot,
+          blur: l.blur, prism: l.prism, prot: l.prot, weight: l.weight });
       } else {
         g.pos.addScaledVector(l.pos, l.weight);
         g.dir.addScaledVector(l.dir, l.weight);
@@ -1362,6 +1374,7 @@ export class Stage {
       LIGHTS.uDir.value[i].copy(l.dir).normalize();
       LIGHTS.uCol.value[i].set(l.r, l.g, l.b);
       LIGHTS.uCone.value[i].set(l.cosO, l.cosI, l.gobo, l.rot);
+      LIGHTS.uLook.value[i].set(l.blur || 0, l.prism || 0, l.prot || 0, 0);
     }
     LIGHTS.uCount.value = n;
   }

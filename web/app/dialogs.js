@@ -733,21 +733,44 @@ function outputSection(con) {
   const mode = h("select.select",
     h("option", { value: "auto" }, "Auto: broadcast on my lighting network"),
     h("option", { value: "node" }, "One node: send to its IP"),
-    h("option", { value: "broadcast" }, "Broadcast address I choose"));
+    h("option", { value: "broadcast" }, "Broadcast address I choose"),
+    h("option", { value: "usb" }, "A USB DMX box"));
+  // a USB box shows up as a serial port (COM3, /dev/ttyUSB0): one universe
+  const usbPort = h("select.select", { "aria-label": "USB interface port" });
+  const usbField = h("label.field", h("span", "USB interface"), usbPort);
+  const usbHint = h("p.muted.small", "Enttec DMX USB Pro and compatible boxes (DMXking ultraDMX…). One box is one universe: universe 1. "
+    + "Not in the list? Plug it in, then Re-check network.");
   const ip = h("input", { type: "text", inputmode: "decimal", placeholder: "e.g. 2.0.0.10", spellcheck: "false", autocomplete: "off" });
   const proto = h("select.select",
     h("option", { value: "" }, `Default (${(con.transport || "artnet") === "sacn" ? "sACN" : "Art-Net"})`),
     h("option", { value: "artnet" }, "Art-Net"),
     h("option", { value: "sacn" }, "sACN (E1.31)"));
   const status = h("div.out-status");
+  const findBtn = h("button.btn", { onclick: (e) => find(e.currentTarget) }, "Find nodes");
   const adapters = h("div.out-list");
   const nodes = h("div.out-list");
-  const syncIp = () => { ip.disabled = mode.value === "auto"; ip.parentElement.style.opacity = ip.disabled ? 0.5 : 1; };
+  const syncIp = () => {
+    const usb = mode.value === "usb";
+    ip.disabled = mode.value === "auto";
+    ip.parentElement.style.opacity = ip.disabled ? 0.5 : 1;
+    ip.parentElement.hidden = proto.parentElement.hidden = usb;
+    usbField.hidden = usbHint.hidden = !usb;
+    findBtn.hidden = usb;
+  };
+  const showPorts = (net) => {
+    const ports = net.usb_ports || [];
+    const cur = net.target.mode === "usb" ? net.target.host : "";
+    usbPort.replaceChildren(...(ports.length ? ports : [""]).concat(cur && !ports.includes(cur) ? [cur] : [])
+      .map((p) => h("option", { value: p, selected: p === cur }, p || "None found")));
+  };
+  const target = () => mode.value === "usb" ? { mode: "usb", host: usbPort.value } :
+    { mode: mode.value, host: mode.value === "auto" ? "" : ip.value.trim(), transport: proto.value };
   mode.addEventListener("change", syncIp);
 
   const verdict = (net) => {
     const r = net.resolved || {};
-    const lines = [h("div", h("b", "Sending to "), h("span.mono", `${r.host}:${r.port}`), ` · ${r.transport === "sacn" ? "sACN" : "Art-Net"}`,
+    const lines = [h("div", h("b", "Sending to "), h("span.mono", r.transport === "usbpro" ? r.host : `${r.host}:${r.port}`),
+      ` · ${r.transport === "usbpro" ? "USB interface, universe 1" : r.transport === "sacn" ? "sACN" : "Art-Net"}`,
       net.target.mode === "auto" && net.env_host ? " (from DMX_HOST in .env)" : "",
       ` · ${con.hz || 40} Hz`)];
     const c = net.check;
@@ -770,8 +793,8 @@ function outputSection(con) {
       const net = await get("/api/console/network");
       mode.value = net.target.mode;
       ip.value = net.target.host || "";
-      proto.value = net.target.transport || "";
-      syncIp(); verdict(net); showAdapters(net);
+      proto.value = net.target.mode === "usb" ? "" : net.target.transport || "";
+      showPorts(net); syncIp(); verdict(net); showAdapters(net);
       return net;
     } catch (err) {
       status.replaceChildren(h("div.out-bad", err.message));
@@ -810,10 +833,11 @@ function outputSection(con) {
     h("div.form-grid",
       h("label.field", h("span", "Send DMX to"), mode),
       h("label.field", h("span", "Node / broadcast IP"), ip),
-      h("label.field", h("span", "Protocol"), proto)),
+      h("label.field", h("span", "Protocol"), proto), usbField),
+    usbHint,
     h("div.row-btns",
-      h("button.btn.primary", { onclick: () => apply({ mode: mode.value, host: mode.value === "auto" ? "" : ip.value.trim(), transport: proto.value }) }, "Apply"),
-      h("button.btn", { onclick: (e) => find(e.currentTarget) }, "Find nodes"),
+      h("button.btn.primary", { onclick: () => apply(target()) }, "Apply"),
+      findBtn,
       h("button.btn", { onclick: refresh }, "Re-check network")),
     status, nodes, adapters,
     h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."),
@@ -838,9 +862,9 @@ export async function openSettings() {
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
   const quality = h("select.select",
-    h("option", { value: "auto" }, "Auto (adapts to this computer)"),
-    h("option", { value: "high" }, "High (sharpest, needs a good GPU)"),
-    h("option", { value: "fast" }, "Fast (older laptops)"));
+    h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (a good graphics card)"),
+    h("option", { value: "auto" }, "Medium: adapts to this computer"),
+    h("option", { value: "fast" }, "Low: older laptops, no shadows"));
   try { quality.value = localStorage.getItem("jarvis.quality") || "auto"; } catch (e) { /* ignore */ }
   quality.addEventListener("change", () => {
     try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }

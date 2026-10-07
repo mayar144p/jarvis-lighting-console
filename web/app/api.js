@@ -9,6 +9,23 @@ const TOKEN_KEY = "jarvis.token";
 let prompting = false;
 let snoozeUntil = 0;
 
+// a pairing code from the desktop app (Desk -> Phones and tablets): typed on
+// a phone it may come in lower case or with its dash
+const clean = (t) => {
+  const s = String(t || "").trim();
+  const c = s.replace(/[\s-]/g, "");
+  return /^[a-z0-9]{8,12}$/i.test(c) ? c.toUpperCase() : s;
+};
+// ...or in the address the desk shows (?code=...): kept, then taken out of the bar
+try {
+  const u = new URL(location.href);
+  if (u.searchParams.get("code")) {
+    sessionStorage.setItem("jarvis.token", clean(u.searchParams.get("code")));
+    u.searchParams.delete("code");
+    history.replaceState(null, "", u.pathname + u.search + u.hash);
+  }
+} catch (e) { /* no storage: it will be asked for */ }
+
 export function token() {
   try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
 }
@@ -31,9 +48,9 @@ function headers(json) {
 function askToken() {
   if (prompting || Date.now() < snoozeUntil) return false;
   prompting = true;
-  const t = window.prompt("This desk needs its access token.\nEnter the CONSOLE_TOKEN from the .env file:");
+  const t = window.prompt("This desk needs its code.\nType the pairing code shown on the desk (Desk → Phones and tablets), or the CONSOLE_TOKEN from .env:");
   prompting = false;
-  if (t) { setToken(t.trim()); return true; }
+  if (t) { setToken(clean(t)); return true; }
   snoozeUntil = Date.now() + 30000;
   return false;
 }

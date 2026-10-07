@@ -12,6 +12,7 @@ const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
+const os = require("node:os");
 const path = require("node:path");
 
 // Installed: the engine's files and a Python of its own sit in the app's
@@ -29,7 +30,8 @@ const PARTS = {
   playbacks: { q: "playbacks", title: "Jarvis - Playbacks" },
 };
 
-let engine = null, base = "", quitting = false, saved = {};
+let engine = null, base = "", quitting = false, restarting = false, saved = {};
+let key = TOKEN;                              // what the engine's requests must carry
 const open = new Map();                       // part -> BrowserWindow
 const reopen = new Set();                     // the windows to open next time
 
@@ -80,24 +82,47 @@ function userFolders() {
   return Object.fromEntries(Object.entries(want).filter(([k]) => !process.env[k]));
 }
 
+// Phones and tablets (Desk -> Phones and tablets): off, the engine answers
+// this computer only, on a new free port each time, with a private key.  On,
+// it answers the network on a fixed port, and the key is a short pairing
+// code the operator types on the phone once.
+const desk = () => (saved._desk = saved._desk || { remotes: false, port: 8787, code: "" });
+const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";       // no 0/O, 1/I/L
+const newCode = () => Array.from({ length: 10 }, () => CODE_ABC[crypto.randomInt(CODE_ABC.length)]).join("");
+const showCode = (c) => `${c.slice(0, 5)}-${c.slice(5)}`;
+function portOr(want) {
+  return new Promise((resolve) => {
+    const s = net.createServer();
+    s.once("error", () => resolve(freePort()));
+    s.listen(want, "0.0.0.0", () => s.close(() => resolve(want)));
+  });
+}
+function lanAddresses() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
+}
+
 async function startEngine() {
-  const port = await freePort();
+  const remote = desk().remotes && desk().code;
+  const port = remote ? await portOr(desk().port) : await freePort();
+  key = remote ? desk().code : TOKEN;
   const found = findPython();
   if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Jarvis again");
   const [py, pre] = found;
   const log = fs.createWriteStream(path.join(app.getPath("userData"), "engine.log"), { flags: "w" });
   engine = spawn(py, [...pre, "app/main.py"], {
     cwd: ROOT, windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
-    // HOST: this computer only.  CONSOLE_TOKEN: the private key.  The
-    // engine shuts down cleanly when our end of its stdin closes.
-    env: { ...process.env, ...userFolders(), HOST: "127.0.0.1", PORT: String(port), CONSOLE_TOKEN: TOKEN, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+    // HOST: this computer only (or the network, for phones).  CONSOLE_TOKEN:
+    // the key.  The engine shuts down cleanly when our end of its stdin closes.
+    env: { ...process.env, ...userFolders(), HOST: remote ? "0.0.0.0" : "127.0.0.1", PORT: String(port),
+      CONSOLE_TOKEN: key, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);
   let died = null;
   engine.once("exit", (code) => {
     died = code;
-    if (!quitting) {
+    if (!quitting && !restarting) {
       dialog.showErrorBox("Jarvis stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
       app.exit(1);
     }
@@ -151,6 +176,7 @@ function openPart(part) {
   const place = mem && onScreen(mem.bounds) ? mem : defaultPlace(part);
   const win = new BrowserWindow({
     ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
+    icon: path.join(__dirname, "res", "icon.png"),
     webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   open.set(part, win);
@@ -230,6 +256,8 @@ function menu() {
       { label: "Programmer and fixtures", click: () => openPart("desk") },
       { label: "Playbacks and buttons", click: () => openPart("playbacks") },
       { type: "separator" },
+      { label: "Phones and tablets…", click: phonesDialog },
+      { type: "separator" },
       { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: () => { if (confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
     ] },
     { label: "View", submenu: [
@@ -239,6 +267,52 @@ function menu() {
       { role: "toggleDevTools", accelerator: "CmdOrCtrl+Shift+I" },
     ] },
   ]));
+}
+
+// every request the app's windows make to the engine carries its key
+function trustEngine() {
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [base + "*"] }, (d, cb) => {
+    d.requestHeaders["X-Jarvis-Token"] = key;
+    cb({ requestHeaders: d.requestHeaders });
+  });
+}
+
+// the engine started again with new settings; the windows follow it
+async function restartEngine() {
+  restarting = true;
+  await stopEngine();
+  try { await startEngine(); } finally { restarting = false; }
+  trustEngine();
+  for (const [part, w] of open) w.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
+}
+
+async function phonesDialog() {
+  const win = BrowserWindow.getFocusedWindow();
+  const d = desk();
+  if (!d.remotes) {
+    const r = await dialog.showMessageBox(win, {
+      type: "question", buttons: ["Allow phones and tablets", "Cancel"], defaultId: 0, cancelId: 1,
+      message: "Use a phone or tablet as a remote?",
+      detail: "The desk then answers on this computer's network, locked with a pairing code you type on the phone once. "
+        + "The phone must be on the same network (Wi-Fi) as this computer. Windows may ask to allow Jarvis through its firewall: allow it on private networks.",
+    });
+    if (r.response !== 0) return;
+    Object.assign(d, { remotes: true, code: newCode() });
+    saveState();
+    await restartEngine();
+  }
+  const port = Number(new URL(base).port);
+  const addrs = lanAddresses();
+  const r = await dialog.showMessageBox(win, {
+    type: "info", buttons: ["OK", "New code", "Stop allowing phones"], defaultId: 0, cancelId: 0,
+    message: `Pairing code: ${showCode(d.code)}`,
+    detail: (addrs.length ? `On the phone or tablet, open:\n${addrs.map((a) => `  http://${a}:${port}`).join("\n")}\nthen type the code.`
+      + `\n\nJust the faders and buttons (a remote in your hand):\n  http://${addrs[0]}:${port}/?window=playbacks`
+      : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the phone.")
+      + "\n\n\"New code\" signs every phone out.",
+  });
+  if (r.response === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
+  if (r.response === 2) { d.remotes = false; saveState(); await restartEngine(); }
 }
 
 // ------------------------------------------------------------------ start
@@ -255,12 +329,12 @@ app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
-  // every request to the engine carries the private key; nothing else can
-  // reach it (it only listens on this computer)
-  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [base + "*"] }, (d, cb) => {
-    d.requestHeaders["X-Jarvis-Token"] = TOKEN;
-    cb({ requestHeaders: d.requestHeaders });
-  });
+  trustEngine();
+  // the desk's screens may use MIDI controllers (Web MIDI) and full screen;
+  // nothing else (camera, microphone, location...) is ever granted
+  const ALLOW = new Set(["midi", "midiSysex", "fullscreen", "clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(ALLOW.has(perm)));
+  session.defaultSession.setPermissionCheckHandler((_wc, perm) => ALLOW.has(perm));
   powerSaveBlocker.start("prevent-display-sleep");    // the screens stay awake during a show
   menu();
   const parts = Object.keys(saved).filter((p) => saved[p] && saved[p].open);

@@ -1,8 +1,8 @@
-name: Desktop app (Windows installer)
+name: Desktop app (installers)
 
-# Builds Jarvis-Setup.exe: the desktop app with the engine and a Python of
-# its own inside (nothing to install first), then runs the app check on the
-# built app.  The installer is kept as this run's artifact (Actions -> this
+# Builds the desktop app with the engine and a Python of its own inside
+# (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
+# Mac - then runs the app check on each built app.  The installer is kept as this run's artifact (Actions -> this
 # run -> Artifacts), private to the repo.  Run it by hand (Actions -> this
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
 on:
@@ -46,4 +46,37 @@ jobs:
         with:
           name: Jarvis-Windows-installer
           path: desktop/dist/*.exe
+          retention-days: 14
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - name: A Python of its own (python-build-standalone via uv; the engine needs only the standard library)
+        run: |
+          UV_PYTHON_INSTALL_DIR="$PWD/desktop/build/pyroot" uv python install 3.12
+          D=$(ls -d desktop/build/pyroot/cpython-3.12.[0-9]*-*/ | head -n1)     # not the 3.12 shortcut uv also makes
+          mv "$D" desktop/build/python
+          rm -rf desktop/build/pyroot
+          desktop/build/python/bin/python3 -c "import sqlite3, json, http.server, sys; print('python ok', sys.version)"
+      - name: Build the app
+        working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund
+          node stage.mjs
+          npx electron-builder --mac --publish never
+      - name: Check the built app (engine, key, Show mode, phones, safe keys, clean stop)
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          DESKTOP_EXE="$(ls -d desktop/dist/mac*/Jarvis.app)/Contents/MacOS/Jarvis" node tools/desktopcheck.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jarvis-Mac-installer
+          path: desktop/dist/*.dmg
           retention-days: 14

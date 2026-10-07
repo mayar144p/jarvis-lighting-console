@@ -79,15 +79,32 @@ Your shows and `.env` are the same as with `run.bat` (it runs the same
 `data/` folder).
 
 **The installer (another PC, nothing to install first).** GitHub → Actions →
-"Desktop app (Windows installer)" → Run workflow. A few minutes later the
+"Desktop app (installers)" → Run workflow. A few minutes later the
 run has `Jarvis-Windows-installer` under Artifacts: unzip it and run
 `Jarvis Setup ….exe`. The app carries its own Python. Installed, the shows,
 fixtures and settings live in `%APPDATA%\Jarvis` (your AI key goes in
 `%APPDATA%\Jarvis\.env`), so they survive updates and reinstalls. The
 artifact stays private to the repo and is kept 14 days.
 
-Not done yet: the app updating itself, and phones / tablets as remotes (see
-`docs/BACKLOG.md` A9).
+**Phones and tablets as remotes:** Desk → Phones and tablets… → Allow. The
+desk then answers your network on a fixed port, locked with a pairing code;
+on the phone (same Wi-Fi) open the address it shows and type the code once
+(`/?window=playbacks` gives just the faders and buttons). "New code" signs
+every phone out; "Stop allowing" goes back to this computer only. Windows
+asks once to let Jarvis through the firewall: allow it on private networks.
+
+**USB DMX:** Settings → Output → "USB DMX interface (Enttec USB Pro and
+compatible)" and pick its port (COM3...). One box is one universe
+(universe 1). Most USB boxes speak this protocol (Enttec DMX USB Pro / Mk2,
+DMXking ultraDMX and clones); the cheap "Open DMX" kind does not.
+**MIDI** controllers work in the app as in the browser.
+
+**Mac:** the same workflow builds `Jarvis.dmg` (artifact
+`Jarvis-Mac-installer`). It isn't signed: the first time, right-click the
+app → Open.
+
+Not done: the app updating itself - it needs a place to publish installers,
+which waits until Jarvis leaves testing (see `docs/BACKLOG.md` A9).
 
 ## The desk
 
@@ -621,6 +638,7 @@ touched):
 | `vischeck.mjs --brands \| --brand X \| --product "words"` | the same rigs through the screen, one brand at a time, plus the effects: disarmed nothing fires; armed, fire / fog / laser show in the 3D; KILL stops them | ~3 min a brand |
 | `oddcheck_ui.mjs` | two browsers on one desk; the server dropping out and coming back | ~1 min |
 | `frametiming.py` | DMX on a steady 40 Hz with a big rig and three screens (CI) | 5 s |
+| `fpscheck.mjs` | how smooth the 3D runs with the 124-light rig all lit and moving, at High / Medium / Low (`CHECKS_GPU=1` for your graphics card) | ~2 min |
 | `desktopcheck.mjs` | the desktop app: engine hidden on a private port and key, Show mode's windows each show their part, Ctrl+R / F5 don't reload, closing stops the engine (`cd desktop && npm install` first) | ~1 min |
 
 The browser checks need Node and Playwright.  `docs/REAL_LIGHT_CHECKLIST.md`

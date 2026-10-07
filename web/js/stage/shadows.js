@@ -7,17 +7,17 @@
 import * as THREE from "three";
 import { LIGHTS } from "./materials.js";
 
-export const SHADOW_SLOTS = 4;
+export const SHADOW_SLOTS = 8;           // High quality; Medium uses 4
 // meshes that cast a shadow carry this layer (the venue builder sets it)
 export const CASTER_LAYER = 5;
-const SIZE = 1024;                       // the atlas; 512 per beam
+const CELL = 512;                        // per beam; the atlas is 4 x 2 of them
 
 export class Shadows {
   constructor(renderer, scene) {
     this.renderer = renderer;
     this.scene = scene;
-    this.rt = new THREE.WebGLRenderTarget(SIZE, SIZE, { depthBuffer: true });
-    this.rt.depthTexture = new THREE.DepthTexture(SIZE, SIZE, THREE.UnsignedIntType);
+    this.rt = new THREE.WebGLRenderTarget(CELL * 4, CELL * 2, { depthBuffer: true });
+    this.rt.depthTexture = new THREE.DepthTexture(CELL * 4, CELL * 2, THREE.UnsignedIntType);
     this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.NearestFilter;
     this.cams = Array.from({ length: SHADOW_SLOTS }, () => new THREE.PerspectiveCamera(60, 1, 0.3, 45));
     for (const c of this.cams) c.layers.set(CASTER_LAYER);
@@ -30,8 +30,8 @@ export class Shadows {
 
   /** Draw the depth pictures for the first `n` uploaded beams (they are
    *  sorted brightest first). */
-  update(n) {
-    n = Math.min(SHADOW_SLOTS, n);
+  update(n, slots = 4) {
+    n = Math.min(SHADOW_SLOTS, slots, n);
     LIGHTS.uShadowCount.value = n;
     if (!n) return;
     const r = this.renderer, s = this.scene;
@@ -39,7 +39,6 @@ export class Shadows {
     s.background = null;
     s.overrideMaterial = this.blank;
     r.autoClear = false;
-    const half = SIZE / 2;
     for (let i = 0; i < n; i++) {
       const cam = this.cams[i];
       const pos = LIGHTS.uPos.value[i], dir = LIGHTS.uDir.value[i];
@@ -51,9 +50,9 @@ export class Shadows {
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
       LIGHTS.uShadowMat.value[i].multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-      const x = (i % 2) * half, y = Math.floor(i / 2) * half;
-      this.rt.viewport.set(x, y, half, half);
-      this.rt.scissor.set(x, y, half, half);
+      const x = (i % 4) * CELL, y = Math.floor(i / 4) * CELL;
+      this.rt.viewport.set(x, y, CELL, CELL);
+      this.rt.scissor.set(x, y, CELL, CELL);
       this.rt.scissorTest = true;
       r.setRenderTarget(this.rt);
       r.clear(false, true, false);

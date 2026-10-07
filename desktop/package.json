@@ -18,11 +18,13 @@
     "appId": "com.jarvis.desk",
     "productName": "Jarvis",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "res"
     },
     "files": [
       "main.js",
-      "package.json"
+      "package.json",
+      "res/icon.png"
     ],
     "extraResources": [
       {
@@ -47,6 +49,12 @@
     "linux": {
       "target": "dir"
     },
-    "publish": null
+    "publish": null,
+    "icon": "res/icon.png",
+    "mac": {
+      "target": "dmg",
+      "identity": null,
+      "category": "public.app-category.entertainment"
+    }
   }
 }

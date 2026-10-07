@@ -23,6 +23,8 @@ const FLOOR_COLOURS = {
   concrete: 0x3b3d42, wood: 0x4a3a2c, grass: 0x2c3a24, black: 0x17181b,
   carpet: 0x2d2a33, tiles: 0x4a4c52,
 };
+// how much each floor mirrors the lights on it (a black dance floor, tiles)
+const FLOOR_SHEEN = { concrete: 0.35, wood: 0.5, grass: 0, black: 1, carpet: 0, tiles: 0.8 };
 
 // ---------------------------------------------------------------------------
 // the room when nothing was drawn: sized around the patch
@@ -187,7 +189,7 @@ function mats(v) {
   const steel = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.45, metalness: 0.85, envMapIntensity: 0.35 });
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.2 });
   return {
-    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: 1 }),
+    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35 }),
     wall: surfaceMaterial(new THREE.Color(v.room.wall_colour || "#2a2c33").getHex()),
     ceiling: surfaceMaterial(0x24262b, { side: THREE.DoubleSide }),
     deck: surfaceMaterial(new THREE.Color((v.stage && v.stage.colour) || "#26272c").getHex(), { grid: 0.12, sheen: 0.6 }),
