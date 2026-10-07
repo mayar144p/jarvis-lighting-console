@@ -48,8 +48,9 @@ export const LIGHTS = {
   // or -1..1 (WebGL), and whether a texture's rows run top-down
   uZ01: uniform(0),
   uFlipY: uniform(0),
-  // x = gobo blur (focus off the sharp point, frost), y = prism copies
-  // (0 or 3), z = the prism's turn
+  // x = gobo blur (focus off the sharp point, frost), y = prism facets
+  // (0 = none, -n = a linear prism of n), z = the prism's turn, w = half
+  // of a split-colour beam (0 = all of it, 1 / 2 = one side)
   uLook: arrayOf(MAX_LIGHTS, () => new THREE.Vector4(), "vec4"),
 };
 
@@ -171,21 +172,39 @@ const goboShape = Fn(([id, uv]) => {
   return out;
 });
 
-// look: x = blur (focus off the sharp point, frost), y = prism copies, z =
-// the prism's turn.  Out of focus the picture's contrast melts into the
-// pool (one look at the picture, not several: this runs for every pixel of
-// the room).  A prism splits the beam into copies round its centre (an
-// open beam: three pools).  Low quality (detail off): the picture as it is.
+// look: x = blur (focus off the sharp point, frost), y = prism facets (-n
+// linear), z = the prism's turn, w = which half of a split beam.  Out of
+// focus the picture's contrast melts into the pool (one look at the
+// picture, not several: this runs for every pixel of the room).  A prism
+// splits the beam into copies round its centre (a linear one: in a row).
+// Low quality (detail off): the picture as it is, and no halves.
 const goboMask = (id, uv0, look, detail) => {
   if (!detail) return goboShape(id, uv0);
   return Fn(() => {
     const uv = vec2(uv0).toVar();
     const edge = float(1).toVar();
-    If(look.y.greaterThan(0.5), () => {
-      // the copy this point belongs to (they hardly overlap)
-      const t = floor(atan(uv.y, uv.x).sub(look.z).div(2.0944).add(0.5)).mul(2.0944).add(look.z);
-      uv.assign(uv.sub(vec2(cos(t), sin(t)).mul(0.45)).mul(1.9));
+    const n = abs(look.y);
+    If(n.greaterThan(1.5), () => {
+      const cs = cos(look.z), sn = sin(look.z);
+      const q = vec2(cs.mul(uv.x).add(sn.mul(uv.y)), sn.negate().mul(uv.x).add(cs.mul(uv.y)));
+      If(look.y.lessThan(0), () => {
+        // a linear prism: n copies side by side
+        const sp = float(1.6).div(n);
+        const k = clamp(floor(q.x.div(sp).add(n.mul(0.5))), 0, n.sub(1));
+        uv.assign(vec2(q.x.sub(k.sub(n.sub(1).mul(0.5)).mul(sp)), q.y).div(sp.mul(0.62)));
+      }).Else(() => {
+        // the copy this point belongs to (round the centre; they hardly overlap)
+        const step = float(6.2831853).div(n);
+        const t = floor(atan(q.y, q.x).div(step).add(0.5)).mul(step);
+        const rr = min(0.53, sin(float(3.14159265).div(n)).mul(0.58));
+        uv.assign(q.sub(vec2(cos(t), sin(t)).mul(0.47)).div(rr));
+      });
       edge.assign(smoothstep(look.x.mul(0.3).oneMinus().sub(0.1), 1.0, length(uv)).oneMinus());
+    });
+    If(look.w.greaterThan(0.5), () => {
+      // one half of a beam split between two colour filters
+      const s = select(look.w.greaterThan(1.5), uv0.x.negate(), uv0.x);
+      edge.mulAssign(smoothstep(-0.04, 0.04, s));
     });
     const out = edge.toVar();
     If(id.greaterThan(0.5), () => {
@@ -243,7 +262,7 @@ const surfaceLight = (albedo, grid, sheen, detail) => Fn(() => {
     const Ld = L.div(max(d, 1e-4));
     const spot = smoothstep(cone.x, cone.y, along.div(max(d, 1e-4))).toVar();
     const look = LIGHTS.uLook.node.element(i);
-    If(cone.z.greaterThan(0.5).or(look.y.greaterThan(0.5)), () => {
+    If(cone.z.greaterThan(0.5).or(abs(look.y).greaterThan(0.5)).or(look.w.greaterThan(0.5)), () => {
       const up = select(abs(dir.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0));
       const rt = normalize(cross(dir, up));
       const u2 = cross(rt, dir);
@@ -392,18 +411,20 @@ const beamNodes = (u, detail) => {
     const n = valueNoise(q).mul(0.65).add(valueNoise(q.mul(2.3)).mul(0.35));
     const haze = n.mul(0.45).add(0.55);
     const a = u.uIntensity.mul(edge).mul(along).mul(mix(1, haze, 0.8)).mul(u.uHaze).toVar();
-    If(u.uGobo.greaterThan(0.5).or(u.uLook.y.greaterThan(0.5)), () => {
+    If(u.uGobo.greaterThan(0.5).or(abs(u.uLook.y).greaterThan(0.5)), () => {
       // a gobo in haze: shafts.  The line of sight through this point of
       // the cone passes the beam's axis at about sqrt(1 - facing^2) of its
       // radius; the picture there lights it or leaves it dark
       const uv0 = normalize(vRad).mul(sqrt(max(0, facing.mul(facing).oneMinus())));
       const cs = cos(u.uGoboRot), sn = sin(u.uGoboRot);
       const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-      a.mulAssign(goboMask(u.uGobo, uv, u.uLook, detail).mul(0.95).add(0.2));
+      a.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail).mul(0.95).add(0.2));
     });
     return a;
   });
-  return { position, alpha: color() };
+  // a split beam: one side of the cone one colour, the other the second
+  const tint = mix(vec3(u.uColor), vec3(u.uColor2), smoothstep(-0.05, 0.05, vRad.x.negate()).mul(u.uLook.w));
+  return { position, alpha: color(), tint };
 };
 
 export function beamMaterial() {
@@ -414,6 +435,7 @@ export function beamMaterial() {
   // the same handles the ShaderMaterial had (stage.js sets .value each frame)
   m.uniforms = {
     uColor: uniform(new THREE.Color(1, 1, 1)),
+    uColor2: uniform(new THREE.Color(1, 1, 1)),     // the other half of a split beam
     uIntensity: uniform(0),
     uSoft: uniform(1.6),
     uHaze: uniform(0.6),
@@ -426,9 +448,9 @@ export function beamMaterial() {
   };
   m.userData.detail = (on) => {
     m.userData.detailOn = on;
-    const { position, alpha } = beamNodes(m.uniforms, on);
+    const { position, alpha, tint } = beamNodes(m.uniforms, on);
     m.positionNode = position;
-    m.colorNode = vec3(m.uniforms.uColor).mul(alpha);
+    m.colorNode = tint.mul(alpha);
     m.opacityNode = alpha;
   };
   m.userData.detail(DETAIL.on);

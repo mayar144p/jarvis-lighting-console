@@ -286,7 +286,7 @@ function movingSpot(body, variant) {
 }
 
 /** A multi-head light (a Wave 360): N small heads on one bar that pans,
- *  each head tilting and lit on its own.  `sk.cells[k]` = {tilt, lens}. */
+ *  each head tilting and lit on its own.  `sk.cells[k]` = {pan, tilt, lens}. */
 function multiHead(body, n) {
   const sk = skeleton();
   const count = Math.max(2, Math.min(8, n));
@@ -309,9 +309,11 @@ function multiHead(body, n) {
   sk.cells = [];
   const R = 0.045, len = 0.15;
   for (let k = 0; k < count; k++) {
+    const p = new THREE.Group();                    // a head that pans on its own
+    p.position.set((k - (count - 1) / 2) * pitch, armH + 0.05, 0);
+    sk.pan.add(p);
     const t = new THREE.Group();
-    t.position.set((k - (count - 1) / 2) * pitch, armH + 0.05, 0);
-    sk.pan.add(t);
+    p.add(t);
     const shell = lathe([[0.001, -len * 0.4], [R * 0.8, -len * 0.38], [R, -len * 0.2], [R, len * 0.5],
       [R * 1.05, len * 0.6], [R * 0.8, len * 0.6]], H, 24);
     t.add(shell);
@@ -323,7 +325,7 @@ function multiHead(body, n) {
     l.position.y = len * 0.6 - 0.003;
     t.add(l);
     sk.emitters.push(emitter(t, len * 0.6, R * 0.75, { cell: k }));
-    sk.cells.push({ tilt: t, lens });
+    sk.cells.push({ pan: p, tilt: t, lens });
   }
   sk.height = armH + 0.3;
   sk.radius = Math.max(0.3, barW / 2);

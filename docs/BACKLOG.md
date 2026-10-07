@@ -317,6 +317,31 @@ it draws the same picture as WebGL 2.
 - Checks: vischeck and the fixture-debug fit check stay green; a
   frame-rate check with the 124-light rig on each quality.
 
+### Step 2b - each light as the real one (asked 2026-10-07)
+
+1. **Every head on its own - DONE.**  Each head of a multi-head light
+   gets its own colour, tilt and (when it has one) pan, in the engine's
+   light feed and on the model.  A light's dimmer is one value for the
+   whole light on the wire (HTP), and a second zoom / strobe channel is an
+   Aux channel, so those stay whole-light - the 3D shows only what the
+   DMX does.
+2. **What a channel MEANS, not its number - DONE.**  `app/beamlook.py`
+   reads the fixture file's own words for the range each channel is in
+   (also a light's Aux channels, found by name: a Sharpy's 8-facet prism,
+   its prism and gobo turning) and the feed says what the beam does:
+   prism facets (any number, linear too) and its turn (spinning or
+   indexed), gobo turn / shake / wheel scroll, half-and-half colours, a
+   colour wheel turning through its colours, pulse / ramp / random
+   strobes.  The beam in the haze and the pool it lands on use the same
+   frame, so a gobo or a split reads the same way round in both.
+   Selftest `test_real_light_look`.
+3. **Real bodies (GDTF models from GDTF Share)** - next, needs the
+   operator's GDTF Share login in `.env`.
+4. **A per-model check** stepping every channel through its ranges - next.
+
+Not yet: a second gobo wheel's pictures (a Sharpy's rotating gobos show
+open), animation wheels.
+
 ### Step 3 (optional / future) - a separate pro visualiser (Unreal Engine)
 
 Only if film-quality previs for clients is wanted, or a visualiser to offer

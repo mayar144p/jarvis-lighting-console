@@ -9,7 +9,7 @@ import json
 import re
 import time
 
-from app import config, fixture_kind, fixtures, merge
+from app import beamlook, config, fixture_kind, fixtures, merge
 from app.engine_base import _BEAM_LOOK_ROLES, _COLOUR_ROLES, _FIXTURE_CACHE
 from app.engine_support import FX_ROLES, HTP_ROLES, ROLE_HEX, cmy_are_leds, split_16bit
 from app.engine_support import curve_pct as _curve_pct
@@ -146,21 +146,24 @@ class LooksMixin:
             if tilt is not None:
                 row["tilt"] = tilt
             reps = merge._repeated(head["map"])
-            if reps.get("tilt", 0) > 1 or reps.get("red", 0) > 1:
-                # each head of a multi-head light: its own colour and tilt
-                n_cells = max(reps.get("tilt", 0), reps.get("red", 0))
+            n_cells = max(reps.get(r, 0) for r in ("tilt", "pan", "red", "green", "blue", "white"))
+            if n_cells > 1:
+                # each head of a multi-head light: its own colour, tilt and
+                # pan (a light's second zoom or strobe is an Aux channel, and
+                # its dimmer one value for the whole light, as on the wire)
                 cells = []
                 for k in range(1, n_cells + 1):
                     cv = {r: values.get(f"{r}@{k}", values.get(r, 0)) for r in ("red", "green", "blue", "white")}
                     cell = {"hex": self._hex_for(head, cv) if any(r in values or f"{r}@{k}" in values
                                                                   for r in ("red", "green", "blue", "white")) else row["hex"]}
-                    t = values.get(f"tilt@{k}", values.get("tilt"))
-                    if t is not None and "tilt" in head["map"]:
-                        # the same scaling, limits and inversion as the head's
-                        # own tilt (a value can be 16-bit / logical, not 0-255)
-                        ct = self._aim01(head, {**values, "tilt": t}, "tilt")
-                        if ct is not None:
-                            cell["tilt"] = ct
+                    for base in ("tilt", "pan"):
+                        t = values.get(f"{base}@{k}", values.get(base))
+                        if t is not None and base in head["map"] and (base == "tilt" or reps.get(base, 0) > 1):
+                            # the same scaling, limits and inversion as the head's
+                            # own aim (a value can be 16-bit / logical, not 0-255)
+                            ct = self._aim01(head, {**values, base: t}, base)
+                            if ct is not None:
+                                cell[base] = ct
                     cells.append(cell)
                 row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head
@@ -191,6 +194,12 @@ class LooksMixin:
                     and r not in ("strobe", "shutter")}
             if beam:
                 row["beam"] = beam
+            # what the beam is DOING, in the file's own words for each
+            # channel's range: an 8-facet prism, gobo 3 shaking, half red
+            # half blue, a random strobe (app/beamlook.py)
+            look = beamlook.describe(self.head_ranges(head), values, self._shutter_role(head))
+            if look:
+                row["look"] = look
             own = self._own_program(head, values)
             if own:
                 row.update(own)
