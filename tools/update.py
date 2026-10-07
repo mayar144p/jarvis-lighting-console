@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FETCH_TIMEOUT = 20
+GENERATED = ("desktop/package-lock.json",)
 
 
 def _enabled(root: Path) -> bool:
@@ -61,8 +62,18 @@ def update(root: Path = ROOT) -> str:
     if code:
         return "this branch has no upstream - skipping the update check"
     code, dirty = _git("status", "--porcelain", "--untracked-files=no")
+    # files npm writes by itself (the desktop app's `npm install` rewrites its
+    # lockfile) are not the operator's edits: put them back, or one install
+    # would stop every update after it
+    changed = [line.split(None, 1)[-1].strip('"') for line in dirty.splitlines() if line.strip()] if code == 0 else []
+    made = [f for f in changed if f in GENERATED]
+    if made:
+        _git("checkout", "--", *made)
+        code, dirty = _git("status", "--porcelain", "--untracked-files=no")
     if code == 0 and dirty:
-        return "Jarvis's own files have local edits - not updating (your data is safe)"
+        files = [line.split(None, 1)[-1].strip('"') for line in dirty.splitlines() if line.strip()]
+        return ("Jarvis's own files have local edits - not updating (your data is safe): "
+                + ", ".join(files[:3]) + (f" and {len(files) - 3} more" if len(files) > 3 else ""))
     code, out = _git("fetch", "--quiet", timeout=FETCH_TIMEOUT)
     if code:
         return "no connection to the update server - starting the version you have"

@@ -838,7 +838,21 @@ def test_auto_update() -> None:
         msg = upd.update(user)
         check("local edits to Jarvis's files are never overwritten",
               "local edits" in msg and (user / "app.txt").read_text() == "my edit\n", msg)
+        check("...and it says which file", "app.txt" in msg, msg)
         git(user, "checkout", "-q", "--", "app.txt")
+        # the desktop app's npm install rewrote its lockfile: not an edit
+        (dev / "desktop").mkdir()
+        (dev / "desktop" / "package-lock.json").write_text('{"lockfileVersion": 3}\n')
+        git(dev, "add", "."); git(dev, "commit", "-qm", "desktop lock"); git(dev, "push", "-q", "origin", "HEAD:main")
+        upd.update(user)
+        (user / "desktop" / "package-lock.json").write_text('{"lockfileVersion": 3, "rewritten": "by npm"}\n')
+        (dev / "app.txt").write_text("v4\n")
+        git(dev, "commit", "-qam", "v4 after npm"); git(dev, "push", "-q", "origin", "HEAD:main")
+        msg = upd.update(user)
+        check("npm rewriting the desktop app's lockfile doesn't stop updates",
+              msg.startswith("updated") and (user / "app.txt").read_text() == "v4\n", msg)
+        (dev / "app.txt").write_text("v5\n")
+        git(dev, "commit", "-qam", "v5"); git(dev, "push", "-q", "origin", "HEAD:main")
         (user / "mine.txt").write_text("x")
         git(user, "add", "mine.txt"); git(user, "commit", "-qm", "my own change")
         msg = upd.update(user)
@@ -851,7 +865,7 @@ def test_auto_update() -> None:
         git(user, "remote", "set-url", "origin", str(tmp / "nowhere.git"))
         msg = upd.update(user)
         check("offline at a venue: it starts the version it has",
-              "no connection" in msg and (user / "app.txt").read_text() == "v2\n", msg)
+              "no connection" in msg and (user / "app.txt").read_text() == "v4\n", msg)
         check("a folder that is not a git checkout is skipped",
               "not a git checkout" in upd.update(tmp), upd.update(tmp))
         real = upd.update
