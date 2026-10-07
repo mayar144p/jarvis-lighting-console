@@ -22,7 +22,9 @@ let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
 
 const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-desk-")), CONSOLE_AUTOSAVE: "false",
-  DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false", ELECTRON_USER_DATA: "" };
+  DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false", ELECTRON_USER_DATA: "",
+  // as on an operator's PC: PYTHON names a folder with no Python in it - the app must find the real one
+  PYTHON: mkdtempSync(join(tmpdir(), "jarvis-not-python-")) };
 // CHECKS_GPU=1: the computer's graphics card; otherwise software drawing
 // (servers / cloud with no GPU), like the other browser checks
 const GPU = process.env.CHECKS_GPU === "1";
