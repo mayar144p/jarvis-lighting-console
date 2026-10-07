@@ -77,7 +77,8 @@ function userFolders() {
     try { fs.copyFileSync(path.join(ROOT, ".env.example"), env); } catch { /* none bundled */ }
   }
   const want = { CONSOLE_DATA_DIR: path.join(ud, "data"), CONSOLE_ENV_FILE: env,
-    CONSOLE_INBOX: path.join(ud, "fixtures_inbox"), AUTO_UPDATE: "false" };
+    CONSOLE_INBOX: path.join(ud, "fixtures_inbox"), AUTO_UPDATE: "false",
+    CONSOLE_LLAMA_DIR: path.join(process.resourcesPath, "llama") };      // the offline AI's engine
   // a value already set (the checks run on scratch data) wins
   return Object.fromEntries(Object.entries(want).filter(([k]) => !process.env[k]));
 }

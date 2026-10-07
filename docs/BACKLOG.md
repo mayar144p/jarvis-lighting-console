@@ -443,7 +443,23 @@ So problems arrive with the evidence attached instead of typed by hand.
   bundle, load the rig, reproduce with the checks (DMX, safety,
   programmer fit, 3D), fix, add a test, link the fix to the issue.
 
-## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07)
+## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07) - DONE (but the installer tick)
+
+**Done:** the switch - Online / Local / Auto - in Settings -> AI and the
+copilot's header (app/llm.py; kept in DATA/ai.json with the key, which is
+never shown back, never in a show or a bug report).  Auto: Gemini first;
+at its limit, with no internet or no answer, the offline AI carries on at
+once (no waiting out "retry in 46 s") and the copilot says so.  The desk's
+own offline AI (app/localai.py): llama.cpp's server ships in the desktop
+app (the build takes the latest release: Vulkan on Windows, Metal on
+Mac), started on first use, stopped after 10 idle minutes and with the
+desk; the model (Qwen3 8B, or 14B on 32 GB) downloads in Settings -> AI
+with pause / resume, checked against its SHA-256, never while live; an AI
+pack (.gguf) imports from a path; Remove frees it; the desk suggests the
+model from memory and free disk.  In the browser version: Ollama / LM
+Studio's address.  Selftest `test_ai_switch`.
+**Not yet:** the installer's "include the offline AI" tick (it is offered
+in Settings -> AI on first use instead); a file picker for the AI pack.
 
 Today the copilot uses one online AI from `.env` (Gemini, any
 OpenAI-compatible service works).  Free online plans have daily limits;

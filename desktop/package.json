@@ -34,6 +34,10 @@
       {
         "from": "build/python",
         "to": "python"
+      },
+      {
+        "from": "build/llama",
+        "to": "llama"
       }
     ],
     "win": {

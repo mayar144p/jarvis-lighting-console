@@ -3,7 +3,8 @@
 import { get, post, act } from "./api.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
-import { $, $$, h, toast, confirmBox } from "./ui.js";
+import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
+import { aiModes, setAiMode } from "./aisettings.js";
 
 const history = [];            // [{role, content}] for follow-ups ("warmer")
 
@@ -105,6 +106,12 @@ if (!session) {
 }
 let attached = null;           // a photo to match (data URL), for the next message
 
+function showAi(st) {
+  const ai = (st && st.ai) || {};
+  const mode = { online: "Online", local: "Local", auto: "Auto" }[ai.mode] || "";
+  $("#ai-status").textContent = st && st.llm_configured ? `${st.model}${mode ? " · " + mode : ""} ▾` : "offline compiler ▾";
+}
+
 const assistantOn = () => !!(state.status && state.status.llm_configured) && !$("#ai-offline").checked;
 
 // a small JPEG: the 3D view, or a photo, shrunk to at most `side` pixels
@@ -159,6 +166,7 @@ async function assist(text) {
     clearInterval(tick);
     thinking.remove();
     if (r.no_key) { $("#ai-offline").checked = true; say("bot", r.error); plan(text); return; }
+    if (r.ai_note) toast(r.ai_note, "", 6000);          // "Gemini limit reached - using the offline AI"
     if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
     const extra = h("div");
     if (r.steps && r.steps.length) {
@@ -426,8 +434,26 @@ export function initCopilot() {
   $("#doctor-btn").addEventListener("click", diagnose);
   on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
   const st = state.status;
-  $("#ai-status").textContent = st && st.llm_configured ? st.model : "offline compiler";
+  showAi(st);
   if (!(st && st.llm_configured)) $("#ai-offline").checked = true;
+  // the AI switch: Online / Local / Auto, and the AI's settings
+  $("#ai-status").addEventListener("click", (e) => {
+    const cur = (state.status && state.status.ai && state.status.ai.mode) || "";
+    menu(e.currentTarget, [
+      ...aiModes.map(([k, label, hint]) => ({ label: (k === cur ? "✓ " : "") + label, hint, run: async () => {
+        const d = await setAiMode(k);
+        if (d && state.status) {
+          state.status.ai = d;
+          state.status.llm_configured = d.available;
+          if (d.available) $("#ai-offline").checked = false;
+          showAi(state.status);
+          syncTools();
+        }
+      } })),
+      "-",
+      { label: "AI settings…", run: () => import("./dialogs.js").then((m) => m.openSettingsAt("ai")) },
+    ]);
+  });
   syncTools();
   say("bot", assistantOn()
     ? "Tell me what you want - a look, a feeling (\"the drop needs to hit harder\"), or a question about the show. I'll work the desk, check the real lights, and show it in 3D first; one Ctrl+Z undoes it."

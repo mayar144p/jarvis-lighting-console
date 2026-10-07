@@ -40,8 +40,11 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    fixtures you already downloaded are re-read if the importer has
    improved, so there's no need to download them again. Set
    `AUTO_UPDATE=false` in `.env` to turn it off.
-2. Optional: put an AI key in `.env` (the free Gemini tier works; get a key at
-   <https://aistudio.google.com/apikey>):
+2. Optional: the AI copilot. **Settings -> AI**: paste a Gemini key (the
+   free tier works; <https://aistudio.google.com/apikey>), and/or download
+   the offline AI (desktop app; ~5 GB, unlimited, no internet), and pick
+   **Online**, **Local** or **Auto** (Gemini first, the offline AI when
+   Gemini hits its limit or there's no internet).  Or, as before, in `.env`:
    ```
    LLM_API_KEY=...
    LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
@@ -702,8 +705,10 @@ is the 15-minute check with real lights.
 
 ## Troubleshooting
 
-* **Copilot says offline:** no `LLM_API_KEY`. The offline compiler still
-  handles common requests.
+* **Copilot says offline:** no AI yet - Settings -> AI (a Gemini key, or
+  the offline AI). The offline compiler still handles common requests.
+* **The offline AI's first answer is slow:** it loads the model (up to a
+  minute); after 10 idle minutes it stops to free the graphics card.
 * **"unauthorised":** `CONSOLE_TOKEN` is set, or `HOST` is not loopback. Enter
   the token when asked.
 * **403 "unexpected Host header":** you opened the desk by a non-loopback name

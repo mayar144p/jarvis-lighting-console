@@ -1,7 +1,7 @@
 name: Desktop app (installers)
 
-# Builds the desktop app with the engine and a Python of its own inside
-# (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
+# Builds the desktop app with the engine, a Python of its own and the
+# offline AI's engine (llama.cpp) inside (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
 # Mac - then runs the app check on each built app.  The installer is kept as this run's artifact (Actions -> this
 # run -> Artifacts), private to the repo.  Run it by hand (Actions -> this
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
@@ -28,6 +28,26 @@ jobs:
           Invoke-WebRequest "https://www.python.org/ftp/python/$v/python-$v-embed-amd64.zip" -OutFile py.zip
           Expand-Archive py.zip -DestinationPath desktop/build/python
           desktop/build/python/python.exe -c "import sqlite3, json, http.server; print('python ok')"
+      - name: The offline AI's engine (llama.cpp's server, latest release; Vulkan runs on any graphics card, else the processor)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the newest of the recent releases that carries a Windows Vulkan build
+          $tag = $null; $name = $null
+          foreach ($t in (gh release list -R ggml-org/llama.cpp --limit 15 --json tagName -q ".[].tagName")) {
+            $names = gh release view $t -R ggml-org/llama.cpp --json assets -q ".assets[].name"
+            $name = $names | Where-Object { $_ -match 'win.*vulkan.*x64.*\.zip$' } | Select-Object -First 1
+            if ($name) { $tag = $t; break }
+            Write-Host "$t has no Windows Vulkan build: $($names -join ', ')"
+          }
+          if (-not $name) { throw "no Windows Vulkan build in the last 15 llama.cpp releases" }
+          Write-Host "llama.cpp $tag : $name"
+          gh release download $tag -R ggml-org/llama.cpp --pattern $name -O llama.zip
+          Expand-Archive llama.zip -DestinationPath desktop/build/llama
+          $exe = Get-ChildItem desktop/build/llama -Recurse -Filter llama-server.exe | Select-Object -First 1
+          if (-not $exe) { throw "no llama-server.exe in the release" }
+          & $exe.FullName --version
       - name: Build the installer
         working-directory: desktop
         run: |
@@ -63,6 +83,26 @@ jobs:
           mv "$D" desktop/build/python
           rm -rf desktop/build/pyroot
           desktop/build/python/bin/python3 -c "import sqlite3, json, http.server, sys; print('python ok', sys.version)"
+      - name: The offline AI's engine (llama.cpp's server, latest release; Metal on Apple silicon)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the newest of the recent releases that carries a Mac arm64 build
+          NAME=""
+          for T in $(gh release list -R ggml-org/llama.cpp --limit 15 --json tagName -q '.[].tagName'); do
+            NAMES=$(gh release view "$T" -R ggml-org/llama.cpp --json assets -q '.assets[].name')
+            NAME=$(echo "$NAMES" | grep -E 'macos.*arm64.*\.(zip|tar\.gz)$' | head -n1 || true)
+            if [ -n "$NAME" ]; then TAG=$T; break; fi
+            echo "$T has no Mac arm64 build: $(echo $NAMES)"
+          done
+          test -n "$NAME" || { echo "no Mac arm64 build in the last 15 llama.cpp releases"; exit 1; }
+          echo "llama.cpp $TAG: $NAME"
+          gh release download "$TAG" -R ggml-org/llama.cpp --pattern "$NAME" -O "llama-$NAME"
+          mkdir -p desktop/build/llama
+          case "$NAME" in *.zip) unzip -q "llama-$NAME" -d desktop/build/llama ;; *) tar -xzf "llama-$NAME" -C desktop/build/llama ;; esac
+          EXE=$(find desktop/build/llama -name llama-server -type f | head -n1)
+          test -n "$EXE" || { echo "no llama-server in the release"; exit 1; }
+          chmod +x "$EXE" && "$EXE" --version
       - name: Build the app
         working-directory: desktop
         run: |

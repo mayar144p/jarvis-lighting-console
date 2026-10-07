@@ -2,6 +2,7 @@
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post } from "./api.js";
+import { aiPanel } from "./aisettings.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state, on, patch, selected, outputState } from "./store.js";
@@ -850,6 +851,12 @@ function outputSection(con) {
   return box;
 }
 
+/** Settings, opened on one of its pages ("ai", "output"...). */
+export function openSettingsAt(tab) {
+  try { localStorage.setItem("jarvis.settingsTab", tab); } catch (e) { /* fine */ }
+  return openSettings();
+}
+
 export async function openSettings() {
   const status = await get("/api/status").catch(() => ({}));
   const con = status.console || {};
@@ -921,8 +928,7 @@ export async function openSettings() {
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
-    ["ai", "AI", [
-      h("p.muted.small", status.llm_configured ? `Using ${status.model}` : "No AI key: the copilot uses its offline compiler. Add LLM_API_KEY to .env for the full copilot.")]],
+    ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
   try { last = localStorage.getItem("jarvis.settingsTab") || last; } catch (e) { /* fine */ }
