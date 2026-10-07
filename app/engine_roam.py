@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 
+from app import motion as motion_mod
 from app import venue as venue_mod
 from app.engine_base import _fclamp
 
@@ -23,6 +24,20 @@ def _inside(pts, x, z) -> bool:
         if (z1 > z) != (z2 > z) and x < (x2 - x1) * (z - z1) / ((z2 - z1) or 1e-9) + x1:
             hit = not hit
     return hit
+
+
+def _pull_in(pts, cx, cz, x, z) -> tuple[float, float]:
+    """A point off the zone, pulled back towards the middle until it is on it."""
+    if _inside(pts, x, z):
+        return x, z
+    lo, hi = 0.0, 1.0
+    for _ in range(8):
+        mid = (lo + hi) / 2
+        if _inside(pts, cx + (x - cx) * mid, cz + (z - cz) * mid):
+            lo = mid
+        else:
+            hi = mid
+    return cx + (x - cx) * lo, cz + (z - cz) * lo
 
 
 class RoamMixin:
@@ -108,17 +123,7 @@ class RoamMixin:
             u = 0.5 + 0.5 * size * (0.62 * math.sin(w[0] * s * 6.28 + ph) + 0.38 * math.sin(w[1] * s * 6.28 + 2 * ph))
             v = 0.5 + 0.5 * size * (0.62 * math.sin(w[2] * s * 6.28 + 3 * ph) + 0.38 * math.sin(w[3] * s * 6.28 + ph))
             x, z = x0 + u * (x1 - x0), z0 + v * (z1 - z0)
-            pts = zs[k]["points"]
-            if not _inside(pts, x, z):
-                # pulled back towards the middle until it is on the zone again
-                lo, hi = 0.0, 1.0
-                for _ in range(8):
-                    mid = (lo + hi) / 2
-                    if _inside(pts, cx + (x - cx) * mid, cz + (z - cz) * mid):
-                        lo = mid
-                    else:
-                        hi = mid
-                x, z = cx + (x - cx) * lo, cz + (z - cz) * lo
+            x, z = _pull_in(zs[k]["points"], cx, cz, x, z)
             solved = self._aim_solve(h, x, zs[k]["y"], z, near=near.get(n), closest=True)
             if solved is None:
                 continue
@@ -135,3 +140,37 @@ class RoamMixin:
             per = self._aim_heads(h, x, zs[k]["y"], z, near=near.get(n),
                                   spread=0.4 + 0.5 * (1 + math.sin(s * 9.0 + ph)))
             row_out.update(per)
+
+    def _zone_move(self, row: dict, kind: str, p: dict, h: dict, k, index: int, count: int) -> dict:
+        """A movement shape (circle, sweep, bounce, figure 8, fan, a shape of
+        your own) drawn ON a zone's floor instead of round the aim: the
+        shape's path is a path across the dance floor, sized S / M / L = a
+        quarter / half / all of it, and each light is aimed at its point
+        from where it hangs - so it stays on the zone wherever the light is.
+        A light that only tilts (a moving bar) or only pans follows the
+        point as far as its one axis can.  {"pan": frac, "tilt": frac}."""
+        zc = row.get("_zone")
+        if not zc or zc[0] != p["zone"]:
+            try:
+                z = self._roam_zones([p["zone"]])[0]
+            except ValueError:
+                return {}                                 # the zone was deleted: hold
+            xs, zz = [q[0] for q in z["points"]], [q[1] for q in z["points"]]
+            zc = row["_zone"] = (p["zone"], z["points"], sum(xs) / len(xs), sum(zz) / len(zz),
+                                 (max(xs) - min(xs)) / 2, (max(zz) - min(zz)) / 2, z["y"])
+        _, pts, cx, cz, hw, hd, y = zc
+        dp, dt = motion_mod.shape(kind, row["_turns"], p, index, count)
+        lock = int(round(float(p.get("lock", 0.0))))
+        dp = 0.0 if dp is None or lock == 2 else dp
+        dt = 0.0 if dt is None or lock == 1 else dt
+        s = max(0.1, min(1.0, float(p.get("size", 20.0)) / 40.0))
+        x, z = _pull_in(pts, cx, cz, cx + dp * s * hw, cz + dt * s * hd)
+        aim = h if "pan" in h["map"] and "tilt" in h["map"] else \
+            {**h, "map": list(h["map"]) + [r for r in ("pan", "tilt") if r not in h["map"]]}
+        near = row.setdefault("_near", {})
+        key = (h["head_no"], k)
+        solved = self._aim_solve(aim, x, y, z, near=near.get(key), closest=True)
+        if solved is None:
+            return {}
+        near[key] = (solved[2], solved[3])
+        return {"pan": max(0.0, min(1.0, solved[0])), "tilt": max(0.0, min(1.0, solved[1]))}

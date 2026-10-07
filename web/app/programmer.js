@@ -606,6 +606,8 @@ function renderAttributes() {
         if (page.page === "other" && main.some((a) => /program|auto|macro|show|sound/i.test(a.name || ""))) {
           rows.push(h("p.muted.small.attr-note", "A program goes to the real light, which runs it itself. The 3D can't know what it does: it shows a slow colour cycle and wander, and tags the light ▶ with the program's name."));
         }
+        const keep = page.page === "other" ? zoneKeepRow(main, heads) : null;
+        if (keep) rows.push(keep);
         for (const a of main) rows.push(attrRow(a, heads));
       }
       if (adv.length) rows.push(h("details.attr-adv", h("summary", `Advanced · ${adv.map((a) => (a.name || attrName(a.role)).toLowerCase()).join(", ")}`),
@@ -627,6 +629,43 @@ function renderAttributes() {
   }
   const rows = pageRows(attrState, null);
   box.replaceChildren(...(rows.length ? rows : [h("p.muted.small", "These fixtures have no beam attributes.")]));
+}
+
+// A light's own movement program (Built-In Auto Tilt...) moves the head
+// by itself - the desk can't keep that on a zone.  "Keep it on" hands the
+// movement to the desk: the light's own movement program goes to its "no
+// function", and the desk moves the light inside the zone (roam for a light
+// that pans and tilts, a bounce across the floor for one that only tilts).
+// Its other programs (heads on / off, colour programs) keep running.
+const OWN_MOVE_RE = /auto ?(tilt|pan)|continuous (pan|tilt)|(pan|tilt) (rotat|spin)|built.?in.*(tilt|pan|move)|(pan|tilt).*(auto|program|macro)|movement (program|macro)/i;
+const OFF_SLOT_RE = /no function|\boff\b|\bstop\b|disabled?|^0$/i;
+function zoneKeepRow(attrs, heads) {
+  const zones = [...new Map((((state.snap && state.snap.venue) || {}).zones || []).map((z) => [z.kind, z.name || z.kind])).entries()];
+  const moving = attrs.filter((a) => OWN_MOVE_RE.test(a.name || "") && !/speed|sens/i.test(a.name || ""));
+  const nums = heads || selected();
+  const lights = patch().filter((x) => nums.includes(x.head_no));
+  const both = lights.some((x) => x.map.includes("pan") && x.map.includes("tilt"));
+  const tilt = lights.some((x) => x.map.includes("tilt"));
+  if (!zones.length || !moving.length || !(both || tilt)) return null;
+  const go = async (kind, name) => {
+    for (const a of moving) {
+      const off = (a.slots || []).find((sl) => OFF_SLOT_RE.test(sl.name || ""));
+      await sendAttrNow(a.role, off ? off.from : 0, heads);
+    }
+    if (both) await run("roam", { zones: [kind], heads: nums, speed: 1 }, { toast: true });
+    else {
+      const across = lights.some((x) => x.map.filter((r) => r === "tilt").length > 1);
+      await run("run_fx", { name: "tilt_bounce", heads: nums, across, params: { zone: kind, size: 40, speed: 0.125 } }, { toast: true });
+    }
+    toast(`${name}: the desk moves ${nums.length === 1 ? "this light" : "these lights"} there now. Stop it on the Move tab.`);
+    loadAttributes();
+  };
+  return h("div.attr-keep",
+    h("div.mv-row", h("span.k", "Keep it on"), h("span.chip-row", ...zones.map(([k, name]) => h("button.chip", {
+      title: `Turn the light's own ${moving.map((a) => (a.name || "").toLowerCase()).join(" / ")} off and move it inside the ${name} from the desk`,
+      onclick: () => go(k, name) }, name)))),
+    h("p.muted.small", `${moving.map((a) => a.name).join(", ")} moves the light by itself, so the desk can't keep it on a zone. `
+      + "“Keep it on” hands the movement to the desk: it stays inside the zone you pick, and the light's other programs keep running."));
 }
 
 // What an operator calls each role (the raw role name is the tooltip).

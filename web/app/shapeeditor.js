@@ -120,7 +120,7 @@ export function setShapeKnobs(fn) { knobsOf = fn; }
 /** Run a shape on the selected movers with the Move tab's knobs. */
 export function runShape(id) {
   const k = knobsOf();
-  return run("run_shape", { id, speed: k.speed, size: k.size, spread: k.spread, direction: k.direction }, { toast: true });
+  return run("run_shape", { id, speed: k.speed, size: k.size, spread: k.spread, direction: k.direction, zone: k.zone }, { toast: true });
 }
 
 /** The Shapes row of the Move tab. */
