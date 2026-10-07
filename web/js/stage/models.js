@@ -382,7 +382,9 @@ function movingBar(body) {
   sk.tilt.add(bar);
   const lens = lensMaterial();
   sk.lenses.push(lens);
-  const n = Math.max(4, Math.min(12, body.cells));
+  // whole lenses per zone: a 3-zone bar draws 6, two a zone
+  const z = Math.max(1, body.cells || 1);
+  const n = z >= 4 ? Math.min(12, z) : z * Math.ceil(4 / z);
   const geo = new THREE.CircleGeometry(0.04, 18);
   geo.rotateX(-Math.PI / 2);
   // each cell its own colour (a Robe Tetra's zones), beams follow theirs
@@ -593,7 +595,8 @@ function panel(body, w, d, cells, cellR) {
 
 function batten(body) {
   const sk = skeleton();
-  const n = Math.max(4, Math.min(32, body.cells || 8));
+  const z = Math.max(1, body.cells || 1);
+  const n = z >= 4 ? Math.min(32, z) : z * Math.ceil(4 / z);   // whole cells per zone
   const len = Math.max(0.5, Math.min(1.3, 0.11 * n + 0.08));
   const S = steel();
   for (const s of [-1, 1]) {                          // end brackets
