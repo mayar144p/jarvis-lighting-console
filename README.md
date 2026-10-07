@@ -103,8 +103,13 @@ DMXking ultraDMX and clones); the cheap "Open DMX" kind does not.
 `Jarvis-Mac-installer`). It isn't signed: the first time, right-click the
 app → Open.
 
-Not done: the app updating itself - it needs a place to publish installers,
-which waits until Jarvis leaves testing (see `docs/BACKLOG.md` A9).
+**Updates:** `run-desktop.bat` / `.sh` (the app from this repo) brings
+itself up to date every time it opens, like `run.bat`: "checking for
+updates…", then the newest version (it reopens itself when the app changed).
+Same rules as `run.bat`: never with your own edits, never touching your
+data, skipped offline or with `AUTO_UPDATE=false`. An installed copy (the
+installer) doesn't update itself yet: that needs a place to publish
+installers, which waits until Jarvis leaves testing.
 
 ## The desk
 
