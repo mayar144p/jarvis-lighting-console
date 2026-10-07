@@ -342,11 +342,15 @@ So problems arrive with the evidence attached instead of typed by hand.
     browser (needs a GitHub account; drag the bundle in).
   - v2: a small relay service with a bot key creates the issue directly,
     so no GitHub account is needed (the key never ships inside the app).
-- **Decided (2026-10-07):** the repo goes public, so reports land in its
-  own Issues.  Checked before: no `.env`, keys or `data/` anywhere in the
-  history; the fixture libraries, three.js and pdf.js carry their licence
-  files.  Open: the project's own licence (none yet = all rights
-  reserved: people can read, not reuse).
+- **Decided (2026-10-07):** the repo stays **private**; bug reports go to
+  its own Issues tab (only the operator and Claude see them), with two
+  forms in `.github/ISSUE_TEMPLATE/`: "Problem with a light" and
+  "Something else is wrong".  The desk's report button (above) fills these
+  same forms.  Before a public release with outside testers: a separate
+  public "bug reports" repo + the v2 relay, so the code stays private.
+  (History checked 2026-10-07: no `.env`, keys or `data/`; all bundled
+  libraries are MIT / Apache 2.0, fine for a closed app with an
+  "Open-source licences" page.)
 - **Fixing:** the fixture-debug skill learns "fix issue #N" - download the
   bundle, load the rig, reproduce with the checks (DMX, safety,
   programmer fit, 3D), fix, add a test, link the fix to the issue.

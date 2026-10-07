@@ -669,3 +669,16 @@ is the 15-minute check with real lights.
 * Validation against physical nodes and fixtures.
 * Show file management (rename, duplicate, delete) beyond save and load.
 * A packaged desktop build.
+
+## Reporting a bug
+
+Open the repo's **Issues** tab → **New issue** and pick a form:
+
+- **Problem with a light** - a fixture does the wrong thing on the rig, in
+  3D or in the programmer (say which light, which mode, what happened).
+- **Something else is wrong** - screens, playbacks, output, saving...
+
+Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)
+and, if you can, the show file so the exact rig can be loaded.  Never
+attach `.env`.  A "Report a problem with this light…" button in the desk
+itself is planned (docs/BACKLOG.md A11).

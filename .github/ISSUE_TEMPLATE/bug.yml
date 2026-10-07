@@ -1,0 +1,38 @@
+name: Something else is wrong
+description: A screen, a button, the output, a dialog, saving / loading - anything that isn't about one light.
+title: "[Bug] <what's wrong>"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where?
+      options:
+        - Screens / layout
+        - Programmer
+        - Playbacks, cues, buttons, timeline
+        - Output / Art-Net / node
+        - Saving, loading, show files
+        - The AI copilot
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+  - type: textarea
+    id: files
+    attributes:
+      label: Screenshots or the show file
+      description: Drag files in here (Show ▾ → Save as… for the show). Never attach `.env`.
+  - type: input
+    id: version
+    attributes:
+      label: Desk version / computer

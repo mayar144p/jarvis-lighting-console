@@ -1,0 +1,67 @@
+name: Problem with a light
+description: A fixture does the wrong thing - on the real rig, in the 3D view, or in the programmer.
+title: "[Light] <brand> <model>: <what's wrong>"
+labels: ["light-bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! The more of the boxes below you fill in, the faster it gets fixed.
+        Later the desk will fill this in by itself: right-click a light → **Report a problem with this light…**
+  - type: input
+    id: light
+    attributes:
+      label: Which light?
+      description: Brand, model and the mode it's patched in (Fixtures list → hover the name).
+      placeholder: "Chauvet Intimidator Spot 360, 14-channel mode"
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Patch
+      description: Fixture number and DMX address.
+      placeholder: "#7 at 1.025"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it go wrong?
+      multiple: true
+      options:
+        - The real light (DMX)
+        - The 3D view
+        - The programmer (wrong or missing controls)
+        - Effects / lasers / fog / confetti
+        - Cues or playbacks
+        - The desk crashed or froze
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened?
+      placeholder: |
+        I pressed Full and the real light stays dark.
+        It should come on at full white.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1. Select the light
+        2. Dimmer tab → Full
+  - type: textarea
+    id: files
+    attributes:
+      label: Screenshots, the fixture file, or the show
+      description: |
+        Drag files in here. Most useful: a screenshot, the light's DMX
+        (its row in the Fixtures list → ⋯ → Show DMX channels), and the show file (Show ▾ → Save as…)
+        so the exact rig can be loaded for testing. Never attach `.env`.
+  - type: input
+    id: version
+    attributes:
+      label: Desk version / computer
+      placeholder: "main @ 2026-10-07, Windows 11"
