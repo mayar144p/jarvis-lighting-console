@@ -146,7 +146,7 @@ class LooksMixin:
             if tilt is not None:
                 row["tilt"] = tilt
             reps = merge._repeated(head["map"])
-            n_cells = max(reps.get(r, 0) for r in ("tilt", "pan", "red", "green", "blue", "white"))
+            n_cells = max(reps.get(r, 0) for r in ("tilt", "pan", "red", "green", "blue", "white")) if reps else 0
             if n_cells > 1:
                 # each head of a multi-head light: its own colour, tilt and
                 # pan (a light's second zoom or strobe is an Aux channel, and

@@ -1010,6 +1010,8 @@ export function openHelp() {
           h("li", "Select, then set intensity, colour, position, beam."),
           h("li", "Record cues onto a playback and press GO."),
           h("li", "When the rig is connected: Go live.")))),
+    foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
+      h("button.btn", { onclick: () => import("./bugreport.js").then((m) => m.openBugReport()) }, "Report a bug…")],
   });
 }
 

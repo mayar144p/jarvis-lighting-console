@@ -117,8 +117,40 @@ def _split(words: str) -> list[str] | None:
     return out if out[0] != out[1] else None
 
 
+# The light feed asks for every light, several times a second on each
+# screen: per model, which of its channels can say anything (most lights:
+# none), and per model + those channels' values, the answer.
+_PLAN: dict = {}            # id(ranges) -> (ranges, shutter role, the keys that matter)
+_MEMO: dict = {}
+
+
+def _keys(ranges: dict, shutter_role: str | None) -> frozenset:
+    roles = {r for r in ("prism", "gobo_rot", "gobo", "wheel", shutter_role)
+             if r and any((ranges.get(r) or {}).get("caps_each") or [(ranges.get(r) or {}).get("caps")])}
+    roles |= {k for k in ranges if k.startswith("aux") and (ranges[k] or {}).get("caps")
+              and any(rx.search(str(ranges[k].get("name") or "")) for rx in _AUX_NAME.values())}
+    return frozenset(roles)
+
+
 def describe(ranges: dict, values: dict, shutter_role: str | None = None) -> dict:
     """The beam's look, from the file's words for each channel's range."""
+    plan = _PLAN.get(id(ranges))
+    if plan is None or plan[0] is not ranges or plan[1] != shutter_role:
+        if len(_PLAN) > 512:
+            _PLAN.clear()
+        plan = _PLAN[id(ranges)] = (ranges, shutter_role, _keys(ranges, shutter_role))
+    if not plan[2]:
+        return {}                         # a light with nothing to say (a PAR, a wash)
+    memo = (id(ranges), shutter_role, tuple(sorted((k, v) for k, v in values.items() if k.split("@")[0] in plan[2])))
+    hit = _MEMO.get(memo)
+    if hit is None or hit[0] is not ranges:
+        if len(_MEMO) > 4096:
+            _MEMO.clear()
+        hit = _MEMO[memo] = (ranges, _describe(ranges, values, shutter_role))
+    return dict(hit[1])
+
+
+def _describe(ranges: dict, values: dict, shutter_role: str | None) -> dict:
     out: dict = {}
     for caps, v in _copies(ranges, values, "prism"):
         c = _cap(caps, v)
