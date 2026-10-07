@@ -102,6 +102,46 @@ function lanAddresses() {
     .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
 }
 
+// Jarvis from the repo brings itself up to date every time it opens, like
+// run.bat: tools/update.py fast-forwards to the latest version (never with
+// local edits; your data is never touched).  If the update changed the app
+// itself, it opens again on the new version.  The installed app has no
+// repo to update from, so it skips this.
+async function selfUpdate() {
+  if (PACKED || !fs.existsSync(path.join(ROOT, ".git"))) return;
+  const found = findPython();
+  if (!found) return;
+  const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
+  splash.loadURL("data:text/html," + encodeURIComponent(
+    "<body style='margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0d;color:#c9cad3;font:14px system-ui'>Jarvis: checking for updates…</body>"));
+  splash.once("ready-to-show", () => splash.show());
+  const run = (cmd, args, opts = {}) => new Promise((resolve) => {
+    const p = spawn(cmd, args, { cwd: ROOT, windowsHide: true, ...opts });
+    let out = "";
+    p.stdout && p.stdout.on("data", (d) => { out += d; });
+    p.on("error", () => resolve(""));
+    p.on("exit", () => resolve(out));
+  });
+  const out = await run(found[0], [...found[1], "tools/update.py"]);
+  try { fs.writeFileSync(path.join(app.getPath("userData"), "update.log"), out); } catch { /* not fatal */ }
+  const m = /updated (\w+) -> (\w+)/.exec(out);
+  if (m) {
+    const changed = await run("git", ["diff", "--name-only", m[1], m[2], "--", "desktop/"]);
+    if (/desktop\/package(-lock)?\.json/.test(changed)) {
+      await run(process.platform === "win32" ? "npm.cmd" : "npm", ["install", "--no-audit", "--no-fund"],
+        { cwd: __dirname, shell: process.platform === "win32" });
+    }
+    if (changed.trim()) {                     // the app itself changed: open the new one
+      splash.destroy();
+      app.releaseSingleInstanceLock();      // or the new one would find this one still open
+      app.relaunch();
+      app.exit(0);
+      return new Promise(() => {});
+    }
+  }
+  splash.destroy();
+}
+
 async function startEngine() {
   const remote = desk().remotes && desk().code;
   const port = remote ? await portOr(desk().port) : await freePort();
@@ -316,11 +356,17 @@ async function phonesDialog() {
 }
 
 // ------------------------------------------------------------------ start
-if (!app.requestSingleInstanceLock()) app.quit();
+// the app decides when it closes (the last desk window, asked first) -
+// not Electron's default, which would end it when the update splash closes
+app.on("window-all-closed", () => {});
+const FIRST = app.requestSingleInstanceLock();
+if (!FIRST) app.quit();                    // Jarvis is already open: that one comes forward
 app.on("second-instance", () => { const w = [...open.values()][0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
 
 app.whenReady().then(async () => {
+  if (!FIRST) return;
   loadState();
+  await selfUpdate();
   try {
     await startEngine();
   } catch (e) {
