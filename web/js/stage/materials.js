@@ -13,7 +13,7 @@ import {
   positionWorld, positionLocal, positionGeometry, positionView, normalWorld, cameraPosition,
   frontFacing, select, smoothstep, mix, max, min, abs, fract, floor, sin, cos, atan, sqrt, pow,
   dot, cross, normalize, length, reflect, clamp, exp, mod, varying, instanceIndex, hash,
-  mx_noise_float, transformNormalToView,
+  transformNormalToView,
 } from "three/tsl";
 
 export const MAX_LIGHTS = 32;
@@ -361,6 +361,21 @@ export function beamGeometry() {
   return g;
 }
 
+// the haze's drift: cheap value noise (the old beams' own), not Perlin -
+// it runs for every pixel of every beam, twice
+const hash3 = Fn(([p0]) => {
+  const p = fract(p0.mul(0.3183099).add(0.1)).mul(17);
+  return fract(p.x.mul(p.y).mul(p.z).mul(p.x.add(p.y).add(p.z)));
+});
+const valueNoise = Fn(([x]) => {
+  const i = floor(x);
+  const f0 = fract(x);
+  const f = f0.mul(f0).mul(f0.mul(-2).add(3));
+  const h = (dx, dy, dz) => hash3(i.add(vec3(dx, dy, dz)));
+  return mix(mix(mix(h(0, 0, 0), h(1, 0, 0), f.x), mix(h(0, 1, 0), h(1, 1, 0), f.x), f.y),
+    mix(mix(h(0, 0, 1), h(1, 0, 1), f.x), mix(h(0, 1, 1), h(1, 1, 1), f.x), f.y), f.z);
+});
+
 const beamNodes = (u, detail) => {
   const t = positionGeometry.y;
   const r = mix(u.uR0, u.uR1, t);
@@ -374,7 +389,7 @@ const beamNodes = (u, detail) => {
     const dist = vT.mul(u.uLen);
     const along = exp(dist.mul(-0.085)).mul(smoothstep(0, 0.03, vT)).mul(smoothstep(0.93, 1, vT).mul(0.6).oneMinus());
     const q = positionWorld.mul(0.7).add(vec3(LIGHTS.uTime.mul(0.07), LIGHTS.uTime.mul(0.03), LIGHTS.uTime.mul(0.05)));
-    const n = mx_noise_float(q).mul(0.5).add(0.5).mul(0.65).add(mx_noise_float(q.mul(2.3)).mul(0.5).add(0.5).mul(0.35));
+    const n = valueNoise(q).mul(0.65).add(valueNoise(q.mul(2.3)).mul(0.35));
     const haze = n.mul(0.45).add(0.55);
     const a = u.uIntensity.mul(edge).mul(along).mul(mix(1, haze, 0.8)).mul(u.uHaze).toVar();
     If(u.uGobo.greaterThan(0.5).or(u.uLook.y.greaterThan(0.5)), () => {
@@ -394,6 +409,7 @@ const beamNodes = (u, detail) => {
 export function beamMaterial() {
   const m = new THREE.MeshBasicNodeMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    forceSinglePass: true,              // additive light needs no back-then-front order
   });
   // the same handles the ShaderMaterial had (stage.js sets .value each frame)
   m.uniforms = {

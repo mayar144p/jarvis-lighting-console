@@ -241,9 +241,7 @@ export class Stage {
     // the picture: the scene, plus a glow round the bright parts (bloom);
     // tone mapping and colour space happen at the end of the pipeline
     this.post = new THREE.RenderPipeline(renderer);
-    this._sceneCol = pass(scene, this.camera).getTextureNode("output");
-    this.bloom = bloom(this._sceneCol, 0.55, 0.4, 0.9);
-    this._bloomOn = null;
+    this._makePipeline(false);
     // the renderer starts asynchronously (it asks the graphics card first)
     renderer.init().then(() => {
       if (this.destroyed) return;
@@ -585,6 +583,7 @@ export class Stage {
       this.q.ratio = this.q.cap;
       this.resize();
       setDetail(this.scene, this.options.quality !== "fast");
+      if (this.post && (this.options.quality === "high") !== this._smooth) this._makePipeline(this.options.quality === "high");
     }
     this.dirty = true;
   }
@@ -1034,6 +1033,15 @@ export class Stage {
     this._present(!!this.options.bloom && this.q.ratio > 0.55);
     this._drawLabels();
     if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** The scene pass and its glow.  Smooth edges (4x multisampling) on High
+   *  only: every see-through beam is then drawn four times a pixel. */
+  _makePipeline(smooth) {
+    this._sceneCol = pass(this.scene, this.camera, { samples: smooth ? 4 : 0 }).getTextureNode("output");
+    this.bloom = bloom(this._sceneCol, 0.55, 0.4, 0.9);
+    this._bloomOn = null;
+    this._smooth = smooth;
   }
 
   /** Draw the frame: the scene, with or without the glow. */
