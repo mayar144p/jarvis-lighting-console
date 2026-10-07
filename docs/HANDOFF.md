@@ -1,4 +1,4 @@
-# Handoff: where the work stands (2026-10-02, second session)
+# Handoff: where the work stands (2026-10-07, third session)
 
 Read this first in a new Claude Code session on this repo.
 
@@ -52,7 +52,7 @@ Windows' clock ticks every 16 ms: anything timed by `time.monotonic()`
 can see "no time passed".  `coarse.py`-style runs (monkeypatch
 `time.monotonic` to 1/64 s steps) reproduce Windows CI failures on Linux.
 
-## Done in this session (PRs #48-#52)
+## Done (PRs #48-#52, then the brand debug)
 
 1. **Screens** (#48): the top bar fits at any width (labels fold into
    icons only when needed); bigger click targets; Esc in Arrange closes a
@@ -76,6 +76,26 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
    wire and in 3D; Full / Out / Locate drive that slot; lights with all
    colours at 0 no longer show lit; a colour channel described only by
    ranges is read as slots; the libsweep has a Blackout check (0 fail).
+
+6. **Brand-by-brand debug** (top 20 brands x 15 products, effects
+   machines first; `tools/brands.py`, `vischeck.mjs --brands`, skill
+   `fixture-debug`):
+   - **Safety:** six lasers switched by a colour / mode channel lit while
+     disarmed (Laserworld RS400G...) - held off unless armed and fired;
+     MagicFX StadiumBlaster / Blower / Shot III and SwirlFan II were plain
+     lights (confetti without ARM) - confetti machines now.
+   - **Effects:** fazer / Robe Fog 1500 "Volume control" is the fog output;
+     Showtec Dragon F-350 is a hazer, not a flame; a moving fogger is not
+     drawn as an always-lit lamp.
+   - **Programmer fit:** the colour picker only for lights that mix any
+     colour; others get their own colours as buttons and a slider per
+     channel.
+   - **3D fit:** the body follows the library type (scanners, flowers,
+     bars, strobes: 306 products); tilting bars move (Robe Tetra); pixel
+     bars, matrices, blinders and moving bars colour each cell
+     (`tools/pixcheck.mjs`).
+   - Result: 279 products, engine check 0 failures; screen check clean
+     except two lights whose "off" the file can't tell (BACKLOG A8/10).
 
 ## Left to do
 

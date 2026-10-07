@@ -239,7 +239,10 @@ async function fit(rig) {
     const rule = LIB_3D.find(([re]) => re.test((it.type || "").split(",")[0].trim()));
     // (a combo with a laser in it - Stairville All FX Bar - is a laser for
     // safety; a combined bar + laser model is in docs/BACKLOG.md)
-    if (rule && !rule[1](hd.body) && !(hd.body.type === "laser" && hd.map.some((r) => r.startsWith("laser_")))) bad(`the 3D draws it as "${hd.body.type}", the library says ${rule[2]}`, it.type);
+    // (and the product's own name wins over a library type that disagrees:
+    // the ADJ "Encore Profile" is filed as a Blinder)
+    const named = new RegExp(`\\b${String(hd.body.type || "").replace(/^moving_/, "")}\\b`, "i").test(hd.model || "");
+    if (rule && !rule[1](hd.body) && !named && !(hd.body.type === "laser" && hd.map.some((r) => r.startsWith("laser_")))) bad(`the 3D draws it as "${hd.body.type}", the library says ${rule[2]}`, it.type);
     if (hd.body.class === "light") {
       // each colour cell (a pixel bar's pixels, a multi-head light's heads)
       // is coloured on its own in the 3D
