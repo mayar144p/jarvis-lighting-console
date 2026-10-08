@@ -4826,7 +4826,8 @@ def test_bug_report_never_waits_on_git() -> None:
         check("no .git at all: unknown", bugreport._read_version(root / "nothing") == "unknown")
     js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
     check("the dialog gives up in time and says what to do", "AbortController" in js and "WAIT_MS" in js)
-    check("Save can't be pressed twice while it works", "saveBtn.disabled = true" in js)
+    check("Save (and Send) can't be pressed twice while it works",
+          "saveBtn.disabled = true" in js or "saveBtn.disabled = sendBtn.disabled = true" in js)
 
 
 def test_wave360_strobe_and_wheel_colours() -> None:
@@ -5467,3 +5468,134 @@ def test_mvr_trusses_objects() -> None:
             check("...and the objects", sorted(o["kind"] for o in back["objects"]) == ["screen", "speaker"], str(back["objects"]))
         finally:
             e.shutdown()
+
+
+def test_report_relay() -> None:
+    """Bug reports without a GitHub account: with REPORT_RELAY set, the desk
+    sends the saved report to the relay (tools/report-relay/), which files
+    the issue with its own token and keeps the zip.  The desk: https only, a
+    size cap, plain reasons, no secrets.  The relay: the form's fields, safe
+    labels, no @mentions, the zip behind the maintainers' key, a rate limit."""
+    print("Report relay: send a report with no GitHub account")
+    import json as _json
+    import shutil
+    import subprocess
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app import bugreport, config as cfg
+    from app import engine as eng
+    seen: dict = {}
+
+    class Relay(BaseHTTPRequestHandler):
+        answer = (200, {"issue_url": f"https://github.com/{bugreport.REPO}/issues/77", "number": 77})
+
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            seen["body"] = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen["key"] = self.headers.get("X-Relay-Key")
+            code, obj = Relay.answer
+            data = _json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    srv = HTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    saved = (cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY, cfg.LLM_API_KEY, cfg.DATA)
+    key = "AIza" + "q" * 35
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            cfg.REPORT_RELAY, cfg.LLM_API_KEY = "", key
+            check("no relay set: no Send button (the report is saved and GitHub opens, as before)",
+                  bugreport.report(e, None, "x", [], False, b"", [], preview=True).get("relay") is False)
+            cfg.REPORT_RELAY = "http://example.com/relay"
+            out = bugreport.report(e, None, "the faders stick", [], False, b"", [], send=True)
+            check("an http:// relay (not this computer) is refused - the report is still saved",
+                  "https" in out.get("send_error", "") and out.get("zip"), str(out))
+            cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY = f"http://127.0.0.1:{srv.server_address[1]}/", "desk-key"
+            check("relay set: the window offers Send report", bugreport.report(e, None, "x", [], False, b"", [], preview=True)["relay"])
+            out = bugreport.report(e, None, f"the faders stick, my key is {key}", [], True, b"", [], send=True)
+            body = seen.get("body") or {}
+            check("sent: the relay's issue comes back", out.get("sent", {}).get("number") == 77, str(out))
+            check("...on the bug form, its fields filled in, the zip with it",
+                  body.get("template") == "bug.yml" and body["fields"].get("what", "").startswith("the faders stick")
+                  and body.get("zip_name") == out["zip"] and len(body.get("zip", "")) > 100, str(body)[:200])
+            check("...the desk's relay key sent; no secret anywhere in it",
+                  seen.get("key") == "desk-key" and key not in _json.dumps(body), "")
+            Relay.answer = (429, {"error": "too many reports from here - try again in an hour"})
+            out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
+            check("the relay says no: its reason, and the report is saved for GitHub",
+                  "too many reports" in out.get("send_error", "") and out.get("url", "").startswith("https://github.com/"), str(out))
+            Relay.answer = (200, {"issue_url": "https://evil.example/x"})
+            out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
+            check("an answer that isn't this repo's issue is not shown as sent", "send_error" in out and "sent" not in out, str(out))
+            big = tmp / "bug_reports" / "jarvis-report-big.zip"
+            big.write_bytes(b"PK" + b"\0" * (bugreport.RELAY_MAX + 10))
+            try:
+                bugreport.relay_send(big, None, "x", [])
+                capped = False
+            except ValueError as exc:
+                capped = "Attach the whole show" in str(exc)
+            check("a report over the relay's size: says to untick the show", capped)
+        finally:
+            e.shutdown()
+            srv.shutdown()
+            cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY, cfg.LLM_API_KEY, cfg.DATA = saved
+    js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
+    check("the report window: Send report when the desk has a relay", "Send report" in js and "send: viaRelay" in js)
+    # the relay itself, with a fake GitHub and a fake bucket
+    node = shutil.which("node")
+    if not node:
+        return
+    script = r"""
+const W = (await import(process.argv[1])).default;
+const calls = [];
+globalThis.fetch = async (u, o) => { calls.push({ u, o }); return new Response(JSON.stringify({ html_url: "https://github.com/o/r/issues/5", number: 5 }), { status: 201 }); };
+const store = new Map();
+const env = { REPO: "o/r", GITHUB_TOKEN: "t", DOWNLOAD_KEY: "dk", RELAY_KEY: "rk",
+  REPORTS: { put: async (k, v, m) => store.set(k, { v, m }), get: async (k) => store.has(k) ? { body: store.get(k).v, customMetadata: store.get(k).m.customMetadata } : null } };
+const zip = Buffer.from("PK\x03\x04hello").toString("base64");
+const rep = (extra = {}, head = {}) => new Request("https://relay.example/", { method: "POST",
+  headers: { "X-Relay-Key": "rk", "CF-Connecting-IP": "1.2.3.4", ...head },
+  body: JSON.stringify({ template: "light-bug.yml", title: "[Light] Acme Beam: dark", labels: ["light-bug", "brand:Acme", "admin", "x\ny"],
+    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "jarvis-report-1-acme.zip", zip, ...extra }) });
+const out = {};
+let r = await W.fetch(rep(), env);
+out.ok = [r.status, await r.json()];
+const gh = JSON.parse(calls[0].o.body);
+out.gh = { url: calls[0].u, labels: gh.labels, mention: gh.body.includes("@everyone"), link: /\/r\/[0-9a-f-]{36}\)/.test(gh.body), title: gh.title };
+const id = [...store.keys()][0].replace(".zip", "");
+out.dlNoKey = (await W.fetch(new Request(`https://relay.example/r/${id}`), env)).status;
+const dl = await W.fetch(new Request(`https://relay.example/r/${id}?key=dk`), env);
+out.dl = [dl.status, dl.headers.get("Content-Disposition")];
+out.wrongKey = (await W.fetch(rep({}, { "X-Relay-Key": "nope" }), env)).status;
+out.badForm = (await W.fetch(rep({ template: "../evil" }), env)).status;
+out.notZip = (await W.fetch(rep({ zip: Buffer.from("hello").toString("base64") }, { "CF-Connecting-IP": "9.9.9.9" }), env)).status;
+const codes = [];
+for (let i = 0; i < 6; i++) codes.push((await W.fetch(rep({}, { "CF-Connecting-IP": "5.5.5.5" }), env)).status);
+out.rate = codes;
+console.log(JSON.stringify(out));
+"""
+    url = (ROOT / "tools" / "report-relay" / "worker.mjs").as_uri()
+    r = subprocess.run([node, "--input-type=module", "-e", script, url], capture_output=True, text=True, timeout=30)
+    got = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+    check("the relay runs", r.returncode == 0, r.stderr[-300:])
+    if not got:
+        return
+    check("the relay files the issue and answers with it", got["ok"] == [200, {"issue_url": "https://github.com/o/r/issues/5", "number": 5}], str(got["ok"]))
+    check("...on this repo, with the form's labels only (no made-up ones), and no @mention",
+          got["gh"]["url"] == "https://api.github.com/repos/o/r/issues" and got["gh"]["labels"] == ["light-bug", "brand:Acme"]
+          and not got["gh"]["mention"], str(got["gh"]))
+    check("...the zip kept, linked from the issue, downloadable only with the maintainers' key",
+          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "jarvis-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
+    check("the wrong relay key, an unknown form, a file that isn't a zip: refused",
+          got["wrongKey"] == 403 and got["badForm"] == 400 and got["notZip"] == 400, str(got))
+    check("at most 6 reports an hour from one address", got["rate"] == [200] * 6, str(got["rate"]))

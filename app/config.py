@@ -277,6 +277,12 @@ if not GDTF_SHARE_CACHE.is_absolute():
     GDTF_SHARE_CACHE = ROOT / GDTF_SHARE_CACHE
 GDTF_SHARE_TIMEOUT = float(_get("GDTF_SHARE_TIMEOUT", "20"))
 
+# Bug reports without a GitHub account (backlog): the address of a report
+# relay (tools/report-relay/) that files the issue and keeps the zip.  Empty:
+# the report is saved and the GitHub page opens, as before.
+REPORT_RELAY = _get("REPORT_RELAY", "").strip()
+REPORT_RELAY_KEY = _get("REPORT_RELAY_KEY", "").strip()
+
 DATA.mkdir(parents=True, exist_ok=True)
 
 

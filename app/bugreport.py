@@ -15,6 +15,7 @@ anything shaped like an API key.
 """
 from __future__ import annotations
 
+import base64
 import collections
 import json
 import os
@@ -22,7 +23,9 @@ import platform
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -167,6 +170,12 @@ def save(files: dict[str, bytes], head: dict | None) -> Path:
 
 def issue_url(head: dict | None, what: str, areas: list[str], zip_name: str) -> str:
     """A new GitHub issue on the right form, filled in (the zip is dragged in)."""
+    q = _issue_fields(head, what, areas, zip_name)
+    return f"https://github.com/{REPO}/issues/new?" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+
+
+def _issue_fields(head: dict | None, what: str, areas: list[str], zip_name: str) -> dict:
+    what = scrub(what)                 # a key pasted into the description stays out of the issue too
     first = (what.strip().splitlines() or ["(no description)"])[0][:80]
     files = f"Drag in **{zip_name}** (it was saved for you; it never contains `.env` or keys)."
     version = f"{desk_version()} · {computer()}"
@@ -181,7 +190,53 @@ def issue_url(head: dict | None, what: str, areas: list[str], zip_name: str) -> 
     else:
         q = {"template": "bug.yml", "title": f"[Bug] {first}", "labels": "bug",
              "area": "Something else", "what": what, "files": files, "version": version}
-    return f"https://github.com/{REPO}/issues/new?" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+    return q
+
+
+# -- sending it without a GitHub account ---------------------------------------
+RELAY_MAX = 8 * 2 ** 20            # the zip a relay takes (bigger: untick the show)
+RELAY_WAIT_S = 45
+
+
+def relay_on() -> bool:
+    return bool(config.REPORT_RELAY)
+
+
+def relay_send(path: Path, head: dict | None, what: str, areas: list[str]) -> dict:
+    """The saved report, sent to the report relay (tools/report-relay/), which
+    files the issue and keeps the zip: {issue_url, number}.  ValueError with
+    a plain reason when it can't."""
+    url = config.REPORT_RELAY
+    if not re.match(r"^(https://|http://(127\.0\.0\.1|localhost)[:/])", url):
+        raise ValueError("REPORT_RELAY must be an https:// address")
+    data = path.read_bytes()
+    if len(data) > RELAY_MAX:
+        raise ValueError(f"the report is {len(data) / 2 ** 20:.1f} MB - untick \"Attach the whole show\" "
+                         f"(a relay takes {RELAY_MAX // 2 ** 20} MB), or open it on GitHub")
+    q = _issue_fields(head, what, areas, path.name)
+    q["files"] = f"Sent from the desk: **{path.name}** (kept by the report relay)."
+    payload = {"template": q.pop("template"), "title": q.pop("title"), "labels": q.pop("labels").split(","),
+               "fields": q, "zip_name": path.name, "zip": base64.b64encode(data).decode("ascii")}
+    headers = {"Content-Type": "application/json", "User-Agent": "jarvis-desk/1"}
+    if config.REPORT_RELAY_KEY:
+        headers["X-Relay-Key"] = config.REPORT_RELAY_KEY
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=RELAY_WAIT_S) as resp:
+            got = json.loads(resp.read(200_000) or b"{}")
+    except urllib.error.HTTPError as exc:
+        try:
+            why = json.loads(exc.read(20_000) or b"{}").get("error") or exc.reason
+        except (ValueError, OSError):
+            why = exc.reason
+        raise ValueError(f"the report relay said no: {str(why)[:200]}") from None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise ValueError(f"the report relay can't be reached ({str(getattr(exc, 'reason', exc))[:120]}) - "
+                         "the report is saved; open it on GitHub instead") from None
+    link = str(got.get("issue_url") or "")
+    if not link.startswith(f"https://github.com/{REPO}/issues/"):
+        raise ValueError("the report relay didn't say which issue it filed")
+    return {"issue_url": link, "number": got.get("number")}
 
 
 def request_url(maker: str, model: str, mode: str = "", link: str = "", note: str = "") -> str:
@@ -203,16 +258,22 @@ def contents(files: dict[str, bytes]) -> list[dict]:
 
 
 def report(eng, head_no: int | None, what: str, areas, include_show: bool, picture: bytes,
-           page_errors, preview: bool = False) -> dict:
+           page_errors, preview: bool = False, send: bool = False) -> dict:
     """Preview (what would go in) or save it and give the issue link."""
     areas = [a for a in (areas or []) if a in AREAS]
     head = next((dict(h) for h in eng.patch if h["head_no"] == head_no), None) if head_no else None
     files = gather(eng, head_no if head else None, str(what or "")[:4000], areas,
                    bool(include_show), picture, page_errors)
     if preview:
-        return {"files": contents(files)}
+        return {"files": contents(files), "relay": relay_on()}
     path = save(files, head)
-    return {"files": contents(files), "zip": path.name, "url": issue_url(head, str(what or ""), areas, path.name)}
+    out = {"files": contents(files), "zip": path.name, "url": issue_url(head, str(what or ""), areas, path.name)}
+    if send:
+        try:
+            out["sent"] = relay_send(path, head, str(what or ""), areas)
+        except ValueError as exc:
+            out["send_error"] = str(exc)
+    return out
 
 
 def read_saved(name: str) -> bytes | None:

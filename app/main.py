@@ -658,7 +658,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._engine(), int(head) if str(head or "").isdigit() else None,
                     str(body.get("what") or ""), body.get("areas") if isinstance(body.get("areas"), list) else [],
                     body.get("include_show", True) is not False, picture,
-                    [str(e)[:300] for e in errs], preview=bool(body.get("preview"))))
+                    [str(e)[:300] for e in errs], preview=bool(body.get("preview")), send=bool(body.get("send"))))
             if route == "/api/fixtures/real_model":
                 # The Add dialog's preview: the light's REAL 3D when its own
                 # GDTF has one, or the maker's body from GDTF Share (kept, or

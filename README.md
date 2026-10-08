@@ -955,6 +955,10 @@ and, if you can, the show file so the exact rig can be loaded.  Never
 attach `.env`.  Quicker: right-click the light → **Report a problem with
 this light…** (or Help → Report a bug) packs all of that for you.
 
+**No GitHub account?** With a report relay set up (`REPORT_RELAY` in
+`.env`; how: `tools/report-relay/README.md`), the report window also has
+**Send report**: the report is filed for you, with everything attached.
+
 When the desk itself hits a problem - an error in the page, a desk error, a
 request that got no answer - a **⚠ badge** appears in the top bar.  Click it
 to see what happened, **Report it** (they are attached) or **Dismiss**.

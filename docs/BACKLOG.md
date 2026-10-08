@@ -465,8 +465,14 @@ blanks every secret (AI key, desk token, GDTF login, anything shaped like
 a key) out of every file, downloads it and opens the matching GitHub form
 filled in (labels light-bug, brand:..., model:...).  The fixture-debug
 skill reads the zip for "fix issue #N".  Selftest `test_bug_report`.
-Next (v2, before outside testers): the relay so no GitHub account is
-needed.
+**v2 DONE 2026-10-08:** the relay (tools/report-relay/: a Cloudflare
+Worker with a fine-grained Issues-only token; the zip kept in R2 behind a
+maintainers' download key; 6 reports an hour per address; the form's
+labels only; no @mentions).  A desk with REPORT_RELAY in its .env shows
+**Send report** - no GitHub account needed; the description is scrubbed
+of keys like the zip.  Selftest `test_report_relay`.  To go live: deploy
+it (its README, ~10 minutes); for outside testers point its REPO at a
+public "bug reports" repo.
 
 So problems arrive with the evidence attached instead of typed by hand.
 
