@@ -15,15 +15,16 @@ Var AiWant
 !macroend
 
 Function JarvisAiPage
-  !insertmacro MUI_HEADER_TEXT "Offline AI" "The copilot can run on this computer: no internet, no daily limit."
+  ; (MUI's header macro isn't defined yet where electron-builder includes
+  ; this file, so the page says it all in its own text)
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateLabel} 0 0 100% 40u "Jarvis can download its offline AI (about 5 GB) in the background the first time it starts. Once it is done, the copilot works at a venue with no internet. It needs 16 GB of memory. You can also add it later in Settings -> AI."
+  ${NSD_CreateLabel} 0 0 100% 72u "Offline AI - the copilot on this computer, with no internet and no daily limit.$\r$\n$\r$\nJarvis can download its offline AI (about 5 GB) in the background the first time it starts. Once it is done, the copilot works at a venue with no internet. It needs 16 GB of memory. You can also add it later in Settings -> AI."
   Pop $0
-  ${NSD_CreateCheckbox} 0 48u 100% 12u "Include the offline AI (about 5 GB download)"
+  ${NSD_CreateCheckbox} 0 80u 100% 12u "Include the offline AI (about 5 GB download)"
   Pop $AiBox
   ${If} $AiWant == ""
     StrCpy $AiWant ${BST_CHECKED}

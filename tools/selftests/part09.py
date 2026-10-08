@@ -5377,6 +5377,9 @@ def test_ai_installer_tick() -> None:
     check("the installer has the ticked 'Include the offline AI' page",
           "customPageAfterChangeDir" in nsh and "BST_CHECKED" in nsh and "offline-ai-wanted" in nsh
           and '"include": "res/installer.nsh"' in pkg)
+    code = "\n".join(line.split(";")[0] for line in nsh.splitlines())
+    check("...using no MUI macro (electron-builder includes it before MUI is loaded - the Windows build stopped)",
+          "MUI_" not in code)
     check("the app hands the tick to the desk, and the desk acts on it at start",
           "offline-ai-wanted" in js and "wanted.json" in js and "localai.auto_download" in main)
 
