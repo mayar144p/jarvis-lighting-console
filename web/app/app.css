@@ -869,6 +869,9 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .out-list { display: flex; flex-direction: column; gap: 4px; }
 .out-list:empty { display: none; }
 .out-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03); font-size: 13px; }
+.out-routes { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.out-routes input { width: 9em; }
+.out-more summary { cursor: pointer; color: var(--text-2); margin: 6px 0; }
 .out-row .btn { margin-left: auto; }
 .out-tag { font-size: 11px; color: var(--accent); background: var(--accent-bg); padding: 1px 6px; border-radius: 999px; }
 .mono { font-family: var(--mono); }
@@ -1652,3 +1655,25 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .tour-bubble b { font-size: 15px; }
 .tour-bubble p { margin: 0; color: var(--text-2); line-height: 1.45; }
 @media (prefers-reduced-motion: reduce) { .tour-ring { transition: none; } }
+
+/* Theme (Settings -> Screen & 3D): the panels, never the 3D view */
+.topbar, .panel, .playbacks, .statusbar, .drawer, .cmdbar, .modal, .menu, .toasts > * { filter: var(--panel-filter, none); }
+:root[data-theme="showdark"] body { background: #000; }
+
+/* on-screen encoder wheels (Programmer, under the tabs) */
+.prog-wheels { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-height: 74px; box-sizing: border-box; }
+.prog-wheels[hidden] { display: none; }
+.wheel { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text-2); }
+.wheel-knob { --a: 0deg; width: 44px; height: 44px; border-radius: 50%; position: relative; cursor: ns-resize; touch-action: none;
+  background: radial-gradient(circle at 50% 40%, var(--surface-3), var(--bg-2)); border: 1px solid var(--border-2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 2px 6px rgba(0,0,0,.4); }
+.wheel-knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--accent);
+  transform-origin: 50% 17px; transform: rotate(var(--a)); }
+.wheel-knob:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prog-wheels .btn.on { background: var(--accent-bg); border-color: var(--accent); }
+
+/* hover help (Settings -> Screen & 3D -> Hover help) */
+.help-tip { position: fixed; z-index: 200; max-width: 300px; padding: 7px 10px; border-radius: 8px; pointer-events: none;
+  background: var(--surface-3); color: var(--text); border: 1px solid var(--border-2); box-shadow: var(--shadow);
+  font-size: 12.5px; line-height: 1.4; filter: var(--panel-filter, none); }
+.help-tip[hidden] { display: none; }

@@ -6,6 +6,7 @@ import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu }
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
+import { renderWheels, initWheels } from "./wheels.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -1234,6 +1235,7 @@ function wireTools() {
 // ------------------------------------------------------------------ tabs
 function showTab(name) {
   tab = name;
+  renderWheels(name);
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
@@ -1311,6 +1313,7 @@ export function initProgrammer() {
   $("#preset-rec").addEventListener("click", saveLook);
   $("#look-search").addEventListener("input", () => renderLooks(true));
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  initWheels();
   let saved = "intensity";
   try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }
   showTab(saved);

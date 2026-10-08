@@ -470,13 +470,20 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
             for target in targets:
                 if time.monotonic() > send_until:
                     break
-                try:
-                    sock.sendto(poll, (target, port))
-                    sent += 1
-                except BlockingIOError:
-                    time.sleep(0.001)     # the queue is full: let it drain
-                except OSError:
-                    pass                  # a dead host is the normal case
+                # the queue full: let it drain and send THIS address again
+                # (skipping it missed a node now and then - and the CI's
+                # "how hard it looked" count came out 252 of 254)
+                for _try in range(20):
+                    try:
+                        sock.sendto(poll, (target, port))
+                        sent += 1
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() > send_until:
+                            break
+                        time.sleep(0.001)
+                    except OSError:
+                        break             # a dead host is the normal case
                 if per_address:
                     time.sleep(0.002)
         finally:
@@ -820,8 +827,9 @@ class ArtNetSender:
             self.simulated_frames += 1
             return False
         packet = build_artdmx(universe, data, self.next_sequence(universe), self.net)
+        host = (getattr(self, "routes", None) or {}).get(universe, self.host)
         try:
-            self._socket().sendto(packet, (self.host, self.port))
+            self._socket().sendto(packet, (host, self.port))
         except OSError as exc:
             self.errors += 1
             self.last_error = str(exc)

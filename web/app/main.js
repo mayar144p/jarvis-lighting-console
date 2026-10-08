@@ -19,6 +19,8 @@ import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
+import { initTheme } from "./theme.js";
+import { initHelp } from "./help.js";
 
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
@@ -33,6 +35,7 @@ function wireGig() {
 const WINDOW = new URLSearchParams(location.search).get("window") || "";
 if (WINDOW) document.documentElement.dataset.window = WINDOW;
 
+initTheme();                              // before anything draws: no bright flash in a dark venue
 async function boot() {
   try {
     state.status = await get("/api/status");
@@ -65,6 +68,7 @@ async function boot() {
   initKeys();
   wireGig();
   initWelcome();
+  initHelp();
   openStream({
     snapshot: setSnapshot,
     snapdiff: applySnapDiff,

@@ -5,6 +5,8 @@ import { get, post, token, modelBytes } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { openNewShow, startTour } from "./welcome.js";
 import { connectedControllers } from "./controllers.js";
+import { themeNow, setTheme, ACCENTS } from "./theme.js";
+import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state, on, patch, selected, outputState } from "./store.js";
@@ -882,7 +884,10 @@ function outputSection(con) {
       mode.value = net.target.mode;
       ip.value = net.target.host || "";
       proto.value = net.target.mode === "usb" ? "" : net.target.transport || "";
-      showPorts(net); syncIp(); verdict(net); showAdapters(net);
+      routes = { ...(net.target.routes || {}) };
+      priority.value = net.target.priority ?? "";
+      priField.hidden = (net.resolved || {}).transport !== "sacn";
+      showPorts(net); syncIp(); verdict(net); showAdapters(net); drawRoutes();
       return net;
     } catch (err) {
       status.replaceChildren(h("div.out-bad", err.message));
@@ -917,6 +922,31 @@ function outputSection(con) {
       btn.disabled = false;
     }
   };
+  // a big rig: a universe goes to a node of its own (one node per truss)
+  const routesBox = h("div.out-routes");
+  const priority = h("input", { type: "number", min: 0, max: 200, step: 1, placeholder: "100" });
+  const priField = h("label.field", { title: "When two desks send the same universe, the higher number wins (default 100)" },
+    h("span", "sACN priority (0-200)"), priority);
+  let routes = {};
+  const drawRoutes = () => {
+    const rows = Object.entries(routes).sort((a, b) => +a[0] - +b[0]);
+    routesBox.replaceChildren(
+      h("div.muted.small", "Universes to a node of their own (the rest go to the target above):"),
+      ...rows.map(([u, ip]) => h("div.out-row",
+        h("span.mono", `Universe ${u}`), h("span", "→"), h("span.mono", ip),
+        h("button.btn.small.ghost", { "aria-label": `Stop sending universe ${u} to its own node`,
+          onclick: () => { delete routes[u]; apply({ routes }); } }, "Remove"))),
+      (() => {
+        const uni = h("input", { type: "number", min: 1, max: 4096, placeholder: "universe", "aria-label": "Universe" });
+        const node = h("input", { type: "text", inputmode: "decimal", placeholder: "node IP, e.g. 2.0.0.12", "aria-label": "Node IP" });
+        return h("div.row-btns", uni, node, h("button.btn.small", { onclick: () => {
+          const u = parseInt(uni.value, 10);
+          if (!(u >= 1 && u <= 4096) || !node.value.trim()) { toast("A universe (1-4096) and the node's IP", "bad"); return; }
+          apply({ routes: { ...routes, [u]: node.value.trim() } });
+        } }, "Add"));
+      })());
+  };
+  priority.addEventListener("change", () => apply({ priority: priority.value.trim() }));
   box.append(
     h("div.form-grid",
       h("label.field", h("span", "Send DMX to"), mode),
@@ -928,6 +958,8 @@ function outputSection(con) {
       findBtn,
       h("button.btn", { onclick: refresh }, "Re-check network")),
     status, nodes, adapters,
+    h("details.out-more", h("summary.small", "More universes: a node per universe, sACN priority"),
+      routesBox, h("div.form-grid", priField)),
     h("p.muted.small", "Saved with the show, so each venue keeps its own node. Changes apply straight away, no restart."),
     h("div.row-btns",
       h("button.btn", { onclick: () => openNodeMonitor() }, virtualNodeOn() ? "Virtual node (on)…" : "Virtual node…"),
@@ -997,6 +1029,7 @@ export async function openSettings() {
         }, "Resize room")))]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
+      themeRow(),
       h("h3", "3D view"),
       h("div.form-grid", h("label.field", h("span", "Quality"), quality))]],
     ["midi", "MIDI & OSC", [
@@ -1055,6 +1088,26 @@ function oscRow() {
 
 // MIDI on this device: a controller plugged into the computer the
 // browser runs on plays the buttons given its notes.
+// Show dark, the accent colour and the panels' brightness (this computer)
+function themeRow() {
+  const t = themeNow();
+  const dark = h("input", { type: "checkbox", checked: t.mode === "showdark" });
+  dark.addEventListener("change", () => setTheme({ mode: dark.checked ? "showdark" : "normal" }));
+  const bright = h("input", { type: "range", min: 30, max: 100, step: 5, value: Math.round(t.bright * 100), "aria-label": "Panel brightness" });
+  bright.addEventListener("input", () => setTheme({ bright: +bright.value / 100 }));
+  const sw = h("div.qe-swatches", ...Object.entries(ACCENTS).map(([k, [c]]) => h("button.qe-sw" + (t.accent === k ? ".on" : ""), {
+    type: "button", title: k, "aria-label": `Accent ${k}`, style: { background: c },
+    onclick: (e) => { setTheme({ accent: k }); sw.querySelectorAll(".qe-sw").forEach((b) => b.classList.toggle("on", b === e.currentTarget)); },
+  })));
+  const tips = h("input", { type: "checkbox", checked: tipsOn() });
+  tips.addEventListener("change", () => setTips(tips.checked));
+  return h("div",
+    h("h3", "Look"),
+    h("label.check", tips, h("span", "Hover help: hold the pointer on any control for what it does")),
+    h("label.check", dark, h("span", "Show dark: the panels in dim red for a dark venue (the 3D view keeps its colours)")),
+    h("div.form-grid", h("label.field", h("span", "Panel brightness"), bright), h("div.field", h("span", "Accent"), sw)));
+}
+
 function webMidiRow() {
   const box = h("input", { type: "checkbox" });
   box.checked = webMidiOn();

@@ -229,8 +229,11 @@ class OutputMixin:
             return self._sender
         transport, host, port = self._dmx_resolved()
         cur = self._sender
+        routes = {int(k): v for k, v in (self.dmx_target.get("routes") or {}).items()} if transport != "usbpro" else {}
+        pri = self.dmx_target.get("priority", config.SACN_PRIORITY)
         if cur is not None and (getattr(cur, "transport", "artnet"), cur.host,
-                                cur.port) == (transport, host, port):
+                                cur.port) == (transport, host, port) and getattr(cur, "priority", pri) == pri:
+            cur.routes = routes
             return cur
         # The target changed (Settings, a loaded show, a cable plugged in
         # under auto): swap senders between two frames, no restart.
@@ -239,12 +242,13 @@ class OutputMixin:
             new = UsbProSender(host, self.dry_run)
         elif transport == "sacn":
             new = SacnSender(host, port, config.DMX_NET, self.dry_run,
-                             priority=config.SACN_PRIORITY,
+                             priority=self.dmx_target.get("priority", config.SACN_PRIORITY),
                              source_name=config.SACN_SOURCE_NAME,
                              cid=config.SACN_CID or None,
                              sync_universe=config.SACN_SYNC_UNIVERSE)
         else:
             new = ArtNetSender(host, port, config.DMX_NET, self.dry_run)
+        new.routes = routes
         self._sender = new
         if cur is not None:
             try:
@@ -304,7 +308,7 @@ class OutputMixin:
             self._auto_host_at = time.monotonic()
             self._auto_host_busy = False
 
-    def _a_set_dmx_target(self, mode=None, host=None, transport=None, **_):
+    def _a_set_dmx_target(self, mode=None, host=None, transport=None, routes=None, priority=None, **_):
         """Where the DMX goes at this venue.  mode: auto (the adapters'
         broadcast), node (one node's IP, unicast) or broadcast (a
         broadcast address you give).  Saved with the show."""
@@ -316,6 +320,24 @@ class OutputMixin:
             cur["host"] = str(host).strip()
         if transport is not None:
             cur["transport"] = str(transport).lower()
+        if routes is not None:
+            from app.engine_base import clean_routes
+            given = routes if isinstance(routes, dict) else {}
+            kept = clean_routes(given)
+            if len(kept) != len([k for k, v in given.items() if str(v).strip()]):
+                raise ValueError("each universe goes to an IP address like 2.0.0.12 (universe 1 to 4096)")
+            cur["routes"] = kept
+        if priority is not None:
+            if priority == "":
+                cur.pop("priority", None)
+            else:
+                try:
+                    p = int(priority)
+                except (TypeError, ValueError):
+                    raise ValueError("sACN priority is 0 to 200") from None
+                if not 0 <= p <= 200:
+                    raise ValueError("sACN priority is 0 to 200")
+                cur["priority"] = p
         if cur["mode"] not in DMX_TARGET_MODES:
             raise ValueError("mode is auto, node, broadcast or usb")
         if cur["mode"] == "usb":

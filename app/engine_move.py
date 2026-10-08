@@ -322,13 +322,19 @@ class MoveMixin:
                     break
         dom = attr_domain(h, role)
         if v is None:
-            return dom // 2
+            return dom // 2 if role in ("pan", "tilt") else 0
         return int(_logical16(v)) if dom > 255 else int(v)
 
-    def _a_nudge(self, axis="pan", step=0.01, **_):
-        """Move the selection's pan or tilt by a fraction of its travel
-        (+/-): the arrows on the Move tab, coarse 0.02 or fine 0.002."""
-        role = "tilt" if str(axis).lower().startswith("t") else "pan"
+    def _a_nudge(self, axis="pan", step=0.01, attribute=None, **_):
+        """Move the selection's pan or tilt - or any attribute (`attribute`:
+        dimmer, zoom, focus, red...) - by a fraction of its travel (+/-):
+        the arrows on the Move tab and the on-screen wheels, coarse 0.02 or
+        fine 0.002."""
+        if attribute:
+            from app.engine_base import _attr_role
+            role = _attr_role(str(attribute)) or str(attribute).lower()
+        else:
+            role = "tilt" if str(axis).lower().startswith("t") else "pan"
         frac = max(-0.5, min(0.5, float(step)))
         done = []
         for h in self._require_selection():

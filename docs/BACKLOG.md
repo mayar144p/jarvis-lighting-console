@@ -396,7 +396,10 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    comes in with every light patched and placed; ours goes back out.
 4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
    beat, bar and phrase, so the lights hit the drops without tapping.
-5. **More universes and sACN in Settings** - sACN output already exists
+5. **(DONE 2026-10-08) More universes and sACN in Settings** - Art-Net /
+   sACN and the target were already in Settings -> Output; added a node per
+   universe (`routes`) and the sACN priority, saved with the show.
+   Was: **More universes and sACN in Settings** - sACN output already exists
    (`DMX_TRANSPORT=sacn` in `.env`); bring the choice and more universes
    into Settings -> Output, for bigger rigs and pro nodes.
 6. **Customisable workspaces** - drag panels into your own layout per show
@@ -406,11 +409,16 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    video of the 3D preview for the client.  (Pairs with A9 step 2.)
 8. **Fixture library updates** - new lights arrive automatically; a
    "Request a fixture" button (it becomes an A11 report).
-9. **Fine / coarse rotary encoders on screen** for precise pan, tilt and
+9. **(DONE 2026-10-08) Fine / coarse rotary encoders on screen**
+   (web/app/wheels.js; `nudge` takes any attribute).  Was: **Fine / coarse rotary encoders on screen** for precise pan, tilt and
    colour, like real desk wheels.
-10. **Themes and a "show dark" mode** - an extra-dim, red-safe screen for
+10. **(DONE 2026-10-08) Themes and a "show dark" mode** (web/app/theme.js:
+    show dark, accent, panel brightness - the 3D view untouched).
+    Was: **Themes and a "show dark" mode** - an extra-dim, red-safe screen for
     dark venues; accent colours.
-11. **Help built in** - hover any control for a short explanation (and a
+11. **(DONE 2026-10-08) Help built in** (web/app/help.js: a quick tip on
+    every control, the ~40 that had none got one; off in Settings).
+    Was: **Help built in** - hover any control for a short explanation (and a
     short video link).
 
 ## A11. Report a bug from the desk (agreed 2026-10-07) - v1 DONE
