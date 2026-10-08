@@ -9,6 +9,7 @@ import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
 import { initWebMidi } from "./webmidi.js";
+import { initControllers } from "./controllers.js";
 import { initTempo } from "./tempo.js";
 import { initStepFx } from "./stepfx.js";
 import { initFxPanel } from "./fxpanel.js";
@@ -53,6 +54,7 @@ async function boot() {
   initTimeline();
   initPlaybacks();
   initQuickButtons();
+  initControllers();
   initWebMidi();
   initTempo();
   initStepFx();

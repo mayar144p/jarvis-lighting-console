@@ -4501,3 +4501,92 @@ console.log(JSON.stringify(out));"""
     pkg = json.loads((ROOT / "desktop" / "package.json").read_text(encoding="utf-8"))
     check("a Mac asks the operator once (it says what the microphone is for)",
           "NSMicrophoneUsageDescription" in pkg["build"]["mac"].get("extendInfo", {}))
+
+
+def test_controller_layouts() -> None:
+    """Ready layouts for hardware controllers (A10 item 1): each one's
+    pads, faders and buttons decoded, and the exact bytes that light a pad
+    in a button's colour, blink a button and move a motor fader."""
+    print("Controllers: APC mini / mk2, Launchpad Mini MK3 / X, Mackie Control")
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        check("(node not installed: controller layouts not checked)", True, "")
+        return
+    js = """
+const P = await import(process.argv[1]);
+const { PROFILES: L, profileFor, hexRgb } = P;
+const out = {};
+out.names = ["APC MINI", "APC mini mk2", "Launchpad Mini MK3 LPMiniMK3 MIDI", "LPX MIDI", "Launchpad X", "X-Touch", "X-TOUCH COMPACT", "X-Touch Mini", "nanoKONTROL2"].map(profileFor);
+const a = L.apcmini, a2 = L.apcmini2, lp = L.launchpadmini3, lx = L.launchpadx, m = L.mackie;
+out.apc = [a.decode([0x90, 56, 127]), a.decode([0x80, 7, 0]), a.decode([0xb0, 48, 127]), a.decode([0xb0, 56, 0]),
+           a.decode([0x90, 64, 127]), a.decode([0x90, 89, 127]), a.decode([0x90, 99, 127])];
+out.apcLed = [a.padLed(0, [255, 0, 0], false), a.padLed(0, [255, 0, 0], true), a.padLed(63, null, false), a.buttonLed("page", 2, true)];
+out.apc2 = [a2.decode([0x90, 0, 100]), a2.decode([0x90, 100, 127]), a2.decode([0x90, 115, 127])];
+out.apc2Led = [a2.padLed(0, [0, 0, 255], false), a2.padLed(0, [0, 0, 255], true)];
+out.lp = [lp.decode([0x90, 81, 100]), lp.decode([0x90, 18, 0]), lp.decode([0xb0, 91, 127]), lp.decode([0xb0, 89, 127]), lp.decode([0xb0, 19, 127]), lp.decode([0x90, 9, 1])];
+out.lpHello = [lp.hello(), lp.bye(), lx.hello()];
+out.lpLed = [lp.padLed(0, [255, 0, 0], true), lp.padLed(63, [255, 0, 0], false)];
+out.mk = [m.decode([0xe0, 0x7f, 0x7f]), m.decode([0xe8, 0, 0]), m.decode([0x90, 24, 127]), m.decode([0x90, 17, 127]), m.decode([0x90, 3, 127]), m.decode([0x90, 9, 127]), m.decode([0x90, 104, 127])];
+out.mkOut = [m.faderOut(0, 1), m.faderOut(8, 0), m.faderOut(2, 0.5), m.buttonLed("go", 1, true), m.padLed(3, [1, 2, 3], true)];
+out.hex = [hexRgb("#ff8800"), hexRgb("nope")];
+console.log(JSON.stringify(out));
+"""
+    url = (ROOT / "web" / "app" / "ctrlprofiles.js").as_uri()
+    r = subprocess.run([node, "--input-type=module", "-e", js, url], capture_output=True, text=True, timeout=30)
+    got = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+    check("the layout file loads in node", r.returncode == 0, r.stderr[-300:])
+    if not got:
+        return
+    check("recognised by the port's name (and nothing else is)", got["names"] == ["apcmini", "apcmini2", "launchpadmini3", "launchpadx",
+                                                                               "launchpadx", "mackie", "mackie", None, None], str(got["names"]))
+    check("APC mini: the top-left pad is note 56, the faders are playbacks, 56 the master, the round buttons GO and the pages",
+          got["apc"] == [{"pad": 0, "down": True}, {"pad": 63, "down": False}, {"fader": 0, "value": 1}, {"master": 0},
+                         {"go": 0, "down": True}, {"page": 7, "down": True}, None], str(got["apc"]))
+    check("APC mini pads: red, blinking red when on, off when empty; a page button lit",
+          got["apcLed"] == [[[0x90, 56, 3]], [[0x90, 56, 4]], [[0x90, 7, 0]], [[0x90, 84, 1]]], str(got["apcLed"]))
+    check("APC mini mk2: buttons under the pads 100-107, the side 112-119",
+          got["apc2"] == [{"pad": 56, "down": True}, {"go": 0, "down": True}, {"page": 3, "down": True}], str(got["apc2"]))
+    check("APC mini mk2: a blue button at 25 % when off, 100 % when on",
+          got["apc2Led"] == [[[0x91, 56, 45]], [[0x96, 56, 45]]], str(got["apc2Led"]))
+    check("Launchpad: pad 81 is top-left, 18 bottom-right; the top row GO, the right side pages",
+          got["lp"] == [{"pad": 0, "down": True}, {"pad": 63, "down": False}, {"go": 0, "down": True},
+                        {"page": 0, "down": True}, {"page": 7, "down": True}, None], str(got["lp"]))
+    check("Launchpad: programmer mode on and off by SysEx (Mini MK3 is device 13, X is 12)",
+          got["lpHello"] == [[[240, 0, 32, 41, 2, 13, 14, 1, 247]], [[240, 0, 32, 41, 2, 13, 14, 0, 247]], [[240, 0, 32, 41, 2, 12, 14, 1, 247]]],
+          str(got["lpHello"]))
+    check("Launchpad: a pad in the button's own colour - full when on, dim when off",
+          got["lpLed"] == [[[240, 0, 32, 41, 2, 13, 3, 3, 81, 127, 0, 0, 247]], [[240, 0, 32, 41, 2, 13, 3, 3, 18, 18, 0, 0, 247]]],
+          str(got["lpLed"]))
+    check("Mackie: fader 1 top, the master fader, SELECT = GO, MUTE = release, REC = buttons, SOLO = pages, touch",
+          got["mk"] == [{"fader": 0, "value": 1}, {"master": 0}, {"go": 0, "down": True}, {"release": 1, "down": True},
+                        {"pad": 3, "down": True}, {"page": 1, "down": True}, {"touch": 0, "down": True}], str(got["mk"]))
+    check("Mackie: the motor faders move to the playback (14-bit), the LEDs light",
+          got["mkOut"] == [[[0xe0, 127, 127]], [[0xe8, 0, 0]], [[0xe2, 0, 64]], [[0x90, 25, 127]], [[0x90, 3, 127]]], str(got["mkOut"]))
+    check("tile colours to RGB", got["hex"] == [[255, 136, 0], None])
+
+
+def test_gdtf_pan_tilt_parts() -> None:
+    """A light that only tilted in 3D (asked 2026-10-08): its GDTF listed a
+    handle and a display before the yoke, and pan / tilt were taken by the
+    ORDER of the parts.  The DMX channels name the part they drive; that
+    is used first, the order only when a file names none."""
+    print("3D: pan and tilt turn the parts the file's channels name")
+    from app import gdtf_geom as g
+    xml = b'''<GDTF><FixtureType Name="X" Manufacturer="LTS"><Geometries><Geometry Name="Base" Model="Base">
+<Geometry Name="Handle" Model="Handle"/><Geometry Name="Display" Model="D"/>
+<Axis Name="Yoke" Model="Yoke"><Axis Name="Head" Model="Head"><Beam Name="Beam"/></Axis></Axis></Geometry></Geometries>
+<DMXModes><DMXMode Name="M" Geometry="Base"><DMXChannels>
+<DMXChannel Geometry="Head" Offset="3"><LogicalChannel Attribute="Tilt"/></DMXChannel>
+<DMXChannel Geometry="Yoke" Offset="1"><LogicalChannel Attribute="Pan"/></DMXChannel>
+</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>'''
+    geo = g.parse_geometry(xml)
+    k = g.resolve_kinematics(geo, True, True)
+    check("pan turns the yoke, tilt the head (not the handle and the display)",
+          g.node_at(geo, k["pan"])["name"] == "Yoke" and g.node_at(geo, k["tilt"])["name"] == "Head" and k.get("by") == "channels", str(k))
+    k = g.resolve_kinematics(geo, False, True)
+    check("a light with tilt only: just the head", k["pan"] is None and g.node_at(geo, k["tilt"])["name"] == "Head", str(k))
+    geo["moves"] = {}
+    k = g.resolve_kinematics(geo, True, True)
+    check("a file whose channels name no part: the order of the parts, as before", k["pan"] and "by" not in k, str(k))

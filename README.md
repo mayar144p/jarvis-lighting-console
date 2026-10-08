@@ -504,6 +504,21 @@ the computer). It also offers a **template**, or an empty show, and a short
 It's a normal show, so change anything. A template, or **Empty show**, is
 one Ctrl+Z, and that brings back the show that was open.
 
+## Hardware controllers
+
+Switch on **Settings → MIDI & OSC → MIDI in the browser**, then plug in a
+controller. These are recognised by name and work straight away:
+
+| Controller | Pads | Faders | Buttons |
+|---|---|---|---|
+| Akai APC mini / APC mini mk2 | the buttons page, lit in each button's colour (dim off, full or blinking on) | playbacks 1-8 and the grand master | under the pads: GO 1-8; down the side: buttons page 1-8 |
+| Novation Launchpad Mini MK3 / X | the buttons page in each button's own colour | - | top row: GO 1-8; right side: buttons page 1-8 |
+| Behringer X-Touch / X-Touch Compact (Mackie Control mode) | REC 1-8: the first 8 buttons | playbacks 1-8 and the grand master, **motor faders follow** | SELECT: GO, MUTE: release, SOLO: buttons page |
+
+The pads always play the page that's on screen, and the screen follows the
+page you pick on the controller. Other controllers still play buttons by
+their MIDI note (Edit → a button → MIDI).
+
 ## MVR plots (Vectorworks, Capture, grandMA3…)
 
 **Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is

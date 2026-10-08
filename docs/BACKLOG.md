@@ -364,7 +364,14 @@ the quality bar is lower.
 
 Suggested order: the operator's top picks first (1-4), then the rest.
 
-1. **Hardware controllers with feedback** - ready layouts for Akai APC40 /
+1. **(DONE 2026-10-08) Hardware controllers with feedback**
+   (web/app/ctrlprofiles.js + controllers.js, through Web MIDI with
+   SysEx): APC mini / mk2, Launchpad Mini MK3 / X, Mackie Control (X-Touch,
+   X-Touch Compact) - recognised by name; pads = the buttons page on
+   screen in the buttons' colours, faders = playbacks + GM (motor faders
+   follow, not while touched), GO / release / page buttons lit.  Not yet:
+   APC40 (needs its mode SysEx and a real unit to check against).
+   Was: **Hardware controllers with feedback** - ready layouts for Akai APC40 /
    APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
    is on, motor faders follow the playbacks; plug in and play.
 2. **(DONE 2026-10-08) Show templates + first-run tour + demo show**

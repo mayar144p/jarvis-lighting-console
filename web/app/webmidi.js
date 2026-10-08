@@ -46,6 +46,18 @@ function clock(st, at) {
   act("tempo_set", { bpm: Math.round(bpm * 10) / 10, source: "browser" }).catch(() => {});
 }
 
+// A controller with a ready layout (controllers.js) takes its input: its
+// pads and faders are not plain notes for the buttons' own MIDI notes.
+const claimed = new Map();               // input id -> handler(bytes)
+export function claimInput(id, handler) {
+  if (handler) claimed.set(id, handler); else claimed.delete(id);
+}
+const changes = new Set();
+/** Called when controllers are plugged in or out (and when MIDI goes on / off). */
+export function onMidiChange(fn) { changes.add(fn); return () => changes.delete(fn); }
+const changed = () => { for (const fn of [...changes]) { try { fn(access); } catch (err) { console.error(err); } } };
+export const midiAccess = () => access;
+
 function message(e) {
   const st0 = (e.data || [])[0];
   if (st0 === 0xf8 || st0 === 0xfa) clock(st0, e.timeStamp || performance.now());
@@ -53,6 +65,8 @@ function message(e) {
     const m = { data: [...(e.data || [])], input: (e.target && e.target.name) || "", at: Date.now() };
     for (const fn of [...monitors]) { try { fn(m); } catch (err) { /* ignore */ } }
   }
+  const own = e.target && claimed.get(e.target.id);
+  if (own) { try { own([...(e.data || [])]); } catch (err) { console.error(err); } return; }
   const [status, number, velocity] = e.data || [];
   const kind = status & 0xf0;
   if (kind !== 0x90 && kind !== 0x80) return;
@@ -65,6 +79,7 @@ function message(e) {
 function attach() {
   if (!access) return;
   for (const input of access.inputs.values()) input.onmidimessage = message;
+  changed();
 }
 
 export function webMidiInputs() {
@@ -79,6 +94,7 @@ export async function setWebMidi(on) {
   if (!on) {
     if (access) for (const input of access.inputs.values()) input.onmidimessage = null;
     access = null;
+    changed();
     return true;
   }
   if (!webMidiSupported()) {
@@ -86,7 +102,8 @@ export async function setWebMidi(on) {
     return false;
   }
   try {
-    access = await navigator.requestMIDIAccess();
+    // SysEx too: a Launchpad needs it to switch into its programmable mode
+    access = await navigator.requestMIDIAccess({ sysex: true }).catch(() => navigator.requestMIDIAccess());
     access.onstatechange = attach;             // controllers plugged in later
     attach();
     error = "";

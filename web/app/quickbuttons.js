@@ -7,7 +7,7 @@
 // looks (its name and tile colour).  Pages have names; in Edit, drag a
 // button onto another slot to move it.  Pressing is live (never an undo
 // step); setting a button up is an edit, saved with the show.
-import { state, on, patch } from "./store.js";
+import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
@@ -121,6 +121,17 @@ const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f",
 
 let page = 1;
 let editing = false;
+/** The buttons page on screen (a controller's pads play this page). */
+export const currentPage = () => page;
+export function setPage(p) {
+  const n = Math.max(1, Math.min((quick().pages || 8), Math.round(p)));
+  if (n === page) return;
+  page = n;
+  render(true);
+  emit("qbpage", page);
+}
+/** A button's tile colour, as the grid draws it (a controller's pad shows it too). */
+export const tileColour = (b) => b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
 let lastKey = "";
 const held = new Set();
 
@@ -179,7 +190,7 @@ function renderPages() {
     pages.push(h("button" + (p === page ? ".on" : ""), {
       dataset: { page: p },
       title: editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
-      onclick: () => { page = p; render(true); },
+      onclick: () => { page = p; render(true); emit("qbpage", page); },
       ondblclick: () => renamePage(p),
     }, names[p] || String(p)));
   }
