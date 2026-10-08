@@ -408,7 +408,12 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    Was: **More universes and sACN in Settings** - sACN output already exists
    (`DMX_TRANSPORT=sacn` in `.env`); bring the choice and more universes
    into Settings -> Output, for bigger rigs and pro nodes.
-6. **Customisable workspaces** - drag panels into your own layout per show
+6. **(DONE 2026-10-08) Customisable workspaces** (web/app/workspaces.js):
+   Programming / Busking / Theatre / Show and your own, Alt+1..9; side
+   panels shown or hidden, swapped, resized by their edge; the dock and
+   its height; the programmer tab.  Per computer (each operator's own).
+   Left: panels dragged into any spot of a free grid.
+   Was: **Customisable workspaces** - drag panels into your own layout per show
    or per user (busking, theatre, programming); switch with one key.  (Pairs
    with A9 step 1's windows.)
 7. **Offline programming with a video render** - program at home, export a

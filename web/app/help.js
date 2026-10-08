@@ -30,7 +30,7 @@ const HELP = {
   "lim-set": "Keep this attribute between those values on these lights - every cue and effect too.",
   "lim-clear": "Remove the limit.",
   "sel-similar": "Select every light of the same type as the first one selected.",
-  "qb-quant": "Buttons fire on the next beat or bar of the tempo.",
+  "qb-quant": "Buttons fire on the next beat, bar, 2 or 4 bars, or phrase of the tempo.",
   "tl-bpm": "The timeline's tempo.", "tl-snap": "What clips snap to on the timeline.",
   "cmd-input": "Console syntax (1 thru 4 @ 50) runs at once; anything else goes to the copilot.",
   "ai-send": "Send to the copilot: it shows the plan in 3D before anything changes.",

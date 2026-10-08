@@ -328,6 +328,18 @@ session's tempo and its place in the bar, and joins no session of its own).
   as well as their speed and the brightness: loud is the effect as made,
   quiet shrinks the movements and the dimmer effects' depth.
 
+### Workspaces
+
+The top bar's **workspace** button arranges the screen for the job:
+*Programming*, *Busking* (buttons big, no fixture list), *Theatre (cues)*
+(a taller cue dock) and *Show (run only)* (the 3D view and the buttons).
+Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
+left it: the fixture list and programmer shown or hidden, which side each
+is on (*Swap sides*), their widths (drag a panel's inner edge; double-click
+for the normal width), the bottom dock and its height, the programmer's
+tab. *Save as a new workspace* makes your own. Workspaces belong to this
+computer (each operator's own), not to the show.
+
 ### Keyboard
 
 | key | does | key | does |
