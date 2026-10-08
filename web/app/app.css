@@ -105,7 +105,7 @@ kbd {
 .btn.small.icon { width: 26px; }
 .btn.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
 
-input[type=text], input[type=search], input[type=number], input[type=password], textarea, .select, select {
+input[type=text], input[type=url], input[type=search], input[type=number], input[type=password], textarea, .select, select {
   height: 32px; padding: 0 10px; border-radius: var(--radius-sm);
   background: var(--bg-2); border: 1px solid var(--border-2); color: var(--text);
   min-width: 0;

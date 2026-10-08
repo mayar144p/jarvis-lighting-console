@@ -1371,6 +1371,13 @@ class Handler(BaseHTTPRequestHandler):
                     "mode": mode.get("name", ""),
                     "map": [channel_role(c) for c in mode.get("channels") or []]})
             return self._json({"results": rows})
+        if route == "/api/fixtures/request":
+            # "Request a fixture": the issue form's link, filled in.
+            maker, model = query.get("maker", "").strip(), query.get("model", "").strip()
+            if not (maker or model):
+                return self._json({"error": "say which light: its brand and model"}, 400)
+            return self._json({"url": bugreport.request_url(maker, model, query.get("mode", ""),
+                                                             query.get("link", ""), query.get("note", ""))})
         if route == "/api/fixtures/library":
             # The bundled open libraries, searched offline.
             try:

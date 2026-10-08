@@ -49,6 +49,7 @@ export function openAddDialog(query = "") {
   const close = modal({
     title: "Add fixtures", wide: true, body,
     foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
+      h("button.btn", { title: "Ask for a light no library has yet: it opens a filled-in request on the desk's GitHub page", onclick: () => requestFixture(search.value) }, "Request it…"),
       h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],
     onClose: () => { if (preview) { preview.destroy(); preview = null; } },
@@ -60,6 +61,8 @@ export function openAddDialog(query = "") {
   // a pick left over from before the search was what "Add to stage" added
   const sameItem = (a, b) => !!(a && b) && (a.id ?? a.key ?? a.rid) === (b.id ?? b.key ?? b.rid)
     && a.manufacturer === b.manufacturer && (a.model || a.fixture) === (b.model || b.fixture);
+  // nothing found: one click to ask for it
+  const askLink = (q) => h("button.linkish", { onclick: () => requestFixture(q) }, "Can't find it? Request it…");
   function noPick() {
     chosen = null;
     addBtn.disabled = true;
@@ -204,11 +207,11 @@ export function openAddDialog(query = "") {
     if (my !== seq) return;
     if (d.error) { list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, d.error)); return; }
     const libs = d.libraries || [];
-    shareNote.textContent = libs.map((l) => `${l.name}: ${l.fixtures} fixtures (${l.licence})`).join(" · ");
+    shareNote.textContent = libs.map((l) => `${l.name}: ${l.fixtures} fixtures (${l.licence}${l.built ? `, updated ${l.built}` : ""})`).join(" · ");
     const rows = d.results || [];
     if (!rows.length) {
       noPick();
-      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Nothing matches. Try fewer words, or the GDTF Share tab."));
+      list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } }, "Nothing matches. Try fewer words, or the GDTF Share tab. ", askLink(q)));
       return;
     }
     list.replaceChildren(...rows.map((r) => {
@@ -260,7 +263,8 @@ export function openAddDialog(query = "") {
     if (!rows.length) {
       noPick();
       list.replaceChildren(h("div.muted.small", { style: { padding: "14px" } },
-        q.length < 2 ? "Type a brand or model (e.g. \u201cfunfetti\u201d, \u201cwave 360\u201d)." : "Nothing matches in the installed fixtures or the libraries."));
+        q.length < 2 ? "Type a brand or model (e.g. \u201cfunfetti\u201d, \u201cwave 360\u201d)." : "Nothing matches in the installed fixtures or the libraries. ",
+        q.length < 2 ? "" : askLink(q)));
     } else keepOrFirst(rows.map((x) => x._item));
     if (q.length < 2) return;
     const st = await get("/api/gdtf/status").catch(() => ({}));
@@ -1334,6 +1338,42 @@ async function pdfText(file) {
   }
   return pages.join("\n");
 }
+
+/** "Request a fixture": a light no library has yet.  Fills in the desk's
+ *  GitHub request form (brand, model, mode, the manual's link) and opens
+ *  it - pressing Submit there needs a GitHub account. */
+export function requestFixture(q = "") {
+  const words = String(q || "").trim().split(/\s+/).filter(Boolean);
+  const maker = h("input", { type: "text", placeholder: "Chauvet", value: words[0] || "" });
+  const model = h("input", { type: "text", placeholder: "Intimidator Wave 360 IRC", value: words.slice(1).join(" ") });
+  const mode = h("input", { type: "text", placeholder: "14-channel" });
+  const link = h("input", { type: "url", placeholder: "https://... (the manual or DMX chart)", style: { width: "100%" } });
+  const note = h("textarea", { rows: 3, placeholder: "Anything else: a similar light that almost works, what it's for" });
+  const go = async () => {
+    if (!maker.value.trim() && !model.value.trim()) { toast("Say which light: its brand and model", "bad"); return; }
+    const qs = new URLSearchParams({ maker: maker.value, model: model.value, mode: mode.value, link: link.value, note: note.value });
+    const d = await get("/api/fixtures/request?" + qs).catch((e) => ({ error: e.message }));
+    if (d.error) { toast(d.error, "bad"); return; }
+    window.open(d.url, "_blank", "noopener");
+    toast("The request opened in your browser: press Submit there. The manual's PDF can be dragged in.", "ok");
+    close();
+  };
+  const close = modal({
+    title: "Request a fixture",
+    body: h("div.form-grid",
+      h("p.muted.small", { style: { gridColumn: "1 / -1", margin: 0 } },
+        "For a light none of the libraries has. This opens a filled-in request on the desk's GitHub page; once it is added, it arrives with the next update. Can't wait? ",
+        h("b", "From its manual…"), " adds it yourself now."),
+      h("label.field", h("span", "Brand"), maker),
+      h("label.field", h("span", "Model"), model),
+      h("label.field", h("span", "DMX mode"), mode),
+      h("label.field", { style: { gridColumn: "1 / -1" } }, h("span", "Link to the manual"), link),
+      h("label.field", { style: { gridColumn: "1 / -1" } }, h("span", "Note"), note)),
+    foot: [h("button.btn", { onclick: () => close() }, "Cancel"), h("button.btn.primary", { onclick: go }, "Open the request")],
+  });
+  setTimeout(() => (maker.value ? model : maker).focus(), 50);
+}
+
 
 export function openManualFixture(onSaved) {
   const maker = h("input", { type: "text", placeholder: "e.g. Chauvet DJ" });

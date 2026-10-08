@@ -680,10 +680,29 @@ def parse_file(path: Path) -> list[dict]:
     return parse_ofl(doc, path.parent.name.replace("-", " ").title(), path.stem)
 
 
+_BUILT: dict[str, str] = {}
+
+
+def built(src: str) -> str:
+    """When a bundled library was last brought up to date (its meta.json's
+    'built', an ISO date), '' when it doesn't say."""
+    if src not in _BUILT:
+        when = ""
+        path = _bundle(src)
+        try:
+            if path and path.suffix == ".zip":
+                with zipfile.ZipFile(path) as zf:
+                    when = str(json.loads(zf.read("meta.json")).get("built") or "")[:10]
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+            when = ""
+        _BUILT[src] = when
+    return _BUILT[src]
+
+
 def libraries() -> list[dict]:
     """What is bundled, for the UI's credits line."""
     return [{"src": s, **{k: v for k, v in m.items() if k != "file"},
-             "fixtures": len(index(s))} for s, m in SOURCES.items()]
+             "fixtures": len(index(s)), "built": built(s)} for s, m in SOURCES.items()]
 
 
 # ---------------------------------------------------------------------------

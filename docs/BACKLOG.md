@@ -423,7 +423,16 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    timeline's music in the video; frame-exact (offline) rendering.
    Was: **Offline programming with a video render** - program at home, export a
    video of the 3D preview for the client.  (Pairs with A9 step 2.)
-8. **Fixture library updates** - new lights arrive automatically; a
+8. **(DONE 2026-10-08) Fixture library updates** - a weekly job
+   (.github/workflows/library-update.yml) rebuilds the OFL / QLC+ zips,
+   and only when a fixture file changed runs rulecheck + the self-test and
+   opens a PR listing new / updated / gone lights (build tool `--summary`);
+   desks get them on their next start (tools/update.py).  The Libraries
+   tab shows each library's "updated" date.  **Request it…** in Add
+   fixtures (and under an empty search) opens a filled-in "Request a
+   fixture" issue form (brand, model, mode, manual link).  Needs: repo
+   Settings -> Actions -> "Allow GitHub Actions to create pull requests".
+   Was: **Fixture library updates** - new lights arrive automatically; a
    "Request a fixture" button (it becomes an A11 report).
 9. **(DONE 2026-10-08) Fine / coarse rotary encoders on screen**
    (web/app/wheels.js; `nudge` takes any attribute).  Was: **Fine / coarse rotary encoders on screen** for precise pan, tilt and
@@ -967,6 +976,15 @@ blur, VR).
     load and whenever the room's size changes; it was placed once for the
     stand-in room - 24 m back from a 3 m room); the crowd follows each
     zone's area and thins evenly past 2,500 people in a big hall.
+
+17. **Open (asked to keep for later, 2026-10-08): lights stay on their
+    trusses when a room is rebuilt.**  Arrange -> Room -> Shape & size
+    *with a starter layout* builds new trusses, so the lights on the old
+    ones lose their truss and float where they were (with "only the
+    walls" they stay on).  Wanted: move each light onto the nearest new
+    truss of the same height (spread as before), or ask "keep the old
+    trusses?".  Turned trusses already turn their lights and aiming
+    follows (done 2026-10-08, PR #81).
 
 ## A4. Programmer, per light type and brand
 

@@ -1,0 +1,78 @@
+name: Fixture library update
+
+# Once a week: fetch the newest Open Fixture Library and QLC+ fixtures,
+# rebuild app/fixlib/, and - only when a fixture file changed - check every
+# light against the desk's rules and open a pull request with what's new.
+# Once merged, every desk gets the new lights the next time it starts
+# (tools/update.py), still searchable offline at a venue.
+#
+# Needs: Settings -> Actions -> General -> "Allow GitHub Actions to create
+# and approve pull requests".  A pull request made by this job doesn't
+# start the CI workflow by itself (GitHub's rule), so this job runs the
+# same checks first; close and reopen the PR to run CI on it as well.
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild the libraries
+        run: python tools/build_fixture_libraries.py --summary libsummary.md
+      - name: Anything new?
+        id: what
+        run: |
+          if head -1 libsummary.md | grep -q "NO CHANGES"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "No fixture changed upstream."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"; cat libsummary.md
+          fi
+      - name: Every light against the desk's rules
+        if: steps.what.outputs.changed == 'true'
+        id: rules
+        continue-on-error: true
+        run: python tools/rulecheck.py --jobs 2 | tee rules.log
+      - name: Self-test
+        if: steps.what.outputs.changed == 'true'
+        run: python tools/selftest.py > selftest.log 2>&1 || { grep FAIL selftest.log; exit 1; }
+      - name: Open the pull request
+        if: steps.what.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RULES: ${{ steps.rules.outcome }}
+        run: |
+          day=$(date -u +%Y-%m-%d)
+          branch="library-update/$day"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add app/fixlib
+          git commit -q -m "Fixture libraries: update from upstream ($day)"
+          git push -u origin "$branch"
+          {
+            echo "The weekly fixture library update."
+            echo
+            cat libsummary.md
+            echo
+            if [ "$RULES" = "success" ]; then
+              echo "**Library rules:** no new failures. **Self-test:** passed."
+            else
+              echo "**Library rules: new failures** - a new or changed light breaks a desk rule. Look before merging:"
+              echo '```'; grep -E "NEW|kept of" rules.log | head -40; echo '```'
+            fi
+          } > body.md
+          gh pr create --base main --head "$branch" --title "Fixture libraries: update ($day)" --body-file body.md

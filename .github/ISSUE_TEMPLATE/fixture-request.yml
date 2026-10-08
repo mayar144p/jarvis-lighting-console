@@ -1,0 +1,42 @@
+name: Request a fixture
+description: A light or effect that none of the desk's libraries has yet.
+title: "[Fixture] <brand> <model>"
+labels: ["fixture-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Easiest: on the desk, **Add fixtures** → search → **Request it…** fills this in.
+        The light's manual (or its DMX chart) is what makes it possible to add - a link or the PDF.
+  - type: input
+    id: light
+    attributes:
+      label: Which light?
+      description: Brand and model, as on the light or its box.
+      placeholder: "Chauvet Intimidator Wave 360 IRC"
+    validations:
+      required: true
+  - type: input
+    id: mode
+    attributes:
+      label: The DMX mode(s) you use
+      placeholder: "14-channel"
+  - type: input
+    id: manual
+    attributes:
+      label: Link to the manual or DMX chart
+      placeholder: "https://www.chauvetdj.com/..."
+  - type: textarea
+    id: what
+    attributes:
+      label: Anything else
+      description: Where you found it, a similar light that almost works, what it's for.
+  - type: textarea
+    id: files
+    attributes:
+      label: The manual, a fixture file, photos
+      description: Drag in the manual PDF, a .gdtf / .qxf / OFL file if you have one, or a photo of the DMX chart.
+  - type: input
+    id: version
+    attributes:
+      label: Desk version / computer
