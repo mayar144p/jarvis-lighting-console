@@ -5032,3 +5032,74 @@ def test_problems_badge() -> None:
             check("a normal refusal isn't flagged as a bug", not r.get("ok") and not r.get("internal"), str(r))
         finally:
             e.shutdown()
+
+
+def test_sweep_fixes() -> None:
+    """Found by the library sweep (tools/libsweep.py), each a whole kind of
+    light: Vari-Lite's colour flags named Blue / Amber / Magenta are the
+    lamp's cyan / yellow / magenta (red couldn't be made, Locate came out
+    magenta); a strobe or flicker hit of 255 is OPEN on some lights, so it
+    showed nothing; and shows past the 14th couldn't be opened, nor any
+    renamed, copied or deleted."""
+    print("Sweep fixes: Vari-Lite colours, flashes on lights where 255 is open, show files")
+    import time as _t
+    from app import engine as eng, fixlib
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            def patch(words):
+                rows = fixlib.search(words)
+                if not rows:
+                    return None
+                got = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                return e._head(e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1)["heads"][0])
+            vl = patch("VL3000 Wash")
+            if vl:
+                check("Vari-Lite VL3000: its colour flags are cyan / yellow / magenta",
+                      {"cyan", "yellow", "magenta"} <= set(vl["map"]) and "blue" not in vl["map"], str(vl["map"]))
+                e.act("select_heads", heads=[vl["head_no"]])
+                e.act("set_intensity", level=100)
+                e.act("set_colour", hex="#ff0000")
+                red = next(x for x in e._looks() if x["n"] == vl["head_no"])["hex"]
+                e.act("clear_programmer")
+                e.act("locate")
+                white = next(x for x in e._looks() if x["n"] == vl["head_no"])["hex"]
+                check("...red is red, Locate is white", red == "#ff0000" and white == "#ffffff", f"{red} {white}")
+                e.act("clear_programmer")
+            for words, fx in (("Shark 150C", "shutter_flicker"), ("Strob LED 18", "strobe_random")):
+                h = patch(words)
+                if not h:
+                    continue
+                e.act("select_heads", heads=[h["head_no"]])
+                e.act("set_intensity", level=100)
+                e.act("run_fx", name=fx, params={"density": 0.5})
+                seen = set()
+                for _ in range(15):
+                    _t.sleep(0.08)
+                    seen.add(bytes(e.build_frames()[h["universe"]][h["address"] - 1:h["address"] - 1 + len(h["map"])]))
+                check(f"{h['model']}: {fx} really flashes (255 is 'open' on it)", len(seen) >= 2, str(len(seen)))
+                e.act("stop_fx")
+                e.act("clear_programmer")
+            for name in ("Wedding", "Club night", "Gala"):
+                check(f"saved {name}", e.act("save_show", name=name).get("ok"))
+            rows = e.act("show_files")["shows"]
+            check("every saved show is listed, with when and how big", {r["name"] for r in rows} == {"Wedding", "Club night", "Gala"}
+                  and all(r["saved"] and r["bytes"] for r in rows), str(rows))
+            r = e.act("show_rename", name="Gala", new="Gala 2026")
+            check("rename (the open one stays open under its new name)", r.get("ok") and e.show_file == "Gala 2026", str(r))
+            check("a copy", e.act("show_copy", name="Wedding", new="Wedding Smith").get("ok")
+                  and (tmp / "s" / "Wedding Smith.json").is_file())
+            check("a name already taken is refused", not e.act("show_copy", name="Wedding", new="club night").get("ok"))
+            check("the open show can't be deleted", not e.act("show_delete", name="Gala 2026").get("ok"))
+            r = e.act("show_delete", name="Wedding")
+            check("delete goes to the .bin, not gone", r.get("ok") and not (tmp / "s" / "Wedding.json").exists()
+                  and any((tmp / "s" / ".bin").glob("Wedding-*.json")), str(r))
+            check("...and the .bin isn't listed as a show", "Wedding" not in {x["name"] for x in e.act("show_files")["shows"]})
+            e.act("set_lock", state="operate")
+            check("Operate mode refuses deleting a show", not e.act("show_delete", name="Wedding Smith").get("ok"))
+            e.act("set_lock", state="design")
+        finally:
+            e.shutdown()

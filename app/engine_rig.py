@@ -350,6 +350,7 @@ class RigMixin:
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show", "restore_version",
+        "show_rename", "show_copy", "show_delete",
         "venue_save", "venue_open", "venue_delete",
         "quick_set", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
         "motion_set", "remember_open",

@@ -138,7 +138,9 @@ def run(check) -> int:
         ok(distinct >= want,
            "effect %s moves over time (%d distinct values in 2.2 s, "
            "wants %d)" % (name, distinct, want), json.dumps(sweep[0]))
-        stray = sorted({r for s in sweep for r in s} - have)
+        # "_level" / "_flash" are notes to the engine (it turns them into
+        # this light's own open / closed / strobe values), never DMX
+        stray = sorted({r for s in sweep for r in s if not r.startswith("_")} - have)
         ok(not stray,
            "effect %s writes only roles the fixture has" % name,
            "wrote %s" % ", ".join(stray))

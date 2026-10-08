@@ -803,6 +803,15 @@ class ProgrammerMixin:
         """A brightness effect on a light whose only control is a shutter
         (fxlib writes "_level"): open it above half, shut it below - at the
         values that open and close THIS light."""
+        if vals and "_flash" in vals:
+            # a strobe / flicker hit writes 255 - the fastest strobe on most
+            # lights, but OPEN (nothing to see) on lights whose 255 is "open"
+            # (Studio Due Shark, Mac Follow, BoomToneDJ Strob LED 18): there
+            # it's the light's own fast strobe, or closed if it has none
+            role = vals.pop("_flash")
+            if head and role in vals and role in head.get("map", ()) and self._open_value(head, role) == vals[role]:
+                ranges = (self.head_ranges(head).get(role) or {}).get("strobe_ranges")
+                vals[role] = self.strobe_steps(head, role)["fast"] if ranges else 0
         if not vals or "_level" not in vals:
             return
         lvl = vals.pop("_level")

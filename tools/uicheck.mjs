@@ -267,7 +267,10 @@ async function clickAll(p, width, step, scope) {
 // ------------------------------------------------------------------- steps
 // Each: [name, async (p) => {...}, {click: scope}]
 const tab = (t) => async (p) => {
-  await p.click(`#prog-tabs [data-tab="${t}"]`, { timeout: 3000 });
+  // 10 s: at 1920 wide with no graphics card (CI, this check's machines) the
+  // page's software-drawn 3D can keep it busy past 3 s - a slow machine, not
+  // a blocked tab (the step still has its 20 s limit)
+  await p.click(`#prog-tabs [data-tab="${t}"]`, { timeout: 10000 });
   await p.waitForTimeout(500);
 };
 const sel = (heads) => async (p) => {
@@ -373,7 +376,10 @@ for (const width of WIDTHS) {
     try {
       await Promise.race([run(p), new Promise((_, no) => setTimeout(() => no(new Error("step took over 20 s")), 20000))]);
     } catch (e) {
-      finding(width, name, "step-failed", name, String(e.message || e).split("\n")[0].slice(0, 200));
+      // the first line, plus what was in the way when a click couldn't land
+      const msg = String(e.message || e).split("\n");
+      const blocker = msg.find((l) => /intercepts pointer events|not stable|not visible|outside of the viewport/.test(l));
+      finding(width, name, "step-failed", name, (msg[0] + (blocker ? " - " + blocker.trim() : "")).slice(0, 400));
     }
     await p.waitForTimeout(250);
     for (const [kind, what, detail] of await p.evaluate(AUDIT)) finding(width, name, kind, what, detail);

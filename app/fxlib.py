@@ -392,6 +392,7 @@ def _strobe_random(base, have, p, elapsed, index, count):
     if wave("random", elapsed * p["speed"] * p["rate"], index) > (
             1.0 - max(0.02, min(1.0, p["density"]))):
         base["strobe"] = 255
+        base["_flash"] = "strobe"      # the engine makes it a flash on THIS light
 
 
 def _shutter_flicker(base, have, p, elapsed, index, count):
@@ -404,6 +405,7 @@ def _shutter_flicker(base, have, p, elapsed, index, count):
     if wave("random", elapsed * p["speed"] * p["rate"], index) > (
             1.0 - max(0.02, min(1.0, p["density"]))):
         base["shutter"] = 255
+        base["_flash"] = "shutter"
 
 
 def _sparks(base, have, p, elapsed, index, count):

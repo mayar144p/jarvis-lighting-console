@@ -328,6 +328,17 @@ session's tempo and its place in the bar, and joins no session of its own).
   as well as their speed and the brightness: loud is the effect as made,
   quiet shrinks the movements and the dimmer effects' depth.
 
+### Shows
+
+The show name in the top bar opens the **show menu**: New show (a template
+or empty), Save (Ctrl+S), Save as, and the first 8 shows (A to Z) to open.
+**All shows…** lists every one with when it was saved and its earlier
+versions; find one by name, and **Open**, **Rename**, **Copy** (start next
+week's venue from this one) or **Delete** it. A deleted show goes to the
+shows folder's `.bin` (the last 20 are kept), not gone. Renaming, copying
+and deleting need Design mode, like saving. The desk also autosaves as you
+work, and **Earlier versions…** opens any saved state of the show.
+
 ### A video for the client
 
 View -> **Record a video…** films the 3D view: pick the camera first, then
@@ -751,7 +762,7 @@ check the table, then save it to your library.
 python tools/selftest.py
 ```
 
-About 1,700 checks: GDTF parsing and geometry, the fixture database, the
+About 3,300 checks: GDTF parsing and geometry, the fixture database, the
 auto-patcher, the merge core (HTP/LTP, master and blackout order, 16-bit,
 curves, quick-button overrides, blackout of dimmer-less lights), the engine
 (patch, programmer, fades, cues, undo, batches, show files, autosave), the
@@ -874,12 +885,15 @@ is the 15-minute check with real lights.
 
 ## Not built yet
 
-* A per-fixture colour-wheel map (the AI and the colour buttons only colour
-  lights that mix colour; wheel slots are offered as numbered steps).
-
-* Validation against physical nodes and fixtures.
-* Show file management (rename, duplicate, delete) beyond save and load.
-* A packaged desktop build.
+* Validation against more physical nodes and fixtures (the light check and
+  `docs/REAL_LIGHT_CHECKLIST.md` cover the ones you have).
+* Lasers and effects whose fixture file doesn't say which channel fires them
+  (13 in the libraries): the desk won't fire what it can't identify - add the
+  light from its manual instead.
+* Lights whose channels change meaning with a mode channel (Chauvet
+  ColorStrip Mini's "Run Speed / Red / Fade Speed"): the desk drives the
+  channel as one thing.
+* The full list, with what's done: `docs/BACKLOG.md`.
 
 ## Reporting a bug
 
