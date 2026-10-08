@@ -516,8 +516,14 @@ or run.bat: the download fetches llama.cpp's server first (~30 MB, the
 build for this computer from llama.cpp's own releases, into DATA/ai/engine;
 an archive that writes outside it is refused).  Selftests
 `test_ai_switch`, `test_ai_engine_fetch`.
-**Not yet:** the installer's "include the offline AI" tick (it is offered
-in Settings -> AI on first use instead); a file picker for the AI pack.
+**Done 2026-10-08:** the installer's "Include the offline AI" tick
+(desktop/res/installer.nsh, ticked by default): the app hands it to the
+desk as DATA/ai/wanted.json and the desk downloads the model that fits in
+the background on its first start (`localai.auto_download`; waits while
+live; forgotten once a model is there, the computer can't run one, or the
+operator pauses).  Selftest `test_ai_installer_tick`.
+**Not yet:** a file picker for the AI pack; the Mac .dmg has no installer
+page (Settings -> AI offers it).
 
 Today the copilot uses one online AI from `.env` (Gemini, any
 OpenAI-compatible service works).  Free online plans have daily limits;

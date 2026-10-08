@@ -44,7 +44,11 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    free tier works; <https://aistudio.google.com/apikey>), and/or download
    the offline AI (desktop app; ~5 GB, unlimited, no internet), and pick
    **Online**, **Local** or **Auto** (Gemini first, the offline AI when
-   Gemini hits its limit or there's no internet).  Or, as before, in `.env`:
+   Gemini hits its limit or there's no internet).  The Windows installer
+   has a ticked **Include the offline AI** box: the desk then downloads the
+   model that fits the computer in the background the first time it starts
+   (progress in Settings -> AI; Pause there stops it), so the copilot works
+   offline once it's done.  Or, as before, in `.env`:
    ```
    LLM_API_KEY=...
    LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai

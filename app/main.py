@@ -1449,6 +1449,14 @@ def main() -> None:
         dmxin.start_from_config(config)
     midi.start_from_config(engine_mod.ENGINE, config)
     engine_mod.ENGINE.ensure_venue("club")      # a fresh desk opens in a club
+    # the installer's "Include the offline AI" tick: the model downloads now,
+    # in the background (Settings -> AI shows its progress)
+    try:
+        said = localai.auto_download(live=bool(engine_mod.ENGINE.live))
+        if said:
+            print(f"* offline AI: {said}")
+    except Exception as exc:                # noqa: BLE001 - never block boot
+        print(f"* offline AI: skipped ({exc})")
 
     try:
         server = ThreadingHTTPServer((config.HOST, config.PORT), Handler)

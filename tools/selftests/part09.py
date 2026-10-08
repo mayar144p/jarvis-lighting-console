@@ -5289,3 +5289,73 @@ def test_light_file_quirks() -> None:
             b.shutdown()
     js = (ROOT / "web" / "app" / "errorbadge.js").read_text(encoding="utf-8")
     check("the screen shows the start-up notice", "snap.notice" in js and "notice_seen" in js)
+
+
+def test_ai_installer_tick() -> None:
+    """A12's last piece: the installer's "Include the offline AI" tick.  The
+    desktop app hands the tick to the desk as DATA/ai/wanted.json; on start
+    the desk downloads the model that fits in the background - nothing to
+    press - and forgets the note once it has it (or the computer can't run
+    one, or the operator pauses it)."""
+    print("The installer's offline-AI tick: downloads on first start")
+    import hashlib
+    import json as _json
+    import os
+    from app import config as cfg, localai
+    blob = b"GGUF" + bytes(range(256)) * 20
+    listing = _json.dumps([{"path": "Qwen3-8B-Q4_K_M.gguf", "size": len(blob),
+                            "lfs": {"oid": hashlib.sha256(blob).hexdigest(), "size": len(blob)}}]).encode()
+
+    def fake(url, headers):
+        if "/api/models/" in url:
+            return 200, {}, iter([listing])
+        return 200, {}, iter([blob])
+    import collections
+    saved = (cfg.DATA, os.environ.get("LLAMA_SERVER"), localai.transport, localai.memory_gb, localai.vram_gb,
+             localai.shutil.disk_usage)
+    with tempfile.TemporaryDirectory() as td:
+        cfg.DATA = Path(td)
+        os.environ["LLAMA_SERVER"] = str(ROOT / "tools" / "selftests" / "fake_llama.py")
+        localai.transport = fake
+        localai.memory_gb, localai.vram_gb = (lambda: 16.0), (lambda: 0.0)
+        usage = collections.namedtuple("usage", "total used free")
+        localai.shutil.disk_usage = lambda _p: usage(500 * 2 ** 30, 0, 200 * 2 ** 30)
+        note = localai.folder() / localai.WANTED
+        try:
+            check("no tick: nothing happens on start", localai.auto_download() == "")
+            note.write_text("{}", encoding="utf-8")
+            check("ticked, but the output is live: it waits", "live" in localai.auto_download(live=True) and note.is_file())
+            said = localai.auto_download()
+            check("ticked: the model that fits starts downloading in the background", "qwen3-8b" in said, said)
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 5 and not localai.status()["download"].get("finished"):
+                time.sleep(0.05)
+            check("...it arrives, checked", [m["file"] for m in localai.models()] == ["Qwen3-8B-Q4_K_M.gguf"],
+                  str(localai.status()["download"]))
+            check("...and the note is gone (no download on the next start)", not note.exists())
+            note.write_text("{}", encoding="utf-8")
+            check("a model already here: the note just goes", localai.auto_download() == "a model is already here" and not note.exists())
+            localai.remove("Qwen3-8B-Q4_K_M.gguf")
+            note.write_text("{}", encoding="utf-8")
+            localai.memory_gb = lambda: 8.0
+            said = localai.auto_download()
+            check("a computer that can't run it: not downloaded, said why, note gone",
+                  said.startswith("not downloaded") and not note.exists(), said)
+            note.write_text("{}", encoding="utf-8")
+            localai.pause()
+            check("Pause in Settings -> AI: the tick no longer restarts it", not note.exists())
+        finally:
+            cfg.DATA, env, localai.transport, localai.memory_gb, localai.vram_gb, localai.shutil.disk_usage = saved
+            if env is None:
+                os.environ.pop("LLAMA_SERVER", None)
+            else:
+                os.environ["LLAMA_SERVER"] = env
+    nsh = (ROOT / "desktop" / "res" / "installer.nsh").read_text(encoding="utf-8")
+    pkg = (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+    js = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the installer has the ticked 'Include the offline AI' page",
+          "customPageAfterChangeDir" in nsh and "BST_CHECKED" in nsh and "offline-ai-wanted" in nsh
+          and '"include": "res/installer.nsh"' in pkg)
+    check("the app hands the tick to the desk, and the desk acts on it at start",
+          "offline-ai-wanted" in js and "wanted.json" in js and "localai.auto_download" in main)
