@@ -16,6 +16,7 @@ from tools.selftests.common import (
     _share_transport,
     _which,
     check,
+    dialogs_js,
 )
 
     # A drag must not be a hundred HTTP requests, and a click that changes
@@ -76,7 +77,7 @@ def test_web_app() -> None:
 
     # Show building: per-cue follow is tri-state (null inherits, 0 waits,
     # seconds auto-run), and the cue list and keys must be able to say all three.
-    dlg = (web / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dlg = dialogs_js()
     keys = (web / "app" / "keys.js").read_text(encoding="utf-8")
     check("the cue list edits follow as inherit / wait / auto",
           'sel.value === "inherit" ? null : sel.value === "wait" ? 0' in dlg

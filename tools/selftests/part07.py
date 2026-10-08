@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 
 from app import fixtures
-from tools.selftests.common import ROOT, check
+from tools.selftests.common import ROOT, check, dialogs_js, stage_js
 
 
 def test_button_tiles() -> None:
@@ -259,7 +259,7 @@ def test_cue_fx_parts() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     check("the Move tab: tap tempo, make a button, record a cue", "BPM" in mv and '"Make a button"' in mv
           and "openCueDialog" in mv, "")
-    dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dl = dialogs_js()
     check("the cue list shows effects and part times", "cue-fx" in dl and "partTimes" in dl, "")
 
 
@@ -533,7 +533,7 @@ def test_desktop_only() -> None:
     api = (web / "app" / "api.js").read_text(encoding="utf-8")
     check("a quiet stream is dropped and re-opened; coming back online retries at once",
           "watchdog" in api and '"online"' in api and "wakeWait" in api, "")
-    dj = (web / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
     check("Settings has no keep-awake / install / remote rows", "wakeRow" not in dj and "installRow" not in dj
           and "remote.html" not in dj, "")
 
@@ -635,7 +635,7 @@ def test_more_models() -> None:
     keys = set(re.findall(r"^\s+([a-z_0-9]+)(?::|,)", block, re.M))
     missing = sorted(set(fk.TYPES) - keys)
     check("every light type has a 3D builder", not missing, str(missing))
-    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    st = stage_js()
     check("a derby turns while it is lit", "sk.spin" in st, "")
 
 
@@ -968,7 +968,7 @@ def test_cue_list_modes() -> None:
             del stack
         finally:
             e.shutdown()
-    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
     check("the cue list drags to reorder, Update offers merge / replace, the record dialog says where",
           '"dragstart"' in dj and 'mode: "merge"' in dj and "Insert before" in dj and "New cue" in dj, "")
 
@@ -1040,7 +1040,7 @@ def test_multi_head() -> None:
     js = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     ac = (ROOT / "web" / "app" / "actions.js").read_text(encoding="utf-8")
     md = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     check("a multi-head 3D model: heads on a bar, each tilting and coloured on its own",
           "function multiHead" in md and "sk.cells" in sj and "L.cells" in sj, "")
     check("the programmer offers Heads: All 1 2 3 4 and 'across each light's heads'",
@@ -1132,7 +1132,7 @@ def test_my_venues() -> None:
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     pbj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-    stj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    stj = stage_js()
     tbj = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
     check("less clutter: every executor in its place (an empty one a quiet Record here), short 3D labels, a plain-words status bar",
           "Record here" in pbj and "firstEmpty" not in pbj and "const clash = placed.some" in stj
@@ -1195,7 +1195,7 @@ def test_big_rig_groups() -> None:
         finally:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
-    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    st = stage_js()
     check("the list folds lights of one model into one row, with automatic group chips and splits",
           "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
     check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
@@ -1204,7 +1204,7 @@ def test_big_rig_groups() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("gig mode: 44 px controls, a switch in Settings (not on by itself)",
           "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" not in mj
-          and "jarvis.gig" in (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8"), "")
+          and "jarvis.gig" in dialogs_js(), "")
     del html
 
 

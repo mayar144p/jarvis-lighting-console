@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from app import config, fixtures
-from tools.selftests.common import ROOT, check
+from tools.selftests.common import ROOT, check, dialogs_js, stage_js
 
 
 def _free_port() -> int:
@@ -81,7 +81,7 @@ def test_virtual_node() -> None:
     finally:
         config.DMX_PORT = saved_port
     mj = (ROOT / "web" / "app" / "monitors.js").read_text(encoding="utf-8")
-    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
     check("Settings opens the node monitor, which draws the 512 channels",
           "openNodeMonitor" in dj and "/api/console/vnode" in mj and "512" in mj, "")
 
@@ -1004,7 +1004,7 @@ def test_rigging_library() -> None:
             e.act("venue_update", id=[o for o in e.venue["objects"] if o["kind"] == "screen"][0]["id"], changes={"content": "javascript:x"})
             check("a clip link is kept, anything else falls back to the lights",
                   [o for o in e.venue["objects"] if o["kind"] == "screen"][0]["content"] == "rig", "")
-            js = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            js = stage_js()
             check("the 3D view: photo, walk, live screens", "photo(longSide" in js and "walk(on" in js and "_drawScreens" in js, "")
             pw = e.act("paperwork")
             L = pw["lights"][0]
@@ -2411,7 +2411,7 @@ def test_gobo_pictures() -> None:
         srv.shutdown()
         srv.server_close()
     mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     check("the 3D draws the pictures into an atlas the floor shader samples",
           "class GoboAtlas" in mj and "texture(LIGHTS.uGobos.value" in mj and "_goboId(inst" in sj, "")
 
@@ -2425,7 +2425,7 @@ def test_shadows() -> None:
     sh = (st / "shadows.js").read_text(encoding="utf-8")
     mj = (st / "materials.js").read_text(encoding="utf-8")
     vj = (st / "venue.js").read_text(encoding="utf-8")
-    sj = (st / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("a depth atlas for the brightest beams, casters only, back faces",
           "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
@@ -2809,7 +2809,7 @@ def test_own_programs() -> None:
             check("off: nothing", "spin" not in e._looks()[0], "")
         finally:
             e.shutdown()
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     check("the 3D plays a stand-in and tags the light", "L.prog" in sj and "▶ ${inst.cur.prog}" in sj and "L.spin" in sj, "")
 
 
@@ -2852,7 +2852,7 @@ def test_laser_fixes() -> None:
             check("...killed: Blackout again", e.build_frames()[h["universe"]][at] <= 9, "")
         finally:
             e.shutdown()
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     check("the 3D aims a standing laser out over the crowd, a hung one down",
           'body.type === "laser"' in sj and "a laser shoots over the crowd" in sj, "")
 
@@ -2966,7 +2966,7 @@ def test_product_fit() -> None:
           '["red", "green", "blue"].every((r) => lightRoles.has(r))' in pj, "")
     check("a light that can't mix gets its own colours as buttons", "const MAKES = [" in pj and "These lights make" in pj, "")
     mj = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     check("a pixel bar's cells are each coloured in 3D", "sk.pixels = inst" in mj and "if (sk.pixels)" in sj, "")
 
 
@@ -3470,9 +3470,9 @@ def test_3d_detail() -> None:
 
     st = ROOT / "web" / "js" / "stage"
     mj = (st / "materials.js").read_text(encoding="utf-8")
-    sj = (st / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     vj = (st / "venue.js").read_text(encoding="utf-8")
-    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
     check("each light carries blur (focus, frost) and prism to the shaders",
           "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
     check("gobos soften, a prism makes its copies (one look at the picture a pixel)",
@@ -3646,7 +3646,7 @@ def test_real_light_look() -> None:
         finally:
             e.shutdown()
 
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    sj = stage_js()
     mj = (ROOT / "web" / "js" / "stage" / "materials.js").read_text(encoding="utf-8")
     mo = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
     check("the 3D reads the look: facets, turns, shake, scroll, split, strobe kinds",
@@ -3809,7 +3809,7 @@ def test_bug_report() -> None:
             cfg.DATA, cfg.LLM_API_KEY = saved
     fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
-    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
     bj = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
     check("right-click a light (list or 3D) -> Report a problem with this light; Help -> Report a bug",
           "Report a problem with this light" in fj and '"contextmenu"' in fj and "onMenu:" in sp
@@ -4462,7 +4462,7 @@ def test_show_templates() -> None:
             check("the AI may only prepare New show / a template (the show that's there would go)",
                   {"show_new", "show_template"} <= set(aitools.CONFIRM))
             check("listing the templates is never an undo step", "show_templates" in engine_base.UNDO_EXCLUDED)
-            from app.engine_patch import _plural
+            from app.engine_select import _plural
             check("group names in the plural: Moving washes, Spots, PARs",
                   [_plural(x) for x in ("Moving wash", "Spot", "PARs")] == ["Moving washes", "Spots", "PARs"])
         finally:
@@ -4893,7 +4893,7 @@ def test_video_render() -> None:
     import subprocess
     web = ROOT / "web"
     panel = (web / "app" / "stagepanel.js").read_text(encoding="utf-8")
-    stage = (web / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    stage = stage_js()
     check("View -> Record a video", "Record a video" in panel and "openVideoDialog" in panel)
     check("the 3D holds its quality while it records (no auto-lowering)", "this.recording ||" in stage and "startRecording(" in stage)
     node = shutil.which("node")
@@ -4957,7 +4957,7 @@ def test_light_check_mode_and_strobe() -> None:
     multi-head light, and is offered when a new model is patched."""
     print("Light check: the light's own mode, every head, the strobe")
     from app import assistant, engine as eng
-    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    js = dialogs_js()
     check("the mode is the first question, with a one-press switch", "async function modeStep" in js and '"change_type"' in js)
     check("offered when a new, untested model is patched", "offerLightTest((r.heads || [])[0])" in js)
     with tempfile.TemporaryDirectory() as td:
@@ -5193,7 +5193,7 @@ def test_truss_turn_aim() -> None:
                 check("the snapshot gives the 3D each light's turn (yaw)", "yaw" in row, str(sorted(row)[:8]))
             js = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
             check("the 3D view is handed each light's yaw", "yaw: +h.yaw" in js)
-            st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            st = stage_js()
             check("the 3D turns each light's body by its yaw", "f.yaw" in st)
             am = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
             check("the room map draws the room's own outline, trusses and objects",
@@ -5225,7 +5225,7 @@ def test_fixture_requests() -> None:
     check("the form asks for the manual", "manual" in ids)
     main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
     check("the desk serves the request link", '"/api/fixtures/request"' in main)
-    dlg = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dlg = dialogs_js()
     check("Add fixtures offers 'Request it...' (and when nothing matches)",
           "export function requestFixture" in dlg and dlg.count("requestFixture(") >= 3)
     libs = {x["src"]: x for x in fixlib.libraries()}
@@ -5670,10 +5670,10 @@ def test_sweep3_fixes() -> None:
                   and all((h.get("mount") or {}).get("rig") not in new_ids for h in e.patch if h.get("mount")))
         finally:
             e.shutdown()
-    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    st = stage_js()
     check("3D auto quality counts very slow frames (not only < 200 ms) and goes below half",
           "dt > 2000" in st and "MIN = 0.35" in st and "q.lite" in st)
-    dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    dl = dialogs_js()
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
