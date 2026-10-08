@@ -583,6 +583,19 @@ async function makeGroup() {
 }
 
 export function initFixtures() {
+  // the group tiles fold away for more fixture rows (on a small screen);
+  // remembered on this computer
+  const fold = $("#grp-fold");
+  const setFold = (folded) => {
+    $("#group-chips").classList.toggle("folded", folded);
+    fold.setAttribute("aria-expanded", String(!folded));
+    fold.textContent = (folded ? "▸" : "▾") + " Groups";
+    try { localStorage.setItem("jarvis.groupsFolded", folded ? "1" : ""); } catch { /* private window */ }
+  };
+  let folded = false;
+  try { folded = localStorage.getItem("jarvis.groupsFolded") === "1"; } catch { /* private window */ }
+  setFold(folded);
+  fold.addEventListener("click", () => setFold(!$("#group-chips").classList.contains("folded")));
   $("#fx-rows").addEventListener("click", rowClick);
   $("#fx-rows").addEventListener("contextmenu", (e) => {
     const tr = e.target.closest("tr[data-head]");

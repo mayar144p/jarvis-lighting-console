@@ -1260,29 +1260,47 @@ export class Stage {
     }
   }
 
-  /** Auto quality: shed resolution when frames run long, win it back later. */
+  /** Auto quality: shed resolution when frames run long, win it back later.
+   *  A very slow computer (software-drawn 3D: frames of 100-1000 ms) counts
+   *  too - it is the one that needs it most; a gap over 2 s is the page
+   *  hidden or paused, not a slow frame.  At the bottom (35 %) the surface
+   *  detail goes as well (shadows already go below 60 %), and comes back
+   *  once frames are quick again. */
   _adapt(now) {
     const q = this.q;
     const dt = now - (q.last || now);
     q.last = now;
-    if (this.options.quality !== "auto" || this.recording || dt <= 0 || dt > 200) return;
-    q.ema = q.ema * 0.9 + dt * 0.1;
+    if (this.options.quality !== "auto" || this.recording || dt <= 0 || dt > 2000) return;
+    q.ema = q.ema * 0.9 + Math.min(dt, 400) * 0.1;
+    const MIN = 0.35;
     if (q.ema > 28) {
       q.fastSince = 0;
       if (!q.slowSince) q.slowSince = now;
-      else if (now - q.slowSince > 1200 && q.ratio > 0.5) {
-        q.ratio = Math.max(0.5, +(q.ratio * 0.8).toFixed(2));
+      // a frame of 300 ms+ is a struggling computer: act after 3 such frames, not 1.2 s
+      else if (now - q.slowSince > (dt > 300 ? Math.min(1200, dt * 3) : 1200)) {
         q.slowSince = 0;
         q.ema = 18;
-        this.resize();
+        if (q.ratio > MIN) {
+          // the slower it is, the bigger the step down
+          q.ratio = Math.max(MIN, +(q.ratio * (dt > 150 ? 0.6 : 0.8)).toFixed(2));
+          this.resize();
+        } else if (!q.lite) {
+          q.lite = true;
+          setDetail(this.scene, false);
+        }
       }
     } else if (q.ema < 17) {
       q.slowSince = 0;
       if (!q.fastSince) q.fastSince = now;
-      else if (now - q.fastSince > 6000 && q.ratio < q.cap) {
-        q.ratio = Math.min(q.cap, +(q.ratio * 1.15).toFixed(2));
+      else if (now - q.fastSince > 6000) {
         q.fastSince = 0;
-        this.resize();
+        if (q.lite) {
+          q.lite = false;
+          setDetail(this.scene, this.options.quality !== "fast");
+        } else if (q.ratio < q.cap) {
+          q.ratio = Math.min(q.cap, +(q.ratio * 1.15).toFixed(2));
+          this.resize();
+        }
       }
     } else {
       q.slowSince = 0;

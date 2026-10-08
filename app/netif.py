@@ -141,6 +141,11 @@ def check(target: str, ifaces: list[dict] | None = None,
     except ValueError:
         return {"ok": False, "via": None, "suggest": None,
                 "message": f"{target!r} is not an IPv4 address"}
+    if tgt.is_loopback:
+        # 127.x is this computer itself (the virtual node, a node program on
+        # this PC): always reachable, whatever the network ports have
+        return {"ok": True, "via": {"name": "this computer", "ip": str(tgt)}, "suggest": None,
+                "message": "this computer itself (a node program or the virtual node on this PC)"}
     for i in ifaces:
         if tgt in _network(i["ip"], i.get("mask")):
             return {"ok": True, "via": i, "suggest": None,

@@ -551,14 +551,48 @@ class RigMixin:
         if not isinstance(spec, dict):
             raise ValueError("spec is a dict: shape, width, depth, height, dj, bar, stage, ...")
         v = roomshape.build(spec)
-        if not _truthy(keep_mounts):
-            for h in self.patch:
-                h.pop("mount", None)
+        old = venue_mod.normalise(self.venue)
+        moved, left = self._remount_onto(old, v)
         self._set_venue_doc(v)
         w, d, hh = venue_mod.dims(v)
+        said = (f"; {moved} light(s) moved onto the new rigging" if moved else "") \
+            + (f"; {left} light(s) had no rigging to go to and stay where they were" if left else "")
         return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m, {len(v['rigging'])} rigging, "
-                                  f"{len(v['objects'])} objects, {len(v['zones'])} zones",
+                                  f"{len(v['objects'])} objects, {len(v['zones'])} zones" + said,
                                   spec=roomshape.clean_spec(spec))
+
+    def _remount_onto(self, old: dict, new: dict) -> tuple[int, int]:
+        """A rebuilt room replaces its rigging: each light on an old truss
+        goes on the matching new one (old and new hung rigs paired front to
+        back, towers by side), at the same place along it.  (moved, left)."""
+        def hung(v):
+            return sorted((r for r in v.get("rigging") or [] if not venue_mod.is_vertical(r)),
+                          key=lambda r: -(r["a"][2] + r["b"][2]) / 2)
+        def towers(v):
+            return sorted((r for r in v.get("rigging") or [] if venue_mod.is_vertical(r)),
+                          key=lambda r: (r["a"][0], r["a"][2]))
+        pairs = {}
+        for olds, news in ((hung(old), hung(new)), (towers(old), towers(new))):
+            if not news:
+                continue
+            for i, r in enumerate(olds):
+                # the same rank front to back; extra old rigs share the last new one
+                j = min(len(news) - 1, round(i * (len(news) - 1) / max(1, len(olds) - 1))) if len(olds) > 1 else 0
+                pairs[r["id"]] = news[j]["id"]
+        new_ids = {r["id"] for r in new.get("rigging") or []}
+        moved = left = 0
+        for h in self.patch:
+            m = h.get("mount")
+            if not isinstance(m, dict) or m.get("rig") in new_ids:
+                continue
+            target = pairs.get(m.get("rig"))
+            if target:
+                h["mount"] = {"rig": target, "t": m.get("t", 0.5)}     # a new rig: its own turn
+                moved += 1
+            else:
+                h.pop("mount", None)
+                left += 1
+        return moved, left
 
     def _a_venue_preview(self, spec=None, text=None, **_):
         """What venue_build / venue_describe would make, without making it
