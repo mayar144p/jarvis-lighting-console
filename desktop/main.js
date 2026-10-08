@@ -377,11 +377,19 @@ app.whenReady().then(async () => {
     return;
   }
   trustEngine();
-  // the desk's screens may use MIDI controllers (Web MIDI) and full screen;
-  // nothing else (camera, microphone, location...) is ever granted
+  // the desk's screens may use MIDI controllers (Web MIDI), full screen and
+  // a microphone / line input (Sound: the beat, the drop) - audio only;
+  // nothing else (camera, screen capture, location...) is ever granted
   const ALLOW = new Set(["midi", "midiSysex", "fullscreen", "clipboard-sanitized-write"]);
-  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(ALLOW.has(perm)));
-  session.defaultSession.setPermissionCheckHandler((_wc, perm) => ALLOW.has(perm));
+  const audioOnly = (d, unknownOk) => {
+    const types = (d && (d.mediaTypes || (d.mediaType ? [d.mediaType] : []))) || [];
+    return types.length > 0 && types.every((t) => t === "audio" || (unknownOk && t === "unknown"));
+  };
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) =>
+    cb(ALLOW.has(perm) || (perm === "media" && audioOnly(details, false))));
+  // (the check also covers listing the inputs by name, which asks as "unknown")
+  session.defaultSession.setPermissionCheckHandler((_wc, perm, _origin, details) =>
+    ALLOW.has(perm) || (perm === "media" && audioOnly(details, true)));
   powerSaveBlocker.start("prevent-display-sleep");    // the screens stay awake during a show
   menu();
   const parts = Object.keys(saved).filter((p) => saved[p] && saved[p].open);

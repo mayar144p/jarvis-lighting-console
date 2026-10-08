@@ -58,7 +58,10 @@
     "mac": {
       "target": "dmg",
       "identity": null,
-      "category": "public.app-category.entertainment"
+      "category": "public.app-category.entertainment",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Jarvis listens to the music (a microphone or line input) to follow the beat and the drops. Nothing is recorded or sent anywhere."
+      }
     }
   }
 }

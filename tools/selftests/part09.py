@@ -4469,3 +4469,35 @@ def test_show_templates() -> None:
                   [_plural(x) for x in ("Moving wash", "Spot", "PARs")] == ["Moving washes", "Spots", "PARs"])
         finally:
             e.shutdown()
+
+
+def test_desktop_microphone() -> None:
+    """The desktop app gave the page no microphone ("Permission denied" in
+    Sound, 2026-10-08): it allows audio input now - and still no camera or
+    screen capture.  The rule itself is taken out of desktop/main.js and run."""
+    print("Desktop app: the microphone (audio only) is allowed")
+    import re
+    import shutil
+    import subprocess
+    src = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    m = re.search(r"const audioOnly = \(d, unknownOk\) => \{.*?\n  \};", src, re.S)
+    check("the app has an audio-only rule for media requests", bool(m) and 'perm === "media" && audioOnly(details, false)' in src)
+    node = shutil.which("node")
+    if not (m and node):
+        return
+    js = m.group(0) + """
+const out = {
+  mic: audioOnly({ mediaTypes: ["audio"] }, false),
+  cam: audioOnly({ mediaTypes: ["video"] }, false),
+  both: audioOnly({ mediaTypes: ["audio", "video"] }, false),
+  none: audioOnly({}, false),
+  listCheck: audioOnly({ mediaType: "unknown" }, true),
+  camCheck: audioOnly({ mediaType: "video" }, true),
+};
+console.log(JSON.stringify(out));"""
+    got = json.loads(subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30).stdout or "{}")
+    check("a microphone is allowed; a camera, camera + mic, or nothing named is not",
+          got == {"mic": True, "cam": False, "both": False, "none": False, "listCheck": True, "camCheck": False}, str(got))
+    pkg = json.loads((ROOT / "desktop" / "package.json").read_text(encoding="utf-8"))
+    check("a Mac asks the operator once (it says what the microphone is for)",
+          "NSMicrophoneUsageDescription" in pkg["build"]["mac"].get("extendInfo", {}))
