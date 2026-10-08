@@ -136,7 +136,7 @@ READY_ERROR_WINDOW_S = 60.0
 _READ_ONLY = frozenset({"show_templates", "status", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "show_files", "rdm_compare",
-                        "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "paperwork"})
+                        "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get"})
 
 # Actions where a run of calls is one intent, so they collapse into a
 # single step.  Only genuinely CONTINUOUS ones belong here: a value the

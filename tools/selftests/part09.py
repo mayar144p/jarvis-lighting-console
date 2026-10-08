@@ -5599,3 +5599,82 @@ console.log(JSON.stringify(out));
     check("the wrong relay key, an unknown form, a file that isn't a zip: refused",
           got["wrongKey"] == 403 and got["badForm"] == 400 and got["notZip"] == 400, str(got))
     check("at most 6 reports an hour from one address", got["rate"] == [200] * 6, str(got["rate"]))
+
+
+def test_sweep3_fixes() -> None:
+    """Sweep 3: the actions that had no test of their own, and its fixes -
+    127.0.0.1 is this computer (no false network warning), a rebuilt room
+    keeps the lights on its new rigging, the 3D's auto quality counts very
+    slow frames, the Output choices aren't cut off, the groups fold."""
+    print("Sweep 3: the untested actions; loopback, rebuilt rooms, slow 3D")
+    from app import engine as eng, netif
+    lan = [{"name": "eth", "ip": "192.0.2.2", "mask": "255.255.255.0"}]
+    check("127.0.0.1 is this computer: reachable, no 'plug into the network' warning",
+          netif.check("127.0.0.1", lan)["ok"] and netif.check("127.0.0.5", lan)["ok"])
+    check("...a node on another network still warns", not netif.check("2.0.0.10", lan)["ok"])
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("show_template", name="club")
+            heads = [h["head_no"] for h in e.patch]
+            # the actions with no test of their own
+            e.act("select_heads", heads=heads[:3])
+            e.act("set_intensity", level=80)
+            r = e.act("clear_heads", heads=[heads[0]])
+            check("clear_heads: one light released, the others keep their values",
+                  r.get("ok") and heads[0] not in e.programmer and heads[1] in e.programmer, str(r))
+            check("clear_heads with nothing on it says so", not e.act("clear_heads", heads=[heads[-1]]).get("ok"))
+            r = e.act("record_preset", name="Test look")
+            num = r.get("n") or (r.get("preset") or {}).get("n")
+            check("delete_preset: gone", e.act("delete_preset", n=num).get("ok") and not any(p["n"] == num for p in e.presets), str(r))
+            check("delete_preset: an unknown one is refused", not e.act("delete_preset", n=999).get("ok"))
+            check("remap_heads runs", e.act("remap_heads").get("ok"))
+            check("get_limits lists the heads", len(e.act("get_limits", heads=heads[:2]).get("heads") or []) == 2)
+            r = e.act("venue_stage", width=6, depth=3)
+            check("venue_stage: the stage's size", r.get("ok") and e.venue["stage"]["width"] == 6, str(e.venue.get("stage")))
+            check("venue_stage remove", e.act("venue_stage", remove=True).get("ok") and not e.venue.get("stage"))
+            check("venue_underlay with no plan uploaded says so", "upload" in (e.act("venue_underlay", x=1).get("error") or ""))
+            mover = next(h for h in e.patch if "pan" in h["map"])
+            check("motion_get: the axes", set(e.act("motion_get", head=mover["head_no"]).get("axes") or []) == {"pan", "tilt"})
+            check("fx_status: armed or not", "sfx" in e.act("fx_status"))
+            check("quick_fx_defaults: a page that has buttons isn't overwritten unasked",
+                  "already has buttons" in (e.act("quick_fx_defaults", page=4).get("error") or ""))
+            check("quick_fx_defaults: no effects patched, says so",
+                  "no lasers or special effects" in (e.act("quick_fx_defaults", page=4, replace=True).get("error") or ""))
+            from app import fixlib
+            fog = fixlib.search("Antari Z-1000")
+            if fog:
+                got = fixtures.store_parsed(db, fixlib.load(fog[0]["src"], fog[0]["key"]), f"{fog[0]['src']}:{fog[0]['key']}")
+                e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1)
+            r = e.act("quick_fx_defaults", page=4, replace=True)
+            check("quick_fx_defaults: the effect buttons (the club has haze and a laser)",
+                  r.get("ok") and any(b["page"] == 4 and b.get("kind") == "arm" for b in e.quick), str(r.get("error")))
+            bpm0 = e._tempo().bpm
+            check("tempo_nudge: +2 BPM", e.act("tempo_nudge", bpm=2).get("ok") and abs(e._tempo().bpm - bpm0 - 2) < 0.01)
+            check("tempo_sync: now is beat 1", e.act("tempo_sync").get("ok"))
+            check("media_delete: an unknown picture is refused", not e.act("media_delete", id="nope").get("ok"))
+            check("rig_pieces: the library", len(e.act("rig_pieces").get("pieces") or []) > 3)
+            # a rebuilt room: the lights go onto its new rigging
+            e.act("clear_programmer")
+            r = e.act("venue_shape", shape="L", layout=True)
+            new_ids = {x["id"] for x in e.venue["rigging"]}
+            on = [h for h in e.patch if (h.get("mount") or {}).get("rig") in new_ids]
+            was = sum(1 for _ in heads)
+            check("venue_build: the lights move onto the new trusses (not left floating)",
+                  len(on) >= was - 2 and "moved onto the new rigging" in r.get("summary", ""), r.get("summary"))
+            check("...one undo puts the old room and mounts back", e.act("undo").get("ok")
+                  and all((h.get("mount") or {}).get("rig") not in new_ids for h in e.patch if h.get("mount")))
+        finally:
+            e.shutdown()
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("3D auto quality counts very slow frames (not only < 200 ms) and goes below half",
+          "dt > 2000" in st and "MIN = 0.35" in st and "q.lite" in st)
+    dl = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    check("the groups fold away for more fixture rows, remembered", 'id="grp-fold"' in html and "jarvis.groupsFolded" in fx)

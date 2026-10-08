@@ -874,7 +874,7 @@ const VENUE_TEMPLATES = [["club", "Club"], ["small_club", "Small club / bar"], [
 function outputSection(con) {
   const box = h("div.out-box");
   const mode = h("select.select",
-    h("option", { value: "auto" }, "Auto: broadcast on my lighting network"),
+    h("option", { value: "auto", title: "Broadcast on this computer's lighting network" }, "Auto (my lighting network)"),
     h("option", { value: "node" }, "One node: send to its IP"),
     h("option", { value: "broadcast" }, "Broadcast address I choose"),
     h("option", { value: "usb" }, "A USB DMX box"));
@@ -1001,7 +1001,7 @@ function outputSection(con) {
   };
   priority.addEventListener("change", () => apply({ priority: priority.value.trim() }));
   box.append(
-    h("div.form-grid",
+    h("div.form-grid.out-grid",
       h("label.field", h("span", "Send DMX to"), mode),
       h("label.field", h("span", "Node / broadcast IP"), ip),
       h("label.field", h("span", "Protocol"), proto), usbField),

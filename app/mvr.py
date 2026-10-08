@@ -463,7 +463,7 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
     for o in placed.get("objects") or []:
         w, d, h = o.get("size") or _OBJ_SIZE.get(o["kind"], (1.0, 1.0, 1.0))
         if o["kind"] == "screen":
-            d, h = min(d, 0.3), h                      # a screen's depth is its thickness
+            d = min(d, 0.3)                            # a screen's depth is its thickness
         r = eng.act("venue_add", item={"kind": o["kind"], "name": (o["name"] or "")[:40], "x": o["x"], "z": o["z"],
                                        "y": o["y"] if o["kind"] in ("screen", "speaker") and o["y"] > 0.3 else 0,
                                        "w": w, "d": d, "h": h, "rot": o["rot"]})

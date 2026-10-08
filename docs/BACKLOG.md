@@ -1006,7 +1006,10 @@ blur, VR).
     stand-in room - 24 m back from a 3 m room); the crowd follows each
     zone's area and thins evenly past 2,500 people in a big hall.
 
-17. **Open (asked to keep for later, 2026-10-08): lights stay on their
+17. **(DONE 2026-10-08) Lights stay on their trusses when a room is
+    rebuilt** - old and new hung rigs paired front to back (towers by
+    side), each light at the same place along its new truss; one undo.
+    Was: **Open (asked to keep for later): lights stay on their
     trusses when a room is rebuilt.**  Arrange -> Room -> Shape & size
     *with a starter layout* builds new trusses, so the lights on the old
     ones lose their truss and float where they were (with "only the
