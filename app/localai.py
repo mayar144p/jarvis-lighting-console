@@ -40,7 +40,7 @@ CATALOG = [
     {"id": "qwen3-8b", "label": "Qwen3 8B", "repo": "Qwen/Qwen3-8B-GGUF", "quant": "Q4_K_M",
      "gb": 5.0, "ram_gb": 16, "note": "for 16 GB computers"},
     {"id": "qwen3-14b", "label": "Qwen3 14B", "repo": "Qwen/Qwen3-14B-GGUF", "quant": "Q4_K_M",
-     "gb": 9.0, "ram_gb": 32, "note": "smarter; 32 GB or a 12 GB graphics card"},
+     "gb": 9.0, "ram_gb": 32, "note": "smarter; 32 GB of memory or a 10 GB graphics card"},
 ]
 IDLE_S = 600
 CHUNK = 1 << 20
@@ -201,15 +201,54 @@ def memory_gb() -> float:
         return 0.0
 
 
+_VRAM: list = []
+
+
+def vram_gb() -> float:
+    """The graphics card's own memory (NVIDIA, through nvidia-smi), or 0.
+    The model runs on the card when it fits there - much faster - so a
+    10 GB card runs the 14B well on a computer with 16 GB of memory."""
+    if _VRAM:
+        return _VRAM[0]
+    gb = 0.0
+    exe = shutil.which("nvidia-smi")
+    if exe:
+        try:
+            out = subprocess.run([exe, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            gb = max((float(x) for x in out.split() if x.strip().replace(".", "", 1).isdigit()), default=0.0) / 1024
+        except (OSError, subprocess.SubprocessError, ValueError):
+            gb = 0.0
+    _VRAM.append(gb)
+    return gb
+
+
+def _fits(item: dict, ram: float, vram: float, free: float) -> tuple[bool, str]:
+    if free < item["gb"] + 1:
+        return False, f"needs {item['gb'] + 1:.0f} GB free on the disk (has {free:.0f} GB)"
+    if ram < 12:
+        return False, "this computer has under 12 GB of memory"
+    if item["id"] == "qwen3-14b" and ram < item["ram_gb"] and vram < 10:
+        return True, "slow"
+    return True, ""
+
+
 def suggest() -> dict:
-    """The model for this computer, and whether it fits."""
-    ram = memory_gb()
+    """The model for this computer (the biggest that fits), and every
+    model with whether it fits - the operator picks."""
+    ram, vram = memory_gb(), vram_gb()
     free = shutil.disk_usage(folder()).free / 2 ** 30
-    pick = CATALOG[1] if ram >= CATALOG[1]["ram_gb"] and free >= CATALOG[1]["gb"] + 2 else CATALOG[0]
-    ok = ram >= 12 and free >= pick["gb"] + 1
-    why = "" if ok else ("this computer has under 12 GB of memory" if ram < 12
-                         else f"needs {pick['gb'] + 1:.0f} GB free on the disk (has {free:.0f} GB)")
-    return {"id": pick["id"], "ok": ok, "why": why, "ram_gb": round(ram, 1), "free_gb": round(free, 1)}
+    options = []
+    for item in CATALOG:
+        ok, why = _fits(item, ram, vram, free)
+        slow = why == "slow"
+        options.append({"id": item["id"], "ok": ok, "slow": slow,
+                        "why": (f"it would be slow here: it wants {item['ram_gb']} GB of memory or a 10 GB graphics card"
+                                if slow else why)})
+    fitting = [o for o in options if o["ok"] and not o["slow"]] or [o for o in options if o["ok"]]
+    pick = fitting[-1] if fitting else options[0]
+    return {"id": pick["id"], "ok": pick["ok"], "why": pick["why"], "options": options,
+            "ram_gb": round(ram, 1), "vram_gb": round(vram, 1), "free_gb": round(free, 1)}
 
 
 # ------------------------------------------------------------------ download

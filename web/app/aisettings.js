@@ -29,7 +29,7 @@ export function aiPanel() {
     const off = d.offline_ai || {};
     const dl = off.download || {};
     const sug = off.suggest || {};
-    const pick = (off.catalog || []).find((m) => m.id === sug.id) || (off.catalog || [])[0] || {};
+    const pick = (off.catalog || []).find((m) => m.id === sug.id) || (off.catalog || [])[0] || {};   // (resume: the one being fetched)
     const seg = h("div.seg", ...MODES.map(([k, label, hint]) => h("button" + (d.mode === k ? ".on" : ""), {
       title: hint, onclick: async () => { const r = await setAiMode(k); if (r) refresh(); } }, label)));
     const key = h("input", { type: "password", autocomplete: "off", placeholder: d.has_key ? "a key is saved - type to replace it" : "paste your Gemini API key" });
@@ -72,11 +72,20 @@ export function aiPanel() {
           : "Not installed yet."),
       ...(off.models || []).map((m) => h("div.row-btns", h("span", m.file), h("span.muted.small", gb(m.bytes)),
         h("button.btn.small.danger", { onclick: () => local({ remove: m.file }) }, "Remove"))),
-      (off.runtime || off.can_fetch_engine) && !(off.models || []).length && !dl.running ? h("div.row-btns",
-        h("button.btn.primary", { disabled: !sug.ok, onclick: () => local({ download: pick.id }) },
-          `Download ${pick.label || "the offline AI"} (${pick.gb || "?"} GB${off.runtime ? "" : " + its engine"})`),
-        h("span.muted.small", sug.ok ? `${pick.note || ""} · this computer: ${sug.ram_gb} GB memory, ${sug.free_gb} GB free`
-          : `Not on this computer: ${sug.why}`)) : null,
+      // every model, the one for this computer marked; the operator picks
+      (off.runtime || off.can_fetch_engine) && !dl.running ? h("div.ai-models",
+        h("p.muted.small", `This computer: ${sug.ram_gb} GB memory${sug.vram_gb ? `, a ${sug.vram_gb} GB graphics card` : ""}, ${sug.free_gb} GB free on the disk.`),
+        ...(off.catalog || []).map((m) => {
+          const o = (sug.options || []).find((x) => x.id === m.id) || { ok: m.id === sug.id && sug.ok, why: sug.why };
+          const have = (off.models || []).some((f) => f.file.toLowerCase().includes(m.repo.split("/")[1].replace("-GGUF", "").toLowerCase()));
+          return h("div.ai-model" + (m.id === sug.id ? ".rec" : ""),
+            h("div", h("b", m.label), m.id === sug.id && o.ok ? h("span.ai-rec", "recommended") : null,
+              h("div.muted.small", `${m.gb} GB · ${m.note}`),
+              !o.ok ? h("div.small.warn", `Not on this computer: ${o.why}`) : o.slow ? h("div.small.warn", `Works, but ${o.why}`) : null),
+            have ? h("span.muted.small", "installed")
+              : h("button.btn" + (m.id === sug.id ? ".primary" : ""), { disabled: !o.ok, onclick: () => local({ download: m.id }) },
+                `Download (${m.gb} GB${off.runtime ? "" : " + its engine"})`));
+        })) : null,
       dlRow,
       off.runtime || off.can_fetch_engine ? h("div.row-btns", pack, h("button.btn", { onclick: () => pack.value.trim() && local({ import: pack.value.trim() }) }, "Use an AI pack"))
         : h("p.muted.small", "There's no offline AI engine for this kind of computer: run Ollama or LM Studio and put its address below."),
