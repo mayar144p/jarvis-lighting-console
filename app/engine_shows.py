@@ -19,9 +19,11 @@ from app import timeline as tl_mod
 from app import sound as sound_mod
 from app import venue as venue_mod
 from app.engine_base import (
+    PLAYBACK_COUNT,
     READY_ERROR_WINDOW_S,
     SAFE_NAME,
     _clamp,
+    _new_playback,
     _normalize_playbacks,
     _palette_values,
     clean_dmx_target,
@@ -323,6 +325,44 @@ class ShowMixin:
                 self.venue = venue_mod.normalise(venue)
             except (ValueError, TypeError):
                 self.venue = venue_mod.empty()  # never block boot
+
+    def _a_show_new(self, **_):
+        """An empty show: no lights, room, cues, groups, palettes, buttons,
+        timeline or effects (one Ctrl+Z brings the old one back; saved
+        shows on disk are untouched)."""
+        self._a_fx_kill()
+        self.fx = []
+        self._restore_state({
+            "patch": [], "programmer": {}, "selected": [], "groups": [],
+            "palettes": {k: [] for k in self.palettes}, "presets": [],
+            "playbacks": [_new_playback(i + 1) for i in range(PLAYBACK_COUNT)],
+            "venue": venue_mod.empty(), "quick": [], "quick_names": {}, "quick_layout": {}, "quick_quant": 0.0,
+            "media": {}, "shapes": [], "step_fx": [], "macros": [], "parked": {}, "moves": [],
+            "timeline": tl_mod.empty(), "prog_fx": [], "patch_extra": {}})
+        self.quick_active = {}
+        self.show_file = ""
+        self.blackout = False
+        return {"summary": "a new, empty show"}
+
+    def _a_show_templates(self, **_):
+        """The show templates there are (for the New show picker)."""
+        from app import showtemplates
+        return {"templates": showtemplates.public(), "summary": f"{len(showtemplates.TEMPLATES)} templates"}
+
+    def _a_show_template(self, name="club", demo=False, **_):
+        """A new show from a template (app/showtemplates.py): room, lights,
+        groups, palettes, buttons and cues.  `demo` starts it playing.  One
+        undo step brings back the show that was there."""
+        from app import showtemplates
+        n0 = len(self._undo)
+        was = self._batching
+        self._batching = True                  # its steps are this one edit
+        try:
+            out = showtemplates.build(self, str(name or "club"), demo=_truthy_flag(demo))
+        finally:
+            self._batching = was
+            del self._undo[n0:]                 # (the cue builder keeps its own step: folded in)
+        return out
 
     def _a_save_show(self, name="", **_):
         label = self._safe_name(name or "show")
@@ -863,3 +903,7 @@ class ShowMixin:
             result["role_heads"] = {role: sorted(nums) for role, nums
                                     in sorted(role_heads.items())}
         return result
+
+
+def _truthy_flag(v) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "on")

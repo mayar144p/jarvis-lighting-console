@@ -88,7 +88,7 @@ UNDO_LIMIT = 60
 UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
-    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader",
+    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
     "ready_check", "show_versions", "show_export", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
@@ -133,7 +133,7 @@ UNDO_EXCLUDED = frozenset({
 READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
-_READ_ONLY = frozenset({"status", "fx_available", "get_limits", "cue_info", "pad_info",
+_READ_ONLY = frozenset({"show_templates", "status", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "rdm_compare",
                         "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "paperwork"})
@@ -651,7 +651,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout",
+    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export",
