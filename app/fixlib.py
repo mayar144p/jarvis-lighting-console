@@ -110,8 +110,23 @@ def _orphan_fine(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def _subtractive_names(rows: list[dict]) -> list[dict]:
+    """Vari-Lite names a lamp's colour-mixing flags Blue / Amber / Magenta
+    (VL2402, VL3000): with magenta there and no red, green or cyan, those are
+    the subtractive cyan and yellow, not LEDs - read as LEDs, red couldn't be
+    made and Locate came out magenta instead of white."""
+    roles = {r.get("role") for r in rows}
+    if "magenta" in roles and "blue" in roles and not roles & {"red", "green", "cyan"}:
+        swap = {"blue": "cyan", "amber": "yellow"}
+        for r in rows:
+            if r.get("role") in swap:
+                r["role"] = swap[r["role"]]
+                r["label"] = r["role"].capitalize()     # the desk reads the role back from the label
+    return rows
+
+
 def _mode(name: str, rows: list[dict]) -> dict:
-    rows = _orphan_fine(rows)
+    rows = _subtractive_names(_orphan_fine(rows))
     for n, row in enumerate(rows, start=1):
         row["n"] = n
     return {"name": name or "Default", "channel_count": len(rows),

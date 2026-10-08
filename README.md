@@ -251,6 +251,21 @@ another button or the whole page; what the buttons do stays the same.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### Turned trusses and the room map
+
+Turn a truss in Arrange and the lights on it turn with it, just as the real
+fixtures do when the truss is hung at an angle. Aiming still lands on the
+spot you point at (the room map, Follow me, positions, the assistant): the
+desk works out each light's pan and tilt from the way its base now faces,
+so the 3D view and the real lights agree. A light keeps its own pan and
+tilt when you slide it along the same truss.
+
+The room map in Move tab -> Aim draws the room as it really is: its own
+outline (L-shaped, round...), the stage, zones, the bar and other objects,
+the trusses at their real angle, and each light turned with its truss
+(selected lights in yellow). Drag on it and every selected light points at
+that spot. The pan/tilt dials still move each light's own pan and tilt.
+
 ### Follow me speed
 
 Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on
@@ -327,6 +342,17 @@ session's tempo and its place in the bar, and joins no session of its own).
   mixer is steadier than a microphone). A link can move the effects' **size**
   as well as their speed and the brightness: loud is the effect as made,
   quiet shrinks the movements and the dimmer effects' depth.
+
+### Shows
+
+The show name in the top bar opens the **show menu**: New show (a template
+or empty), Save (Ctrl+S), Save as, and the first 8 shows (A to Z) to open.
+**All shows…** lists every one with when it was saved and its earlier
+versions; find one by name, and **Open**, **Rename**, **Copy** (start next
+week's venue from this one) or **Delete** it. A deleted show goes to the
+shows folder's `.bin` (the last 20 are kept), not gone. Renaming, copying
+and deleting need Design mode, like saving. The desk also autosaves as you
+work, and **Earlier versions…** opens any saved state of the show.
 
 ### A video for the client
 
@@ -751,7 +777,7 @@ check the table, then save it to your library.
 python tools/selftest.py
 ```
 
-About 1,700 checks: GDTF parsing and geometry, the fixture database, the
+About 3,300 checks: GDTF parsing and geometry, the fixture database, the
 auto-patcher, the merge core (HTP/LTP, master and blackout order, 16-bit,
 curves, quick-button overrides, blackout of dimmer-less lights), the engine
 (patch, programmer, fades, cues, undo, batches, show files, autosave), the
@@ -874,12 +900,15 @@ is the 15-minute check with real lights.
 
 ## Not built yet
 
-* A per-fixture colour-wheel map (the AI and the colour buttons only colour
-  lights that mix colour; wheel slots are offered as numbered steps).
-
-* Validation against physical nodes and fixtures.
-* Show file management (rename, duplicate, delete) beyond save and load.
-* A packaged desktop build.
+* Validation against more physical nodes and fixtures (the light check and
+  `docs/REAL_LIGHT_CHECKLIST.md` cover the ones you have).
+* Lasers and effects whose fixture file doesn't say which channel fires them
+  (13 in the libraries): the desk won't fire what it can't identify - add the
+  light from its manual instead.
+* Lights whose channels change meaning with a mode channel (Chauvet
+  ColorStrip Mini's "Run Speed / Red / Fade Speed"): the desk drives the
+  channel as one thing.
+* The full list, with what's done: `docs/BACKLOG.md`.
 
 ## Reporting a bug
 

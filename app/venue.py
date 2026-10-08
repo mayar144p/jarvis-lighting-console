@@ -397,6 +397,24 @@ def is_vertical(r: dict) -> bool:
     return abs(b[1] - a[1]) > max(abs(b[0] - a[0]), abs(b[2] - a[2]))
 
 
+def rig_angle(r: dict) -> float | None:
+    """Which way a horizontal rig runs, in degrees round the vertical (0 =
+    along +x, as the 3D turns a light's holder): None for a tower or pole."""
+    if is_vertical(r):
+        return None
+    dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
+    if math.hypot(dx, dz) < 1e-6:
+        return None
+    return math.degrees(math.atan2(-dz, dx))
+
+
+def fold90(a: float) -> float:
+    """An angle folded into (-90, 90]: a straight truss is the same truss
+    whichever end it was drawn from."""
+    a = ((a + 90.0) % 180.0) - 90.0
+    return 90.0 if a == -90.0 else a
+
+
 def length(r: dict) -> float:
     a, b = r["a"], r["b"]
     return math.dist(a, b)

@@ -560,6 +560,78 @@ class ShowMixin:
         r["summary"] = f"opened the {vid[:8]} {vid[9:13]} version of {label!r} (the newer one is kept)"
         return r
 
+    # -- the show files themselves (the menu listed only the first 14, and
+    # there was no way to rename, copy or delete one from the desk) -------
+    def _a_show_files(self, **_):
+        """Every saved show: name, when saved, size, how many earlier versions."""
+        rows = []
+        for name in self._show_names():
+            p = self.show_dir / f"{name}.json"
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            vdir = self._versions_dir(name)
+            rows.append({"name": name, "saved": int(st.st_mtime), "bytes": st.st_size,
+                         "versions": len(list(vdir.glob("*.json"))) if vdir.is_dir() else 0,
+                         "open": name == self.show_file})
+        rows.sort(key=lambda r: -r["saved"])
+        return {"shows": rows, "summary": f"{len(rows)} saved show(s)"}
+
+    def _show_pair(self, name, new):
+        src = self._safe_name(name)
+        dst = self._safe_name(new)
+        if not (self.show_dir / f"{src}.json").is_file():
+            raise ValueError(f"no show {src!r}")
+        # case doesn't make a different show (on Windows it's the same file)
+        taken = next((n for n in self._show_names() if n.lower() == dst.lower()), None)
+        if taken is not None and src.lower() != dst.lower():
+            raise ValueError(f"there is already a show called {taken!r}")
+        return src, dst
+
+    def _a_show_rename(self, name="", new="", **_):
+        """Rename a saved show (its earlier versions go with it)."""
+        src, dst = self._show_pair(name, new)
+        if src == dst:
+            return {"summary": "same name - nothing to do"}
+        os.replace(self.show_dir / f"{src}.json", self.show_dir / f"{dst}.json")
+        if self._versions_dir(src).is_dir() and not self._versions_dir(dst).exists():
+            os.replace(self._versions_dir(src), self._versions_dir(dst))
+        if self.show_file == src:
+            self.show_file = dst
+        return {"show": dst, "summary": f"renamed {src!r} to {dst!r}"}
+
+    def _a_show_copy(self, name="", new="", **_):
+        """A copy of a saved show under a new name (to start a new venue
+        from last week's show)."""
+        src, dst = self._show_pair(name, new)
+        if src.lower() == dst.lower():
+            raise ValueError("give the copy a different name")
+        tmp = self.show_dir / f".{dst}.json.tmp"
+        tmp.write_bytes((self.show_dir / f"{src}.json").read_bytes())
+        os.replace(tmp, self.show_dir / f"{dst}.json")
+        return {"show": dst, "summary": f"copied {src!r} to {dst!r}"}
+
+    def _a_show_delete(self, name="", **_):
+        """Delete a saved show - into the shows folder's .bin, not gone: the
+        last 20 deleted can be put back by moving the file out of .bin."""
+        label = self._safe_name(name)
+        path = self.show_dir / f"{label}.json"
+        if not path.is_file():
+            raise ValueError(f"no show {label!r}")
+        if label == self.show_file:
+            raise ValueError("that show is open - open or start another one first")
+        bin_ = self.show_dir / ".bin"
+        bin_.mkdir(parents=True, exist_ok=True)
+        os.replace(path, bin_ / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}.json")
+        old = sorted(bin_.glob("*.json"), key=lambda p: p.stat().st_mtime)
+        for p in old[:-20]:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return {"summary": f"deleted {label!r} (kept in the shows folder's .bin)"}
+
     def _a_show_export(self, name="", **_):
         """The show file's text, for a download / a USB stick."""
         label = self._safe_name(name or self.show_file or "show")

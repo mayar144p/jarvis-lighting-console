@@ -5032,3 +5032,149 @@ def test_problems_badge() -> None:
             check("a normal refusal isn't flagged as a bug", not r.get("ok") and not r.get("internal"), str(r))
         finally:
             e.shutdown()
+
+
+def test_sweep_fixes() -> None:
+    """Found by the library sweep (tools/libsweep.py), each a whole kind of
+    light: Vari-Lite's colour flags named Blue / Amber / Magenta are the
+    lamp's cyan / yellow / magenta (red couldn't be made, Locate came out
+    magenta); a strobe or flicker hit of 255 is OPEN on some lights, so it
+    showed nothing; and shows past the 14th couldn't be opened, nor any
+    renamed, copied or deleted."""
+    print("Sweep fixes: Vari-Lite colours, flashes on lights where 255 is open, show files")
+    import time as _t
+    from app import engine as eng, fixlib
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            def patch(words):
+                rows = fixlib.search(words)
+                if not rows:
+                    return None
+                got = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                return e._head(e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1)["heads"][0])
+            vl = patch("VL3000 Wash")
+            if vl:
+                check("Vari-Lite VL3000: its colour flags are cyan / yellow / magenta",
+                      {"cyan", "yellow", "magenta"} <= set(vl["map"]) and "blue" not in vl["map"], str(vl["map"]))
+                e.act("select_heads", heads=[vl["head_no"]])
+                e.act("set_intensity", level=100)
+                e.act("set_colour", hex="#ff0000")
+                red = next(x for x in e._looks() if x["n"] == vl["head_no"])["hex"]
+                e.act("clear_programmer")
+                e.act("locate")
+                white = next(x for x in e._looks() if x["n"] == vl["head_no"])["hex"]
+                check("...red is red, Locate is white", red == "#ff0000" and white == "#ffffff", f"{red} {white}")
+                e.act("clear_programmer")
+            for words, fx in (("Shark 150C", "shutter_flicker"), ("Strob LED 18", "strobe_random")):
+                h = patch(words)
+                if not h:
+                    continue
+                e.act("select_heads", heads=[h["head_no"]])
+                e.act("set_intensity", level=100)
+                e.act("run_fx", name=fx, params={"density": 0.5})
+                seen = set()
+                for _ in range(15):
+                    _t.sleep(0.08)
+                    seen.add(bytes(e.build_frames()[h["universe"]][h["address"] - 1:h["address"] - 1 + len(h["map"])]))
+                check(f"{h['model']}: {fx} really flashes (255 is 'open' on it)", len(seen) >= 2, str(len(seen)))
+                e.act("stop_fx")
+                e.act("clear_programmer")
+            for name in ("Wedding", "Club night", "Gala"):
+                check(f"saved {name}", e.act("save_show", name=name).get("ok"))
+            rows = e.act("show_files")["shows"]
+            check("every saved show is listed, with when and how big", {r["name"] for r in rows} == {"Wedding", "Club night", "Gala"}
+                  and all(r["saved"] and r["bytes"] for r in rows), str(rows))
+            r = e.act("show_rename", name="Gala", new="Gala 2026")
+            check("rename (the open one stays open under its new name)", r.get("ok") and e.show_file == "Gala 2026", str(r))
+            check("a copy", e.act("show_copy", name="Wedding", new="Wedding Smith").get("ok")
+                  and (tmp / "s" / "Wedding Smith.json").is_file())
+            check("a name already taken is refused", not e.act("show_copy", name="Wedding", new="club night").get("ok"))
+            check("the open show can't be deleted", not e.act("show_delete", name="Gala 2026").get("ok"))
+            r = e.act("show_delete", name="Wedding")
+            check("delete goes to the .bin, not gone", r.get("ok") and not (tmp / "s" / "Wedding.json").exists()
+                  and any((tmp / "s" / ".bin").glob("Wedding-*.json")), str(r))
+            check("...and the .bin isn't listed as a show", "Wedding" not in {x["name"] for x in e.act("show_files")["shows"]})
+            e.act("set_lock", state="operate")
+            check("Operate mode refuses deleting a show", not e.act("show_delete", name="Wedding Smith").get("ok"))
+            e.act("set_lock", state="design")
+        finally:
+            e.shutdown()
+
+
+def test_truss_turn_aim() -> None:
+    """A turned truss turns the lights on it: aiming at a spot (the room map,
+    Follow me, the assistant) still lands every beam on that spot, and the
+    3D turns each body with its truss - so the desk and the real lights agree."""
+    print("Truss turn: lights turn with their truss and still hit the aim spot")
+    import math
+    from app import engine as eng, fixture_kind, venue as V
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("show_template", name="club")
+            rigs: dict = {}
+            for h in e.patch:
+                if "pan" in h["map"] and "tilt" in h["map"] and isinstance(h.get("mount"), dict):
+                    rigs.setdefault(h["mount"]["rig"], []).append(h["head_no"])
+            check("the club template has moving lights on a truss", bool(rigs), str(list(rigs)))
+            if not rigs:
+                return
+            rid, heads = max(rigs.items(), key=lambda kv: len(kv[1]))
+            r = V.rig(e.venue, rid)
+
+            def miss(n, target):
+                h, v = e._head(n), e.programmer[n]
+                rg = e.head_ranges(h)
+                pr, tr = rg.get("pan") or {}, rg.get("tilt") or {}
+                pmin, pmax = (pr["min"], pr["max"]) if pr.get("unit") == "degree" and pr.get("min") is not None else (-270.0, 270.0)
+                tmin, tmax = (tr["min"], tr["max"]) if tr.get("unit") == "degree" and tr.get("min") is not None else (-135.0, 135.0)
+                p = math.radians(pmin + v["pan"] / (65535 if "pan_fine" in h["map"] else 255) * (pmax - pmin))
+                t = math.radians(tmin + v["tilt"] / (65535 if "tilt_fine" in h["map"] else 255) * (tmax - tmin))
+                d = [math.sin(t) * math.sin(p), math.cos(t), math.sin(t) * math.cos(p)]
+                hung = h.get("stance") == "hang"
+                if hung:
+                    d = [-d[0], -d[1], d[2]]
+                y = math.radians(e._head_yaw(h))      # the 3D: holder.rotation.y = yaw
+                d = [d[0] * math.cos(y) + d[2] * math.sin(y), d[1], -d[0] * math.sin(y) + d[2] * math.cos(y)]
+                dsc = fixture_kind.describe(h)
+                piv = 0.372 if dsc.get("heads") else e._AIM_PIVOT.get(dsc["type"], 0.4)
+                o = [h["x"], h["y"] + (-piv if hung else piv), h["z"]]
+                w = [target[i] - o[i] for i in range(3)]
+                along = sum(w[i] * d[i] for i in range(3))
+                return math.sqrt(max(0.0, sum(x * x for x in w) - along * along)), along
+
+            target = (0.0, 0.0, 6.0)
+            a, b = r["a"], r["b"]
+            cx, cz = (a[0] + b[0]) / 2, (a[2] + b[2]) / 2
+            half = math.hypot(b[0] - a[0], b[2] - a[2]) / 2
+            for ang in (0, 37, 90, 180):
+                th = math.radians(ang)
+                e.act("venue_update", id=rid, changes={"a": [cx - half * math.cos(th), a[1], cz + half * math.sin(th)],
+                                                        "b": [cx + half * math.cos(th), b[1], cz - half * math.sin(th)]})
+                e.act("select_heads", heads=heads)
+                e.act("aim_at", x=target[0], y=target[1], z=target[2])
+                got = [miss(n, target) for n in heads]
+                worst = max(x[0] for x in got)
+                check(f"truss turned {ang} deg: every beam lands on the aim spot", worst < 0.05 and all(x[1] > 0 for x in got),
+                      f"worst miss {worst:.3f} m")
+                e.act("clear_programmer")
+            snap = e.snapshot() if hasattr(e, "snapshot") else None
+            if snap:
+                row = next((x for x in snap.get("patch", []) if x.get("head_no") == heads[0]), {})
+                check("the snapshot gives the 3D each light's turn (yaw)", "yaw" in row, str(sorted(row)[:8]))
+            js = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+            check("the 3D view is handed each light's yaw", "yaw: +h.yaw" in js)
+            st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            check("the 3D turns each light's body by its yaw", "f.yaw" in st)
+            am = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+            check("the room map draws the room's own outline, trusses and objects",
+                  "r.outline" in am and "am-truss" in am and "v.objects" in am)
+        finally:
+            e.shutdown()

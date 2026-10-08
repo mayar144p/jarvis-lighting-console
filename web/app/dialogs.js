@@ -684,22 +684,68 @@ export async function openShowMenu(anchor, menuFn) {
     { label: "Import MVR plot…", hint: "Vectorworks, Capture, grandMA3: lights patched and placed", run: importMvr },
     { label: "Export as MVR", hint: "the patch and the rigging, for other programs", run: exportMvr },
     "-",
-    ...shows.slice(0, 14).map((name) => ({
+    ...shows.slice(0, 8).map((name) => ({
       label: "Open " + name + (name === current ? "  (open)" : ""),
-      run: async () => {
-        if (await confirmBox("Open show", `Open “${name}”? The current patch, cues and palettes are replaced (the autosave keeps what you had until the next change).`, { ok: "Open" })) {
-          const d = await post("/api/console/load", { name }).catch((e) => ({ error: e.message }));
-          const r = d.result || {};
-          if (d.error || !r.ok) toast(d.error || r.error, "bad"); else toast(r.summary || "Opened", "ok");
-        }
-      },
+      run: () => openShowFile(name),
     })),
-    shows.length ? null : { label: "No saved shows yet", disabled: true, run() {} },
+    shows.length ? { label: `All shows… (${shows.length})`, hint: "find, open, rename, copy, delete", run: openShowFiles }
+      : { label: "No saved shows yet", disabled: true, run() {} },
     "-",
     { label: "Ready? check…", hint: "before doors", run: openReadyCheck },
     current ? { label: "Earlier versions…", run: () => openVersions(current) } : null,
     current ? { label: "Export (download)", run: () => exportShow(current) } : null,
   ]);
+}
+
+async function openShowFile(name) {
+  if (!(await confirmBox("Open show", `Open “${name}”? The current patch, cues and palettes are replaced (the autosave keeps what you had until the next change).`, { ok: "Open" }))) return false;
+  const d = await post("/api/console/load", { name }).catch((e) => ({ error: e.message }));
+  const r = d.result || {};
+  if (d.error || !r.ok) { toast(d.error || r.error, "bad"); return false; }
+  toast(r.summary || "Opened", "ok");
+  return true;
+}
+
+// Every saved show (the menu shows the latest 8): find, open, rename, copy,
+// delete.  Deleting keeps the file in the shows folder's .bin.
+export async function openShowFiles() {
+  const search = h("input", { type: "search", placeholder: "Find a show…", "aria-label": "Find a show", style: { width: "100%" } });
+  const list = h("div.show-files");
+  let rows = [];
+  const when = (t) => new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const kb = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
+  async function load() {
+    const r = await run("show_files", {}, { silentError: true });
+    rows = r.shows || [];
+    paint();
+  }
+  function paint() {
+    const q = search.value.trim().toLowerCase();
+    const shown = rows.filter((x) => !q || x.name.toLowerCase().includes(q));
+    list.replaceChildren(...(shown.length ? shown.map((x) => h("div.show-file" + (x.open ? ".open" : ""),
+      h("div.sf-name", h("b", x.name), x.open ? h("span.chip.on", "open") : null,
+        h("small.muted", `${when(x.saved)} · ${kb(x.bytes)}${x.versions ? ` · ${x.versions} earlier version${x.versions > 1 ? "s" : ""}` : ""}`)),
+      h("div.sf-acts",
+        h("button.btn.small.primary", { disabled: x.open, onclick: async () => { if (await openShowFile(x.name)) close(); } }, "Open"),
+        h("button.btn.small", { onclick: async () => {
+          const nn = await promptBox("Rename show", "New name", x.name, { ok: "Rename" });
+          if (nn && nn !== x.name) { const r = await run("show_rename", { name: x.name, new: nn }, { toast: true }); if (r.ok) load(); }
+        } }, "Rename"),
+        h("button.btn.small", { onclick: async () => {
+          const nn = await promptBox("Copy show", "Name of the copy", `${x.name} copy`.slice(0, 40), { ok: "Copy" });
+          if (nn) { const r = await run("show_copy", { name: x.name, new: nn }, { toast: true }); if (r.ok) load(); }
+        } }, "Copy"),
+        h("button.btn.small.danger", { disabled: x.open, title: x.open ? "Open another show first" : "Moves it to the shows folder's .bin", onclick: async () => {
+          if (await confirmBox("Delete show", `Delete “${x.name}”? It goes to the shows folder's .bin, where it can still be found.`, { ok: "Delete", danger: true })) {
+            const r = await run("show_delete", { name: x.name }, { toast: true }); if (r.ok) load();
+          }
+        } }, "Delete"))))
+      : [h("p.muted", rows.length ? "No show matches." : "No saved shows yet - Save as… keeps the one you're working on.")]));
+  }
+  search.addEventListener("input", paint);
+  const close = modal({ title: "Shows", wide: true, body: h("div", search, list),
+    foot: [h("span.grow"), h("button.btn", { onclick: () => close() }, "Close")] });
+  load();
 }
 
 // Before doors: what would bite during the show, each with what to press.

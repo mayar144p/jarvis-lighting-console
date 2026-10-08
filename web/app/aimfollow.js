@@ -84,8 +84,15 @@ function syncButtons() {
 function bounds() {
   const v = (state.snap && state.snap.venue) || {};
   const r = v.room || { width: 12, depth: 14, back: -1, cx: 0 };
+  const out = (r.outline || []).filter((p) => Array.isArray(p) && p.length >= 2);
+  if (out.length >= 3) {
+    // the room's own shape (drawn in Arrange): its extent, not a rectangle
+    const xs = out.map((p) => +p[0]), zs = out.map((p) => +p[1]);
+    const x0 = Math.min(...xs), z0 = Math.min(...zs);
+    return { x0, z0, w: Math.max(...xs) - x0, d: Math.max(...zs) - z0, v, outline: out };
+  }
   const x0 = (r.cx || 0) - r.width / 2, z0 = r.back ?? -1;
-  return { x0, z0, w: r.width, d: r.depth, v };
+  return { x0, z0, w: r.width, d: r.depth, v, outline: null };
 }
 
 function drawTarget() {
@@ -110,10 +117,12 @@ function el(tag, attrs = {}) {
 }
 
 function floorMap() {
-  const { x0, z0, w, d, v } = bounds();
+  const { x0, z0, w, d, v, outline } = bounds();
   const pad = 0.4;
   const svg = el("svg", { viewBox: `${x0 - pad} ${z0 - pad} ${w + pad * 2} ${d + pad * 2}`, preserveAspectRatio: "xMidYMid meet" });
-  svg.append(el("rect", { x: x0, y: z0, width: w, height: d, class: "am-room", rx: 0.2 }));
+  // the room as it is: its drawn outline, else its rectangle
+  svg.append(outline ? el("polygon", { points: outline.map((p) => `${p[0]},${p[1]}`).join(" "), class: "am-room" })
+    : el("rect", { x: x0, y: z0, width: w, height: d, class: "am-room", rx: 0.2 }));
   const st = v.stage;
   if (st && st.width) svg.append(el("rect", { x: (st.x || 0) - st.width / 2, y: st.z || 0, width: st.width, height: st.depth || 2, class: "am-stage" }));
   for (const zn of v.zones || []) {
@@ -125,11 +134,37 @@ function floorMap() {
     t.textContent = zn.name || zn.kind;
     svg.append(t);
   }
+  // what stands in the room (bar, DJ booth, speakers...), turned as placed;
+  // marks as a small cross
+  for (const o of v.objects || []) {
+    if (typeof o.x !== "number" || typeof o.z !== "number" || o.kind === "screen" && !o.w) continue;
+    const g = el("g", { transform: `translate(${o.x} ${o.z}) rotate(${-(+o.rot || 0)})`, class: "am-obj am-" + o.kind });
+    if (o.kind === "mark") {
+      g.append(el("path", { d: "M-.25 0H.25M0 -.25V.25", class: "am-mark" }));
+    } else {
+      g.append(el("rect", { x: -(o.w || 1) / 2, y: -(o.d || 1) / 2, width: o.w || 1, height: o.d || 1, rx: 0.08 }));
+    }
+    svg.append(g);
+  }
+  // the rigging at its real angle: a turned truss shows turned
+  for (const r of v.rigging || []) {
+    const [a, b] = [r.a || [0, 0, 0], r.b || [0, 0, 0]];
+    if (Math.hypot(b[0] - a[0], b[2] - a[2]) < 0.05) {
+      const sz = Math.max(0.3, +r.size || 0.3);
+      svg.append(el("rect", { x: a[0] - sz / 2, y: a[2] - sz / 2, width: sz, height: sz, class: "am-tower" }));
+    } else {
+      svg.append(el("line", { x1: a[0], y1: a[2], x2: b[0], y2: b[2], class: "am-truss" }));
+    }
+  }
+  // the lights, each body turned the way its base faces (with its truss)
   const sel = new Set(movers().map((x) => x.head_no));
   for (const hd of (state.snap && state.snap.patch) || []) {
     if (typeof hd.x !== "number" || typeof hd.z !== "number") continue;
     if (!(hd.map || []).includes("pan") && !(hd.map || []).includes("tilt")) continue;
-    svg.append(el("circle", { cx: hd.x, cy: hd.z, r: sel.has(hd.head_no) ? 0.28 : 0.18, class: sel.has(hd.head_no) ? "am-head on" : "am-head" }));
+    const on = sel.has(hd.head_no), s = on ? 0.32 : 0.22;
+    const g = el("g", { transform: `translate(${hd.x} ${hd.z}) rotate(${-(+hd.yaw || 0)})`, class: on ? "am-head on" : "am-head" });
+    g.append(el("rect", { x: -s, y: -s * 0.55, width: s * 2, height: s * 1.1, rx: s * 0.4 }));
+    svg.append(g);
   }
   const tg = el("g", { class: "aim-target" });
   tg.append(el("circle", { r: 0.5, class: "am-ring" }), el("circle", { r: 0.1, class: "am-dot" }));
@@ -163,7 +198,7 @@ export function aimBlock(...after) {
     title: "Then press and drag on the 3D view: every selected moving light follows the pointer over the floor (right-drag still turns the view, Esc stops)",
     onclick: () => setFollow(!following),
   }, following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor");
-  const map = h("div.aim-map", { title: "Drag on the floor plan: the selected lights follow (stage at the top)" });
+  const map = h("div.aim-map", { title: "The room as drawn in Arrange, trusses at their real angle. Drag on it: every selected light points at that spot, wherever its truss is turned. (The pan/tilt pad below moves each light's own pan and tilt.)" });
   map.append(floorMap());
   queueMicrotask(drawTarget);
   const speed = h("div.mv-row", h("span.k", "Aim speed"),

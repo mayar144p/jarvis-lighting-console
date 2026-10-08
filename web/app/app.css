@@ -1337,8 +1337,12 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .am-zone { fill: color-mix(in srgb, var(--accent) 6%, transparent); stroke: color-mix(in srgb, var(--accent) 35%, transparent); stroke-width: .05; }
 .am-dancefloor { fill: color-mix(in srgb, var(--accent) 12%, transparent); }
 .am-label { fill: var(--muted); font-size: .6px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
-.am-head { fill: #6a6a76; }
+.am-head { fill: #c4c7d2; stroke: #15151b; stroke-width: .05; }
 .am-head.on { fill: #fbbf24; stroke: #000; stroke-width: .04; }
+.am-truss { stroke: #8b8f9c; stroke-width: .3; stroke-linecap: round; opacity: .55; }
+.am-tower { fill: #8b8f9c; opacity: .55; }
+.am-obj rect { fill: color-mix(in srgb, var(--text-2) 12%, transparent); stroke: color-mix(in srgb, var(--text-2) 35%, transparent); stroke-width: .04; }
+.am-mark { stroke: var(--accent); stroke-width: .07; fill: none; }
 .am-ring { fill: none; stroke: var(--accent); stroke-width: .1; }
 .am-dot { fill: var(--accent); }
 .am-now { fill: none; stroke: #fbbf24; stroke-width: .08; stroke-dasharray: .12 .08; }
@@ -1737,3 +1741,12 @@ body.ws-swap .programmer > .ws-grip { left: auto; right: -5px; }
 .err-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .err-btn[hidden] { display: none; }
 #err-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------- the shows list */
+.show-files { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-height: min(60vh, 520px); overflow: auto; }
+.show-file { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.show-file.open { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.sf-name { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.sf-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sf-name small { flex-basis: 100%; }
+.sf-acts { display: flex; gap: 6px; flex-shrink: 0; }
