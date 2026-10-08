@@ -4274,3 +4274,132 @@ def test_button_looks() -> None:
             check("the AI can style buttons and set a page's grid", {"quick_style", "quick_layout"} <= set(assistant.ALLOWED))
         finally:
             e.shutdown()
+
+
+def _mvr_file(gdtf: bytes, extra: str = "", with_gdtf: bool = True) -> bytes:
+    import io
+    import zipfile
+    hang, stand = "{1,0,0}{0,1,0}{0,0,1}", "{1,0,0}{0,-1,0}{0,0,-1}"
+
+    def fx(name, x, y, z, addr, mode="6 Channel", spec="Acme@Beam900.gdtf", rot=hang):
+        return (f'<Fixture name="{name}" uuid="{name}"><Matrix>{rot}{{{x},{y},{z}}}</Matrix><GDTFSpec>{spec}</GDTFSpec>'
+                f'<GDTFMode>{mode}</GDTFMode><FixtureID>1</FixtureID><Addresses><Address break="0">{addr}</Address></Addresses></Fixture>')
+    row = "".join(fx(f"Beam {i + 1}", -3000 + i * 2000, 4000, 6000, f"1.{1 + i * 6}") for i in range(4))
+    grp = ('<GroupObject name="Floor" uuid="g1"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,-2000,0}</Matrix><ChildList>'
+           + fx("Floor L", -2000, 1000, 0, 513, rot=stand) + fx("Floor R", 2000, 1000, 0, "2.7", mode="99 Channel", rot=stand)
+           + "</ChildList></GroupObject>")
+    ghost = fx("Ghost", 0, 0, 5000, "3.1", spec="Nobody@Nothing.gdtf")
+    xml = ('<?xml version="1.0"?><GeneralSceneDescription verMajor="1" verMinor="6"><Scene><Layers>'
+           f'<Layer name="Lights" uuid="L1"><ChildList>{row}{grp}{ghost}{extra}</ChildList></Layer></Layers></Scene></GeneralSceneDescription>')
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("GeneralSceneDescription.xml", xml)
+        if with_gdtf:
+            z.writestr("Acme@Beam900.gdtf", gdtf)
+    return buf.getvalue()
+
+
+def test_mvr() -> None:
+    """MVR in and out (A10 item 3): a plot from Vectorworks / Capture /
+    grandMA3 comes in with every light installed from its own GDTF, patched
+    at its address in its mode and placed - hanging or standing, inside
+    nested groups - and lights hung in a row get a truss they're mounted
+    on.  What can't come in is said, never guessed.  One undo step.  Ours
+    goes back out with the GDTF files and reads back the same."""
+    print("MVR: a plot in (patched, placed, trusses), the rig out")
+    import io
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from tools.selftests.common import SPEC_GDTF
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("description.xml", SPEC_GDTF)
+    gdtf = buf.getvalue()
+    data = _mvr_file(gdtf)
+    plot = mvr.read(data)
+    by = {lt["name"]: lt for lt in plot["lights"]}
+    check("the plot: 7 lights, the version", len(plot["lights"]) == 7 and plot["version"] == "1.6", str(len(plot["lights"])))
+    check("addresses as 1.007 and as one number (513 = universe 2, 1)",
+          by["Beam 2"]["address"] == (1, 7) and by["Floor L"]["address"] == (2, 1), str(by["Floor L"]["address"]))
+    check("a light inside a group is placed by the group's matrix too", by["Floor L"]["pos"][1] == -1.0, str(by["Floor L"]["pos"]))
+    check("turned over = standing; as drawn in GDTF = hanging", by["Floor L"]["stance"] == "stand" and by["Beam 1"]["stance"] == "hang")
+    check("millimetres to metres", by["Beam 1"]["pos"] == [-3.0, 4.0, 6.0], str(by["Beam 1"]["pos"]))
+    for bad, why in ((b"not a zip", "not a zip"), (_zip({"x.txt": b"hi"}), "no plot inside"),
+                     (_zip({"GeneralSceneDescription.xml": b'<!DOCTYPE x [<!ENTITY a "b">]><GeneralSceneDescription/>'}), "XML entities"),
+                     (_zip({"GeneralSceneDescription.xml": b"<GeneralSceneDescription><Scene/></GeneralSceneDescription>"}), "no lights")):
+        try:
+            got = mvr.read(bad)
+            ok = why == "no lights" and not got["lights"]
+        except ValueError:
+            ok = why != "no lights"
+        check(f"refused / empty: {why}", ok)
+    check("a GDTF name with a path in it can't leave the folder", mvr.safe_name("../../evil.gdtf") == "evil.gdtf"
+          and mvr.safe_name("a.exe") is None and mvr.safe_name("..gdtf") is None)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            rigs_before = len(e.venue["rigging"])
+            undo_before = len(e._undo)
+            r = mvr.import_into(e, data, tmp / "gdtf")
+            heads = {h["name"]: h for h in e.patch}
+            check("6 lights patched and placed, the one with no GDTF named", r["ok"] and len(heads) == 6 and r["skipped"] == 1
+                  and "Nobody@Nothing.gdtf" in r["problems"][0], str(r))
+            check("each at its own address, in its own mode", (heads["Beam 2"]["universe"], heads["Beam 2"]["address"]) == (1, 7)
+                  and (heads["Floor L"]["universe"], heads["Floor L"]["address"]) == (2, 1) and heads["Beam 1"]["mode"] == "6 Channel")
+            check("a mode its file doesn't have: the first mode, and said", heads["Floor R"]["mode"] == "6 Channel"
+                  and any("99 Channel" in n for n in r["notes"]), str(r["notes"]))
+            rig = (heads["Beam 1"].get("mount") or {}).get("rig")
+            check("the 4 in a row hang on one new truss, left to right", r["trusses"] == 1 and len(e.venue["rigging"]) == rigs_before + 1
+                  and all((heads[f"Beam {i}"].get("mount") or {}).get("rig") == rig for i in range(1, 5))
+                  and heads["Beam 1"]["mount"]["t"] < heads["Beam 4"]["mount"]["t"], str([heads[f"Beam {i}"].get("mount") for i in range(1, 5)]))
+            check("at the plot's height", abs(heads["Beam 1"]["y"] - 6.0) < 0.3, str(heads["Beam 1"]["y"]))
+            check("the floor lights stand, nearer the audience than the truss",
+                  heads["Floor L"]["stance"] == "stand" and heads["Floor L"]["z"] > heads["Beam 1"]["z"] + 4
+                  and abs(heads["Floor L"]["x"] - heads["Floor R"]["x"] + 4) < 0.01, f"{heads['Floor L']} {heads['Beam 1']['z']}")
+            check("its GDTF is kept (its 3D body works too)", (tmp / "gdtf" / "Acme@Beam900.gdtf").read_bytes() == gdtf)
+            check("the whole import is one undo step", len(e._undo) == undo_before + 1 and e._undo[-1].get("label", "Import MVR") is not None)
+            out = mvr.export_from(e, [tmp / "gdtf"], "t")
+            back = mvr.read(out)
+            byb = {lt["name"]: lt for lt in back["lights"]}
+            check("out again: every light, its GDTF inside, the same address and mode",
+                  len(back["lights"]) == 6 and "Acme@Beam900.gdtf" in back["gdtf"] and byb["Beam 2"]["address"] == (1, 7)
+                  and byb["Floor L"]["mode"] == "6 Channel", str(byb.get("Beam 2")))
+            check("...hanging and standing as they were, the trusses with them",
+                  byb["Floor L"]["stance"] == "stand" and byb["Beam 1"]["stance"] == "hang" and len(back["trusses"]) >= 1)
+            again = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+            try:
+                r2 = mvr.import_into(again, out, tmp / "gdtf2", replace=True)
+                h2 = {h["name"]: h for h in again.patch}
+                check("our own MVR reads back into a new desk: the same lights, addresses and spacing",
+                      r2["ok"] and len(h2) == 6 and (h2["Beam 2"]["universe"], h2["Beam 2"]["address"]) == (1, 7)
+                      and abs((h2["Beam 4"]["x"] - h2["Beam 1"]["x"]) - (heads["Beam 4"]["x"] - heads["Beam 1"]["x"])) < 0.05, str(r2))
+            finally:
+                again.shutdown()
+            r = mvr.import_into(e, data, tmp / "gdtf", replace=True)
+            check("start from the plot: the old lights and trusses go, the room fits the plot",
+                  r["ok"] and len(e.patch) == 6 and len(e.venue["rigging"]) == 1, f"{len(e.patch)} {len(e.venue['rigging'])}")
+            e.act("undo")
+            check("...and one Ctrl+Z puts the show back", len(e.patch) == 6 and len(e.venue["rigging"]) == rigs_before + 1,
+                  f"{len(e.patch)} {len(e.venue['rigging'])}")
+            n = len(e.patch)
+            r = mvr.import_into(e, _mvr_file(gdtf, with_gdtf=False), tmp / "gdtf3")
+            check("a plot whose GDTF files are all missing imports nothing, and says why",
+                  not r["ok"] and len(e.patch) == n and "isn't in the MVR" in r["error"], str(r.get("error")))
+        finally:
+            e.shutdown()
+
+
+def _zip(files: dict) -> bytes:
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for n, b in files.items():
+            z.writestr(n, b)
+    return buf.getvalue()

@@ -371,7 +371,15 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    band, theatre, corporate: a ready rig, groups, palettes and buttons (a
    new show starts 80% done); a tour and a demo show so a new user sees
    lights moving within 30 seconds.
-3. **MVR / GDTF import and export** - a plot from Vectorworks or Capture
+3. **(DONE 2026-10-08) MVR / GDTF import and export** (app/mvr.py, Show ▾).
+   In: GDTF from inside the file (to the GDTF Share folder, so 3D bodies
+   work), address, mode, place, hang / stand, nested groups; lights in a
+   row -> a truss; missing GDTF / mode said; one undo; "add" or "start
+   from the plot".  Out: patch + trusses + our GDTF files.  Not yet: an
+   MVR's own truss / scene objects as 3D models (only lights in a row make
+   trusses), a light whose GDTF isn't in the file matched from our library.
+   Also asked and done: **Lights only** in the 3D view (hides the venue).
+   Was: a plot from Vectorworks or Capture
    comes in with every light patched and placed; ours goes back out.
 4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
    beat, bar and phrase, so the lights hit the drops without tapping.

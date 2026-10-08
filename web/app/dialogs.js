@@ -1,7 +1,7 @@
 // Dialogs: add fixtures, fixture profiles, DMX channels, CSV import, cues,
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
-import { get, post } from "./api.js";
+import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -653,6 +653,8 @@ export async function openShowMenu(anchor, menuFn) {
     { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
     { label: "Paperwork…", hint: "light plot, patch sheet, rigging - print / PDF", run: () => window.open("/plot.html", "_blank") },
+    { label: "Import MVR plot…", hint: "Vectorworks, Capture, grandMA3: lights patched and placed", run: importMvr },
+    { label: "Export as MVR", hint: "the patch and the rigging, for other programs", run: exportMvr },
     "-",
     ...shows.slice(0, 14).map((name) => ({
       label: "Open " + name + (name === current ? "  (open)" : ""),
@@ -700,6 +702,68 @@ async function openVersions(name) {
       } }, "Open"))))
       : h("p.muted", "No earlier versions yet: they appear after the next save that changes something."));
   close = modal({ title: `Versions of “${name}”`, body });
+}
+
+// MVR: a plot from Vectorworks, Capture, grandMA3, Depence... comes in
+// with every light patched (its own GDTF, mode and address) and placed;
+// lights hung in a row get a truss.  One Ctrl+Z takes it all back.
+function importMvr() {
+  const pick = h("input", { type: "file", accept: ".mvr", hidden: true });
+  document.body.append(pick);
+  pick.addEventListener("change", async () => {
+    const file = pick.files && pick.files[0];
+    pick.remove();
+    if (!file) return;
+    const patched = ((state.snap && state.snap.patch) || []).length;
+    let replace = false;
+    if (patched) {
+      const choice = await new Promise((done) => {
+        const close = modal({
+          title: `Import ${file.name}`,
+          body: h("p", `There are ${patched} light(s) in this show already. Add the plot to them, or start over from the plot (the lights and the trusses go, the room is sized to the plot)? One Ctrl+Z undoes either.`),
+          foot: [h("button.btn", { onclick: () => { close(); done(null); } }, "Cancel"), h("span.grow"),
+            h("button.btn", { onclick: () => { close(); done("add"); } }, "Add to this show"),
+            h("button.btn.primary", { onclick: () => { close(); done("new"); } }, "Start from the plot")],
+        });
+      });
+      if (!choice) return;
+      replace = choice === "new";
+    }
+    toast(`Reading ${file.name}…`, "", 2000);
+    const t = token();
+    const r = await fetch(`/api/mvr/import${replace ? "?replace=1" : ""}`, {
+      method: "POST", body: file,
+      headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+    });
+    const d = await r.json().catch(() => ({ error: `import failed (${r.status})` }));
+    if (!d.ok) { toast(d.error || "Nothing could be imported", "bad"); if (!(d.problems || []).length) return; }
+    const list = (title, items) => (items && items.length ? h("div", h("b", title), h("ul.small", ...items.map((x) => h("li", x)))) : null);
+    modal({
+      title: d.ok ? "MVR imported" : "MVR not imported",
+      body: h("div",
+        h("p", d.summary || d.error || ""),
+        d.ok ? h("p.muted.small", "Each light has its own GDTF (with its 3D body when the file has one), its mode and its address from the plot. Ctrl+Z takes the whole import back.") : null,
+        list("Changed on the way", d.notes), list("Not imported", d.problems)),
+    });
+  });
+  pick.click();
+}
+
+async function exportMvr() {
+  const t = token();
+  const r = await fetch("/api/mvr/export", { headers: t ? { "X-Jarvis-Token": t } : {} });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    toast(d.error || `export failed (${r.status})`, "bad");
+    return;
+  }
+  const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, "show.mvr"])[1];
+  const url = URL.createObjectURL(await r.blob());
+  const a = h("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function exportShow(name) {
