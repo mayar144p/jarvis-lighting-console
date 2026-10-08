@@ -1022,6 +1022,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             # the value that means "open, not strobing" on this fixture
             entry["open"] = self._open_value(heads[0], role)
             entry["open_known"] = self._open_known(heads[0], role)
+            entry["steps"] = self.strobe_steps(heads[0], role)
         if role.startswith("aux") and heads:
             d = self.head_ranges(heads[0]).get(role) or {}
             entry["name"] = str(d.get("name") or role)

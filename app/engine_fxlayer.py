@@ -351,16 +351,55 @@ class FxLayerMixin:
         if role is None or role not in values:
             return 0.0
         v = max(0, min(255, int(values[role])))
-        ranges = (self.head_ranges(head).get(role) or {}).get("strobe_ranges")
+        rng = self.head_ranges(head).get(role) or {}
+        ranges = rng.get("strobe_ranges")
         if ranges:
             for lo, hi in ranges:
                 if lo <= v <= hi:
-                    return round(1 + 19 * (v - lo) / max(1, hi - lo), 2)
+                    pos = (v - lo) / max(1, hi - lo)
+                    if self._strobe_fast_first(rng, lo, hi):      # "fast to slow"
+                        pos = 1 - pos
+                    return round(1 + 19 * pos, 2)
             return 0.0
         opened = self._open_value(head, role)
         if v > opened + 8 and v < 248:        # no ranges known: a guess
             return round(1 + 19 * (v - opened) / max(1, 255 - opened), 2)
         return 0.0
+
+    _FAST_SLOW = re.compile(r"fast\W*(?:to|-|>|\u2192)*\W*slow", re.I)
+    _SLOW_FAST = re.compile(r"slow\W*(?:to|-|>|\u2192)*\W*fast", re.I)
+
+    def _strobe_fast_first(self, rng: dict, lo: int, hi: int) -> bool:
+        """Does this strobe range run fast -> slow?  Its own words say so
+        ("Strobe (fast to slow)"); most run slow -> fast."""
+        for cap in rng.get("caps") or []:
+            try:
+                clo, chi, text = int(cap[0]), int(cap[1]), str(cap[2])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if clo <= lo and chi >= hi or lo <= clo <= hi:
+                if self._FAST_SLOW.search(text):
+                    return True
+                if self._SLOW_FAST.search(text):
+                    return False
+        return False
+
+    def strobe_steps(self, head: dict, role: str) -> dict:
+        """{off, slow, medium, fast}: DMX values for the programmer's strobe
+        buttons, inside this light's own first strobe range and the right
+        way round - fixed numbers (64 / 160 / 250) landed outside the range
+        or in another program on lights like the Intimidator Wave 360."""
+        rng = self.head_ranges(head).get(role) or {}
+        off = self._open_value(head, role)
+        ranges = rng.get("strobe_ranges") or []
+        if ranges:
+            lo, hi = (int(x) for x in ranges[0])
+            at = lambda f: int(round(lo + (hi - lo) * f))  # noqa: E731
+            if self._strobe_fast_first(rng, lo, hi):
+                return {"off": off, "slow": at(0.95), "medium": at(0.5), "fast": at(0.05)}
+            return {"off": off, "slow": at(0.05), "medium": at(0.5), "fast": at(0.95)}
+        lo = max(off + 8, 64)
+        return {"off": off, "slow": lo, "medium": round((lo + 255) / 2), "fast": 250}
 
     def _a_motion_set(self, head=None, pan_s=None, tilt_s=None, clear=False, **_):
         """Store how long this fixture model takes for a full pan and a

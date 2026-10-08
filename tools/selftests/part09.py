@@ -4810,3 +4810,56 @@ def test_bug_report_never_waits_on_git() -> None:
     js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
     check("the dialog gives up in time and says what to do", "AbortController" in js and "WAIT_MS" in js)
     check("Save can't be pressed twice while it works", "saveBtn.disabled = true" in js)
+
+
+def test_wave360_strobe_and_wheel_colours() -> None:
+    """From a report on the Chauvet Intimidator Wave 360 IRC: "no rainbow
+    effect", "strobe does not match all lights".  Its strobe ranges run
+    FAST to slow, and the programmer's Slow / Medium / Fast were fixed
+    numbers (64 / 160 / 250) - 250 is no strobe at all on it.  And in its
+    17-channel mode it can't mix, only step through numbered colour
+    macros, so it was offered no colour effect at all."""
+    print("Intimidator Wave 360: the strobe the right way round, colour effects on its wheel")
+    import time as _t
+    from app import assistant, engine as eng, fxlib
+    key = "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            if not assistant.add_fixture(e, "qlc", key, qty=2, mode="33 ch.").get("ok"):
+                check("(the QLC+ library isn't bundled here: not checked)", True, "")
+                return
+            h = e._head(1)
+            st = e.strobe_steps(h, "shutter")
+            check("Fast / Medium / Slow are inside its first strobe range (25-64)",
+                  all(25 <= st[k] <= 64 for k in ("slow", "medium", "fast")), str(st))
+            check("...and the right way round: fast to slow means Fast is the LOW end", st["fast"] < st["medium"] < st["slow"], str(st))
+            check("the 3D strobes fast on Fast, slow on Slow",
+                  e._strobe_hz(h, {"shutter": st["fast"]}, None) > 15 > 3 > e._strobe_hz(h, {"shutter": st["slow"]}, None))
+            check("Off is its open value", st["off"] == 20, str(st))
+            e.act("remove_heads", heads=[1, 2])
+            assistant.add_fixture(e, "qlc", key, qty=2, mode="17 ch.")
+            n1, n2 = sorted(x["head_no"] for x in e.patch)[:2]
+            names = e.act("fx_available", heads=[n1])["names"]
+            check("17 channels (no mixing): Rainbow, Colour chase and Alternate are offered",
+                  all(n in names for n in fxlib.WHEEL_FX), str(names))
+            e.act("select_heads", heads=[n1, n2])
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="colour_chase")
+            check("Colour chase runs on its colour macros", r.get("ok"), r.get("error") or "")
+            seen, hexes = set(), set()
+            a1 = e._head(n1)["address"]
+            for _ in range(5):
+                _t.sleep(0.35)
+                seen.add(e.build_frames()[1][a1 - 1 + 10])
+                hexes |= {x.get("hex") for x in e._looks() if x.get("n") in (n1, n2)}
+            check("the wheel channel steps through its colours", len(seen) >= 2, str(sorted(seen)))
+            check("the 3D shows a colour per numbered macro, not grey", len(hexes) >= 2 and "#cbd5e1" not in hexes, str(hexes))
+            check("a wheel step is one of its slots' values",
+                  fxlib.wheel_step("rainbow", [11, 19, 27], None, 0.0, 0, 1) in (11, 19, 27)
+                  and fxlib.wheel_step("rainbow", [11], None, 0.0, 0, 1) is None)
+        finally:
+            e.shutdown()
