@@ -169,6 +169,59 @@ PROFILES.mackie = {
   },
 };
 
+// --------------------------------------------------- Akai APC40 (mk1 and mkII)
+// From Akai's published protocol (not yet tried on a real unit: Settings ->
+// Controllers -> MIDI monitor shows what it sends).  A SysEx puts it in
+// "Ableton Live" mode, so the desk lights every LED.  A 5 x 8 clip grid,
+// 8 track faders (CC 7 on channels 1-8) and the master (CC 14); under each
+// column TRACK SELECT (note 51 on that column's channel) = GO and CLIP STOP
+// (note 52) = release; the 5 SCENE LAUNCH buttons (notes 82-86) = pages.
+function apc40(name, product, re, grid) {
+  const sx = (mode) => [0xf0, 0x47, 0x7f, product, 0x60, 0x00, 0x04, mode,
+    ...(product === 0x29 ? [0x09, 0x07, 0x01] : [0x08, 0x02, 0x01]), 0xf7];
+  return {
+    name, pads: 40, cols: 8, faders: 8, hasMaster: true, motor: false,
+    match: (n) => re.test(n),
+    hello: () => [sx(0x41)],                     // Ableton Live mode: the host lights the LEDs
+    bye: () => [sx(0x40)],                       // back to its own (generic) mode
+    decode([st, d1, d2]) {
+      const kind = st & 0xf0, ch = st & 0x0f;
+      if (kind === 0xb0) {
+        if (d1 === 7 && ch < 8) return { fader: ch, value: d2 / 127 };
+        if (d1 === 14 && ch === 0) return { master: d2 / 127 };
+        return null;
+      }
+      if (kind !== 0x90 && kind !== 0x80) return null;
+      const down = kind === 0x90 && d2 > 0;
+      const pad = grid.pad(ch, d1);
+      if (pad !== null) return { pad, down };
+      if (d1 === 51 && ch < 8) return { go: ch, down };
+      if (d1 === 52 && ch < 8) return { release: ch, down };
+      if (d1 >= 82 && d1 <= 86 && ch === 0) return { page: d1 - 82, down };
+      return null;
+    },
+    padLed: (i, rgb, on) => [grid.led(i, rgb, on)],
+    buttonLed(kind, i, on) {
+      if (kind === "page") return i > 4 ? [] : [[0x90, 82 + i, on ? 1 : 0]];
+      const note = { go: 51, release: 52 }[kind];
+      return note === undefined || i > 7 ? [] : [[0x90 + i, note, on ? 1 : 0]];
+    },
+    faderOut: () => [],
+  };
+}
+// mk1: the grid is notes 53-57 (top row first) on the column's own channel;
+// LEDs green / red / yellow, +1 blinking (on) - like the first APC mini
+PROFILES.apc40 = apc40("Akai APC40", 0x73, /apc\s*40(?!.*mk\s*(2|ii))/i, {
+  pad: (ch, d1) => (ch < 8 && d1 >= 53 && d1 <= 57 ? (d1 - 53) * 8 + ch : null),
+  led: (i, rgb, on) => [0x90 + (i % 8), 53 + Math.floor(i / 8), rgb ? nearest(rgb, APC1).v + (on ? 1 : 0) : 0],
+});
+// mkII: RGB pads, notes 0-39 from the BOTTOM-left on channel 1, the colour
+// from the 128-colour palette; on, it pulses (channel 9)
+PROFILES.apc40mk2 = apc40("Akai APC40 mkII", 0x29, /apc\s*40.*mk\s*(2|ii)/i, {
+  pad: (ch, d1) => (ch === 0 && d1 <= 39 ? (4 - Math.floor(d1 / 8)) * 8 + (d1 % 8) : null),
+  led: (i, rgb, on) => [rgb && on ? 0x98 : 0x90, (4 - Math.floor(i / 8)) * 8 + (i % 8), rgb ? nearest(rgb, PALETTE).v : 0],
+});
+
 /** The layout for a MIDI port's name, or null. */
 export function profileFor(name) {
   for (const [id, p] of Object.entries(PROFILES)) if (p.match(String(name || ""))) return id;

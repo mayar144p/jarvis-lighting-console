@@ -1819,6 +1819,8 @@ class PatchMixin:
             for extra in ("amber", "uv", "lime", "indigo"):
                 if extra in roles:
                     out[extra] = 0
+            if "lime" in roles and "green" not in roles:
+                out["lime"] = g        # red + lime + blue: the lime is its green
             # cyan / magenta / yellow LEDs beside red, green and blue: each
             # gives what its two primaries share beyond the third
             for role, v in (("cyan", min(g, b) - r), ("magenta", min(r, b) - g), ("yellow", min(r, g) - b)):
@@ -1841,9 +1843,23 @@ class PatchMixin:
         """Values that put this head's colour at white / open."""
         roles = set(head["map"])
         out = {}
-        for role in ("red", "green", "blue", "white"):
-            if role in roles:
-                out[role] = 255
+        rgb = {"red", "green", "blue"} <= roles
+        if "white" in roles and not rgb:
+            # a white emitter beside a partial mix (a Rocklite's red /
+            # amber / white mode): the white LED alone is white, red + white
+            # would be pink
+            out["white"] = 255
+            for role in ("red", "green", "blue", "amber", "lime"):
+                if role in roles:
+                    out[role] = 0
+        else:
+            for role in ("red", "green", "blue", "white"):
+                if role in roles:
+                    out[role] = 255
+            if "lime" in roles and "green" not in roles:
+                # red + lime + blue (+ indigo): an ETC Source Four LED's
+                # lime ("Mint") is its green - without it white is magenta
+                out["lime"] = 255
         for role in ("cyan", "magenta", "yellow"):
             if role in roles:
                 out[role] = 255 if cmy_are_leds(roles) else 0   # LEDs on, filters out

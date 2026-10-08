@@ -138,7 +138,7 @@ function floorMap() {
   // marks as a small cross
   for (const o of v.objects || []) {
     if (typeof o.x !== "number" || typeof o.z !== "number" || o.kind === "screen" && !o.w) continue;
-    const g = el("g", { transform: `translate(${o.x} ${o.z}) rotate(${-(+o.rot || 0)})`, class: "am-obj am-" + o.kind });
+    const g = el("g", { transform: `translate(${o.x} ${o.z}) rotate(${+o.rot || 0})`, class: "am-obj am-" + o.kind });
     if (o.kind === "mark") {
       g.append(el("path", { d: "M-.25 0H.25M0 -.25V.25", class: "am-mark" }));
     } else {

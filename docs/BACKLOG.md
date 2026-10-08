@@ -369,8 +369,10 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    SysEx): APC mini / mk2, Launchpad Mini MK3 / X, Mackie Control (X-Touch,
    X-Touch Compact) - recognised by name; pads = the buttons page on
    screen in the buttons' colours, faders = playbacks + GM (motor faders
-   follow, not while touched), GO / release / page buttons lit.  Not yet:
-   APC40 (needs its mode SysEx and a real unit to check against).
+   follow, not while touched), GO / release / page buttons lit.  APC40 and
+   APC40 mkII added 2026-10-08 from Akai's protocol (Ableton-mode SysEx,
+   5 x 8 grid, track faders + master, TRACK SELECT = GO, CLIP STOP =
+   release, SCENE LAUNCH = pages); still to try on a real unit.
    Was: **Hardware controllers with feedback** - ready layouts for Akai APC40 /
    APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
    is on, motor faders follow the playbacks; plug in and play.
@@ -388,9 +390,13 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    In: GDTF from inside the file (to the GDTF Share folder, so 3D bodies
    work), address, mode, place, hang / stand, nested groups; lights in a
    row -> a truss; missing GDTF / mode said; one undo; "add" or "start
-   from the plot".  Out: patch + trusses + our GDTF files.  Not yet: an
-   MVR's own truss / scene objects as 3D models (only lights in a row make
-   trusses), a light whose GDTF isn't in the file matched from our library.
+   from the plot".  Out: patch + trusses + our GDTF files.  **Done 2026-10-08:** the MVR's own trusses
+   (place, angle, length from the truss GDTF's model or its name; the
+   lights along one mounted on it, turned with it) and the scene objects
+   the desk knows by name (PA / sub, screen / LED wall, bar, DJ booth,
+   riser, pillar, table), in and out.  Not yet: a light whose GDTF isn't
+   in the file matched from our library; curved / shaped truss pieces
+   (each comes in straight).
    Also asked and done: **Lights only** in the 3D view (hides the venue).
    Was: a plot from Vectorworks or Capture
    comes in with every light patched and placed; ours goes back out.
@@ -459,8 +465,14 @@ blanks every secret (AI key, desk token, GDTF login, anything shaped like
 a key) out of every file, downloads it and opens the matching GitHub form
 filled in (labels light-bug, brand:..., model:...).  The fixture-debug
 skill reads the zip for "fix issue #N".  Selftest `test_bug_report`.
-Next (v2, before outside testers): the relay so no GitHub account is
-needed.
+**v2 DONE 2026-10-08:** the relay (tools/report-relay/: a Cloudflare
+Worker with a fine-grained Issues-only token; the zip kept in R2 behind a
+maintainers' download key; 6 reports an hour per address; the form's
+labels only; no @mentions).  A desk with REPORT_RELAY in its .env shows
+**Send report** - no GitHub account needed; the description is scrubbed
+of keys like the zip.  Selftest `test_report_relay`.  To go live: deploy
+it (its README, ~10 minutes); for outside testers point its REPO at a
+public "bug reports" repo.
 
 So problems arrive with the evidence attached instead of typed by hand.
 
@@ -516,8 +528,14 @@ or run.bat: the download fetches llama.cpp's server first (~30 MB, the
 build for this computer from llama.cpp's own releases, into DATA/ai/engine;
 an archive that writes outside it is refused).  Selftests
 `test_ai_switch`, `test_ai_engine_fetch`.
-**Not yet:** the installer's "include the offline AI" tick (it is offered
-in Settings -> AI on first use instead); a file picker for the AI pack.
+**Done 2026-10-08:** the installer's "Include the offline AI" tick
+(desktop/res/installer.nsh, ticked by default): the app hands it to the
+desk as DATA/ai/wanted.json and the desk downloads the model that fits in
+the background on its first start (`localai.auto_download`; waits while
+live; forgotten once a model is there, the computer can't run one, or the
+operator pauses).  Selftest `test_ai_installer_tick`.
+**Not yet:** a file picker for the AI pack; the Mac .dmg has no installer
+page (Settings -> AI offers it).
 
 Today the copilot uses one online AI from `.env` (Gemini, any
 OpenAI-compatible service works).  Free online plans have daily limits;
@@ -641,18 +659,26 @@ counts are modes, not lights.
    "No function" next to "Red laser switched on") now fires from its
    armed button and is held off otherwise (Laserworld RS400G, Stairville
    DJ Lase, All FX Bar...).  The rest still need a person with the light.
-2. **Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
+2. **(DONE 2026-10-08, PR #81) Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
    Wash, 6 modes): subtractive mixers the console doesn't treat as CMY,
    so Locate comes out blue.  Needs a "mixer flag" kind of colour, like
    CMY with different filters.
-3. **CMY-only light with no dimmer and no shutter** (Generic CMY Fader,
+3. **(DONE 2026-10-08) CMY-only light with no dimmer and no shutter** - its
+   flags are filters, so it is a lamp that is lit and white at rest (and
+   listed by Ready? as a lamp DMX can't close); red is red.  Was: **CMY-only light with no dimmer and no shutter** (Generic CMY Fader,
    3 modes): Full shows dark in 3D.  With no way to dim, "Full" on such a
    light should mean "flags out" and the 3D should draw it lit.
-4. **Shutter flicker / random strobe / alternate never change the DMX**
+4. **(DONE 2026-10-08, PR #81) Shutter flicker / random strobe / alternate never change the DMX**
    (Studio Due Shark 150C x4 modes, Mac Mah Mac Follow 1200, BoomToneDJ
    Strob LED 18 2ch, Pro-Lights Ra 2000Profile 44ch alternate / fan).
    The effect is offered but finds no range to move on that channel.
-5. **Locate not white, from odd files** (still 18 modes):
+5. **(Mostly DONE 2026-10-08) Locate not white, from odd files** - "Lime" /
+   "Mint" is now a colour role (`lime`, PARSER_VERSION 14): on red + lime +
+   blue lights it is their green (Locate white, a green pick lights it, the
+   3D mixes it as green); a white LED beside a partial mix is white alone
+   (Rocklite).  Left: HSI / CCT-only modes (hue + saturation channels) show
+   the 3D's "colour unknown" grey; Cameo CLBAR10RGBA 2ch's macro.
+   Was (still 18 modes):
    - ETC Source Four LED Series 2 Daylight / Tungsten HD "Direct": the file
      names two channels "Red" and one "Mint", so the white mix is off;
    - Blizzard Rocklite RGBAW 4-channel (red, amber, white only): Locate
@@ -666,10 +692,13 @@ counts are modes, not lights.
    ColorChanger, PR Pilot 575): red and blue land on the same slot.  Fix
    per light with **Teach the wheel** (Colour tab); a library-wide fix
    would need the slot colours from the manufacturers.
-7. **Not wrong, the sweep should skip:** Cameo P2 FC CCT modes are
+7. **(DONE 2026-10-08) Not wrong, the sweep should skip** (libsweep skips a
+   partial red / green / blue mix whose channels share other functions): Cameo P2 FC CCT modes are
    white-only (red and blue *should* give the same DMX); Chauvet
    ColorStrip Mini "Default" has one channel for "speed / red / fade".
-8. **Tell the operator when the autosave was unreadable.**  The desk now
+8. **(DONE 2026-10-08) Tell the operator when the autosave was unreadable** -
+   a one-time notice on screen (snapshot `notice`, OK -> `notice_seen`).
+   Was: **Tell the operator when the autosave was unreadable.**  The desk now
    starts empty and keeps the file as `autosave.broken.json` (batch 2),
    but only the log says so; a one-time notice on screen would be kinder.
 9. **Lamps DMX can't close** (72 modes, mostly old scanners and HMI

@@ -17,9 +17,10 @@ const AREAS = [["dmx", "The real light (DMX)"], ["3d", "The 3D view"], ["program
   ["effects", "Effects / lasers / fog"], ["cues", "Cues or playbacks"], ["crash", "The desk crashed or froze"]];
 // a report that doesn't come back in time says so, instead of "Saving…" for ever
 const WAIT_MS = 25000;
+const SEND_WAIT_MS = 70000;          // saving, then sending it to the report relay
 async function ask(body) {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), WAIT_MS);
+  const timer = setTimeout(() => ctl.abort(), body.send ? SEND_WAIT_MS : WAIT_MS);
   try {
     return await request("/api/console/bug_report", body, { signal: ctl.signal });
   } catch (e) {
@@ -51,23 +52,43 @@ export function openBugReport(head = null) {
     list.replaceChildren(h("li.muted", "Gathering…"));
     const d = await ask(payload({ preview: true }));
     if (d.error) { list.replaceChildren(h("li", d.error)); return; }
+    relay = !!d.relay;
+    sendBtn.hidden = !relay;
+    saveBtn.className = relay ? "btn" : "btn primary";
+    note.textContent = relay
+      ? "Never included: the .env file, the AI key or any password. Send report files it for you - no GitHub account needed; "
+        + "or save it and open GitHub yourself."
+      : "Never included: the .env file, the AI key or any password. "
+        + "It is saved on this computer; you drag it into the GitHub issue that opens (a GitHub account is needed).";
     list.replaceChildren(...d.files.map((f) => h("li", h("code", f.name), h("span.muted", " " + kb(f.bytes)))),
       h("li", h("code", "3d-view.png"), h("span.muted", " a picture of the 3D view")));
   };
   show.addEventListener("change", preview);
   let busy = false;
-  const send = async () => {
+  let relay = false;
+  const send = async (viaRelay = false) => {
     if (!what.value.trim()) { toast("Say what's wrong first", "bad"); what.focus(); return; }
     if (busy) return;
     busy = true;
-    saveBtn.disabled = true;
-    sending.textContent = "Saving the report…";
+    saveBtn.disabled = sendBtn.disabled = true;
+    sending.textContent = viaRelay ? "Sending the report…" : "Saving the report…";
     let picture = "";
     try { picture = window.jarvisStage ? window.jarvisStage.photo(1600) : ""; } catch { /* no 3D in this window */ }
-    const d = await ask(payload({ picture }));
+    const d = await ask(payload({ picture, send: viaRelay }));
     busy = false;
-    saveBtn.disabled = false;
+    saveBtn.disabled = sendBtn.disabled = false;
     if (d.error) { sending.textContent = d.error; return; }
+    if (viaRelay && d.sent) {
+      toast(`Report sent - issue #${d.sent.number || "?"}. Thank you!`, "ok", 9000);
+      window.open(d.sent.issue_url, "_blank", "noopener");
+      close();
+      return;
+    }
+    if (viaRelay) {
+      // not sent: say why, and leave the GitHub way open (the report is saved)
+      sending.textContent = `${d.send_error || "It couldn't be sent."} It is saved as ${d.zip}.`;
+      return;
+    }
     // the zip, saved where downloads go (fetched with the desk's key, then handed over)
     const t = token();
     const r = await fetch("/api/console/bug_report?name=" + encodeURIComponent(d.zip), { headers: t ? { "X-Jarvis-Token": t } : {} });
@@ -80,7 +101,11 @@ export function openBugReport(head = null) {
     toast(`Report saved as ${d.zip}. Drag it into the GitHub page that opened, then Submit.`, "ok", 9000);
     close();
   };
-  const saveBtn = h("button.btn.primary", { onclick: () => send() }, "Save report and open GitHub");
+  const saveBtn = h("button.btn.primary", { onclick: () => send(false) }, "Save report and open GitHub");
+  const sendBtn = h("button.btn.primary", { hidden: true, onclick: () => send(true),
+    title: "Files the report on the desk's GitHub page for you, with everything attached - no GitHub account needed" }, "Send report");
+  const note = h("p.muted.small", "Never included: the .env file, the AI key or any password. "
+    + "It is saved on this computer; you drag it into the GitHub issue that opens (a GitHub account is needed).");
   const close = modal({
     title: hd ? `Report a problem with #${head} ${hd.model || hd.name || ""}` : "Report a bug",
     body: h("div.report-form",
@@ -88,12 +113,10 @@ export function openBugReport(head = null) {
       hd ? h("div.field", h("span", "Where does it go wrong?"),
         h("div.report-ticks", ...ticks.map((t) => h("label.check", t.box, h("span", t.label))))) : null,
       h("label.check", show, h("span", "Attach the whole show, so the exact rig can be loaded for testing")),
-      h("div.field", h("span", "What goes in the report"), list,
-        h("p.muted.small", "Never included: the .env file, the AI key or any password. "
-          + "It is saved on this computer; you drag it into the GitHub issue that opens (a GitHub account is needed).")),
+      h("div.field", h("span", "What goes in the report"), list, note),
       sending),
     foot: [h("button.btn", { onclick: () => close() }, "Cancel"),
-      saveBtn],
+      saveBtn, sendBtn],
   });
   preview();
   setTimeout(() => what.focus(), 50);

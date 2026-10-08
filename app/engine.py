@@ -1279,6 +1279,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
                 "floor_movers": len(self._floor_limits()),
                 "blackout": self.blackout,
+                "notice": self.__dict__.get("boot_notice"),
                 "selected": list(self.selected),
                 "programmer": {
                     "values": {str(k): dict(v)

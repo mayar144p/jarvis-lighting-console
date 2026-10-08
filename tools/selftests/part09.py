@@ -4528,6 +4528,13 @@ out.lpLed = [lp.padLed(0, [255, 0, 0], true), lp.padLed(63, [255, 0, 0], false)]
 out.mk = [m.decode([0xe0, 0x7f, 0x7f]), m.decode([0xe8, 0, 0]), m.decode([0x90, 24, 127]), m.decode([0x90, 17, 127]), m.decode([0x90, 3, 127]), m.decode([0x90, 9, 127]), m.decode([0x90, 104, 127])];
 out.mkOut = [m.faderOut(0, 1), m.faderOut(8, 0), m.faderOut(2, 0.5), m.buttonLed("go", 1, true), m.padLed(3, [1, 2, 3], true)];
 out.hex = [hexRgb("#ff8800"), hexRgb("nope")];
+const q = L.apc40, q2 = L.apc40mk2;
+out.apc40names = ["Akai APC40", "APC40", "APC40 mkII", "APC40 MK2 MIDI"].map(profileFor);
+out.apc40 = [q.hello(), q.bye(), q.decode([0x90, 53, 127]), q.decode([0x97, 57, 0]), q.decode([0xb3, 7, 127]), q.decode([0xb0, 14, 0]),
+             q.decode([0x92, 51, 127]), q.decode([0x95, 52, 127]), q.decode([0x90, 84, 127]), q.decode([0x90, 99, 127])];
+out.apc40Led = [q.padLed(0, [255, 0, 0], false), q.padLed(9, [255, 0, 0], true), q.padLed(39, null, false), q.buttonLed("go", 2, true), q.buttonLed("page", 4, true), q.buttonLed("page", 5, true)];
+out.apc40mk2 = [q2.hello(), q2.decode([0x90, 32, 127]), q2.decode([0x90, 7, 0]), q2.decode([0x91, 0, 127])];
+out.apc40mk2Led = [q2.padLed(0, [0, 0, 255], false), q2.padLed(0, [0, 0, 255], true), q2.padLed(39, null, false)];
 console.log(JSON.stringify(out));
 """
     url = (ROOT / "web" / "app" / "ctrlprofiles.js").as_uri()
@@ -4562,6 +4569,19 @@ console.log(JSON.stringify(out));
     check("Mackie: the motor faders move to the playback (14-bit), the LEDs light",
           got["mkOut"] == [[[0xe0, 127, 127]], [[0xe8, 0, 0]], [[0xe2, 0, 64]], [[0x90, 25, 127]], [[0x90, 3, 127]]], str(got["mkOut"]))
     check("tile colours to RGB", got["hex"] == [[255, 136, 0], None])
+    check("APC40 and APC40 mkII recognised by name", got["apc40names"] == ["apc40", "apc40", "apc40mk2", "apc40mk2"], str(got["apc40names"]))
+    check("APC40: Ableton mode by SysEx (and back); the grid's top-left is note 53 on channel 1; faders CC 7 per channel, "
+          "master CC 14; TRACK SELECT = GO, CLIP STOP = release, SCENE LAUNCH = pages",
+          got["apc40"] == [[[0xf0, 0x47, 0x7f, 0x73, 0x60, 0, 4, 0x41, 8, 2, 1, 0xf7]], [[0xf0, 0x47, 0x7f, 0x73, 0x60, 0, 4, 0x40, 8, 2, 1, 0xf7]],
+                           {"pad": 0, "down": True}, {"pad": 39, "down": False}, {"fader": 3, "value": 1}, {"master": 0},
+                           {"go": 2, "down": True}, {"release": 5, "down": True}, {"page": 2, "down": True}, None], str(got["apc40"]))
+    check("APC40 pads: red, blinking when on, off when empty; GO and page LEDs",
+          got["apc40Led"] == [[[0x90, 53, 3]], [[0x91, 54, 4]], [[0x97, 57, 0]], [[0x92, 51, 1]], [[0x90, 86, 1]], []], str(got["apc40Led"]))
+    check("APC40 mkII: its own SysEx; the grid from the bottom-left (note 32 = top-left)",
+          got["apc40mk2"] == [[[0xf0, 0x47, 0x7f, 0x29, 0x60, 0, 4, 0x41, 9, 7, 1, 0xf7]], {"pad": 0, "down": True},
+                              {"pad": 39, "down": False}, None], str(got["apc40mk2"]))
+    check("APC40 mkII pads: the palette colour, pulsing when on",
+          got["apc40mk2Led"] == [[[0x90, 32, 45]], [[0x98, 32, 45]], [[0x90, 7, 0]]], str(got["apc40mk2Led"]))
 
 
 def test_gdtf_pan_tilt_parts() -> None:
@@ -4806,7 +4826,8 @@ def test_bug_report_never_waits_on_git() -> None:
         check("no .git at all: unknown", bugreport._read_version(root / "nothing") == "unknown")
     js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
     check("the dialog gives up in time and says what to do", "AbortController" in js and "WAIT_MS" in js)
-    check("Save can't be pressed twice while it works", "saveBtn.disabled = true" in js)
+    check("Save (and Send) can't be pressed twice while it works",
+          "saveBtn.disabled = true" in js or "saveBtn.disabled = sendBtn.disabled = true" in js)
 
 
 def test_wave360_strobe_and_wheel_colours() -> None:
@@ -5227,3 +5248,354 @@ def test_fixture_requests() -> None:
     wf = (ROOT / ".github" / "workflows" / "library-update.yml").read_text(encoding="utf-8")
     check("a weekly job rebuilds the libraries and opens a pull request only when something changed",
           "schedule" in wf and "--summary" in wf and "NO CHANGES" in wf and "gh pr create" in wf and "rulecheck" in wf)
+
+
+def test_light_file_quirks() -> None:
+    """Backlog A8, from the library sweeps: a lime ("Mint") emitter is a
+    colour, so an ETC Source Four LED's Locate is white, not magenta; a
+    white LED beside a partial mix is white alone (not pink); a CMY-only
+    lamp is lit and white at rest; and an autosave that couldn't be read
+    is said on screen once, not only in the log."""
+    print("Light-file quirks: lime emitters, partial mixes, CMY lamps, a broken autosave")
+    from app import engine as eng, fixlib
+    from app.engine_support import channel_role
+    check("Lime and Mint are the lime emitter", channel_role("Lime") == "lime" and channel_role("Mint") == "lime")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            def patch(words, mode=None):
+                rows = fixlib.search(words)
+                if not rows:
+                    return None
+                got = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                r = e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1, mode=mode)
+                return e._head(r["heads"][0]) if r.get("heads") else None
+
+            def look(h):
+                return next(x for x in e._looks() if x["n"] == h["head_no"])
+
+            for words, mode in (("Source Four LED Series 2 Tungsten HD", "Direct"), ("Rocklite RGBAW", "4-Channel")):
+                h = patch(words, mode)
+                if not h:
+                    continue
+                e.act("select_heads", heads=[h["head_no"]])
+                e.act("locate")
+                check(f"{words} [{mode}]: Locate is white", look(h)["hex"] == "#ffffff", f"{look(h)['hex']} {h['map']}")
+                if "lime" in h["map"]:
+                    e.act("set_colour", hex="#00ff00")
+                    check("...green lights its lime", look(h)["hex"] == "#00ff00", look(h)["hex"])
+                e.act("clear_programmer")
+            cmy = patch("Generic CMY Fader")
+            if cmy:
+                lk = look(cmy)
+                check("a CMY-only lamp is lit and white at rest (its flags are out)", lk["on"] and lk["hex"] == "#ffffff", str(lk))
+                e.act("select_heads", heads=[cmy["head_no"]])
+                e.act("set_colour", hex="#ff0000")
+                check("...and red when the flags make red", look(cmy)["hex"] == "#ff0000", str(look(cmy)))
+                e.act("clear_programmer")
+        finally:
+            e.shutdown()
+        save = tmp / "autosave.json"
+        save.write_text("{ cut short by a power cu", encoding="utf-8")
+        b = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2", autosave_path=save, restore=True)
+        try:
+            n = b.snapshot().get("notice") or {}
+            check("an unreadable autosave is said on screen", n.get("id") == "autosave_broken" and "autosave.broken.json" in n.get("text", ""), str(n)[:160])
+            b.act("notice_seen")
+            check("...once: OK clears it", not b.snapshot().get("notice"))
+        finally:
+            b.shutdown()
+    js = (ROOT / "web" / "app" / "errorbadge.js").read_text(encoding="utf-8")
+    check("the screen shows the start-up notice", "snap.notice" in js and "notice_seen" in js)
+
+
+def test_ai_installer_tick() -> None:
+    """A12's last piece: the installer's "Include the offline AI" tick.  The
+    desktop app hands the tick to the desk as DATA/ai/wanted.json; on start
+    the desk downloads the model that fits in the background - nothing to
+    press - and forgets the note once it has it (or the computer can't run
+    one, or the operator pauses it)."""
+    print("The installer's offline-AI tick: downloads on first start")
+    import hashlib
+    import json as _json
+    import os
+    from app import config as cfg, localai
+    blob = b"GGUF" + bytes(range(256)) * 20
+    listing = _json.dumps([{"path": "Qwen3-8B-Q4_K_M.gguf", "size": len(blob),
+                            "lfs": {"oid": hashlib.sha256(blob).hexdigest(), "size": len(blob)}}]).encode()
+
+    def fake(url, headers):
+        if "/api/models/" in url:
+            return 200, {}, iter([listing])
+        return 200, {}, iter([blob])
+    import collections
+    saved = (cfg.DATA, os.environ.get("LLAMA_SERVER"), localai.transport, localai.memory_gb, localai.vram_gb,
+             localai.shutil.disk_usage)
+    with tempfile.TemporaryDirectory() as td:
+        cfg.DATA = Path(td)
+        os.environ["LLAMA_SERVER"] = str(ROOT / "tools" / "selftests" / "fake_llama.py")
+        localai.transport = fake
+        localai.memory_gb, localai.vram_gb = (lambda: 16.0), (lambda: 0.0)
+        usage = collections.namedtuple("usage", "total used free")
+        localai.shutil.disk_usage = lambda _p: usage(500 * 2 ** 30, 0, 200 * 2 ** 30)
+        note = localai.folder() / localai.WANTED
+        try:
+            check("no tick: nothing happens on start", localai.auto_download() == "")
+            note.write_text("{}", encoding="utf-8")
+            check("ticked, but the output is live: it waits", "live" in localai.auto_download(live=True) and note.is_file())
+            said = localai.auto_download()
+            check("ticked: the model that fits starts downloading in the background", "qwen3-8b" in said, said)
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 5 and not localai.status()["download"].get("finished"):
+                time.sleep(0.05)
+            check("...it arrives, checked", [m["file"] for m in localai.models()] == ["Qwen3-8B-Q4_K_M.gguf"],
+                  str(localai.status()["download"]))
+            check("...and the note is gone (no download on the next start)", not note.exists())
+            note.write_text("{}", encoding="utf-8")
+            check("a model already here: the note just goes", localai.auto_download() == "a model is already here" and not note.exists())
+            localai.remove("Qwen3-8B-Q4_K_M.gguf")
+            note.write_text("{}", encoding="utf-8")
+            localai.memory_gb = lambda: 8.0
+            said = localai.auto_download()
+            check("a computer that can't run it: not downloaded, said why, note gone",
+                  said.startswith("not downloaded") and not note.exists(), said)
+            note.write_text("{}", encoding="utf-8")
+            localai.pause()
+            check("Pause in Settings -> AI: the tick no longer restarts it", not note.exists())
+        finally:
+            cfg.DATA, env, localai.transport, localai.memory_gb, localai.vram_gb, localai.shutil.disk_usage = saved
+            if env is None:
+                os.environ.pop("LLAMA_SERVER", None)
+            else:
+                os.environ["LLAMA_SERVER"] = env
+    nsh = (ROOT / "desktop" / "res" / "installer.nsh").read_text(encoding="utf-8")
+    pkg = (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+    js = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the installer has the ticked 'Include the offline AI' page",
+          "customPageAfterChangeDir" in nsh and "BST_CHECKED" in nsh and "offline-ai-wanted" in nsh
+          and '"include": "res/installer.nsh"' in pkg)
+    code = "\n".join(line.split(";")[0] for line in nsh.splitlines())
+    check("...using no MUI macro (electron-builder includes it before MUI is loaded - the Windows build stopped)",
+          "MUI_" not in code)
+    check("the app hands the tick to the desk, and the desk acts on it at start",
+          "offline-ai-wanted" in js and "wanted.json" in js and "localai.auto_download" in main)
+
+
+def test_mvr_trusses_objects() -> None:
+    """MVR's own trusses and scene objects (asked: "MVR trusses / objects"):
+    a truss comes in at its place, angle and length (from its GDTF model, or
+    the length in its name), the lights hung along it go ON it - turned with
+    it - and the PA, the LED wall, the bar come in as objects.  Ours go back
+    out with their length and angle."""
+    print("MVR: the plot's own trusses (angle, length) and objects")
+    import io
+    import math
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from app import venue as venue_mod
+    from tools.selftests.common import SPEC_GDTF
+
+    def zipped(files):
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            for n, d in files.items():
+                z.writestr(n, d)
+        return b.getvalue()
+    light = zipped({"description.xml": SPEC_GDTF})
+    truss = zipped({"description.xml": b'<GDTF><FixtureType Name="Box" Manufacturer="Prolyte"><Models>'
+                                       b'<Model Name="Box30" Length="6" Width="0.29" Height="0.29" PrimitiveType="Cube"/>'
+                                       b'</Models></FixtureType></GDTF>'})
+    c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+    turned = f"{{{c},{s},0}}{{{-s},{c},0}}{{0,0,1}}"
+
+    def fx(name, x, y, z):
+        return (f'<Fixture name="{name}" uuid="{name}"><Matrix>{turned}{{{x},{y},{z}}}</Matrix>'
+                f'<GDTFSpec>Acme@Beam900.gdtf</GDTFSpec><GDTFMode>6 Channel</GDTFMode>'
+                f'<Addresses><Address break="0">1.{1 + len(name) * 0}</Address></Addresses></Fixture>')
+    beams = "".join(fx(f"T{i}", round(d * c), round(4000 + d * s), 5700) for i, d in enumerate((-2000, 0, 2000)))
+    xml = ('<?xml version="1.0"?><GeneralSceneDescription verMajor="1" verMinor="6"><Scene><Layers><Layer name="Rig" uuid="L"><ChildList>'
+           f'<Truss name="Upstage truss" uuid="t1"><Matrix>{turned}{{0,4000,6000}}</Matrix><GDTFSpec>Prolyte@Box30.gdtf</GDTFSpec></Truss>'
+           '<Truss name="Pipe 4m" uuid="t2"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,0,5000}</Matrix></Truss>'
+           f'{beams}'
+           '<SceneObject name="PA Left" uuid="o1"><Matrix>{1,0,0}{0,1,0}{0,0,1}{-5000,1000,0}</Matrix></SceneObject>'
+           '<VideoScreen name="LED Wall" uuid="o2"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,7000,2000}</Matrix></VideoScreen>'
+           '<SceneObject name="Chair 12" uuid="o3"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,0,0}</Matrix></SceneObject>'
+           '</ChildList></Layer></Layers></Scene></GeneralSceneDescription>')
+    data = zipped({"GeneralSceneDescription.xml": xml, "Acme@Beam900.gdtf": light, "Prolyte@Box30.gdtf": truss})
+    plot = mvr.read(data)
+    check("the plot's trusses and the objects the desk knows (a chair is left out)",
+          len(plot["trusses"]) == 2 and sorted(o["kind"] for o in plot["objects"]) == ["screen", "speaker"] and plot["others"] == 1,
+          f"{plot['trusses']} {plot['objects']}")
+    check("a truss's length from its GDTF model, or from its name",
+          plot["trusses"][0]["size"][0] == 6.0 and mvr.length_in_name("Pipe 4m") == 4.0 and mvr.length_in_name("10ft truss") == 3.048
+          and mvr.length_in_name("Truss 1") is None)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = mvr.import_into(e, data, tmp / "gdtf", replace=True)
+            rigs = {x["name"]: x for x in e.venue["rigging"]}
+            up = rigs.get("Upstage truss")
+            check("both trusses in, and the 2 objects", r["ok"] and r["trusses"] == 2 and r["objects"] == 2 and up and "Pipe 4m" in rigs, str(r))
+            if up:
+                ln = math.dist((up["a"][0], up["a"][2]), (up["b"][0], up["b"][2]))
+                check("the truss at its angle (30 deg) and length (6 m)",
+                      abs(venue_mod.fold90(venue_mod.rig_angle(up)) - 30) < 0.5 and abs(ln - 6) < 0.05, f"{venue_mod.rig_angle(up)} {ln}")
+                pipe = rigs["Pipe 4m"]
+                check("the pipe: 4 m from its name", abs(math.dist((pipe["a"][0], pipe["a"][2]), (pipe["b"][0], pipe["b"][2])) - 4) < 0.05)
+                on = [h for h in e.patch if (h.get("mount") or {}).get("rig") == up["id"]]
+                check("the 3 lights along it hang ON it, in order", len(on) == 3
+                      and sorted(on, key=lambda h: h["mount"]["t"])[0]["name"] == "T0", str([(h["name"], h.get("mount")) for h in e.patch]))
+                check("...turned with it", all(abs(abs(e._head_yaw(h)) - 30) < 1 or abs(abs(e._head_yaw(h)) - 150) < 1 for h in on),
+                      str([e._head_yaw(h) for h in on]))
+            objs = {o["kind"]: o for o in e.venue["objects"]}
+            check("the PA and the LED wall as objects, the screen at its height",
+                  "speaker" in objs and "screen" in objs and abs(objs["screen"]["y"] - 2.0) < 0.01, str(objs))
+            back = mvr.read(mvr.export_from(e, [tmp / "gdtf"], "t"))
+            bt = {t["name"].split(" (")[0]: t for t in back["trusses"]}
+            check("out again: the truss with its length in its name and its angle",
+                  "Upstage truss" in bt and abs(mvr.length_in_name(bt["Upstage truss"]["name"]) - 6) < 0.05
+                  and abs(math.degrees(math.atan2(bt["Upstage truss"]["u"][1], bt["Upstage truss"]["u"][0])) % 180 - 30) < 0.5,
+                  str(bt.get("Upstage truss")))
+            check("...and the objects", sorted(o["kind"] for o in back["objects"]) == ["screen", "speaker"], str(back["objects"]))
+        finally:
+            e.shutdown()
+
+
+def test_report_relay() -> None:
+    """Bug reports without a GitHub account: with REPORT_RELAY set, the desk
+    sends the saved report to the relay (tools/report-relay/), which files
+    the issue with its own token and keeps the zip.  The desk: https only, a
+    size cap, plain reasons, no secrets.  The relay: the form's fields, safe
+    labels, no @mentions, the zip behind the maintainers' key, a rate limit."""
+    print("Report relay: send a report with no GitHub account")
+    import json as _json
+    import shutil
+    import subprocess
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app import bugreport, config as cfg
+    from app import engine as eng
+    seen: dict = {}
+
+    class Relay(BaseHTTPRequestHandler):
+        answer = (200, {"issue_url": f"https://github.com/{bugreport.REPO}/issues/77", "number": 77})
+
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            seen["body"] = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen["key"] = self.headers.get("X-Relay-Key")
+            code, obj = Relay.answer
+            data = _json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    srv = HTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    saved = (cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY, cfg.LLM_API_KEY, cfg.DATA)
+    key = "AIza" + "q" * 35
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            cfg.REPORT_RELAY, cfg.LLM_API_KEY = "", key
+            check("no relay set: no Send button (the report is saved and GitHub opens, as before)",
+                  bugreport.report(e, None, "x", [], False, b"", [], preview=True).get("relay") is False)
+            cfg.REPORT_RELAY = "http://example.com/relay"
+            out = bugreport.report(e, None, "the faders stick", [], False, b"", [], send=True)
+            check("an http:// relay (not this computer) is refused - the report is still saved",
+                  "https" in out.get("send_error", "") and out.get("zip"), str(out))
+            cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY = f"http://127.0.0.1:{srv.server_address[1]}/", "desk-key"
+            check("relay set: the window offers Send report", bugreport.report(e, None, "x", [], False, b"", [], preview=True)["relay"])
+            out = bugreport.report(e, None, f"the faders stick, my key is {key}", [], True, b"", [], send=True)
+            body = seen.get("body") or {}
+            check("sent: the relay's issue comes back", out.get("sent", {}).get("number") == 77, str(out))
+            check("...on the bug form, its fields filled in, the zip with it",
+                  body.get("template") == "bug.yml" and body["fields"].get("what", "").startswith("the faders stick")
+                  and body.get("zip_name") == out["zip"] and len(body.get("zip", "")) > 100, str(body)[:200])
+            check("...the desk's relay key sent; no secret anywhere in it",
+                  seen.get("key") == "desk-key" and key not in _json.dumps(body), "")
+            Relay.answer = (429, {"error": "too many reports from here - try again in an hour"})
+            out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
+            check("the relay says no: its reason, and the report is saved for GitHub",
+                  "too many reports" in out.get("send_error", "") and out.get("url", "").startswith("https://github.com/"), str(out))
+            Relay.answer = (200, {"issue_url": "https://evil.example/x"})
+            out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
+            check("an answer that isn't this repo's issue is not shown as sent", "send_error" in out and "sent" not in out, str(out))
+            big = tmp / "bug_reports" / "jarvis-report-big.zip"
+            big.write_bytes(b"PK" + b"\0" * (bugreport.RELAY_MAX + 10))
+            try:
+                bugreport.relay_send(big, None, "x", [])
+                capped = False
+            except ValueError as exc:
+                capped = "Attach the whole show" in str(exc)
+            check("a report over the relay's size: says to untick the show", capped)
+        finally:
+            e.shutdown()
+            srv.shutdown()
+            cfg.REPORT_RELAY, cfg.REPORT_RELAY_KEY, cfg.LLM_API_KEY, cfg.DATA = saved
+    js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
+    check("the report window: Send report when the desk has a relay", "Send report" in js and "send: viaRelay" in js)
+    # the relay itself, with a fake GitHub and a fake bucket
+    node = shutil.which("node")
+    if not node:
+        return
+    script = r"""
+const W = (await import(process.argv[1])).default;
+const calls = [];
+globalThis.fetch = async (u, o) => { calls.push({ u, o }); return new Response(JSON.stringify({ html_url: "https://github.com/o/r/issues/5", number: 5 }), { status: 201 }); };
+const store = new Map();
+const env = { REPO: "o/r", GITHUB_TOKEN: "t", DOWNLOAD_KEY: "dk", RELAY_KEY: "rk",
+  REPORTS: { put: async (k, v, m) => store.set(k, { v, m }), get: async (k) => store.has(k) ? { body: store.get(k).v, customMetadata: store.get(k).m.customMetadata } : null } };
+const zip = Buffer.from("PK\x03\x04hello").toString("base64");
+const rep = (extra = {}, head = {}) => new Request("https://relay.example/", { method: "POST",
+  headers: { "X-Relay-Key": "rk", "CF-Connecting-IP": "1.2.3.4", ...head },
+  body: JSON.stringify({ template: "light-bug.yml", title: "[Light] Acme Beam: dark", labels: ["light-bug", "brand:Acme", "admin", "x\ny"],
+    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "jarvis-report-1-acme.zip", zip, ...extra }) });
+const out = {};
+let r = await W.fetch(rep(), env);
+out.ok = [r.status, await r.json()];
+const gh = JSON.parse(calls[0].o.body);
+out.gh = { url: calls[0].u, labels: gh.labels, mention: gh.body.includes("@everyone"), link: /\/r\/[0-9a-f-]{36}\)/.test(gh.body), title: gh.title };
+const id = [...store.keys()][0].replace(".zip", "");
+out.dlNoKey = (await W.fetch(new Request(`https://relay.example/r/${id}`), env)).status;
+const dl = await W.fetch(new Request(`https://relay.example/r/${id}?key=dk`), env);
+out.dl = [dl.status, dl.headers.get("Content-Disposition")];
+out.wrongKey = (await W.fetch(rep({}, { "X-Relay-Key": "nope" }), env)).status;
+out.badForm = (await W.fetch(rep({ template: "../evil" }), env)).status;
+out.notZip = (await W.fetch(rep({ zip: Buffer.from("hello").toString("base64") }, { "CF-Connecting-IP": "9.9.9.9" }), env)).status;
+const codes = [];
+for (let i = 0; i < 6; i++) codes.push((await W.fetch(rep({}, { "CF-Connecting-IP": "5.5.5.5" }), env)).status);
+out.rate = codes;
+console.log(JSON.stringify(out));
+"""
+    url = (ROOT / "tools" / "report-relay" / "worker.mjs").as_uri()
+    r = subprocess.run([node, "--input-type=module", "-e", script, url], capture_output=True, text=True, timeout=30)
+    got = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+    check("the relay runs", r.returncode == 0, r.stderr[-300:])
+    if not got:
+        return
+    check("the relay files the issue and answers with it", got["ok"] == [200, {"issue_url": "https://github.com/o/r/issues/5", "number": 5}], str(got["ok"]))
+    check("...on this repo, with the form's labels only (no made-up ones), and no @mention",
+          got["gh"]["url"] == "https://api.github.com/repos/o/r/issues" and got["gh"]["labels"] == ["light-bug", "brand:Acme"]
+          and not got["gh"]["mention"], str(got["gh"]))
+    check("...the zip kept, linked from the issue, downloadable only with the maintainers' key",
+          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "jarvis-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
+    check("the wrong relay key, an unknown form, a file that isn't a zip: refused",
+          got["wrongKey"] == 403 and got["badForm"] == 400 and got["notZip"] == 400, str(got))
+    check("at most 6 reports an hour from one address", got["rate"] == [200] * 6, str(got["rate"]))

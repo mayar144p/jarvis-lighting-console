@@ -44,7 +44,11 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    free tier works; <https://aistudio.google.com/apikey>), and/or download
    the offline AI (desktop app; ~5 GB, unlimited, no internet), and pick
    **Online**, **Local** or **Auto** (Gemini first, the offline AI when
-   Gemini hits its limit or there's no internet).  Or, as before, in `.env`:
+   Gemini hits its limit or there's no internet).  The Windows installer
+   has a ticked **Include the offline AI** box: the desk then downloads the
+   model that fits the computer in the background the first time it starts
+   (progress in Settings -> AI; Pause there stops it), so the copilot works
+   offline once it's done.  Or, as before, in `.env`:
    ```
    LLM_API_KEY=...
    LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
@@ -588,7 +592,12 @@ controller. These are recognised by name and work straight away:
 |---|---|---|---|
 | Akai APC mini / APC mini mk2 | the buttons page, lit in each button's colour (dim off, full or blinking on) | playbacks 1-8 and the grand master | under the pads: GO 1-8; down the side: buttons page 1-8 |
 | Novation Launchpad Mini MK3 / X | the buttons page in each button's own colour | - | top row: GO 1-8; right side: buttons page 1-8 |
+| Akai APC40 / APC40 mkII | the 5 x 8 clip grid: the buttons page in each button's colour (blinking / pulsing on) | playbacks 1-8 and the master | TRACK SELECT: GO 1-8; CLIP STOP: release; SCENE LAUNCH: buttons page 1-5 |
 | Behringer X-Touch / X-Touch Compact (Mackie Control mode) | REC 1-8: the first 8 buttons | playbacks 1-8 and the grand master, **motor faders follow** | SELECT: GO, MUTE: release, SOLO: buttons page |
+
+The APC40 layouts are built from Akai's published protocol and haven't been
+tried on a real unit yet: if a button does the wrong thing, **Settings → MIDI
+& OSC → MIDI monitor** shows what it sends - report it.
 
 The pads always play the page that's on screen, and the screen follows the
 page you pick on the controller. Other controllers still play buttons by
@@ -599,15 +608,21 @@ their MIDI note (Edit → a button → MIDI).
 **Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is
 installed from its own GDTF inside the file, with its 3D body when the file
 has one. It is patched at its universe and address, in its mode, and placed
-where the plot has it, hanging or standing. Lights hung in a row get a truss
-they are mounted on. With a show already patched you choose **Add to this
+where the plot has it, hanging or standing. The plot's own **trusses** come in
+at their place, angle and length (the length from the truss's GDTF model, or
+from its name such as "Pipe 4m"), and the lights hung along one go on it,
+turned with it. Lights hung in a row with no truss get one of their own.
+**Scene objects** the desk knows by name come in too: PA and subs, LED walls
+and screens, the bar, the DJ booth, risers, pillars, tables (other objects,
+like chairs, are counted and left out). With a show already patched you choose **Add to this
 show** or **Start from the plot** (the old lights and trusses go, and the room
 is sized to the plot). What couldn't come in is listed: a GDTF missing from
 the file, or a mode the file doesn't have (the light gets its first mode).
 The whole import is one Ctrl+Z.
 
-**Show ▾ -> Export as MVR** saves the patch and the trusses as an `.mvr`,
-with the GDTF files the desk has for those lights, for other programs.
+**Show ▾ -> Export as MVR** saves the patch, the trusses (at their angle,
+with their length in the name) and the objects as an `.mvr`, with the GDTF
+files the desk has for those lights, for other programs.
 
 ## Fixture library
 
@@ -939,6 +954,10 @@ Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)
 and, if you can, the show file so the exact rig can be loaded.  Never
 attach `.env`.  Quicker: right-click the light → **Report a problem with
 this light…** (or Help → Report a bug) packs all of that for you.
+
+**No GitHub account?** With a report relay set up (`REPORT_RELAY` in
+`.env`; how: `tools/report-relay/README.md`), the report window also has
+**Send report**: the report is filed for you, with everything attached.
 
 When the desk itself hits a problem - an error in the page, a desk error, a
 request that got no answer - a **⚠ badge** appears in the top bar.  Click it

@@ -658,7 +658,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._engine(), int(head) if str(head or "").isdigit() else None,
                     str(body.get("what") or ""), body.get("areas") if isinstance(body.get("areas"), list) else [],
                     body.get("include_show", True) is not False, picture,
-                    [str(e)[:300] for e in errs], preview=bool(body.get("preview"))))
+                    [str(e)[:300] for e in errs], preview=bool(body.get("preview")), send=bool(body.get("send"))))
             if route == "/api/fixtures/real_model":
                 # The Add dialog's preview: the light's REAL 3D when its own
                 # GDTF has one, or the maker's body from GDTF Share (kept, or
@@ -1449,6 +1449,14 @@ def main() -> None:
         dmxin.start_from_config(config)
     midi.start_from_config(engine_mod.ENGINE, config)
     engine_mod.ENGINE.ensure_venue("club")      # a fresh desk opens in a club
+    # the installer's "Include the offline AI" tick: the model downloads now,
+    # in the background (Settings -> AI shows its progress)
+    try:
+        said = localai.auto_download(live=bool(engine_mod.ENGINE.live))
+        if said:
+            print(f"* offline AI: {said}")
+    except Exception as exc:                # noqa: BLE001 - never block boot
+        print(f"* offline AI: skipped ({exc})")
 
     try:
         server = ThreadingHTTPServer((config.HOST, config.PORT), Handler)

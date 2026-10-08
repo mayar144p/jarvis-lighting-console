@@ -48,7 +48,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Jarvis"
+      "shortcutName": "Jarvis",
+      "include": "res/installer.nsh"
     },
     "linux": {
       "target": "dir"

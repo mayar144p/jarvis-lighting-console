@@ -79,6 +79,17 @@ function userFolders() {
   const want = { CONSOLE_DATA_DIR: path.join(ud, "data"), CONSOLE_ENV_FILE: env,
     CONSOLE_INBOX: path.join(ud, "fixtures_inbox"), AUTO_UPDATE: "false",
     CONSOLE_LLAMA_DIR: path.join(process.resourcesPath, "llama") };      // the offline AI's engine
+  // the installer's "Include the offline AI" tick: handed to the desk, which
+  // downloads the model in the background (and forgets the note once it has it)
+  const tick = path.join(ud, "offline-ai-wanted");
+  if (fs.existsSync(tick)) {
+    try {
+      const dir = path.join(process.env.CONSOLE_DATA_DIR || want.CONSOLE_DATA_DIR, "ai");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "wanted.json"), JSON.stringify({ from: "installer", at: new Date().toISOString() }));
+      fs.unlinkSync(tick);
+    } catch { /* the desk offers it in Settings -> AI instead */ }
+  }
   // a value already set (the checks run on scratch data) wins
   return Object.fromEntries(Object.entries(want).filter(([k]) => !process.env[k]));
 }

@@ -1180,7 +1180,7 @@ function webMidiRow() {
   });
   show();
   return h("div", h("label.check", box, h("span", "MIDI in the browser: a controller plugged into the computer this screen runs on plays the buttons")), note,
-    h("p.muted.small", "Ready layouts with lit pads and moving faders: Akai APC mini / mk2, Novation Launchpad Mini MK3 / X, Behringer X-Touch (Mackie Control mode). Plug one in - it is recognised by name."));
+    h("p.muted.small", "Ready layouts with lit pads and moving faders: Akai APC mini / mk2, APC40 / mkII, Novation Launchpad Mini MK3 / X, Behringer X-Touch (Mackie Control mode). Plug one in - it is recognised by name."));
 }
 
 // ================================================================== help

@@ -297,7 +297,37 @@ def download(model_id: str, live: bool = False, background: bool = True) -> dict
 
 def pause() -> dict:
     _dl["paused"] = True
+    # the operator took over: the installer's tick no longer restarts it
+    (folder() / WANTED).unlink(missing_ok=True)
     return status()
+
+
+WANTED = "wanted.json"
+
+
+def auto_download(live: bool = False) -> str:
+    """The installer's "Include the offline AI" tick (a wanted.json the
+    desktop app leaves in DATA/ai/): on start, download the model that fits
+    this computer in the background - nothing to press.  The note goes once
+    a model is there (or this computer can't run one); a download cut short
+    picks up where it was on the next start.  '' when there's no note."""
+    note = folder() / WANTED
+    if not note.is_file():
+        return ""
+    if models():
+        note.unlink(missing_ok=True)
+        return "a model is already here"
+    if live:
+        return "waiting: the output is live"
+    pick = suggest()
+    if not pick["ok"]:
+        note.unlink(missing_ok=True)
+        return f"not downloaded: {pick['why']}"
+    try:
+        download(pick["id"], live=False, background=True)
+    except ValueError as exc:
+        return f"not started: {exc}"
+    return f"downloading {pick['id']} in the background"
 
 
 # ------------------------------------------------------------------ the engine
@@ -401,6 +431,7 @@ def _fetch(item: dict) -> None:
             raise ValueError("the file arrived damaged (its fingerprint doesn't match) - download it again")
         part.replace(target)
         _dl.update(running=False, finished=True)
+        (folder() / WANTED).unlink(missing_ok=True)       # the installer's tick: done
     except (OSError, ValueError, urllib.error.URLError) as exc:
         _dl.update(running=False, error=str(exc))
 

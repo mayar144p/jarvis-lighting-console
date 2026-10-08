@@ -157,8 +157,14 @@ def probe(e, n: int) -> dict[str, tuple[str, str]]:
         f1, h1 = p.frame(), p.look().get("hex", "")
         r2 = e.act("set_colour", colour="#0000ff")
         f2, h2 = p.frame(), p.look().get("hex", "")
+        part = [c for c in ("red", "green", "blue") if c in m]
         if "aren't named" in str(r1.get("error")) or r1.get("unknown_wheel"):
             res["colour"] = ("skip", "unnamed wheel (the operator names it once)")
+        elif part and len(part) < 3 and f1 == f2:
+            # some of red / green / blue share a channel with a speed or a
+            # strobe whose meaning a mode channel switches (Chauvet ColorStrip
+            # Mini: "Run Speed / Red / Fade Speed") - not the desk's to guess
+            res["colour"] = ("skip", "colour channels shared with other functions")
         elif not (r1.get("ok") and r2.get("ok")):
             res["colour"] = ("fail", f"refused: {r1.get('error') or r2.get('error')}")
         elif f1 == f2:
@@ -235,7 +241,9 @@ def probe(e, n: int) -> dict[str, tuple[str, str]]:
             str(x.get("name", "")).strip().lower() in ("open", "white", "clear") or (x.get("hex") or "").lower() in ("#ffffff",)
             or _hue(x.get("hex") or "#000000")[1] < 0.2 and (x.get("hex") or "#000000") != "#000000"
             for x in e._wheel_slots(p.h))
-        if (mixes or wheel) and sat > 0.35 and white_slot:
+        part = [c for c in ("red", "green", "blue") if c in m]
+        shared = bool(part) and len(part) < 3 and "white" not in m and "lime" not in m
+        if (mixes or wheel) and sat > 0.35 and white_slot and not shared:
             bad.append(f"not white: {hx}")
         res["locate"] = ("fail", "; ".join(bad)) if bad else ("ok", "")
         e.act("clear_programmer")
