@@ -3,7 +3,7 @@
 // and recent errors, and (ticked) the whole show.  The reporter sees the
 // list before anything is saved; the zip is saved and a pre-filled GitHub
 // issue opens, to drag it into.  Never: .env, the AI key or passwords.
-import { post, token } from "./api.js";
+import { request, token } from "./api.js";
 import { head as headOf } from "./store.js";
 import { h, modal, toast } from "./ui.js";
 
@@ -15,6 +15,21 @@ window.addEventListener("unhandledrejection", (e) => keep((e.reason && e.reason.
 
 const AREAS = [["dmx", "The real light (DMX)"], ["3d", "The 3D view"], ["programmer", "The programmer"],
   ["effects", "Effects / lasers / fog"], ["cues", "Cues or playbacks"], ["crash", "The desk crashed or froze"]];
+// a report that doesn't come back in time says so, instead of "Saving…" for ever
+const WAIT_MS = 25000;
+async function ask(body) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), WAIT_MS);
+  try {
+    return await request("/api/console/bug_report", body, { signal: ctl.signal });
+  } catch (e) {
+    return { error: e && e.name === "AbortError"
+      ? "The desk didn't answer in 25 seconds. Untick \"Attach the whole show\" and try again - or restart the desk."
+      : (e && e.message) || "The desk didn't answer" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const kb = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
 /** `head` = a light's number, or nothing for "something else is wrong". */
@@ -31,18 +46,25 @@ export function openBugReport(head = null) {
     head, what: what.value.trim(), areas: ticks.filter((t) => t.box.checked).map((t) => t.id),
     include_show: show.checked, page_errors: pageErrors, ...extra });
   const preview = async () => {
-    const d = await post("/api/console/bug_report", payload({ preview: true })).catch((e) => ({ error: e.message }));
+    list.replaceChildren(h("li.muted", "Gathering…"));
+    const d = await ask(payload({ preview: true }));
     if (d.error) { list.replaceChildren(h("li", d.error)); return; }
     list.replaceChildren(...d.files.map((f) => h("li", h("code", f.name), h("span.muted", " " + kb(f.bytes)))),
       h("li", h("code", "3d-view.png"), h("span.muted", " a picture of the 3D view")));
   };
   show.addEventListener("change", preview);
+  let busy = false;
   const send = async () => {
     if (!what.value.trim()) { toast("Say what's wrong first", "bad"); what.focus(); return; }
+    if (busy) return;
+    busy = true;
+    saveBtn.disabled = true;
     sending.textContent = "Saving the report…";
     let picture = "";
     try { picture = window.jarvisStage ? window.jarvisStage.photo(1600) : ""; } catch { /* no 3D in this window */ }
-    const d = await post("/api/console/bug_report", payload({ picture })).catch((e) => ({ error: e.message }));
+    const d = await ask(payload({ picture }));
+    busy = false;
+    saveBtn.disabled = false;
     if (d.error) { sending.textContent = d.error; return; }
     // the zip, saved where downloads go (fetched with the desk's key, then handed over)
     const t = token();
@@ -56,6 +78,7 @@ export function openBugReport(head = null) {
     toast(`Report saved as ${d.zip}. Drag it into the GitHub page that opened, then Submit.`, "ok", 9000);
     close();
   };
+  const saveBtn = h("button.btn.primary", { onclick: () => send() }, "Save report and open GitHub");
   const close = modal({
     title: hd ? `Report a problem with #${head} ${hd.model || hd.name || ""}` : "Report a bug",
     body: h("div.report-form",
@@ -68,7 +91,7 @@ export function openBugReport(head = null) {
           + "It is saved on this computer; you drag it into the GitHub issue that opens (a GitHub account is needed).")),
       sending),
     foot: [h("button.btn", { onclick: () => close() }, "Cancel"),
-      h("button.btn.primary", { onclick: send }, "Save report and open GitHub")],
+      saveBtn],
   });
   preview();
   setTimeout(() => what.focus(), 50);

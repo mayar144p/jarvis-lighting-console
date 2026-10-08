@@ -4782,3 +4782,31 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
           and got["show"]["bottom"] == "buttons")
     check("busking: the buttons and the programmer, no fixture list", got["busk"]["prog"] and not got["busk"]["fix"]
           and got["busk"]["bottom"] == "buttons")
+
+
+def test_bug_report_never_waits_on_git() -> None:
+    """A report that sat at "Saving the report..." for ever (both the list
+    and the save waited): the desk's version came from running git, and on
+    Windows a slow git under a timeout can keep the request waiting for
+    good.  The version is read from .git's own files now, and the dialog
+    gives up after 25 s with what to do."""
+    print("Bug report: never waits on git")
+    import inspect
+    from app import bugreport
+    check("no git program is run", "subprocess" not in inspect.getsource(bugreport))
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        g = root / ".git"
+        (g / "refs" / "heads").mkdir(parents=True)
+        (g / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (g / "refs" / "heads" / "main").write_text("0123456789abcdef\n", encoding="utf-8")
+        check("a branch: its commit and name", bugreport._read_version(root) == "0123456 main")
+        (g / "refs" / "heads" / "main").unlink()
+        (g / "packed-refs").write_text("# pack-refs\nfedcba9876543210 refs/heads/main\n", encoding="utf-8")
+        check("a packed branch too", bugreport._read_version(root) == "fedcba9 main")
+        (g / "HEAD").write_text("abcdef0123456789\n", encoding="utf-8")
+        check("a detached checkout: the commit", bugreport._read_version(root) == "abcdef0")
+        check("no .git at all: unknown", bugreport._read_version(root / "nothing") == "unknown")
+    js = (ROOT / "web" / "app" / "bugreport.js").read_text(encoding="utf-8")
+    check("the dialog gives up in time and says what to do", "AbortController" in js and "WAIT_MS" in js)
+    check("Save can't be pressed twice while it works", "saveBtn.disabled = true" in js)
