@@ -116,7 +116,7 @@ def read(data: bytes | Path) -> dict:
         for n, real in names.items():
             if n.lower().endswith(".gdtf") and zf.getinfo(real).file_size <= MAX_GDTF:
                 gdtf[n.rsplit("/", 1)[-1]] = zf.read(real)
-    lights, trusses, others = [], [], 0
+    lights, trusses, objects, others = [], [], [], 0
     ident = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.0, 0.0, 0.0])
 
     def walk(el, frame, layer):
@@ -148,7 +148,11 @@ def read(data: bytes | Path) -> dict:
                     "stance": "stand" if rot[2][2] < -0.5 else "hang",
                 })
             elif t == "Truss":
-                trusses.append({"name": name, "pos": [v / 1000 for v in here[1]]})
+                trusses.append({"name": name, "pos": [v / 1000 for v in here[1]], "u": here[0][0],
+                                "gdtf": _text(c, "GDTFSpec"), "layer": layer})
+            elif t in ("SceneObject", "VideoScreen") and object_kind(name, t):
+                objects.append({"name": name, "kind": object_kind(name, t), "pos": [v / 1000 for v in here[1]],
+                                "u": here[0][0], "gdtf": _text(c, "GDTFSpec")})
             elif t != "GroupObject":
                 others += 1
             walk(c, here, layer)
@@ -163,7 +167,83 @@ def read(data: bytes | Path) -> dict:
                 frame = _compose(ident, parse_matrix(m.text)) if m is not None else ident
                 walk(layer, frame, layer.get("name") or "")
     ver = f"{root.get('verMajor', '?')}.{root.get('verMinor', '?')}"
-    return {"version": ver, "lights": lights, "trusses": trusses, "others": others, "gdtf": gdtf}
+    for item in trusses + objects:
+        item["size"] = model_size(gdtf.get(item["gdtf"].rsplit("/", 1)[-1]) or gdtf.get(item["gdtf"] + ".gdtf")) \
+            if item["gdtf"] else None
+    return {"version": ver, "lights": lights, "trusses": trusses, "objects": objects, "others": others, "gdtf": gdtf}
+
+
+# -- trusses and scene objects -------------------------------------------------------
+# What a scene object is, from its name (Vectorworks and Capture name them
+# after the symbol: "PA Left", "Bar", "DJ Riser", "LED Wall 4x3").
+_OBJ_WORDS = [
+    ("screen", r"\bscreen|led ?wall|video ?wall|\bled panel|projection"),
+    ("sub", r"\bsubs?\b|subwoofer"),
+    ("speaker", r"speaker|\bpa\b|\bpa[ _-]|line ?array|\bmonitor|wedge|loudspeaker"),
+    ("dj_booth", r"\bdj\b|dj ?booth|dj ?table|turntable|cdj"),
+    ("bar", r"\bbar\b|bar ?counter"),
+    ("riser", r"riser|\bstage\b|\bdeck|platform|podium|rostrum"),
+    ("pillar", r"pillar|column|\bpost\b"),
+    ("table", r"\btable"),
+]
+# their size when the file doesn't say (w x d x h m)
+_OBJ_SIZE = {"screen": (4.0, 0.2, 2.5), "sub": (0.8, 0.8, 0.6), "speaker": (0.6, 0.5, 1.0),
+             "dj_booth": (2.0, 0.9, 1.1), "bar": (4.0, 0.8, 1.1), "riser": (3.0, 2.0, 0.4),
+             "pillar": (0.4, 0.4, 3.0), "table": (1.6, 0.8, 0.75)}
+
+
+def object_kind(name: str, tag: str = "SceneObject") -> str | None:
+    """Our object kind for an MVR scene object, or None (left out)."""
+    if tag == "VideoScreen":
+        return "screen"
+    for kind, pat in _OBJ_WORDS:
+        if re.search(pat, str(name or ""), re.I):
+            return kind
+    return None
+
+
+def model_size(blob: bytes | None) -> tuple[float, float, float] | None:
+    """(length, width, height) in m of the biggest model in a GDTF file -
+    a truss's length, a screen's width.  None when it doesn't say."""
+    if not blob:
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            name = next((n for n in zf.namelist() if n.rsplit("/", 1)[-1] == "description.xml"), None)
+            if name is None or zf.getinfo(name).file_size > MAX_XML:
+                return None
+            xml = zf.read(name)
+        if b"<!DOCTYPE" in xml[:2000] or b"<!ENTITY" in xml[:20000]:
+            return None
+        best = None
+        for el in ET.fromstring(xml).iter():
+            if _tag(el) != "Model":
+                continue
+            try:
+                dims = tuple(float(el.get(k) or 0) for k in ("Length", "Width", "Height"))
+            except ValueError:
+                continue
+            if all(d > 0 for d in dims) and (best is None or dims[0] * dims[1] * dims[2] > best[0] * best[1] * best[2]):
+                best = dims
+        return best
+    except (zipfile.BadZipFile, ET.ParseError, KeyError, OSError):
+        return None
+
+
+def length_in_name(name: str) -> float | None:
+    """'Truss 3m', 'Box truss 2.5 m', 'Pipe (4.00 m)', '10ft truss' -> metres."""
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(m|meter|metre|ft|')(?![a-z])", str(name or ""), re.I)
+    if not m:
+        return None
+    v = float(m.group(1).replace(",", "."))
+    if m.group(2).lower() in ("ft", "'"):
+        v *= 0.3048
+    return v if 0.3 <= v <= 60 else None
+
+
+def _yaw(u: list[float]) -> float:
+    """Our rigging / object turn (degrees) from an MVR object's own x axis."""
+    return math.degrees(math.atan2(-float(u[1]), float(u[0]))) if abs(u[0]) + abs(u[1]) > 1e-6 else 0.0
 
 
 def safe_name(name: str) -> str | None:
@@ -178,9 +258,10 @@ def safe_name(name: str) -> str | None:
 # -- placing in our room -----------------------------------------------------------
 def to_room(plot: dict, room: dict) -> dict:
     """Where everything goes in our coordinates, and the room it needs."""
-    pts = [lt["pos"] for lt in plot["lights"]] + [t["pos"] for t in plot["trusses"]]
+    pts = [lt["pos"] for lt in plot["lights"]] + [t["pos"] for t in plot["trusses"]] \
+        + [o["pos"] for o in plot.get("objects") or []]
     if not pts:
-        return {"lights": [], "room": None}
+        return {"lights": [], "trusses": [], "objects": [], "room": None}
     xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
     xmid, ymax = (min(xs) + max(xs)) / 2, max(ys)
     width = max(float(room.get("width") or 0), (max(xs) - min(xs)) + 4.0, 8.0)
@@ -188,12 +269,14 @@ def to_room(plot: dict, room: dict) -> dict:
     height = max(float(room.get("height") or 0), max(zs) + 1.0, 3.0)
     back = float(room.get("back") if room.get("back") is not None else -1.0)
     cx = float(room.get("cx") or 0.0)
-    out = []
-    for lt in plot["lights"]:
-        x, y, z = lt["pos"]
-        out.append({**lt, "x": round(cx + x - xmid, 3), "y": round(max(0.0, z), 3),
-                    "z": round(back + 1.0 + (ymax - y), 3)})
-    return {"lights": out, "room": {"width": round(width, 2), "depth": round(depth, 2), "height": round(height, 2)}}
+    def here(p):
+        x, y, z = p
+        return {"x": round(cx + x - xmid, 3), "y": round(max(0.0, z), 3), "z": round(back + 1.0 + (ymax - y), 3)}
+    out = [{**lt, **here(lt["pos"])} for lt in plot["lights"]]
+    trusses = [{**t, **here(t["pos"]), "rot": round(_yaw(t.get("u") or [1, 0, 0]), 2)} for t in plot.get("trusses") or []]
+    objects = [{**o, **here(o["pos"]), "rot": round(_yaw(o.get("u") or [1, 0, 0]), 2)} for o in plot.get("objects") or []]
+    return {"lights": out, "trusses": trusses, "objects": objects,
+            "room": {"width": round(width, 2), "depth": round(depth, 2), "height": round(height, 2)}}
 
 
 def rows(lights: list[dict]) -> list[list[dict]]:
@@ -226,7 +309,8 @@ def _uuid(seed: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "jarvis-mvr:" + seed)).upper()
 
 
-def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], show: str = "show") -> bytes:
+def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], show: str = "show",
+          objects: list[dict] | None = None) -> bytes:
     """An MVR of the patch and the rigging.  `gdtf_files`: (manufacturer,
     model) -> the .gdtf the desk has for it (put inside the file)."""
     root = ET.Element("GeneralSceneDescription", verMajor="1", verMinor="6", provider="Jarvis", providerVersion="1")
@@ -240,8 +324,22 @@ def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], s
         a, b = r["a"], r["b"]
         mx, my, mz = ((a[i] + b[i]) / 2 for i in range(3))
         yaw = math.degrees(math.atan2(-(b[2] - a[2]), b[0] - a[0]))
-        t = ET.SubElement(kids, "Truss", name=str(r.get("name") or r["id"]), uuid=_uuid(show + ":rig:" + r["id"]))
+        length = math.dist((a[0], a[2]), (b[0], b[2]))
+        name = str(r.get("name") or r["id"])
+        if length_in_name(name) is None:
+            name = f"{name} ({length:.2f} m)"         # the length, for the desk (and a person) reading it back
+        t = ET.SubElement(kids, "Truss", name=name, uuid=_uuid(show + ":rig:" + r["id"]))
         ET.SubElement(t, "Matrix").text = _matrix(mx, my, mz, yaw=yaw)
+    for o in objects or []:
+        if o.get("kind") not in _OBJ_SIZE:
+            continue
+        label = str(o.get("name") or o["kind"].replace("_", " ").title())
+        if object_kind(label) != o["kind"]:
+            label = f"{label} ({o['kind'].replace('_', ' ')})"
+        so = ET.SubElement(kids, "VideoScreen" if o["kind"] == "screen" else "SceneObject", name=label,
+                           uuid=_uuid(show + ":obj:" + str(o.get("id"))))
+        ET.SubElement(so, "Matrix").text = _matrix(float(o.get("x") or 0), float(o.get("y") or 0), float(o.get("z") or 0),
+                                                   yaw=-float(o.get("rot") or 0))
     packed: dict[str, str] = {}
     for h in patch:
         key = (str(h.get("manufacturer") or ""), str(h.get("model") or ""))
@@ -320,21 +418,56 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
     if want and (replace or want["width"] > (room.get("width") or 0) + 0.01 or want["depth"] > (room.get("depth") or 0) + 0.01
                  or want["height"] > (room.get("height") or 0) + 0.01):
         eng.act("venue_room", width=want["width"], depth=want["depth"], height=want["height"])
-    # 2. trusses for the lights hung in a row
-    on_rig: dict[str, tuple[str, float, float]] = {}
+    # 2a. the plot's own trusses, at their place, angle and length; a light
+    #     hung on one goes on it (the turn of the truss turns the light)
+    on_rig: dict = {}
     trusses = 0
-    for i, row in enumerate(rows([lt for lt in placed["lights"] if lt["gdtf"] in types])):
+    placed_lights = [lt for lt in placed["lights"] if lt["gdtf"] in types]
+    for i, t in enumerate(placed.get("trusses") or []):
+        size = t.get("size")
+        length = (size[0] if size else None) or length_in_name(t["name"]) or 2.0
+        th = math.radians(t["rot"])
+        dx, dz = math.cos(th), math.sin(th)
+        # the lights along it: within 0.6 m of its line, about its height
+        near = []
+        for lt in placed_lights:
+            if (lt["uuid"] or id(lt)) in on_rig or lt["stance"] == "stand" and lt["y"] < 1.5:
+                continue
+            along = (lt["x"] - t["x"]) * dx + (lt["z"] - t["z"]) * dz
+            off = abs(-(lt["x"] - t["x"]) * dz + (lt["z"] - t["z"]) * dx)
+            if off <= 0.6 and abs(along) <= length / 2 + 0.5 and abs(lt["y"] - t["y"]) <= 1.0:
+                near.append((lt, along))
+        trim = (min(lt["y"] for lt, _a in near) if near else t["y"]) - 0.15
+        r = eng.act("rig_add", preset="straight", piece="box30", x=t["x"], z=t["z"], length=length,
+                    rot=t["rot"], trim=max(0.3, trim), name=(t["name"] or f"Truss {i + 1}")[:40])
+        if not r.get("ok"):
+            continue
+        trusses += 1
+        for lt, along in near:
+            on_rig[lt["uuid"] or id(lt)] = (r["id"], max(0.0, min(1.0, along / length + 0.5)))
+    # 2b. the hung lights left in a row, on a truss of their own (as before)
+    for i, row in enumerate(rows([lt for lt in placed_lights if (lt["uuid"] or id(lt)) not in on_rig])):
         x0, x1 = row[0]["x"] - 0.5, row[-1]["x"] + 0.5
         z = sum(lt["z"] for lt in row) / len(row)
         trim = min(lt["y"] for lt in row)
         name = row[0]["layer"] if row[0]["layer"] and row[0]["layer"].lower() not in ("lights", "layer", "fixtures") else ""
         r = eng.act("rig_add", preset="straight", piece="box30", x=(x0 + x1) / 2, z=z, length=x1 - x0, trim=trim,
-                    name=name or f"Truss {i + 1} (MVR)")
+                    name=name or f"Truss {trusses + 1} (MVR)")
         if not r.get("ok"):
             continue
         trusses += 1
         for lt in row:
-            on_rig[lt["uuid"] or id(lt)] = (r["id"], x0, x1)
+            on_rig[lt["uuid"] or id(lt)] = (r["id"], max(0.0, min(1.0, (lt["x"] - x0) / max(0.01, x1 - x0))))
+    # 2c. the scene objects the desk knows (PA, bar, DJ booth, riser, screen...)
+    objects = 0
+    for o in placed.get("objects") or []:
+        w, d, h = o.get("size") or _OBJ_SIZE.get(o["kind"], (1.0, 1.0, 1.0))
+        if o["kind"] == "screen":
+            d, h = min(d, 0.3), h                      # a screen's depth is its thickness
+        r = eng.act("venue_add", item={"kind": o["kind"], "name": (o["name"] or "")[:40], "x": o["x"], "z": o["z"],
+                                       "y": o["y"] if o["kind"] in ("screen", "speaker") and o["y"] > 0.3 else 0,
+                                       "w": w, "d": d, "h": h, "rot": o["rot"]})
+        objects += bool(r.get("ok"))
     # 3. every light: patched at its address, placed where the plot has it
     heads: list[int] = []
     moved: list[str] = []
@@ -366,7 +499,7 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
         heads.append(n)
         rig = on_rig.get(lt["uuid"] or id(lt))
         if rig:
-            eng.act("set_place", head=n, rig=rig[0], t=max(0.0, min(1.0, (lt["x"] - rig[1]) / max(0.01, rig[2] - rig[1]))))
+            eng.act("set_place", head=n, rig=rig[0], t=rig[1])
         else:
             eng.act("set_place", head=n, x=lt["x"], y=lt["y"], z=lt["z"], stance=lt["stance"])
     # one undo step for the whole plot
@@ -374,8 +507,8 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
     _collapse(eng, top, before, "Import MVR" if heads else None)
     skipped = len(plot["lights"]) - len(heads)
     summary = f"MVR: {len(heads)} light(s) patched and placed" + (f", {trusses} truss(es)" if trusses else "") \
-        + (f"; {skipped} not imported" if skipped else "")
-    return {"ok": bool(heads), "heads": heads, "trusses": trusses, "types": len(types), "skipped": skipped,
+        + (f", {objects} object(s)" if objects else "") + (f"; {skipped} not imported" if skipped else "")
+    return {"ok": bool(heads), "heads": heads, "trusses": trusses, "objects": objects, "types": len(types), "skipped": skipped,
             "problems": problems[:40], "notes": moved[:40], "version": plot["version"], "summary": summary,
             **({} if heads else {"error": "no light could be imported: " + "; ".join(problems[:3])})}
 
@@ -401,5 +534,6 @@ def export_from(eng, gdtf_dirs: list[Path], show: str = "") -> bytes:
     from . import venue as venue_mod
     with eng.lock:
         patch = [dict(h) for h in eng.patch]
-        rigging = list(venue_mod.normalise(eng.venue).get("rigging") or [])
-    return write(patch, rigging, gdtf_for_patch(eng, gdtf_dirs), show or eng.show_file or "show")
+        v = venue_mod.normalise(eng.venue)
+        rigging, objects = list(v.get("rigging") or []), list(v.get("objects") or [])
+    return write(patch, rigging, gdtf_for_patch(eng, gdtf_dirs), show or eng.show_file or "show", objects)

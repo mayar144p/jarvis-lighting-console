@@ -390,9 +390,13 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    In: GDTF from inside the file (to the GDTF Share folder, so 3D bodies
    work), address, mode, place, hang / stand, nested groups; lights in a
    row -> a truss; missing GDTF / mode said; one undo; "add" or "start
-   from the plot".  Out: patch + trusses + our GDTF files.  Not yet: an
-   MVR's own truss / scene objects as 3D models (only lights in a row make
-   trusses), a light whose GDTF isn't in the file matched from our library.
+   from the plot".  Out: patch + trusses + our GDTF files.  **Done 2026-10-08:** the MVR's own trusses
+   (place, angle, length from the truss GDTF's model or its name; the
+   lights along one mounted on it, turned with it) and the scene objects
+   the desk knows by name (PA / sub, screen / LED wall, bar, DJ booth,
+   riser, pillar, table), in and out.  Not yet: a light whose GDTF isn't
+   in the file matched from our library; curved / shaped truss pieces
+   (each comes in straight).
    Also asked and done: **Lights only** in the 3D view (hides the venue).
    Was: a plot from Vectorworks or Capture
    comes in with every light patched and placed; ours goes back out.

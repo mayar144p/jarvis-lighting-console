@@ -5379,3 +5379,88 @@ def test_ai_installer_tick() -> None:
           and '"include": "res/installer.nsh"' in pkg)
     check("the app hands the tick to the desk, and the desk acts on it at start",
           "offline-ai-wanted" in js and "wanted.json" in js and "localai.auto_download" in main)
+
+
+def test_mvr_trusses_objects() -> None:
+    """MVR's own trusses and scene objects (asked: "MVR trusses / objects"):
+    a truss comes in at its place, angle and length (from its GDTF model, or
+    the length in its name), the lights hung along it go ON it - turned with
+    it - and the PA, the LED wall, the bar come in as objects.  Ours go back
+    out with their length and angle."""
+    print("MVR: the plot's own trusses (angle, length) and objects")
+    import io
+    import math
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from app import venue as venue_mod
+    from tools.selftests.common import SPEC_GDTF
+
+    def zipped(files):
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            for n, d in files.items():
+                z.writestr(n, d)
+        return b.getvalue()
+    light = zipped({"description.xml": SPEC_GDTF})
+    truss = zipped({"description.xml": b'<GDTF><FixtureType Name="Box" Manufacturer="Prolyte"><Models>'
+                                       b'<Model Name="Box30" Length="6" Width="0.29" Height="0.29" PrimitiveType="Cube"/>'
+                                       b'</Models></FixtureType></GDTF>'})
+    c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+    turned = f"{{{c},{s},0}}{{{-s},{c},0}}{{0,0,1}}"
+
+    def fx(name, x, y, z):
+        return (f'<Fixture name="{name}" uuid="{name}"><Matrix>{turned}{{{x},{y},{z}}}</Matrix>'
+                f'<GDTFSpec>Acme@Beam900.gdtf</GDTFSpec><GDTFMode>6 Channel</GDTFMode>'
+                f'<Addresses><Address break="0">1.{1 + len(name) * 0}</Address></Addresses></Fixture>')
+    beams = "".join(fx(f"T{i}", round(d * c), round(4000 + d * s), 5700) for i, d in enumerate((-2000, 0, 2000)))
+    xml = ('<?xml version="1.0"?><GeneralSceneDescription verMajor="1" verMinor="6"><Scene><Layers><Layer name="Rig" uuid="L"><ChildList>'
+           f'<Truss name="Upstage truss" uuid="t1"><Matrix>{turned}{{0,4000,6000}}</Matrix><GDTFSpec>Prolyte@Box30.gdtf</GDTFSpec></Truss>'
+           '<Truss name="Pipe 4m" uuid="t2"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,0,5000}</Matrix></Truss>'
+           f'{beams}'
+           '<SceneObject name="PA Left" uuid="o1"><Matrix>{1,0,0}{0,1,0}{0,0,1}{-5000,1000,0}</Matrix></SceneObject>'
+           '<VideoScreen name="LED Wall" uuid="o2"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,7000,2000}</Matrix></VideoScreen>'
+           '<SceneObject name="Chair 12" uuid="o3"><Matrix>{1,0,0}{0,1,0}{0,0,1}{0,0,0}</Matrix></SceneObject>'
+           '</ChildList></Layer></Layers></Scene></GeneralSceneDescription>')
+    data = zipped({"GeneralSceneDescription.xml": xml, "Acme@Beam900.gdtf": light, "Prolyte@Box30.gdtf": truss})
+    plot = mvr.read(data)
+    check("the plot's trusses and the objects the desk knows (a chair is left out)",
+          len(plot["trusses"]) == 2 and sorted(o["kind"] for o in plot["objects"]) == ["screen", "speaker"] and plot["others"] == 1,
+          f"{plot['trusses']} {plot['objects']}")
+    check("a truss's length from its GDTF model, or from its name",
+          plot["trusses"][0]["size"][0] == 6.0 and mvr.length_in_name("Pipe 4m") == 4.0 and mvr.length_in_name("10ft truss") == 3.048
+          and mvr.length_in_name("Truss 1") is None)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = mvr.import_into(e, data, tmp / "gdtf", replace=True)
+            rigs = {x["name"]: x for x in e.venue["rigging"]}
+            up = rigs.get("Upstage truss")
+            check("both trusses in, and the 2 objects", r["ok"] and r["trusses"] == 2 and r["objects"] == 2 and up and "Pipe 4m" in rigs, str(r))
+            if up:
+                ln = math.dist((up["a"][0], up["a"][2]), (up["b"][0], up["b"][2]))
+                check("the truss at its angle (30 deg) and length (6 m)",
+                      abs(venue_mod.fold90(venue_mod.rig_angle(up)) - 30) < 0.5 and abs(ln - 6) < 0.05, f"{venue_mod.rig_angle(up)} {ln}")
+                pipe = rigs["Pipe 4m"]
+                check("the pipe: 4 m from its name", abs(math.dist((pipe["a"][0], pipe["a"][2]), (pipe["b"][0], pipe["b"][2])) - 4) < 0.05)
+                on = [h for h in e.patch if (h.get("mount") or {}).get("rig") == up["id"]]
+                check("the 3 lights along it hang ON it, in order", len(on) == 3
+                      and sorted(on, key=lambda h: h["mount"]["t"])[0]["name"] == "T0", str([(h["name"], h.get("mount")) for h in e.patch]))
+                check("...turned with it", all(abs(abs(e._head_yaw(h)) - 30) < 1 or abs(abs(e._head_yaw(h)) - 150) < 1 for h in on),
+                      str([e._head_yaw(h) for h in on]))
+            objs = {o["kind"]: o for o in e.venue["objects"]}
+            check("the PA and the LED wall as objects, the screen at its height",
+                  "speaker" in objs and "screen" in objs and abs(objs["screen"]["y"] - 2.0) < 0.01, str(objs))
+            back = mvr.read(mvr.export_from(e, [tmp / "gdtf"], "t"))
+            bt = {t["name"].split(" (")[0]: t for t in back["trusses"]}
+            check("out again: the truss with its length in its name and its angle",
+                  "Upstage truss" in bt and abs(mvr.length_in_name(bt["Upstage truss"]["name"]) - 6) < 0.05
+                  and abs(math.degrees(math.atan2(bt["Upstage truss"]["u"][1], bt["Upstage truss"]["u"][0])) % 180 - 30) < 0.5,
+                  str(bt.get("Upstage truss")))
+            check("...and the objects", sorted(o["kind"] for o in back["objects"]) == ["screen", "speaker"], str(back["objects"]))
+        finally:
+            e.shutdown()

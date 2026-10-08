@@ -608,15 +608,21 @@ their MIDI note (Edit → a button → MIDI).
 **Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is
 installed from its own GDTF inside the file, with its 3D body when the file
 has one. It is patched at its universe and address, in its mode, and placed
-where the plot has it, hanging or standing. Lights hung in a row get a truss
-they are mounted on. With a show already patched you choose **Add to this
+where the plot has it, hanging or standing. The plot's own **trusses** come in
+at their place, angle and length (the length from the truss's GDTF model, or
+from its name such as "Pipe 4m"), and the lights hung along one go on it,
+turned with it. Lights hung in a row with no truss get one of their own.
+**Scene objects** the desk knows by name come in too: PA and subs, LED walls
+and screens, the bar, the DJ booth, risers, pillars, tables (other objects,
+like chairs, are counted and left out). With a show already patched you choose **Add to this
 show** or **Start from the plot** (the old lights and trusses go, and the room
 is sized to the plot). What couldn't come in is listed: a GDTF missing from
 the file, or a mode the file doesn't have (the light gets its first mode).
 The whole import is one Ctrl+Z.
 
-**Show ▾ -> Export as MVR** saves the patch and the trusses as an `.mvr`,
-with the GDTF files the desk has for those lights, for other programs.
+**Show ▾ -> Export as MVR** saves the patch, the trusses (at their angle,
+with their length in the name) and the objects as an `.mvr`, with the GDTF
+files the desk has for those lights, for other programs.
 
 ## Fixture library
 
