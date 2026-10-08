@@ -472,6 +472,18 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+/** The timeline's music as a stream for the video recorder (it plays as
+ *  the timeline plays), or null when there's none or the browser can't. */
+export function timelineAudioStream() {
+  if (!audio || !audio.el) return null;
+  try {
+    const s = audio.el.captureStream ? audio.el.captureStream() : audio.el.mozCaptureStream ? audio.el.mozCaptureStream() : null;
+    return s && s.getAudioTracks().length ? s : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export function setTimelineVisible(on) {
   visible = on;
   if (on) { docSig = ""; render(); loadAudio(doc().audio); }

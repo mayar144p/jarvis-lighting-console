@@ -459,6 +459,43 @@ def import_pack(path: str) -> dict:
     return status()
 
 
+PACK_MAX = 40 * 2 ** 30
+
+
+def receive_pack(stream, length: int, name: str) -> dict:
+    """An AI pack picked in the page (Settings -> AI -> Choose the file...),
+    streamed in: never held in memory, checked as a model before it counts,
+    and kept only when it all arrived."""
+    base = Path(str(name or "").replace("\\", "/")).name.strip()
+    if not base.lower().endswith(".gguf") or base.startswith(".") or len(base) > 120:
+        raise ValueError("pick the AI pack: a .gguf model file")
+    if length <= 4 or length > PACK_MAX:
+        raise ValueError("that file is not an AI model (.gguf)")
+    if shutil.disk_usage(folder()).free < length + 2 ** 30:
+        raise ValueError(f"not enough free disk: the pack is {length / 2 ** 30:.1f} GB")
+    target = folder() / base
+    part = target.with_name(target.name + ".part")
+    left = length
+    try:
+        with part.open("wb") as out:
+            first = True
+            while left > 0:
+                chunk = stream.read(min(CHUNK, left))
+                if not chunk:
+                    raise ValueError("the file stopped arriving - try again")
+                if first:
+                    if chunk[:4] != b"GGUF":
+                        raise ValueError("that file is not an AI model (.gguf)")
+                    first = False
+                out.write(chunk)
+                left -= len(chunk)
+        part.replace(target)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    return status()
+
+
 def remove(file: str) -> dict:
     p = folder() / Path(str(file)).name
     if p.suffix != ".gguf" or not p.is_file():

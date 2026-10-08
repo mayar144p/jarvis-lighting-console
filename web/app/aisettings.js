@@ -1,7 +1,7 @@
 // Settings -> AI (backlog A12): the switch (Online / Local / Auto), the
 // online key, and the desk's own offline AI - download (pause / resume), an
 // AI pack from a USB stick, remove.  The key is sent once and never shown.
-import { get, post } from "./api.js";
+import { get, post, token } from "./api.js";
 import { h, toast } from "./ui.js";
 
 const MODES = [
@@ -36,6 +36,27 @@ export function aiPanel() {
     const model = h("input", { type: "text", value: d.model || "" });
     const ollama = h("input", { type: "text", value: d.local_url || "", placeholder: "http://127.0.0.1:11434/v1" });
     const pack = h("input", { type: "text", placeholder: "the AI pack's path, e.g. E:\\qwen3-8b.gguf" });
+    // or pick the file: streamed to the desk (a 5 GB pack takes a minute or two)
+    const packNote = h("span.muted.small");
+    const packFile = h("input", { type: "file", accept: ".gguf", hidden: true, onchange: () => {
+      const f = packFile.files && packFile.files[0];
+      if (!f) return;
+      const x = new XMLHttpRequest();
+      x.open("POST", "/api/ai/pack?name=" + encodeURIComponent(f.name));
+      const t = token();
+      if (t) x.setRequestHeader("X-Jarvis-Token", t);
+      x.upload.onprogress = (e) => { if (e.lengthComputable) packNote.textContent = `Copying ${f.name}: ${Math.round(e.loaded * 100 / e.total)} %`; };
+      x.onload = () => {
+        let r = {};
+        try { r = JSON.parse(x.responseText || "{}"); } catch { /* not JSON */ }
+        if (x.status >= 400 || r.error) { packNote.textContent = r.error || `the desk answered ${x.status}`; return; }
+        toast(`${f.name} is ready`, "ok");
+        refresh();
+      };
+      x.onerror = () => { packNote.textContent = "the copy stopped - try again"; };
+      packNote.textContent = `Copying ${f.name}…`;
+      x.send(f);
+    } });
     const save = async (body) => {
       const r = await post("/api/ai", body).catch((e) => ({ error: e.message }));
       if (r.error) toast(r.error, "bad"); else { toast("Saved", "ok"); refresh(); }
@@ -87,7 +108,10 @@ export function aiPanel() {
                 `Download (${m.gb} GB${off.runtime ? "" : " + its engine"})`));
         })) : null,
       dlRow,
-      off.runtime || off.can_fetch_engine ? h("div.row-btns", pack, h("button.btn", { onclick: () => pack.value.trim() && local({ import: pack.value.trim() }) }, "Use an AI pack"))
+      off.runtime || off.can_fetch_engine ? h("div",
+        h("div.row-btns", h("button.btn", { title: "A .gguf model file, e.g. from a USB stick", onclick: () => packFile.click() }, "Choose an AI pack…"),
+          packFile, packNote),
+        h("div.row-btns", pack, h("button.btn", { onclick: () => pack.value.trim() && local({ import: pack.value.trim() }) }, "Use this path")))
         : h("p.muted.small", "There's no offline AI engine for this kind of computer: run Ollama or LM Studio and put its address below."),
       h("details", { open: !off.runtime && !off.can_fetch_engine }, h("summary.muted.small", "Use Ollama or LM Studio instead"),
         h("div.row-btns", ollama, h("button.btn", { onclick: () => save({ local_url: ollama.value.trim() }) }, "Save"))));

@@ -382,11 +382,19 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
     # 1. each light type, from its GDTF inside the file
     types: dict[str, int] = {}
     problems: list[str] = []
+    matched: list[str] = []
     for spec in sorted({lt["gdtf"] for lt in plot["lights"] if lt["gdtf"]}):
         blob = plot["gdtf"].get(spec.rsplit("/", 1)[-1]) or plot["gdtf"].get(spec.rsplit("/", 1)[-1] + ".gdtf")
         name = safe_name(spec if spec.lower().endswith(".gdtf") else spec + ".gdtf")
         if blob is None or name is None:
-            problems.append(f"{spec}: its GDTF file isn't in the MVR")
+            # not in the file: the same light from the desk's own fixtures or
+            # the libraries, by the maker and model in its name ("Maker@Model")
+            fid, how = _from_library(eng, spec)
+            if fid:
+                types[spec] = fid
+                matched.append(f"{spec}: its GDTF isn't in the MVR - {how}")
+            else:
+                problems.append(f"{spec}: its GDTF file isn't in the MVR, and no library has it")
             continue
         path = gdtf_dir / name
         if path.is_file() and path.read_bytes() != blob:     # another light with the same file name
@@ -509,8 +517,44 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
     summary = f"MVR: {len(heads)} light(s) patched and placed" + (f", {trusses} truss(es)" if trusses else "") \
         + (f", {objects} object(s)" if objects else "") + (f"; {skipped} not imported" if skipped else "")
     return {"ok": bool(heads), "heads": heads, "trusses": trusses, "objects": objects, "types": len(types), "skipped": skipped,
-            "problems": problems[:40], "notes": moved[:40], "version": plot["version"], "summary": summary,
+            "problems": problems[:40], "notes": (matched + moved)[:40], "version": plot["version"], "summary": summary,
             **({} if heads else {"error": "no light could be imported: " + "; ".join(problems[:3])})}
+
+
+def _spec_words(spec: str) -> tuple[str, str]:
+    """'Martin@MAC Aura XB@rev3.gdtf' -> ('Martin', 'MAC Aura XB')."""
+    base = str(spec or "").replace("\\", "/").rsplit("/", 1)[-1]
+    base = re.sub(r"\.gdtf$", "", base, flags=re.I)
+    parts = [p.replace("_", " ").strip() for p in base.split("@")]
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return "", parts[0] if parts else ""
+
+
+def _from_library(eng, spec: str) -> tuple[int | None, str]:
+    """A light the MVR names but doesn't carry: (fixture id, how it was
+    found) from the installed fixtures, else the bundled libraries -
+    only a confident match (maker and model both agree)."""
+    from . import fixlib, fixtures
+    maker, model = _spec_words(spec)
+    if not model:
+        return None, ""
+    norm = lambda t: re.sub(r"[^a-z0-9]+", "", str(t).lower())     # noqa: E731
+    want_m, want_k = norm(maker), norm(model)
+
+    def same(m, k):
+        return norm(k) == want_k and (not want_m or norm(m).startswith(want_m[:5]) or want_m.startswith(norm(m)[:5]))
+    for row in fixtures.search(eng.db_path, f"{maker} {model}".strip(), limit=20, fuzzy=True):
+        if same(row["manufacturer"], row["model"]):
+            return row["id"], f"used the installed {row['manufacturer']} {row['model']}"
+    for row in fixlib.search(f"{maker} {model}".strip(), limit=20):
+        if same(row["manufacturer"], row["model"]):
+            done = fixtures.store_parsed(eng.db_path, fixlib.load(row["src"], row["key"]), f"{row['src']}:{row['key']}")
+            fid = ((done.get("imported") or [{}])[0]).get("fixture_id")
+            if fid:
+                lib = fixlib.SOURCES.get(row["src"], {}).get("name", row["src"])
+                return fid, f"used {row['manufacturer']} {row['model']} from the {lib} (check its mode)"
+    return None, ""
 
 
 def gdtf_for_patch(eng, gdtf_dirs: list[Path]) -> dict:

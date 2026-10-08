@@ -558,5 +558,50 @@ class LooksMixin:
                     return "#%02x%02x%02x" % (int(r_ * 255), int(g_ * 255), int(b_ * 255))
         if lit:
             return "#000000"
+        # hue + saturation channels (an ETC Source Four LED's HSI mode): the
+        # colour they make; saturation not driven = white
+        hs = self._hue_sat(head)
+        if hs:
+            hue = float(values.get(hs["hue"], 0)) / 255.0
+            sat = float(values.get(hs["sat"], 0)) / 255.0 if hs.get("sat") else 1.0
+            r_, g_, b_ = colorsys.hsv_to_rgb(hue % 1.0, max(0.0, min(1.0, sat)), 1.0)
+            return "#%02x%02x%02x" % (int(round(r_ * 255)), int(round(g_ * 255)), int(round(b_ * 255)))
+        # a white-only light with a colour temperature channel: warm to cool white
+        cct = self._cct_role(head)
+        if cct:
+            k = float(values.get(cct, 128)) / 255.0
+            warm, cool = (255, 196, 137), (220, 232, 255)
+            return "#%02x%02x%02x" % tuple(int(round(warm[i] + (cool[i] - warm[i]) * k)) for i in range(3))
         return ROLE_HEX.get(head.get("role") or "generic",
                             ROLE_HEX["generic"])
+
+    _HUE = re.compile(r"^\s*(colou?r\s*)?hue\b", re.I)
+    _SAT = re.compile(r"\bsat(uration)?\b", re.I)
+    _CCT = re.compile(r"colou?r\s*(point|temp)|\bcct\b|kelvin|white\s*point", re.I)
+
+    def _hue_sat(self, head: dict) -> dict | None:
+        """{hue: role, sat: role|None} for a light that mixes its colour by
+        hue and saturation channels (named so in its file), else None."""
+        if set(head.get("map") or []) & {"red", "green", "blue", "cyan", "magenta", "yellow"}:
+            return None
+        try:
+            ranges = self.head_ranges(head)
+        except Exception:                      # noqa: BLE001 - a bare engine
+            return None
+        names = {r: str((ranges.get(r) or {}).get("name") or "") for r in head.get("map") or [] if r.startswith("aux")}
+        hue = next((r for r, n in names.items() if self._HUE.search(n) and "fine" not in n.lower()), None)
+        if not hue:
+            return None
+        sat = next((r for r, n in names.items() if self._SAT.search(n) and "fine" not in n.lower()), None)
+        return {"hue": hue, "sat": sat}
+
+    def _cct_role(self, head: dict) -> str | None:
+        """The colour-temperature channel of a white-only light, else None."""
+        if set(head.get("map") or []) & {"red", "green", "blue", "cyan", "magenta", "yellow", "wheel"}:
+            return None
+        try:
+            ranges = self.head_ranges(head)
+        except Exception:                      # noqa: BLE001
+            return None
+        return next((r for r in head.get("map") or [] if r.startswith("aux")
+                     and self._CCT.search(str((ranges.get(r) or {}).get("name") or ""))), None)

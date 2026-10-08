@@ -1831,6 +1831,14 @@ class PatchMixin:
                             ("yellow", 255 - b)):
                 if role in roles:
                     out[role] = v
+        elif self._hue_sat(head):
+            # hue + saturation channels: the pick as hue and saturation
+            import colorsys as _cs
+            hs = self._hue_sat(head)
+            hh, ss, _vv = _cs.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+            out[hs["hue"]] = int(round(hh * 255)) % 256
+            if hs.get("sat"):
+                out[hs["sat"]] = int(round(ss * 255))
         elif "white" in roles:
             out["white"] = int(0.299 * r + 0.587 * g + 0.114 * b)
         elif "wheel" in roles:
@@ -1843,6 +1851,9 @@ class PatchMixin:
         """Values that put this head's colour at white / open."""
         roles = set(head["map"])
         out = {}
+        hs = self._hue_sat(head)
+        if hs and hs.get("sat"):
+            out[hs["sat"]] = 0                  # no saturation: white
         rgb = {"red", "green", "blue"} <= roles
         if "white" in roles and not rgb:
             # a white emitter beside a partial mix (a Rocklite's red /

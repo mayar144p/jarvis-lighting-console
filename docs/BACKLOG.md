@@ -394,7 +394,8 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    (place, angle, length from the truss GDTF's model or its name; the
    lights along one mounted on it, turned with it) and the scene objects
    the desk knows by name (PA / sub, screen / LED wall, bar, DJ booth,
-   riser, pillar, table), in and out.  Not yet: a light whose GDTF isn't
+   riser, pillar, table), in and out.  A light whose GDTF isn't in the file is matched from the installed
+   fixtures or the libraries (2026-10-08).  Was not yet: a light whose GDTF isn't
    in the file matched from our library; curved / shaped truss pieces
    (each comes in straight).
    Also asked and done: **Lights only** in the 3D view (hides the venue).
@@ -425,8 +426,9 @@ Suggested order: the operator's top picks first (1-4), then the rest.
 7. **(DONE 2026-10-08) Offline programming with a video render**
    (web/app/videorec.js): View -> Record a video - the timeline played
    from the start or the show run by hand, Full HD / 4K / small, MP4
-   (WebM fallback), the 3D's quality held while it records.  Left: the
-   timeline's music in the video; frame-exact (offline) rendering.
+   (WebM fallback), the 3D's quality held while it records.  The
+   timeline's music goes in the video too (2026-10-08).  Left:
+   frame-exact (offline) rendering.
    Was: **Offline programming with a video render** - program at home, export a
    video of the 3D preview for the client.  (Pairs with A9 step 2.)
 8. **(DONE 2026-10-08) Fixture library updates** - a weekly job
@@ -534,7 +536,8 @@ desk as DATA/ai/wanted.json and the desk downloads the model that fits in
 the background on its first start (`localai.auto_download`; waits while
 live; forgotten once a model is there, the computer can't run one, or the
 operator pauses).  Selftest `test_ai_installer_tick`.
-**Not yet:** a file picker for the AI pack; the Mac .dmg has no installer
+**Done 2026-10-08:** Choose an AI pack… (streamed to the desk).
+**Not yet:** the Mac .dmg has no installer
 page (Settings -> AI offers it).
 
 Today the copilot uses one online AI from `.env` (Gemini, any
@@ -676,7 +679,8 @@ counts are modes, not lights.
    "Mint" is now a colour role (`lime`, PARSER_VERSION 14): on red + lime +
    blue lights it is their green (Locate white, a green pick lights it, the
    3D mixes it as green); a white LED beside a partial mix is white alone
-   (Rocklite).  Left: HSI / CCT-only modes (hue + saturation channels) show
+   (Rocklite).  Hue + saturation modes and colour-temperature-only modes are
+   understood (2026-10-08: 3D colour, Locate white, colour picks).  Was: HSI / CCT-only modes (hue + saturation channels) show
    the 3D's "colour unknown" grey; Cameo CLBAR10RGBA 2ch's macro.
    Was (still 18 modes):
    - ETC Source Four LED Series 2 Daylight / Tungsten HD "Direct": the file
@@ -944,8 +948,9 @@ Fixed:
     (buttons, macros, other lists, timeline, tempo), preview / blind (3D only;
     preview-edit a cue, PREVIEW in the top bar - BLIND already means dry
     run here), Move tab rebuilt: Aim (follow me on the 3D floor, floor
-    map), pan/tilt pad with nudge.  **Left:** LTC (audio
-    timecode); OSC out.
+    map), pan/tilt pad with nudge.  OSC out (2026-10-08: Settings
+    -> MIDI & OSC; cues Send OSC; GO / master / blackout / buttons reported;
+    saved with the show).  **Left:** LTC (audio timecode).
 
 ## A3. Visualiser and venue editor
 
