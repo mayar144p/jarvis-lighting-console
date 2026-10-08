@@ -592,7 +592,12 @@ controller. These are recognised by name and work straight away:
 |---|---|---|---|
 | Akai APC mini / APC mini mk2 | the buttons page, lit in each button's colour (dim off, full or blinking on) | playbacks 1-8 and the grand master | under the pads: GO 1-8; down the side: buttons page 1-8 |
 | Novation Launchpad Mini MK3 / X | the buttons page in each button's own colour | - | top row: GO 1-8; right side: buttons page 1-8 |
+| Akai APC40 / APC40 mkII | the 5 x 8 clip grid: the buttons page in each button's colour (blinking / pulsing on) | playbacks 1-8 and the master | TRACK SELECT: GO 1-8; CLIP STOP: release; SCENE LAUNCH: buttons page 1-5 |
 | Behringer X-Touch / X-Touch Compact (Mackie Control mode) | REC 1-8: the first 8 buttons | playbacks 1-8 and the grand master, **motor faders follow** | SELECT: GO, MUTE: release, SOLO: buttons page |
+
+The APC40 layouts are built from Akai's published protocol and haven't been
+tried on a real unit yet: if a button does the wrong thing, **Settings → MIDI
+& OSC → MIDI monitor** shows what it sends - report it.
 
 The pads always play the page that's on screen, and the screen follows the
 page you pick on the controller. Other controllers still play buttons by

@@ -369,8 +369,10 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    SysEx): APC mini / mk2, Launchpad Mini MK3 / X, Mackie Control (X-Touch,
    X-Touch Compact) - recognised by name; pads = the buttons page on
    screen in the buttons' colours, faders = playbacks + GM (motor faders
-   follow, not while touched), GO / release / page buttons lit.  Not yet:
-   APC40 (needs its mode SysEx and a real unit to check against).
+   follow, not while touched), GO / release / page buttons lit.  APC40 and
+   APC40 mkII added 2026-10-08 from Akai's protocol (Ableton-mode SysEx,
+   5 x 8 grid, track faders + master, TRACK SELECT = GO, CLIP STOP =
+   release, SCENE LAUNCH = pages); still to try on a real unit.
    Was: **Hardware controllers with feedback** - ready layouts for Akai APC40 /
    APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
    is on, motor faders follow the playbacks; plug in and play.

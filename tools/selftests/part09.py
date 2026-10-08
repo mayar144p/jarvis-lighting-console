@@ -4528,6 +4528,13 @@ out.lpLed = [lp.padLed(0, [255, 0, 0], true), lp.padLed(63, [255, 0, 0], false)]
 out.mk = [m.decode([0xe0, 0x7f, 0x7f]), m.decode([0xe8, 0, 0]), m.decode([0x90, 24, 127]), m.decode([0x90, 17, 127]), m.decode([0x90, 3, 127]), m.decode([0x90, 9, 127]), m.decode([0x90, 104, 127])];
 out.mkOut = [m.faderOut(0, 1), m.faderOut(8, 0), m.faderOut(2, 0.5), m.buttonLed("go", 1, true), m.padLed(3, [1, 2, 3], true)];
 out.hex = [hexRgb("#ff8800"), hexRgb("nope")];
+const q = L.apc40, q2 = L.apc40mk2;
+out.apc40names = ["Akai APC40", "APC40", "APC40 mkII", "APC40 MK2 MIDI"].map(profileFor);
+out.apc40 = [q.hello(), q.bye(), q.decode([0x90, 53, 127]), q.decode([0x97, 57, 0]), q.decode([0xb3, 7, 127]), q.decode([0xb0, 14, 0]),
+             q.decode([0x92, 51, 127]), q.decode([0x95, 52, 127]), q.decode([0x90, 84, 127]), q.decode([0x90, 99, 127])];
+out.apc40Led = [q.padLed(0, [255, 0, 0], false), q.padLed(9, [255, 0, 0], true), q.padLed(39, null, false), q.buttonLed("go", 2, true), q.buttonLed("page", 4, true), q.buttonLed("page", 5, true)];
+out.apc40mk2 = [q2.hello(), q2.decode([0x90, 32, 127]), q2.decode([0x90, 7, 0]), q2.decode([0x91, 0, 127])];
+out.apc40mk2Led = [q2.padLed(0, [0, 0, 255], false), q2.padLed(0, [0, 0, 255], true), q2.padLed(39, null, false)];
 console.log(JSON.stringify(out));
 """
     url = (ROOT / "web" / "app" / "ctrlprofiles.js").as_uri()
@@ -4562,6 +4569,19 @@ console.log(JSON.stringify(out));
     check("Mackie: the motor faders move to the playback (14-bit), the LEDs light",
           got["mkOut"] == [[[0xe0, 127, 127]], [[0xe8, 0, 0]], [[0xe2, 0, 64]], [[0x90, 25, 127]], [[0x90, 3, 127]]], str(got["mkOut"]))
     check("tile colours to RGB", got["hex"] == [[255, 136, 0], None])
+    check("APC40 and APC40 mkII recognised by name", got["apc40names"] == ["apc40", "apc40", "apc40mk2", "apc40mk2"], str(got["apc40names"]))
+    check("APC40: Ableton mode by SysEx (and back); the grid's top-left is note 53 on channel 1; faders CC 7 per channel, "
+          "master CC 14; TRACK SELECT = GO, CLIP STOP = release, SCENE LAUNCH = pages",
+          got["apc40"] == [[[0xf0, 0x47, 0x7f, 0x73, 0x60, 0, 4, 0x41, 8, 2, 1, 0xf7]], [[0xf0, 0x47, 0x7f, 0x73, 0x60, 0, 4, 0x40, 8, 2, 1, 0xf7]],
+                           {"pad": 0, "down": True}, {"pad": 39, "down": False}, {"fader": 3, "value": 1}, {"master": 0},
+                           {"go": 2, "down": True}, {"release": 5, "down": True}, {"page": 2, "down": True}, None], str(got["apc40"]))
+    check("APC40 pads: red, blinking when on, off when empty; GO and page LEDs",
+          got["apc40Led"] == [[[0x90, 53, 3]], [[0x91, 54, 4]], [[0x97, 57, 0]], [[0x92, 51, 1]], [[0x90, 86, 1]], []], str(got["apc40Led"]))
+    check("APC40 mkII: its own SysEx; the grid from the bottom-left (note 32 = top-left)",
+          got["apc40mk2"] == [[[0xf0, 0x47, 0x7f, 0x29, 0x60, 0, 4, 0x41, 9, 7, 1, 0xf7]], {"pad": 0, "down": True},
+                              {"pad": 39, "down": False}, None], str(got["apc40mk2"]))
+    check("APC40 mkII pads: the palette colour, pulsing when on",
+          got["apc40mk2Led"] == [[[0x90, 32, 45]], [[0x98, 32, 45]], [[0x90, 7, 0]]], str(got["apc40mk2Led"]))
 
 
 def test_gdtf_pan_tilt_parts() -> None:
