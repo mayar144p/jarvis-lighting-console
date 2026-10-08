@@ -56,9 +56,24 @@ class QuickMixin:
     QUANT_LATE_S = 0.08
 
     QUICK_ICONS = ("bolt", "sun", "moon", "star", "heart", "fire", "snow", "drop", "music",
-                   "strobe", "spin", "sparkle", "eye", "stop", "up", "down")
+                   "strobe", "spin", "sparkle", "eye", "stop", "up", "down",
+                   "play", "pause", "wave", "circle", "beam", "smoke", "laser", "bulb",
+                   "palette", "target", "crown", "diamond", "zap", "rocket", "mic", "party")
 
-    QUICK_SLOTS = 24
+    # how a tile LOOKS (saved with the button; none of it changes what it does)
+    QUICK_SHAPES = ("rounded", "square", "pill", "circle")
+    QUICK_FILLS = ("outline", "solid", "glow")
+    QUICK_TEXT = ("s", "m", "l", "xl")
+    QUICK_MAX_W, QUICK_MAX_H = 4, 3
+    # the named sizes of old shows, as width x height
+    SIZE_WH = {"wide": (2, 1), "tall": (1, 2), "big": (2, 2)}
+    STYLE_KEYS = ("tint", "shape", "fill", "text", "plain", "blink", "icon_only", "icon", "w", "h", "size")
+
+    # a page's grid: buttons across, rows, row height (more across = smaller)
+    QUICK_SLOTS = 48                      # the most a page can hold (12 x 4, 8 x 6...)
+    QUICK_COLS = (4, 5, 6, 8, 10, 12)
+    QUICK_HEIGHTS = ("s", "m", "l", "xl")
+    LAYOUT_DEFAULT = {"cols": 8, "rows": 3, "height": "m"}
 
     def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
         kind = str(raw.get("kind") or "flash").lower()
@@ -106,11 +121,7 @@ class QuickMixin:
             if not 0 <= note <= 127:
                 raise ValueError("a MIDI note is 0 to 127")
             btn["midi"] = note
-        # a bigger tile (2 wide, 2 tall or both) and an icon on it
-        if raw.get("size") not in (None, "", "normal"):
-            if raw["size"] not in self.QUICK_SIZES:
-                raise ValueError(f"size is one of normal, {', '.join(self.QUICK_SIZES)}")
-            btn["size"] = raw["size"]
+        self._quick_clean_style(raw, btn)
         if raw.get("quant") not in (None, "", "page", "desk"):
             try:
                 q = float(raw["quant"])
@@ -119,10 +130,6 @@ class QuickMixin:
             if q not in self.QUANTS:
                 raise ValueError("quant (fire on the beat) is 0 (as pressed), 0.5, 1, 2 or 4 beats")
             btn["quant"] = q
-        if raw.get("icon") not in (None, ""):
-            if raw["icon"] not in self.QUICK_ICONS:
-                raise ValueError(f"icon is one of {', '.join(self.QUICK_ICONS)}")
-            btn["icon"] = raw["icon"]
         if kind not in self.ONE_SHOT_BUTTONS:
             if raw.get("exclusive") not in (None, ""):
                 btn["exclusive"] = str(raw["exclusive"]).strip()[:20] or None
@@ -426,6 +433,127 @@ class QuickMixin:
         if not t or t.get("all"):
             out["target"] = {"heads": heads}
         return out
+
+    def _quick_clean_style(self, raw: dict, btn: dict) -> None:
+        """How a tile looks: its size in grid cells (1-4 across, 1-3 down;
+        the old "wide" / "tall" / "big" still work), shape, fill, text
+        size, the details line, blinking while on, an icon (or only the
+        icon).  Defaults are not stored."""
+        size = raw.get("size")
+        if size not in (None, "", "normal") and size not in self.SIZE_WH:
+            raise ValueError(f"size is one of normal, {', '.join(self.QUICK_SIZES)}")
+        w, h = self.SIZE_WH.get(size, (1, 1))
+        if raw.get("w") not in (None, "") or raw.get("h") not in (None, ""):
+            try:
+                w = int(raw.get("w") or 1)
+                h = int(raw.get("h") or 1)
+            except (TypeError, ValueError):
+                raise ValueError("a tile is 1-4 buttons wide and 1-3 tall") from None
+            if not (1 <= w <= self.QUICK_MAX_W and 1 <= h <= self.QUICK_MAX_H):
+                raise ValueError("a tile is 1-4 buttons wide and 1-3 tall")
+        if (w, h) != (1, 1):
+            btn["w"], btn["h"] = w, h
+            named = next((k for k, v in self.SIZE_WH.items() if v == (w, h)), None)
+            if named:
+                btn["size"] = named           # what older desks read
+        for key, allowed, default in (("shape", self.QUICK_SHAPES, "rounded"), ("fill", self.QUICK_FILLS, "outline"),
+                                      ("text", self.QUICK_TEXT, "m")):
+            v = raw.get(key)
+            if v in (None, "", default):
+                continue
+            if v not in allowed:
+                raise ValueError(f"{key} is one of {', '.join(allowed)}")
+            btn[key] = v
+        for key in ("plain", "blink", "icon_only"):
+            if _truthy(raw.get(key)):
+                btn[key] = True
+        if raw.get("icon") not in (None, ""):
+            if raw["icon"] not in self.QUICK_ICONS:
+                raise ValueError(f"icon is one of {', '.join(self.QUICK_ICONS)}")
+            btn["icon"] = raw["icon"]
+        if btn.get("icon_only") and not btn.get("icon"):
+            btn.pop("icon_only")              # nothing to show but the name
+
+    def _a_quick_style(self, ids=None, page=None, style=None, **_):
+        """Give buttons the same look (Edit -> Copy look / Paste look):
+        `style` is a button's look (shape, fill, colour, size, text...),
+        `ids` the buttons, or `page` for every button on that page.  What
+        they DO is not touched."""
+        style = style if isinstance(style, dict) else {}
+        look = {k: style.get(k) for k in self.STYLE_KEYS if k in style}
+        if page is not None:
+            page = int(_clamp(page, 1, self.QUICK_PAGES))
+            want = {b["id"] for b in self.quick if b["page"] == page}
+        else:
+            want = {str(i) for i in (ids or [])}
+        if not want:
+            raise ValueError("which buttons? (ids, or a page)")
+        done = 0
+        out = []
+        for b in self.quick:
+            if b["id"] in want:
+                # only what the look names changes (None takes it off)
+                raw = dict(b)
+                if "w" in look or "h" in look:
+                    raw.pop("size", None)
+                elif "size" in look:
+                    raw.pop("w", None)
+                    raw.pop("h", None)
+                raw.update(look)
+                b = self._quick_clean(raw, b["page"], b["slot"])
+                done += 1
+            out.append(b)
+        self.quick = out
+        return {"buttons": done, "summary": f"look applied to {done} button(s)"}
+
+    def _quick_layouts(self) -> dict:
+        return dict(self.__dict__.get("quick_layout") or {})
+
+    def _quick_layout_load(self, raw) -> dict:
+        """A show file's page grids, checked (a bad entry is dropped)."""
+        out: dict = {}
+        for k, v in (raw.items() if isinstance(raw, dict) else []):
+            try:
+                p = int(k)
+                c = int(v.get("cols", 8))
+                if not 1 <= p <= self.QUICK_PAGES or c not in self.QUICK_COLS:
+                    continue
+                hgt = v.get("height", "m") if v.get("height", "m") in self.QUICK_HEIGHTS else "m"
+                out[str(p)] = {"cols": c, "rows": int(_clamp(v.get("rows", 3), 1, self.QUICK_SLOTS // c)), "height": hgt}
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return out
+
+    def _a_quick_layout(self, page=1, cols=None, rows=None, height=None, all_pages=False, **_):
+        """A page's grid: how many buttons across (4-12; fewer = bigger),
+        how many rows, and how tall a row is (s / m / l / xl).  Buttons keep
+        their numbers, so they flow into the new grid in order."""
+        page = int(_clamp(page, 1, self.QUICK_PAGES))
+        cur = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
+        if cols not in (None, ""):
+            c = int(cols)
+            if c not in self.QUICK_COLS:
+                raise ValueError(f"buttons across is one of {', '.join(map(str, self.QUICK_COLS))}")
+            cur["cols"] = c
+        if height not in (None, ""):
+            if height not in self.QUICK_HEIGHTS:
+                raise ValueError(f"row height is one of {', '.join(self.QUICK_HEIGHTS)}")
+            cur["height"] = height
+        if rows not in (None, ""):
+            cur["rows"] = int(rows)
+        # never more buttons than a page holds, never fewer rows than one
+        cur["rows"] = int(_clamp(cur["rows"], 1, self.QUICK_SLOTS // cur["cols"]))
+        lay = self._quick_layouts()
+        for p in (range(1, self.QUICK_PAGES + 1) if _truthy(all_pages) else [page]):
+            if cur == self.LAYOUT_DEFAULT:
+                lay.pop(str(p), None)
+            else:
+                lay[str(p)] = dict(cur)
+        self.quick_layout = lay
+        hidden = [b["slot"] for b in self.quick if b["page"] == page and b["slot"] > cur["cols"] * cur["rows"]]
+        note = f" ({len(hidden)} button(s) past the last row are kept, not shown)" if hidden else ""
+        return {"page": page, "layout": cur, "hidden": hidden,
+                "summary": f"page {page}: {cur['cols']} across, {cur['rows']} rows{note}"}
 
     def _a_quick_page(self, page=1, name="", **_):
         """Name a page of buttons ("Main", "Movers", "Drops")."""

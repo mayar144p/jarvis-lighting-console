@@ -200,8 +200,8 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
-**Buttons** in the bottom panel is a grid of instant buttons, 4 pages of 24,
-like a MagicQ execute window. Each one is **hold** (on while pressed),
+**Buttons** in the bottom panel is a grid of instant buttons on up to 8
+pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
 **latch** (press on, press off) or **tap**:
 
 | kind | does |
@@ -218,6 +218,17 @@ Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
 a fixed set of lights. **Suggest buttons for this rig** fills a page from what
 is patched. Blackout and the grand master still win over a flash. Pressing a
 button is never an undo step; setting one up is. Buttons save with the show.
+
+**How they look** (Edit -> a button -> *Look*, with a live preview of the
+tile off and on): its colour; its size, 1-4 buttons across and 1-3 down;
+its shape (rounded, square, pill, circle); its fill (outline, solid, glow);
+text size S-XL; *Name only* (no small line under it); *Blink while on*
+(slow, and still when the computer asks for less motion); one of 32 icons,
+or the icon alone. A lit button shows a dot as well as its colour.
+**Layout** (in Edit) sets the page's grid: 4-12 buttons across (fewer =
+bigger), the rows, and the row height, for one page or every page.
+Right-click a button in Edit to **Copy look** and **Paste look** onto
+another button or the whole page; what the buttons do stays the same.
 
 ### Timeline
 

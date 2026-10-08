@@ -4170,3 +4170,107 @@ def test_ai_runs_desk() -> None:
             e.shutdown()
             cfg.DATA = saved
             os.environ.pop("CONSOLE_AI_DIR", None)
+
+
+def test_button_looks() -> None:
+    """Buttons as customisable as they look: any size (1-4 across, 1-3
+    down; the old wide / tall / big still read), shape, fill, text size,
+    name only, blinking while on, icon only, 32 icons; a page's own grid
+    (buttons across, rows, row height); a look copied onto other buttons.
+    All of it saved, undone and kept by the autosave; what a button DOES
+    is never touched by its look."""
+    print("Button looks: size, shape, fill, text, icons; a page's own grid")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            r = e.act("quick_set", page=1, slot=1, button={
+                "kind": "colour", "colour": "#ff0000", "label": "Red", "w": 3, "h": 2, "shape": "circle", "fill": "solid",
+                "text": "xl", "plain": True, "blink": True, "icon": "party", "icon_only": True})
+            b = r.get("button") or {}
+            check("a tile 3 across and 2 down, round, solid, big text, name only, blinking, icon only",
+                  (b.get("w"), b.get("h"), b.get("shape"), b.get("fill"), b.get("text"), b.get("plain"), b.get("blink"), b.get("icon_only"))
+                  == (3, 2, "circle", "solid", "xl", True, True, True) and "size" not in b, str(b))
+            b = e.act("quick_set", page=1, slot=9, button={"kind": "blackout", "size": "big"}).get("button") or {}
+            check("an old show's 'big' is 2 x 2 (and still says big for older desks)",
+                  (b.get("w"), b.get("h"), b.get("size")) == (2, 2, "big"), str(b))
+            b = e.act("quick_set", page=1, slot=10, button={"kind": "blackout", "w": 2, "h": 1}).get("button") or {}
+            check("2 x 1 is the old 'wide'", b.get("size") == "wide", str(b))
+            b = e.act("quick_set", page=1, slot=11, button={"kind": "flash", "shape": "rounded", "fill": "outline", "text": "m"}).get("button") or {}
+            check("the defaults aren't stored", not {"shape", "fill", "text", "w", "h", "size"} & set(b), str(b))
+            for bad, why in (({"w": 5}, "too wide"), ({"h": 4}, "too tall"), ({"shape": "hexagon"}, "a shape it doesn't have"),
+                             ({"fill": "neon"}, "a fill it doesn't have"), ({"text": "huge"}, "a text size it doesn't have"),
+                             ({"icon": "unicorn"}, "an icon it doesn't have")):
+                check(f"refused: {why}", not e.act("quick_set", page=1, slot=12, button={"kind": "flash", **bad}).get("ok"))
+            b = e.act("quick_set", page=1, slot=12, button={"kind": "flash", "icon_only": True}).get("button") or {}
+            check("icon only with no icon shows the name", "icon_only" not in b, str(b))
+            check("32 icons", len(e.QUICK_ICONS) == 32 and len(set(e.QUICK_ICONS)) == 32)
+            # a look copied onto other buttons, what they do untouched
+            before = {k: v for k, v in next(x for x in e.quick if x["id"] == "q1-11").items()}
+            look = {k: v for k, v in next(x for x in e.quick if x["id"] == "q1-1").items() if k in e.STYLE_KEYS}
+            r = e.act("quick_style", ids=["q1-11"], style=look)
+            after = next(x for x in e.quick if x["id"] == "q1-11")
+            check("paste look: the same shape, fill, size, icon...", r.get("ok") and all(after.get(k) == v for k, v in look.items()), str(after))
+            check("...and it still does what it did", after["kind"] == before["kind"] and after["label"] == before["label"]
+                  and after["target"] == before["target"] and after["mode"] == before["mode"], str(after))
+            r = e.act("quick_style", page=1, style={"shape": "pill"})
+            check("paste look on a whole page", r.get("ok") and all(x.get("shape") == "pill" for x in e.quick if x["page"] == 1), r.get("summary"))
+            check("a look naming only the shape leaves the rest (size, fill...)",
+                  next(x for x in e.quick if x["id"] == "q1-1").get("w") == 3 and next(x for x in e.quick if x["id"] == "q1-1").get("fill") == "solid")
+            e.act("quick_style", ids=["q1-11"], style={"shape": None, "fill": None, "w": None, "h": None, "size": None})
+            after = next(x for x in e.quick if x["id"] == "q1-11")
+            check("a full look (as Paste look sends it) takes off what the copied button doesn't have",
+                  not {"shape", "fill", "w", "h", "size"} & set(after), str(after))
+            check("paste look needs buttons", not e.act("quick_style", ids=[], style={"shape": "pill"}).get("ok"))
+            # a page's own grid
+            check("a page has the usual grid until it is changed", e._quick_public()["layout"] == {}
+                  and e._quick_public()["layout_default"] == {"cols": 8, "rows": 3, "height": "m"})
+            r = e.act("quick_layout", page=2, cols=4, rows=3, height="xl")
+            check("4 big buttons across on page 2", r.get("ok") and e._quick_public()["layout"]["2"] == {"cols": 4, "rows": 3, "height": "xl"}, str(r))
+            r = e.act("quick_layout", page=2, cols=12, rows=8)
+            check("never more buttons than a page holds (12 across: 4 rows)", e._quick_public()["layout"]["2"]["rows"] == 4, str(r))
+            check("refused: 7 across", not e.act("quick_layout", page=2, cols=7).get("ok"))
+            check("refused: a row height it doesn't have", not e.act("quick_layout", page=2, height="giant").get("ok"))
+            e.act("quick_set", page=3, slot=20, button={"kind": "flash"})
+            r = e.act("quick_layout", page=3, cols=4, rows=2)
+            check("a button past the last row is kept, and said", r.get("hidden") == [20] and any(x["id"] == "q3-20" for x in e.quick)
+                  and "kept" in r["summary"], str(r))
+            r = e.act("quick_layout", page=3, cols=8, rows=3, height="m")
+            check("back to the usual grid stores nothing", "3" not in e._quick_public()["layout"], str(e._quick_public()["layout"]))
+            r = e.act("quick_layout", page=1, cols=6, all_pages=True)
+            check("one grid for every page", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 9)))
+            check("slot 48 is a real slot (12 x 4)", e.act("quick_set", page=4, slot=48, button={"kind": "flash"}).get("ok"))
+            e.act("undo")
+            check("undo takes a button back", not any(x["id"] == "q4-48" for x in e.quick))
+            e.act("undo")
+            check("undo takes a grid back", e._quick_public()["layout"].get("1", {}).get("cols") != 6, str(e._quick_public()["layout"]))
+            e.act("quick_layout", page=2, cols=5, rows=4, height="l")
+            e.act("quick_page", page=2, name="Drops")
+            e.act("save_show", name="looks")
+            e.act("quick_layout", page=2, cols=8, rows=3, height="m")
+            e.act("quick_set", page=1, slot=1, clear=True)
+            e.act("load_show", name="looks")
+            check("a saved show keeps its grids and looks", e._quick_public()["layout"].get("2") == {"cols": 5, "rows": 4, "height": "l"}
+                  and next(x for x in e.quick if x["id"] == "q1-1").get("w") == 3, str(e._quick_public()["layout"]))
+            e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+            try:
+                with e.lock:
+                    pay = json.loads(e._autosave_payload())
+                pay["quick_layout"]["9"] = {"cols": 8}
+                pay["quick_layout"]["1"] = {"cols": 7}
+                pay["quick_layout"]["3"] = "junk"
+                e2._restore_payload(pay)
+                lay = e2._quick_public()["layout"]
+                check("after a restart: the grids and the page names come back (the names used to be lost)",
+                      lay.get("2") == {"cols": 5, "rows": 4, "height": "l"} and e2.quick_names.get("2") == "Drops", f"{lay} {e2.quick_names}")
+                check("a bad grid in a file is dropped, not trusted", not {"9", "1", "3"} & set(lay), str(lay))
+            finally:
+                e2.shutdown()
+            from app import assistant
+            check("the AI can style buttons and set a page's grid", {"quick_style", "quick_layout"} <= set(assistant.ALLOWED))
+        finally:
+            e.shutdown()

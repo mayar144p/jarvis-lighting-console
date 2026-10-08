@@ -1163,6 +1163,15 @@ numbers on hover.
 
 ## 9. Buttons as customisable as possible (DONE)
 
+Added 2026-10-08 (asked: shape, size "and other stuff"): any tile size
+1-4 x 1-3 (`w` / `h`; old "wide" / "tall" / "big" still read and are
+still written for older desks), shape, fill, text size, name only, blink
+while on (off under reduced motion), icon only, 32 icons, a dot on a lit
+tile (not colour alone), a page's own grid (`quick_layout`: 4-12 across,
+rows, row height; up to 48 a page), Copy / Paste look (`quick_style`), a
+live preview in the editor.  Fixed on the way: page names were lost after
+a restart (the autosave didn't keep them).
+
 Done: every option in the button editor is a tap.
 - **Lights:** all, the selection, a group or a type, or only the odd /
   even / left / right half of them.

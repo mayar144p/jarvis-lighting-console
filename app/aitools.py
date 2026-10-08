@@ -27,7 +27,7 @@ MORE = (
     "floor_safe", "fx_available", "get_limits", "group_flash", "group_master", "insert_cue",
     "macro_run", "macro_save", "move_cue", "move_play", "move_range", "move_rename", "move_save",
     "nudge", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
-    "quick_fader", "quick_from_programmer", "quick_move", "quick_page", "quick_press",
+    "quick_fader", "quick_from_programmer", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_style",
     "quick_quant", "quick_rate", "quick_release_all", "quick_xy", "ready_check", "rename_cue",
     "rename_preset", "rig_add", "rig_pieces", "rig_report", "rig_trim", "run_media", "select_split",
     "show_versions", "sound_link", "sound_tempo", "sound_trigger", "step_capture", "step_fx_save",
