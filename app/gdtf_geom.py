@@ -284,12 +284,54 @@ def parse_geometry(desc_xml: bytes) -> dict:
         "nodes": nodes,
         "models": _collect_models(root),
         "emitters": _collect_emitters(root),
+        "moves": _channel_geometry(root),
         "kinematics": {},          # filled in by resolve_kinematics
     }
 
 
+def _channel_geometry(root) -> dict:
+    """{"pan": part name, "tilt": part name} as the file's DMX channels say.
+
+    Every <DMXChannel> names the geometry it drives (`Geometry="Yoke"` on
+    Pan, `"Head"` on Tilt).  That is the file's own answer to "which part
+    turns", so it beats guessing from the order the parts are listed in -
+    a file that lists a handle or a display before the yoke turned THAT
+    for pan, and the light in 3D only ever tilted (seen 2026-10-08)."""
+    out: dict = {}
+    for ch in root.iter():
+        if _local(ch.tag) != "DMXChannel" or not ch.get("Geometry"):
+            continue
+        for lc in ch:
+            if _local(lc.tag) != "LogicalChannel":
+                continue
+            attr = (lc.get("Attribute") or "").strip()
+            key = {"Pan": "pan", "Tilt": "tilt"}.get(attr)
+            if key and key not in out:
+                out[key] = ch.get("Geometry")
+        if len(out) == 2:
+            break
+    return out
+
+
+def _path_named(root: dict, name: str) -> str | None:
+    """The path of the first node called `name` (the root's own parts included)."""
+    def walk(node, path):
+        if node.get("name") == name and node.get("kind") != "beam":
+            return path
+        for i, c in enumerate(node.get("children") or []):
+            got = walk(c, "%s/%d" % (path, i))
+            if got:
+                return got
+        return None
+    for i, n in enumerate(root.get("nodes") or []):
+        got = walk(n, str(i))
+        if got:
+            return got
+    return None
+
+
 def _empty() -> dict:
-    return {"nodes": [], "models": {}, "emitters": [], "kinematics": {}}
+    return {"nodes": [], "models": {}, "emitters": [], "moves": {}, "kinematics": {}}
 
 
 # --- kinematics -----------------------------------------------------------
@@ -344,8 +386,18 @@ def resolve_kinematics(root: dict, has_pan: bool, has_tilt: bool) -> dict:
     rotate something that has no tilt control, and a wash with a yoke does
     not grow a fake head.
     """
-    nodes = rotation_nodes(root)
     out: dict = {"pan": None, "tilt": None, "order": []}
+    # the file's own answer first: the parts its Pan / Tilt channels drive
+    named = root.get("moves") or {}
+    pan = _path_named(root, named["pan"]) if has_pan and named.get("pan") else None
+    tilt = _path_named(root, named["tilt"]) if has_tilt and named.get("tilt") else None
+    if pan and tilt and pan != tilt:
+        out.update(pan=pan, tilt=tilt, order=["pan", "tilt"], by="channels")
+        return out
+    if (pan or tilt) and not (has_pan and has_tilt):
+        out.update(pan=pan, tilt=tilt, order=["pan"] if pan else ["tilt"], by="channels")
+        return out
+    nodes = rotation_nodes(root)
     idx = 0
     if has_pan and idx < len(nodes):
         out["pan"] = nodes[idx][0]

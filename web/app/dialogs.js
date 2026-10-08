@@ -1,9 +1,10 @@
 // Dialogs: add fixtures, fixture profiles, DMX channels, CSV import, cues,
 // shows, settings and help.
 import { FixturePreview } from "/js/stage/stage.js";
-import { get, post, token } from "./api.js";
+import { get, post, token, modelBytes } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { openNewShow, startTour } from "./welcome.js";
+import { connectedControllers } from "./controllers.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state, on, patch, selected, outputState } from "./store.js";
@@ -68,13 +69,33 @@ export function openAddDialog(query = "") {
     showPick((chosen && items.find((x) => sameItem(x, chosen))) || items[0]);
   }
 
+  // the light's own 3D when there is one (its GDTF, or the maker's body
+  // from GDTF Share); the drawn stand-in only when there isn't
+  async function showModel(item) {
+    const family = `${item.manufacturer || ""} ${item.model || item.fixture || ""}`;
+    const cap = pv.querySelector(".cap");
+    const note = h("span.muted", " · looking for its 3D…");
+    cap.append(note);
+    preview.clear();
+    let real = false;
+    try {
+      const r = await post("/api/fixtures/real_model", { manufacturer: item.manufacturer || "", model: item.model || item.fixture || "",
+        source: item.source || "", moving: !!(item.body && item.body.moving), fetch: true });
+      if (chosen !== item || !preview) return;
+      if (r.ok && r.definition) real = await preview.showReal(r.definition, item.body, family, modelBytes);
+    } catch (e) { /* no 3D to be had: the stand-in */ }
+    if (chosen !== item || !preview) return;
+    note.textContent = real ? " · its own 3D" : " · drawn (no 3D model for this light)";
+    if (!real) preview.show(item.body, family);
+  }
+
   function showPick(item) {
     chosen = item;
     right.classList.remove("no-pick");
     [...list.children].forEach((b) => b.classList.toggle("on", b._item === item));
     const b = item.body || {};
     pv.querySelector(".cap").replaceChildren(h("b", b.label || "Fixture"), " · ", b.brand_name || item.manufacturer || "");
-    if (preview && item.body) preview.show(item.body, `${item.manufacturer || ""} ${item.model || item.fixture || ""}`);
+    if (preview && item.body) showModel(item);
     title.textContent = `${item.manufacturer || ""} ${item.model || item.fixture || ""}`.trim();
     const modes = item.modes || [];
     mode.replaceChildren(...modes.map((m) => h("option", { value: m.name },
@@ -1040,8 +1061,10 @@ function webMidiRow() {
   const note = h("span.muted.small", "");
   const show = () => {
     const ins = webMidiInputs();
+    const ctl = connectedControllers();
     note.textContent = !webMidiSupported() ? "This browser has no MIDI (use Chrome or Edge)."
-      : !box.checked ? "" : webMidiError() || (ins.length ? `Listening to ${ins.join(", ")}` : "No controller plugged in yet.");
+      : !box.checked ? "" : webMidiError() || (ins.length ? `Listening to ${ins.join(", ")}` : "No controller plugged in yet.")
+        + (ctl.length ? ` · Ready layout: ${ctl.map((c) => c.layout).join(", ")} - pads play the buttons page, faders the playbacks.` : "");
   };
   box.disabled = !webMidiSupported();
   box.addEventListener("change", async () => {
@@ -1050,7 +1073,8 @@ function webMidiRow() {
     show();
   });
   show();
-  return h("div", h("label.check", box, h("span", "MIDI in the browser: a controller plugged into the computer this screen runs on plays the buttons")), note);
+  return h("div", h("label.check", box, h("span", "MIDI in the browser: a controller plugged into the computer this screen runs on plays the buttons")), note,
+    h("p.muted.small", "Ready layouts with lit pads and moving faders: Akai APC mini / mk2, Novation Launchpad Mini MK3 / X, Behringer X-Touch (Mackie Control mode). Plug one in - it is recognised by name."));
 }
 
 // ================================================================== help

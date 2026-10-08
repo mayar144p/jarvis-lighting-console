@@ -1628,13 +1628,43 @@ export class FixturePreview {
     this._raf = requestAnimationFrame(this._loop);
   }
 
+  /** The drawn stand-in for this kind of light. */
   show(body, family = "") {
     if (this.failed) return;
+    this.token = (this.token || 0) + 1;
+    this._mount(buildFixture(body, family), body);
+  }
+
+  /** Nothing yet (the real 3D is on its way). */
+  clear() {
+    this.token = (this.token || 0) + 1;
+    if (this.pivot) this.pivot.clear();
+    this.sk = null;
+  }
+
+  /** The manufacturer's own 3D (a GDTF definition); false when it can't be
+   *  built - then the caller shows the stand-in. */
+  async showReal(def, body, family, fetchModel) {
+    if (this.failed) return false;
+    const token = this.token = (this.token || 0) + 1;
+    const sk0 = buildFixture(body, family);
+    const lensMat = sk0.lenses[0] || new THREE.MeshStandardMaterial();
+    let housingMat = null;
+    sk0.root.traverse((o) => {
+      if (!housingMat && o.isMesh && o.material && o.material.isMeshStandardMaterial && o.material !== lensMat) housingMat = o.material;
+    });
+    const sk = await buildGdtf(def, body, fetchModel, housingMat || new THREE.MeshStandardMaterial({ color: 0x1b1c20 }), lensMat)
+      .catch(() => null);
+    if (!sk || token !== this.token || this.destroyed) return token === this.token ? false : true;
+    this._mount(sk, body);
+    return true;
+  }
+
+  _mount(sk, body) {
     this.pivot.clear();
-    const sk = buildFixture(body, family);
     const moving = body && body.moving;
-    if (!moving && !sk.standing) sk.tilt.rotation.x = 0.5;
-    for (const lens of sk.lenses) lens.emissive.setRGB(0.9, 0.85, 0.7).multiplyScalar(1.5);
+    if (!moving && !sk.standing && sk.tilt) sk.tilt.rotation.x = 0.5;
+    for (const lens of sk.lenses || []) if (lens.emissive) lens.emissive.setRGB(0.9, 0.85, 0.7).multiplyScalar(1.5);
     this.pivot.add(sk.root);
     const box = new THREE.Box3().setFromObject(sk.root);
     const c = box.getCenter(new THREE.Vector3());

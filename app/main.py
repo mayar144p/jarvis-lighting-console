@@ -659,6 +659,31 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("what") or ""), body.get("areas") if isinstance(body.get("areas"), list) else [],
                     body.get("include_show", True) is not False, picture,
                     [str(e)[:300] for e in errs], preview=bool(body.get("preview"))))
+            if route == "/api/fixtures/real_model":
+                # The Add dialog's preview: the light's REAL 3D when its own
+                # GDTF has one, or the maker's body from GDTF Share (kept, or
+                # fetched now when logged in) - else {ok: false} and the
+                # drawn stand-in shows.
+                man, model = str(body.get("manufacturer") or ""), str(body.get("model") or "")
+                src = str(body.get("source") or "")
+                client = gdtf_share()
+                if not (src.lower().endswith(".gdtf") and (config.GDTF_SHARE_CACHE / Path(src).name).is_file()):
+                    src = client.body_file(man, model) or ""
+                if not src and model and body.get("fetch"):
+                    try:
+                        got = client.fetch_body(man, model)
+                        src = got.get("file") or "" if got.get("ok") else ""
+                    except gdtfshare.GdtfShareError:
+                        src = ""
+                if not src:
+                    return self._json({"ok": False})
+                moving = bool(body.get("moving"))
+                built = gdtf_geom.manifest_for(
+                    {"source": Path(src).name, "manufacturer": man, "model": model, "mode": "",
+                     "map": ["pan", "tilt"] if moving else []},
+                    config.GDTF_SHARE_CACHE, config.DATA / "gdtf_models", manifest_of=Path(src).name)
+                pub = gdtf_geom.public_manifest(built)
+                return self._json({"ok": bool(built.get("ok")), "definition": pub})
             if route == "/api/gdtf/bodies":
                 # The makers' 3D models for the lights in the patch whose
                 # profile has none: kept for the 3D only, the profile stays.
