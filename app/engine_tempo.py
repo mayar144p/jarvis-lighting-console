@@ -46,6 +46,7 @@ class TempoMixin:
         dj = self.__dict__.get("_prodj_last")
         if dj:
             out["deck"] = dj
+        out["bar_in_phrase"] = self._tempo().bar_in_phrase(time.monotonic())
         return out
 
     # -- actions --------------------------------------------------------------
@@ -104,6 +105,12 @@ class TempoMixin:
         self._prodj_stop()
         return self._tempo_result("stopped listening to the CDJs")
 
+    def _a_tempo_phrase(self, **_):
+        """The phrase starts now (8 bars): buttons set to "on the next
+        phrase" fire 8 bars on, and the tempo panel counts the bars."""
+        self._tempo().mark_phrase(time.monotonic())
+        return self._tempo_result("phrase starts here: bar 1 of 8")
+
     def _a_tempo_link(self, state=None, **_):
         """Follow an Ableton Link session on the network: its tempo and
         its beat (UDP multicast 224.76.78.75:20808)."""
@@ -130,12 +137,27 @@ class TempoMixin:
             if round(t.bpm, 1) != before:
                 self._tempo_changed()
 
+    def tempo_dj_status(self, st: dict) -> None:
+        """A CDJ's status (UDP 50002): who's master, who's playing."""
+        with self.lock:
+            self._decks().saw_status(st, time.monotonic())
+
+    def _decks(self) -> "tempo_mod.DeckFollower":
+        d = self.__dict__.get("_deck_follower")
+        if d is None:
+            d = self._deck_follower = tempo_mod.DeckFollower()
+        return d
+
     def tempo_dj(self, beat: dict) -> None:
         with self.lock:
+            if not self._decks().take(beat.get("device", 0), time.monotonic()):
+                return                         # another deck: the master (or the one followed) leads
             t = self._tempo()
             before = round(t.bpm, 1)
             t.dj_beat(time.monotonic(), beat["bpm"], beat["beat"])
-            self._prodj_last = {"name": beat.get("name"), "device": beat.get("device"), "bpm": beat["bpm"]}
+            m = self._decks().master(time.monotonic())
+            self._prodj_last = {"name": beat.get("name"), "device": beat.get("device"), "bpm": beat["bpm"],
+                                "master": m is not None and m == beat.get("device")}
             if round(t.bpm, 1) != before:
                 self._tempo_changed()
 
@@ -175,6 +197,37 @@ class TempoMixin:
         th = threading.Thread(target=loop, name="jarvis-prodj", daemon=True)
         self._prodj_thread, self._prodj_stopper, self._prodj_sock = th, stop, sock
         th.start()
+        # the players' status (who's master) on 50002 - if the port is free
+        status_port = (int(port) + 1) if port else tempo_mod.PRODJ_STATUS_PORT
+        try:
+            ss = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            ss.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                ss.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass
+            ss.bind(("0.0.0.0", status_port))
+            ss.settimeout(0.3)
+        except OSError:
+            ss = None                          # beats alone still work: the deck followed stays until it stops
+
+        def status_loop():
+            while not stop.is_set():
+                try:
+                    pkt, _peer = ss.recvfrom(1500)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                st = tempo_mod.parse_prodj_status(pkt)
+                if st:
+                    try:
+                        self.tempo_dj_status(st)
+                    except Exception:              # noqa: BLE001 - never stop listening
+                        pass
+            ss.close()
+        if ss is not None:
+            threading.Thread(target=status_loop, name="jarvis-prodj-status", daemon=True).start()
         return None
 
     def _prodj_stop(self) -> None:

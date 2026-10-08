@@ -829,7 +829,7 @@ function editButton(slot, btn) {
     const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
     kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
     if (!NO_QUANT.has(d)) {
-      kids.push(row("Fires", chips([["", "Like the page"], [0, "As pressed"], [1, "On the beat"], [4, "On the bar"]],
+      kids.push(row("Fires", chips([["", "Like the page"], [0, "As pressed"], [1, "On the beat"], [4, "On the bar"], [32, "On the phrase"]],
         s.quant, (v) => { s.quant = v; draw(); }),
       h("span.qe-note", "On the beat: a press waits for the next beat (or bar) of the tempo, so a strobe hit or a GO lands on it.")));
     }

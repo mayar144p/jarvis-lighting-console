@@ -26,7 +26,7 @@ function sync() {
   $("#tempo").classList.toggle("hearing", !!snd.listening);
   const auto = (state.lite && state.lite.autopilot) || (state.snap && state.snap.autopilot) || {};
   $("#tempo").classList.toggle("auto", !!auto.on);
-  $("#tempo").title = `${t.bpm.toFixed(1)} BPM${src ? " from " + (t.source === "prodj" && t.deck ? t.deck.name || "the CDJs" : src) : ""}`
+  $("#tempo").title = `${t.bpm.toFixed(1)} BPM${src ? " from " + (t.source === "prodj" && t.deck ? (t.deck.name || "the CDJs") + (t.deck.master ? " (master)" : "") : src) : ""}`
     + ` · tap on the beat (T), Shift+T for the 1 · effects locked to the beat follow it`
     + (t.follow ? " · the Speed master follows it" : "");
 }
@@ -56,6 +56,7 @@ function openMenu(anchor) {
   menu(anchor, [
     { label: "Tap on the beat", hint: "T", run: tap },
     { label: "This is the 1 (downbeat)", hint: "Shift+T", run: downbeat },
+    { label: `Phrase starts here (bar ${t.bar_in_phrase || 1} of 8 now)`, hint: "buttons \"on the phrase\" fire 8 bars on", run: () => run("tempo_phrase", {}, { toast: true }) },
     { label: "Type the BPM…", run: async () => {
       const v = await promptBox("Tempo", "BPM", (t.bpm || 120).toFixed(1), { ok: "Set" });
       if (v) run("tempo_set", { bpm: +v }, { toast: true });
@@ -66,7 +67,9 @@ function openMenu(anchor) {
     { label: "Slower  −0.5", run: () => run("tempo_nudge", { bpm: -0.5 }) },
     "-",
     { label: (t.follow ? "✓ " : "") + "Speed master follows the tempo", hint: "120 BPM = 1×", run: () => run("tempo_set", { follow: !t.follow }, { toast: true }) },
-    { label: (t.prodj ? "✓ " : "") + "Listen to the CDJs (Pro DJ Link)", hint: "tempo + the bar from the decks", run: () => run("tempo_prodj", { state: !t.prodj }, { toast: true }) },
+    { label: (t.prodj ? "✓ " : "") + "Listen to the CDJs (Pro DJ Link)",
+      hint: t.prodj && t.deck ? `following ${t.deck.name || "deck " + t.deck.device}${t.deck.master ? " (master)" : ""}` : "tempo + the bar from the master deck",
+      run: () => run("tempo_prodj", { state: !t.prodj }, { toast: true }) },
     { label: (t.link ? "✓ " : "") + "Follow Ableton Link",
       hint: t.link ? (t.link.peers ? `${t.link.peers} app(s) in the session${t.link.synced ? ", in time" : ", measuring…"}` : "no Link app found yet")
         : "tempo + the bar from Live, Traktor, rekordbox, djay… on this network",

@@ -76,6 +76,18 @@ class Clock:
         """Now is beat 1 of a bar."""
         self.anchor = now
 
+    PHRASE = 32                      # beats: 8 bars, the length dance music builds in
+
+    def mark_phrase(self, now: float) -> None:
+        """Now is the first beat of a phrase (8 bars).  The count restarts
+        here, so "on the next phrase" means 8 bars from now - and a CDJ's
+        beats keep it there (they move the count by less than a bar)."""
+        self.anchor = now
+
+    def bar_in_phrase(self, now: float) -> int:
+        """1..8"""
+        return int(math.floor(self.beats(now) / self.bar)) % (self.PHRASE // self.bar) + 1
+
     def align(self, now: float, beat_in_bar: int) -> None:
         """Now is this beat of the bar (1..4): move the phase to the nearest
         count that says so, without changing the tempo."""
@@ -180,6 +192,68 @@ def parse_prodj_beat(pkt: bytes) -> dict | None:
     if not track_bpm or not 1 <= beat <= 4:
         return None
     return {"device": device, "name": name, "bpm": round(track_bpm * pitch / 0x100000, 2), "beat": beat}
+
+
+# CDJ status packets (UDP 50002): which player is the tempo MASTER, which
+# are playing.  Two decks playing both send beats; the desk follows the
+# master (the deck the DJ syncs the others to), not whichever spoke last.
+PRODJ_STATUS_PORT = 50002
+PRODJ_STATUS = 0x0A
+F_PLAYING, F_MASTER, F_SYNC, F_ONAIR = 0x40, 0x20, 0x10, 0x08
+
+
+def parse_prodj_status(pkt: bytes) -> dict | None:
+    """{device, name, playing, master, synced, on_air} or None."""
+    if len(pkt) < 0x8A or pkt[:10] != PRODJ_MAGIC or pkt[0x0A] != PRODJ_STATUS:
+        return None
+    flags = pkt[0x89]
+    return {"device": pkt[0x21], "name": pkt[0x0B:0x1F].split(b"\0", 1)[0].decode("ascii", "replace").strip(),
+            "playing": bool(flags & F_PLAYING), "master": bool(flags & F_MASTER),
+            "synced": bool(flags & F_SYNC), "on_air": bool(flags & F_ONAIR)}
+
+
+def build_prodj_status(device: int, master: bool = False, playing: bool = True, name: str = "CDJ-3000") -> bytes:
+    p = bytearray(0xD4)
+    p[:10] = PRODJ_MAGIC
+    p[0x0A] = PRODJ_STATUS
+    p[0x0B:0x0B + len(name)] = name.encode("ascii")[:20]
+    p[0x21] = device & 0xFF
+    p[0x89] = (F_PLAYING if playing else 0) | (F_MASTER if master else 0)
+    return bytes(p)
+
+
+class DeckFollower:
+    """Which deck's beats drive the clock: the master when the players say
+    who it is (status within MASTER_S); else the deck already followed,
+    until it goes quiet for QUIET_S; else whichever deck is playing."""
+    MASTER_S, QUIET_S = 3.0, 2.0
+
+    def __init__(self):
+        self.status: dict[int, dict] = {}     # device -> its last status, with "at"
+        self.last_beat: dict[int, float] = {}
+        self.following: int | None = None
+
+    def saw_status(self, st: dict, now: float) -> None:
+        self.status[st["device"]] = dict(st, at=now)
+
+    def master(self, now: float) -> int | None:
+        for dev, st in self.status.items():
+            if st.get("master") and now - st["at"] < self.MASTER_S:
+                return dev
+        return None
+
+    def take(self, device: int, now: float) -> bool:
+        """A beat from `device`: should the clock follow it?"""
+        self.last_beat[device] = now
+        m = self.master(now)
+        if m is not None:
+            self.following = m
+            return device == m
+        cur = self.following
+        if cur is None or cur == device or now - self.last_beat.get(cur, -1e9) > self.QUIET_S:
+            self.following = device
+            return True
+        return False
 
 
 def build_prodj_beat(device: int, bpm: float, beat: int, pitch_pct: float = 0.0, name: str = "CDJ-3000") -> bytes:

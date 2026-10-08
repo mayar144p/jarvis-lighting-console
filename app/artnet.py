@@ -449,6 +449,7 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
 
     bound_port = 0
     bind_note = ""
+    sent = unreachable = 0
     try:
         # See _Probe: poll from an ephemeral port (spec-compliant replies
         # come back to the source) and additionally own udp/6454 outright
@@ -457,7 +458,6 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
         bound_port = probe.src_port
 
         poll = build_artpoll()
-        sent = 0
         # The polls go out without waiting: a send to an address nobody
         # owns can block while the computer asks the network who has it
         # (6 s for 508 addresses on GitHub's Ubuntu runners), and "Find
@@ -483,7 +483,11 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
                             break
                         time.sleep(0.001)
                     except OSError:
-                        break             # a dead host is the normal case
+                        # "host unreachable": the computer already knows
+                        # nobody is there - the address WAS looked at
+                        # (dropping these made the CI's count 244 of 254)
+                        unreachable += 1
+                        break
                 if per_address:
                     time.sleep(0.002)
         finally:
@@ -555,7 +559,7 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
     except OSError as exc:
         return {"universes": [], "nodes": [], "error": str(exc),
                 "polls_sent": sent, "replies": 0, "frames": 0,
-                "swept": sent, "subnets": subnets}
+                "swept": sent + unreachable, "unreachable": unreachable, "subnets": subnets}
 
     for row in universes.values():
         if not row["node"]:
@@ -573,12 +577,13 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
             "via": "unicast sweep",
         })
     message = (f"{len(nodes)} node(s), {len(rows)} universe(s) on "
-               f"{sent} polled address(es)" if nodes else
-               f"no node answered on {sent} unicast address(es) "
+               f"{sent + unreachable} polled address(es)" if nodes else
+               f"no node answered on {sent + unreachable} unicast address(es) "
                f"({', '.join(subnets)})")
     return {"universes": rows, "nodes": list(nodes.values()), "error": None,
             "polls_sent": sent, "replies": replies, "frames": frames,
-            "swept": sent, "subnets": subnets, "bound_port": bound_port,
+            "swept": sent + unreachable, "unreachable": unreachable,
+            "subnets": subnets, "bound_port": bound_port,
             "bind_note": bind_note, "message": message,
             # seconds per stage, to see where a slow "Find nodes" went
             "took": {"subnets": round(t_subnets, 2), "send": round(t_sent, 2),
@@ -756,7 +761,8 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
         took.update(found.get("took") or {}, sweep_total=round(time.monotonic() - t_sweep, 2))
         # count the sweep's polls whether or not anything answered: a
         # negative result is only meaningful if we say how hard we looked
-        swept = int(found.get("polls_sent") or 0)
+        # (an address the computer itself called unreachable was looked at too)
+        swept = int(found.get("swept") or found.get("polls_sent") or 0)
         subnets = found.get("subnets") or []
         if found.get("nodes") or found.get("universes"):
             for row in found["universes"]:

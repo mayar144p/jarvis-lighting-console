@@ -4693,3 +4693,50 @@ def test_ai_model_choice() -> None:
         check("no room on the disk: not offered, and why", not any(o["ok"] for o in s["options"]) and "free on the disk" in s["why"], str(s))
     finally:
         localai.memory_gb, localai.vram_gb, localai.shutil.disk_usage = saved
+
+
+def test_dj_master_and_phrase() -> None:
+    """DJ sync (A10 item 4): with two decks playing, the desk follows the
+    MASTER (the players' status says who), else stays with the deck it
+    follows until that goes quiet - never flip-flopping between two
+    tempos.  And the phrase: 8 bars from a "phrase starts here", buttons
+    that fire on the next 2 / 4 bars or phrase."""
+    print("DJ sync: the master deck, the phrase")
+    from app import engine as eng
+    from app import tempo as T
+    f = T.DeckFollower()
+    check("no master known: the first deck leads", f.take(1, 0.0) and not f.take(2, 0.1) and f.take(1, 0.5))
+    check("...until it goes quiet for 2 s, then the other one", f.take(2, 2.6) and not f.take(1, 2.7))
+    f.saw_status(T.parse_prodj_status(T.build_prodj_status(1, master=True)), 3.0)
+    check("the players say deck 1 is master: deck 1 leads", f.take(1, 3.1) and not f.take(2, 3.2))
+    check("a master that stopped saying so for 3 s no longer counts", f.master(6.5) is None)
+    st = T.parse_prodj_status(T.build_prodj_status(3, master=False, playing=True, name="XDJ-1000"))
+    check("a status packet read: device, name, playing, master",
+          st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False}, str(st))
+    check("not a status packet: nothing", T.parse_prodj_status(b"x" * 200) is None and T.parse_prodj_status(T.build_prodj_beat(1, 120, 1)) is None)
+    c = T.Clock(128, 0.0)
+    c.mark_phrase(10.0)
+    spb = 60 / 128
+    check("bars counted in the phrase (1..8)", c.bar_in_phrase(10.0) == 1 and c.bar_in_phrase(10.0 + 4 * spb + 0.01) == 2
+          and c.bar_in_phrase(10.0 + 31 * spb) == 8 and c.bar_in_phrase(10.0 + 32 * spb + 0.01) == 1)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "quant": 32})
+            r = e.act("quick_set", page=1, slot=2, button={"kind": "flash", "quant": 7})
+            check("a button can wait for the phrase (and 7 beats is refused)", not r.get("ok")
+                  and next(b for b in e.quick if b["id"] == "q1-1")["quant"] == 32.0)
+            e.act("tempo_set", bpm=120)
+            e.act("tempo_phrase")
+            e._tempo().anchor -= 0.5                       # half a second into the phrase (one beat)
+            r = e.act("quick_press", id="q1-1", down=True)
+            check("pressed in bar 1: waits for the next phrase", r.get("pending") and "phrase" in r.get("summary", ""), str(r))
+            check("...which is 32 beats from the phrase start", e.quick_pending["q1-1"]["at"] % 32 == 0)
+            check("the desk's buttons can all fire on the phrase", e.act("quick_quant", beats=32).get("ok"))
+            check("the tempo says which bar of the phrase", "bar_in_phrase" in e.tempo_public())
+        finally:
+            e.shutdown()
