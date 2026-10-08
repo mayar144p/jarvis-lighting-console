@@ -1694,3 +1694,26 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .ai-model.rec { border-color: var(--accent); background: var(--accent-bg); }
 .ai-rec { margin-left: 8px; font: 600 10.5px var(--font); text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
 .ai-model .warn { color: var(--warn); }
+
+/* ------------------------------------------------- workspaces (workspaces.js) */
+.ws-btn { gap: 6px; }
+.ws-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+#ws-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar[data-fit="2"] #ws-name, .topbar[data-fit="3"] #ws-name { display: none; }
+.topbar[data-fit="2"] #ws-btn, .topbar[data-fit="3"] #ws-btn { padding: 0 9px; }
+body.ws-swap .workspace {
+  grid-template-columns: var(--prog-w) minmax(0, 1fr) var(--fixtures-w);
+  grid-template-areas: "prog stage fixtures" "pb pb pb";
+}
+body.ws-nofix .workspace { --fixtures-w: 0px !important; }
+body.ws-noprog .workspace { --prog-w: 0px !important; }
+body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
+.fixtures, .programmer { position: relative; }
+.ws-grip { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 6; cursor: ew-resize; touch-action: none; }
+.fixtures > .ws-grip { right: -5px; }
+.programmer > .ws-grip { left: -5px; }
+body.ws-swap .fixtures > .ws-grip { right: auto; left: -5px; }
+body.ws-swap .programmer > .ws-grip { left: auto; right: -5px; }
+.ws-grip::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .15s; }
+.ws-grip:hover::after, .ws-grip.on::after { opacity: 1; background: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .ws-grip::after { transition: none; } }

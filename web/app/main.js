@@ -17,6 +17,7 @@ import { initMovePanel } from "./movepanel.js";
 import { initTimeline } from "./timeline.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
+import { initWorkspaces } from "./workspaces.js";
 import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
 import { initTheme } from "./theme.js";
@@ -66,6 +67,7 @@ async function boot() {
   initCmdbar();
   initCopilot();
   initKeys();
+  initWorkspaces();
   wireGig();
   initWelcome();
   initHelp();

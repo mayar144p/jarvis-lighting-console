@@ -4740,3 +4740,45 @@ def test_dj_master_and_phrase() -> None:
             check("the tempo says which bar of the phrase", "bar_in_phrase" in e.tempo_public())
         finally:
             e.shutdown()
+
+
+def test_workspaces() -> None:
+    """Workspaces (A10 item 6): ready ones for programming, busking,
+    theatre and running a show, each a sane layout; a damaged saved one
+    can't break the screen; the top bar has the switcher and Alt+1..9."""
+    print("Workspaces: the screen arranged for the job")
+    import shutil
+    import subprocess
+    web = ROOT / "web"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    src = (web / "app" / "workspaces.js").read_text(encoding="utf-8")
+    main = (web / "app" / "main.js").read_text(encoding="utf-8")
+    check("the switcher is in the top bar and starts with the desk", 'id="ws-btn"' in html and "initWorkspaces()" in main)
+    check("Alt+1..9 switches (by the key, so a Mac's Alt symbols don't matter)", "Digit([1-9])" in src)
+    check("a second window keeps its own layout", "dataset.window" in src)
+    node = shutil.which("node")
+    if not node:
+        check("(node not installed: the layouts not checked)", True, "")
+        return
+    js = """
+const W = await import(process.argv[1]);
+console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map((w) => JSON.stringify(W.clean(w)) === JSON.stringify(w)),
+  bad: W.clean({ id: "x", name: "y".repeat(90), fix: 0, fixW: 5000, progW: 10, bottom: "<b>", dock: -3, tab: "<img>" }),
+  show: W.BUILTIN.find((w) => w.id === "show"), busk: W.BUILTIN.find((w) => w.id === "busking") }));
+"""
+    url = (web / "app" / "wslayouts.js").as_uri()
+    r = subprocess.run([node, "--input-type=module", "-e", js, url], capture_output=True, text=True, timeout=30)
+    got = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+    check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
+    if not got:
+        return
+    check("four ready ones: programming, busking, theatre, show", got["ids"] == ["programming", "busking", "theatre", "show"], str(got["ids"]))
+    check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
+    bad = got["bad"]
+    check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
+          bad["fixW"] == 620 and bad["progW"] == 220 and bad["bottom"] == "faders" and bad["dock"] == 0
+          and bad["tab"] == "" and len(bad["name"]) == 40 and bad["fix"] is True, str(bad))
+    check("running a show: the 3D and the buttons, nothing to program with", not got["show"]["fix"] and not got["show"]["prog"]
+          and got["show"]["bottom"] == "buttons")
+    check("busking: the buttons and the programmer, no fixture list", got["busk"]["prog"] and not got["busk"]["fix"]
+          and got["busk"]["bottom"] == "buttons")
