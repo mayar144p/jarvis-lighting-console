@@ -604,6 +604,13 @@ export class Stage {
     this.dirty = true;
   }
 
+  /** Lights to point out without selecting them (a group's folder under
+   *  the pointer in the fixture list): an amber ring and their numbers. */
+  setPeek(list) {
+    this.peek = new Set((list || []).map(Number));
+    this.dirty = true;
+  }
+
   setOptions(o) {
     const before = { ...this.options };
     Object.assign(this.options, o || {});
@@ -1530,6 +1537,8 @@ export class Stage {
     // a light running its own program says so (its colours and moves are a stand-in)
     if (this.options.labels) for (const inst of this.fixtures.values()) if (inst.cur && inst.cur.prog && want.size < 16) want.add(inst.head);
     if (this.options.labels && this.hover !== null && this.hover !== undefined) want.add(this.hover);
+    const peek = this.peek || new Set();
+    for (const head of peek) if (want.size < 32) want.add(head);
     const w = this.el.clientWidth, h = this.el.clientHeight;
     for (const [head, tag] of this.tags) {
       if (!want.has(head) || !this.fixtures.has(head)) { tag.remove(); this.tags.delete(head); }
@@ -1569,7 +1578,8 @@ export class Stage {
       tag.style.top = sy.toFixed(1) + "px";
     }
     for (const inst of this.fixtures.values()) {
-      const on = this.selected.has(inst.head);
+      const peeked = peek.has(inst.head) && !this.selected.has(inst.head);
+      const on = this.selected.has(inst.head) || peeked;
       if (on && !inst.ring) {
         inst.ring = new THREE.Mesh(new THREE.RingGeometry(inst.sk.radius * 1.05, inst.sk.radius * 1.2, 40),
           new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, side: THREE.DoubleSide, toneMapped: false }));
@@ -1578,6 +1588,7 @@ export class Stage {
       }
       if (inst.ring) {
         inst.ring.visible = on;
+        inst.ring.material.color.setHex(peeked ? 0xf5a524 : 0x38bdf8);
         inst.ring.position.y = inst.hung ? 0.02 : 0.01;
       }
     }

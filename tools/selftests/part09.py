@@ -4660,3 +4660,36 @@ def test_output_routes_and_wheels() -> None:
             check("an attribute no selected light has: said", "none of the selected" in str(e.act("nudge", attribute="zoom", step=0.1).get("error")))
         finally:
             e.shutdown()
+
+
+def test_ai_model_choice() -> None:
+    """Settings -> AI offered one model (asked 2026-10-08: "only Qwen 5 GB?").
+    Every model is listed with whether it fits; the recommendation counts
+    the graphics card's memory, so a 10 GB card gets the 14B."""
+    print("Offline AI: every model to pick from, the card's memory counted")
+    from app import localai
+    saved = (localai.memory_gb, localai.vram_gb, localai.shutil.disk_usage)
+
+    class Disk:
+        def __init__(self, gb):
+            self.free = gb * 2 ** 30
+    try:
+        for ram, vram, free, want, why in ((16, 10, 100, "qwen3-14b", "16 GB + an RTX 3080 (10 GB): the 14B"),
+                                           (16, 0, 100, "qwen3-8b", "16 GB, no big card: the 8B"),
+                                           (32, 0, 100, "qwen3-14b", "32 GB: the 14B"),
+                                           (16, 10, 8, "qwen3-8b", "a nearly full disk: what fits")):
+            localai.memory_gb, localai.vram_gb = (lambda r=ram: r), (lambda v=vram: v)
+            localai.shutil.disk_usage = lambda _p, f=free: Disk(f)
+            s = localai.suggest()
+            check(f"{why}", s["id"] == want and len(s["options"]) == len(localai.CATALOG), str(s))
+        localai.memory_gb, localai.vram_gb = (lambda: 16), (lambda: 0)
+        localai.shutil.disk_usage = lambda _p: Disk(100)
+        s = localai.suggest()
+        big = next(o for o in s["options"] if o["id"] == "qwen3-14b")
+        check("the bigger model on a smaller computer: still yours to pick, marked slow", big["ok"] and big["slow"]
+              and "graphics card" in big["why"] and s["id"] == "qwen3-8b", str(big))
+        localai.shutil.disk_usage = lambda _p: Disk(4)
+        s = localai.suggest()
+        check("no room on the disk: not offered, and why", not any(o["ok"] for o in s["options"]) and "free on the disk" in s["why"], str(s))
+    finally:
+        localai.memory_gb, localai.vram_gb, localai.shutil.disk_usage = saved

@@ -100,17 +100,61 @@ function foldRow(c) {
     h("td.c-addr", h("span", addr(first)), h("small", "–" + addr(lastHd))));
 }
 
+// Groups as folders, like a code editor's file tree: the lights in a
+// group live in its folder (open it with the arrow), clicking the name
+// selects them all, hovering it points them out in the 3D view.  Lights in
+// no group stay in the list under the folders.
+let openFolders = new Set();
+try { openFolders = new Set(JSON.parse(localStorage.getItem("jarvis.openFolders") || "[]")); } catch (e) { /* private window */ }
+const keepFolders = () => { try { localStorage.setItem("jarvis.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
+const userGroups = () => (state.snap && state.snap.groups) || [];
+
+function folderIcon(open) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "folder-ic");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", open ? "M1.5 4.5V12a1 1 0 001 1h10.2a1 1 0 00.95-.68L15 8H4.3a1 1 0 00-.95.68L1.5 13M1.5 4.5v-1a1 1 0 011-1h3l1.5 1.5h5a1 1 0 011 1V8"
+    : "M1.5 3.5a1 1 0 011-1h3.2l1.5 1.5h6.3a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1z");
+  svg.append(path);
+  return svg;
+}
+
+function folderRow(g, members, open) {
+  return h("tr.folder" + (open ? ".open" : ""), { dataset: { group: g.n, fold: members.map((x) => x.head_no).join(","), head: members[0].head_no } },
+    h("td.c-name", { colSpan: 3 }, h("div.folder-line",
+      h("button.fold-btn", { title: open ? "Close the folder" : "Open the folder", "aria-label": open ? `Close ${g.name}` : `Open ${g.name}`,
+        "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"),
+      folderIcon(open),
+      h("b.folder-name", { title: `Select the ${members.length} light(s) in ${g.name} - hover to see them in the 3D view` }, g.name),
+      h("span.folder-count", String(members.length)))));
+}
+
 function render() {
   const rows = visible();
   const sel = new Set(selected());
   const stale = new Set(((state.snap && state.snap.stale_heads) || []).map(Number));
   const tbody = $("#fx-rows");
+  const groups = userGroups();
   const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.mode, r.body && r.body.type, r.unverified]),
-    [...stale], [...expanded], parked()]);
+    [...stale], [...expanded], parked(), groups.map((g) => [g.n, g.name, g.heads]), [...openFolders], filterText]);
   if (sig !== lastSig) {
     lastSig = sig;
     const out = [];
-    for (const c of clusters(rows)) {
+    const byNo = new Map(rows.map((r) => [r.head_no, r]));
+    const grouped = new Set();
+    // your own groups first; the show builder's "Auto · ..." ones after
+    const auto = (g) => /^auto\s*·/i.test(g.name || "");
+    for (const g of [...groups.filter((x) => !auto(x)), ...groups.filter(auto)]) {
+      const members = (g.heads || []).map((n) => byNo.get(n)).filter(Boolean);
+      for (const hd of members) grouped.add(hd.head_no);
+      if (!members.length) continue;                 // (a search that matches nothing in it)
+      const open = openFolders.has(g.n) || !!filterText.trim();
+      out.push(folderRow(g, members, open));
+      if (open) out.push(...members.map((hd) => headRow(hd, true)));
+    }
+    for (const c of clusters(rows.filter((r) => !grouped.has(r.head_no)))) {
       if (c.heads.length < FOLD_MIN) { out.push(...c.heads.map((hd) => headRow(hd))); continue; }
       out.push(foldRow(c));
       if (expanded.has(c.heads[0].head_no)) out.push(...c.heads.map((hd) => headRow(hd, true)));
@@ -245,6 +289,13 @@ function renderGroups() {
 function rowClick(e) {
   const tr = e.target.closest("tr[data-head]");
   if (!tr) return;
+  if (tr.dataset.group !== undefined && e.target.closest(".fold-btn")) {
+    const n = +tr.dataset.group;
+    if (openFolders.has(n)) openFolders.delete(n); else openFolders.add(n);
+    keepFolders();
+    render();
+    return;
+  }
   if (tr.dataset.fold) {
     const members = tr.dataset.fold.split(",").map(Number);
     if (e.target.closest(".fold-btn")) {
@@ -541,8 +592,18 @@ export function initFixtures() {
   });
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");
-    if (tr && window.jarvisStage) window.jarvisStage.frame([+tr.dataset.head]);
+    if (!tr || !window.jarvisStage) return;
+    window.jarvisStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
   });
+  // a folder under the pointer: its lights pointed out in the 3D view
+  let peeking = null;
+  const peek = (tr) => {
+    if (tr === peeking) return;
+    peeking = tr;
+    if (window.jarvisStage && window.jarvisStage.setPeek) window.jarvisStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
+  };
+  $("#fx-rows").addEventListener("pointerover", (e) => peek(e.target.closest("tr.folder")));
+  $("#fx-rows").addEventListener("pointerleave", () => peek(null));
   $("#fx-filter").addEventListener("input", (e) => { filterText = e.target.value; render(); });
   $("#fx-filter").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
