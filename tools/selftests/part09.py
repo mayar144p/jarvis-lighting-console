@@ -5808,3 +5808,92 @@ console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickF
               and not (got.get("noav") or {}).get("audio"), str(got))
     vr = (ROOT / "web" / "app" / "videorec.js").read_text(encoding="utf-8")
     check("...the timeline's music is added to the recording", "timelineAudioStream" in vr and "addTrack" in vr)
+
+
+def test_sweep3_adds_c() -> None:
+    """Sweep 3, more additions: audio timecode (LTC) decoded from sound and
+    followed by the timeline, a second gobo wheel and an animation wheel in
+    the 3D, and side panels / the dock placed freely per workspace."""
+    print("Sweep 3 adds (2): LTC in, gobo wheel 2 / animation wheel, free panel places")
+    import json as _json
+    import shutil
+    import subprocess
+
+    from app import engine as eng, fixlib
+    node = shutil.which("node")
+    if node:
+        js = r"""
+const L = await import(process.argv[1]);
+const out = {};
+for (const fps of [24, 25, 30]) {
+  const got = []; const d = new L.LtcDecoder(48000, (f) => got.push(f));
+  const s = L.encodeLtc(3723.4, 30, fps, 48000);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.06;
+  for (let i = 0; i < s.length; i += 512) d.feed(s.subarray(i, i + 512).map((x) => x * 0.6 + rnd()));
+  out[fps] = { n: got.length, first: got[0] && got[0].text, fps: got.at(-1) && got.at(-1).fps, last: got.at(-1) && got.at(-1).seconds };
+}
+const quiet = []; const q = new L.LtcDecoder(48000, (f) => quiet.push(f));
+q.feed(Float32Array.from({ length: 48000 }, (_, i) => Math.sin(i / 7) * 0.4));
+out.music = quiet.length;
+console.log(JSON.stringify(out));
+"""
+        r = subprocess.run([node, "--input-type=module", "-e", js, (ROOT / "web" / "app" / "ltc.js").as_uri()],
+                           capture_output=True, text=True, timeout=60)
+        got = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+        check("LTC decodes at 24, 25 and 30 fps, through noise, and knows the rate",
+              all(got.get(str(f), {}).get("n", 0) >= 25 and got[str(f)]["fps"] == f and got[str(f)]["first"].startswith("01:02:03")
+                  for f in (24, 25, 30)), str(got)[:300])
+        check("...music isn't read as timecode", got.get("music") == 0, str(got.get("music")))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("timeline_set", length=120)
+            e.act("timecode", state=True, offset=10)
+            r = e.act("timecode_ltc", t=40.0, fps=25)
+            check("the timeline follows audio timecode: jumps to it and plays", r.get("ok") and e.tl["playing"]
+                  and abs(e._tl_now() - 30.0) < 0.3, f"{r} {e._tl_now()}")
+            check("...the transport says LTC", e.timecode_public()["source"] == "LTC")
+            check("out-of-range timecode is refused", not e.act("timecode_ltc", t=-5).get("ok"))
+            e.act("timecode", state=False)
+            for words, want in (("Martin MAC 2000 Profile", "gobo2"), ("Sharpy Plus", "anim")):
+                rows = fixlib.search(words)
+                if not rows:
+                    continue
+                got_f = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                h = e._head(e.act("add_heads", fixture_id=got_f["imported"][0]["fixture_id"], qty=1)["heads"][0])
+                n = h["head_no"]
+                if want == "gobo2":
+                    role = e._gobo2_role(h)
+                    check("MAC 2000: its second gobo wheel is found (not its position channel)",
+                          role and "Gobo & Function" in e.head_ranges(h)[role]["name"] and e._gobo2_images(h), str(role))
+                    e.programmer.setdefault(n, {})[role] = 12
+                else:
+                    ins, rot = e._anim_roles(h)
+                    check("Sharpy Plus: its animation disk and its rotation", ins and rot, f"{ins} {rot}")
+                    e.programmer.setdefault(n, {}).update({ins: 200, rot: 128})
+                beam = next(x for x in e._looks() if x["n"] == n).get("beam") or {}
+                check(f"...the 3D is told ({want})", want in beam, str(beam))
+                snap_row = next(x for x in e.snapshot()["patch"] if x["head_no"] == n)
+                if want == "gobo2":
+                    check("...with the wheel's slots", bool(snap_row.get("gobos2")))
+                e.act("clear_programmer")
+        finally:
+            e.shutdown()
+    if node:
+        js = r"""
+const W = await import(process.argv[1]);
+console.log(JSON.stringify({ both: W.gridFor(W.clean({ fixAt: "right", progAt: "right", dockAt: "top" })),
+  old: W.gridFor(W.clean({ swap: true })), hidden: W.gridFor(W.clean({ fix: false })) }));
+"""
+        r = subprocess.run([node, "--input-type=module", "-e", js, (ROOT / "web" / "app" / "wslayouts.js").as_uri()],
+                           capture_output=True, text=True, timeout=30)
+        g = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+        check("workspaces: both panels on one side (the fixture list at the edge), the dock on top",
+              g.get("both", {}).get("areas") == '"pb pb pb" "stage prog fixtures"' and g["both"]["rows"].startswith("var(--pb-h)"), str(g.get("both")))
+        check("...an old 'swap sides' workspace keeps its look", g.get("old", {}).get("areas") == '"prog stage fixtures" "pb pb pb"')
+        check("...a hidden panel takes no column", g.get("hidden", {}).get("areas") == '"stage prog" "pb pb"')
+    ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
+    check("panels move by dragging their title, or from the workspace menu", "wireMove" in ws and 'place("fixAt"' in ws)

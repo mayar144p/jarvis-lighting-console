@@ -224,7 +224,9 @@ whoever picks it up starts from the diagnosis, not from scratch.
    * **Shadows:** the crowd, performers, objects and the stage block the
      brightest beams (Crowd menu -> Shadows; off on Fast quality).
    Left (later): real lens-flare streaks.
-11. **Output extras:** LTC timecode; OSC out; Pro DJ Link phrase data.
+11. **Output extras:** LTC timecode and OSC out DONE 2026-10-08; Pro DJ Link
+    phrase data still open (it needs the players' database protocol and a
+    CDJ-3000 to check against).
 
 Dropped for now (maybe later): the phone room scan.
 
@@ -347,7 +349,8 @@ it draws the same picture as WebGL 2.
    misspelled "Stobe" and "Pulsation" ranges not taken as strobes (fixed;
    PARSER_VERSION 13 re-reads installed lights).
 
-Not yet: a second gobo wheel's pictures (a Sharpy's rotating gobos show
+A second gobo wheel (shown when the first is open) and an animation wheel
+(a moving break-up pattern) DONE 2026-10-08.  Was not yet: a second gobo wheel's pictures (a Sharpy's rotating gobos show
 open), animation wheels, random-colour and sound / snap colour macros.
 
 ### Step 3 (optional / future) - a separate pro visualiser (Unreal Engine)
@@ -419,7 +422,9 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    Programming / Busking / Theatre / Show and your own, Alt+1..9; side
    panels shown or hidden, swapped, resized by their edge; the dock and
    its height; the programmer tab.  Per computer (each operator's own).
-   Left: panels dragged into any spot of a free grid.
+   Panels placed freely (2026-10-08): each side panel left or right
+   (both on one side too) by dragging its title, the dock at the bottom
+   or the top.  Left: panels floating over the 3D.
    Was: **Customisable workspaces** - drag panels into your own layout per show
    or per user (busking, theatre, programming); switch with one key.  (Pairs
    with A9 step 1's windows.)
@@ -950,7 +955,8 @@ Fixed:
     run here), Move tab rebuilt: Aim (follow me on the 3D floor, floor
     map), pan/tilt pad with nudge.  OSC out (2026-10-08: Settings
     -> MIDI & OSC; cues Send OSC; GO / master / blackout / buttons reported;
-    saved with the show).  **Left:** LTC (audio timecode).
+    saved with the show) and LTC in (2026-10-08: web/app/ltc.js decodes
+    a timecode track from a sound input; the TC button).
 
 ## A3. Visualiser and venue editor
 

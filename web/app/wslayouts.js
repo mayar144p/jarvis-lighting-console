@@ -7,11 +7,38 @@ export const BOTTOMS = ["faders", "buttons", "timeline"];
 
 // the ready ones: what a job wants on screen
 export const BUILTIN = [
-  { id: "programming", name: "Programming", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "" },
-  { id: "busking", name: "Busking", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "" },
-  { id: "theatre", name: "Theatre (cues)", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "" },
-  { id: "show", name: "Show (run only)", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "" },
+  { id: "programming", name: "Programming", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
+  { id: "busking", name: "Busking", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
+  { id: "theatre", name: "Theatre (cues)", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
+  { id: "show", name: "Show (run only)", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
 ];
+
+export const SIDES = ["left", "right"];
+
+/** Where the panels go: {cols, rows, areas, fixAt, progAt, top} for the
+ *  workspace grid.  Each side panel on the left or the right (both on one
+ *  side works: the fixture list on the outside), the dock at the bottom or
+ *  the top.  A hidden panel takes no column. */
+export function gridFor(w) {
+  const fixAt = SIDES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left");
+  const progAt = SIDES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right");
+  const cols = { fixtures: "var(--fixtures-w)", prog: "var(--prog-w)" };
+  const left = [], right = [];
+  if (w.fix !== false) (fixAt === "left" ? left : right).push("fixtures");
+  if (w.prog !== false) (progAt === "left" ? left : right).push("prog");
+  // two on one side: the fixture list at the screen's edge
+  left.sort((a) => (a === "fixtures" ? -1 : 1));
+  right.sort((a) => (a === "fixtures" ? 1 : -1));
+  const names = [...left, "stage", ...right];
+  const main = `"${names.join(" ")}"`, dock = `"${names.map(() => "pb").join(" ")}"`;
+  const top = w.dockAt === "top";
+  return {
+    cols: [...left.map((n) => cols[n]), "minmax(0, 1fr)", ...right.map((n) => cols[n])].join(" "),
+    rows: top ? "var(--pb-h) minmax(0, 1fr)" : "minmax(0, 1fr) var(--pb-h)",
+    areas: top ? `${dock} ${main}` : `${main} ${dock}`,
+    fixAt, progAt, top,
+  };
+}
 
 /** A workspace with every field the right type (a damaged entry can't break the screen). */
 export function clean(w) {
@@ -23,5 +50,8 @@ export function clean(w) {
     bottom: BOTTOMS.includes(w.bottom) ? w.bottom : "faders",
     dock: Math.max(0, Math.min(1200, Math.round(+w.dock || 0))),
     tab: /^[a-z]{1,20}$/.test(w.tab || "") ? w.tab : "",
+    fixAt: SIDES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left"),
+    progAt: SIDES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right"),
+    dockAt: w.dockAt === "top" ? "top" : "bottom",
   };
 }

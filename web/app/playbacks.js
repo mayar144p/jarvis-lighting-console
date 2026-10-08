@@ -201,7 +201,9 @@ function wireGrip() {
   });
   grip.addEventListener("pointermove", (e) => {
     if (!on) return;
-    dockHeight(document.body.dataset.bottom || "faders", Math.round(h0 + (y0 - e.clientY)));
+    // the dock at the top (a workspace can put it there) grows downward
+    const dir = document.body.classList.contains("ws-docktop") ? -1 : 1;
+    dockHeight(document.body.dataset.bottom || "faders", Math.round(h0 + dir * (y0 - e.clientY)));
   });
   const end = () => { if (on) { on = false; grip.classList.remove("on"); window.dispatchEvent(new Event("resize")); } };
   grip.addEventListener("pointerup", end);

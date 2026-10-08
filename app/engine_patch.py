@@ -1781,6 +1781,44 @@ class PatchMixin:
                     if not re.search(r"shake|scroll|rotat|spin|rainbow", s.get("name") or "", re.I)]
         return rows or None
 
+    _GOBO2 = re.compile(r"gobo\s*(wheel)?\s*2\b", re.I)
+    _ANIM = re.compile(r"animation|effect\s*wheel|anim\.?\s*(disk|wheel)", re.I)
+
+    def _gobo2_role(self, head: dict) -> str | None:
+        """A second gobo wheel (MAC 2000: "Gobo Wheel 2, Gobo & Function",
+        not its "..., Position/Velocity" channel): its channel, when the
+        file names one with slots."""
+        ranges = self.head_ranges(head)
+        for r in head.get("map") or []:
+            if not r.startswith("aux"):
+                continue
+            name = str((ranges.get(r) or {}).get("name") or "")
+            what = name.split(",", 1)[1] if "," in name else ""
+            if self._GOBO2.search(name) and not re.search(r"posit|veloc|rotat|speed|fine", what, re.I) \
+                    and (ranges.get(r) or {}).get("slots"):
+                return r
+        return None
+
+    def _anim_roles(self, head: dict) -> tuple[str | None, str | None]:
+        """(insertion, rotation) of an animation / effect wheel, by name."""
+        ranges = self.head_ranges(head)
+        names = {r: str((ranges.get(r) or {}).get("name") or "") for r in head.get("map") or [] if r.startswith("aux")}
+        anim = [r for r, n in names.items() if self._ANIM.search(n)]
+        rot = next((r for r in anim if re.search(r"rotat|speed|veloc|posit", names[r], re.I)), None)
+        ins = next((r for r in anim if r != rot), None)
+        return ins, rot
+
+    def _gobo2_images(self, head: dict) -> list[list] | None:
+        """[[from, to, picture], ...] of the second gobo wheel (as for the
+        first: "" open, "-" a drawn stand-in)."""
+        role = self._gobo2_role(head)
+        if not role:
+            return None
+        rows = [[s["from"], s["to"], s.get("img") or ("" if re.search(r"\bopen\b|no gobo", s.get("name") or "", re.I) else "-")]
+                for s in self._wheel_slots(head, role)
+                if not re.search(r"shake|scroll|rotat(?!ion gobo)|spin|rainbow", re.sub(r"indexed rotation", "", s.get("name") or "", flags=re.I), re.I)]
+        return rows or None
+
     def _nearest_slot(self, head: dict, hexcol: str) -> dict | None:
         """The colour-wheel slot closest to `hexcol`: a wheel can't mix,
         so the picker lands on the nearest colour the fixture really has."""

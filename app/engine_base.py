@@ -91,7 +91,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
+    "ready_check", "show_versions", "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -133,7 +133,7 @@ UNDO_EXCLUDED = frozenset({
 READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
-_READ_ONLY = frozenset({"show_templates", "status", "fx_available", "get_limits", "cue_info", "pad_info",
+_READ_ONLY = frozenset({"show_templates", "status", "timecode_ltc", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "show_files", "rdm_compare",
                         "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get"})
@@ -655,7 +655,7 @@ ACTIONS = (
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen",
-    "osc_out", "osc_send",
+    "osc_out", "osc_send", "timecode_ltc",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",

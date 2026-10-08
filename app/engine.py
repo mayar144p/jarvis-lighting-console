@@ -480,7 +480,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             self._log(name, True, None, extra.get("summary"))
             if name not in _READ_ONLY and not params.get("dry"):
                 self.act_rev += 1
-            if name != "status" and not self._batching:
+            if name not in ("status", "timecode_ltc") and not self._batching:
                 self._autosave()
             self._sync_follow_thread()        # start/stop the follow ticker
             self._osc_feedback(name, params, res)
@@ -1287,7 +1287,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, yaw=self._head_yaw(h), body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), better_mode=self._better_mode(h))
+                "patch": [dict(h, yaw=self._head_yaw(h), body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), gobos2=self._gobo2_images(h), better_mode=self._better_mode(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],

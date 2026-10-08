@@ -193,6 +193,15 @@ class LooksMixin:
             beam = {r: round(max(0, min(255, int(values[r]))) / 255.0, 3)
                     for r in _BEAM_LOOK_ROLES if r in values
                     and r not in ("strobe", "shutter")}
+            # the second gobo wheel, and an animation wheel in the beam
+            g2 = self._gobo2_role(head)
+            if g2 and g2 in values:
+                beam["gobo2"] = round(max(0, min(255, int(values[g2]))) / 255.0, 3)
+            a_in, a_rot = self._anim_roles(head)
+            if a_in and int(values.get(a_in, 0) or 0) > 8:
+                beam["anim"] = round(int(values[a_in]) / 255.0, 3)
+                if a_rot:
+                    beam["anim_rot"] = round(int(values.get(a_rot, 0) or 0) / 255.0, 3)
             if beam:
                 row["beam"] = beam
             # what the beam is DOING, in the file's own words for each

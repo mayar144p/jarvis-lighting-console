@@ -460,7 +460,8 @@ function onTransport(t) {
   const b = $("#tl-tc");
   if (b) {
     b.classList.toggle("on", !!tc.follow);
-    b.textContent = tc.follow ? (tc.running ? `MTC ${tc.time}` : "MTC · waiting") : "MTC";
+    const kind = tc.source || "MTC";
+    b.textContent = tc.follow ? (tc.running ? `${kind} ${tc.time}` : "TC · waiting") : "TC";
   }
   stamp = performance.now();
   if (visible) drawHead();
@@ -491,13 +492,24 @@ export function setTimelineVisible(on) {
 
 export function initTimeline() {
   $("#tl-play").addEventListener("click", () => run(transport.playing ? "timeline_pause" : "timeline_play"));
-  $("#tl-tc").addEventListener("click", async () => {
+  $("#tl-tc").addEventListener("click", async (e) => {
     const tc = transport.timecode || {};
-    if (tc.follow) { run("timecode", { state: false }, { toast: true }); return; }
-    const off = await promptBox("Follow MIDI timecode", "The timecode where the timeline starts (seconds, or h:mm:ss)", tc.offset ? String(tc.offset) : "0", { ok: "Follow" });
-    if (off === null) return;
-    const secs = String(off).includes(":") ? String(off).split(":").reduce((a, v) => a * 60 + (+v || 0), 0) : +off || 0;
-    run("timecode", { state: true, offset: secs }, { toast: true });
+    const { ltcListening, startLtc, stopLtc } = await import("./ltcin.js");
+    const follow = async (title, ltc) => {
+      const off = await promptBox(title, "The timecode where the timeline starts (seconds, or h:mm:ss)", tc.offset ? String(tc.offset) : "0", { ok: "Follow" });
+      if (off === null) return;
+      const secs = String(off).includes(":") ? String(off).split(":").reduce((a, v) => a * 60 + (+v || 0), 0) : +off || 0;
+      if (ltc) {
+        try { await startLtc(); } catch (err) { toast(err.message || String(err), "bad", 7000); return; }
+      } else stopLtc();
+      run("timecode", { state: true, offset: secs }, { toast: true });
+    };
+    menu(e.currentTarget, [
+      { label: "Follow MIDI timecode (MTC)", hint: "from the desk's MIDI input", run: () => follow("Follow MIDI timecode", false) },
+      { label: "Follow audio timecode (LTC)", hint: "a timecode track into this computer's sound input (picked in Sound)",
+        run: () => follow("Follow audio timecode", true) },
+      { label: "Don't follow timecode", disabled: !tc.follow && !ltcListening(), run: () => { stopLtc(); run("timecode", { state: false }, { toast: true }); } },
+    ]);
   });
   $("#tl-stop").addEventListener("click", () => run("timeline_stop"));
   $("#tl-loop").addEventListener("click", () => run("timeline_set", { loop: !doc().loop }));
