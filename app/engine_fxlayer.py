@@ -812,8 +812,14 @@ class FxLayerMixin:
         d = fixture_kind.describe(h)
         pivot = 0.372 if d.get("heads") else self._AIM_PIVOT.get(d["type"], 0.4)
         ahead = 0.14 if d["type"] == "scanner" else 0.0
-        ox, oy, oz = h["x"], h["y"] + (-pivot if hung else pivot), h["z"] + ahead
-        dx, dy, dz = tx - ox, ty - oy, tz - oz
+        # which way its base faces (a turned truss turns its lights): the
+        # target is worked out in the light's own frame, as the 3D turns its
+        # holder - so the DMX points the real light where the 3D shows
+        yaw = math.radians(self._head_yaw(h))
+        cy_, sy_ = math.cos(yaw), math.sin(yaw)
+        ox, oy, oz = h["x"] + ahead * sy_, h["y"] + (-pivot if hung else pivot), h["z"] + ahead * cy_
+        wx, dy, wz = tx - ox, ty - oy, tz - oz
+        dx, dz = wx * cy_ - wz * sy_, wx * sy_ + wz * cy_
         n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
         dx, dy, dz = dx / n, dy / n, dz / n
         lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)

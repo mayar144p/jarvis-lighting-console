@@ -471,6 +471,9 @@ export class Stage {
     const hung = f.stance ? f.stance === "hang" : (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
     inst.hung = hung;
     inst.holder.position.set(+f.x || 0, +f.y || 0, +f.z || 0);
+    // which way its base faces (a turned truss turns its lights) - the same
+    // angle the desk aims with, so the 3D beam is where the real one goes
+    inst.holder.rotation.set(0, (+f.yaw || 0) * DEG, 0);
     const flip = inst.sk.native === "hung" ? !hung : hung;
     inst.sk.root.rotation.set(0, 0, flip ? Math.PI : 0);
     inst.pick.position.y = (hung ? -1 : 1) * inst.sk.height / 2;

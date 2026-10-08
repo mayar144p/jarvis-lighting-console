@@ -2129,8 +2129,12 @@ class PatchMixin:
             elif target_rig and (h.get("mount") or {}).get("rig") != target_rig["id"]:
                 h.pop("stance", None)        # a new rig: hang or stand as it does
             if target_rig:
+                same = (h.get("mount") or {}).get("rig") == target_rig["id"]
                 h["mount"] = {"rig": target_rig["id"],
-                              "t": round(max(0.0, min(1.0, float(tt))), 4)}
+                              "t": round(max(0.0, min(1.0, float(tt))), 4),
+                              # slid along the same rig: it keeps its facing
+                              **({"yaw0": h["mount"]["yaw0"]} if same and h["mount"].get("yaw0") is not None else {})}
+                self._head_yaw(h)          # hung on a rig: faces along it
                 pos = venue_mod.mount_position(target_rig, h["mount"]["t"],
                                                h.get("stance"))
                 h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]

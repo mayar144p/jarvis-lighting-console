@@ -251,6 +251,21 @@ another button or the whole page; what the buttons do stays the same.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### Turned trusses and the room map
+
+Turn a truss in Arrange and the lights on it turn with it, just as the real
+fixtures do when the truss is hung at an angle. Aiming still lands on the
+spot you point at (the room map, Follow me, positions, the assistant): the
+desk works out each light's pan and tilt from the way its base now faces,
+so the 3D view and the real lights agree. A light keeps its own pan and
+tilt when you slide it along the same truss.
+
+The room map in Move tab -> Aim draws the room as it really is: its own
+outline (L-shaped, round...), the stage, zones, the bar and other objects,
+the trusses at their real angle, and each light turned with its truss
+(selected lights in yellow). Drag on it and every selected light points at
+that spot. The pan/tilt dials still move each light's own pan and tilt.
+
 ### Follow me speed
 
 Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on

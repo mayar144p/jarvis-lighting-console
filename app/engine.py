@@ -1285,7 +1285,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), better_mode=self._better_mode(h))
+                "patch": [dict(h, yaw=self._head_yaw(h), body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), better_mode=self._better_mode(h))
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],

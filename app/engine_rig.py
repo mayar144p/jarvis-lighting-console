@@ -426,10 +426,34 @@ class RigMixin:
     # the venue (app/venue.py): room, stage, zones, rigging, objects
     # ------------------------------------------------------------------
     def _set_venue_doc(self, v: dict) -> None:
-        """Store a new venue and carry mounted heads with their rigs."""
+        """Store a new venue and carry mounted heads with their rigs - their
+        place, and which way they face: a truss turned 90 degrees turns its
+        lights 90 degrees, as it does on the real rig."""
+        for h in self.patch:                 # facing pinned to the rig as it WAS
+            self._head_yaw(h)
         self.venue = v
         self._reflow_mounts()
         self.patch_rev += 1
+
+    def _head_yaw(self, h: dict) -> float:
+        """Which way this light's base faces, degrees round the vertical (0:
+        as a light hung on a truss running left-right).  A light on a rig
+        turns with it: the rig's angle less where it was when the light was
+        hung (mount["yaw0"]); an older show's light, or one never turned,
+        faces along its truss.  A light on no rig keeps its last facing.
+        The aim solver and the 3D both use it, so the DMX points where the
+        3D shows."""
+        m = h.get("mount")
+        if isinstance(m, dict):
+            r = venue_mod.rig(self.venue, m.get("rig"))
+            ang = venue_mod.rig_angle(r) if r else None
+            if ang is not None:
+                if m.get("yaw0") is None:
+                    m["yaw0"] = round(ang - venue_mod.fold90(ang), 3)
+                yaw = ((ang - float(m["yaw0"]) + 180.0) % 360.0) - 180.0
+                h["yaw"] = round(yaw, 3)
+                return h["yaw"]
+        return float(h.get("yaw") or 0.0)
 
     def _reflow_mounts(self) -> list[int]:
         """Put every mounted head back on its rig (after a rig moved), and
@@ -449,6 +473,7 @@ class RigMixin:
             h["x"], h["y"], h["z"] = pos["x"], pos["y"], pos["z"]
             h["stance"] = pos["orient"]
             h["kind"] = "truss" if pos["orient"] == "hang" else "floor"
+            self._head_yaw(h)
         return moved
 
     def ensure_venue(self, default: str = "club") -> bool:

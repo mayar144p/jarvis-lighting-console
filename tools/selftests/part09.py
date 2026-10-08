@@ -5103,3 +5103,78 @@ def test_sweep_fixes() -> None:
             e.act("set_lock", state="design")
         finally:
             e.shutdown()
+
+
+def test_truss_turn_aim() -> None:
+    """A turned truss turns the lights on it: aiming at a spot (the room map,
+    Follow me, the assistant) still lands every beam on that spot, and the
+    3D turns each body with its truss - so the desk and the real lights agree."""
+    print("Truss turn: lights turn with their truss and still hit the aim spot")
+    import math
+    from app import engine as eng, fixture_kind, venue as V
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("show_template", name="club")
+            rigs: dict = {}
+            for h in e.patch:
+                if "pan" in h["map"] and "tilt" in h["map"] and isinstance(h.get("mount"), dict):
+                    rigs.setdefault(h["mount"]["rig"], []).append(h["head_no"])
+            check("the club template has moving lights on a truss", bool(rigs), str(list(rigs)))
+            if not rigs:
+                return
+            rid, heads = max(rigs.items(), key=lambda kv: len(kv[1]))
+            r = V.rig(e.venue, rid)
+
+            def miss(n, target):
+                h, v = e._head(n), e.programmer[n]
+                rg = e.head_ranges(h)
+                pr, tr = rg.get("pan") or {}, rg.get("tilt") or {}
+                pmin, pmax = (pr["min"], pr["max"]) if pr.get("unit") == "degree" and pr.get("min") is not None else (-270.0, 270.0)
+                tmin, tmax = (tr["min"], tr["max"]) if tr.get("unit") == "degree" and tr.get("min") is not None else (-135.0, 135.0)
+                p = math.radians(pmin + v["pan"] / (65535 if "pan_fine" in h["map"] else 255) * (pmax - pmin))
+                t = math.radians(tmin + v["tilt"] / (65535 if "tilt_fine" in h["map"] else 255) * (tmax - tmin))
+                d = [math.sin(t) * math.sin(p), math.cos(t), math.sin(t) * math.cos(p)]
+                hung = h.get("stance") == "hang"
+                if hung:
+                    d = [-d[0], -d[1], d[2]]
+                y = math.radians(e._head_yaw(h))      # the 3D: holder.rotation.y = yaw
+                d = [d[0] * math.cos(y) + d[2] * math.sin(y), d[1], -d[0] * math.sin(y) + d[2] * math.cos(y)]
+                dsc = fixture_kind.describe(h)
+                piv = 0.372 if dsc.get("heads") else e._AIM_PIVOT.get(dsc["type"], 0.4)
+                o = [h["x"], h["y"] + (-piv if hung else piv), h["z"]]
+                w = [target[i] - o[i] for i in range(3)]
+                along = sum(w[i] * d[i] for i in range(3))
+                return math.sqrt(max(0.0, sum(x * x for x in w) - along * along)), along
+
+            target = (0.0, 0.0, 6.0)
+            a, b = r["a"], r["b"]
+            cx, cz = (a[0] + b[0]) / 2, (a[2] + b[2]) / 2
+            half = math.hypot(b[0] - a[0], b[2] - a[2]) / 2
+            for ang in (0, 37, 90, 180):
+                th = math.radians(ang)
+                e.act("venue_update", id=rid, changes={"a": [cx - half * math.cos(th), a[1], cz + half * math.sin(th)],
+                                                        "b": [cx + half * math.cos(th), b[1], cz - half * math.sin(th)]})
+                e.act("select_heads", heads=heads)
+                e.act("aim_at", x=target[0], y=target[1], z=target[2])
+                got = [miss(n, target) for n in heads]
+                worst = max(x[0] for x in got)
+                check(f"truss turned {ang} deg: every beam lands on the aim spot", worst < 0.05 and all(x[1] > 0 for x in got),
+                      f"worst miss {worst:.3f} m")
+                e.act("clear_programmer")
+            snap = e.snapshot() if hasattr(e, "snapshot") else None
+            if snap:
+                row = next((x for x in snap.get("patch", []) if x.get("head_no") == heads[0]), {})
+                check("the snapshot gives the 3D each light's turn (yaw)", "yaw" in row, str(sorted(row)[:8]))
+            js = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+            check("the 3D view is handed each light's yaw", "yaw: +h.yaw" in js)
+            st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+            check("the 3D turns each light's body by its yaw", "f.yaw" in st)
+            am = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+            check("the room map draws the room's own outline, trusses and objects",
+                  "r.outline" in am and "am-truss" in am and "v.objects" in am)
+        finally:
+            e.shutdown()
