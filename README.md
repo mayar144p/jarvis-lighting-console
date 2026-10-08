@@ -310,12 +310,19 @@ or follow MIDI clock, the CDJs (Pro DJ Link), the room's sound, or
 rekordbox, djay and the rest on the same network; the desk listens to the
 session's tempo and its place in the bar, and joins no session of its own).
 
+* **The CDJs** (tempo menu -> *Listen to the CDJs*): with two decks playing,
+  the desk follows the one the players say is **master**, and the tempo's
+  hover text names it (*from CDJ-B (master)*). With no master it stays on the
+  deck it is following until that one goes quiet for 2 seconds, so it never
+  jumps between two tempos mid-mix.
+* **The phrase** (tempo menu -> *Phrase starts here* on the drop or the
+  first beat of a section): the desk counts 8 bars from it (*bar 3 of 8*).
 * **Buttons on the beat** (Buttons page -> *On the beat*: off, half beat,
-  beat, 2 beats or bar). A press waits for the next one, and the tile blinks
+  beat, 2 beats, bar, 2 bars, 4 bars or the phrase). A press waits for the next one, and the tile blinks
   while it waits. Pressed just after the beat, it fires at once. A quick tap
   between beats still gives a hit on the beat. Each button can say
   otherwise in Edit (*Fires*: like the page, as pressed, on the beat, on the
-  bar). Kill, ARM, E-stop, tempo, faders and XY pads always act at once.
+  bar, on the phrase). Kill, ARM, E-stop, tempo, faders and XY pads always act at once.
 * **The sound** (tempo menu -> *Sound*): pick the input (a line in from the
   mixer is steadier than a microphone). A link can move the effects' **size**
   as well as their speed and the brightness: loud is the effect as made,

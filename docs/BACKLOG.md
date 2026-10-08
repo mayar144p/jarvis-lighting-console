@@ -394,7 +394,13 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    Also asked and done: **Lights only** in the 3D view (hides the venue).
    Was: a plot from Vectorworks or Capture
    comes in with every light patched and placed; ours goes back out.
-4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
+4. **(DONE 2026-10-08) DJ sync** - the beat and bar from the CDJs were
+   there; added the players' status packets (udp 50002): the desk follows
+   the MASTER deck, else sticks with one deck until it goes quiet (no
+   flip-flopping); "Phrase starts here" counts 8-bar phrases; buttons can
+   fire on the next 2 / 4 bars or phrase.  Left: the CDJ-3000's own phrase
+   marks (verse / chorus) - they live in the players' track database.
+   Was: **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
    beat, bar and phrase, so the lights hit the drops without tapping.
 5. **(DONE 2026-10-08) More universes and sACN in Settings** - Art-Net /
    sACN and the target were already in Settings -> Output; added a node per

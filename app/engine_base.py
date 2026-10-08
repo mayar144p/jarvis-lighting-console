@@ -104,7 +104,7 @@ UNDO_EXCLUDED = frozenset({
     "fx_status", "remember_open", "light_test", "light_tested", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
-    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "fx_beats", "fx_space", "fx_tweak",
+    "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "tempo_phrase", "fx_beats", "fx_space", "fx_tweak",
     "step_fx_run", "highlight", "group_master",
     # a macro manages its own undo: its lines are ONE step
     "macro_run", "osc", "timecode", "blind",
@@ -651,7 +651,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates",
+    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export",

@@ -49,7 +49,7 @@ class QuickMixin:
 
     QUICK_SIZES = ("wide", "tall", "big")
     # on the beat: a press waits for the next half beat / beat / 2 beats / bar
-    QUANTS = (0.0, 0.5, 1.0, 2.0, 4.0)
+    QUANTS = (0.0, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0)      # ... 2 bars, 4 bars, a phrase (8 bars)
     # these act the moment they are touched, whatever the setting
     NO_QUANT = frozenset({"fxkill", "arm", "estop", "tempo", "fader", "xy"})
     # pressed this late after the beat still counts as on it (seconds)
@@ -128,7 +128,7 @@ class QuickMixin:
             except (TypeError, ValueError):
                 q = -1.0
             if q not in self.QUANTS:
-                raise ValueError("quant (fire on the beat) is 0 (as pressed), 0.5, 1, 2 or 4 beats")
+                raise ValueError("quant (fire on the beat) is 0 (as pressed), 0.5, 1, 2, 4, 8, 16 or 32 beats")
             btn["quant"] = q
         if kind not in self.ONE_SHOT_BUTTONS:
             if raw.get("exclusive") not in (None, ""):
@@ -718,10 +718,11 @@ class QuickMixin:
         except (TypeError, ValueError):
             q = -1.0
         if q not in self.QUANTS:
-            raise ValueError("beats is 0 (as pressed), 0.5, 1, 2 or 4")
+            raise ValueError("beats is 0 (as pressed), 0.5, 1, 2, 4 (a bar), 8, 16 or 32 (a phrase)")
         self.quick_quant = q
         word = {0.0: "as pressed", 0.5: "on the next half beat", 1.0: "on the next beat",
-                2.0: "on the next 2 beats", 4.0: "on the next bar"}[q]
+                2.0: "on the next 2 beats", 4.0: "on the next bar", 8.0: "on the next 2 bars",
+                16.0: "on the next 4 bars", 32.0: "on the next phrase"}[q]
         return {"quant": q, "summary": f"buttons fire {word}"}
 
     def _quick_pending_tick(self, now: float | None = None) -> None:
@@ -769,7 +770,8 @@ class QuickMixin:
                 since = b - math.floor(b / q) * q              # beats since the last grid line
                 if since > late:
                     pend[key] = {"at": math.floor(b / q) * q + q, "up": False}
-                    word = "bar" if q >= 4 else "beat" if q >= 1 else "half beat"
+                    word = ("phrase" if q >= 32 else f"{int(q // 4)} bars" if q > 4 else "bar" if q >= 4
+                            else "beat" if q >= 1 else "half beat")
                     return {"id": key, "active": key in self.quick_active, "pending": True,
                             "summary": f"{btn['label']} on the next {word}"}
                 # just after the beat: that was meant to be on it - now
