@@ -825,6 +825,21 @@ Fixed:
    (Settings -> MIDI: every message from the desk computer's controller
    with what it did, and every message a controller on the tablet sends).
 
+## A8b. Prevention, not one light at a time (2026-10-08)
+
+- **(DONE) Library rules** (tools/rulecheck.py, CI job library-rules): the
+  desk's promises checked on all ~2,400 library lights; each bug found on one
+  product becomes a rule.  First run found a real one no report had: on 10
+  multi-head lights with 16-bit pan / tilt (Event Bar Pro, Robin Spikie...)
+  heads 2-4 were stuck at the end of their travel (merge.pair_map).
+  Known and left: 16 lights whose files name no wheel colours (teach once),
+  4 combo bars treated wholly as lasers (A8 combo bar).
+- **(DONE) Light check asks the light's own mode first** (Test this light):
+  one press switches every light of the model to the mode on its display;
+  strobe and every head checked; offered when a new model is patched.
+- Left: more rules as reports come in; a model's taught colours and fixes
+  shipped to everyone with library updates (A10 item 8).
+
 ## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
 
 6. **(DONE) A live beat clock** (app/tempo.py): a tempo pill in the top

@@ -41,6 +41,18 @@ jobs:
       - name: Frame timing (286 lights, effects, 3 screens)
         run: python tools/frametiming.py
 
+  library-rules:
+    # every light in the fixture libraries against the desk's promises
+    # (tools/rulecheck.py): a bug in one light is a rule for all of them
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Library rules (about 2,400 lights; fails only on a NEW failure)
+        run: python tools/rulecheck.py
+
   lint:
     runs-on: ubuntu-latest
     steps:

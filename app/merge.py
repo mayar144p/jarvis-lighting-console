@@ -374,11 +374,15 @@ def pair_map(roles: list[str]) -> tuple[dict[int, int], dict[int, int]]:
     base_of: dict[int, int] = {}
     for i, role in enumerate(roles):
         if is_fine_role(role):
-            for j, other in enumerate(roles):
-                if other == role[:-5]:
-                    fine_of[j] = i
-                    base_of[i] = j
-                    break
+            # the NEAREST unpaired base: a multi-head light (Event Bar Pro:
+            # pan, pan fine, tilt, tilt fine x 4) pairs each head's fine
+            # with its own head - taking the first base paired them all
+            # with head 1, and heads 2-4 got a 16-bit value cut to 255
+            near = [j for j, other in enumerate(roles) if other == role[:-5] and j not in fine_of]
+            if near:
+                j = min(near, key=lambda x: (abs(x - i), x))
+                fine_of[j] = i
+                base_of[i] = j
     if len(_PAIR_CACHE) < 512:
         _PAIR_CACHE[key] = (fine_of, base_of)   # read only by callers
     return fine_of, base_of
@@ -440,7 +444,15 @@ def build_frames(patch: list[dict], prog: dict,
                 cell = f"{role}@{seen[role]}"
                 if cell in values and role not in HTP_ROLES:
                     v = values[cell]
-                    buf[pos] = 0 if v < 0 else (255 if v > 255 else int(v))
+                    if (role + "_fine") in roles:
+                        # a 16-bit role: this head's coarse byte (and its
+                        # own fine byte, when it has one)
+                        coarse, fine = split_16bit(_logical16(v))
+                        buf[pos] = coarse
+                        if i in fine_of and 0 <= offset + fine_of[i] < SLOTS:
+                            buf[offset + fine_of[i]] = fine
+                    else:
+                        buf[pos] = 0 if v < 0 else (255 if v > 255 else int(v))
                     continue
             partner = fine_of.get(i)
             if partner is not None:
@@ -471,5 +483,10 @@ def build_frames(patch: list[dict], prog: dict,
                 buf[pos] = _curve_pct(values.get(role, 0), curve) * 255 // 100
             elif role != "unused":
                 v = values.get(role, 0)
-                buf[pos] = 0 if v < 0 else (255 if v > 255 else int(v))
+                if (role + "_fine") in roles and not is_fine_role(role):
+                    # 16-bit elsewhere on this light (a head with no fine
+                    # channel of its own): the coarse byte, not a clip at 255
+                    buf[pos] = split_16bit(_logical16(v))[0]
+                else:
+                    buf[pos] = 0 if v < 0 else (255 if v > 255 else int(v))
     return frames

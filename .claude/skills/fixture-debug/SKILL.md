@@ -155,6 +155,25 @@ When the fit is wrong, fix the desk, not the test. Use ui-ux-pro-max /
 design-for-ai for the programmer (show only what the light can do) and for
 the 3D models.
 
+## 2c. Library rules: a bug in one light is a rule for all of them
+
+`python tools/rulecheck.py` checks the desk's promises on EVERY library light
+(~2,400, about 80 s): strobe buttons inside the light's own strobe range and
+the right way round, colour effects offered to every light that makes
+colours (and they really change the DMX), a lit colour light never grey in
+the 3D, every head of a multi-head light moving and taking colour.
+`--only "name"` / `--rule id` narrow it.  CI runs it (job "library-rules")
+and fails only on a NEW failure; lights that break a rule for a reason the
+desk can't fix (a file that names no wheel colours) are listed in
+`tools/rules_known.json`.
+
+**Every bug found on one product becomes a rule here** (a function in
+`tools/rulecheck.py` `RULES`) before or with its fix: run it, see every
+other light of that kind fail, fix the desk, see them all pass.  Only then
+add the product's own selftest.  `--update-known` accepts what's left
+(say why in the commit); a known one that starts passing is reported as
+fixed.
+
 ## 3. When something fails
 
 Use agent-skills `debugging-and-error-recovery` and ponytail for the

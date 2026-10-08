@@ -4904,3 +4904,65 @@ console.log(JSON.stringify({
     check("the file is named after the show and the time", got["name"] == "Club night-2026-10-08-21-05.mp4", got["name"])
     check("no characters a disk refuses; no name: jarvis-...", not got["odd"] and got["blank"])
     check("the clock reads m:ss", got["clock"] == "2:05")
+
+
+def test_multihead_16bit_heads() -> None:
+    """Found by the library rules (tools/rulecheck.py), not by a report:
+    on a multi-head light with fine pan / tilt (American DJ Event Bar Pro:
+    pan, pan fine, tilt, tilt fine x 4) every fine channel was paired with
+    HEAD 1's pan, so heads 2-4 got a 16-bit value cut to 255 - stuck at
+    the end of their travel whatever the desk asked."""
+    print("Multi-head lights with 16-bit pan / tilt: every head goes where it's sent")
+    from app import merge
+    roles = ["pan", "pan_fine", "tilt", "tilt_fine"] * 4 + ["dimmer"]
+    fine_of, _base = merge.pair_map(roles)
+    check("each head's fine channel pairs with its own pan / tilt",
+          all(fine_of.get(4 * k) == 4 * k + 1 and fine_of.get(4 * k + 2) == 4 * k + 3 for k in range(4)), str(fine_of))
+    head = {"head_no": 1, "universe": 1, "address": 1, "map": roles, "channels": len(roles)}
+    fr = merge.build_frames([head], {1: {"pan": 0x4C80, "tilt": 0xB300, "dimmer": 100}}, [])[1]
+    check("every head at the same position (coarse and fine)",
+          all(fr[4 * k] == 0x4C and fr[4 * k + 1] == 0x80 and fr[4 * k + 2] == 0xB3 for k in range(4)), str(list(fr[:16])))
+    mixed = ["pan", "pan_fine", "tilt", "tilt_fine", "unused", "pan", "tilt", "dimmer"]   # Stairville Infinite Pixel 250
+    head2 = {"head_no": 1, "universe": 1, "address": 1, "map": mixed, "channels": len(mixed)}
+    fr2 = merge.build_frames([head2], {1: {"pan": 0x4C80, "tilt": 0xB300}}, [])[1]
+    check("a second head with no fine channel gets the coarse byte, not 255", fr2[5] == 0x4C and fr2[6] == 0xB3, str(list(fr2[:8])))
+    fr3 = merge.build_frames([head], {1: {"tilt@2": 0x1000, "tilt@3": 0xF000}}, [])[1]
+    check("one head aimed on its own: its own coarse and fine bytes", fr3[6] == 0x10 and fr3[10] == 0xF0, str(list(fr3[:16])))
+
+
+def test_light_check_mode_and_strobe() -> None:
+    """The light check (Test this light) asks first whether the mode set on
+    the REAL light matches the desk's - the cause of "some heads don't move"
+    no test can see - and switches every light of that model to the mode
+    the light shows, in one go.  It checks the strobe too, each head of a
+    multi-head light, and is offered when a new model is patched."""
+    print("Light check: the light's own mode, every head, the strobe")
+    from app import assistant, engine as eng
+    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("the mode is the first question, with a one-press switch", "async function modeStep" in js and '"change_type"' in js)
+    check("offered when a new, untested model is patched", "offerLightTest((r.heads || [])[0])" in js)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            if not assistant.add_fixture(e, "qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf", qty=2, mode="17 ch.").get("ok"):
+                check("(the QLC+ library isn't bundled here: not checked)", True, "")
+                return
+            st = e.act("light_test", head=1, step="start")
+            check("the test knows the light's modes and how many heads",
+                  [m["name"] for m in st["modes"]] == ["33 ch.", "17 ch."] and st["heads"] == 4 and st["fixture_id"], str(st.get("modes")))
+            check("...and its strobe steps", st["strobe"] and st["strobe"]["fast"] < st["strobe"]["slow"], str(st.get("strobe")))
+            r = e.act("light_test", head=1, step="strobe", value="fast")
+            check("Strobe fast reaches the light", r.get("ok") and e.programmer[1]["shutter"] == st["strobe"]["fast"], str(r))
+            e.act("light_test", head=1, step="end")
+            r = e.act("change_type", heads=[1, 2], fixture_id=st["fixture_id"], mode="33 ch.")
+            check("the light shows 33 channels: both lights switch, keeping their numbers",
+                  r.get("ok") and e._head(1)["mode"] == "33 ch." and e._head(2)["mode"] == "33 ch.", r.get("error") or "")
+            check("...and the one that had to move says where", "#2 -> 1.34" in r.get("summary", ""), r.get("summary", ""))
+            t = e.act("light_tested", head=1, strobe=False)
+            check("a wrong strobe (all else right) says report it - the file may be wrong",
+                  not t["tested"] and any("strobe" in a for a in t["advice"]), str(t.get("advice")))
+        finally:
+            e.shutdown()

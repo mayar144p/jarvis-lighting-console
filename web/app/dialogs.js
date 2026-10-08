@@ -365,7 +365,10 @@ export function openAddDialog(query = "") {
       if (addr.value) params.address = +addr.value;
       if (name.value.trim()) params.name = name.value.trim();
       const r = await run("add_heads", params);
-      if (r.ok) toast(r.summary || "Added", "ok");
+      if (r.ok) {
+        toast(r.summary || "Added", "ok");
+        offerLightTest((r.heads || [])[0]);
+      }
     } catch (err) {
       toast(err.message, "bad");
     } finally {
@@ -1371,6 +1374,24 @@ export function openManualFixture(onSaved) {
   });
 }
 
+// A model the desk hasn't seen pass the test: offer it while the real light
+// is there to look at (only when the output is live - otherwise it can't
+// react).  Most "it doesn't move / wrong colours" turns out to be the mode
+// set on the light, and that is the first question.
+async function offerLightTest(headNo) {
+  if (!headNo) return;
+  await new Promise((r) => setTimeout(r, 500));          // the new patch arrives
+  const hd = patch().find((x) => x.head_no === headNo);
+  if (!hd || hd.tested) return;
+  if (outputState() !== "live") {
+    toast(`When the real ${hd.model} is connected: right-click it -> Test this light (30 s: mode, light, move, colour, strobe)`, "", 8000);
+    return;
+  }
+  if (await confirmBox(`Test the new ${hd.model}?`,
+    `30 seconds with the real light in front of you: is it in the right mode, does it light, move, change colour and strobe as the desk expects. `
+    + `Every ${hd.model} is ready after one test.`, { ok: "Test it now" })) openLightTest(hd);
+}
+
 // ====================================================== test this light
 // A fixture file can be wrong in ways no code can see: a shutter "open"
 // value it never states, a channel order that does not match the light's
@@ -1381,7 +1402,8 @@ export async function openLightTest(hd) {
   const head = hd.head_no;
   const st = await run("light_test", { head, step: "start" }, { silentError: true });
   if (!st.ok) { toast(st.error || "This light cannot be tested", "bad"); return; }
-  const res = { light: null, move: true, colour: true };
+  const res = { light: null, move: true, colour: true, strobe: true };
+  const many = (st.heads || 1) > 1 ? ` (all ${st.heads} heads)` : "";
   const box = h("div.lt");
   const live = outputState() === "live";
   let closed = false;
@@ -1469,11 +1491,42 @@ export async function openLightTest(hd) {
     return faders();
   }
 
+  // The desk can't see what is set on the light itself: the mode (how many
+  // channels it listens to) and its address.  A mismatch makes some heads
+  // not move and colours land wrong - so it's the first question.
+  async function modeStep() {
+    const modes = st.modes || [];
+    const a = await ask(`Look at the light's own display (or its DIP switches). It should be in mode "${st.mode}" - ${st.channels} channels - `
+      + `starting at DMX address ${String(st.address).split(".").pop()}${st.address.includes(".") ? ` on universe ${st.address.split(".")[0]}` : ""}. Is it?`,
+      [["Yes, it matches", "yes", "primary"], ...(modes.length > 1 ? [["It shows another mode", "other"]] : []), ["I can't see it", "skip"]]);
+    if (a !== "other") return false;
+    const pick = await ask("Which mode does the light show?",
+      [...modes.filter((m) => m.name !== st.mode).map((m) => [`${m.name} (${m.channels} ch)`, m.name, "primary"]), ["Back", ""]]);
+    if (!pick) return modeStep();
+    // every light of this model in the old mode: they're set the same way
+    const same = patch().filter((x) => x.model === hd.model && x.manufacturer === hd.manufacturer && x.mode === st.mode).map((x) => x.head_no);
+    const r = await run("change_type", { heads: same, fixture_id: st.fixture_id, mode: pick }, { silentError: true });
+    if (!r.ok) { toast(r.error || "Couldn't change the mode", "bad"); return false; }
+    toast(r.summary + (/moved/.test(r.summary || "") ? " - set those lights' addresses to match" : ""), "ok", 9000);
+    return true;
+  }
+
+  async function strobeStep() {
+    await run("light_test", { head, step: "strobe", value: "fast" }, { silentError: true });
+    const a = await ask(`It should be strobing FAST now${many}. Is it?`, [["Yes", true, "primary"], ["No", false]]);
+    await run("light_test", { head, step: "strobe", value: "slow" }, { silentError: true });
+    const b = a && await ask("Now it should strobe SLOWLY. Is it?", [["Yes", true, "primary"], ["No", false]]);
+    await run("light_test", { head, step: "strobe", value: "off" }, { silentError: true });
+    return !!(a && b);
+  }
+
   async function sweep(axis) {
     await run("light_test", { head, step: axis, value: 0.3 }, { silentError: true });
     await wait(1200);
     await run("light_test", { head, step: axis, value: 0.7 }, { silentError: true });
-    const a = await ask(`It should ${axis === "pan" ? "turn left and right (pan)" : "tip down and up (tilt)"} now. Did the real head do that?`,
+    // "all 4 heads" only for an axis each head has (a Wave 360's pan turns the whole body)
+    const n = (hd.map || []).filter((r) => r === axis).length;
+    const a = await ask(`It should ${axis === "pan" ? "turn left and right (pan)" : "tip down and up (tilt)"} now${n > 1 ? ` (all ${n} heads)` : ""}. Did the real light do that?`,
       [["Yes", "yes", "primary"], ["Again", "again"], ["No / something else moved", "no"]]);
     if (a === "again") return sweep(axis);
     await run("light_test", { head, step: axis, value: 0.5 }, { silentError: true });
@@ -1483,7 +1536,7 @@ export async function openLightTest(hd) {
   async function colours() {
     for (const [hex, name] of [["#ff0000", "red"], ["#00ff00", "green"], ["#0000ff", "blue"]]) {
       await run("light_test", { head, step: "colour", hex }, { silentError: true });
-      const a = await ask(`It should be ${name.toUpperCase()} now${st.mixing ? "" : " (or the closest colour on its wheel)"}. Is it?`,
+      const a = await ask(`It should be ${name.toUpperCase()} now${many}${st.mixing ? "" : " (or the closest colour on its wheel)"}. Is it?`,
         [["Yes", true, "primary"], ["No", false]]);
       if (!a) return false;
     }
@@ -1498,15 +1551,24 @@ export async function openLightTest(hd) {
     onClose: () => { closed = true; run("light_test", { head, step: "end" }, { silentError: true }); },
   });
 
+  if (await modeStep()) {
+    // the light is re-patched in the mode it really is in: test that
+    close();
+    const again = patch().find((x) => x.head_no === head);
+    if (again) openLightTest(again);
+    return;
+  }
+  if (closed) return;
   res.light = await lightStep();
   if (!closed && res.light && st.pan) res.move = await sweep("pan");
   if (!closed && res.light && st.tilt && res.move) res.move = await sweep("tilt");
   if (!closed && res.light && st.colour) res.colour = await colours();
+  if (!closed && res.light && st.strobe) res.strobe = await strobeStep();
   if (closed) return;
-  const r = await run("light_tested", { head, light: !!res.light, move: res.move, colour: res.colour }, { silentError: true });
+  const r = await run("light_tested", { head, light: !!res.light, move: res.move, colour: res.colour, strobe: res.strobe }, { silentError: true });
   const ok = r.ok && r.tested;
   box.replaceChildren(
-    h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves and changes colour as expected. Every ${hd.model} is ready.`
+    h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves, changes colour${st.strobe ? " and strobes" : ""} as expected. Every ${hd.model} is ready.`
       : `⚠ ${hd.model} needs attention.`),
     ...((r.advice || []).map((t) => h("p.small", t))),
     ok ? null : h("div.row-btns", h("button.btn", { onclick: () => { close(); openChannels([head]); } }, "Show its DMX channels")));
