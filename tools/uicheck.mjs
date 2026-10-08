@@ -261,6 +261,11 @@ async function clickAll(p, width, step, scope) {
     await closeAll(p);
     await p.evaluate(() => document.querySelectorAll("[data-uic]").forEach((x) => x.removeAttribute("data-uic")));
   }
+  // a dialog that opens after an answer from the desk (Match colours...)
+  // can arrive after the last close: wait for it, and close it too, or it
+  // covers the next step
+  await p.waitForTimeout(700);
+  await closeAll(p);
   return pressed;
 }
 
