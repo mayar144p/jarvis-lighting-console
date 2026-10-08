@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 
 from app import fixture_kind, merge
@@ -107,9 +108,9 @@ class ProgrammerMixin:
                     union.append(n)
         return {
             "heads": [h["head_no"] for h in rows],
-            "available": [x for x in fxlib_mod.describe(
-                # the union of roles, so describe() agrees with available()
-                sorted({r for h in rows for r in (h.get("map") or [])})) if x["name"] in union],
+            # every effect any of them can run (a wheel light's colour
+            # effects too, which fxlib can't see from roles alone)
+            "available": fxlib_mod.describe_names(union),
             "names": sorted(union),
             "per_head": per_head,
             "summary": "%d effect(s) available on %d head(s)"
@@ -714,8 +715,7 @@ class ProgrammerMixin:
                         roles = by_no.get(head_no, {}).get("map") or []
                         reps = merge._repeated(roles)
                         try:
-                            vals = fxlib_mod.apply(row["lib"], {}, roles, params=self._sized(row.get("params"), "lib"),
-                                                   elapsed=elapsed, index=i, count=len(units))
+                            vals = self._lib_values(row, by_no.get(head_no), roles, elapsed, i, len(units))
                         except ValueError:
                             continue
                         self._fx_gate(by_no.get(head_no), vals)
@@ -732,9 +732,8 @@ class ProgrammerMixin:
                 for i, head_no in enumerate(heads):
                     roles = by_no.get(head_no, {}).get("map") or []
                     try:
-                        vals = fxlib_mod.apply(
-                            row["lib"], {}, roles, params=self._sized(row.get("params"), "lib"),
-                            elapsed=elapsed, index=spatial.get(head_no, i) if spatial else i, count=count)
+                        vals = self._lib_values(row, by_no.get(head_no), roles, elapsed,
+                                                spatial.get(head_no, i) if spatial else i, count)
                     except ValueError:
                         # The patch changed under a running effect - a mode
                         # was re-imported and the head lost the channel.  Drop
@@ -764,6 +763,8 @@ class ProgrammerMixin:
         the brightness effects on a light whose only gate can't shut (no
         dimmer, no colour, and a shutter where 0 is already open)."""
         avail = fxlib_mod.available(h.get("map") or [])
+        if self._wheel_colours(h):
+            avail = sorted(set(avail) | set(fxlib_mod.WHEEL_FX))
         m = set(h.get("map") or [])
         if not m & {"dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber", "uv"}:
             gate = self._shutter_role(h)
@@ -771,6 +772,32 @@ class ProgrammerMixin:
             if gate is None or closed is None or self._open_value(h, gate) == int(closed):
                 avail = [n for n in avail if not fxlib_mod.FX[n].get("bright")]
         return avail
+
+    _NOT_A_COLOUR = re.compile(r"^\s*(open|white|no ?colou?r|off|none)\b", re.I)
+
+    def _wheel_colours(self, h: dict) -> list[int]:
+        """The DMX values of a light's colour-wheel colours - only for a
+        light that can't mix (it runs the colour effects on its wheel)."""
+        roles = set(h.get("map") or [])
+        if "wheel" not in roles or len(fxlib_mod._palette(fxlib_mod.normalise(list(roles)))) >= 2:
+            return []
+        slots = (self.head_ranges(h).get("wheel") or {}).get("slots") or []
+        vals = [int(x["value"]) for x in slots
+                if x.get("value") is not None and not self._NOT_A_COLOUR.match(str(x.get("name") or ""))]
+        return vals if len(vals) >= 2 else []
+
+    def _lib_values(self, row: dict, head: dict | None, roles, elapsed: float,
+                    index: int, count: int) -> dict:
+        """One named effect's values for one head: fxlib's, or on a light
+        that can't mix, its colour wheel stepped through (WHEEL_FX)."""
+        name = row["lib"]
+        if head and name in fxlib_mod.WHEEL_FX:
+            cols = self._wheel_colours(head)
+            if cols:
+                v = fxlib_mod.wheel_step(name, cols, self._sized(row.get("params"), "lib"), elapsed, index, count)
+                return {} if v is None else {"wheel": v}
+        return fxlib_mod.apply(name, {}, roles, params=self._sized(row.get("params"), "lib"),
+                               elapsed=elapsed, index=index, count=count)
 
     def _fx_gate(self, head: dict | None, vals: dict) -> None:
         """A brightness effect on a light whose only control is a shutter

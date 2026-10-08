@@ -580,6 +580,49 @@ def describe(roles) -> list[dict]:
     return out
 
 
+def describe_names(names) -> list[dict]:
+    """`describe` for a list of effect names (the engine's own answer, which
+    adds the colour-wheel effects fxlib can't see from roles alone)."""
+    out = []
+    for name in sorted(set(names)):
+        spec = FX.get(name)
+        if not spec:
+            continue
+        out.append({
+            "name": name, "label": spec["label"], "group": spec["group"],
+            "params": [{"key": k, "label": lbl, "default": d,
+                        "min": lo, "max": hi}
+                       for (k, lbl, d, lo, hi) in spec["params"]],
+        })
+    return out
+
+
+# A light that can't mix (a colour wheel, or colour macros like the
+# Intimidator Wave 360's 17-channel mode) still runs the colour effects -
+# stepping through ITS OWN colours on the wheel channel, as a desk does.
+WHEEL_FX = ("rainbow", "colour_chase", "alternate")
+
+
+def wheel_step(name: str, values: list[int], params: dict | None,
+               elapsed: float, index: int, count: int) -> int | None:
+    """The wheel's DMX value now, for one of WHEEL_FX over `values` (the
+    wheel's colour slots, in order).  None: fewer than two colours."""
+    if name not in WHEEL_FX or len(values) < 2:
+        return None
+    p = defaults(name)
+    p.update({k: float(v) for k, v in (params or {}).items() if k in p and v is not None})
+    n = len(values)
+    rate = max(p["rate"], 0.01)
+    if name == "rainbow":                    # a wheel can't fade: it steps round
+        t = elapsed * p["speed"] + p["phase"] * 0.01 * index
+        t += p["spread"] / 360.0 * (index / max(1, count)) * n * rate
+        return values[int(t / rate) % n]
+    if name == "colour_chase":
+        return values[int(elapsed * p["speed"] * p["rate"] + index) % n]
+    flip = int(elapsed * p["speed"] * p["rate"]) % 2          # alternate
+    return values[(index % 2 + flip) % 2]
+
+
 def why_not(roles, name: str) -> str:
     """Why an effect is not available - for a diagnostic, never for the UI.
 

@@ -532,13 +532,13 @@ function renderBeamQuick() {
   const set = (role, value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
   const strobe = by.strobe || by.shutter;
   if (strobe) {
+    // the light's own strobe range, the right way round (the desk works it out)
     const open = strobe.open ?? 0;
     const lo = Math.max(open + 8, 64);
+    const st = strobe.steps || { off: open, slow: lo, medium: Math.round((lo + 255) / 2), fast: 250 };
     rows.push(h("div.chip-row", h("span.k", "Strobe"),
-      h("button.chip", { title: `DMX ${open}`, onclick: set(strobe.role, open) }, "Off"),
-      h("button.chip", { title: `DMX ${lo}`, onclick: set(strobe.role, lo) }, "Slow"),
-      h("button.chip", { title: `DMX ${Math.round((lo + 255) / 2)}`, onclick: set(strobe.role, Math.round((lo + 255) / 2)) }, "Medium"),
-      h("button.chip", { title: "DMX 250", onclick: set(strobe.role, 250) }, "Fast")));
+      ...[["off", "Off"], ["slow", "Slow"], ["medium", "Medium"], ["fast", "Fast"]].map(([k, label]) =>
+        h("button.chip", { title: `DMX ${st[k]}`, onclick: set(strobe.role, st[k]) }, label))));
   }
   // A shutter whose "open" value nobody knows sits at 0 - closed on many
   // movers - so the light tilts but never lights.  Find it on the real

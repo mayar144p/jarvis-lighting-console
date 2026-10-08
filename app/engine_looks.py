@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import colorsys
 import json
 import re
 import time
@@ -535,6 +536,14 @@ class LooksMixin:
                 hx = _to_hex(str(slot["name"]).split(" ")[0].lower()) or _to_hex(str(slot["name"]).lower())
                 if hx:
                     return hx
+                # "Color 7": a numbered colour the file doesn't describe (the
+                # Intimidator Wave 360's macros).  The 3D shows a stand-in
+                # hue per slot, so a colour chase is seen to step; teaching
+                # the slots (Colour tab) puts the real colours in.
+                if re.match(r"^\s*(colou?r|macro)\s*\d+\s*$", str(slot["name"]), re.I) and len(slots) > 1:
+                    i = slots.index(slot)
+                    r_, g_, b_ = colorsys.hsv_to_rgb(i / len(slots), 1.0, 1.0)
+                    return "#%02x%02x%02x" % (int(r_ * 255), int(g_ * 255), int(b_ * 255))
         if lit:
             return "#000000"
         return ROLE_HEX.get(head.get("role") or "generic",
