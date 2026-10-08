@@ -5,7 +5,7 @@
 // the screen as you left it.  Switch from the top bar or with Alt+1..9.
 // Kept per computer (each operator's own), not in the show.
 import { $, $$, h, menu, toast, promptBox, confirmBox } from "./ui.js";
-import { BUILTIN, clean, MIN_W, MAX_W } from "./wslayouts.js";
+import { BUILTIN, clean, gridFor, MIN_W, MAX_W } from "./wslayouts.js";
 
 const KEY = "jarvis.workspaces";
 
@@ -37,6 +37,7 @@ function capture(into) {
   Object.assign(into, clean({
     ...into,
     fix: !b.classList.contains("ws-nofix"), prog: !b.classList.contains("ws-noprog"), swap: b.classList.contains("ws-swap"),
+    fixAt: into.fixAt, progAt: into.progAt, dockAt: into.dockAt,
     fixW: parseInt(ws().style.getPropertyValue("--fixtures-w"), 10) || 0,
     progW: parseInt(ws().style.getPropertyValue("--prog-w"), 10) || 0,
     bottom: b.dataset.bottom || "faders", dock: dockPx(), tab: sel ? sel.dataset.tab : "",
@@ -58,6 +59,14 @@ function apply(w) {
     b.classList.toggle("ws-nofix", !w.fix);
     b.classList.toggle("ws-noprog", !w.prog);
     b.classList.toggle("ws-swap", !!w.swap);
+    // where each panel sits: the grid from the workspace (wslayouts.js)
+    const g = gridFor(w);
+    el.style.setProperty("--ws-cols", g.cols);
+    el.style.setProperty("--ws-rows", g.rows);
+    el.style.setProperty("--ws-areas", g.areas);
+    $("#fixtures-panel").dataset.side = g.fixAt;
+    $("#programmer").dataset.side = g.progAt;
+    b.classList.toggle("ws-docktop", g.top);
     if (w.fixW) el.style.setProperty("--fixtures-w", w.fixW + "px"); else el.style.removeProperty("--fixtures-w");
     if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
     // the dock's height lives per mode (playbacks.js reads it when the mode is picked)
@@ -95,6 +104,47 @@ function toggle(field) {
   if (!w.fix && !w.prog && field !== "swap") toast("The 3D view and the dock fill the screen");
   apply(w);
   store();
+}
+
+function place(field, value) {
+  const w = activeWorkspace();
+  capture(w);
+  w[field] = value;
+  w.swap = false;
+  apply(w);
+  store();
+}
+
+// Drag a side panel by its title to the left or right of the screen.
+function wireMove(panel, field) {
+  const handle = panel.querySelector(".panel-head h2");
+  if (!handle) return;
+  handle.style.cursor = "grab";
+  handle.title = "Drag to the other side of the screen to move this panel there";
+  let x0 = 0, on = false, hint = null;
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    on = true;
+    x0 = e.clientX;
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!on || Math.abs(e.clientX - x0) < 24) return;
+    const side = e.clientX < window.innerWidth / 2 ? "left" : "right";
+    if (!hint) { hint = h("div.ws-drop"); document.body.append(hint); }
+    hint.dataset.side = side;
+  });
+  const end = (e) => {
+    if (!on) return;
+    on = false;
+    if (hint) {
+      hint.remove();
+      hint = null;
+      place(field, e.clientX < window.innerWidth / 2 ? "left" : "right");
+    }
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", () => { on = false; if (hint) { hint.remove(); hint = null; } });
 }
 
 async function saveAs() {
@@ -148,7 +198,9 @@ function openMenu(anchor) {
     "-",
     { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", run: () => toggle("fix") },
     { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", run: () => toggle("prog") },
-    { label: "Swap sides", hint: cur.swap ? "programmer on the left now" : "programmer to the left", run: () => toggle("swap") },
+    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
+    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
+    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
     { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
     "-",
     { label: "Save as a new workspace…", run: saveAs },
@@ -209,6 +261,8 @@ export function initWorkspaces() {
   if (btn) btn.addEventListener("click", () => openMenu(btn));
   wireGrip($("#fixtures-panel"), "--fixtures-w", "fixW");
   wireGrip($("#programmer"), "--prog-w", "progW");
+  wireMove($("#fixtures-panel"), "fixAt");
+  wireMove($("#programmer"), "progAt");
   // whatever changes the screen is kept in the workspace in use
   const later = () => setTimeout(remember, 0);
   for (const sel of ["#pb-mode", "#prog-tabs"]) { const el = $(sel); if (el) el.addEventListener("click", later); }

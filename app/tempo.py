@@ -283,6 +283,7 @@ class Timecode:
         self.seconds: float | None = None
         self.fps = 25.0
         self.at: float | None = None          # when the last quarter frame came
+        self.source = "MTC"                   # or "LTC" (audio, from a desk page)
 
     def quarter_frame(self, data: int, now: float) -> float | None:
         """One quarter frame; returns the time (s) when a full one is in."""

@@ -20,7 +20,7 @@ function fixturesFor(p) {
     head_no: h.head_no, name: h.name || "", manufacturer: h.manufacturer || "",
     model: h.model || "", mode: h.mode || "", kind: h.kind,
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
-    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null,
+    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null, gobos2: h.gobos2 || null,
     yaw: +h.yaw || 0,                      // which way its base faces (turns with its truss)
   }));
 }

@@ -346,11 +346,12 @@ class TempoMixin:
     def timecode_public(self) -> dict:
         tc = self._tc()
         return {"follow": self.tc_follow, "offset": self.tc_offset, "running": tc.running(time.monotonic()),
-                "time": tc.text(), "fps": tc.fps}
+                "time": tc.text(), "fps": tc.fps, "source": getattr(tc, "source", "MTC")}
 
     def _a_timecode(self, state=None, offset=None, **_):
-        """The timeline follows MIDI timecode (MTC) from the desk's MIDI
-        input: it jumps where the timecode is and plays along; `offset`
+        """The timeline follows timecode - MIDI (MTC) from the desk's MIDI
+        input, or audio (LTC) a desk page hears: it jumps where the
+        timecode is and plays along; `offset`
         (seconds) is the timecode at which the timeline's 0 is."""
         self._tc()
         if offset is not None:
@@ -360,26 +361,48 @@ class TempoMixin:
         if self.tc_follow:
             self._tc_watch()
         return {"timecode": self.timecode_public(),
-                "summary": ("the timeline follows MIDI timecode" + (f" (0 = {self.tc_offset:g} s)" if self.tc_offset else ""))
+                "summary": ("the timeline follows timecode (MTC or LTC)" + (f" (0 = {self.tc_offset:g} s)" if self.tc_offset else ""))
                 if self.tc_follow else "timecode off"}
 
     def tempo_mtc(self, data: int) -> None:
         """A quarter frame (0xF1) from the desk's MIDI input."""
         with self.lock:
-            t = self._tc().quarter_frame(int(data), time.monotonic())
+            tc = self._tc()
+            t = tc.quarter_frame(int(data), time.monotonic())
+            tc.source = "MTC"
             if t is None or not self.tc_follow:
                 return
-            target = t - self.tc_offset
-            if target < 0 or target > self.timeline["length"]:
-                if self.tl["playing"]:
-                    self._a_timeline_pause()
-                return
-            if not self.tl["playing"]:
-                self._a_timeline_seek(t=target)
-                self._a_timeline_play()
-                self._tc_started = True
-            elif abs(self._tl_now() - target) > 0.15:
-                self._a_timeline_seek(t=target)
+            self._tc_follow_to(t)
+
+    def _a_timecode_ltc(self, t=None, fps=None, text=None, **_):
+        """Audio timecode (LTC), decoded by a desk page listening to a sound
+        input (web/app/ltc.js): the time it read, a few times a second."""
+        sec = float(t)
+        if not 0 <= sec < 86400:
+            raise ValueError("timecode is 00:00:00:00 - 23:59:59:29")
+        tc = self._tc()
+        now = time.monotonic()
+        tc.seconds, tc.at, tc.source = sec, now, "LTC"
+        if fps:
+            tc.fps = float(fps)
+        if self.tc_follow:
+            self._tc_follow_to(sec)
+        return {"summary": f"LTC {tc.text()}"}
+
+    def _tc_follow_to(self, t: float) -> None:
+        """The timeline to timecode `t` (MTC or LTC): play along, jump when
+        it drifts, pause outside the timeline."""
+        target = t - self.tc_offset
+        if target < 0 or target > self.timeline["length"]:
+            if self.tl["playing"]:
+                self._a_timeline_pause()
+            return
+        if not self.tl["playing"]:
+            self._a_timeline_seek(t=target)
+            self._a_timeline_play()
+            self._tc_started = True
+        elif abs(self._tl_now() - target) > 0.15:
+            self._a_timeline_seek(t=target)
 
     def _tc_watch(self) -> None:
         """Timecode stopped (no quarter frame for 0.3 s): pause the timeline."""

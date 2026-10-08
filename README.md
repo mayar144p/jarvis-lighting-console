@@ -251,6 +251,11 @@ another button or the whole page; what the buttons do stays the same.
 * **Editing.** Double-click a lane to add a clip. Drag a clip to move it and
   its edge to resize it; right-click to edit, duplicate or delete. **+ Track →
   Cue list from PB1** lays an existing cue list out in time.
+* **Timecode.** The **TC** button follows timecode: *MIDI timecode (MTC)* from
+  the desk's MIDI input, or *audio timecode (LTC)* - a timecode track into the
+  sound input picked in Sound (a line in from the playback computer). The
+  timeline jumps to it and plays along, and pauses when it stops; you say
+  which timecode is the timeline's 0.
 * The **engine owns the clock**, so the lights stay in time even if the browser
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
@@ -377,9 +382,10 @@ The top bar's **workspace** button arranges the screen for the job:
 (a taller cue dock) and *Show (run only)* (the 3D view and the buttons).
 Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
 left it: the fixture list and programmer shown or hidden, which side each
-is on (*Swap sides*), their widths (drag a panel's inner edge; double-click
-for the normal width), the bottom dock and its height, the programmer's
-tab. *Save as a new workspace* makes your own. Workspaces belong to this
+is on (drag a panel by its title to the side you want - both can go on the
+same side - or pick it in the workspace menu), their widths (drag a panel's
+inner edge; double-click for the normal width), the faders / buttons dock at
+the bottom or the top and its height, the programmer's tab. *Save as a new workspace* makes your own. Workspaces belong to this
 computer (each operator's own), not to the show.
 
 ### Keyboard

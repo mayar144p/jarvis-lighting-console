@@ -1488,7 +1488,11 @@ export class Stage {
         b.mesh.visible = false;
         b.glow.visible = false;
       }
-      const goboId = lk.gscroll ? this._goboScroll(inst, lk.gscroll, time) : this._goboId(inst, goboV);
+      let goboId = lk.gscroll ? this._goboScroll(inst, lk.gscroll, time) : this._goboId(inst, goboV);
+      // the first wheel open: the second wheel's gobo (a MAC 2000's wheel 2)
+      if (!goboId && L.beam.gobo2 !== undefined) goboId = this._goboId(inst, L.beam.gobo2, inst.data.gobos2);
+      // an animation wheel in the beam: a break-up pattern that keeps moving
+      if (!goboId && L.beam.anim) goboId = 3 + (Math.floor(time * (0.5 + (L.beam.anim_rot || 0.3) * 4)) % 3);
       u.uGobo.value = goboId;                     // the same picture in the haze
       u.uGoboRot.value = rot;
       u.uLook.value.set(blur, prism, prot, split ? 1 : 0);
@@ -1507,8 +1511,8 @@ export class Stage {
   /** Which gobo a light shows: the picture in its file for the slot the
    *  channel is in (100 + atlas cell), open (0), or - when the file names
    *  no pictures, or one can't be had - a drawn pattern (1..7). */
-  _goboId(inst, v) {
-    const rows = inst.data.gobos;
+  _goboId(inst, v, wheel) {
+    const rows = wheel || inst.data.gobos;
     if (rows && rows.length && this.gobos) {
       const dmx = Math.round(v * 255);
       const row = rows.find((r) => dmx >= r[0] && dmx <= r[1]);
