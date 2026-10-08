@@ -641,18 +641,26 @@ counts are modes, not lights.
    "No function" next to "Red laser switched on") now fires from its
    armed button and is held off otherwise (Laserworld RS400G, Stairville
    DJ Lase, All FX Bar...).  The rest still need a person with the light.
-2. **Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
+2. **(DONE 2026-10-08, PR #81) Vari-Lite "Blue / Amber / Magenta Mixer"** (VL2402 Spot, VL3000
    Wash, 6 modes): subtractive mixers the console doesn't treat as CMY,
    so Locate comes out blue.  Needs a "mixer flag" kind of colour, like
    CMY with different filters.
-3. **CMY-only light with no dimmer and no shutter** (Generic CMY Fader,
+3. **(DONE 2026-10-08) CMY-only light with no dimmer and no shutter** - its
+   flags are filters, so it is a lamp that is lit and white at rest (and
+   listed by Ready? as a lamp DMX can't close); red is red.  Was: **CMY-only light with no dimmer and no shutter** (Generic CMY Fader,
    3 modes): Full shows dark in 3D.  With no way to dim, "Full" on such a
    light should mean "flags out" and the 3D should draw it lit.
-4. **Shutter flicker / random strobe / alternate never change the DMX**
+4. **(DONE 2026-10-08, PR #81) Shutter flicker / random strobe / alternate never change the DMX**
    (Studio Due Shark 150C x4 modes, Mac Mah Mac Follow 1200, BoomToneDJ
    Strob LED 18 2ch, Pro-Lights Ra 2000Profile 44ch alternate / fan).
    The effect is offered but finds no range to move on that channel.
-5. **Locate not white, from odd files** (still 18 modes):
+5. **(Mostly DONE 2026-10-08) Locate not white, from odd files** - "Lime" /
+   "Mint" is now a colour role (`lime`, PARSER_VERSION 14): on red + lime +
+   blue lights it is their green (Locate white, a green pick lights it, the
+   3D mixes it as green); a white LED beside a partial mix is white alone
+   (Rocklite).  Left: HSI / CCT-only modes (hue + saturation channels) show
+   the 3D's "colour unknown" grey; Cameo CLBAR10RGBA 2ch's macro.
+   Was (still 18 modes):
    - ETC Source Four LED Series 2 Daylight / Tungsten HD "Direct": the file
      names two channels "Red" and one "Mint", so the white mix is off;
    - Blizzard Rocklite RGBAW 4-channel (red, amber, white only): Locate
@@ -666,10 +674,13 @@ counts are modes, not lights.
    ColorChanger, PR Pilot 575): red and blue land on the same slot.  Fix
    per light with **Teach the wheel** (Colour tab); a library-wide fix
    would need the slot colours from the manufacturers.
-7. **Not wrong, the sweep should skip:** Cameo P2 FC CCT modes are
+7. **(DONE 2026-10-08) Not wrong, the sweep should skip** (libsweep skips a
+   partial red / green / blue mix whose channels share other functions): Cameo P2 FC CCT modes are
    white-only (red and blue *should* give the same DMX); Chauvet
    ColorStrip Mini "Default" has one channel for "speed / red / fade".
-8. **Tell the operator when the autosave was unreadable.**  The desk now
+8. **(DONE 2026-10-08) Tell the operator when the autosave was unreadable** -
+   a one-time notice on screen (snapshot `notice`, OK -> `notice_seen`).
+   Was: **Tell the operator when the autosave was unreadable.**  The desk now
    starts empty and keeps the file as `autosave.broken.json` (batch 2),
    but only the log says so; a one-time notice on screen would be kinder.
 9. **Lamps DMX can't close** (72 modes, mostly old scanners and HMI

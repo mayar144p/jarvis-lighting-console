@@ -25,7 +25,7 @@ SLOTS = 512
 # Closed vocabulary; anything the label matcher cannot place becomes "raw"
 # and shows a warning badge in the patch view.
 ROLES = ("dimmer", "zone_dimmer", "red", "green", "blue", "white", "amber",
-         "uv", "cyan", "magenta", "yellow", "pan", "pan_fine", "tilt",
+         "uv", "lime", "cyan", "magenta", "yellow", "pan", "pan_fine", "tilt",
          "tilt_fine", "speed", "shutter", "strobe", "gobo", "gobo_rot",
          "prism", "zoom", "focus", "frost", "iris", "wheel", "macro",
          # special effects and lasers: never driven by a light action
@@ -46,7 +46,7 @@ HTP_ROLES = frozenset({"dimmer", "zone_dimmer"})
 
 # Colour roles: on a fixture with no dimmer these ARE the brightness.
 COLOUR_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv",
-                          "cyan", "magenta", "yellow"})
+                          "lime", "cyan", "magenta", "yellow"})
 
 
 
@@ -78,7 +78,8 @@ BEAM_ROLES = frozenset({"shutter", "strobe", "gobo", "gobo_rot", "prism",
 _LABEL_ROLE = {
     "dimmer": "dimmer", "intensity": "dimmer", "master dimmer": "dimmer",
     "red": "red", "green": "green", "blue": "blue", "white": "white",
-    "amber": "amber", "uv": "uv", "cyan": "cyan", "magenta": "magenta",
+    "amber": "amber", "uv": "uv", "lime": "lime", "mint": "lime",
+    "cyan": "cyan", "magenta": "magenta",
     "yellow": "yellow", "pan": "pan", "pan fine": "pan_fine",
     "tilt": "tilt", "tilt fine": "tilt_fine", "speed": "speed",
     "pan/tilt speed": "speed", "shutter": "shutter", "strobe": "strobe",
@@ -228,10 +229,12 @@ def channel_role(label) -> str:
     if ("colour" in s or "color" in s) and ("wheel" in s or "index" in s):
         return "wheel"
     # whole words only: "Textured glass" is not red, "Bluetooth" not blue
-    for word in ("red", "green", "blue", "white", "amber", "uv",
+    for word in ("red", "green", "blue", "white", "amber", "uv", "lime",
                  "cyan", "magenta", "yellow"):
         if re.search(rf"(?<![a-z]){word}(?![a-z])", s):
             return word
+    if s.strip() == "mint":
+        return "lime"                 # ETC Source Four LED's lime emitter is "Mint"
     if s.strip() in ("indigo", "royal", "violet") and "wheel" not in s:
         return "blue"                 # ETC ColorSource "Deep Blue": its blue emitter is "Indigo"
     return "raw"

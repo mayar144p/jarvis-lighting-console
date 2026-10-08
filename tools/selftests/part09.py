@@ -5227,3 +5227,65 @@ def test_fixture_requests() -> None:
     wf = (ROOT / ".github" / "workflows" / "library-update.yml").read_text(encoding="utf-8")
     check("a weekly job rebuilds the libraries and opens a pull request only when something changed",
           "schedule" in wf and "--summary" in wf and "NO CHANGES" in wf and "gh pr create" in wf and "rulecheck" in wf)
+
+
+def test_light_file_quirks() -> None:
+    """Backlog A8, from the library sweeps: a lime ("Mint") emitter is a
+    colour, so an ETC Source Four LED's Locate is white, not magenta; a
+    white LED beside a partial mix is white alone (not pink); a CMY-only
+    lamp is lit and white at rest; and an autosave that couldn't be read
+    is said on screen once, not only in the log."""
+    print("Light-file quirks: lime emitters, partial mixes, CMY lamps, a broken autosave")
+    from app import engine as eng, fixlib
+    from app.engine_support import channel_role
+    check("Lime and Mint are the lime emitter", channel_role("Lime") == "lime" and channel_role("Mint") == "lime")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            def patch(words, mode=None):
+                rows = fixlib.search(words)
+                if not rows:
+                    return None
+                got = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                r = e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1, mode=mode)
+                return e._head(r["heads"][0]) if r.get("heads") else None
+
+            def look(h):
+                return next(x for x in e._looks() if x["n"] == h["head_no"])
+
+            for words, mode in (("Source Four LED Series 2 Tungsten HD", "Direct"), ("Rocklite RGBAW", "4-Channel")):
+                h = patch(words, mode)
+                if not h:
+                    continue
+                e.act("select_heads", heads=[h["head_no"]])
+                e.act("locate")
+                check(f"{words} [{mode}]: Locate is white", look(h)["hex"] == "#ffffff", f"{look(h)['hex']} {h['map']}")
+                if "lime" in h["map"]:
+                    e.act("set_colour", hex="#00ff00")
+                    check("...green lights its lime", look(h)["hex"] == "#00ff00", look(h)["hex"])
+                e.act("clear_programmer")
+            cmy = patch("Generic CMY Fader")
+            if cmy:
+                lk = look(cmy)
+                check("a CMY-only lamp is lit and white at rest (its flags are out)", lk["on"] and lk["hex"] == "#ffffff", str(lk))
+                e.act("select_heads", heads=[cmy["head_no"]])
+                e.act("set_colour", hex="#ff0000")
+                check("...and red when the flags make red", look(cmy)["hex"] == "#ff0000", str(look(cmy)))
+                e.act("clear_programmer")
+        finally:
+            e.shutdown()
+        save = tmp / "autosave.json"
+        save.write_text("{ cut short by a power cu", encoding="utf-8")
+        b = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2", autosave_path=save, restore=True)
+        try:
+            n = b.snapshot().get("notice") or {}
+            check("an unreadable autosave is said on screen", n.get("id") == "autosave_broken" and "autosave.broken.json" in n.get("text", ""), str(n)[:160])
+            b.act("notice_seen")
+            check("...once: OK clears it", not b.snapshot().get("notice"))
+        finally:
+            b.shutdown()
+    js = (ROOT / "web" / "app" / "errorbadge.js").read_text(encoding="utf-8")
+    check("the screen shows the start-up notice", "snap.notice" in js and "notice_seen" in js)

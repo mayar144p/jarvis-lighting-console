@@ -381,8 +381,11 @@ class LooksMixin:
         m = set(head.get("map") or [])
         if fixture_kind.head_class(head) != "light":
             return False
-        return not m & (HTP_ROLES | {"shutter", "strobe"} | _COLOUR_ROLES) and bool(
-            m & {"pan", "tilt", "wheel", "gobo", "gobo_rot", "prism", "zoom", "focus"})
+        # CMY flags on a lamp are filters, not LEDs: they colour the light
+        # but can't close it (a CMY fader with nothing else is lit at rest)
+        filters = (m & {"cyan", "magenta", "yellow"}) - LooksMixin._emitters(head)
+        return not m & (HTP_ROLES | {"shutter", "strobe"} | LooksMixin._emitters(head)) and bool(
+            m & {"pan", "tilt", "wheel", "gobo", "gobo_rot", "prism", "zoom", "focus"} or filters)
 
     def _gate_intensity(self, head: dict, values: dict) -> int:
         """Brightness of a fixture that has no dimmer channel (0 or 100).
@@ -397,7 +400,7 @@ class LooksMixin:
         if role is None:
             # No dimmer and no gate (e.g. a raw 3ch RGB par): the colour
             # channels ARE the brightness.
-            if not set(head["map"]) & _COLOUR_ROLES:
+            if not self._emitters(head):
                 # a lamp light with nothing that can dim or close it (an old
                 # scanner: pan, tilt, colour wheel, gobo): the lamp is simply
                 # on, whatever the desk does - show it that way
@@ -485,8 +488,12 @@ class LooksMixin:
         roles = set(head["map"])
         r = g = b = 0.0
         lit = False
+        # red + lime + blue (an ETC Source Four LED): the lime is its green
+        lime_green = "lime" in roles and "green" not in roles and bool(roles & {"red", "blue"})
         if roles & {"red", "green", "blue"} and any(k in values for k in ("red", "green", "blue")):
             r, g, b = (float(values.get(k, 0)) for k in ("red", "green", "blue"))
+            if lime_green:
+                g = float(values.get("lime", 0))
             lit = True
         leds = cmy_are_leds(roles) and roles & {"cyan", "magenta", "yellow"}
         if leds and any(values.get(k) for k in ("cyan", "magenta", "yellow")):
@@ -509,11 +516,16 @@ class LooksMixin:
             lit = True
         for role, rgb in self._EMIT_RGB.items():
             v = values.get(role)
+            if role == "lime" and lime_green:
+                continue
             if role in roles and v:
                 k = float(v) / 255.0
                 r, g, b = r + rgb[0] * k, g + rgb[1] * k, b + rgb[2] * k
                 lit = True
-        if not lit and roles & {"cyan", "magenta", "yellow"} and any(k in values for k in ("cyan", "magenta", "yellow")):
+        if not lit and roles & {"cyan", "magenta", "yellow"} and (
+                any(k in values for k in ("cyan", "magenta", "yellow")) or not self._emitters(head)):
+            # CMY filters (on a lamp: no colour LEDs) that nothing drives are
+            # out of the beam - open white, not "colour unknown"
             r, g, b = (255.0 - values.get(k, 0) for k in ("cyan", "magenta", "yellow"))
             lit = True
         if lit and (r or g or b):

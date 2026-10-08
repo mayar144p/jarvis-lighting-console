@@ -266,8 +266,20 @@ class ShowMixin:
             except OSError:
                 pass
             self._log("restore_autosave", False, f"the autosave could not be read and was kept aside: {exc}"[:200])
+            # said on screen once, not only in the log
+            self.boot_notice = {
+                "id": "autosave_broken", "title": "The last session couldn't be restored",
+                "text": "The desk's autosave couldn't be read (a power cut while it was saving, say), so the desk "
+                        "started empty. Nothing was deleted: the file was kept as "
+                        f"{self.autosave_path.with_suffix('.broken.json').name} in the data folder. "
+                        "Open a saved show (Show ▾) to carry on."}
             return False
         return True
+
+    def _a_notice_seen(self, **_) -> dict:
+        """The start-up notice was read: don't show it again."""
+        self.boot_notice = None
+        return {"ok": True, "summary": "Notice dismissed"}
 
     def _restore_payload(self, payload: dict) -> None:
         """The autosave's show onto this (empty, booting) desk."""
