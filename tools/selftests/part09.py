@@ -4590,3 +4590,73 @@ def test_gdtf_pan_tilt_parts() -> None:
     geo["moves"] = {}
     k = g.resolve_kinematics(geo, True, True)
     check("a file whose channels name no part: the order of the parts, as before", k["pan"] and "by" not in k, str(k))
+
+
+def test_output_routes_and_wheels() -> None:
+    """More universes (A10 item 5): a universe can go to a node of its own
+    (one node per truss), Art-Net and sACN; sACN's priority per show.  And
+    the on-screen wheels (item 9): any attribute moves by a share of its
+    travel, coarse or fine."""
+    print("Output: a node per universe, sACN priority; the wheels")
+    import socket as _socket
+
+    from app import engine as eng
+    from app.artnet import ArtNetSender
+    from app.sacn import SacnSender
+    a = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    a.bind(("127.0.0.1", 0))
+    port = a.getsockname()[1]
+    b = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    try:
+        b.bind(("127.0.0.2", port))
+        two = True
+    except OSError:
+        two = False                       # (no 127.0.0.2 on this computer: macOS)
+    for s_ in (a, b):
+        s_.settimeout(1.0)
+    try:
+        snd = ArtNetSender("127.0.0.1", port, 0, dry_run=False)
+        snd.routes = {2: "127.0.0.2"} if two else {}
+        snd.send(1, bytes(512))
+        snd.send(2, bytes(512))
+        got_main = a.recv(2000)
+        got_routed = b.recv(2000) if two else b"skip"
+        check("Art-Net: universe 1 to the target, universe 2 to its own node", bool(got_main) and bool(got_routed))
+    finally:
+        a.close()
+        b.close()
+    sc = SacnSender("multicast", 5568, 0, True)
+    sc.routes = {3: "2.0.0.13"}
+    check("sACN: a routed universe goes to its node, the rest to their multicast group",
+          sc.destination(3) == "2.0.0.13" and sc.destination(1).startswith("239.255."))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("set_dmx_target", mode="node", host="2.0.0.10", routes={"2": "2.0.0.12", "3": "2.0.0.13"}, priority=150)
+            check("routes and priority set", r.get("ok") and r["target"]["routes"] == {"2": "2.0.0.12", "3": "2.0.0.13"}
+                  and r["target"]["priority"] == 150, str(r.get("target")))
+            check("the output uses them", e._get_sender().routes == {2: "2.0.0.12", 3: "2.0.0.13"})
+            e.act("set_dmx_target", transport="sacn")
+            check("sACN gets the show's priority", e._get_sender().priority == 150)
+            check("refused: a route that isn't an IP", not e.act("set_dmx_target", routes={"2": "the truss"}).get("ok"))
+            check("refused: priority 300", not e.act("set_dmx_target", priority=300).get("ok"))
+            e.act("save_show", name="routes")
+            e.act("set_dmx_target", routes={}, priority="")
+            check("cleared", "routes" not in e.dmx_target and "priority" not in e.dmx_target, str(e.dmx_target))
+            e.act("load_show", name="routes")
+            check("saved with the show (each venue keeps its nodes)", e.dmx_target.get("routes", {}).get("3") == "2.0.0.13"
+                  and e.dmx_target.get("priority") == 150, str(e.dmx_target))
+            # the wheels
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            e.act("select_all")
+            r = e.act("nudge", attribute="dimmer", step=0.1)
+            first = e.programmer[1].get("dimmer")
+            e.act("nudge", attribute="dimmer", step=0.001)
+            check("a wheel turns any attribute: coarse, then fine", r.get("ok") and first and e.programmer[1]["dimmer"] >= first, str(e.programmer[1]))
+            check("pan and tilt as before", e.act("nudge", axis="pan", step=0.02).get("ok"))
+            check("an attribute no selected light has: said", "none of the selected" in str(e.act("nudge", attribute="zoom", step=0.1).get("error")))
+        finally:
+            e.shutdown()

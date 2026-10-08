@@ -504,6 +504,25 @@ the computer). It also offers a **template**, or an empty show, and a short
 It's a normal show, so change anything. A template, or **Empty show**, is
 one Ctrl+Z, and that brings back the show that was open.
 
+## Look and help
+
+**Settings → Screen & 3D**, per computer:
+- **Show dark:** the panels in dim red for a dark venue. Eyes stay used to
+  the dark, and the 3D view keeps its true colours.
+- **Panel brightness** and an **accent colour**.
+- **Hover help:** rest the pointer on any control for what it does (on by
+  default).
+
+**Wheels:** under the programmer's tabs, a wheel for each attribute of the
+open tab that the selected lights have (dimmer, colour, pan / tilt, zoom,
+focus, iris, frost, gobo spin). Drag up or down or scroll to turn. **FINE**,
+or holding Shift, turns a tenth as far. Arrow keys work too.
+
+**More universes:** Settings → Output → *More universes* sends any universe
+to a node of its own (one node per truss), over Art-Net or sACN. With sACN
+you can also set the desk's **priority** (0-200). Both are saved with the
+show.
+
 ## Hardware controllers
 
 Switch on **Settings → MIDI & OSC → MIDI in the browser**, then plug in a

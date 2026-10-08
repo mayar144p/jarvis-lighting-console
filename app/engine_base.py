@@ -703,8 +703,37 @@ def clean_dmx_target(raw) -> dict:
             host = ""
     if mode == "node" and (not host or host == "multicast"):
         mode = "auto"
-    return {"mode": mode, "host": host if mode != "auto" else "",
-            "transport": transport}
+    out = {"mode": mode, "host": host if mode != "auto" else "",
+           "transport": transport}
+    # universes that go to a node of their own (a big rig: one node per
+    # truss), the rest to the target above
+    routes = clean_routes(raw.get("routes"))
+    if routes:
+        out["routes"] = routes
+    try:
+        pri = int(raw.get("priority")) if raw.get("priority") not in (None, "") else None
+    except (TypeError, ValueError):
+        pri = None
+    if pri is not None and 0 <= pri <= 200:
+        out["priority"] = pri          # sACN: who wins when two desks send
+    return out
+
+
+def clean_routes(raw) -> dict:
+    """{"3": "2.0.0.12", ...}: universe -> a node's IPv4 (64 at most)."""
+    import ipaddress
+    out: dict = {}
+    for k, v in (raw.items() if isinstance(raw, dict) else []):
+        try:
+            u = int(k)
+            ip = ipaddress.IPv4Address(str(v).strip())
+        except (TypeError, ValueError):
+            continue
+        if 1 <= u <= MAX_UNIVERSES and not (ip.is_multicast or ip.is_unspecified or ip.is_loopback):
+            out[str(u)] = str(ip)
+        if len(out) >= 64:
+            break
+    return dict(sorted(out.items(), key=lambda kv: int(kv[0])))
 
 
 def pick_auto_broadcast(ifaces: list[dict]) -> str:

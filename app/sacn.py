@@ -325,6 +325,9 @@ class SacnSender:
         universe, 239.255.<hi>.<lo>; anything else is a fixed unicast or
         broadcast host.
         """
+        routed = (getattr(self, "routes", None) or {}).get(universe)
+        if routed:
+            return routed
         if self.host in ("multicast", ""):
             return multicast_group(universe, self.net)
         return self.host
