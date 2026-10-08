@@ -3,7 +3,7 @@
 // and recent errors, and (ticked) the whole show.  The reporter sees the
 // list before anything is saved; the zip is saved and a pre-filled GitHub
 // issue opens, to drag it into.  Never: .env, the AI key or passwords.
-import { request, token } from "./api.js";
+import { request, token, recentErrors } from "./api.js";
 import { head as headOf } from "./store.js";
 import { h, modal, toast } from "./ui.js";
 
@@ -44,7 +44,9 @@ export function openBugReport(head = null) {
   const sending = h("div.muted.small");
   const payload = (extra = {}) => ({
     head, what: what.value.trim(), areas: ticks.filter((t) => t.box.checked).map((t) => t.id),
-    include_show: show.checked, page_errors: pageErrors, ...extra });
+    include_show: show.checked,
+    // the page's own errors, plus what the warning badge saw (no answer, desk errors)
+    page_errors: [...pageErrors, ...recentErrors().map((x) => `${new Date(x.t).toLocaleTimeString()} ${x.text}`)].slice(-30), ...extra });
   const preview = async () => {
     list.replaceChildren(h("li.muted", "Gathering…"));
     const d = await ask(payload({ preview: true }));

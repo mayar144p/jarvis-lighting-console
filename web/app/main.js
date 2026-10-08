@@ -18,6 +18,7 @@ import { initTimeline } from "./timeline.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initWorkspaces } from "./workspaces.js";
+import { initErrorBadge } from "./errorbadge.js";
 import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
 import { initTheme } from "./theme.js";
@@ -68,6 +69,7 @@ async function boot() {
   initCopilot();
   initKeys();
   initWorkspaces();
+  initErrorBadge();
   wireGig();
   initWelcome();
   initHelp();

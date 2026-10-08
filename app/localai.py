@@ -213,11 +213,11 @@ def vram_gb() -> float:
     gb = 0.0
     exe = shutil.which("nvidia-smi")
     if exe:
+        from app import procs
+        out = procs.run([exe, "--query-gpu=memory.total", "--format=csv,noheader,nounits"], 5).stdout
         try:
-            out = subprocess.run([exe, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                                 capture_output=True, text=True, timeout=5).stdout
             gb = max((float(x) for x in out.split() if x.strip().replace(".", "", 1).isdigit()), default=0.0) / 1024
-        except (OSError, subprocess.SubprocessError, ValueError):
+        except ValueError:
             gb = 0.0
     _VRAM.append(gb)
     return gb

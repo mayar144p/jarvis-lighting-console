@@ -7,6 +7,10 @@ name: Desktop app (installers)
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
 on:
   workflow_dispatch:
+  # every night too: an engine change can break the installed app without
+  # touching desktop/, and that should show the next morning, not at release
+  schedule:
+    - cron: "41 2 * * *"
   pull_request:
     paths: ["desktop/**", ".github/workflows/desktop.yml", "tools/desktopcheck.mjs"]
 

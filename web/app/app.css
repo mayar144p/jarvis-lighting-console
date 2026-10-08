@@ -1731,3 +1731,9 @@ body.ws-swap .programmer > .ws-grip { left: auto; right: -5px; }
 .rec-pill small { color: var(--muted); }
 @keyframes rec-blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .rec-pill i { animation: none; } }
+
+/* ---------------------------------------------- problems badge (errorbadge.js) */
+.err-btn { gap: 5px; color: var(--blind); border-color: color-mix(in srgb, var(--blind) 45%, transparent); }
+.err-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.err-btn[hidden] { display: none; }
+#err-count { font-weight: 700; font-variant-numeric: tabular-nums; }
