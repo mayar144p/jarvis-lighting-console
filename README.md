@@ -485,6 +485,25 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
 
+## New shows: templates and the demo
+
+The first time the desk opens with nothing patched, it offers **the demo**:
+a club night already programmed and playing in the 3D view (nothing leaves
+the computer). It also offers a **template**, or an empty show, and a short
+**tour** of the desk (later: Help → *Take the tour*).
+
+**Show ▾ → New show…** has the templates: **Club night**, **Wedding**,
+**Band / concert**, **Theatre** and **Corporate event**. Each one builds:
+- a room of that kind;
+- real lights from the library, hung on its trusses;
+- groups;
+- colour palettes, and position palettes for each zone of the room;
+- a page of buttons;
+- a first set of cues and the timeline.
+
+It's a normal show, so change anything. A template, or **Empty show**, is
+one Ctrl+Z, and that brings back the show that was open.
+
 ## MVR plots (Vectorworks, Capture, grandMA3…)
 
 **Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is

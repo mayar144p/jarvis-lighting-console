@@ -17,6 +17,7 @@ import { initTimeline } from "./timeline.js";
 import { initCmdbar } from "./cmdbar.js";
 import { initCopilot } from "./copilot.js";
 import { initKeys } from "./keys.js";
+import { initWelcome } from "./welcome.js";
 
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
@@ -61,6 +62,7 @@ async function boot() {
   initCopilot();
   initKeys();
   wireGig();
+  initWelcome();
   openStream({
     snapshot: setSnapshot,
     snapdiff: applySnapDiff,

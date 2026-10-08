@@ -4403,3 +4403,69 @@ def _zip(files: dict) -> bytes:
         for n, b in files.items():
             z.writestr(n, b)
     return buf.getvalue()
+
+
+def test_show_templates() -> None:
+    """A new show that starts 80 % done (A10 item 2): each template builds
+    a room, real lights from the library on the right trusses, groups,
+    colour and position palettes, a page of buttons and a first set of
+    cues, as ONE undo step; the demo starts playing; New show empties
+    the desk (one undo brings the old show back)."""
+    print("Show templates, New show, the demo")
+    import time as _time
+
+    from app import engine as eng
+    from app import showtemplates
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            e.act("select_all")
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=1, name="mine")
+            listed = e.act("show_templates")
+            check("five templates to pick from", listed.get("ok") and [t["id"] for t in listed["templates"]]
+                  == ["club", "wedding", "band", "theatre", "corporate"], str(listed.get("templates")))
+            undo0 = len(e._undo)
+            for name in showtemplates.TEMPLATES:
+                r = e.act("show_template", name=name)
+                t = showtemplates.TEMPLATES[name]
+                want = sum(x[3] for x in t["lights"])
+                check(f"{t['label']}: every light, groups, palettes, buttons and cues",
+                      r.get("ok") and r["heads"] == want and r["groups"] == len({x[0] for x in t["lights"]})
+                      and r["palettes"] >= len(t["palettes"]) and r["buttons"] >= 8 and r["cues"] >= 3 and not r["notes"],
+                      str({k: r.get(k) for k in ("heads", "groups", "palettes", "buttons", "cues", "notes", "error")}))
+                hung = [h for h in e.patch if (h.get("mount") or {}).get("rig")]
+                check(f"{t['label']}: the lights hang on the room's trusses",
+                      len(hung) == sum(x[3] for x in t["lights"] if x[4]), f"{len(hung)}")
+            check("each template is one undo step", len(e._undo) == undo0 + len(showtemplates.TEMPLATES), str(len(e._undo) - undo0))
+            for _ in showtemplates.TEMPLATES:
+                e.act("undo")
+            check("...and undo brings the show that was there back",
+                  len(e.patch) == 3 and [c.get("name") for c in e.playbacks[0]["stack"]] == ["mine"],
+                  f"{len(e.patch)} {[c.get('name') for c in e.playbacks[0]['stack']]}")
+            check("an unknown template is refused, nothing changed",
+                  not e.act("show_template", name="rave cave").get("ok") and len(e.patch) == 3)
+            r = e.act("show_new")
+            check("New show: no lights, cues, groups, palettes, buttons or room",
+                  r.get("ok") and not e.patch and not e.groups and not e.quick and not any(e.palettes.values())
+                  and not any(p["stack"] for p in e.playbacks) and not e.venue.get("rigging"), str(r))
+            e.act("undo")
+            check("...one undo and it's all back", len(e.patch) == 3)
+            r = e.act("show_template", name="club", demo=True)
+            _time.sleep(0.3)
+            check("the demo is playing straight away (the timeline, its cues and effects)",
+                  r.get("ok") and e.tl["playing"] and e.playbacks[0].get("active"), str(e.tl["playing"]))
+            e.act("timeline_stop")
+            from app import aitools, engine_base
+            check("the AI may only prepare New show / a template (the show that's there would go)",
+                  {"show_new", "show_template"} <= set(aitools.CONFIRM))
+            check("listing the templates is never an undo step", "show_templates" in engine_base.UNDO_EXCLUDED)
+            from app.engine_patch import _plural
+            check("group names in the plural: Moving washes, Spots, PARs",
+                  [_plural(x) for x in ("Moving wash", "Spot", "PARs")] == ["Moving washes", "Spots", "PARs"])
+        finally:
+            e.shutdown()

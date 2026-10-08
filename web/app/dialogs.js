@@ -3,11 +3,12 @@
 import { FixturePreview } from "/js/stage/stage.js";
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
+import { openNewShow, startTour } from "./welcome.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state, on, patch, selected, outputState } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, modal, toast, confirmBox, promptBox, menu } from "./ui.js";
+import { $, h, modal, toast, confirmBox, promptBox, menu, closeTopModal } from "./ui.js";
 
 // ================================================================== add
 let preview = null;
@@ -650,6 +651,7 @@ export async function openShowMenu(anchor, menuFn) {
   const shows = (state.snap && state.snap.shows) || [];
   const current = (state.snap && state.snap.show_file) || "";
   menuFn(anchor, [
+    { label: "New show…", hint: "a template (club, wedding, band, theatre, corporate) or empty", run: openNewShow },
     { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
     { label: "Paperwork…", hint: "light plot, patch sheet, rigging - print / PDF", run: () => window.open("/plot.html", "_blank") },
@@ -1081,6 +1083,7 @@ export function openHelp() {
           h("li", "Record cues onto a playback and press GO."),
           h("li", "When the rig is connected: Go live.")))),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
+      h("button.btn", { onclick: () => { closeTopModal(); startTour(); } }, "Take the tour"),
       h("button.btn", { onclick: () => import("./bugreport.js").then((m) => m.openBugReport()) }, "Report a bug…")],
   });
 }

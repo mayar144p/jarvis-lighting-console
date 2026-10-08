@@ -1151,7 +1151,7 @@ class PatchMixin:
         for t, heads in sorted(by_type.items(), key=lambda kv: (-len(kv[1]), kv[0])):
             name = labels[t]
             out.append({"key": f"type:{t}", "kind": "type",
-                        "name": (name if name.endswith("s") else name + "s") if len(heads) > 1 else name,
+                        "name": _plural(name) if len(heads) > 1 else name,
                         "heads": sorted(heads)})
         if len(by_rig) > 1 or (by_rig and len(by_type) > 1):
             for rid, heads in by_rig.items():
@@ -2185,3 +2185,10 @@ class PatchMixin:
                            f"x{first['x']:.2f} y{first['y']:.2f} "
                            f"z{first['z']:.2f}{where}"
                            + (" (clamped to the room)" if clamped else "")}
+
+
+def _plural(name: str) -> str:
+    """"Moving wash" -> "Moving washes", "Spot" -> "Spots", "PARs" stays."""
+    if name.endswith("s") and not name.endswith(("ss", "sh")):
+        return name
+    return name + ("es" if name.endswith(("sh", "ch", "x", "ss")) else "s")

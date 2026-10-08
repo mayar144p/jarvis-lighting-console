@@ -46,6 +46,8 @@ CONFIRM = {
     "fx_laser": "Lasers on",
     "fx_reload": "Mark the confetti refilled",
     "save_show": "Save the show",
+    "show_new": "Start a new, empty show",
+    "show_template": "Start a new show from a template",
     "load_show": "Open a show (this one is replaced)",
     "restore_version": "Open an earlier version of a show",
     "venue_open": "Open a saved venue (this room is replaced)",

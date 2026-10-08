@@ -367,7 +367,13 @@ Suggested order: the operator's top picks first (1-4), then the rest.
 1. **Hardware controllers with feedback** - ready layouts for Akai APC40 /
    APC mini, Novation Launchpad, Behringer X-Touch: lit buttons show what
    is on, motor faders follow the playbacks; plug in and play.
-2. **Show templates + first-run tour + demo show** - wedding, club night,
+2. **(DONE 2026-10-08) Show templates + first-run tour + demo show**
+   (app/showtemplates.py, web/app/welcome.js): club, wedding, band,
+   theatre, corporate - room, library lights on its trusses, groups,
+   colour + zone position palettes, buttons, cues + timeline, one undo
+   step; `show_new`; the demo = the club night with its timeline playing;
+   a welcome on a new empty desk; a 7-step tour (Help -> Take the tour).
+   Was: **Show templates + first-run tour + demo show** - wedding, club night,
    band, theatre, corporate: a ready rig, groups, palettes and buttons (a
    new show starts 80% done); a tour and a demo show so a new user sees
    lights moving within 30 seconds.
