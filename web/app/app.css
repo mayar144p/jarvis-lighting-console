@@ -1717,3 +1717,17 @@ body.ws-swap .programmer > .ws-grip { left: auto; right: -5px; }
 .ws-grip::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .15s; }
 .ws-grip:hover::after, .ws-grip.on::after { opacity: 1; background: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .ws-grip::after { transition: none; } }
+
+/* ------------------------------------------------ video render (videorec.js) */
+.rec-pill {
+  position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); z-index: 8;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px;
+  border-radius: 18px; border: 1px solid color-mix(in srgb, var(--live) 60%, transparent);
+  background: rgba(16, 16, 19, .92); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.rec-pill i { width: 10px; height: 10px; border-radius: 50%; background: var(--live); animation: rec-blink 1s steps(2) infinite; }
+.rec-pill b { color: var(--live); letter-spacing: .06em; }
+.rec-pill span { font-variant-numeric: tabular-nums; }
+.rec-pill small { color: var(--muted); }
+@keyframes rec-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rec-pill i { animation: none; } }

@@ -4863,3 +4863,44 @@ def test_wave360_strobe_and_wheel_colours() -> None:
                   and fxlib.wheel_step("rainbow", [11], None, 0.0, 0, 1) is None)
         finally:
             e.shutdown()
+
+
+def test_video_render() -> None:
+    """Offline programming with a video render (A10 item 7): the 3D view
+    recorded as a video for the client - MP4 where the browser makes it,
+    named after the show, the timeline's length when it plays the timeline."""
+    print("Video render: the 3D view as a video")
+    import shutil
+    import subprocess
+    web = ROOT / "web"
+    panel = (web / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    stage = (web / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("View -> Record a video", "Record a video" in panel and "openVideoDialog" in panel)
+    check("the 3D holds its quality while it records (no auto-lowering)", "this.recording ||" in stage and "startRecording(" in stage)
+    node = shutil.which("node")
+    if not node:
+        check("(node not installed: the video choices not checked)", True, "")
+        return
+    js = """
+const V = await import(process.argv[1]);
+console.log(JSON.stringify({
+  mp4: V.pickFormat((m) => m.startsWith("video/mp4")).ext, webm: V.pickFormat((m) => m === "video/webm").ext,
+  none: V.pickFormat(() => false), throws: V.pickFormat((m) => { if (m.includes("avc1")) throw new Error("x"); return m === "video/mp4"; }).ext,
+  tl: V.plannedSeconds("timeline", 30, 161.2), live: [V.plannedSeconds("live", 2), V.plannedSeconds("live", 9999), V.plannedSeconds("live", "x")],
+  name: V.fileName("shows/Club night.json", new Date(2026, 9, 8, 21, 5).getTime(), "mp4"),
+  odd: V.fileName('a<>:"/\\\\|?*b', 0, "webm").includes("<"), blank: V.fileName("", 0, "mp4").startsWith("jarvis-"),
+  clock: V.clock(125) }));
+"""
+    r = subprocess.run([node, "--input-type=module", "-e", js, (web / "app" / "videoplan.js").as_uri()],
+                       capture_output=True, text=True, timeout=30)
+    got = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+    check("the video choices load in node", r.returncode == 0, r.stderr[-300:])
+    if not got:
+        return
+    check("MP4 first (a client's phone plays it), WebM where MP4 can't be made, nothing when neither",
+          got["mp4"] == "mp4" and got["webm"] == "webm" and got["none"] is None and got["throws"] == "mp4", str(got))
+    check("playing the timeline records its whole length (+1 s)", got["tl"] == 163, str(got["tl"]))
+    check("recording by hand: 5 s to 10 min", got["live"] == [5, 600, 30], str(got["live"]))
+    check("the file is named after the show and the time", got["name"] == "Club night-2026-10-08-21-05.mp4", got["name"])
+    check("no characters a disk refuses; no name: jarvis-...", not got["odd"] and got["blank"])
+    check("the clock reads m:ss", got["clock"] == "2:05")

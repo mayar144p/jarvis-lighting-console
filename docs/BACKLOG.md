@@ -416,7 +416,12 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    Was: **Customisable workspaces** - drag panels into your own layout per show
    or per user (busking, theatre, programming); switch with one key.  (Pairs
    with A9 step 1's windows.)
-7. **Offline programming with a video render** - program at home, export a
+7. **(DONE 2026-10-08) Offline programming with a video render**
+   (web/app/videorec.js): View -> Record a video - the timeline played
+   from the start or the show run by hand, Full HD / 4K / small, MP4
+   (WebM fallback), the 3D's quality held while it records.  Left: the
+   timeline's music in the video; frame-exact (offline) rendering.
+   Was: **Offline programming with a video render** - program at home, export a
    video of the 3D preview for the client.  (Pairs with A9 step 2.)
 8. **Fixture library updates** - new lights arrive automatically; a
    "Request a fixture" button (it becomes an A11 report).
