@@ -20,7 +20,6 @@ import json
 import os
 import platform
 import re
-import subprocess
 import sys
 import time
 import urllib.parse
@@ -60,13 +59,37 @@ def scrub(text: str) -> str:
     return _KEYLIKE.sub("[removed]", text)
 
 
+_VERSION: str | None = None
+
+
 def desk_version() -> str:
+    """The commit the desk runs, read from .git's own files - no git
+    program: on Windows a slow git under a timeout could leave the report
+    waiting forever (its helper process keeps the pipe open)."""
+    global _VERSION
+    if _VERSION is None:
+        _VERSION = _read_version(Path(config.ROOT))
+    return _VERSION
+
+
+def _read_version(root: Path) -> str:
     try:
-        out = subprocess.run(["git", "log", "-1", "--format=%h %cs"], cwd=config.ROOT,
-                             capture_output=True, text=True, timeout=3)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+        git = root / ".git"
+        if git.is_file():                              # a worktree: "gitdir: <path>"
+            git = (root / git.read_text(encoding="utf-8").split(":", 1)[1].strip()).resolve()
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head[:7]                            # a detached checkout
+        ref = head.split(":", 1)[1].strip()
+        p = git / ref
+        if p.is_file():
+            return p.read_text(encoding="utf-8").strip()[:7] + " " + ref.rsplit("/", 1)[-1]
+        packed = git / "packed-refs"
+        if packed.is_file():
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                if line.endswith(" " + ref):
+                    return line[:7] + " " + ref.rsplit("/", 1)[-1]
+    except (OSError, IndexError, ValueError):
         pass
     return "unknown"
 
