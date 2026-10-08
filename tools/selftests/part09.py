@@ -12,11 +12,8 @@ from tools.selftests.common import ROOT, check
 
 
 def _free_port() -> int:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+    from tools.selftests.common import _free_udp_port
+    return _free_udp_port()
 
 
 def test_virtual_node() -> None:
@@ -4964,5 +4961,74 @@ def test_light_check_mode_and_strobe() -> None:
             t = e.act("light_tested", head=1, strobe=False)
             check("a wrong strobe (all else right) says report it - the file may be wrong",
                   not t["tested"] and any("strobe" in a for a in t["advice"]), str(t.get("advice")))
+        finally:
+            e.shutdown()
+
+
+def test_nothing_waits_forever() -> None:
+    """Nothing the desk does may wait for ever.  Another program is only
+    run through app/procs.py, which stops it AND whatever it started when
+    time is up and never waits for output a helper still holds (Windows'
+    subprocess.run(timeout=) waits for exactly that - it froze "Report a
+    problem").  And every request from the screen gives up in time."""
+    print("Nothing waits for ever: other programs, the screen's requests")
+    import re
+    import sys as _sys
+    from app import procs
+    bad = []
+    for f in sorted((ROOT / "app").glob("*.py")):
+        if f.name == "procs.py":
+            continue
+        src = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"subprocess\.(run|call|check_output|check_call)\(|\.communicate\(", src):
+            bad.append(f"{f.name}:{src.count(chr(10), 0, m.start()) + 1}")
+    check("no other program is run outside app/procs.py", not bad, ", ".join(bad))
+    t = time.monotonic()
+    r = procs.run([_sys.executable, "-c",
+                   "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c','import time; time.sleep(20)']);"
+                   " print('started', flush=True); time.sleep(20)"], 1.0)
+    took = time.monotonic() - t
+    check("a program whose helper keeps its output open is stopped on time", r.timed_out and took < 5, f"{took:.1f} s")
+    check("...and what it printed is kept", "started" in r.stdout, r.stdout)
+    check("a program that isn't there: an answer, not a crash", procs.run(["no-such-program-jarvis"], 1).returncode == 127)
+    api = (ROOT / "web" / "app" / "api.js").read_text(encoding="utf-8")
+    check("every request from the screen has a time limit", "DEFAULT_WAIT_MS" in api and "AbortController" in api)
+
+
+def test_problems_badge() -> None:
+    """Problems reach the operator when they happen, not in a screenshot:
+    a crash inside an action is marked (and kept for the report), and the
+    top bar's warning badge shows page errors, desk errors and requests
+    that got no answer - Report it attaches them."""
+    print("The problems badge: a bug shows when it happens")
+    from app import bugreport, engine as eng
+    web = ROOT / "web" / "app"
+    badge = (web / "errorbadge.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the badge is in the top bar, hidden until something goes wrong", 'id="err-btn" hidden' in html)
+    check("page errors and unanswered requests reach it", 'addEventListener("error"' in badge and "noteError" in
+          (web / "api.js").read_text(encoding="utf-8"))
+    check("an action's crash is flagged to it", "res.internal" in (web / "actions.js").read_text(encoding="utf-8"))
+    check("Report it attaches what it saw", "recentErrors()" in (web / "bugreport.js").read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            before = len(bugreport.SERVER_ERRORS)
+
+            def boom(**_):
+                raise RuntimeError("a bug")
+            orig = e._handlers["status"]
+            e._handlers["status"] = boom            # an action with a bug in it
+            try:
+                r = e.act("status")
+            finally:
+                e._handlers["status"] = orig
+            check("a crash in an action is marked internal (a bug, not 'can't do that')", r.get("internal") and not r.get("ok"), str(r))
+            check("...and kept for the report", len(bugreport.SERVER_ERRORS) > before)
+            r = e.act("set_intensity", level="lots")
+            check("a normal refusal isn't flagged as a bug", not r.get("ok") and not r.get("internal"), str(r))
         finally:
             e.shutdown()

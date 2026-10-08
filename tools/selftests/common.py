@@ -108,7 +108,27 @@ def _valueerror(fn) -> bool:
 
 
 def _free_udp_port() -> int:
+    """A UDP port for a test, from 20000-29999: below the range the system
+    hands out at random (32768+ on Linux, 49152+ on Windows), so nothing
+    else running - a desk, a browser, the screen check - grabs it between
+    this check and the test's own bind.  Both it and the next port are
+    free (the CDJ listener takes port + 1 for the players' status)."""
+    import random as _random
     import socket as _socket
+    for _ in range(200):
+        port = _random.randint(20000, 29998)
+        socks = []
+        try:
+            for p in (port, port + 1):
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+                socks.append(s)
+                s.bind(("", p))
+            return port
+        except OSError:
+            continue
+        finally:
+            for s in socks:
+                s.close()
     s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
     try:
         s.bind(("", 0))

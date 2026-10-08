@@ -57,27 +57,64 @@ function askToken() {
 
 export class ApiError extends Error {}
 
+// Nothing on the screen may wait for ever (a desk step that hangs used to
+// leave a button or a dialog "working…" until the page was reloaded).
+// Every request gives up in time; the slow ones get longer.
+export const DEFAULT_WAIT_MS = 30000;
+const SLOW = /^\/api\/(ai|console\/(assistant|ai|autoshow|generate|doctor|scan|rdm|import_show|load|save|models|network|underlay|media_frame|bug_report)|gdtf\/|fixtures\/(from_manual|import|library\/install|real_model))/;
+export const waitFor = (path) => (SLOW.test(path) ? 300000 : DEFAULT_WAIT_MS);
+
 export async function request(path, body, opts = {}) {
   const init = body === undefined
     ? { headers: headers(false) }
     : { method: "POST", headers: headers(true), body: JSON.stringify(body) };
-  if (opts.signal) init.signal = opts.signal;
+  const ms = opts.timeout || waitFor(path);
+  const own = new AbortController();
+  const timer = setTimeout(() => own.abort(), ms);
+  if (opts.signal) {
+    if (opts.signal.aborted) own.abort();
+    else opts.signal.addEventListener("abort", () => own.abort(), { once: true });
+  }
+  init.signal = own.signal;
   let resp;
   try {
     resp = await fetch(path, init);
   } catch (e) {
-    if (e && e.name === "AbortError") throw e;
+    if (e && e.name === "AbortError") {
+      if (opts.signal && opts.signal.aborted) throw e;          // the caller cancelled it
+      noteError(`no answer in ${Math.round(ms / 1000)} s: ${path}`);
+      throw new ApiError(`The desk didn't answer in ${Math.round(ms / 1000)} seconds (it may still finish). Try again - if it keeps happening, Report a bug.`);
+    }
     // the browser's own words for this are "Failed to fetch"
     throw new ApiError("The desk isn't answering - nothing was sent. Reconnecting…");
+  } finally {
+    clearTimeout(timer);
   }
   if (resp.status === 401) {
     if (askToken()) return request(path, body, opts);
     throw new ApiError("this desk needs its access token");
   }
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new ApiError(data.error || `HTTP ${resp.status}`);
+  if (!resp.ok) {
+    if (resp.status >= 500) noteError(`${path}: ${data.error || "HTTP " + resp.status}`);
+    throw new ApiError(data.error || `HTTP ${resp.status}`);
+  }
   return data;
 }
+
+// Problems the operator should hear about, not find later in a report:
+// errors in the page, desk errors, requests that got no answer.  The top
+// bar's warning badge (errorbadge.js) shows them.
+const problems = [];
+const listeners = new Set();
+export function noteError(text) {
+  problems.push({ t: Date.now(), text: String(text).slice(0, 300) });
+  if (problems.length > 30) problems.shift();
+  for (const fn of listeners) { try { fn(); } catch (e) { /* a listener's own trouble */ } }
+}
+export const recentErrors = () => problems.slice();
+export function clearErrors() { problems.length = 0; for (const fn of listeners) fn(); }
+export function onErrors(fn) { listeners.add(fn); }
 
 export const get = (path) => request(path);
 export const post = (path, body = {}) => request(path, body);

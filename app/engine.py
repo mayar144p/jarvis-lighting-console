@@ -461,6 +461,12 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                                             IndexError))
                 res = self._result(name, False, str(exc) if expected else
                                    f"internal error: {exc!r}")
+                if not expected:
+                    # a bug, not "can't do that": kept for the report, and
+                    # the screen's warning badge shows it (res["internal"])
+                    from app import bugreport
+                    bugreport.note_error(name, exc)
+                    res["internal"] = True
                 self._log(name, False, res["error"])
                 return res
             if not extra.get("ok", True) and pushed and self._undo:

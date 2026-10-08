@@ -1,0 +1,67 @@
+name: Nightly
+
+# What is too slow for every push, every night: hunting flaky tests (the
+# whole self-test three times on Linux and Windows - a test that fails once
+# in three is a real bug, never a re-run), and the full screen check (63
+# steps at three widths).  Red here means: look before the next gig.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flake-hunt:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Self-test three times (any failure is a flaky test to fix)
+        shell: bash
+        run: |
+          bad=0
+          for i in 1 2 3; do
+            echo "=== round $i"
+            python tools/selftest.py > round$i.log 2>&1 || { bad=1; echo "round $i failed:"; grep -E "FAIL" round$i.log; }
+            tail -1 round$i.log
+          done
+          exit $bad
+      - name: Odd inputs and the gig, twice
+        shell: bash
+        run: |
+          for i in 1 2; do python tools/oddcheck.py | tail -1; python tools/gigcheck.py | tail -1; done
+
+  screen-check-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: A browser for the check
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Screen check (every step, three widths)
+        run: node tools/uicheck.mjs screencheck --widths 1280,1440,1920
+      - name: Keep the report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-check-full
+          path: screencheck

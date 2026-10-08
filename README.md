@@ -765,13 +765,26 @@ live stream, fixture type and brand recognition, the doctor, the copilot
 module imports, element ids exist, colour picker maths and the 3DS parser
 executed under node). Suites run isolated, so one crash cannot hide the rest.
 
-CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass.
+CI (`.github/workflows/ci.yml`) runs it on Linux and Windows, plus a lint pass,
+the library rules (`rulecheck.py`: about 2,400 lights against the desk's
+promises) and a screen check of the key screens in a real browser.  Every
+night (`nightly.yml`) the whole self-test runs three times on Linux and
+Windows to catch flaky tests (one that fails once in three is a bug to fix,
+not a re-run), the full screen check runs at three widths, and both
+installers are built and checked (`desktop.yml`).
+
+Two rules keep the desk from hanging: another program is only ever run
+through `app/procs.py` (it stops the program and everything it started when
+time is up), and every request from the screen has a time limit
+(`web/app/api.js`: 30 s, 5 minutes for AI, imports and downloads).  The
+self-test fails any code that breaks either.
 
 The other checks (all in `tools/`, all on scratch data - `data/` is never
 touched):
 
 | Check | What it proves | Time |
 |---|---|---|
+| `rulecheck.py [--only X \| --rule id]` | every library light against the desk's promises (strobe range and direction, colour effects, never grey when lit, every head of a multi-head light); fails only on a new failure (CI) | ~80 s |
 | `gigcheck.py` | a whole gig, then save, reload, compare (CI) | <1 s |
 | `oddcheck.py` | odd inputs: empty rig, 12,900 nonsense values, 520 lights, corrupt shows and autosaves, a restart, Undo all the way (CI) | ~1 min |
 | `libsweep.py [--all-modes]` | every library light (and every mode: 8,093) x Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D | ~3 min |
@@ -878,8 +891,12 @@ Open the repo's **Issues** tab → **New issue** and pick a form:
 
 Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)
 and, if you can, the show file so the exact rig can be loaded.  Never
-attach `.env`.  A "Report a problem with this light…" button in the desk
-itself is planned (docs/BACKLOG.md A11).
+attach `.env`.  Quicker: right-click the light → **Report a problem with
+this light…** (or Help → Report a bug) packs all of that for you.
+
+When the desk itself hits a problem - an error in the page, a desk error, a
+request that got no answer - a **⚠ badge** appears in the top bar.  Click it
+to see what happened, **Report it** (they are attached) or **Dismiss**.
 
 ## Running the visual checks on your own PC (graphics card)
 

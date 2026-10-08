@@ -17,7 +17,8 @@ import ipaddress
 import platform
 import re
 import socket
-import subprocess
+
+from app import procs
 
 
 # Listing the adapters must never hold up "Find nodes": on some machines
@@ -27,12 +28,7 @@ RUN_TIMEOUT_S = 1.5
 
 
 def _run(cmd: list[str]) -> str:
-    try:
-        out = subprocess.run(cmd, capture_output=True, timeout=RUN_TIMEOUT_S,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return out.stdout.decode(errors="replace")
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    return procs.run(cmd, RUN_TIMEOUT_S).stdout
 
 
 def parse_ipconfig(text: str) -> list[dict]:

@@ -839,6 +839,18 @@ Fixed:
   strobe and every head checked; offered when a new model is patched.
 - Left: more rules as reports come in; a model's taught colours and fixes
   shipped to everyone with library updates (A10 item 8).
+- **(DONE) Nothing waits for ever:** other programs only through
+  app/procs.py (the whole process tree stopped on time - Windows'
+  subprocess.run(timeout=) waits for output a helper still holds); every
+  request from the screen has a time limit (api.js).  Both enforced by the
+  self-test.
+- **(DONE) The problems badge** (errorbadge.js): page errors, desk crashes
+  inside actions (marked `internal`) and unanswered requests show at once;
+  Report it attaches them.
+- **(DONE) CI screen check** (13 key screens) on every change; nightly: the
+  self-test x3 on Linux + Windows (flaky-test hunt), the full screen check,
+  both installers built and checked.  Test ports come from 20000-29999,
+  away from the ports the system hands out at random.
 
 ## A2. Programming features (from grandMA3, MagicQ, Avolites, Onyx, QLC+, Lightkey, SoundSwitch, rekordbox)
 

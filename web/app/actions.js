@@ -1,6 +1,6 @@
 // Every button, key and command goes through `run`, so errors are reported
 // the same way everywhere and the status bar always knows the last action.
-import { act } from "./api.js";
+import { act, noteError } from "./api.js";
 import { state, emit } from "./store.js";
 import { toast } from "./ui.js";
 
@@ -26,6 +26,7 @@ export async function run(action, params = {}, opts = {}) {
   }
   state.lastAction = (res.ok ? "" : "✕ ") + (res.summary || res.error || LABELS[action] || action);
   emit("action", { action, params, res });
+  if (res.internal) noteError(`${action}: ${res.error}`);     // a bug in the desk, not "can't do that"
   if (!res.ok && !opts.silentError) toast(res.error || `${action} failed`, "bad");
   else if (res.ok && opts.toast) toast(typeof opts.toast === "string" ? opts.toast : (res.summary || "Done"), "ok");
   return res;
