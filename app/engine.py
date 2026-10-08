@@ -483,6 +483,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             if name != "status" and not self._batching:
                 self._autosave()
             self._sync_follow_thread()        # start/stop the follow ticker
+            self._osc_feedback(name, params, res)
             return res
 
     def act_batch(self, calls: list[dict], label: str = "ai") -> dict:
@@ -1308,6 +1309,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
                 "shapes": [dict(s) for s in self._shapes()],
                 "macros": [dict(m) for m in self._macros()],
                 "osc": self.osc_public(),
+                "osc_out": self.osc_out_public(),
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),

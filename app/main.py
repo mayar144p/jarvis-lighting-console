@@ -492,6 +492,15 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.close_connection = True            # the rest of the body is unread
                 return self._json({"error": str(exc)}, 400)
+        if route == "/api/ai/pack":
+            # an AI pack picked in Settings -> AI, streamed straight to DATA/ai
+            try:
+                out = localai.receive_pack(self.rfile, int(self.headers.get("Content-Length") or 0),
+                                           query.get("name", ""))
+            except ValueError as exc:
+                self.close_connection = True
+                return self._json({"error": str(exc)}, 400)
+            return self._json({**out, "ai": llm.public()})
         if route == "/api/mvr/import":
             # a plot from Vectorworks / Capture / grandMA3...: patched and placed
             try:

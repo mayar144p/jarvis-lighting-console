@@ -30,7 +30,7 @@ CUE_ACTIONS = {
     "timeline_play": "play the timeline", "timeline_pause": "pause the timeline",
     "timeline_seek": "move the timeline", "tempo_set": "set the tempo",
     "step_fx_run": "run a step effect", "master": "set the master",
-    "autopilot": "autopilot on / off",
+    "autopilot": "autopilot on / off", "osc_send": "send OSC (QLab, Resolume...)",
 }
 MAX_CUE_ACTIONS = 8
 

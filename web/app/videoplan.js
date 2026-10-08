@@ -12,9 +12,17 @@ export const FORMATS = [
   { mime: "video/webm", ext: "webm" },
 ];
 
-/** The first format this browser records, or null. */
-export function pickFormat(isSupported) {
-  for (const f of FORMATS) {
+// with the timeline's music: the same, with a sound codec
+export const FORMATS_AV = [
+  { mime: "video/mp4;codecs=avc1.640028,mp4a.40.2", ext: "mp4", audio: true },
+  { mime: "video/webm;codecs=vp9,opus", ext: "webm", audio: true },
+  { mime: "video/webm;codecs=vp8,opus", ext: "webm", audio: true },
+];
+
+/** The first format this browser records, or null.  `audio`: one that
+ *  carries sound too, when the browser has one (else picture only). */
+export function pickFormat(isSupported, audio = false) {
+  for (const f of audio ? [...FORMATS_AV, ...FORMATS] : FORMATS) {
     try { if (isSupported(f.mime)) return f; } catch (e) { /* a browser that throws: try the next */ }
   }
   return null;

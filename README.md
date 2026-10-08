@@ -367,7 +367,8 @@ stops at its end) or *record what I do* while you run the show by hand (up to
 small one for chat apps; saved as MP4 (WebM where the browser can't make
 MP4), named after the show. Only the 3D picture is filmed, not the desk
 around it, and the real lights needn't be connected - program at home, send
-the client the video. A slow computer films smoother at Small.
+the client the video. Playing the timeline, its music goes in the video too.
+A slow computer films smoother at Small.
 
 ### Workspaces
 
@@ -583,6 +584,17 @@ to a node of its own (one node per truss), over Art-Net or sACN. With sACN
 you can also set the desk's **priority** (0-200). Both are saved with the
 show.
 
+## OSC out (QLab, Resolume, video servers)
+
+**Settings → MIDI & OSC → OSC out**: the address and port of the other
+program (QLab listens on 53000, Resolume on 7000). **Test** sends
+`/jarvis/hello`. Tick *Tell it what the desk does* and it gets
+`/jarvis/go <list> <cue>`, `/jarvis/master 0-1`, `/jarvis/blackout 0|1` and
+`/jarvis/button <id>` as they happen. A cue sends its own: Cue list → ⋯ →
+**Actions…** → **Send OSC** (e.g. `/go`, or
+`/composition/layers/1/clips/2/connect 1`). Saved with the show, since each
+venue has its own video computer.
+
 ## Hardware controllers
 
 Switch on **Settings → MIDI & OSC → MIDI in the browser**, then plug in a
@@ -619,6 +631,10 @@ show** or **Start from the plot** (the old lights and trusses go, and the room
 is sized to the plot). What couldn't come in is listed: a GDTF missing from
 the file, or a mode the file doesn't have (the light gets its first mode).
 The whole import is one Ctrl+Z.
+
+A light whose GDTF isn't in the MVR comes in from the desk's own fixtures or
+the libraries when one has the same maker and model (the import says so;
+check its mode).
 
 **Show ▾ -> Export as MVR** saves the patch, the trusses (at their angle,
 with their length in the name) and the objects as an `.mvr`, with the GDTF

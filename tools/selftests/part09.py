@@ -3970,7 +3970,7 @@ def test_ai_switch() -> None:
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
     wf = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
     check("Settings -> AI: the switch, the key, download / pause / AI pack / remove",
-          all(k in js for k in ('"/api/ai"', '"/api/ai/local"', "Pause", "Use an AI pack", "Remove")), "")
+          all(k in js for k in ('"/api/ai"', '"/api/ai/local"', "Pause", "AI pack", "Remove")), "")
     check("the copilot's header switches the AI and shows the fallback note", "setAiMode" in cj and "r.ai_note" in cj, "")
     check("the desktop app ships the offline AI's engine (llama.cpp's server)",
           "ggml-org/llama.cpp" in wf and "CONSOLE_LLAMA_DIR" in (ROOT / "desktop" / "main.js").read_text(encoding="utf-8"), "")
@@ -4386,8 +4386,9 @@ def test_mvr() -> None:
                   f"{len(e.patch)} {len(e.venue['rigging'])}")
             n = len(e.patch)
             r = mvr.import_into(e, _mvr_file(gdtf, with_gdtf=False), tmp / "gdtf3")
-            check("a plot whose GDTF files are all missing imports nothing, and says why",
-                  not r["ok"] and len(e.patch) == n and "isn't in the MVR" in r["error"], str(r.get("error")))
+            check("a plot whose GDTF files are missing: the lights the desk already has come in from its own fixtures, and it says so",
+                  r["ok"] and len(e.patch) > n and any("used the installed" in x for x in r["notes"])
+                  and any("Nobody@Nothing" in p and "no library has it" in p for p in r["problems"]), str(r.get("notes"))[:200])
         finally:
             e.shutdown()
 
@@ -5678,3 +5679,132 @@ def test_sweep3_fixes() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("the groups fold away for more fixture rows, remembered", 'id="grp-fold"' in html and "jarvis.groupsFolded" in fx)
+
+
+def test_sweep3_adds() -> None:
+    """Sweep 3's additions: an AI pack picked in the page (streamed, checked),
+    MVR lights whose GDTF isn't in the file matched from the library, lights
+    that mix by hue + saturation (and white-only ones) shown in their colour,
+    the timeline's music in the video, and OSC out (cues send it; GO, master,
+    blackout reported; saved with the show)."""
+    print("Sweep 3 adds: AI pack upload, MVR library match, hue/sat lights, video sound, OSC out")
+    import io
+    import json as _json
+    import shutil
+    import socket as _socket
+    import subprocess
+    import zipfile
+
+    from app import config as cfg, engine as eng, fixlib, localai, mvr, osc
+    # -- an AI pack, streamed in
+    saved = cfg.DATA
+    with tempfile.TemporaryDirectory() as td:
+        cfg.DATA = Path(td)
+        try:
+            blob = b"GGUF" + b"\1" * 5000
+            st = localai.receive_pack(io.BytesIO(blob), len(blob), "C:\\\\USB\\\\my-pack.gguf")
+            check("an AI pack picked in the page arrives whole, under its own name",
+                  [m["file"] for m in st["models"]] == ["my-pack.gguf"] and (cfg.DATA / "ai" / "my-pack.gguf").read_bytes() == blob)
+            for data, name, why in ((b"NOPE" + b"\0" * 20, "x.gguf", "not a model"), (blob, "x.exe", "not .gguf"),
+                                    (blob[:2000], "cut.gguf", "cut short")):
+                try:
+                    localai.receive_pack(io.BytesIO(data), len(blob) if why == "cut short" else len(data), name)
+                    ok = False
+                except ValueError:
+                    ok = True
+                check(f"an AI pack is refused: {why} - and nothing half-copied is left", ok
+                      and not list((cfg.DATA / "ai").glob("*.part")) and not (cfg.DATA / "ai" / "cut.gguf").exists())
+        finally:
+            cfg.DATA = saved
+    main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    ai = (ROOT / "web" / "app" / "aisettings.js").read_text(encoding="utf-8")
+    check("Settings -> AI: Choose an AI pack… streams it to the desk", '"/api/ai/pack"' in main and "Choose an AI pack" in ai and "x.send(f)" in ai)
+    # -- MVR, a light whose GDTF isn't inside
+    check("an MVR's GDTF name gives the maker and the model",
+          mvr._spec_words("Chauvet@Intimidator Spot 260@rev2.gdtf") == ("Chauvet", "Intimidator Spot 260"))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            hit = fixlib.search("Intimidator Spot 260")
+            if hit:
+                maker = hit[0]["manufacturer"]
+                fx = (f'<Fixture name="Spot" uuid="s1"><Matrix>{{1,0,0}}{{0,1,0}}{{0,0,1}}{{0,2000,5000}}</Matrix>'
+                      f'<GDTFSpec>{maker}@{hit[0]["model"]}.gdtf</GDTFSpec><GDTFMode>x</GDTFMode>'
+                      f'<Addresses><Address break="0">1.1</Address></Addresses></Fixture>')
+                xml = ('<?xml version="1.0"?><GeneralSceneDescription verMajor="1" verMinor="6"><Scene><Layers><Layer name="L" uuid="L">'
+                       f'<ChildList>{fx}</ChildList></Layer></Layers></Scene></GeneralSceneDescription>')
+                b = io.BytesIO()
+                with zipfile.ZipFile(b, "w") as z:
+                    z.writestr("GeneralSceneDescription.xml", xml)
+                r = mvr.import_into(e, b.getvalue(), tmp / "gdtf")
+                check("an MVR light whose GDTF isn't in the file: matched from the library, and said",
+                      r["ok"] and len(e.patch) == 1 and any("from the" in n for n in r["notes"]), str(r))
+            # -- hue + saturation lights
+            src = fixlib.search("Source Four LED Series 2 Lustr")
+            if src:
+                got = fixtures.store_parsed(db, fixlib.load(src[0]["src"], src[0]["key"]), f"{src[0]['src']}:{src[0]['key']}")
+                fid = got["imported"][0]["fixture_id"]
+                h = e._head(e.act("add_heads", fixture_id=fid, qty=1, mode="HSI")["heads"][0])
+                look = lambda: next(x for x in e._looks() if x["n"] == h["head_no"])["hex"]   # noqa: E731
+                e.act("select_heads", heads=[h["head_no"]])
+                e.act("set_intensity", level=100)
+                white = look()
+                e.act("set_colour", hex="#ff0000")
+                red = look()
+                e.act("set_colour", hex="#0000ff")
+                blue = look()
+                check("a hue + saturation light: white, red and blue in the 3D (not 'unknown' grey)",
+                      (white, red, blue) == ("#ffffff", "#ff0000", "#0000ff"), f"{white} {red} {blue}")
+                e.act("clear_programmer")
+                e.act("locate")
+                check("...and Locate is white", look() == "#ffffff", look())
+                e.act("clear_programmer")
+                s = e._head(e.act("add_heads", fixture_id=fid, qty=1, mode="Studio")["heads"][0])
+                hx = next(x for x in e._looks() if x["n"] == s["head_no"])["hex"]
+                check("a white-only light with a colour temperature: warm-to-cool white, not grey", hx != "#cbd5e1" and e._cct_role(s), hx)
+            # -- OSC out
+            rx = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            rx.bind(("127.0.0.1", 0))
+            rx.settimeout(2)
+            port = rx.getsockname()[1]
+            try:
+                check("OSC out: an address that isn't one is refused", not e.act("osc_send", address="go").get("ok"))
+                check("...with nowhere set, says where to set it", "OSC out" in (e.act("osc_send", address="/go").get("error") or ""))
+                e.act("osc_out", host="127.0.0.1", port=port, feedback=True)
+                e.act("osc_send", address="/go", value=1)
+                check("a message arrives where OSC out points", osc.parse(rx.recvfrom(2048)[0]) == [("/go", [1])])
+                e.act("select_heads", heads=[e.patch[0]["head_no"]])
+                e.act("set_intensity", level=100)
+                e.act("record_cue", playback=1)
+                e.act("cue_set", playback=1, cue=1, actions=[{"action": "osc_send", "args": {"address": "/cue/5/start"}}])
+                e.act("cue_go", playback=1, cue=1)
+                got = [osc.parse(rx.recvfrom(2048)[0])[0] for _ in range(2)]
+                check("a cue's Send OSC action goes out, and GO is reported (/jarvis/go list cue)",
+                      ("/cue/5/start", []) in got and any(a == "/jarvis/go" and args[:1] == [1] for a, args in got), str(got))
+                e.act("master", level=50)
+                check("the master is reported 0-1", osc.parse(rx.recvfrom(2048)[0]) == [("/jarvis/master", [0.5])])
+                saved_show = _json.loads(e._autosave_payload())
+                check("OSC out is saved with the show", (saved_show.get("osc_out") or {}).get("port") == port, str(saved_show.get("osc_out")))
+            finally:
+                rx.close()
+        finally:
+            e.shutdown()
+    # -- the video with the timeline's music
+    node = shutil.which("node")
+    if node:
+        js = r"""
+const V = await import(process.argv[1]);
+console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickFormat((m) => true),
+  noav: V.pickFormat((m) => !m.includes(","), true) }));
+"""
+        r = subprocess.run([node, "--input-type=module", "-e", js, (ROOT / "web" / "app" / "videoplan.js").as_uri()],
+                           capture_output=True, text=True, timeout=30)
+        got = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+        check("the video picks a format with sound when the timeline has music (and picture-only when the browser can't)",
+              (got.get("av") or {}).get("audio") and not (got.get("plain") or {}).get("audio")
+              and not (got.get("noav") or {}).get("audio"), str(got))
+    vr = (ROOT / "web" / "app" / "videorec.js").read_text(encoding="utf-8")
+    check("...the timeline's music is added to the recording", "timelineAudioStream" in vr and "addTrack" in vr)

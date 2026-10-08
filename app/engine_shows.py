@@ -101,6 +101,7 @@ class ShowMixin:
             "moves": self.moves,
             "timeline": self.timeline,
             "output_target": self.dmx_target,
+            "osc_out": self._osc_out_saved(),
             "meta": {"master": self.master,
                      "show_file": self.show_file, **self._tempo_saved()},
         }
@@ -323,6 +324,7 @@ class ShowMixin:
         self.macros = self._clean_macro_list(payload.get("macros"))
         if isinstance(payload.get("output_target"), dict):
             self.dmx_target = clean_dmx_target(payload["output_target"])
+        self._osc_out_load(payload.get("osc_out"))
         for b in payload.get("quick") or []:
             try:
                 self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
@@ -407,6 +409,7 @@ class ShowMixin:
                 "moves": json.loads(json.dumps(self.moves, default=str)),
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
+                "osc_out": self._osc_out_saved(),
                 "meta": {"master": self.master, **self._tempo_saved()},
             }
             text = json.dumps(payload, indent=2)
@@ -862,6 +865,7 @@ class ShowMixin:
                 self.dmx_target = clean_dmx_target(payload["output_target"])
                 self._reflow_mounts()
                 self.patch_rev += 1
+            self._osc_out_load(payload.get("osc_out"))
         return {"file": label, "heads": len(heads), "show_file": label,
                 "stale_heads": self._stale_heads(heads, playbacks),
                 "summary": f"loaded show {label!r} ({len(heads)} heads)"}

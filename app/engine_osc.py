@@ -19,6 +19,7 @@ Part of the Engine class (see app/engine.py): a mixin.
 """
 from __future__ import annotations
 
+import re
 import socket
 import threading
 import time
@@ -34,7 +35,108 @@ def _level(v) -> int:
     return int(round(x * 100 if x <= 1.0 else x))
 
 
+# OSC out: what the desk tells another program (QLab, Resolume, a video
+# server, Companion) when feedback is on - one message per event
+FEEDBACK = {
+    "cue_go": "/jarvis/go", "cue_back": "/jarvis/back", "playback_release": "/jarvis/release",
+    "master": "/jarvis/master", "blackout": "/jarvis/blackout", "timeline_play": "/jarvis/timeline/play",
+    "timeline_stop": "/jarvis/timeline/stop", "quick_press": "/jarvis/button",
+}
+_HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
+
+
 class OscMixin:
+    # -- OSC out ----------------------------------------------------------------
+    def osc_out_public(self) -> dict:
+        st = self.__dict__.get("_osc_out") or {}
+        return {"host": st.get("host", ""), "port": st.get("port", 53000), "feedback": bool(st.get("feedback")),
+                "sent": st.get("sent", 0), "error": st.get("error")}
+
+    def _a_osc_out(self, host=None, port=None, feedback=None, **_):
+        """Where OSC goes out (QLab, Resolume, a video server...), and whether
+        the desk tells it what it does (GO, master, blackout, buttons)."""
+        st = self.__dict__.setdefault("_osc_out", {"port": 53000, "sent": 0})
+        if host is not None:
+            h = str(host).strip()
+            if h and not _HOST.match(h):
+                raise ValueError("an OSC target is an IP address or a computer's name")
+            st["host"] = h
+        if port is not None:
+            p = int(port)
+            if not 1 <= p <= 65535:
+                raise ValueError("a port is 1-65535")
+            st["port"] = p
+        if feedback is not None:
+            st["feedback"] = _truthy(feedback)
+        st["error"] = None
+        o = self.osc_out_public()
+        return {"osc_out": o, "summary": (f"OSC out to {o['host']}:{o['port']}" + (", with feedback" if o["feedback"] else ""))
+                if o["host"] else "OSC out off"}
+
+    def _a_osc_send(self, address="", value=None, host=None, port=None, **_):
+        """Send one OSC message (a cue can: start QLab's next cue, a Resolume
+        clip).  To the OSC out target, or the host / port given."""
+        addr = str(address or "").strip()
+        if not addr.startswith("/") or len(addr) > 200 or any(c in addr for c in " #*,?[]{}"):
+            raise ValueError("an OSC address starts with / (e.g. /go or /composition/layers/1/clips/2/connect)")
+        st = self.__dict__.setdefault("_osc_out", {"port": 53000, "sent": 0})
+        to_host = str(host).strip() if host else st.get("host", "")
+        to_port = int(port) if port is not None else int(st.get("port", 53000))
+        if not to_host or not _HOST.match(to_host):
+            raise ValueError("set where OSC goes first (Settings -> MIDI & OSC -> OSC out)")
+        if not 1 <= to_port <= 65535:
+            raise ValueError("a port is 1-65535")
+        args = [] if value in (None, "") else [value]
+        self._osc_out_send(to_host, to_port, addr, *args)
+        return {"summary": f"OSC {addr}" + (f" {value}" if args else "") + f" to {to_host}:{to_port}"}
+
+    def _osc_out_send(self, host: str, port: int, addr: str, *args) -> None:
+        st = self.__dict__.setdefault("_osc_out", {"port": 53000, "sent": 0})
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.sendto(osc_mod.build(addr, *args), (host, int(port)))
+            st["sent"] = st.get("sent", 0) + 1
+            st["error"] = None
+        except OSError as exc:
+            st["error"] = f"can't send to {host}:{port}: {exc}"[:200]
+            raise ValueError(st["error"]) from None
+
+    def _osc_out_saved(self) -> dict:
+        st = self.__dict__.get("_osc_out") or {}
+        return {k: st[k] for k in ("host", "port", "feedback") if k in st}
+
+    def _osc_out_load(self, raw) -> None:
+        """A show's OSC out (saved with it: each venue has its own video server)."""
+        if not isinstance(raw, dict):
+            return
+        try:
+            self._a_osc_out(host=raw.get("host", ""), port=raw.get("port", 53000), feedback=raw.get("feedback", False))
+        except (ValueError, TypeError):
+            pass
+
+    def _osc_feedback(self, action: str, params: dict, res: dict) -> None:
+        """After an action: tell the OSC out target, when feedback is on.
+        Never raises - a missing video server must not stop a GO."""
+        st = self.__dict__.get("_osc_out") or {}
+        addr = FEEDBACK.get(action)
+        if not addr or not st.get("feedback") or not st.get("host"):
+            return
+        if action in ("cue_go", "cue_back"):
+            args = [int(res.get("playback") or params.get("playback") or 1), int(res.get("cue") or 0)]
+        elif action == "playback_release":
+            args = [int(params.get("playback") or 1)]
+        elif action == "master":
+            args = [float(self.master) / 100.0]
+        elif action == "blackout":
+            args = [1 if self.blackout else 0]
+        elif action == "quick_press":
+            args = [str(params.get("id") or ""), 1]
+        else:
+            args = []
+        try:
+            self._osc_out_send(st["host"], st.get("port", 53000), addr, *args)
+        except ValueError:
+            pass
     def osc_public(self) -> dict:
         st = self.__dict__.get("_osc") or {}
         return {"on": bool(st.get("thread")), "port": st.get("port", OSC_PORT), "count": st.get("count", 0),

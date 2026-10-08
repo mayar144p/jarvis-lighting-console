@@ -54,15 +54,27 @@ export function openVideoDialog(stage) {
   });
 }
 
-async function startVideo(stage, { mode, secs, size, fmt }) {
+async function startVideo(stage, { mode, secs, size, fmt: picked }) {
+  let fmt = picked;
   const sz = SIZES.find((s) => s.id === size) || SIZES[0];
   const tl = timelineInfo();
   const total = plannedSeconds(mode, secs, tl.length);
   const stream = stage.startRecording(sz.long, 30);
   if (!stream) { toast("This browser can't record the 3D view", "bad"); return; }
+  // playing the timeline: its music goes in the video too
+  if (mode === "timeline") {
+    const { timelineAudioStream } = await import("./timeline.js");
+    const sound = timelineAudioStream();
+    const av = sound ? pickFormat((m) => MediaRecorder.isTypeSupported(m), true) : null;
+    if (sound && av && av.audio) {
+      for (const t of sound.getAudioTracks()) stream.addTrack(t);
+      fmt = av;
+    }
+  }
   let recorder;
   try {
-    recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: sz.bits });
+    recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: sz.bits,
+      ...(fmt.audio ? { audioBitsPerSecond: 192000 } : {}) });
   } catch (e) {
     stage.stopRecording();
     toast("Couldn't start recording: " + e.message, "bad", 6000);

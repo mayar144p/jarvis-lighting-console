@@ -571,6 +571,7 @@ const CUE_ACTS = [
   ["tempo_set", "Set the tempo", "bpm", "BPM"],
   ["step_fx_run", "Run a step effect", "id", "step effect id"],
   ["master", "Set the master", "level", "0-100"],
+  ["osc_send", "Send OSC", "address", "/go  or  /cue/5/start 1"],
 ];
 
 function openCueActions(n, c, done) {
@@ -578,8 +579,20 @@ function openCueActions(n, c, done) {
   const box = h("div");
   const draw = () => box.replaceChildren(...(list.length ? list.map((a, i) => {
     const def = CUE_ACTS.find((d) => d[0] === a.action) || [a.action, a.action, "", ""];
-    const inp = def[2] ? h("input", { type: "text", value: a.args[def[2]] ?? "", placeholder: def[3] }) : null;
-    if (inp) inp.addEventListener("change", () => { const v = inp.value.trim(); a.args[def[2]] = v !== "" && !isNaN(+v) ? +v : v; });
+    const osc = a.action === "osc_send";
+    const shown = osc ? [a.args.address, a.args.value].filter((x) => x !== undefined && x !== "").join(" ") : a.args[def[2]];
+    const inp = def[2] ? h("input", { type: "text", value: shown ?? "", placeholder: def[3] }) : null;
+    if (inp) inp.addEventListener("change", () => {
+      const v = inp.value.trim();
+      if (osc) {
+        // "/address value": the address, then one value (a number when it is one)
+        const [addr, ...rest] = v.split(/\s+/);
+        const val = rest.join(" ");
+        a.args = { address: addr || "", ...(val !== "" ? { value: !isNaN(+val) ? +val : val } : {}) };
+        return;
+      }
+      a.args[def[2]] = v !== "" && !isNaN(+v) ? +v : v;
+    });
     return h("div.row-btns", h("b", def[1]), inp, h("button.btn.small.ghost", { onclick: () => { list.splice(i, 1); draw(); } }, "×"));
   }) : [h("p.muted.small", "Nothing yet: add what this cue does as it plays.")]));
   const add = h("select.select", h("option", { value: "" }, "+ add…"), ...CUE_ACTS.map((d) => h("option", { value: d[0] }, d[1])));
@@ -1091,7 +1104,9 @@ export async function openSettings() {
       h("div.row-btns", h("button.btn", { onclick: () => openMidiMonitor() }, "MIDI monitor…"),
         h("span.muted.small", "see what a controller sends and what it did")),
       h("h3", "OSC"),
-      oscRow()]],
+      oscRow(),
+      h("h3", "OSC out"),
+      oscOutRow()]],
     ["library", "Fixtures", [
       h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
       h("div.row-btns", h("button.btn", {
@@ -1137,6 +1152,26 @@ function oscRow() {
     h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
     note,
     h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
+}
+
+// OSC out: where the desk's OSC goes (QLab, Resolume, a video server), and
+// whether it reports GO, the master, blackout and buttons there.  Saved
+// with the show.  A cue sends its own with Actions -> Send OSC.
+function oscOutRow() {
+  const o = (state.snap && state.snap.osc_out) || {};
+  const host = h("input", { type: "text", value: o.host || "", placeholder: "e.g. 192.168.1.20", spellcheck: "false", autocomplete: "off", style: { width: "160px" } });
+  const port = h("input", { type: "number", min: 1, max: 65535, value: o.port || 53000, style: { width: "90px" } });
+  const fb = h("input", { type: "checkbox", checked: !!o.feedback });
+  const note = h("span.muted.small", o.error || (o.host ? `${o.sent || 0} message(s) sent` : "off"));
+  const apply = () => run("osc_out", { host: host.value.trim(), port: +port.value || 53000, feedback: fb.checked }, { toast: true });
+  host.addEventListener("change", apply);
+  port.addEventListener("change", apply);
+  fb.addEventListener("change", apply);
+  return h("div",
+    h("div.row-btns", h("span", "Send to"), host, h("span", "port"), port,
+      h("button.btn.small", { title: "Sends /jarvis/hello - see it arrive in QLab / Resolume", onclick: () => run("osc_send", { address: "/jarvis/hello", value: 1 }, { toast: true }) }, "Test"), note),
+    h("label.check", fb, h("span", "Tell it what the desk does: /jarvis/go <list> <cue> · /jarvis/master 0-1 · /jarvis/blackout · /jarvis/button <id>")),
+    h("p.muted.small", "A cue sends its own: Cue list → ⋯ → Actions… → Send OSC (QLab: /go, Resolume: /composition/layers/1/clips/2/connect 1). QLab listens on 53000, Resolume on 7000."));
 }
 
 // MIDI on this device: a controller plugged into the computer the
