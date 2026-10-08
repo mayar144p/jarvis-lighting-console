@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
-                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, profiles, rdm, roomshape)
+                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from tools import import_gdtf  # noqa: E402
@@ -153,7 +153,23 @@ SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quick
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 SCREEN_MAX = 500 * 1024 * 1024
 UPLOAD_TYPE = "application/x-jarvis-upload"
-RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media"})
+RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import"})
+
+
+def read_upload(stream, length: int, limit: int) -> bytes:
+    """A raw upload's bytes, at most `limit`."""
+    if length <= 0:
+        raise ValueError("no file sent")
+    if length > limit:
+        raise ValueError(f"at most {limit // (1024 * 1024)} MB")
+    buf, left = bytearray(), length
+    while left > 0:
+        chunk = stream.read(min(1 << 20, left))
+        if not chunk:
+            raise ValueError("the upload stopped half-way")
+        buf += chunk
+        left -= len(chunk)
+    return bytes(buf)
 
 
 def _screen_dir() -> Path:
@@ -476,6 +492,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.close_connection = True            # the rest of the body is unread
                 return self._json({"error": str(exc)}, 400)
+        if route == "/api/mvr/import":
+            # a plot from Vectorworks / Capture / grandMA3...: patched and placed
+            try:
+                data = read_upload(self.rfile, int(self.headers.get("Content-Length") or 0), mvr.MAX_BYTES)
+            except ValueError as exc:
+                self.close_connection = True
+                return self._json({"error": str(exc)}, 400)
+            try:
+                res = mvr.import_into(engine_mod.ENGINE, data, config.GDTF_SHARE_CACHE,
+                                      replace=query.get("replace") in ("1", "true"))
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            return self._json(res, 200 if res.get("ok") else 400)
         try:
             body = self._read_body()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -1235,6 +1264,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "private, max-age=604800")
             # a picture, never a page: an SVG opened on its own runs nothing
             self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        if route == "/api/mvr/export":
+            eng = engine_mod.ENGINE
+            if not eng.patch:
+                return self._json({"error": "nothing patched to export"}, 400)
+            data = mvr.export_from(eng, [config.GDTF_SHARE_CACHE, config.INBOX])
+            name = re.sub(r"[^A-Za-z0-9_-]", "_", eng.show_file or "show")[:60] or "show"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{name}.mvr"')
+            self.send_header("Content-Length", str(len(data)))
             self._security_headers()
             self.end_headers()
             self.wfile.write(data)

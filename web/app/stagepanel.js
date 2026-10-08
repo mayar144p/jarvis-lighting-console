@@ -141,6 +141,11 @@ export function initStage() {
     });
   };
   toggle("#zones-btn", "zones", false);
+  toggle("#lightsonly-btn", "lightsOnly", false);
+  // arranging the venue needs the venue: Lights only goes off
+  $("#arrange-btn").addEventListener("click", () => {
+    if ($("#lightsonly-btn").classList.contains("on")) $("#lightsonly-btn").click();
+  });
   const dance = pref("dance", "1") === "1";
   // the crowd is off until asked for: it hid the rig (the choice is remembered)
   stage.setOptions({ people: pref("people", "0") === "1", dance, shadows: pref("shadows", "1") === "1" });

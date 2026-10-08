@@ -81,6 +81,22 @@ const ICONS = {
   stop: "M6 6h12v12H6z",
   up: "M12 19V5M5 12l7-7 7 7",
   down: "M12 5v14M19 12l-7 7-7-7",
+  play: "M7 4v16l13-8z",
+  pause: "M7 4h3v16H7zM14 4h3v16h-3z",
+  wave: "M2 12c2.5-5 5-5 7.5 0s5 5 7.5 0 3.5-3 5-2",
+  circle: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+  beam: "M9 3h6l-1 4h-4zM10 7 5 21M14 7l5 14M12 7v14",
+  smoke: "M4 15a4 4 0 0 1 4-4 5 5 0 0 1 9.6 1.4A3.5 3.5 0 0 1 17 19H7a3 3 0 0 1-3-4zM8 7c0-2 2-2 2-4M13 7c0-2 2-2 2-4",
+  laser: "M3 12h4M7 9v6l4-3zM11 12l10-7M11 12h10M11 12l10 7",
+  bulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z",
+  palette: "M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-1.3-1.2-1.6-1.2-2.8 0-1 .8-1.6 1.8-1.6H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11.5h.01M10 7.5h.01M15 7.5h.01",
+  target: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM12 11.5v1",
+  crown: "M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z",
+  diamond: "M6 3h12l4 6-10 12L2 9zM2 9h20M9 3l3 18M15 3l-3 18",
+  zap: "M4 14 14 2l-2 8h8L10 22l2-8z",
+  rocket: "M5 19c1-3 3-5 6-6M14.5 4.5C18 3 21 3 21 3s0 3-1.5 6.5L13 16l-5-5zM9 15l-3 6 3-1 1-3M8 11l-5 1 4-4h3",
+  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
+  party: "M3 21l5-14 9 9zM14 3l1 2M19 5l-2 2M21 10l-2-.5M11 4.5c1 1 1 2.5 0 3.5M16.5 9c1-1 2.5-1 3.5 0",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
 function icon(name) {
@@ -176,34 +192,63 @@ async function renamePage(p) {
   if (name !== null) run("quick_page", { page: p, name });
 }
 
+// A page's grid (Edit -> Layout): buttons across, rows, row height.
+function layoutOf(p) {
+  const q = quick();
+  return { cols: 8, rows: 3, height: "m", ...(q.layout_default || {}), ...((q.layout || {})[p] || {}) };
+}
+const pageSlots = (p) => { const l = layoutOf(p); return l.cols * l.rows; };
+// a tile's size in grid cells: w x h (old shows: wide / tall / big)
+const SIZE_WH = { wide: [2, 1], tall: [1, 2], big: [2, 2] };
+const spanOf = (b) => (b.w || b.h ? [b.w || 1, b.h || 1] : SIZE_WH[b.size] || [1, 1]);
+
 // The slots a big tile takes besides its own, or null when one of them
-// is used (then it shows at normal size).
-const COLS = 8;
-function tileFit(slot, size, total, used) {
-  const col = (slot - 1) % COLS;
-  const w = (size === "wide" || size === "big") && col < COLS - 1 ? 2 : 1;
-  const t = (size === "tall" || size === "big") && slot + COLS <= total ? 2 : 1;
+// is used (then it shows at normal size).  It never runs past the row's
+// end or the page's last row.
+function tileFit(slot, [wantW, wantH], cols, total, used) {
+  const col = (slot - 1) % cols;
+  const w = Math.max(1, Math.min(wantW, cols - col));
+  let t = 1;
+  while (t < wantH && slot + t * cols <= total) t++;
   const take = [];
-  for (let r = 0; r < t; r++) for (let c = 0; c < w; c++) if (r || c) take.push(slot + r * COLS + c);
+  for (let r = 0; r < t; r++) for (let c = 0; c < w; c++) if (r || c) take.push(slot + r * cols + c);
   return take.some(used) ? null : { w, t, take };
+}
+
+// How a tile looks, from the button: shape, fill, text size, details,
+// blinking while on, icon only (the classes are in app.css)
+function lookClasses(b) {
+  return [b.shape && b.shape !== "rounded" ? "qs-" + b.shape : "", b.fill && b.fill !== "outline" ? "qf-" + b.fill : "",
+    b.text && b.text !== "m" ? "qt-" + b.text : "", b.plain ? "qplain" : "", b.blink ? "qblink" : "",
+    b.icon_only && b.icon ? "qicononly" : ""].filter(Boolean);
+}
+function tileContent(b) {
+  const name = b.icon_only && b.icon ? null : h("b", b.label);
+  return [h("span.qline", b.icon ? icon(b.icon) : null, name),
+    b.plain || (b.icon_only && b.icon) ? null
+      : h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`)];
 }
 
 function render(force = false) {
   const box = $("#qb-grid");
   if (!box) return;
   const q = quick();
-  const key = JSON.stringify([q.buttons, q.names, page, editing, groups().map((g) => [g.n, g.name]),
+  const key = JSON.stringify([q.buttons, q.names, q.layout, page, editing, groups().map((g) => [g.n, g.name]),
     autoGroups().map((g) => [g.key, g.name])]);
   if (!force && key === lastKey) return;        // only redraw on a change: a click needs the same element
   lastKey = key;
   const active = activeIds();
   const byslot = new Map(q.buttons.filter((b) => b.page === page).map((b) => [b.slot, b]));
   const cells = [];
+  // this page's grid: buttons past its last row are kept, not shown
+  const lay = layoutOf(page), COLS = lay.cols;
+  const total = COLS * lay.rows, covered = new Set(), span = new Map();
+  for (const [slot] of byslot) if (slot > total) byslot.delete(slot);
   // big tiles take the empty slots next to / under them
-  const total = q.slots || 24, covered = new Set(), span = new Map();
   for (const [slot, b] of [...byslot].sort((a, c) => a[0] - c[0])) {
-    if (!b.size || covered.has(slot)) continue;
-    const fit = tileFit(slot, b.size, total, (x) => byslot.has(x) || covered.has(x));
+    const want = spanOf(b);
+    if ((want[0] === 1 && want[1] === 1) || covered.has(slot)) continue;
+    const fit = tileFit(slot, want, COLS, total, (x) => byslot.has(x) || covered.has(x));
     if (!fit) continue;                         // no room: stays normal size
     fit.take.forEach((x) => covered.add(x));
     span.set(slot, [fit.w, fit.t]);
@@ -215,9 +260,18 @@ function render(force = false) {
     let last = 0;
     for (const [slot] of byslot) last = Math.max(last, Math.floor((slot - 1) / COLS) + (span.get(slot) || [1, 1])[1]);
     // (never fewer than three rows: two buttons don't fill the screen)
-    shown = Math.min(total, Math.max(3, last) * COLS);
+    shown = Math.min(total, Math.max(Math.min(3, lay.rows), last) * COLS);
   }
   box.style.setProperty("--qb-rows", String(Math.ceil(shown / COLS)));
+  box.style.setProperty("--qb-cols", String(COLS));
+  box.dataset.height = lay.height;
+  const place = (el, slot) => {
+    const sp = span.get(slot);
+    if (!sp) return;
+    el.style.gridColumn = `${(slot - 1) % COLS + 1} / span ${sp[0]}`;
+    el.style.gridRow = `${Math.floor((slot - 1) / COLS) + 1} / span ${sp[1]}`;
+    el.classList.add(sp[1] > 1 ? "qbig" : "qwide");
+  };
   for (let slot = 1; slot <= shown; slot++) {
     if (covered.has(slot)) continue;
     const b = byslot.get(slot);
@@ -247,33 +301,26 @@ function render(force = false) {
     if (CONTROL.has(b.kind) && !editing) {
       const el = controlTile(b);
       el.style.setProperty("--tint", tint);
-      const sp = span.get(slot);
-      if (sp) {
-        el.style.gridColumn = `${(slot - 1) % COLS + 1} / span ${sp[0]}`;
-        el.style.gridRow = `${Math.floor((slot - 1) / COLS) + 1} / span ${sp[1]}`;
-        el.classList.add(sp[1] > 1 ? "qbig" : "qwide");
-      }
+      place(el, slot);
       cells.push(el);
       continue;
     }
     const el = h("button.qbtn" + (b.kind === "estop" ? ".qestop" : "") + (active.has(b.id) ? ".on" : ""), {
-      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy)" : ""}`,
+      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy, right-click: copy / paste the look)" : ""}`,
+      "aria-label": b.label,
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
-    }, h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label)), h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`),
+    }, ...tileContent(b),
     b.keeps ? h("small.qkeeps", { title: "What this button holds: " + b.keeps }, b.keeps) : null,
     b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
     PACED.has(b.kind) ? h("span.qrate" + (b.rate || b.free ? "" : ".one"), { title: "Speed (tap to change)" },
       (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
     el.style.setProperty("--tint", tint);
-    const sp = span.get(slot);
-    if (sp) {
-      el.style.gridColumn = `${(slot - 1) % COLS + 1} / span ${sp[0]}`;
-      el.style.gridRow = `${Math.floor((slot - 1) / COLS) + 1} / span ${sp[1]}`;
-      el.classList.add(sp[1] > 1 ? "qbig" : "qwide");
-    }
+    el.classList.add(...lookClasses(b));
+    place(el, slot);
     if (editing) {
       el.addEventListener("click", () => editButton(slot, b));
+      el.addEventListener("contextmenu", (e) => { e.preventDefault(); lookMenu(el, b); });
       el.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", JSON.stringify({ page, slot })));
       drop(el);
     } else {
@@ -321,6 +368,7 @@ function render(force = false) {
   $("#qb-edit").classList.toggle("on", editing);
   $("#qb-edit").textContent = editing ? "Done" : "Edit";
   $("#qb-edit").hidden = locked;
+  $("#qb-layout").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
   $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
   updateControls();
@@ -458,7 +506,9 @@ function fromButton(b) {
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
     fxList: b && b.fx_list ? b.fx_list.map((f) => f.name) : [], fxListParams: b && b.fx_list ? b.fx_list : [],
     values: b ? b.values || null : null, attrs: b ? b.attrs || null : null, recapture: !b,
-    move: b ? b.move || "" : "", rate: b && b.rate ? b.rate : 1, free: !!(b && b.free), size: b ? b.size || "" : "", icon: b ? b.icon || "" : "",
+    move: b ? b.move || "" : "", rate: b && b.rate ? b.rate : 1, free: !!(b && b.free), icon: b ? b.icon || "" : "",
+    w: b ? spanOf(b)[0] : 1, h: b ? spanOf(b)[1] : 1, shape: (b && b.shape) || "rounded", fill: (b && b.fill) || "outline",
+    text: (b && b.text) || "m", plain: !!(b && b.plain), blink: !!(b && b.blink), iconOnly: !!(b && b.icon_only),
     midi: b && b.midi !== undefined ? b.midi : "",
     fadeIn: b && b.fade_in ? b.fade_in : 0, fadeOut: b && b.fade_out ? b.fade_out : 0, key: b ? b.key || "" : "",
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
@@ -480,7 +530,13 @@ function toButton(s) {
   const label = s.label.trim() || (DOES.find(([k]) => k === d) || [0, "Button"])[1];
   const b = { kind, label, mode: ONE_SHOT.has(d) ? "tap" : s.mode };
   if (s.tint) b.tint = s.tint;
-  if (s.size) b.size = s.size;
+  if (s.w !== 1 || s.h !== 1) { b.w = s.w; b.h = s.h; }
+  if (s.shape !== "rounded") b.shape = s.shape;
+  if (s.fill !== "outline") b.fill = s.fill;
+  if (s.text !== "m") b.text = s.text;
+  if (s.plain) b.plain = true;
+  if (s.blink) b.blink = true;
+  if (s.iconOnly && s.icon) b.icon_only = true;
   if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
   if (s.quant !== "" && !NO_QUANT.has(kind)) b.quant = +s.quant;
@@ -520,6 +576,96 @@ function toButton(s) {
   return b;
 }
 
+// The Look part of the editor: a live preview of the tile, then its
+// colour, size, shape, fill, text, details, blinking and icon.
+const SHAPES = [["rounded", "Rounded"], ["square", "Square"], ["pill", "Pill"], ["circle", "Circle"]];
+const FILLS = [["outline", "Outline", "Dark with a coloured edge; fills when on"], ["solid", "Solid", "Always filled with its colour"],
+  ["glow", "Glow", "A soft glow in its colour all the time"]];
+const TEXTS = [["s", "S"], ["m", "M"], ["l", "L"], ["xl", "XL"]];
+function lookSection(s, slot, btn, draw) {
+  const lay = layoutOf(page);
+  const b = { ...toButton(s), id: "preview" };
+  const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
+  const prev = (on) => {
+    const el = h("div.qbtn" + (on ? ".on" : ""), { "aria-hidden": "true" }, ...tileContent(b));
+    el.style.setProperty("--tint", tint);
+    el.classList.add(...lookClasses(b), ...(s.h > 1 ? ["qbig"] : s.w > 1 ? ["qwide"] : []));
+    el.style.width = `${Math.min(s.w, 3) * 92 + (Math.min(s.w, 3) - 1) * 6}px`;
+    el.style.height = `${s.h * ({ s: 44, m: 56, l: 76, xl: 100 }[lay.height] || 56) + (s.h - 1) * 6}px`;
+    return el;
+  };
+  const used = (x) => quick().buttons.some((o) => o.page === page && o.slot === x && !(btn && o.id === btn.id));
+  const fit = tileFit(slot, [s.w, s.h], lay.cols, lay.cols * lay.rows, used);
+  const warn = (s.w > 1 || s.h > 1) && (!fit || fit.w < s.w || fit.t < s.h)
+    ? h("span.qe-note.warn", !fit ? "The space it needs is taken: it shows at normal size until it is free."
+      : "It reaches the edge of the page: it shows as big as fits.")
+    : null;
+  const toggle = (k, label, title) => h("button.chip" + (s[k] ? ".on" : ""), { type: "button", title,
+    "aria-pressed": String(!!s[k]), onclick: () => { s[k] = !s[k]; draw(); } }, label);
+  return h("div.qe-look",
+    h("div.qe-preview", h("div.qe-prev-pair", prev(false), h("span.muted.small", "off")),
+      h("div.qe-prev-pair", prev(true), h("span.muted.small", "on"))),
+    row("Colour", swatches(TINTS, s.tint, (c) => { s.tint = c; draw(); }, { none: "Auto" })),
+    row("Size", h("div.qe-body",
+      h("div.chip-row", h("span.qe-mini", "Across"), chips([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.w, (v) => { s.w = v; draw(); })),
+      h("div.chip-row", h("span.qe-mini", "Down"), chips([[1, "1"], [2, "2"], [3, "3"]], s.h, (v) => { s.h = v; draw(); })),
+      warn)),
+    row("Shape", chips(SHAPES, s.shape, (v) => { s.shape = v; draw(); })),
+    row("Fill", chips(FILLS, s.fill, (v) => { s.fill = v; draw(); })),
+    row("Text", h("div.chip-row", chips(TEXTS, s.text, (v) => { s.text = v; draw(); }),
+      toggle("plain", "Name only", "Hide the small line under the name (what it does, to which lights)"),
+      toggle("blink", "Blink while on", "Blinks slowly while it is on, so it can't be missed"))),
+    row("Icon", h("div.qe-body",
+      h("div.qe-icons",
+        h("button.qe-icon" + (!s.icon ? ".on" : ""), { type: "button", title: "No icon", onclick: () => { s.icon = ""; s.iconOnly = false; draw(); } }, "None"),
+        ...Object.keys(ICONS).map((k) => h("button.qe-icon" + (s.icon === k ? ".on" : ""),
+          { type: "button", title: k, "aria-label": k, onclick: () => { s.icon = k; draw(); } }, icon(k)))),
+      s.icon ? h("div.chip-row", toggle("iconOnly", "Icon only", "Show the icon big, without the name (the name shows on hover)")) : null)));
+}
+
+// Edit: right-click a button to copy its look onto others
+let lookClip = null;
+const lookOf = (b) => Object.fromEntries(["tint", "shape", "fill", "text", "plain", "blink", "icon_only", "icon", "w", "h", "size"]
+  .map((k) => [k, b[k] ?? null]));
+function lookMenu(el, b) {
+  menu(el, [
+    { label: "Copy look", run: () => { lookClip = lookOf(b); toast(`Look of “${b.label}” copied`, "ok"); } },
+    { label: "Paste look", disabled: !lookClip, run: () => run("quick_style", { ids: [b.id], style: lookClip }) },
+    { label: "Paste look on every button of this page", disabled: !lookClip,
+      run: () => run("quick_style", { page, style: lookClip }) },
+  ]);
+}
+
+// Edit -> Layout: this page's grid
+function editLayout() {
+  const cur = layoutOf(page);
+  const s = { ...cur, all: false };
+  const body = h("div.qe");
+  const q = quick();
+  const draw = () => {
+    const maxRows = Math.floor((q.slots || 48) / s.cols);
+    if (s.rows > maxRows) s.rows = maxRows;
+    const past = q.buttons.filter((b) => b.page === page && b.slot > s.cols * s.rows).length;
+    body.replaceChildren(
+      row("Buttons across", chips([4, 5, 6, 8, 10, 12].map((n) => [n, String(n)]), s.cols, (v) => { s.cols = v; draw(); })),
+      row("Rows", chips(Array.from({ length: Math.min(8, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
+      row("Row height", chips([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"]], s.height, (v) => { s.height = v; draw(); })),
+      row("", h("label.check.small", h("input", { type: "checkbox", checked: s.all, onchange: (e) => { s.all = e.target.checked; } }), " Every page")),
+      h("div.qe-note", `${s.cols * s.rows} buttons on the page. Fewer across = bigger buttons. Buttons keep their numbers and flow into the new grid in order.`),
+      past ? h("div.qe-note.warn", `${past} button(s) past the last row are kept but not shown - add a row to see them.`) : null);
+  };
+  draw();
+  const close = modal({
+    title: `Layout of page ${(q.names || {})[page] || page}`,
+    body,
+    foot: [h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("quick_layout", { page, cols: s.cols, rows: s.rows, height: s.height, all_pages: s.all });
+        if (r.ok) close();
+      } }, "Save")],
+  });
+}
+
 function editButton(slot, btn) {
   const s = fromButton(btn);
   const body = h("div.qe");
@@ -540,19 +686,8 @@ function editButton(slot, btn) {
     };
     const kids = [
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
-        oninput: (e) => { s.label = e.target.value; } })),
-      row("Tile colour", swatches(TINTS, s.tint, (c) => { s.tint = c; draw(); }, { none: "Auto" })),
-      row("Tile size", h("div.chip-row", chips([["", "Normal"], ["wide", "Wide"], ["tall", "Tall"], ["big", "Big"]], s.size,
-        (v) => { s.size = v; draw(); }),
-        s.size && !tileFit(slot, s.size, quick().slots || 24,
-          (x) => quick().buttons.some((o) => o.page === page && o.slot === x && !(btn && o.id === btn.id)))
-          ? h("span.qe-note.warn", s.size === "tall" ? "The space below is taken: it will show at normal size until it is free."
-            : "The space next to it is taken: it will show at normal size until it is free.")
-          : null)),
-      row("Icon", h("div.qe-icons",
-        h("button.qe-icon" + (!s.icon ? ".on" : ""), { title: "No icon", onclick: () => { s.icon = ""; draw(); } }, "None"),
-        ...Object.keys(ICONS).map((k) => h("button.qe-icon" + (s.icon === k ? ".on" : ""),
-          { title: k, onclick: () => { s.icon = k; draw(); } }, icon(k))))),
+        oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
+      lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
     if (!NO_TARGET.has(d)) {
@@ -726,8 +861,8 @@ function editButton(slot, btn) {
       btn ? h("button.btn", { title: "Copy this button to the next empty slot", onclick: async () => {
         const taken = new Set(quick().buttons.filter((b) => b.page === page).map((b) => b.slot));
         let to = 1;
-        while (taken.has(to) && to <= (quick().slots || 24)) to++;
-        if (to > (quick().slots || 24)) { toast("This page is full", "bad"); return; }
+        while (taken.has(to) && to <= pageSlots(page)) to++;
+        if (to > pageSlots(page)) { toast("This page is full", "bad"); return; }
         await run("quick_move", { page, slot, to_slot: to, copy: true });
         close();
       } }, "Duplicate") : null,
@@ -831,6 +966,7 @@ export function initQuickButtons() {
     }
   }, true);
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
+  $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {

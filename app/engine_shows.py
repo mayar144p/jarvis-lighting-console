@@ -90,6 +90,8 @@ class ShowMixin:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "quick_layout": self.__dict__.get("quick_layout") or {},
             "sound": self._sound_cfg(),
             "step_fx": self._steps(),
             "parked": self.__dict__.get("parked") or {},
@@ -312,6 +314,9 @@ class ShowMixin:
                 self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
             except (KeyError, TypeError, ValueError):
                 continue
+        if isinstance(payload.get("quick_names"), dict):
+            self.quick_names = {str(k): str(v)[:16] for k, v in payload["quick_names"].items()}
+        self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
         venue = payload.get("venue")
         if isinstance(venue, dict):
             try:
@@ -339,6 +344,7 @@ class ShowMixin:
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                "quick_layout": json.loads(json.dumps(self.__dict__.get("quick_layout") or {})),
                 "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
                 "media": json.loads(json.dumps(self._media(), default=str)),
                 "shapes": json.loads(json.dumps(self._shapes(), default=str)),
@@ -704,6 +710,7 @@ class ShowMixin:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
+            self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
             try:
                 qq = float(payload.get("quick_quant") or 0.0)
             except (TypeError, ValueError):

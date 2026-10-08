@@ -609,6 +609,8 @@ export class Stage {
     Object.assign(this.options, o || {});
     if (this.people) this.people.visible = !!this.options.people;
     if (this.built && this.built.zones) this.built.zones.visible = !!this.options.zones;
+    // Lights only: the room, rigging, stage, objects and crowd hidden - the lights and their beams stay
+    this.venueGroup.visible = !this.options.lightsOnly;
     if (before.house !== this.options.house) this._applyHouse();
     if (before.quality !== this.options.quality) {
       const dpr = window.devicePixelRatio || 1;

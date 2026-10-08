@@ -651,7 +651,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "attach_heads", "place_many",
     "quick_set", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser",
+    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export",

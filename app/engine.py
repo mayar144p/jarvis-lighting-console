@@ -252,6 +252,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
             "venue": dict(self.venue) if isinstance(self.venue, dict) else self.venue,
             "quick": [dict(b) for b in self.quick],
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+            "quick_layout": copy.deepcopy(self.__dict__.get("quick_layout") or {}),
             "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
             "media": copy.deepcopy(self._media()),
             "shapes": copy.deepcopy(self._shapes()),
@@ -299,6 +300,7 @@ class Engine(PatchMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMi
         self.venue = state.get("venue") or venue_mod.empty()
         self.quick = [dict(b) for b in (state.get("quick") or [])]
         self.quick_names = dict(state.get("quick_names") or {})
+        self.quick_layout = copy.deepcopy(state.get("quick_layout") or {})
         self.quick_quant = float(state.get("quick_quant") or 0.0)
         if "media" in state:
             self.media = copy.deepcopy(state["media"])

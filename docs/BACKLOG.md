@@ -371,7 +371,15 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    band, theatre, corporate: a ready rig, groups, palettes and buttons (a
    new show starts 80% done); a tour and a demo show so a new user sees
    lights moving within 30 seconds.
-3. **MVR / GDTF import and export** - a plot from Vectorworks or Capture
+3. **(DONE 2026-10-08) MVR / GDTF import and export** (app/mvr.py, Show ▾).
+   In: GDTF from inside the file (to the GDTF Share folder, so 3D bodies
+   work), address, mode, place, hang / stand, nested groups; lights in a
+   row -> a truss; missing GDTF / mode said; one undo; "add" or "start
+   from the plot".  Out: patch + trusses + our GDTF files.  Not yet: an
+   MVR's own truss / scene objects as 3D models (only lights in a row make
+   trusses), a light whose GDTF isn't in the file matched from our library.
+   Also asked and done: **Lights only** in the 3D view (hides the venue).
+   Was: a plot from Vectorworks or Capture
    comes in with every light patched and placed; ours goes back out.
 4. **DJ sync** - lock to Pioneer DJ decks / rekordbox (Pro DJ Link) for
    beat, bar and phrase, so the lights hit the drops without tapping.
@@ -1162,6 +1170,15 @@ numbers on hover.
   earlier; the button editor's cut-off dropdowns are gone with item 9.)
 
 ## 9. Buttons as customisable as possible (DONE)
+
+Added 2026-10-08 (asked: shape, size "and other stuff"): any tile size
+1-4 x 1-3 (`w` / `h`; old "wide" / "tall" / "big" still read and are
+still written for older desks), shape, fill, text size, name only, blink
+while on (off under reduced motion), icon only, 32 icons, a dot on a lit
+tile (not colour alone), a page's own grid (`quick_layout`: 4-12 across,
+rows, row height; up to 48 a page), Copy / Paste look (`quick_style`), a
+live preview in the editor.  Fixed on the way: page names were lost after
+a restart (the autosave didn't keep them).
 
 Done: every option in the button editor is a tap.
 - **Lights:** all, the selection, a group or a type, or only the odd /

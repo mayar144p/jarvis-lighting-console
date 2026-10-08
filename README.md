@@ -143,6 +143,8 @@ outdoor stage) and resizes the room.
   the truss moves its lights.
 * **Crowd ▾**: show or hide the crowd, simple or varied figures, how packed
   it is, dancing or still. People stand in the zones and are lit by the rig.
+* **Lights only**: hides the room, truss, stage, objects and crowd, so only
+  the lights and their beams are left (**Arrange** turns it off).
 * **Views ▾**: front, sides, back, plan and whole room. There's also eye level
   from the crowd, the DJ's view, and **through the selected light** along its
   beam, the way you would check a focus. Save any view by name.
@@ -200,8 +202,8 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
-**Buttons** in the bottom panel is a grid of instant buttons, 4 pages of 24,
-like a MagicQ execute window. Each one is **hold** (on while pressed),
+**Buttons** in the bottom panel is a grid of instant buttons on up to 8
+pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
 **latch** (press on, press off) or **tap**:
 
 | kind | does |
@@ -218,6 +220,17 @@ Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
 a fixed set of lights. **Suggest buttons for this rig** fills a page from what
 is patched. Blackout and the grand master still win over a flash. Pressing a
 button is never an undo step; setting one up is. Buttons save with the show.
+
+**How they look** (Edit -> a button -> *Look*, with a live preview of the
+tile off and on): its colour; its size, 1-4 buttons across and 1-3 down;
+its shape (rounded, square, pill, circle); its fill (outline, solid, glow);
+text size S-XL; *Name only* (no small line under it); *Blink while on*
+(slow, and still when the computer asks for less motion); one of 32 icons,
+or the icon alone. A lit button shows a dot as well as its colour.
+**Layout** (in Edit) sets the page's grid: 4-12 buttons across (fewer =
+bigger), the rows, and the row height, for one page or every page.
+Right-click a button in Edit to **Copy look** and **Paste look** onto
+another button or the whole page; what the buttons do stays the same.
 
 ### Timeline
 
@@ -471,6 +484,21 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
 * Every API write must be same-origin `application/json`, and on a loopback
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
+
+## MVR plots (Vectorworks, Capture, grandMA3…)
+
+**Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is
+installed from its own GDTF inside the file, with its 3D body when the file
+has one. It is patched at its universe and address, in its mode, and placed
+where the plot has it, hanging or standing. Lights hung in a row get a truss
+they are mounted on. With a show already patched you choose **Add to this
+show** or **Start from the plot** (the old lights and trusses go, and the room
+is sized to the plot). What couldn't come in is listed: a GDTF missing from
+the file, or a mode the file doesn't have (the light gets its first mode).
+The whole import is one Ctrl+Z.
+
+**Show ▾ -> Export as MVR** saves the patch and the trusses as an `.mvr`,
+with the GDTF files the desk has for those lights, for other programs.
 
 ## Fixture library
 
