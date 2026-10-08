@@ -546,7 +546,15 @@ class FxLayerMixin:
             if gate:
                 self._set_programmer(n, gate, self._open_value(h, gate))
             colour = [r for r in ("red", "green", "blue", "wheel", "cyan") if r in h["map"]]
+            reps = merge._repeated(h["map"])
+            strobe = None
+            if gate and ((self.head_ranges(h).get(gate) or {}).get("strobe_ranges") or gate == "strobe"):
+                strobe = self.strobe_steps(h, gate)
             return {"head": n, "model": h.get("model"), "gate": gate,
+                    # the light's own modes, to match the one set on the light
+                    "modes": self._model_modes(h), "fixture_id": self._fixture_id_of(h),
+                    "heads": max([reps.get("tilt", 1), reps.get("pan", 1), reps.get("red", 1), 1]),
+                    "strobe": strobe,
                     "open": self._open_value(h, gate) if gate else None,
                     "open_known": self._open_known(h, gate) if gate else True,
                     "candidates": self._open_candidates(h, gate) if gate else [],
@@ -631,14 +639,50 @@ class FxLayerMixin:
             for role, v in self._colour_values(h, str(hex or "#ffffff")).items():
                 self._set_programmer(n, role, v)
             return {"summary": f"colour {hex}"}
-        raise ValueError("step is start, open, channel, raw, keep, pan, tilt, colour or end")
+        if step == "strobe":
+            # fast / slow / off, from the light's own strobe range
+            if not gate:
+                raise ValueError("this light has no strobe")
+            steps = self.strobe_steps(h, gate)
+            speed = str(value or "off")
+            if speed not in steps:
+                raise ValueError("strobe is fast, medium, slow or off")
+            self._set_programmer(n, gate, steps[speed])
+            return {"summary": f"strobe {speed} ({gate} {steps[speed]})"}
+        raise ValueError("step is start, open, channel, raw, keep, pan, tilt, colour, strobe or end")
 
-    def _a_light_tested(self, head=None, light=True, move=True, colour=True, **_):
+    def _model_modes(self, h: dict) -> list[dict]:
+        """[{name, channels}] for every mode of this light's model."""
+        try:
+            with fixtures.db(self.db_path) as conn:
+                fid = self._fixture_id_of(h, conn)
+                if fid is None:
+                    return []
+                rows = conn.execute("SELECT name, channel_count FROM modes WHERE fixture_id = ? ORDER BY id",
+                                    (fid,)).fetchall()
+            return [{"name": r["name"], "channels": r["channel_count"]} for r in rows]
+        except Exception:                  # noqa: BLE001 - a nicety: the test still runs
+            return []
+
+    def _fixture_id_of(self, h: dict, conn=None):
+        def look(c):
+            r = c.execute("SELECT id FROM fixtures WHERE manufacturer = ? AND model = ? ORDER BY id DESC LIMIT 1",
+                          (h.get("manufacturer"), h.get("model"))).fetchone()
+            return r["id"] if r else None
+        try:
+            if conn is not None:
+                return look(conn)
+            with fixtures.db(self.db_path) as c:
+                return look(c)
+        except Exception:                  # noqa: BLE001
+            return None
+
+    def _a_light_tested(self, head=None, light=True, move=True, colour=True, strobe=True, **_):
         """Record the result: a model that passed is not asked about again."""
         if head is None:
             raise ValueError("head is required")
         h = self._head(head)
-        ok = _truthy(light) and _truthy(move) and _truthy(colour)
+        ok = _truthy(light) and _truthy(move) and _truthy(colour) and _truthy(strobe)
         fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
                               "_model", "tested", bool(ok))
         fixtures.invalidate_cache()
@@ -650,6 +694,9 @@ class FxLayerMixin:
             advice.append(f"Moved or coloured wrongly: the light's channel mode must match the desk's "
                           f"({h.get('mode')}, {len(h['map'])} channels) - set it on the light's "
                           f"menu, or re-add it in the mode the light shows.")
+        if not _truthy(strobe) and _truthy(move) and _truthy(colour):
+            advice.append("The strobe was wrong but the rest was right: its file may describe the strobe "
+                          "wrongly - report it (right-click the light -> Report a problem) so it's fixed for everyone.")
         return {"tested": ok, "advice": advice,
                 "summary": f"{h.get('model')}: " + ("passed the test" if ok else "needs attention")}
 

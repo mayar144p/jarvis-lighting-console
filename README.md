@@ -613,8 +613,16 @@ machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 **Test this light.** A fixture file can be wrong in ways Jarvis can't see: a
 shutter whose open value it never states, or a channel order that doesn't match
 the light's mode. If a new light misbehaves, run the 30-second test: right-click
-it → **Test this light…** (also on the Level tab's warning). Go live first, then:
+it → **Test this light…** (also on the Level tab's warning, and offered when you
+add a model the desk hasn't seen pass the test). Go live first, then:
 
+0. Jarvis asks whether the light's own display (or DIP switches) shows the mode
+   and address the desk expects. Most "some heads don't move / wrong colours"
+   is a light set to another mode. **It shows another mode** lists the model's
+   modes: pick the one on the display and every light of that model switches to
+   it, keeping its number, place, groups and cues. If one has to move to a new
+   address because the mode is bigger, Jarvis says which, so you can set it on
+   the light.
 1. Jarvis lights it at full, white and centred, and asks whether the real light
    is on.
 2. If it's dark, Jarvis tries the shutter's likely open values one at a time. Press
@@ -625,8 +633,9 @@ it → **Test this light…** (also on the Level tab's warning). Go live first, 
    them until the real light comes on, then press **It's on - keep these**. That
    works even when the fixture file is wrong. A channel the file never named is
    then held at that value for the model.
-3. It then moves pan and tilt, and shows red, green and blue, asking each time
-   whether the real light did the same. A wrong answer usually means the light's
+3. It then moves pan and tilt, shows red, green and blue, and strobes fast then
+   slow, asking each time whether the real light did the same (on a multi-head
+   light: all of its heads). A wrong answer usually means the light's
    DMX mode doesn't match the one you added, and Jarvis tells you which mode to set.
 
 What works is saved for that model, so every head of it lights on **Full** from

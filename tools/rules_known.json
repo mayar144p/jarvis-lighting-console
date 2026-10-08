@@ -1,0 +1,26 @@
+{
+ "lit_shows_colour": [
+  "ofl:boomtonedj/crazy-spot-30.json",
+  "ofl:dts/xr4-spot.json",
+  "qlc:American_DJ/American-DJ-Double-Phase.qxf",
+  "qlc:American_DJ/American-DJ-Jellydome.qxf",
+  "qlc:American_DJ/American-DJ-Quad-Phase.qxf",
+  "qlc:American_DJ/American-DJ-Spherion-Tri-LED.qxf",
+  "qlc:DTS/DTS-Jack.qxf",
+  "qlc:DTS/DTS-XR7-Spot.qxf",
+  "qlc:HQ_Power/HQ-Power-Power-Space-250.qxf",
+  "qlc:High_End_Systems/High-End-Systems-Technobeam.qxf",
+  "qlc:JB-Lighting/JB-Lighting-Varyscan-4-EV.qxf",
+  "qlc:JB_Systems/JB-Systems-Super-Solar-RGBW.qxf",
+  "qlc:Martin/Martin-Destroyer.qxf",
+  "qlc:Martin/Martin-Punisher.qxf",
+  "qlc:Martin/Martin-RoboColor-III.qxf",
+  "qlc:Pro-Lights/Pro-Lights-Miniruby.qxf"
+ ],
+ "every_head_colours": [
+  "ofl:cameo/multi-fx-bar.json",
+  "ofl:chauvet-dj/gigbar-2.json",
+  "ofl:eurolite/led-b-40.json",
+  "qlc:Chauvet/Chauvet-GigBar-IRC.qxf"
+ ]
+}
