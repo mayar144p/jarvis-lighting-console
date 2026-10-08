@@ -184,6 +184,20 @@ def issue_url(head: dict | None, what: str, areas: list[str], zip_name: str) -> 
     return f"https://github.com/{REPO}/issues/new?" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
 
 
+def request_url(maker: str, model: str, mode: str = "", link: str = "", note: str = "") -> str:
+    """A 'Request a fixture' issue, filled in: a light no library has yet.
+    Nothing is saved or sent from here - the operator's browser opens the
+    form and they press Submit (a GitHub account is needed for that)."""
+    maker, model = " ".join(str(maker or "").split())[:80], " ".join(str(model or "").split())[:120]
+    q = {"template": "fixture-request.yml",
+         "title": f"[Fixture] {maker} {model}".strip(),
+         "labels": ",".join(["fixture-request"] + [f"{k}:{v}" for k, v in (("brand", maker), ("model", model)) if v]),
+         "light": f"{maker} {model}".strip(), "mode": str(mode or "")[:200],
+         "manual": str(link or "")[:500], "what": scrub(str(note or "")[:2000]),
+         "version": f"{desk_version()} · {computer()}"}
+    return f"https://github.com/{REPO}/issues/new?" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+
+
 def contents(files: dict[str, bytes]) -> list[dict]:
     return [{"name": n, "bytes": len(b)} for n, b in files.items()]
 

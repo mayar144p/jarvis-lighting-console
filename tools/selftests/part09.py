@@ -5178,3 +5178,52 @@ def test_truss_turn_aim() -> None:
                   "r.outline" in am and "am-truss" in am and "v.objects" in am)
         finally:
             e.shutdown()
+
+
+def test_fixture_requests() -> None:
+    """A10 item 8: new lights arrive by themselves (a weekly job rebuilds the
+    libraries and opens a pull request when a fixture changed; desks pick it
+    up on their next start), and a light no library has is one click from a
+    filled-in request."""
+    print("Fixture library updates and 'Request a fixture'")
+    import re
+    import sys as _sys
+    import urllib.parse as up
+    from app import bugreport, fixlib
+    url = bugreport.request_url("Chauvet", "Intimidator Wave 360 IRC", "14-channel",
+                                "https://example.com/manual.pdf", "for the club")
+    q = {k: v[0] for k, v in up.parse_qs(up.urlparse(url).query).items()}
+    check("the request opens the fixture-request form", q.get("template") == "fixture-request.yml", url[:120])
+    check("...titled with the light", q.get("title") == "[Fixture] Chauvet Intimidator Wave 360 IRC", q.get("title"))
+    check("...brand / model labels", "brand:Chauvet" in q.get("labels", "") and "fixture-request" in q.get("labels", ""))
+    tpl = (ROOT / ".github" / "ISSUE_TEMPLATE" / "fixture-request.yml").read_text(encoding="utf-8")
+    ids = set(re.findall(r"^\s+id:\s*(\w+)", tpl, re.M))
+    fields = set(q) - {"template", "title", "labels"}
+    check("every field the desk fills in is on the form", fields <= ids, f"{sorted(fields - ids)} not in {sorted(ids)}")
+    check("the form asks for the manual", "manual" in ids)
+    main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the desk serves the request link", '"/api/fixtures/request"' in main)
+    dlg = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("Add fixtures offers 'Request it...' (and when nothing matches)",
+          "export function requestFixture" in dlg and dlg.count("requestFixture(") >= 3)
+    libs = {x["src"]: x for x in fixlib.libraries()}
+    check("each open library says when it was last updated",
+          all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", libs[s].get("built") or "") for s in ("ofl", "qlc")),
+          str({s: libs[s].get("built") for s in libs}))
+    _sys.path.insert(0, str(ROOT / "tools"))
+    import build_fixture_libraries as bfl
+    before = bfl._snapshot(ROOT / "app" / "fixlib" / "ofl.zip")
+    check("a library's fixtures can be listed for comparing", len(before) > 100, str(len(before)))
+    after = dict(before)
+    gone = next(iter(after))
+    del after[gone]
+    some = next(iter(after))
+    after[some] = (after[some][0], "different")
+    after["new/light.json"] = ("Newco Beam 1", "x")
+    ch = bfl.changes(before, after)
+    check("a rebuild says what is new, updated and gone",
+          ch["added"] == ["Newco Beam 1"] and ch["changed"] == [after[some][0]] and ch["removed"] == [before[gone][0]], str(ch)[:200])
+    check("...and 'NO CHANGES' when nothing moved", not any(bfl.changes(before, before).values()))
+    wf = (ROOT / ".github" / "workflows" / "library-update.yml").read_text(encoding="utf-8")
+    check("a weekly job rebuilds the libraries and opens a pull request only when something changed",
+          "schedule" in wf and "--summary" in wf and "NO CHANGES" in wf and "gh pr create" in wf and "rulecheck" in wf)

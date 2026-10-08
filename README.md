@@ -629,6 +629,21 @@ You can also drop `.gdtf`, QLC+ `.qxf` or Open Fixture Library `.json` files
 into `fixtures_inbox/` and press **Import** in Settings, or run
 `python tools/import_gdtf.py`.
 
+**New lights arrive by themselves.** Once a week a job on GitHub fetches
+the newest Open Fixture Library and QLC+ fixtures, checks every light
+against the desk's rules and runs the self-test, then opens a pull request
+listing what's new (only when something changed). Once it's merged, every
+desk gets the new lights the next time it starts, and they're still
+searchable offline. The **Libraries** tab says when each library was last
+updated.
+
+**Request a fixture.** A light none of the libraries has? In **Add
+fixtures**, press **Request it…** (or **Can't find it? Request it…** under
+an empty search). Fill in the brand, model, mode and a link to the manual.
+It opens a filled-in request on the desk's GitHub page; press Submit there
+(that needs a GitHub account) and drag in the manual's PDF. Can't wait?
+**From its manual…** adds the light yourself straight away.
+
 Every format is read into the same model: DMX modes, 16-bit channels, pan and
 tilt travel, the shutter's open value (so a light whose shutter reads 0 as
 closed still lights on **Full**), and the colour and gobo wheel slots with
@@ -917,6 +932,8 @@ Open the repo's **Issues** tab → **New issue** and pick a form:
 - **Problem with a light** - a fixture does the wrong thing on the rig, in
   3D or in the programmer (say which light, which mode, what happened).
 - **Something else is wrong** - screens, playbacks, output, saving...
+- **Request a fixture** - a light no library has yet (Add fixtures →
+  **Request it…** fills it in).
 
 Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)
 and, if you can, the show file so the exact rig can be loaded.  Never
