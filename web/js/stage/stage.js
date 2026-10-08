@@ -1034,7 +1034,8 @@ export class Stage {
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
     if (!this.ready) return;
-    if (!this.dirty && !motion && !(this.anyLit && now - this.lastRender > 32)) return;
+    // recording a video: a steady 30 frames a second, lit or not
+    if (!this.dirty && !motion && !((this.anyLit || this.recording) && now - this.lastRender > 32)) return;
 
     const time = (now - this.t0) / 1000;
     LIGHTS.uTime.value = time;
@@ -1114,6 +1115,26 @@ export class Stage {
     this.resize();
     this.dirty = true;
     return url;
+  }
+
+  /** Record the view as a video stream: the canvas at `longSide` pixels
+   *  on its long side (1920 = full HD), 30 frames a second, the picture
+   *  quality held steady while it records.  stopRecording() puts it back. */
+  startRecording(longSide = 1920, fps = 30) {
+    const dom = this.renderer.domElement;
+    if (!dom.captureStream) return null;
+    const w = Math.max(1, this.el.clientWidth), h = Math.max(1, this.el.clientHeight);
+    this.recording = { keep: this.q.ratio };
+    this.q.ratio = Math.min(4, Math.max(0.5, longSide / Math.max(w, h)));
+    this.resize();
+    return dom.captureStream(fps);
+  }
+
+  stopRecording() {
+    if (!this.recording) return;
+    this.q.ratio = this.recording.keep;
+    this.recording = null;
+    this.resize();
   }
 
   /** Walk the room at eye height: W A S D / arrows to move (Shift runs),
@@ -1241,7 +1262,7 @@ export class Stage {
     const q = this.q;
     const dt = now - (q.last || now);
     q.last = now;
-    if (this.options.quality !== "auto" || dt <= 0 || dt > 200) return;
+    if (this.options.quality !== "auto" || this.recording || dt <= 0 || dt > 200) return;
     q.ema = q.ema * 0.9 + dt * 0.1;
     if (q.ema > 28) {
       q.fastSince = 0;

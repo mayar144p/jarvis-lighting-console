@@ -328,6 +328,17 @@ session's tempo and its place in the bar, and joins no session of its own).
   as well as their speed and the brightness: loud is the effect as made,
   quiet shrinks the movements and the dimmer effects' depth.
 
+### A video for the client
+
+View -> **Record a video…** films the 3D view: pick the camera first, then
+either *play the timeline from the start* (it records the whole timeline and
+stops at its end) or *record what I do* while you run the show by hand (up to
+10 minutes; the red REC button on the 3D view stops early). Full HD, 4K or a
+small one for chat apps; saved as MP4 (WebM where the browser can't make
+MP4), named after the show. Only the 3D picture is filmed, not the desk
+around it, and the real lights needn't be connected - program at home, send
+the client the video. A slow computer films smoother at Small.
+
 ### Workspaces
 
 The top bar's **workspace** button arranges the screen for the job:
