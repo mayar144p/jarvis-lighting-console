@@ -1724,6 +1724,18 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
   background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); }
 .ws-drop[data-side="left"] { left: 0; }
 .ws-drop[data-side="right"] { right: 0; }
+.ws-drop[data-side="float"] { bottom: auto; border-radius: var(--radius, 8px); }
+/* a side panel floating over the 3D view (workspaces.js) */
+.workspace { position: relative; }
+.fixtures[data-side="float"], .programmer[data-side="float"] {
+  position: absolute; z-index: 20; grid-area: auto;
+  height: min(70%, 560px);
+  border: 1px solid var(--border-2); border-radius: var(--radius, 8px); overflow: hidden;
+  box-shadow: 0 12px 32px rgb(0 0 0 / .45);
+}
+.fixtures[data-side="float"] { width: var(--fixtures-w, 300px); }
+.programmer[data-side="float"] { width: var(--prog-w, 340px); }
+[data-side="float"].fixtures > .ws-grip, [data-side="float"].programmer > .ws-grip { left: auto; right: -2px; }
 .ws-grip::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .15s; }
 .ws-grip:hover::after, .ws-grip.on::after { opacity: 1; background: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .ws-grip::after { transition: none; } }

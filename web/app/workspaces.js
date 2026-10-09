@@ -64,8 +64,8 @@ function apply(w) {
     el.style.setProperty("--ws-cols", g.cols);
     el.style.setProperty("--ws-rows", g.rows);
     el.style.setProperty("--ws-areas", g.areas);
-    $("#fixtures-panel").dataset.side = g.fixAt;
-    $("#programmer").dataset.side = g.progAt;
+    floatAt($("#fixtures-panel"), g.fixAt, w.fixPos);
+    floatAt($("#programmer"), g.progAt, w.progPos);
     b.classList.toggle("ws-docktop", g.top);
     if (w.fixW) el.style.setProperty("--fixtures-w", w.fixW + "px"); else el.style.removeProperty("--fixtures-w");
     if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
@@ -83,6 +83,30 @@ function apply(w) {
   }
   paintButton();
   window.dispatchEvent(new Event("resize"));      // the 3D view fits its new space
+}
+
+// A side panel in its place: a side of the screen (the grid), or floating
+// over the 3D view at its saved corner (kept on screen).
+function floatAt(panel, at, p) {
+  panel.dataset.side = at;
+  if (at !== "float") {
+    for (const k of ["left", "top", "max-height"]) panel.style.removeProperty(k);
+    return;
+  }
+  // inside the 3D view's area: never over the dock or off the screen
+  const box = ws().getBoundingClientRect(), st = $("#stage-wrap").getBoundingClientRect();
+  const x0 = st.left - box.left, y0 = st.top - box.top;
+  const x = Math.max(x0, Math.min((p && p.x) || 0, x0 + st.width - 160));
+  const y = Math.max(y0, Math.min((p && p.y) || 0, y0 + st.height - 120));
+  panel.style.left = x + "px";
+  panel.style.top = y + "px";
+  panel.style.maxHeight = Math.max(120, y0 + st.height - y - 8) + "px";
+}
+function refloat() {
+  const w = activeWorkspace();
+  if (!w) return;
+  if (w.fixAt === "float") floatAt($("#fixtures-panel"), "float", w.fixPos);
+  if (w.progAt === "float") floatAt($("#programmer"), "float", w.progPos);
 }
 
 /** Switch to a workspace by id or by its place (1..9). */
@@ -115,32 +139,65 @@ function place(field, value) {
   store();
 }
 
-// Drag a side panel by its title to the left or right of the screen.
+// Drag a side panel by its title: to a side of the screen (drop it near
+// that edge), or anywhere over the 3D view to float it there.  A floating
+// panel follows the pointer.
+const EDGE = 0.18;                     // the outer 18% of the screen is "that side"
+function dropAt(x) {
+  const f = x / window.innerWidth;
+  return f < EDGE ? "left" : f > 1 - EDGE ? "right" : "float";
+}
 function wireMove(panel, field) {
   const handle = panel.querySelector(".panel-head h2");
   if (!handle) return;
   handle.style.cursor = "grab";
-  handle.title = "Drag to the other side of the screen to move this panel there";
-  let x0 = 0, on = false, hint = null;
+  handle.title = "Drag near a side of the screen to put this panel there, or over the 3D view to float it";
+  const posField = field === "fixAt" ? "fixPos" : "progPos";
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, on = false, moved = false, hint = null;
   handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     on = true;
+    moved = false;
     x0 = e.clientX;
+    y0 = e.clientY;
+    const r = panel.getBoundingClientRect();
+    dx = e.clientX - r.left;
+    dy = e.clientY - r.top;
     handle.setPointerCapture(e.pointerId);
   });
   handle.addEventListener("pointermove", (e) => {
-    if (!on || Math.abs(e.clientX - x0) < 24) return;
-    const side = e.clientX < window.innerWidth / 2 ? "left" : "right";
+    if (!on || (!moved && Math.hypot(e.clientX - x0, e.clientY - y0) < 24)) return;
+    moved = true;
+    const at = dropAt(e.clientX);
     if (!hint) { hint = h("div.ws-drop"); document.body.append(hint); }
-    hint.dataset.side = side;
+    hint.dataset.side = at;
+    if (at === "float") {
+      // the outline where the panel will float
+      const r = panel.getBoundingClientRect();
+      Object.assign(hint.style, { left: `${e.clientX - dx}px`, top: `${e.clientY - dy}px`,
+        width: `${Math.min(r.width, 360)}px`, height: `${Math.min(r.height, 520)}px` });
+    } else {
+      for (const k of ["left", "top", "width", "height"]) hint.style.removeProperty(k);
+    }
   });
   const end = (e) => {
     if (!on) return;
     on = false;
-    if (hint) {
-      hint.remove();
-      hint = null;
-      place(field, e.clientX < window.innerWidth / 2 ? "left" : "right");
+    if (!hint) return;
+    hint.remove();
+    hint = null;
+    const at = dropAt(e.clientX);
+    if (at === "float") {
+      const box = ws().getBoundingClientRect();
+      const w = activeWorkspace();
+      capture(w);
+      w[posField] = { x: Math.round(e.clientX - dx - box.left), y: Math.round(e.clientY - dy - box.top) };
+      w[field] = "float";
+      w.swap = false;
+      apply(w);
+      store();
+    } else {
+      place(field, at);
     }
   };
   handle.addEventListener("pointerup", end);
@@ -200,6 +257,12 @@ function openMenu(anchor) {
     { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", run: () => toggle("prog") },
     { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
     { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
+    cur.fixAt === "float"
+      ? null
+      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", run: () => place("fixAt", "float") },
+    cur.progAt === "float"
+      ? null
+      : { label: "Programmer floating over the 3D", hint: "drag it by its title", run: () => place("progAt", "float") },
     { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
     { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
     "-",
@@ -208,7 +271,7 @@ function openMenu(anchor) {
     builtin
       ? { label: `Reset "${cur.name}"`, hint: "how it came", run: () => reset(cur) }
       : { label: `Delete "${cur.name}"…`, danger: true, disabled: saved.list.length <= 1, run: () => remove(cur) },
-  ]);
+  ].filter(Boolean));
 }
 
 function paintButton() {
@@ -237,7 +300,7 @@ function wireGrip(panel, cssVar, field) {
     if (!on) return;
     // the edge that faces the 3D view: dragging toward it widens the panel
     const r = panel.getBoundingClientRect(), stage = $("#stage-wrap").getBoundingClientRect();
-    const sign = r.left < stage.left ? 1 : -1;
+    const sign = panel.dataset.side === "float" || r.left < stage.left ? 1 : -1;
     const w = Math.max(MIN_W, Math.min(MAX_W, Math.round(w0 + sign * (e.clientX - x0))));
     ws().style.setProperty(cssVar, w + "px");
     window.dispatchEvent(new Event("resize"));
@@ -278,4 +341,8 @@ export function initWorkspaces() {
     useWorkspace(Number(m[1]));
   });
   apply(activeWorkspace());
+  // the grid settles after apply (the 3D view's size changes): place again
+  requestAnimationFrame(refloat);
+  let t = 0;
+  window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(refloat, 120); });
 }

@@ -75,7 +75,7 @@ CONFIRM = {
 # light, the AI's own preview and undo (the operator has Ctrl+Z).
 NEVER = frozenset({
     "set_dmx_target", "set_lock", "unlock", "set_limits", "clear_limits", "set_orient",
-    "remember_open", "light_test", "light_tested", "motion_set", "motion_test",
+    "remember_open", "light_test", "light_tested", "zero_dark", "motion_set", "motion_test",
     "motion_test_end", "motion_get", "import_scan", "patch_from_csv", "export_patch",
     "remap_heads", "osc", "virtual_node", "timecode", "tempo_prodj", "tempo_link",
     "rdm_compare", "teach_slots", "colour_cal", "media_save", "show_export",

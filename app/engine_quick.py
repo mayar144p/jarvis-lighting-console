@@ -1474,6 +1474,10 @@ class QuickMixin:
             return cache[1]
         darks = {}
         for h in self.patch:
+            q = self.zero_question(h)
+            if q and q["dark"]:
+                darks[h["head_no"]] = {q["role"]: 0}       # the operator said 0 is dark
+                continue
             if self._intensity_roles(h) or self._emitters(h) or "wheel" not in (h.get("map") or []):
                 continue
             slot = next((x for x in self._wheel_slots(h) if self._DARK_SLOT.match(str(x.get("name") or ""))), None)

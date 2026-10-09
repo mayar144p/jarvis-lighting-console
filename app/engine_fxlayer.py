@@ -318,6 +318,8 @@ class FxLayerMixin:
         self._rest_cache = None
         self._hold_cache = None
         self._motion_cache = {}
+        self._zq_cache = None
+        self._dark_cache = None
 
     # -- movement speed, for the visualiser ------------------------------
     def _motion_of(self, head: dict) -> dict:
@@ -559,6 +561,8 @@ class FxLayerMixin:
                     "open_known": self._open_known(h, gate) if gate else True,
                     "candidates": self._open_candidates(h, gate) if gate else [],
                     "hunt": self._hunt_list(h),
+                    # its colour-macro channel's 0 says nothing: ask (A8.10)
+                    "zero": self.zero_question(h),
                     "slots": self._test_slots(h),
                     "pan": "pan" in h["map"], "tilt": "tilt" in h["map"],
                     "colour": bool(colour), "mixing": "red" in h["map"] or "cyan" in h["map"],
@@ -699,6 +703,26 @@ class FxLayerMixin:
                           "wrongly - report it (right-click the light -> Report a problem) so it's fixed for everyone.")
         return {"tested": ok, "advice": advice,
                 "summary": f"{h.get('model')}: " + ("passed the test" if ok else "needs attention")}
+
+    def _a_zero_dark(self, head=None, dark=None, **_):
+        """The answer to "with its colour channel at 0, is the real light
+        dark?" (A8.10), kept for every head of the same model and mode.
+        dark=None forgets it."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        q = self.zero_question(h)
+        if q is None:
+            raise ValueError(f"{h.get('model')}: its file already says what 0 does - nothing to ask")
+        ans = None if dark is None else _truthy(dark)
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
+                              "_model", "zero_dark", ans)
+        fixtures.invalidate_cache()
+        self._drop_fixture_caches()
+        what = ("forgotten" if ans is None else
+                "dark at 0: Full lights it, Out and Blackout darken it" if ans else
+                "lit at 0 (its open white)")
+        return {"dark": ans, "summary": f"{h.get('model')}: {what}"}
 
     def _a_remember_open(self, head=None, value=None, role=None, **_):
         """The value that opens this light's shutter, found on the real

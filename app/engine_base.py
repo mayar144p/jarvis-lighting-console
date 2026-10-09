@@ -101,7 +101,7 @@ UNDO_EXCLUDED = frozenset({
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "remember_open", "light_test", "light_tested", "colour_cal", "teach_slots",
+    "fx_status", "remember_open", "light_test", "light_tested", "zero_dark", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "tempo_phrase", "fx_beats", "fx_space", "fx_tweak",
@@ -662,7 +662,7 @@ ACTIONS = (
     "timeline_stop", "timeline_seek",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
-    "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested",
+    "fx_status", "quick_fx_defaults", "remember_open", "light_test", "light_tested", "zero_dark",
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "fx_beats", "fx_tweak",
     "sound_link", "sound_trigger", "sound_tempo", "autopilot", "autopilot_next", "fx_space",

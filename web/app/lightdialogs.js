@@ -384,6 +384,18 @@ export async function openLightTest(hd) {
     return true;
   }
 
+  // A light whose colour-macro channel is its on / off, and whose file
+  // calls 0 only "No function": dark on an LED light, open white on a
+  // lamp's wheel.  Asked once, on the real light; kept for the model.
+  async function zeroStep() {
+    const z = st.zero;
+    await run("light_test", { head, step: "channel", role: z.role, value: 0 }, { silentError: true });
+    const a = await ask(`Its colour channel is at 0 now ("${z.name}" in its file). Is the real light dark, or lit?`,
+      [["Dark", "dark", "primary"], ["Lit", "lit"], ["Can't tell", "skip"]]);
+    await run("light_test", { head, step: "channel" }, { silentError: true });
+    if (a !== "skip") await run("zero_dark", { head, dark: a === "dark" }, { toast: true });
+  }
+
   async function strobeStep() {
     await run("light_test", { head, step: "strobe", value: "fast" }, { silentError: true });
     const a = await ask(`It should be strobing FAST now${many}. Is it?`, [["Yes", true, "primary"], ["No", false]]);
@@ -433,6 +445,7 @@ export async function openLightTest(hd) {
   }
   if (closed) return;
   res.light = await lightStep();
+  if (!closed && res.light && st.zero) await zeroStep();
   if (!closed && res.light && st.pan) res.move = await sweep("pan");
   if (!closed && res.light && st.tilt && res.move) res.move = await sweep("tilt");
   if (!closed && res.light && st.colour) res.colour = await colours();

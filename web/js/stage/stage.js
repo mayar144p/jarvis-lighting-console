@@ -17,7 +17,7 @@ import { buildVenue, hitDistance, cutaway } from "./venue.js";
 import { SfxSystem } from "./sfx.js";
 import { Shadows } from "./shadows.js";
 import {
-  LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, GoboAtlas,
+  LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, streakMap, GoboAtlas,
   setDetail,
 } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
@@ -275,10 +275,10 @@ export class Stage {
 
   _buildBeams(inst) {
     for (const b of inst.beams) {
-      this.beamGroup.remove(b.mesh);
-      this.beamGroup.remove(b.glow);
+      this.beamGroup.remove(b.mesh, b.glow, b.streak);
       b.mat.dispose();
       b.glow.material.dispose();
+      b.streak.material.dispose();
     }
     inst.beams = inst.sk.emitters.map((em) => {
       const mat = beamMaterial();
@@ -294,17 +294,24 @@ export class Stage {
       glow.visible = false;
       glow.renderOrder = 3;
       this.beamGroup.add(glow);
-      return { em, mesh, mat, glow, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
+      const streak = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: streakMap(), blending: THREE.AdditiveBlending, depthWrite: false,
+        transparent: true, toneMapped: false,
+      }));
+      streak.visible = false;
+      streak.renderOrder = 3;
+      this.beamGroup.add(streak);
+      return { em, mesh, mat, glow, streak, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
     });
   }
 
   _remove(inst) {
     this.rigGroup.remove(inst.holder);
     for (const b of inst.beams) {
-      this.beamGroup.remove(b.mesh);
-      this.beamGroup.remove(b.glow);
+      this.beamGroup.remove(b.mesh, b.glow, b.streak);
       b.mat.dispose();
       b.glow.material.dispose();
+      b.streak.material.dispose();
     }
   }
 
@@ -1284,6 +1291,7 @@ export class Stage {
       if (body.type === "atmos" || angle <= 0 || a <= 0.002) {
         b.mesh.visible = false;
         b.glow.visible = false;
+        b.streak.visible = false;
         continue;
       }
       em.node.getWorldPosition(b.origin);
@@ -1326,10 +1334,20 @@ export class Stage {
       const g = r0 * (3 + 12 * Math.pow(facing, 6)) * (0.4 + a);
       b.glow.scale.setScalar(g);
       b.glow.material.color.setRGB(cr, cg, cb).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
+      // a lens flare's streak when the lens looks almost straight at the
+      // camera (not on Fast quality, not for a laser's pin-point)
+      const k = Math.pow(facing, 24) * a;
+      b.streak.visible = k > 0.05 && this.options.quality !== "fast" && !em.laser;
+      if (b.streak.visible) {
+        b.streak.position.copy(b.glow.position);
+        b.streak.scale.set(g * 4, g * 0.12, 1);
+        b.streak.material.color.setRGB(cr, cg, cb).multiplyScalar(0.45 * k);
+      }
 
       if (inst.head === this.povHead) {            // looking down this beam
         b.mesh.visible = false;
         b.glow.visible = false;
+        b.streak.visible = false;
       }
       let goboId = lk.gscroll ? this._goboScroll(inst, lk.gscroll, time) : this._goboId(inst, goboV);
       // the first wheel open: the second wheel's gobo (a MAC 2000's wheel 2)

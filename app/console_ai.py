@@ -41,7 +41,7 @@ DENY_ACTIONS = frozenset({
     "venue_save", "venue_open", "venue_delete",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_status",
-    "quick_fx_defaults", "remember_open", "light_test", "light_tested",
+    "quick_fx_defaults", "remember_open", "light_test", "light_tested", "zero_dark",
     "import_show",
     "import_scan", "patch_clear", "patch_from_csv", "remove_heads",
     "group_delete", "delete_preset", "delete_cue", "set_lock", "unlock",

@@ -577,8 +577,44 @@ def _xyY_hex(text) -> str | None:
     return "#%02x%02x%02x" % tuple(out)
 
 
-def _gdtf_wheels(fixture_type) -> dict[str, list[dict]]:
-    """{wheel name: [{name, hex}] by slot index (1-based)}."""
+GOBO_EXTS = (".png", ".svg", ".jpg", ".jpeg")
+
+
+def _gdtf_media(zf, name: str) -> str:
+    """A wheel slot's picture (the maker's own gobo image, in the GDTF's
+    wheels/ folder), kept in DATA/gobos under its content hash:
+    "gdtf:<hash>.<ext>", or "" when the file has none."""
+    if zf is None or not name:
+        return ""
+    import hashlib
+
+    from . import config
+    names = {n.lower(): n for n in zf.namelist()}
+    for ext in ("",) + GOBO_EXTS:
+        hit = names.get(f"wheels/{name}{ext}".lower())
+        if not hit or not hit.lower().endswith(GOBO_EXTS):
+            continue
+        try:
+            data = zf.read(hit)
+        except (KeyError, OSError, RuntimeError, zipfile.BadZipFile):
+            return ""
+        if not data or len(data) > 4_000_000:
+            return ""
+        out = f"{hashlib.sha1(data).hexdigest()[:20]}{Path(hit).suffix.lower().replace('.jpeg', '.jpg')}"
+        folder = config.DATA / "gobos"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            if not (folder / out).is_file():
+                (folder / out).write_bytes(data)
+        except OSError:
+            return ""
+        return "gdtf:" + out
+    return ""
+
+
+def _gdtf_wheels(fixture_type, zf=None) -> dict[str, list[dict]]:
+    """{wheel name: [{name, hex, img}] by slot index (1-based)}; img: the
+    slot's own picture from the GDTF (a gobo), "" when it has none."""
     wheels: dict[str, list[dict]] = {}
     node = _child(fixture_type, "Wheels")
     if node is None:
@@ -587,9 +623,41 @@ def _gdtf_wheels(fixture_type) -> dict[str, list[dict]]:
         slots = []
         for slot in _children(wheel, "Slot"):
             slots.append({"name": (slot.get("Name") or "").strip(),
-                          "hex": _xyY_hex(slot.get("Color"))})
+                          "hex": _xyY_hex(slot.get("Color")),
+                          "img": _gdtf_media(zf, (slot.get("MediaFileName") or "").strip())})
         wheels[wheel.get("Name") or ""] = slots
     return wheels
+
+
+_MAKER_GOBOS: dict[tuple, list[str]] = {}
+
+
+def gdtf_gobo_pictures(path) -> list[str]:
+    """The pictures of a GDTF's gobo wheel, in wheel order (slots with no
+    picture - its open hole - left out): the maker's own gobo images, kept
+    in DATA/gobos.  [] when it has none.  Used for a light whose library
+    file has none, from the maker's GDTF fetched for its 3D body."""
+    p = Path(path) if path else None
+    if p is None or not p.is_file():
+        return []
+    key = (str(p), p.stat().st_mtime_ns)
+    if key in _MAKER_GOBOS:
+        return _MAKER_GOBOS[key]
+    out: list[str] = []
+    try:
+        with zipfile.ZipFile(p) as zf:
+            name = _description_entry(zf)
+            if name:
+                root = ET.fromstring(zf.read(name))
+                ft = _child(root, "FixtureType") or root
+                wheels = _gdtf_wheels(ft, zf)
+                gobo = next((w for n, w in wheels.items() if re.search(r"gobo", n, re.I)
+                             and not re.search(r"anim|effect", n, re.I)), None)
+                out = [sl["img"] for sl in gobo or [] if sl.get("img")]
+    except (OSError, KeyError, ValueError, ET.ParseError, zipfile.BadZipFile):
+        out = []
+    _MAKER_GOBOS[key] = out
+    return out
 
 
 def _gdtf_slots(logical, wheels: dict) -> list[dict] | None:
@@ -620,7 +688,8 @@ def _gdtf_slots(logical, wheels: dict) -> list[dict] | None:
                 continue
             name = (cset.get("Name") or "").strip() or wheel[i - 1]["name"]
             found.append((start, {"name": name or f"Slot {i}",
-                                  "hex": wheel[i - 1]["hex"], "slot": i}))
+                                  "hex": wheel[i - 1]["hex"], "slot": i,
+                                  **({"img": wheel[i - 1]["img"]} if wheel[i - 1].get("img") else {})}))
     if not found:
         return None
     marks = sorted(set(marks))
@@ -671,7 +740,8 @@ def parse_gdtf(path: Path) -> list[dict]:
     if not model:
         model = path.stem
 
-    wheels = _gdtf_wheels(fixture_type)
+    with zipfile.ZipFile(path) as zf:
+        wheels = _gdtf_wheels(fixture_type, zf)        # with the gobo pictures
     modes: list[dict] = []
     modes_node = _child(fixture_type, "DMXModes") or _child(root, "DMXModes")
     if modes_node is not None:

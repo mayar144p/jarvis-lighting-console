@@ -493,6 +493,10 @@ export function setTimelineVisible(on) {
 export function initTimeline() {
   $("#tl-play").addEventListener("click", () => run(transport.playing ? "timeline_pause" : "timeline_play"));
   $("#tl-tc").addEventListener("click", async (e) => {
+    // the button, taken before the await: a click's currentTarget is
+    // cleared once it has been handled, and the menu then had nothing to
+    // open under (a TypeError, and no menu)
+    const btn = e.currentTarget;
     const tc = transport.timecode || {};
     const { ltcListening, startLtc, stopLtc } = await import("./ltcin.js");
     const follow = async (title, ltc) => {
@@ -504,7 +508,7 @@ export function initTimeline() {
       } else stopLtc();
       run("timecode", { state: true, offset: secs }, { toast: true });
     };
-    menu(e.currentTarget, [
+    menu(btn, [
       { label: "Follow MIDI timecode (MTC)", hint: "from the desk's MIDI input", run: () => follow("Follow MIDI timecode", false) },
       { label: "Follow audio timecode (LTC)", hint: "a timecode track into this computer's sound input (picked in Sound)",
         run: () => follow("Follow audio timecode", true) },
