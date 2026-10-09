@@ -439,9 +439,62 @@ class LooksMixin:
     # RGB channels rule", not dark
     _DARK_SLOT = re.compile(r"^\s*(black ?out|dark|no light)\b", re.I)
 
+    # A colour-macro channel on a light with no dimmer and no colour LEDs
+    # (a derby's "Color macro", a 1-channel LED's "Programs") whose 0 says
+    # nothing: "No function" is dark on an LED light, open white on a lamp's
+    # wheel, and the file can't tell which.  The operator answers once, on
+    # the real light ("Test this light"), and it is kept for the model.
+    _COLOUR_WORD = re.compile(r"^\s*(red|green|blue|white|amber|orange|yellow|cyan|magenta|"
+                              r"purple|pink|uv|violet|lime|warm|cold|cool)\b", re.I)
+    _SAYS_NOTHING = re.compile(r"^\s*(no ?function|none|nothing|no colou?r|not used)?\s*\.?\s*$", re.I)
+
+    def _macro_role(self, head: dict) -> str | None:
+        """The channel that picks the colour on a light that has nothing
+        else to light or darken it (no dimmer, no colour LEDs)."""
+        if self._intensity_roles(head) or self._emitters(head):
+            return None
+        ranges = self.head_ranges(head)
+        for role in head.get("map") or []:
+            if role != "wheel" and not role.startswith("aux"):
+                continue
+            caps = (ranges.get(role) or {}).get("caps") or []
+            if sum(1 for c in caps if self._COLOUR_WORD.match(str(c[2]))) >= 3:
+                return role
+        return None
+
+    def zero_question(self, head: dict) -> dict | None:
+        """{role, name, to, lit, dark}: the light's colour-macro channel at
+        0 says nothing, so whether it is dark there is asked once (dark:
+        the answer, None until then).  None: nothing to ask."""
+        role = self._macro_role(head)
+        if role is None:
+            return None
+        caps = (self.head_ranges(head).get(role) or {}).get("caps") or []
+        zero = next((c for c in caps if int(c[0]) <= 0 <= int(c[1])), None)
+        name = str(zero[2]) if zero else ""
+        if not self._SAYS_NOTHING.match(name):
+            return None                        # "Blackout", "White", "Open"...: the file says
+        white = next((c for c in caps if re.search(r"\bwhite\b", str(c[2]), re.I)
+                      and not re.search(r"\+|and", str(c[2]), re.I)), None)
+        first = white or next((c for c in caps if self._COLOUR_WORD.match(str(c[2]))), None)
+        if first is None:
+            return None
+        ans = (self.head_ranges(head).get("_model") or {}).get("zero_dark")
+        return {"role": role, "name": name or "nothing", "to": int(zero[1]) if zero else 0,
+                "lit": (int(first[0]) + int(first[1])) // 2,
+                "lit_name": str(first[2]), "dark": None if ans is None else bool(ans)}
+
+    def _zero_dark(self, head: dict, values: dict) -> bool:
+        """The operator said this light is dark with its colour channel at
+        0, and it is there now."""
+        q = self.zero_question(head)
+        return bool(q and q["dark"] and int(values.get(q["role"], 0)) <= q["to"])
+
     def _wheel_dark(self, head: dict, values: dict) -> bool:
         """The colour wheel sits on a slot the file calls "Blackout" (a
         Swarm's colour channel at 0): the light is dark, whatever else."""
+        if self._zero_dark(head, values):
+            return True
         roles = set(head.get("map") or [])
         if "wheel" not in roles or self._emitters(head):
             return False                       # colour LEDs decide on their own

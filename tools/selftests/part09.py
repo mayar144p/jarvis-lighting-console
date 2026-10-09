@@ -5950,3 +5950,159 @@ def test_arrange_turn_and_move() -> None:
     check("a piece of a shape: the preview moves and turns the whole shape", "s.mates" in ed and "_turnShape(" in ed)
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("no rebuild in the middle of a drag", "stage.editor.busy" in sp)
+
+
+def test_batch_e() -> None:
+    """A8.10 (a light whose colour channel is its on / off, asked once if
+    0 is dark), A8.11 (a combo effect bar drawn as a bar, still a laser),
+    panels floating over the 3D, lens-flare streaks, and the 3D's gobos:
+    the same light's pictures from the other library, or from the maker's
+    GDTF (imported, or fetched from GDTF Share for its 3D body)."""
+    print("Batch E: colour-channel on / off, combo bars, floating panels, flares, real gobos")
+    import json as _json
+    import shutil
+    import struct
+    import subprocess
+    import zipfile
+    import zlib
+
+    from app import config, engine as eng, fixlib, fixture_kind
+    from app.gdtfshare import GdtfShare
+
+    def png(c):
+        raw = b"".join(b"\x00" + bytes([c, c, c]) * 4 for _ in range(4))
+        ch = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)  # noqa: E731
+        return (b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0))
+                + ch(b"IDAT", zlib.compress(raw)) + ch(b"IEND", b""))
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            def add(query, src=None):
+                rows = [r for r in fixlib.search(query) if not src or r["src"] == src]
+                if not rows:
+                    return None
+                got = fixtures.store_parsed(db, fixlib.load(rows[0]["src"], rows[0]["key"]), f"{rows[0]['src']}:{rows[0]['key']}")
+                r = e.act("add_heads", fixture_id=got["imported"][0]["fixture_id"], qty=1)
+                return e._head(r["heads"][0]) if r.get("ok") else None
+
+            # --- A8.10: a derby's colour macro, 0 = "No Function"
+            derby = add("Varytec LED Derby ST")
+            if derby:
+                n = derby["head_no"]
+                q = e.zero_question(derby)
+                check("A8.10: a light whose colour channel is its on / off, 0 'No Function': asked",
+                      q and q["role"] == "wheel" and q["dark"] is None, str(q))
+                ready = e.act("ready_check")
+                check("...Ready? lists it until answered", any("doesn't say if 0 is dark" in i["text"] for i in ready["items"]))
+                check("...Test this light asks it", (e.act("light_test", head=n, step="start").get("zero") or {}).get("role") == "wheel")
+                e.act("light_test", head=n, step="end")
+                check("...unanswered, it is drawn lit at rest (as before)", e._gate_intensity(derby, {}) == 100)
+                e.act("zero_dark", head=n, dark=True)
+                check("...'dark': dark at rest in the 3D", e._gate_intensity(derby, {}) == 0)
+                e.act("select_heads", head=n)
+                e.act("set_intensity", level=100)
+                prog = e.programmer.get(n) or {}
+                check("...Full lights it white", prog.get("wheel") == q["lit"] and e._gate_intensity(derby, prog) == 100, str(prog))
+                e.act("set_intensity", level=0)
+                check("...Out darkens it", (e.programmer.get(n) or {}).get("wheel") == 0)
+                check("...Blackout has its dark value", e._darks().get(n) == {"wheel": 0})
+                check("...no longer on Ready?", not any("doesn't say if 0 is dark" in i["text"] for i in e.act("ready_check")["items"]))
+                e.act("zero_dark", head=n, dark=None)
+                check("...and can be forgotten", e.zero_question(derby)["dark"] is None)
+                e.act("clear_programmer")
+            showtec = add("Showtec Dynamic LED v3")
+            if showtec:
+                check("...a 'Programs' channel (aux) too", (e.zero_question(showtec) or {}).get("role") == "aux1")
+            par = add("Generic RGB")
+            check("...a light with a dimmer or colour LEDs is never asked", not par or e.zero_question(par) is None)
+            check("...a light whose file says (Blackout slot) is never asked",
+                  not e.act("zero_dark", head=par["head_no"] if par else 1, dark=True).get("ok"))
+
+            # --- A8.11: a combo effect bar
+            bar = add("Stairville All FX Bar")
+            if bar:
+                d = fixture_kind.describe(bar)
+                check("A8.11: a combo effect bar is drawn as a bar, still a laser (its laser needs ARM)",
+                      d.get("combo") and d.get("class") == "laser", str({k: d.get(k) for k in ("type", "class", "combo")}))
+
+            # --- gobos: the twin's pictures (OFL Sharpy: "Gobo 1..", QLC+ has them)
+            sharpy = add("Clay Paky Sharpy", "ofl")
+            if sharpy:
+                g = e._gobo_images(sharpy) or []
+                check("gobos: a light whose file has no pictures gets its twin's (the other library)",
+                      g and all(x[2].startswith("qlc:") for x in g if x[2]), str([x[2][:10] for x in g][:5]))
+            # the maker's GDTF kept for the 3D body: its gobos
+            spot = add("Intimidator Spot 260", "ofl")
+            if spot:
+                stand = sum(1 for x in e._gobo_images(spot) or [] if x[2] == "-")
+                slots = "".join(f'<Slot Name="G{i}" MediaFileName="g{i}"/>' for i in range(1, stand + 1))
+                xml = (f'<GDTF DataVersion="1.1"><FixtureType Name="Intimidator Spot 260" Manufacturer="Chauvet DJ">'
+                       f'<Wheels><Wheel Name="Gobo1"><Slot Name="Open"/>{slots}</Wheel></Wheels></FixtureType></GDTF>')
+                cache = config.GDTF_SHARE_CACHE
+                had = (cache / "bodies.json").read_bytes() if (cache / "bodies.json").is_file() else None
+                cache.mkdir(parents=True, exist_ok=True)
+                try:
+                    with zipfile.ZipFile(cache / "body-test-e.gdtf", "w") as z:
+                        z.writestr("description.xml", xml)
+                        for i in range(1, stand + 1):
+                            z.writestr(f"wheels/g{i}.png", png(20 * i))
+                    (cache / "bodies.json").write_text(_json.dumps(
+                        {GdtfShare._body_key(spot["manufacturer"], spot["model"]): {"file": "body-test-e.gdtf", "gobos_only": True}}))
+                    g = e._gobo_images(spot) or []
+                    pics = [x[2] for x in g if x[2]]
+                    check("gobos: or the maker's own, from its GDTF fetched for the 3D body",
+                          stand and len(pics) == stand and all(p.startswith("gdtf:") for p in pics), str(pics[:3]))
+                    pic = fixlib.gobo_picture(pics[0]) if pics else None
+                    check("...served as a picture", pic and pic[1] == "image/png")
+                    check("...a GDTF kept only for its gobos is not used as a 3D body",
+                          GdtfShare(db, cache).body_file(spot["manufacturer"], spot["model"]) is None)
+                finally:
+                    (cache / "body-test-e.gdtf").unlink(missing_ok=True)
+                    if had is None:
+                        (cache / "bodies.json").unlink(missing_ok=True)
+                    else:
+                        (cache / "bodies.json").write_bytes(had)
+            check("...a picture name that isn't a hash is refused",
+                  fixlib.gobo_picture("gdtf:../../x.png") is None and fixlib.gobo_picture("gdtf:abc.png") is None)
+        finally:
+            e.shutdown()
+
+    # an imported GDTF's own gobo pictures
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "t.gdtf"
+        xml = ('<GDTF DataVersion="1.1"><FixtureType Name="Test Spot" Manufacturer="Test"><Wheels><Wheel Name="G1">'
+               '<Slot Name="Open"/><Slot Name="Star" MediaFileName="star"/></Wheel></Wheels><DMXModes><DMXMode Name="Std">'
+               '<DMXChannels><DMXChannel Offset="1"><LogicalChannel Attribute="Gobo1"><ChannelFunction Attribute="Gobo1" '
+               'Wheel="G1" DMXFrom="0/1"><ChannelSet Name="Open" DMXFrom="0/1" WheelSlotIndex="1"/><ChannelSet Name="Star" '
+               'DMXFrom="128/1" WheelSlotIndex="2"/></ChannelFunction></LogicalChannel></DMXChannel></DMXChannels>'
+               '</DMXMode></DMXModes></FixtureType></GDTF>')
+        with zipfile.ZipFile(f, "w") as z:
+            z.writestr("description.xml", xml)
+            z.writestr("wheels/star.png", png(200))
+        det = fixtures.parse_gdtf(f)[0]["modes"][0]["detail"]
+        slots = next((d.get("slots") for d in det if d.get("role") == "gobo"), None) or []
+        check("an imported GDTF's gobo slots carry the maker's pictures",
+              any(s.get("img", "").startswith("gdtf:") and s["name"] == "Star" for s in slots), str(slots))
+
+    # floating panels: the grid leaves them out, positions are kept
+    node = shutil.which("node")
+    if node:
+        js = (ROOT / "web" / "app" / "wslayouts.js").as_uri()
+        out = subprocess.run([node, "--input-type=module", "-e",
+                              f"import {{gridFor, clean}} from {_json.dumps(js)};"
+                              "const g = gridFor({fixAt: 'float', progAt: 'right'}); const c = clean({fixAt: 'float', fixPos: {x: '40', y: -3}});"
+                              "console.log(JSON.stringify({areas: g.areas, at: c.fixAt, pos: c.fixPos}))"],
+                             capture_output=True, text=True, timeout=30)
+        got = _json.loads(out.stdout or "{}")
+        check("a floating panel takes no column, over the 3D at its kept place",
+              got.get("areas") == '"stage prog" "pb pb"' and got.get("at") == "float" and got.get("pos") == {"x": 40, "y": 0}, out.stdout + out.stderr)
+    ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
+    check("...dragged anywhere over the 3D, or near a side to dock", "dropAt(" in ws and '"float"' in ws)
+    sj = stage_js()
+    check("lens flare: a streak through a lens that faces the camera", "streakMap" in sj and "b.streak" in sj)
+    rc = (ROOT / "tools" / "rulecheck.py").read_text(encoding="utf-8")
+    check("library rules: a picked gobo is the one the 3D shows, and real pictures are counted",
+          "gobo_pick_matches_3d" in rc and "gobo_real_pictures" in rc)

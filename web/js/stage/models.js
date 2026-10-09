@@ -749,7 +749,40 @@ function tube(body) {
   return sk;
 }
 
+// A combo effect bar (PARs / derbys, strobes and a laser on one bar): the
+// bar with its LED lenses either side and the laser's window in the middle.
+// To the desk it is a laser (its laser part needs ARM), so only the laser
+// draws a beam.
+function comboBar(body) {
+  const sk = skeleton();
+  const len = 1.0;
+  const S = steel();
+  for (const s of [-1, 1]) {                          // end brackets
+    const b = rbox(0.012, 0.1, 0.07, 0.004, S);
+    b.position.set(s * (len / 2 + 0.01), 0.05, 0);
+    sk.pan.add(b);
+  }
+  sk.tilt.position.y = 0.08;
+  const H = housing(body.style);
+  sk.tilt.add(rbox(len, 0.09, 0.1, 0.012, H));
+  const lens = lensMaterial();
+  sk.lenses.push(lens);
+  for (const x of [-0.42, -0.3, -0.18, 0.18, 0.3, 0.42]) {   // the LED heads
+    const l = disc(0.04, lens);
+    l.position.set(x, 0.046, 0);
+    sk.tilt.add(l);
+  }
+  const win = rbox(0.08, 0.004, 0.05, 0.002, lens);   // the laser window
+  win.position.y = 0.046;
+  sk.tilt.add(win);
+  sk.emitters.push(emitter(sk.tilt, 0.047, 0.004, { laser: true }));
+  sk.height = 0.2;
+  sk.radius = len / 2 + 0.05;
+  return sk;
+}
+
 function laser(body) {
+  if (body.combo) return comboBar(body);
   const sk = skeleton();
   bracket(sk, body, 0.12, 0.09);
   const H = housing(body.style);

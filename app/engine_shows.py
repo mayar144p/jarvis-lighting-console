@@ -487,6 +487,12 @@ class ShowMixin:
             add("warn", f"{len(always)} light(s) have no dimmer or shutter in their mode, so Blackout can't "
                         f"darken them ({', '.join(f'#{n}' for n in always[:6])}).",
                 "Pick a mode with a dimmer / shutter, or fix the profile")
+        unsure = [h["head_no"] for h in self.patch
+                  if (q := self.zero_question(h)) is not None and q["dark"] is None]
+        if unsure:
+            add("warn", f"{len(unsure)} light(s) switch on and off with their colour channel, and their file "
+                        f"doesn't say if 0 is dark ({', '.join(f'#{n}' for n in unsure[:6])}).",
+                "Right-click one → Test this light (asked once per model)")
         movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
         if movers and not self.floor_safe:
             add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Position tab → Stay on the floor")

@@ -7,25 +7,28 @@ export const BOTTOMS = ["faders", "buttons", "timeline"];
 
 // the ready ones: what a job wants on screen
 export const BUILTIN = [
-  { id: "programming", name: "Programming", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
-  { id: "busking", name: "Busking", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
-  { id: "theatre", name: "Theatre (cues)", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
-  { id: "show", name: "Show (run only)", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom" },
+  { id: "programming", name: "Programming", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "busking", name: "Busking", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "theatre", name: "Theatre (cues)", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "show", name: "Show (run only)", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
 ];
 
 export const SIDES = ["left", "right"];
+// where a side panel can be: a side of the screen, or floating over the 3D
+export const PLACES = [...SIDES, "float"];
 
 /** Where the panels go: {cols, rows, areas, fixAt, progAt, top} for the
  *  workspace grid.  Each side panel on the left or the right (both on one
  *  side works: the fixture list on the outside), the dock at the bottom or
- *  the top.  A hidden panel takes no column. */
+ *  the top.  A hidden or floating panel takes no column. */
 export function gridFor(w) {
-  const fixAt = SIDES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left");
-  const progAt = SIDES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right");
+  const fixAt = PLACES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left");
+  const progAt = PLACES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right");
   const cols = { fixtures: "var(--fixtures-w)", prog: "var(--prog-w)" };
   const left = [], right = [];
-  if (w.fix !== false) (fixAt === "left" ? left : right).push("fixtures");
-  if (w.prog !== false) (progAt === "left" ? left : right).push("prog");
+  // a floating panel takes no column: it sits over the 3D view
+  if (w.fix !== false && fixAt !== "float") (fixAt === "left" ? left : right).push("fixtures");
+  if (w.prog !== false && progAt !== "float") (progAt === "left" ? left : right).push("prog");
   // two on one side: the fixture list at the screen's edge
   left.sort((a) => (a === "fixtures" ? -1 : 1));
   right.sort((a) => (a === "fixtures" ? 1 : -1));
@@ -40,6 +43,11 @@ export function gridFor(w) {
   };
 }
 
+const pos = (p, x) => {
+  const n = (v, d) => (Number.isFinite(+v) ? Math.max(0, Math.min(4000, Math.round(+v))) : d);
+  return { x: n(p && p.x, x), y: n(p && p.y, 16) };
+};
+
 /** A workspace with every field the right type (a damaged entry can't break the screen). */
 export function clean(w) {
   const width = (v) => { v = Math.round(+v || 0); return v ? Math.max(MIN_W, Math.min(MAX_W, v)) : 0; };
@@ -50,8 +58,10 @@ export function clean(w) {
     bottom: BOTTOMS.includes(w.bottom) ? w.bottom : "faders",
     dock: Math.max(0, Math.min(1200, Math.round(+w.dock || 0))),
     tab: /^[a-z]{1,20}$/.test(w.tab || "") ? w.tab : "",
-    fixAt: SIDES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left"),
-    progAt: SIDES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right"),
+    fixAt: PLACES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left"),
+    progAt: PLACES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right"),
     dockAt: w.dockAt === "top" ? "top" : "bottom",
+    // a floating panel's top-left corner over the 3D view, in px
+    fixPos: pos(w.fixPos, 16), progPos: pos(w.progPos, 340),
   };
 }

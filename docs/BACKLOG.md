@@ -223,7 +223,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      file has no pictures keep the drawn patterns.
    * **Shadows:** the crowd, performers, objects and the stage block the
      brightest beams (Crowd menu -> Shadows; off on Fast quality).
-   Left (later): real lens-flare streaks.
+   Lens-flare streaks: DONE 2026-10-09.
 11. **Output extras:** LTC timecode and OSC out DONE 2026-10-08; Pro DJ Link
     phrase data still open (it needs the players' database protocol and a
     CDJ-3000 to check against).
@@ -424,7 +424,7 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    its height; the programmer tab.  Per computer (each operator's own).
    Panels placed freely (2026-10-08): each side panel left or right
    (both on one side too) by dragging its title, the dock at the bottom
-   or the top.  Left: panels floating over the 3D.
+   or the top.  Panels floating over the 3D: DONE 2026-10-09.
    Was: **Customisable workspaces** - drag panels into your own layout per show
    or per user (busking, theatre, programming); switch with one key.  (Pairs
    with A9 step 1's windows.)
@@ -433,7 +433,10 @@ Suggested order: the operator's top picks first (1-4), then the rest.
    from the start or the show run by hand, Full HD / 4K / small, MP4
    (WebM fallback), the 3D's quality held while it records.  The
    timeline's music goes in the video too (2026-10-08).  Left:
-   frame-exact (offline) rendering.
+   frame-exact (offline) rendering - it needs the engine to work out the
+   looks at any moment of the timeline without playing it (fades, effects
+   and chases are run live by the output thread today), then the page to
+   draw and encode each frame (WebCodecs + an MP4 muxer).  A bigger job.
    Was: **Offline programming with a video render** - program at home, export a
    video of the 3D preview for the client.  (Pairs with A9 step 2.)
 8. **(DONE 2026-10-08) Fixture library updates** - a weekly job
@@ -715,7 +718,10 @@ counts are modes, not lights.
    BLACKOUT can't darken them on the wire, so the 3D shows them lit in
    BLACKOUT too (true to the real light).  The Ready? check lists them
    before doors.  (Found 2026-10-02 by the libsweep Blackout check.)
-10. **Lights whose only on / off is a colour-macro channel** (1- and
+10. **(DONE 2026-10-09) Lights whose only on / off is a colour-macro
+    channel**: asked once in Test this light ("with its colour channel at
+    0, dark or lit?"), kept for the model; Full / Out / Blackout and the 3D
+    follow; Ready? lists the unasked.  Was: **Lights whose only on / off is a colour-macro channel** (1- and
     2-channel modes): Full, Out and Locate now use a slot named
     "Blackout" when the file has one; a file that names nothing leaves the
     desk guessing.  Worth a "Test this light" question for these.
@@ -726,7 +732,11 @@ counts are modes, not lights.
     Function", then Red, Green, Blue, White): on an LED light "No function"
     at 0 is likely dark, on a lamp light's wheel it is open white - the
     file can't tell which, so ask once with the real light.
-11. **Combo bars drawn as one thing** (Stairville All FX Bar: PARs,
+11. **(Drawn: DONE 2026-10-09)** a combo bar is drawn as a bar with its
+    LED heads and the laser window; still a laser to the desk (its laser
+    part keeps needing ARM - safety first).  Left: Full / colour reaching an
+    LED part that has real colour channels (the All FX Bar's has only auto
+    shows).  Was: **Combo bars drawn as one thing** (Stairville All FX Bar: PARs,
     derbys, strobe and a laser on one bar): the desk treats it as a laser
     (so the laser part needs ARM), and the 3D draws a laser projector.  A
     combined model - a bar with its lenses and a laser fan - and Full /
@@ -872,6 +882,20 @@ Fixed:
    (Settings -> MIDI: every message from the desk computer's controller
    with what it did, and every message a controller on the tablet sends).
 
+## A8c. Gobos in the 3D match the light (2026-10-09)
+
+Reported on a Chauvet Intimidator: the 3D's gobos didn't look like the
+light's.  Sending was right (library rule `gobo_pick_matches_3d`: on all
+467 library lights with a gobo wheel, the gobo picked is the one the 3D
+shows).  The pictures were the gap: 250 of the 467 files have none, so
+the 3D drew stand-in patterns (rule `gobo_real_pictures`, baseline in
+rules_known.json - a light that gains its pictures shows as fixed, a new
+stand-in fails CI).  Now: the same light's pictures from the other library
+(twin, same number of gobos), and the maker's own gobo images from its GDTF
+(imported, or fetched from GDTF Share: Beam tab -> Get the maker's gobos).
+Left: more pictures for the 250 - each one a GDTF from the maker, or a
+picture added to the library upstream (OFL / QLC+).
+
 ## A8b. Prevention, not one light at a time (2026-10-08)
 
 - **(DONE) Library rules** (tools/rulecheck.py, CI job library-rules): the
@@ -1002,7 +1026,7 @@ blur, VR).
     Shows); Views -> Take a photo (the view re-rendered at 4K, PNG);
     Views -> Walk around (eye height, W A S D / arrows, Shift runs, drag to
     look, stays inside the walls, Esc).  Shadows and clip upload: done
-    (plan item 10).  **Left:** real lens-flare streaks.
+    (plan item 10).  Lens-flare streaks: done 2026-10-09.
 15. **Paperwork.  DONE:** Show ▾ -> Paperwork… (/plot.html): the light
     plot (the room from above - walls, stage, zones, objects, marks,
     rigging with names and trims - a symbol per kind of light with its

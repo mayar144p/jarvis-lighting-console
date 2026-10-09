@@ -1121,9 +1121,53 @@ def gobo_slots(source: str, mode: str = "") -> list[list]:
     return out
 
 
+_TWINS: dict[tuple, list[str]] = {}
+
+
+def _brand(manufacturer: str) -> str:
+    """The maker, as both libraries can spell it ("Chauvet DJ" and
+    "Chauvet" are one maker)."""
+    words = _norm(manufacturer).split()
+    return words[0] if words else ""
+
+
+def twin_gobos(manufacturer: str, model: str, count: int) -> list[str]:
+    """The gobo pictures of the same light in a bundled library (the other
+    one usually: OFL calls the slots "Slot 2..." where QLC+ has the
+    pictures), in wheel order, open slot left out - only when it has the
+    same number of gobos, so each picture lands on its own slot.  []."""
+    key = (_brand(manufacturer), _norm(model), int(count))
+    if key in _TWINS:
+        return _TWINS[key]
+    out: list[str] = []
+    if key[0] and key[1] and count > 0:
+        for src in ("qlc", "ofl"):
+            for row in index(src):
+                if _brand(row["manufacturer"]) != key[0] or _norm(row["model"]) != key[1]:
+                    continue
+                pics = [r[2] for r in gobo_slots(f"{src}:{row['key']}") if r[2]]
+                if len(pics) == count:
+                    out = pics
+                    break
+            if out:
+                break
+    _TWINS[key] = out
+    return out
+
+
 def gobo_picture(ref: str) -> tuple[bytes, str] | None:
-    """The picture for "qlc:Maker/gobo.svg" / "ofl:name" from gobos.zip."""
+    """The picture for "qlc:Maker/gobo.svg" / "ofl:name" from gobos.zip, or
+    "gdtf:<hash>.png" - a maker's own gobo from an imported GDTF, kept in
+    DATA/gobos."""
     src, _, name = str(ref or "").partition(":")
+    if src == "gdtf":
+        if not re.fullmatch(r"[0-9a-f]{20}\.(png|svg|jpg)", name):
+            return None
+        from . import config
+        f = config.DATA / "gobos" / name
+        if not f.is_file():
+            return None
+        return f.read_bytes(), {".jpg": "image/jpeg"}.get(f.suffix, GOBO_TYPES.get(f.suffix, "application/octet-stream"))
     if src not in ("ofl", "qlc") or not name or ".." in name or name.startswith("/"):
         return None
     path = BUNDLE_DIR / "gobos.zip"

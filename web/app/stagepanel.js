@@ -226,9 +226,10 @@ function crowdMenu(btn, keep) {
   ]);
 }
 
-/** Each light model's real body from GDTF Share (the maker's 3D model);
- *  the profile and its channels stay exactly as they are. */
-async function realBodies() {
+/** Each light model's real body from GDTF Share (the maker's 3D model,
+ *  and its own gobo pictures); the profile and its channels stay exactly
+ *  as they are. */
+export async function realBodies() {
   toast("Looking the rig up on GDTF Share…", "", 4000);
   const d = await post("/api/gdtf/bodies", {}).catch((e) => ({ error: e.message }));
   if (d.error) {
@@ -273,7 +274,7 @@ function viewsMenu(btn) {
     } },
     { label: recording() ? "■ Stop recording" : "Record a video…", hint: recording() ? "and save it" : "the 3D view for the client (MP4)",
       run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
-    { label: "The makers' 3D bodies", hint: "from GDTF Share, for the 3D only", run: realBodies },
+    { label: "The makers' 3D bodies and gobos", hint: "from GDTF Share, for the 3D only", run: realBodies },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
     { label: "Save this view…", run: async () => {

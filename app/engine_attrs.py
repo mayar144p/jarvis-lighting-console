@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from app import fixlib, merge, profiles
+from app import fixlib, fixtures, merge, profiles
 from app import venue as venue_mod
 from app.engine_base import (
     _COLOUR_ROLES,
@@ -279,6 +279,15 @@ class AttrMixin:
             # colour is set (merge.resolve_head).  "Full" used to do
             # nothing at all on these, the commonest DJ lights.
             out[VDIM] = int(pct)
+        elif (q := self.zero_question(head)) and q["dark"]:
+            # its colour-macro channel is its on / off, and the operator said
+            # 0 ("No function") is dark: Full lights it white (or its first
+            # colour) unless a colour is already picked, Out goes back to 0
+            now_v = int((self.programmer.get(head["head_no"]) or {}).get(q["role"], 0))
+            if pct > 0 and now_v <= q["to"]:
+                out[q["role"]] = q["lit"]
+            elif pct <= 0:
+                out[q["role"]] = 0
         elif "wheel" in head["map"]:
             # its colour channel is its on / off (a Swarm: 0 = "Blackout"):
             # Full leaves the blackout slot for its white / first colour,
@@ -484,6 +493,20 @@ class AttrMixin:
             rows = [[s["from"], s["to"], "" if re.search(r"\bopen\b|no gobo", s.get("name") or "", re.I) else "-"]
                     for s in self._wheel_slots(head, "gobo")
                     if not re.search(r"shake|scroll|rotat|spin|rainbow", s.get("name") or "", re.I)]
+            # the same light in the other library has the pictures (same
+            # number of gobos): each one onto its own slot, in wheel order
+            stand = [r for r in rows if r[2] == "-"]
+            twin = fixlib.twin_gobos(head.get("manufacturer") or "", head.get("model") or "", len(stand))
+            if not twin and stand:
+                # or the maker's own GDTF, fetched for the light's 3D body
+                # (Fixtures -> Get the makers' 3D models): its gobo images
+                from app import config, gdtfshare
+                body = gdtfshare.GdtfShare.cached_body(config.GDTF_SHARE_CACHE, head.get("manufacturer") or "",
+                                                       head.get("model") or "")
+                pics = fixtures.gdtf_gobo_pictures(body) if body else []
+                twin = pics if len(pics) == len(stand) else []
+            for r, pic in zip(stand, twin):
+                r[2] = pic
         return rows or None
 
     _GOBO2 = re.compile(r"gobo\s*(wheel)?\s*2\b", re.I)
@@ -646,6 +669,9 @@ class AttrMixin:
                                 or next((s for s in slots if not dark.match(str(s["name"]))), None)
                             if lit:
                                 out[role] = int(lit["value"])
+        q = self.zero_question(head)
+        if q and q["dark"]:
+            out[q["role"]] = q["lit"]          # 0 is dark on this light: white is its white slot
         return out
 
     def _a_set_colour(self, hex=None, colour=None, value=None, cell=None, **_):

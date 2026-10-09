@@ -241,13 +241,20 @@ def _describe_fx(kind: str, manufacturer: str, has: set) -> dict:
     t = TYPES[kind]
     brand = brand_of(manufacturer)
     b = BRANDS[brand]
-    return {"type": kind, "label": t["label"], "moving": False,
-            "class": "laser" if kind == "laser" else "sfx",
-            "brand": brand,
-            "brand_name": b["name"] if brand != "generic" else (manufacturer or "Generic"),
-            "style": {"body": b["body"], "accent": b["accent"], "finish": b["finish"]},
-            "cells": 1, "beam": {"min": t["beam"][0], "max": t["beam"][1]},
-            "features": sorted(r for r in has if r.startswith(("fx_", "laser_")) or r == "fog")}
+    out = {"type": kind, "label": t["label"], "moving": False,
+           "class": "laser" if kind == "laser" else "sfx",
+           "brand": brand,
+           "brand_name": b["name"] if brand != "generic" else (manufacturer or "Generic"),
+           "style": {"body": b["body"], "accent": b["accent"], "finish": b["finish"]},
+           "cells": 1, "beam": {"min": t["beam"][0], "max": t["beam"][1]},
+           "features": sorted(r for r in has if r.startswith(("fx_", "laser_")) or r == "fog")}
+    if kind == "laser" and has & {"dimmer", "red", "green", "blue", "white", "strobe"}:
+        # a combo bar (Stairville All FX Bar: LED beams, strobes and a
+        # laser on one bar): still a laser to the desk - its laser part
+        # needs ARM - but drawn as the bar it is
+        out["combo"] = True
+        out["label"] = "Effect bar with laser"
+    return out
 
 
 @lru_cache(maxsize=512)

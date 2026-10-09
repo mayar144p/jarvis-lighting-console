@@ -704,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
                     if key in seen or not key[1] or eng.model_source(h).lower().endswith(".gdtf"):
                         continue
                     seen.add(key)
-                    if client.body_file(*key):
+                    if client.body_file(*key) or gdtfshare.GdtfShare.cached_body(client.cache_dir, *key):
                         done.append({"model": " ".join(key).strip(), "ok": True, "had": True})
                         continue
                     try:

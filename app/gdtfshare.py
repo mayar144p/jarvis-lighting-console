@@ -519,10 +519,22 @@ class GdtfShare:
     def _body_key(cls, manufacturer: str, model: str) -> str:
         return cls._squash(manufacturer) + "/" + cls._squash(model)
 
+    @classmethod
+    def cached_body(cls, cache_dir: Path, manufacturer: str, model: str) -> Path | None:
+        """The maker's .gdtf kept for this light (body_file without a
+        client: the engine reads its gobo pictures), or None."""
+        try:
+            got = json.loads((Path(cache_dir) / "bodies.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        name = (got.get(cls._body_key(manufacturer, model)) or {}).get("file") or ""
+        f = Path(cache_dir) / name
+        return f if name and "/" not in name and f.is_file() else None
+
     def body_file(self, manufacturer: str, model: str) -> str | None:
         """The .gdtf (in the cache) whose 3D model this light uses, or None."""
         got = self._bodies().get(self._body_key(manufacturer, model)) or {}
-        name = got.get("file") or ""
+        name = "" if got.get("gobos_only") else got.get("file") or ""     # no 3D model in it
         return name if name and (self.cache_dir / name).is_file() else None
 
     def fetch_body(self, manufacturer: str, model: str) -> dict:
@@ -546,14 +558,18 @@ class GdtfShare:
             from io import BytesIO
             with ZipFile(BytesIO(payload)) as zf:
                 has_models = bool(model_members(zf))
+                # its own gobo pictures (wheels/...): kept for the 3D's
+                # gobos even when it has no 3D model
+                has_gobos = any(n.lower().startswith("wheels/") for n in zf.namelist())
         except BadZipFile:
             return {"ok": False, "reason": "the Share's file is not a GDTF"}
-        if not has_models:
-            return {"ok": False, "reason": "its GDTF has no 3D model"}
+        if not has_models and not has_gobos:
+            return {"ok": False, "reason": "its GDTF has no 3D model or gobo pictures"}
         (self.cache_dir / name).write_bytes(payload)
         bodies = self._bodies()
         bodies[self._body_key(manufacturer, model)] = {"file": name, "rid": rid,
-                                                       "fixture": f"{best.get('manufacturer')} {best.get('fixture')}"}
+                                                       "fixture": f"{best.get('manufacturer')} {best.get('fixture')}",
+                                                       **({} if has_models else {"gobos_only": True})}
         self._bodies_file.write_text(json.dumps(bodies, indent=1), encoding="utf-8")
         return {"ok": True, "file": name, "fixture": bodies[self._body_key(manufacturer, model)]["fixture"]}
 

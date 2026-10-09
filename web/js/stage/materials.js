@@ -459,6 +459,36 @@ export function beamMaterial() {
 
 // A soft radial glow for lenses seen head-on.
 let glowTexture = null;
+// A lens flare's streak: a thin horizontal line of light through a lens
+// that faces the camera (what a camera sees looking into a beam).
+let streakTexture = null;
+export function streakMap() {
+  if (streakTexture) return streakTexture;
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 32;
+  const g = c.getContext("2d");
+  const along = g.createLinearGradient(0, 0, 256, 0);
+  along.addColorStop(0, "rgba(255,255,255,0)");
+  along.addColorStop(0.35, "rgba(255,255,255,0.25)");
+  along.addColorStop(0.5, "rgba(255,255,255,1)");
+  along.addColorStop(0.65, "rgba(255,255,255,0.25)");
+  along.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = along;
+  g.fillRect(0, 0, 256, 32);
+  // thin: fade it top and bottom
+  g.globalCompositeOperation = "destination-in";
+  const across = g.createLinearGradient(0, 0, 0, 32);
+  across.addColorStop(0, "rgba(0,0,0,0)");
+  across.addColorStop(0.5, "rgba(0,0,0,1)");
+  across.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = across;
+  g.fillRect(0, 0, 256, 32);
+  streakTexture = new THREE.CanvasTexture(c);
+  streakTexture.colorSpace = THREE.SRGBColorSpace;
+  return streakTexture;
+}
+
 export function glowMap() {
   if (glowTexture) return glowTexture;
   const c = document.createElement("canvas");

@@ -568,6 +568,16 @@ function renderBeamQuick() {
     if (!by[role]) continue;
     rows.push(h("div.chip-row", h("span.k", role === "gobo" ? "Gobo" : "Gobo 2"), ...slotButtons(role, by[role])));
   }
+  // its file has no gobo pictures: the 3D draws stand-ins - the maker's own
+  // GDTF (GDTF Share) usually has them
+  const sel = new Set(selected());
+  const drawn = by.gobo && patch().filter((x) => sel.has(x.head_no) && (x.gobos || []).some((g) => g[2] === "-"));
+  if (drawn && drawn.length) {
+    const models = [...new Set(drawn.map((x) => x.model))];
+    rows.push(h("div.small.muted.gobo-standin",
+      `${models.join(", ")}: its fixture file has no gobo pictures, so the 3D draws stand-ins. `,
+      h("button.btn.small", { onclick: () => import("./stagepanel.js").then((m) => m.realBodies()) }, "Get the maker's gobos")));
+  }
   if (by.prism) rows.push(h("div.chip-row", h("span.k", "Prism"), h("button.chip", { onclick: set("prism", 0) }, "Out"), h("button.chip", { onclick: set("prism", 128) }, "In")));
   for (const [role, label, a, b] of [["zoom", "Zoom", "Narrow", "Wide"], ["iris", "Iris", "Open", "Closed"], ["frost", "Frost", "Off", "Full"], ["focus", "Focus", "Near", "Far"]]) {
     if (!by[role]) continue;

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import multiprocessing as mp
+import re
 import sys
 import tempfile
 import time
@@ -156,6 +157,41 @@ def r_every_head_colours(e, h):
     return f"red channel(s) {dark} not lit on red" if dark else ""
 
 
+def r_gobo_pick_matches_3d(e, h):
+    """Every gobo the programmer offers sends a value the 3D draws as that
+    same gobo (its picture, or the open beam for "Open")."""
+    if "gobo" not in (h.get("map") or []):
+        return None
+    slots = e._wheel_slots(h, "gobo")
+    rows = e._gobo_images(h) or []
+    if not slots or not rows:
+        return None
+    bad = []
+    for s in slots:
+        v = int(s["value"])
+        row = next((r for r in rows if r[0] <= v <= r[1]), None)
+        if s.get("img"):
+            if not row or row[2] != s["img"]:
+                bad.append(f"{s['name']!r} sends {v}, the 3D shows {row[2] if row else 'nothing'}")
+        elif row and row[2] and row[2] != "-" and re.search(r"\bopen\b|no gobo", str(s.get("name") or ""), re.I):
+            bad.append(f"{s['name']!r} (open) sends {v}, the 3D shows a gobo")
+    return "; ".join(bad[:3])
+
+
+def r_gobo_real_pictures(e, h):
+    """A light with a gobo wheel shows its real gobos in the 3D, not drawn
+    stand-ins (the file - or the same light in the other library - has the
+    pictures)."""
+    if "gobo" not in (h.get("map") or []):
+        return None
+    rows = e._gobo_images(h) or []
+    gobos = [r for r in rows if r[2]]
+    if not gobos:
+        return None
+    stand = sum(1 for r in gobos if r[2] == "-")
+    return f"{stand} of {len(gobos)} gobos drawn as stand-ins" if stand else ""
+
+
 RULES = [
     ("strobe_in_range", "Strobe Slow / Medium / Fast land inside the light's own strobe range", r_strobe_in_range),
     ("strobe_direction", "Fast strobes faster than Slow (a 'fast to slow' range read the right way)", r_strobe_direction),
@@ -164,6 +200,8 @@ RULES = [
     ("lit_shows_colour", "A lit colour light never shows as 'unknown' grey in the 3D", r_lit_shows_colour),
     ("every_head_moves", "Every head of a multi-head light moves", r_every_head_moves),
     ("every_head_colours", "Every head of a multi-head light takes the colour", r_every_head_colours),
+    ("gobo_pick_matches_3d", "A gobo picked in the programmer is the gobo the 3D shows", r_gobo_pick_matches_3d),
+    ("gobo_real_pictures", "A light's gobos show as its real pictures in the 3D, not stand-ins", r_gobo_real_pictures),
 ]
 
 

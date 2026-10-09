@@ -78,7 +78,19 @@ physically is and who made it:
   and head as the file's own pivots.
 * **Light.** Beams are volumetric cones driven by the live output: colour,
   intensity, zoom, pan/tilt, gobo and strobe, lighting the floor, the flown
-  truss and the performers, with bloom and optional haze.
+  truss and the performers, with bloom and optional haze. A lens that looks
+  straight at the camera draws a thin flare streak, as a camera sees it.
+* **Gobos.** A light's own gobo pictures are projected for the slot its gobo
+  channel is in. They come from its fixture file; when that file has none,
+  from the same light in the other library (the two often describe one light,
+  only one with pictures), or from the maker's own GDTF. A light still drawn
+  with stand-in patterns says so on the Beam tab: **Get the maker's gobos**
+  fetches its GDTF from GDTF Share (signed in; the same as Stage → **The
+  makers' 3D bodies and gobos**). The gobo you pick always sends the value
+  the 3D shows - a library check proves it on every light.
+* **Effect bars** (PARs, derbys, strobes and a laser on one bar) are drawn
+  as the bar they are; the desk still treats them as a laser, so the laser
+  part needs ARM.
 * The fixture picker shows the same 3D model before you patch anything.
 * **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
   draw calls, and the crowd is lit per vertex. The view only redraws when
@@ -267,7 +279,9 @@ The top bar's **workspace** button arranges the screen for the job:
 Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
 left it: the fixture list and programmer shown or hidden, which side each
 is on (drag a panel by its title to the side you want - both can go on the
-same side - or pick it in the workspace menu), their widths (drag a panel's
+same side - or pick it in the workspace menu), or floating over the 3D view
+(drag it by its title anywhere over the 3D; drag it near a side to dock it
+again), their widths (drag a panel's
 inner edge; double-click for the normal width), the faders / buttons dock at
 the bottom or the top and its height, the programmer's tab. *Save as a new workspace* makes your own. Workspaces belong to this
 computer (each operator's own), not to the show.
@@ -595,6 +609,12 @@ add a model the desk hasn't seen pass the test). Go live first, then:
    them until the real light comes on, then press **It's on - keep these**. That
    works even when the fixture file is wrong. A channel the file never named is
    then held at that value for the model.
+   A light whose colour channel is its only on / off (a derby's "Color
+   macro", a small LED's "Programs") and whose file calls 0 only "No
+   function" is asked once more: with that channel at 0, is the real light
+   **Dark** or **Lit**? The answer is kept for the model: Full lights it,
+   Out and Blackout darken it, and the 3D draws it that way. **Ready?** lists
+   such lights until they've been asked.
 3. It then moves pan and tilt, shows red, green and blue, and strobes fast then
    slow, asking each time whether the real light did the same (on a multi-head
    light: all of its heads). A wrong answer usually means the light's
