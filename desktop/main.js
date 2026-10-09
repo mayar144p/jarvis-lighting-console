@@ -113,6 +113,28 @@ function lanAddresses() {
   return Object.values(os.networkInterfaces()).flat()
     .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
 }
+// a Tailscale (or other CGNAT-range VPN) address: 100.64.0.0/10
+const isTailscale = (a) => { const [x, y] = a.split(".").map(Number); return x === 100 && y >= 64 && y <= 127; };
+
+// Windows Firewall: the other computer reaches the desk only once Windows
+// lets the port in.  Its own "allow?" question covers private networks
+// only, a home network is often set "Public", and a dismissed question
+// isn't asked again - the page then just never loads on the other
+// computer.  One rule for the desk's port, from this network and Tailscale
+// only (never the open internet), added after Windows' admin prompt.
+const fwName = (port) => `Jarvis desk (port ${port})`;
+function firewallHasRule(port) {
+  if (process.platform !== "win32") return true;
+  const r = spawnSync("netsh", ["advfirewall", "firewall", "show", "rule", `name=${fwName(port)}`], { windowsHide: true });
+  return r.status === 0;
+}
+function firewallAllow(port) {
+  const args = `advfirewall firewall add rule name="${fwName(port)}" dir=in action=allow protocol=TCP localport=${port} profile=any remoteip=LocalSubnet,100.64.0.0/10`;
+  // the admin prompt: netsh started elevated by PowerShell, waited for
+  const ps = `Start-Process -FilePath netsh -ArgumentList '${args.replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden`;
+  spawnSync("powershell.exe", ["-NoProfile", "-Command", ps], { windowsHide: true });
+  return firewallHasRule(port);
+}
 
 // Jarvis from the repo brings itself up to date every time it opens, like
 // run.bat: tools/update.py fast-forwards to the latest version (never with
@@ -308,7 +330,7 @@ function menu() {
       { label: "Programmer and fixtures", click: () => openPart("desk") },
       { label: "Playbacks and buttons", click: () => openPart("playbacks") },
       { type: "separator" },
-      { label: "Phones and tablets…", click: phonesDialog },
+      { label: "Other computers, phones and tablets…", click: phonesDialog },
       { type: "separator" },
       { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: () => { if (confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
     ] },
@@ -344,9 +366,10 @@ async function phonesDialog() {
   if (!d.remotes) {
     const r = await dialog.showMessageBox(win, {
       type: "question", buttons: ["Allow phones and tablets", "Cancel"], defaultId: 0, cancelId: 1,
-      message: "Use a phone or tablet as a remote?",
-      detail: "The desk then answers on this computer's network, locked with a pairing code you type on the phone once. "
-        + "The phone must be on the same network (Wi-Fi) as this computer. Windows may ask to allow Jarvis through its firewall: allow it on private networks.",
+      message: "Use this desk from another computer, a phone or a tablet?",
+      detail: "The desk then answers on this computer's network, locked with a pairing code you type there once. "
+        + "Another computer gets the whole desk - patch, program, the 3D - working on this computer's show; a phone can have just the faders. "
+        + "It must be on the same network as this computer, or joined to it by Tailscale (for another town or country).",
     });
     if (r.response !== 0) return;
     Object.assign(d, { remotes: true, code: newCode() });
@@ -355,16 +378,31 @@ async function phonesDialog() {
   }
   const port = Number(new URL(base).port);
   const addrs = lanAddresses();
+  const fwOk = firewallHasRule(port);
+  const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)" : "");
+  const buttons = ["OK", "New code", "Stop allowing others"];
+  if (!fwOk) buttons.push("Let it through Windows Firewall");
   const r = await dialog.showMessageBox(win, {
-    type: "info", buttons: ["OK", "New code", "Stop allowing phones"], defaultId: 0, cancelId: 0,
+    type: "info", buttons, defaultId: 0, cancelId: 0,
     message: `Pairing code: ${showCode(d.code)}`,
-    detail: (addrs.length ? `On the phone or tablet, open:\n${addrs.map((a) => `  http://${a}:${port}`).join("\n")}\nthen type the code.`
+    detail: (addrs.length ? `On the other computer, phone or tablet, open:\n${addrs.map(where).join("\n")}\nthen type the code. A computer gets the whole desk.`
       + `\n\nJust the faders and buttons (a remote in your hand):\n  http://${addrs[0]}:${port}/?window=playbacks`
-      : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the phone.")
-      + "\n\n\"New code\" signs every phone out.",
+      : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the other device.")
+      + (fwOk ? "" : "\n\nIf the page doesn't load on the other device, Windows Firewall is blocking it: press \"Let it through Windows Firewall\" (Windows asks for permission once).")
+      + "\n\n\"New code\" signs every other device out.",
   });
   if (r.response === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
   if (r.response === 2) { d.remotes = false; saveState(); await restartEngine(); }
+  if (r.response === 3) {
+    const ok = firewallAllow(port);
+    await dialog.showMessageBox(win, {
+      type: ok ? "info" : "warning", buttons: ["OK"],
+      message: ok ? "Windows Firewall now lets the desk in" : "Windows Firewall wasn't changed",
+      detail: ok ? `From this network and Tailscale only, on port ${port}. Load the page on the other device again.`
+        : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Jarvis (and Python) on private and public networks.",
+    });
+    return phonesDialog();
+  }
 }
 
 // ------------------------------------------------------------------ start

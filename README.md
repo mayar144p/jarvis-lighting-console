@@ -93,12 +93,27 @@ fixtures and settings live in `%APPDATA%\Jarvis` (your AI key goes in
 `%APPDATA%\Jarvis\.env`), so they survive updates and reinstalls. The
 artifact stays private to the repo and is kept 14 days.
 
-**Phones and tablets as remotes:** Desk → Phones and tablets… → Allow. The
-desk then answers your network on a fixed port, locked with a pairing code;
-on the phone (same Wi-Fi) open the address it shows and type the code once
-(`/?window=playbacks` gives just the faders and buttons). "New code" signs
-every phone out; "Stop allowing" goes back to this computer only. Windows
-asks once to let Jarvis through the firewall: allow it on private networks.
+**Another computer, a phone or a tablet:** Desk → Other computers, phones and
+tablets… → Allow. The desk then answers your network on a fixed port, locked
+with a pairing code. On the other device open the address it shows and type
+the code once. A computer gets the **whole desk** - patch, program, the 3D -
+working on this computer's show, live on both screens; `/?window=playbacks`
+gives just the faders and buttons for a phone. "New code" signs every other
+device out; "Stop allowing others" goes back to this computer only. If the
+page never loads on the other device, Windows Firewall is blocking it: the
+same dialog has **Let it through Windows Firewall** (from your network and
+Tailscale only).
+
+**From another town or country** (you in Sweden, the lights in Australia):
+don't share the screen - run the desk on the computer with the lights and
+open it in your own browser. Both install **Tailscale** (free) and sign in
+to the same account; then use the Tailscale address the dialog shows
+(100.x.x.x). Only your button presses travel (about 0.15 s Sweden -
+Australia), the 3D draws on your own computer, and the fades, effects and
+timeline run on the lights' computer, so the light stays smooth. Never open
+the port on your router to the internet. Started with `run.bat` instead of
+the app: put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
+`.env`.
 
 **USB DMX:** Settings → Output → "USB DMX interface (Enttec USB Pro and
 compatible)" and pick its port (COM3...). One box is one universe
