@@ -491,6 +491,8 @@ def main() -> int:
 
     elapsed = time.monotonic() - started
     print(f"\n{common.PASS} passed, {common.FAIL} failed in {elapsed:.1f}s")
+    for line in common.FAILED:
+        print("  FAIL " + line)
     if crashed:
         print("crashed suites: " + ", ".join(crashed))
     if silent:

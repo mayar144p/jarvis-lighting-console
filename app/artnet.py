@@ -470,10 +470,12 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
             for target in targets:
                 if time.monotonic() > send_until:
                     break
-                # the queue full: let it drain and send THIS address again
-                # (skipping it missed a node now and then - and the CI's
-                # "how hard it looked" count came out 252 of 254)
-                for _try in range(20):
+                # the queue full: let it drain and send THIS address again,
+                # for as long as the burst's second lasts (skipping it
+                # missed a node now and then - and the CI's "how hard it
+                # looked" count came out 252 of 254; with 20 tries 1 ms
+                # apart a busy machine still dropped a dozen, 242)
+                while True:
                     try:
                         sock.sendto(poll, (target, port))
                         sent += 1
@@ -576,13 +578,17 @@ def sweep(subnets: list[str] | None = None, timeout: float = 2.0,
             "node": row["node"],
             "via": "unicast sweep",
         })
+    # addresses the burst's second ran out on (a computer too busy to send
+    # them): said, never counted as looked at
+    skipped = max(0, len(targets) - sent - unreachable)
     message = (f"{len(nodes)} node(s), {len(rows)} universe(s) on "
                f"{sent + unreachable} polled address(es)" if nodes else
                f"no node answered on {sent + unreachable} unicast address(es) "
-               f"({', '.join(subnets)})")
+               f"({', '.join(subnets)})") + (
+               f"; {skipped} address(es) not polled (the computer was too busy) - try again" if skipped else "")
     return {"universes": rows, "nodes": list(nodes.values()), "error": None,
             "polls_sent": sent, "replies": replies, "frames": frames,
-            "swept": sent + unreachable, "unreachable": unreachable,
+            "swept": sent + unreachable, "unreachable": unreachable, "skipped": skipped,
             "subnets": subnets, "bound_port": bound_port,
             "bind_note": bind_note, "message": message,
             # seconds per stage, to see where a slow "Find nodes" went
