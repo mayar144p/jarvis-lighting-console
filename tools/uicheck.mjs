@@ -365,7 +365,7 @@ let rigBuilt = false;
 for (const width of WIDTHS) {
   const height = width >= 1900 ? 1080 : width >= 1440 ? 900 : 800;
   const p = await browser.newPage({ viewport: { width, height } });
-  p.on("pageerror", (e) => { pageErrors.push(String(e.message || e)); });
+  p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
   await p.addInitScript((big) => {
     try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (big) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
@@ -418,4 +418,7 @@ console.log(lines.slice(0, 3).join("\n"));
 for (const [k, list] of Object.entries(kinds)) console.log(`  ${k}: ${list.length}`);
 console.log(`report: ${join(outDir, "report.md")}`);
 const hard = findings.filter((f) => ["page-error", "step-failed", "empty", "bad-text"].includes(f.kind));
+// the ones that fail the run, in full on the console: CI's log then says
+// what broke without downloading the screenshots
+for (const f of hard) console.log(`  FAIL [${f.width} ${f.step}] ${f.kind}: ${f.what}${f.detail ? "\n       " + String(f.detail).slice(0, 1500) : ""}`);
 process.exit(hard.length ? 1 : 0);
