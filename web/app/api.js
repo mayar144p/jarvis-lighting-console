@@ -9,7 +9,7 @@ const TOKEN_KEY = "jarvis.token";
 let prompting = false;
 let snoozeUntil = 0;
 
-// a pairing code from the desktop app (Desk -> Phones and tablets): typed on
+// a pairing code from the desktop app (Desk -> Other computers, phones and tablets): typed on
 // a phone it may come in lower case or with its dash
 const clean = (t) => {
   const s = String(t || "").trim();
@@ -48,7 +48,7 @@ function headers(json) {
 function askToken() {
   if (prompting || Date.now() < snoozeUntil) return false;
   prompting = true;
-  const t = window.prompt("This desk needs its code.\nType the pairing code shown on the desk (Desk → Phones and tablets), or the CONSOLE_TOKEN from .env:");
+  const t = window.prompt("This desk needs its code.\nType the pairing code shown on the desk (Desk → Other computers, phones and tablets), or the CONSOLE_TOKEN from .env:");
   prompting = false;
   if (t) { setToken(clean(t)); return true; }
   snoozeUntil = Date.now() + 30000;

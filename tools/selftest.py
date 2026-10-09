@@ -193,6 +193,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_sweep3_adds_c,
     test_arrange_turn_and_move,
     test_batch_e,
+    test_remote_desk,
     test_multihead_aim,
     test_review_fixes_oct,
     test_plan_preview,
@@ -397,6 +398,7 @@ def _standalone_suites():
     ("Sweep 3 adds (2): LTC, gobo wheel 2, animation wheel, free panels", test_sweep3_adds_c),
     ("Arrange: turning and moving trusses and objects", test_arrange_turn_and_move),
     ("Batch E: colour-channel on / off, combo bars, floating panels, flares, real gobos", test_batch_e),
+    ("Another computer: the whole desk, and Windows Firewall", test_remote_desk),
     ("Multi-head lights follow per head", test_multihead_aim),
     ("Review fixes (Oct)", test_review_fixes_oct),
     ("Copilot plan preview in 3D", test_plan_preview),
@@ -489,6 +491,8 @@ def main() -> int:
 
     elapsed = time.monotonic() - started
     print(f"\n{common.PASS} passed, {common.FAIL} failed in {elapsed:.1f}s")
+    for line in common.FAILED:
+        print("  FAIL " + line)
     if crashed:
         print("crashed suites: " + ", ".join(crashed))
     if silent:

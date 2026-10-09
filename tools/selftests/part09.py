@@ -6126,3 +6126,22 @@ def test_batch_e() -> None:
     check("no click handler reads e.currentTarget after an await (it is null by then: the TC menu threw)", not bad, str(bad))
     check("library rules: a picked gobo is the one the 3D shows, and real pictures are counted",
           "gobo_pick_matches_3d" in rc and "gobo_real_pictures" in rc)
+
+
+def test_remote_desk() -> None:
+    """Another computer uses the whole desk (patch, program) over the
+    network or Tailscale.  The page never loaded on the other computer when
+    Windows Firewall kept the port shut: the desktop app now offers one
+    rule for the port (this network and Tailscale only)."""
+    print("Another computer: the whole desk, and Windows Firewall")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the dialog offers to let the port through Windows Firewall (an admin prompt)",
+          "Let it through Windows Firewall" in mj and "-Verb RunAs" in mj and "advfirewall firewall add rule" in mj)
+    check("...from this network and Tailscale only, never the open internet", "remoteip=LocalSubnet,100.64.0.0/10" in mj)
+    check("...and says a computer gets the whole desk, with a Tailscale address marked",
+          "A computer gets the whole desk" in mj and "isTailscale" in mj)
+    ex = (ROOT / ".env.example").read_text(encoding="utf-8")
+    check("run.bat: HOST=0.0.0.0 and a CONSOLE_TOKEN let other computers in (documented)", "HOST=0.0.0.0" in ex)
+    from app import config
+    check("a desk that answers the network always needs its code", config.HOST in ("127.0.0.1", "localhost", "::1")
+          or config.requires_token())

@@ -96,7 +96,11 @@ def check(label: str, condition: bool, detail: str = "") -> None:
         print(f"  ok   {label}")
     else:
         FAIL += 1
+        FAILED.append(f"{label}  {detail}"[:600])
         print(f"  FAIL {label}  {detail}")
+
+
+FAILED: list[str] = []          # repeated at the end of the run, so a log's tail names them
 
 
 def _valueerror(fn) -> bool:
