@@ -6108,5 +6108,21 @@ def test_batch_e() -> None:
     sj = stage_js()
     check("lens flare: a streak through a lens that faces the camera", "streakMap" in sj and "b.streak" in sj)
     rc = (ROOT / "tools" / "rulecheck.py").read_text(encoding="utf-8")
+    import re as _re
+    bad = []
+    for f in sorted((ROOT / "web").rglob("*.js")):
+        if "vendor" in f.parts:
+            continue
+        src = f.read_text(encoding="utf-8")
+        for m in _re.finditer(r"async \((\w+)\) => \{", src):
+            ev, start, depth, i = m.group(1), m.end(), 1, m.end()
+            while i < len(src) and depth:
+                depth += {"{": 1, "}": -1}.get(src[i], 0)
+                i += 1
+            body = src[start:i]
+            a = body.find("await ")
+            if a >= 0 and body.find(f"{ev}.currentTarget", a) > a:
+                bad.append(f"{f.name}:{src[:start].count(chr(10)) + 1}")
+    check("no click handler reads e.currentTarget after an await (it is null by then: the TC menu threw)", not bad, str(bad))
     check("library rules: a picked gobo is the one the 3D shows, and real pictures are counted",
           "gobo_pick_matches_3d" in rc and "gobo_real_pictures" in rc)
