@@ -181,6 +181,13 @@ export class VenueEditor {
     } else if (s.type === "item" && !this._item(s.id)) {
       return this.clear();
     }
+    if (s.type === "rig" || s.type === "object" || s.type === "zone") {
+      // picked as an "item" (select() then names its kind): pick it again
+      // the same way, so the gizmo goes back onto where it now is - it was
+      // left where the drag ended (the room had stopped the piece short)
+      if (!this._item(s.id)) return this.clear();
+      return this.select({ type: "item", id: s.id }, { silent: true });
+    }
     this.select(s, { silent: true });
   }
 
@@ -376,12 +383,20 @@ export class VenueEditor {
     const ceil = Math.min(...ends.map(([x, z]) => ceilingAt(this.venue, x, z, box.h)));
     const hangY = ceil - size / 2 - 0.05;
     const top = Math.max(...ys) + dd.y;
-    if (top > hangY - 0.35) dd.y = hangY - Math.max(...ys);  // snap up to the ceiling
+    // moved left / right / back / forth only (no up-down axis on the
+    // gizmo): exactly where the pointer goes - no snapping up to the
+    // ceiling, no jumping to join another piece's end.  Those help only
+    // when you mean them: lifting it (the ceiling) or dragging an end's
+    // own handle (joining).
+    const ax = this.tc.axis || "";
+    const vertical = (ax !== "XYZ" && /Y/.test(ax)) || Math.abs(d.y) > 0.3;
+    if (vertical) {
+      if (top > hangY - 0.35) dd.y = hangY - Math.max(...ys);  // snap up to the ceiling
+    } else {
+      dd.y = Math.min(dd.y, hangY - Math.max(...ys));          // just never through it
+    }
     dd.y = Math.max(dd.y, -Math.min(...ys));                // never through the floor
-    // end to end: an end near another piece's end joins it
-    const j = this._joint([it.a, it.b].map((e) => new THREE.Vector3(...e).add(dd)), it.id);
-    if (j) dd.add(j.shift);
-    this._showJoint(j);
+    this._showJoint(null);
     return dd;
   }
 
@@ -502,6 +517,8 @@ export class VenueEditor {
         s.turned = turned;
       } else {
         const dd = this._rigDelta(it, d);
+        // the gizmo stays on the piece where the room stops it
+        this.proxy.position.copy(s.start).add(dd);
         s.group.position.copy(s.group0).add(dd);
         for (const r of s.riders) r.inst.holder.position.copy(r.pos).add(dd);
         for (const m of s.mates || []) {

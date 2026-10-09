@@ -5950,6 +5950,10 @@ def test_arrange_turn_and_move() -> None:
     check("a piece of a shape: the preview moves and turns the whole shape", "s.mates" in ed and "_turnShape(" in ed)
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("no rebuild in the middle of a drag", "stage.editor.busy" in sp)
+    check("a truss slid sideways goes exactly where it's dragged: no ceiling snap, no joining ends",
+          "const vertical = (ax !== \"XYZ\" && /Y/.test(ax))" in ed and "this._showJoint(null)" in ed)
+    check("the gizmo stays on a piece the room stops, and goes back onto it after the update",
+          "this.proxy.position.copy(s.start).add(dd)" in ed and 'return this.select({ type: "item", id: s.id }, { silent: true })' in ed)
 
 
 def test_batch_e() -> None:
