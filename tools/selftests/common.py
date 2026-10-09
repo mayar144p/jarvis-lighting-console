@@ -212,3 +212,19 @@ def _raises(fn) -> bool:
 def _which(prog: str) -> str | None:
     from shutil import which
     return which(prog)
+
+
+DIALOG_FILES = ("dialogs.js", "cuedialogs.js", "settings.js", "lightdialogs.js")
+
+
+def dialogs_js() -> str:
+    """The dialogs' source: dialogs.js and the files split out of it."""
+    return "\n".join((ROOT / "web" / "app" / f).read_text(encoding="utf-8") for f in DIALOG_FILES)
+
+
+STAGE_FILES = ("stage.js", "gpu.js", "look.js", "preview.js")
+
+
+def stage_js() -> str:
+    """The 3D view's source: stage.js and the files split out of it."""
+    return "\n".join((ROOT / "web" / "js" / "stage" / f).read_text(encoding="utf-8") for f in STAGE_FILES)

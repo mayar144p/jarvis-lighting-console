@@ -18,6 +18,7 @@ from tools.selftests.common import (
     _share_transport,
     _which,
     check,
+    dialogs_js,
 )
 
 
@@ -194,7 +195,7 @@ def test_fixture_search() -> None:
         check("a bad installed fixture can be deleted", gone and fixtures.search(db, "intimidator 110", fuzzy=True) == []
               and fixtures.get(db, bad["id"]) is None, str(gone))
         check("deleting one that isn't there says so", fixtures.delete(db, 99999) is None, "")
-    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    js = dialogs_js()
     check("the Add dialog can delete an installed fixture and shows channel counts",
           "/api/fixtures/delete" in js and "chCounts(" in js, "")
     check("only the newest search may fill the list", js.count("if (my !== seq) return;") >= 5, str(js.count("if (my !== seq) return;")))
@@ -339,7 +340,7 @@ def test_light_test() -> None:
             check("and blackout still blacks it out", e.build_frames()[1][1] == 0, "")
         finally:
             e.shutdown()
-    js = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    js = dialogs_js()
     check("adding a light no longer pops up the test (it stays on the right-click menu)",
           "openLightTest(first)" not in js and "export async function openLightTest" in js, "")
 

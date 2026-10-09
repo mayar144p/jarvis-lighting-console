@@ -29,7 +29,7 @@ Read this first in a new Claude Code session on this repo.
   working files CRLF, which breaks exact-text edit scripts; strip `\r`
   first (`sed -i 's/\r$//' file`).
 
-## The checks (all in `tools/`, see the README's Tests section)
+## The checks (all in `tools/`, see docs/DEVELOPING.md)
 
 | Check | What it proves |
 |---|---|
