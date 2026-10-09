@@ -853,19 +853,35 @@ class RigMixin:
             raise ValueError("id is required")
         raw = dict(changes) if isinstance(changes, dict) else {
             k: v for k, v in params.items() if not k.startswith("_")}
+        # the other pieces of the same shape, turned with it (Arrange turns
+        # a circle / frame as a whole): [{id, a, b}], one undo step
+        pieces = raw.pop("pieces", None)
         cur = venue_mod.rig(self.venue, str(id))
         v, item = venue_mod.update_item(self.venue, str(id), raw)
+        if pieces and cur and cur.get("group"):
+            if not isinstance(pieces, list) or len(pieces) > 200:
+                raise ValueError("pieces is a list of {id, a, b}")
+            for pc in pieces:
+                other = venue_mod.rig(v, str((pc or {}).get("id") or ""))
+                if not other or other.get("group") != cur["group"] or other["id"] == item["id"]:
+                    raise ValueError("pieces must be the other pieces of the same shape")
+                v, _o = venue_mod.update_item(v, other["id"], {"a": pc.get("a"), "b": pc.get("b")})
+            self._set_venue_doc(v)
+            return self._venue_result(f"turned the shape {cur['group']} ({len(pieces) + 1} pieces)", item=item)
         # a piece of a shape (circle, frame...) moved as a whole: the rest of
         # the shape comes with it
         if cur and cur.get("group") and "a" in raw and "b" in raw:
             da = [item["a"][k] - cur["a"][k] for k in range(3)]
             db = [item["b"][k] - cur["b"][k] for k in range(3)]
-            if all(abs(da[k] - db[k]) < 1e-3 for k in range(3)) and any(abs(x) > 1e-4 for x in da):
+            # (a screen rounds the ends to the cm: a few mm apart is still
+            # the same move - at 1 mm a circle's piece moved alone)
+            if all(abs(da[k] - db[k]) < 0.015 for k in range(3)) and any(abs(x) > 1e-4 for x in da):
+                step = [round((da[k] + db[k]) / 2, 3) for k in range(3)]
                 for other in list(v["rigging"]):
                     if other.get("group") == cur["group"] and other["id"] != item["id"]:
                         v, _o = venue_mod.update_item(v, other["id"], {
-                            "a": [round(other["a"][k] + da[k], 3) for k in range(3)],
-                            "b": [round(other["b"][k] + da[k], 3) for k in range(3)]})
+                            "a": [round(other["a"][k] + step[k], 3) for k in range(3)],
+                            "b": [round(other["b"][k] + step[k], 3) for k in range(3)]})
         self._set_venue_doc(v)
         return self._venue_result(f"updated {item['kind']} {item['id']}",
                                   item=item)

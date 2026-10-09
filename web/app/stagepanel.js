@@ -25,8 +25,16 @@ function fixturesFor(p) {
   }));
 }
 
+let syncLater = 0;
 function syncRig() {
   if (!stage || !state.snap) return;
+  // not in the middle of a drag in Arrange: a rebuild would put the piece
+  // being dragged back where it was until the drag ends (it "snapped back")
+  if (stage.editor && stage.editor.busy) {
+    clearTimeout(syncLater);
+    syncLater = setTimeout(syncRig, 120);
+    return;
+  }
   const p = patch();
   const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z,
     h.body && h.body.type, h.stance, h.rot, h.yaw]), state.snap.venue]);
