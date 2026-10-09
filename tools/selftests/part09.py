@@ -5897,3 +5897,56 @@ console.log(JSON.stringify({ both: W.gridFor(W.clean({ fixAt: "right", progAt: "
         check("...a hidden panel takes no column", g.get("hidden", {}).get("areas") == '"stage prog" "pb pb"')
     ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
     check("panels move by dragging their title, or from the workspace menu", "wireMove" in ws and 'place("fixAt"' in ws)
+
+
+def test_arrange_turn_and_move() -> None:
+    """Arrange: a truss or object turned past 90 degrees kept a wrong angle
+    (three.js reads .rotation in XYZ order, which wraps there), a turned
+    truss jumped when the engine slid it back inside the room, a rebuild in
+    the middle of a drag put the piece back, and a piece of a circle moved
+    alone (its ends, rounded to the cm, differed by a few mm)."""
+    print("Arrange: turning and moving trusses and objects")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "shows")
+        try:
+            e.act("show_template", name="club")
+            e.act("rig_add", preset="circle", piece="box30", x=0, z=6, diameter=4)
+            circle = [dict(r) for r in e.venue["rigging"] if r.get("group")]
+            first = circle[0]
+            # the editor rounds each end to the cm: 1.414 + 1 -> 2.41
+            r2 = lambda v: round(v, 2)  # noqa: E731
+            a = [r2(first["a"][0] + 1), first["a"][1], first["a"][2]]
+            b = [r2(first["b"][0] + 1), first["b"][1], first["b"][2]]
+            e.act("venue_update", id=first["id"], changes={"a": a, "b": b})
+            moved = {r["id"]: r for r in e.venue["rigging"] if r.get("group")}
+            check("a circle's piece moved 1 m: the whole circle comes along",
+                  all(abs(moved[r["id"]]["a"][0] - r["a"][0] - 1) < 0.02 for r in circle),
+                  str([round(moved[r["id"]]["a"][0] - r["a"][0], 3) for r in circle]))
+            # the whole shape turned in one step (Arrange's rotate on a piece)
+            now = [moved[r["id"]] for r in circle]
+            mx = sum(p[0] for r in now for p in (r["a"], r["b"])) / (2 * len(now))
+            mz = sum(p[2] for r in now for p in (r["a"], r["b"])) / (2 * len(now))
+            turn = lambda p: [round(mx + (p[2] - mz), 3), p[1], round(mz - (p[0] - mx), 3)]  # noqa: E731 - 90 degrees
+            n0 = len(e._undo)
+            r = e.act("venue_update", id=now[0]["id"], changes={
+                "a": turn(now[0]["a"]), "b": turn(now[0]["b"]),
+                "pieces": [{"id": x["id"], "a": turn(x["a"]), "b": turn(x["b"])} for x in now[1:]]})
+            after = {x["id"]: x for x in e.venue["rigging"] if x.get("group")}
+            check("a shape turned as a whole: every piece where it was sent", r.get("ok") and all(
+                abs(after[x["id"]]["a"][0] - turn(x["a"])[0]) < 0.02 and abs(after[x["id"]]["a"][2] - turn(x["a"])[2]) < 0.02
+                for x in now), str(r.get("error")))
+            check("...one undo step", len(e._undo) == n0 + 1, f"{n0} -> {len(e._undo)}")
+            bad = e.act("venue_update", id=now[0]["id"], changes={"a": now[0]["a"], "b": now[0]["b"],
+                                                                 "pieces": [{"id": "r1", "a": [0, 4, 0], "b": [1, 4, 0]}]})
+            check("...only the same shape's pieces", not bad.get("ok") and "same shape" in (bad.get("error") or ""))
+        finally:
+            e.shutdown()
+    ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    check("the editor reads a turn as a heading (YXZ), not .rotation.y (XYZ wraps past 90 degrees)",
+          '"YXZ").y' in ed and "rotation.y - s.startRot.y" not in ed and "-this.proxy.rotation.y" not in ed)
+    check("a turned truss is slid inside the room in the preview, as the engine does", "_turnRig(" in ed and "shift" in ed)
+    check("a piece of a shape: the preview moves and turns the whole shape", "s.mates" in ed and "_turnShape(" in ed)
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("no rebuild in the middle of a drag", "stage.editor.busy" in sp)

@@ -32,6 +32,15 @@ const JOIN_M = 0.4;
 // drafted objects made from two clicks
 const TWO_CLICK = { door: 1, balcony: 1 };
 
+// The heading of a turned object, from its quaternion.  Read in YXZ order:
+// three.js keeps .rotation in XYZ, where a turn past 90 degrees comes back
+// as a smaller angle with X and Z flipped - a truss turned 120 degrees
+// was saved at 60 (it "snapped back").  A drag on the gizmo's outer ring
+// (it turns about the view, not about up) can tilt the proxy: only the
+// heading counts for anything that turns flat.
+const _eul = new THREE.Euler();
+const yawOf = (o) => _eul.setFromQuaternion(o.quaternion, "YXZ").y;
+
 export class VenueEditor {
   constructor(stage, hooks = {}) {
     this.stage = stage;
@@ -305,6 +314,45 @@ export class VenueEditor {
     this.stage.dirty = true;
   }
 
+  /** A rig turned about its middle by `yaw` (radians, about up), then slid
+   *  back inside the room as the engine does (venue.keep_rig_inside):
+   *  {a, b, mid, shift} - the new ends and the slide. */
+  _turnRig(it, yaw) {
+    const Y = new THREE.Vector3(0, 1, 0);
+    const A = new THREE.Vector3(...it.a), B = new THREE.Vector3(...it.b);
+    const mid = A.clone().add(B).multiplyScalar(0.5);
+    const a = A.sub(mid).applyAxisAngle(Y, yaw).add(mid), b = B.sub(mid).applyAxisAngle(Y, yaw).add(mid);
+    const shift = new THREE.Vector3();
+    const box = this._roomBox();
+    if (box) {
+      const slide = (lo, hi, u, v) => (Math.min(u, v) < lo ? lo - Math.min(u, v) : Math.max(u, v) > hi ? hi - Math.max(u, v) : 0);
+      shift.x = slide(box.x0, box.x1, a.x, b.x);
+      shift.z = slide(box.z0, box.z1, a.z, b.z);
+    }
+    return { a: a.add(shift), b: b.add(shift), mid, shift };
+  }
+
+  /** Several rigs (a shape's pieces) turned together about their common
+   *  middle, then slid inside the room as one: {parts, ends: [{a, b}],
+   *  mid, shift}. */
+  _turnShape(parts, yaw) {
+    const Y = new THREE.Vector3(0, 1, 0);
+    const pts = parts.flatMap((m) => [new THREE.Vector3(...m.it.a), new THREE.Vector3(...m.it.b)]);
+    const mid = pts.reduce((acc, q) => acc.add(q), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+    const ends = parts.map((m) => ({ a: new THREE.Vector3(...m.it.a).sub(mid).applyAxisAngle(Y, yaw).add(mid),
+      b: new THREE.Vector3(...m.it.b).sub(mid).applyAxisAngle(Y, yaw).add(mid) }));
+    const shift = new THREE.Vector3();
+    const box = this._roomBox();
+    if (box) {
+      const xs = ends.flatMap((e) => [e.a.x, e.b.x]), zs = ends.flatMap((e) => [e.a.z, e.b.z]);
+      const slide = (lo, hi, vals) => (Math.min(...vals) < lo ? lo - Math.min(...vals) : Math.max(...vals) > hi ? hi - Math.max(...vals) : 0);
+      shift.x = slide(box.x0, box.x1, xs);
+      shift.z = slide(box.z0, box.z1, zs);
+    }
+    for (const e of ends) { e.a.add(shift); e.b.add(shift); }
+    return { parts, ends, mid, shift };
+  }
+
   /** A rig drag, kept inside the room and under its ceiling; near the
    *  ceiling it snaps up to hang just below it. */
   _rigDelta(it, d) {
@@ -368,12 +416,22 @@ export class VenueEditor {
     if (!s) return;
     s.start = this.proxy.position.clone();
     s.startRot = this.proxy.rotation.clone();
+    s.startYaw = yawOf(this.proxy);
     if (s.type === "rig") {
       s.riders = [...this.stage.fixtures.values()].filter((i) => (i.data.mount || {}).rig === s.id)
         .map((i) => ({ inst: i, pos: i.holder.position.clone() }));
       const g = this.stage.built.items.get(s.id);
       s.group = g;
       s.group0 = g ? g.position.clone() : null;
+      // a piece of a shape (circle, frame...): a move takes the whole shape
+      // (venue_update moves the rest), so the preview shows it too
+      const tag = s.item && s.item.group;
+      s.mates = !tag ? [] : (this.venue.rigging || []).filter((r) => r.group === tag && r.id !== s.id).map((r) => {
+        const mg = this.stage.built.items.get(r.id);
+        return { id: r.id, it: JSON.parse(JSON.stringify(r)), g: mg, g0: mg ? mg.position.clone() : null,
+          riders: [...this.stage.fixtures.values()].filter((i) => (i.data.mount || {}).rig === r.id)
+            .map((i) => ({ inst: i, pos: i.holder.position.clone() })) };
+      }).filter((m) => m.g);
     } else if (s.type === "object") {
       const g = this.stage.built.items.get(s.id);
       s.group = g;
@@ -417,23 +475,45 @@ export class VenueEditor {
       }
     } else if (s.type === "rig" && s.group) {
       const it = s.item;
-      if (this.tc.mode === "rotate") {
-        const yaw = this.proxy.rotation.y - s.startRot.y;
-        s.group.rotation.y = yaw;
-        const mid = new THREE.Vector3(...it.a).add(new THREE.Vector3(...it.b)).multiplyScalar(0.5);
-        s.group.position.copy(s.group0).sub(mid).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(mid);
-        for (const r of s.riders) r.inst.holder.position.copy(r.pos).sub(mid).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(mid);
+      if (this.tc.mode === "rotate" && (s.mates || []).length) {
+        // a piece of a shape: the whole shape turns about its own middle
+        const yaw = yawOf(this.proxy) - s.startYaw;
+        const t = this._turnShape([{ it, g: s.group, g0: s.group0, riders: s.riders }, ...s.mates], yaw);
+        const Y = new THREE.Vector3(0, 1, 0);
+        for (const m of t.parts) {
+          m.g.rotation.y = yaw;
+          m.g.position.copy(m.g0).sub(t.mid).applyAxisAngle(Y, yaw).add(t.mid).add(t.shift);
+          for (const r of m.riders) r.inst.holder.position.copy(r.pos).sub(t.mid).applyAxisAngle(Y, yaw).add(t.mid).add(t.shift);
+        }
+        this.handles.children.forEach((m, i) => m.position.copy(i === 0 ? t.ends[0].a : t.ends[0].b));
         s.yaw = yaw;
+        s.shapeTurn = t;
+      } else if (this.tc.mode === "rotate") {
+        const yaw = yawOf(this.proxy) - s.startYaw;
+        const turned = this._turnRig(it, yaw);
+        const Y = new THREE.Vector3(0, 1, 0);
+        // about its middle, then slid back inside the room the way the
+        // engine will (so letting go doesn't jump)
+        s.group.rotation.y = yaw;
+        s.group.position.copy(s.group0).sub(turned.mid).applyAxisAngle(Y, yaw).add(turned.mid).add(turned.shift);
+        for (const r of s.riders) r.inst.holder.position.copy(r.pos).sub(turned.mid).applyAxisAngle(Y, yaw).add(turned.mid).add(turned.shift);
+        this.handles.children.forEach((m, i) => m.position.copy(i === 0 ? turned.a : turned.b));
+        s.yaw = yaw;
+        s.turned = turned;
       } else {
         const dd = this._rigDelta(it, d);
         s.group.position.copy(s.group0).add(dd);
         for (const r of s.riders) r.inst.holder.position.copy(r.pos).add(dd);
+        for (const m of s.mates || []) {
+          m.g.position.copy(m.g0).add(dd);
+          for (const r of m.riders) r.inst.holder.position.copy(r.pos).add(dd);
+        }
         this.handles.children.forEach((m, i) => m.position.set(...(i === 0 ? it.a : it.b)).add(dd));
         s.dd = dd;
       }
     } else if (s.type === "object" && s.group) {
       s.group.position.copy(s.group0).add(d);
-      s.group.rotation.y = s.groupRot0 + (this.proxy.rotation.y - s.startRot.y);
+      s.group.rotation.y = s.groupRot0 + (yawOf(this.proxy) - s.startYaw);
     } else if (s.type === "vertex") {
       const h = this.handles.children.find((m) => m.userData.handle === s.key);
       s.joint = s.parent.type === "rig" ? this._joint([this.proxy.position.clone()], s.parent.id) : null;
@@ -447,7 +527,7 @@ export class VenueEditor {
     } else if (s.type === "underlay" && this.stage.built.underlay) {
       const u = this.stage.built.underlay;
       u.position.set(this.proxy.position.x, 0.006, this.proxy.position.z);
-      u.rotation.z = this.proxy.rotation.y;
+      u.rotation.z = yawOf(this.proxy);
     }
     this.stage.dirty = true;
   }
@@ -474,23 +554,32 @@ export class VenueEditor {
       }
     } else if (s.type === "rig") {
       const it = s.item;
-      if (this.tc.mode === "rotate") {
-        const yaw = s.yaw || 0;
-        const A = new THREE.Vector3(...it.a), B = new THREE.Vector3(...it.b);
-        const mid = A.clone().add(B).multiplyScalar(0.5);
-        const Y = new THREE.Vector3(0, 1, 0);
-        const na = A.sub(mid).applyAxisAngle(Y, yaw).add(mid), nb = B.sub(mid).applyAxisAngle(Y, yaw).add(mid);
-        if (s.group) s.group.rotation.y = 0;
-        H.updateItem && H.updateItem(s.id, { a: [r2(na.x), r2(na.y), r2(na.z)], b: [r2(nb.x), r2(nb.y), r2(nb.z)] });
+      if (this.tc.mode === "rotate" && s.shapeTurn) {
+        const e = s.shapeTurn.ends, v3 = (q) => [r2(q.x), r2(q.y), r2(q.z)];
+        if (Math.abs(s.yaw || 0) > 1e-4) {
+          H.updateItem && H.updateItem(s.id, { a: v3(e[0].a), b: v3(e[0].b),
+            pieces: s.mates.map((m, i) => ({ id: m.id, a: v3(e[i + 1].a), b: v3(e[i + 1].b) })) });
+        }
+        s.shapeTurn = null;
+      } else if (this.tc.mode === "rotate") {
+        const t = s.turned || this._turnRig(it, yawOf(this.proxy) - s.startYaw);
+        if (Math.abs(s.yaw || 0) > 1e-4) {
+          H.updateItem && H.updateItem(s.id, { a: [r2(t.a.x), r2(t.a.y), r2(t.a.z)], b: [r2(t.b.x), r2(t.b.y), r2(t.b.z)] });
+        }
+        s.turned = null;
       } else {
+        // the move rounded once, then added to both ends (each end rounded
+        // on its own came out a few mm apart, and a shape's other pieces
+        // didn't follow)
         const dd = s.dd || this._rigDelta(it, d);
-        H.updateItem && H.updateItem(s.id, {
-          a: [r2(it.a[0] + dd.x), r2(Math.max(0, it.a[1] + dd.y)), r2(it.a[2] + dd.z)],
-          b: [r2(it.b[0] + dd.x), r2(Math.max(0, it.b[1] + dd.y)), r2(it.b[2] + dd.z)],
-        });
+        const m = [r2(dd.x), r2(dd.y), r2(dd.z)], r3 = (v) => Math.round(v * 1000) / 1000;
+        const end = (e) => [r3(e[0] + m[0]), r3(Math.max(0, e[1] + m[1])), r3(e[2] + m[2])];
+        H.updateItem && H.updateItem(s.id, { a: end(it.a), b: end(it.b) });
       }
     } else if (s.type === "object") {
-      const rot = Math.round(-this.proxy.rotation.y * 180 / Math.PI);
+      // its heading in -180..180 (the engine keeps -360..360)
+      let rot = Math.round(-yawOf(this.proxy) * 180 / Math.PI);
+      rot = ((rot + 540) % 360) - 180;
       H.updateItem && H.updateItem(s.id, { x: r2(p.x), y: r2(Math.max(0, p.y)), z: r2(p.z), rot });
     } else if (s.type === "vertex") {
       const base = s.parent;
@@ -510,7 +599,7 @@ export class VenueEditor {
       const st = this.venue.stage;
       H.updateStage && H.updateStage({ x: r2(p.x), z: r2(p.z - st.depth / 2) });
     } else if (s.type === "underlay") {
-      H.updateUnderlay && H.updateUnderlay({ x: r2(p.x), z: r2(p.z), rot: Math.round(-this.proxy.rotation.y * 180 / Math.PI) });
+      H.updateUnderlay && H.updateUnderlay({ x: r2(p.x), z: r2(p.z), rot: Math.round(-yawOf(this.proxy) * 180 / Math.PI) });
     }
     s.start = null;
   }
