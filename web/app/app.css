@@ -1797,3 +1797,5 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .choice-body { display: grid; gap: 10px; max-width: 520px; }
 .choice-message { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
 .choice-detail { margin: 0; white-space: pre-wrap; color: var(--text-2); line-height: 1.5; user-select: text; overflow-wrap: anywhere; }
+.modal-foot { flex-wrap: wrap; }
+.modal-foot .btn { flex-shrink: 0; }
