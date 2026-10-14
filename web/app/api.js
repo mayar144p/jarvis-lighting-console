@@ -5,8 +5,10 @@
 // credential that can drive real lights does not belong in long-lived
 // storage.
 
+import { promptBox } from "./ui.js";
+
 const TOKEN_KEY = "jarvis.token";
-let prompting = false;
+let asking = null;
 let snoozeUntil = 0;
 
 // a pairing code from the desktop app (Desk -> Other computers, phones and tablets): typed on
@@ -45,14 +47,22 @@ function headers(json) {
   return h;
 }
 
+// The desk's own box (not the browser's grey prompt): one at a time,
+// every request that needs the code waits for the same answer.  Skipped,
+// it isn't asked again for 30 s.
 function askToken() {
-  if (prompting || Date.now() < snoozeUntil) return false;
-  prompting = true;
-  const t = window.prompt("This desk needs its code.\nType the pairing code shown on the desk (Desk → Other computers, phones and tablets), or the CONSOLE_TOKEN from .env:");
-  prompting = false;
-  if (t) { setToken(clean(t)); return true; }
-  snoozeUntil = Date.now() + 30000;
-  return false;
+  if (Date.now() < snoozeUntil) return Promise.resolve(false);
+  if (asking) return asking;
+  asking = promptBox("This desk needs its code",
+    "Type the pairing code shown on the desk (Desk → Other computers, phones and tablets), or the CONSOLE_TOKEN from .env",
+    "", { ok: "Connect", placeholder: "ABCDE-12345" })
+    .then((t) => {
+      if (t) { setToken(clean(t)); return true; }
+      snoozeUntil = Date.now() + 30000;
+      return false;
+    })
+    .finally(() => { asking = null; });
+  return asking;
 }
 
 export class ApiError extends Error {}
@@ -91,7 +101,7 @@ export async function request(path, body, opts = {}) {
     clearTimeout(timer);
   }
   if (resp.status === 401) {
-    if (askToken()) return request(path, body, opts);
+    if (await askToken()) return request(path, body, opts);
     throw new ApiError("this desk needs its access token");
   }
   const data = await resp.json().catch(() => ({}));
@@ -168,7 +178,7 @@ export function openStream(handlers, onStatus) {
       try {
         const resp = await fetch("/api/console/stream", { headers: headers(false), signal: ctrl.signal });
         if (resp.status === 401) {
-          askToken();
+          await askToken();
           throw new Error("needs the access token");
         }
         if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);

@@ -23,6 +23,7 @@ import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
 import { initTheme } from "./theme.js";
 import { initHelp } from "./help.js";
+import { initDeskBridge } from "./deskbridge.js";
 
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
@@ -38,6 +39,7 @@ const WINDOW = new URLSearchParams(location.search).get("window") || "";
 if (WINDOW) document.documentElement.dataset.window = WINDOW;
 
 initTheme();                              // before anything draws: no bright flash in a dark venue
+initDeskBridge();                         // the desktop app's questions show in the desk's own boxes
 async function boot() {
   try {
     state.status = await get("/api/status");
