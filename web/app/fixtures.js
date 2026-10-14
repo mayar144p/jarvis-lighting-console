@@ -4,6 +4,7 @@ import { run, select } from "./actions.js";
 import { $, h, menu, promptBox, confirmBox, toast, modal } from "./ui.js";
 import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMotionCalibration, openLightTest } from "./dialogs.js";
 import { post, get } from "./api.js";
+import { isDrawn, modelDefs } from "./real3d.js";
 import { openBugReport } from "./bugreport.js";
 
 let anchor = null;                 // last plain-clicked head, for shift ranges
@@ -67,12 +68,25 @@ function clusters(rows) {
 
 const addr = (hd) => `${hd.universe}.${String(hd.address).padStart(3, "0")}`;
 
+// a light whose 3D is a drawn placeholder (no model came with its profile)
+// - its type icon gets a dashed amber frame, so the narrow list keeps its width
+const DRAWN_TIP = "Placeholder 3D: the 3D view draws a stand-in for this kind of light, not the real fixture (no 3D model came with its profile). The \"placeholder 3D\" chip on the stage fetches the makers' own.";
+function typeIcon(body, n) {
+  const ic = iconFor(body);
+  if (!isDrawn(n)) return ic;
+  ic.classList.add("drawn");
+  const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+  t.textContent = DRAWN_TIP;
+  ic.prepend(t);
+  return ic;
+}
+
 function headRow(hd, child = false) {
   const b = hd.body || {};
   return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""), { dataset: { head: hd.head_no } },
     h("td.c-no", h("i.lamp"), h("span", hd.head_no)),
     h("td.c-name", h("div.f-name",
-      iconFor(b),
+      typeIcon(b, hd.head_no),
       h("div.f-text",
         h("b", { title: [hd.name || hd.model, ...[b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
           .filter(Boolean)].join(" · ") }, hd.name || hd.model),
@@ -91,7 +105,7 @@ function foldRow(c) {
     h("td.c-no", h("button.fold-btn", { title: open ? "Fold" : "Show each light", "aria-label": open ? "Fold" : "Show each light",
         "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"), h("span", `${first.head_no}–${lastHd.head_no}`)),
     h("td.c-name", h("div.f-name",
-      iconFor(b),
+      typeIcon(b, first.head_no),
       h("div.f-text",
         h("b", { title: [first.model, b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
           .filter(Boolean).join(" · ") }, first.model, h("em.f-qty", ` × ${c.heads.length}`)),
@@ -138,7 +152,8 @@ function render() {
   const tbody = $("#fx-rows");
   const groups = userGroups();
   const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.mode, r.body && r.body.type, r.unverified]),
-    [...stale], [...expanded], parked(), groups.map((g) => [g.n, g.name, g.heads]), [...openFolders], filterText]);
+    [...stale], [...expanded], parked(), groups.map((g) => [g.n, g.name, g.heads]), [...openFolders], filterText,
+    [...(state.drawn3d || [])]]);
   if (sig !== lastSig) {
     lastSig = sig;
     const out = [];
@@ -631,7 +646,8 @@ export function initFixtures() {
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }
-  on("snapshot", () => { render(); renderGroups(); renderClashes(); });
+  on("snapshot", () => { modelDefs(); render(); renderGroups(); renderClashes(); });
+  on("models3d", render);
   on("selection", () => { render(); renderGroups(); });
   on("lite", render);
   on("looks", paintLamps);

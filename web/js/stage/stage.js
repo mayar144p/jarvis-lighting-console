@@ -1438,6 +1438,12 @@ export class Stage {
     LIGHTS.uCount.value = n;
   }
 
+  /** The lights showing a drawn placeholder instead of their real 3D:
+   *  their tag says so (hover or select one). */
+  setDrawn(heads) {
+    this.drawn = heads instanceof Set ? heads : new Set(heads || []);
+  }
+
   _drawLabels() {
     // rings mark a big selection; a cloud of tags would hide the rig
     const want = new Set(this.options.labels && this.selected.size <= 12 ? this.selected : []);
@@ -1473,8 +1479,9 @@ export class Stage {
       // pointer, or a single selected light; otherwise just its number
       const full = head === this.hover || want.size === 1;
       const prog = inst.cur && inst.cur.prog ? `  ▶ ${inst.cur.prog}` : "";
-      const text = (full ? `#${head}  ${brand}${d.model || ""}`.trim() : `#${head}`) + prog;
-      const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "");
+      const drawn = !!(this.drawn && this.drawn.has(head));
+      const text = (full ? `#${head}  ${brand}${d.model || ""}`.trim() + (drawn ? "  · placeholder 3D" : "") : `#${head}`) + prog;
+      const cls = "stage-tag" + (this.selected.has(head) ? " sel" : "") + (drawn ? " drawn" : "");
       if (tag.textContent !== text) tag.textContent = text;
       if (tag.className !== cls) tag.className = cls;
       const sx = (p.x + 1) / 2 * w, sy = (1 - p.y) / 2 * h;

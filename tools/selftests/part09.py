@@ -6179,3 +6179,46 @@ def test_desk_popups() -> None:
     br = (ROOT / "web" / "app" / "deskbridge.js").read_text(encoding="utf-8")
     check("the page answers with the pressed button (closing it = the safe choice)",
           "export function choiceBox" in ui and "resolve(cancel)" in ui and "desk.answer(q.id, i)" in br)
+
+
+def test_gdtf_own_3d_and_placeholders() -> None:
+    """A .gdtf imported from fixtures_inbox/ showed the drawn stand-in, not
+    its own 3D: the 3D only looked in the GDTF Share folder.  And a drawn
+    stand-in now says so (stage tag, a chip, the fixture list, the Add
+    preview), and differs from model to model."""
+    print("A GDTF's own 3D, and placeholders that say so")
+    import tempfile as _tf
+    from app import config, gdtf_geom
+    from app import main as main_mod
+    inbox, cache = Path(_tf.mkdtemp()), Path(_tf.mkdtemp())
+    (inbox / "sub").mkdir()
+    (inbox / "sub" / "Acme@Mover.gdtf").write_bytes(b"PK-not-really-a-zip")
+    old = (config.INBOX, config.GDTF_SHARE_CACHE)
+    config.INBOX, config.GDTF_SHARE_CACHE = inbox, cache / "share"
+    try:
+        check("a light imported from fixtures_inbox/ finds its .gdtf for the 3D (copied over once)",
+              main_mod.gdtf_at_hand("Acme@Mover.gdtf") and (cache / "share" / "Acme@Mover.gdtf").is_file())
+        check("...a second ask uses the copy", main_mod.gdtf_at_hand("Acme@Mover.gdtf"))
+        check("...a light with no .gdtf anywhere: no (the placeholder)", not main_mod.gdtf_at_hand("Nope@Missing.gdtf")
+              and not main_mod.gdtf_at_hand("built-in") and not main_mod.gdtf_at_hand(""))
+        check("...only the file's own name is used (a path can't reach outside)",
+              main_mod.gdtf_at_hand("../../elsewhere/Acme@Mover.gdtf") and not main_mod.gdtf_at_hand("../../etc/passwd.gdtf"))
+    finally:
+        config.INBOX, config.GDTF_SHARE_CACHE = old
+        gdtf_geom.clear_manifest_cache()
+    src = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    check("the Add preview and the stage both look the file up this way", src.count("gdtf_at_hand(src)") == 2)
+    r3 = (ROOT / "web" / "app" / "real3d.js").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
+    sj = stage_js()
+    check("one answer for which lights are drawn, shared by the 3D and the list", "state.drawn3d" in r3 and "modelDefs(" in sp and "isDrawn(" in fx)
+    check("the stage says 'placeholder 3D' on the light's tag, and a chip counts them (click: the makers' 3D)",
+          "placeholder 3D" in sj and "setDrawn(" in sj and 'id="drawn-chip"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "realBodies()" in sp)
+    check("the fixture list marks a drawn light's icon, and the Add preview says placeholder 3D",
+          'classList.add("drawn")' in fx and "placeholder 3D (no 3D model came with this light)" in dj)
+    mj = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    check("placeholders differ per model (shape, ribs, base, size from the name), the same model always the same",
+          "export function variantOf" in mj and "v: variantOf(family)" in mj and '"square"' in mj and '"tapered"' in mj)

@@ -66,6 +66,32 @@ def gdtf_share() -> gdtfshare.GdtfShare:
     return _SHARE
 
 
+def gdtf_at_hand(name: str) -> bool:
+    """The 3D reads every .gdtf from one folder (GDTF_SHARE_CACHE).  A file
+    imported from fixtures_inbox/ stays in the inbox, so its own 3D body was
+    never found and the light showed the drawn stand-in: copy it over the
+    first time it's wanted (lights imported long ago included)."""
+    name = Path(str(name or "")).name
+    if not name.lower().endswith(".gdtf"):
+        return False
+    dest = config.GDTF_SHARE_CACHE / name
+    if dest.is_file():
+        return True
+    try:
+        found = next((p for p in config.INBOX.rglob("*") if p.name == name and p.is_file()), None)
+    except OSError:
+        found = None
+    if not found:
+        return False
+    try:
+        config.GDTF_SHARE_CACHE.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(found.read_bytes())
+    except OSError:
+        return False
+    gdtf_geom.clear_manifest_cache()            # a stand-in built before is stale now
+    return True
+
+
 # Floor plans (an image, or a PDF page the browser rendered to PNG) are
 # stored content-addressed beside the show data; the venue keeps only the id.
 _UNDERLAY_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
@@ -676,7 +702,7 @@ class Handler(BaseHTTPRequestHandler):
                 man, model = str(body.get("manufacturer") or ""), str(body.get("model") or "")
                 src = str(body.get("source") or "")
                 client = gdtf_share()
-                if not (src.lower().endswith(".gdtf") and (config.GDTF_SHARE_CACHE / Path(src).name).is_file()):
+                if not gdtf_at_hand(src):
                     src = client.body_file(man, model) or ""
                 if not src and model and body.get("fetch"):
                     try:
@@ -1237,7 +1263,7 @@ class Handler(BaseHTTPRequestHandler):
             def sourced(x):
                 # its own GDTF, else the maker's 3D body fetched for it
                 src = eng.model_source(x)
-                if not src.lower().endswith(".gdtf"):
+                if not gdtf_at_hand(src):
                     src = bodies.body_file(x.get("manufacturer") or "", x.get("model") or "") or src
                 return dict(x, source=src)
             for h in eng.patch:

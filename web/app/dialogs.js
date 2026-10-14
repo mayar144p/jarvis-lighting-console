@@ -90,7 +90,8 @@ export function openAddDialog(query = "") {
       if (r.ok && r.definition) real = await preview.showReal(r.definition, item.body, family, modelBytes);
     } catch (e) { /* no 3D to be had: the stand-in */ }
     if (chosen !== item || !preview) return;
-    note.textContent = real ? " · its own 3D" : " · drawn (no 3D model for this light)";
+    note.textContent = real ? " · its own 3D" : " · placeholder 3D (no 3D model came with this light)";
+    note.className = real ? "muted" : "drawn-note";
     if (!real) preview.show(item.body, family);
   }
 
