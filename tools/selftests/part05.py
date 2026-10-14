@@ -118,7 +118,7 @@ def test_web_app() -> None:
     check("the access token lives for this tab only (sessionStorage)",
           "sessionStorage" in api and "localStorage" not in api, "")
     check("and a 401 cannot open a prompt loop",
-          "snoozeUntil" in api and "prompting" in api, "")
+          "snoozeUntil" in api and "if (asking) return asking" in api, "")
 
     models = (web / "js" / "stage" / "models.js").read_text(encoding="utf-8")
     table = models[models.index("const BUILDERS = {"):]
