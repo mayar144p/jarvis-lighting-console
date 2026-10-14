@@ -2,6 +2,7 @@
 import { Stage } from "/js/stage/stage.js";
 import { setScreenMediaLoader } from "/js/stage/venue.js";
 import { get, modelBytes, post, token } from "./api.js";
+import { modelDefs } from "./real3d.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";
 import { run, select } from "./actions.js";
@@ -25,6 +26,22 @@ function fixturesFor(p) {
   }));
 }
 
+// "4 lights use a placeholder 3D": so a drawn stand-in is never mistaken
+// for the real light.  Click: fetch the makers' own 3D from GDTF Share.
+function showDrawn() {
+  const chip = $("#drawn-chip");
+  if (!chip) return;
+  const drawn = state.drawn3d;
+  const p = patch();
+  const n = drawn ? p.filter((h) => drawn.has(h.head_no)).length : 0;
+  if (stage) stage.setDrawn(drawn);
+  chip.hidden = !n;
+  if (!n) return;
+  chip.textContent = n === p.length ? `Placeholder 3D (${n})` : `${n} of ${p.length} placeholder 3D`;
+  chip.title = `${n === 1 ? "1 light shows" : `${n} lights show`} a drawn placeholder, not the real fixture: `
+    + "no 3D model came with its profile. Click to fetch the makers' own 3D from GDTF Share (the DMX profile stays as it is).";
+}
+
 let syncLater = 0;
 function syncRig() {
   if (!stage || !state.snap) return;
@@ -45,11 +62,11 @@ function syncRig() {
   }
   const mSig = p.map((h) => h.manufacturer + "/" + h.model + "/" + h.mode).sort().join("|");
   if (mSig !== modelSig) {
+    const force = modelSig === "";                 // "the makers' 3D bodies" asks again
     modelSig = mSig;
-    get("/api/console/models").then((d) => {
-      if (d && d.definitions) stage.setGdtf(d.definitions, modelBytes);
-    }).catch(() => { /* procedural models stay; they are decoration */ });
+    modelDefs(force).then((defs) => stage.setGdtf(defs, modelBytes));
   }
+  showDrawn();
   stage.setSelected(state.snap.selected || []);
   const empty = !p.length;
   $("#stage-hint").classList.toggle("must", empty || document.body.classList.contains("arranging"));
@@ -113,6 +130,8 @@ export function initStage() {
   initVenuePanel(stage);
 
   on("snapshot", syncRig);
+  on("models3d", showDrawn);
+  $("#drawn-chip").addEventListener("click", () => realBodies());
   on("selection", (sel) => stage.setSelected(sel));
   on("lite", (l) => { if (l.selected) stage.setSelected(l.selected); });
   on("looks", (looks) => stage.setLooks(looks, 90));

@@ -1799,3 +1799,14 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .choice-detail { margin: 0; white-space: pre-wrap; color: var(--text-2); line-height: 1.5; user-select: text; overflow-wrap: anywhere; }
 .modal-foot { flex-wrap: wrap; }
 .modal-foot .btn { flex-shrink: 0; }
+
+/* a light drawn as a placeholder, not its real 3D: dashed, amber */
+.stage-tag.drawn { border-style: dashed; border-color: rgba(245, 165, 36, .7); }
+.drawn-chip {
+  height: 26px; padding: 0 10px; border-radius: 999px; font: 600 11px/1 var(--font); cursor: pointer;
+  color: #f5c46a; background: rgba(14, 14, 17, .85); border: 1px dashed rgba(245, 165, 36, .7);
+}
+.drawn-chip:hover, .drawn-chip:focus-visible { background: rgba(245, 165, 36, .14); outline: none; }
+.stage-hud.drawn-hud { top: 46px; left: 10px; }
+.type-ic.drawn { outline: 1px dashed rgba(245, 165, 36, .8); outline-offset: 1px; border-radius: 3px; color: #f5c46a; }
+.preview3d .cap .drawn-note { color: #f5c46a; }

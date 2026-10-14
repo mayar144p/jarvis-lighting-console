@@ -182,6 +182,28 @@ function skeleton() {
   return { root, pan, tilt, emitters: [], lenses: [], height: 0.3, radius: 0.25 };
 }
 
+// Every model of a kind would otherwise be the same drawing: a stand-in
+// varies by the light it stands in for (the same model always looks the
+// same), and its size follows the number in its name (a Spot 160 is
+// smaller than a Spot 475).
+const PLAIN = { size: 1, len: 1, shape: "round", ribs: 4, armW: 0.05, baseW: 1, baseH: 1, handles: true, displayRight: false, fins: 5, depth: 1 };
+export function variantOf(family) {
+  const f = String(family || "").toLowerCase().trim();
+  if (!f) return PLAIN;
+  let x = 2166136261;
+  for (let i = 0; i < f.length; i++) x = Math.imul(x ^ f.charCodeAt(i), 16777619);
+  x = (x >>> 0) || 1;
+  const r = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+  const nums = (f.match(/\d{2,4}/g) || []).map(Number).filter((n) => n >= 60 && n <= 2500);
+  const spread = r();
+  const size = nums.length ? Math.min(1.3, Math.max(0.82, 0.82 + Math.log2(Math.max(...nums) / 60) * 0.08)) : 0.9 + spread * 0.2;
+  return {
+    size, len: 0.88 + r() * 0.3, shape: ["round", "round", "square", "tapered"][Math.floor(r() * 4)],
+    ribs: 2 + Math.floor(r() * 5), armW: 0.04 + r() * 0.025, baseW: 0.9 + r() * 0.25, baseH: 0.85 + r() * 0.35,
+    handles: r() > 0.3, displayRight: r() > 0.5, fins: Math.floor(r() * 6), depth: 0.85 + r() * 0.4,
+  };
+}
+
 function emitter(parent, y, radius, extra = {}) {
   const node = new THREE.Object3D();
   node.position.y = y;
@@ -191,6 +213,8 @@ function emitter(parent, y, radius, extra = {}) {
 
 /** A moving-head base with display, handles and the brand plate. */
 function movingBase(sk, body, w, h, d) {
+  const v = body.v || PLAIN;
+  w *= v.baseW; h *= v.baseH;
   const H = housing(body.style);
   const base = rbox(w, h, d, 0.03, H);
   base.position.y = h / 2;
@@ -198,14 +222,14 @@ function movingBase(sk, body, w, h, d) {
   const display = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.28, h * 0.32),
     new THREE.MeshBasicMaterial({ color: 0x1d4ed8, toneMapped: false }));
   display.material.color.multiplyScalar(0.55);
-  display.position.set(-w * 0.2, h * 0.52, d / 2 + 0.001);
+  display.position.set((v.displayRight ? 1 : -1) * w * 0.2, h * 0.52, d / 2 + 0.001);
   sk.root.add(display);
   const plate = logo(body, w * 0.46, w * 0.11);
   if (plate) {
-    plate.position.set(w * 0.16, h * 0.5, d / 2 + 0.002);
+    plate.position.set((v.displayRight ? -1 : 1) * w * 0.16, h * 0.5, d / 2 + 0.002);
     sk.root.add(plate);
   }
-  for (const s of [-1, 1]) {                         // carry handles
+  for (const s of v.handles ? [-1, 1] : []) {       // carry handles
     const hnd = rbox(0.02, h * 0.5, d * 0.55, 0.008, steel());
     hnd.position.set(s * (w / 2 + 0.012), h * 0.55, 0);
     sk.root.add(hnd);
@@ -252,21 +276,31 @@ function movingSpot(body, variant) {
   const sk = skeleton();
   const hybrid = variant === "hybrid";
   const beam = variant === "beam";
-  const R = beam ? 0.1 : 0.125;
-  const len = beam ? 0.3 : hybrid ? 0.5 : 0.44;
-  movingBase(sk, body, beam ? 0.32 : 0.38, 0.14, beam ? 0.26 : 0.3);
-  const axis = yoke(sk, body, R + 0.012, len * 0.62 + 0.06);
+  const v = body.v || PLAIN;
+  const R = (beam ? 0.1 : 0.125) * v.size;
+  const len = (beam ? 0.3 : hybrid ? 0.5 : 0.44) * v.len * Math.sqrt(v.size);
+  movingBase(sk, body, (beam ? 0.32 : 0.38) * v.size, 0.14 * Math.sqrt(v.size), (beam ? 0.26 : 0.3) * v.size);
+  const axis = yoke(sk, body, R + 0.012, len * 0.62 + 0.06, v.armW);
   const H = housing(body.style);
   const front = len * 0.55;
   const back = -len * 0.45;
-  const lensR = beam ? 0.05 : R * 0.72;
-  const shell = lathe([
-    [0.001, back], [R * 0.55, back + 0.005], [R * 0.85, back + 0.04],
-    [R, back + 0.1], [R, front - 0.06], [R * 1.06, front - 0.035],
-    [R * 1.04, front], [lensR * 1.05, front],
-  ], H);
-  sk.tilt.add(shell);
-  for (let i = 0; i < 4; i++) {                       // cooling ribs
+  const lensR = beam ? 0.05 * v.size : R * 0.72;
+  if (v.shape === "square") {                         // a boxy head with a round nose
+    const box = rbox(R * 1.9, front - back - 0.07, R * 1.9, 0.03, H);
+    box.position.y = (back + front - 0.07) / 2;
+    sk.tilt.add(box);
+    const nose = cyl(R * 0.98, R * 0.92, 0.07, H);
+    nose.position.y = front - 0.035;
+    sk.tilt.add(nose);
+  } else {
+    const tail = v.shape === "tapered" ? 0.55 : 1;     // a head that narrows to the back
+    sk.tilt.add(lathe([
+      [0.001, back], [R * 0.55 * tail, back + 0.005], [R * 0.85 * tail, back + 0.04],
+      [R * (tail < 1 ? 0.8 : 1), back + 0.1], [R, front - 0.06], [R * 1.06, front - 0.035],
+      [R * 1.04, front], [lensR * 1.05, front],
+    ], H));
+  }
+  for (let i = 0; i < (v.shape === "square" ? 0 : v.ribs); i++) {   // cooling ribs
     const rib = cyl(R * 1.012, R * 1.012, 0.008, steel());
     rib.position.y = back + 0.13 + i * 0.03;
     sk.tilt.add(rib);
@@ -334,12 +368,13 @@ function multiHead(body, n) {
 
 function movingWash(body, family) {
   const sk = skeleton();
-  const R = 0.165;
-  movingBase(sk, body, 0.4, 0.15, 0.3);
-  const axis = yoke(sk, body, R + 0.012, 0.26);
+  const v = body.v || PLAIN;
+  const R = 0.165 * v.size;
+  movingBase(sk, body, 0.4 * v.size, 0.15 * Math.sqrt(v.size), 0.3 * v.size);
+  const axis = yoke(sk, body, R + 0.012, 0.26 * Math.sqrt(v.size) * v.len, v.armW);
   const H = housing(body.style);
-  const front = 0.13;
-  const back = -0.16;
+  const front = 0.13 * v.depth;
+  const back = -0.16 * v.depth;
   const shell = lathe([
     [0.001, back], [R * 0.6, back + 0.004], [R * 0.95, back + 0.06],
     [R, 0], [R * 1.02, front - 0.02], [R * 0.98, front],
@@ -425,16 +460,18 @@ function bracket(sk, body, halfW, axisH) {
 
 function ledPar(body) {
   const sk = skeleton();
-  const R = 0.11;
-  bracket(sk, body, R + 0.01, 0.13);
+  const v = body.v || PLAIN;
+  const R = 0.11 * v.size;
+  const D = v.depth;
+  bracket(sk, body, R + 0.01, 0.13 * v.size);
   const H = housing(body.style);
   const shell = lathe([
-    [0.001, -0.08], [R * 0.8, -0.078], [R, -0.05], [R, 0.06], [R * 1.04, 0.075], [R * 0.95, 0.08],
+    [0.001, -0.08 * D], [R * 0.8, -0.078 * D], [R, -0.05 * D], [R, 0.06], [R * 1.04, 0.075], [R * 0.95, 0.08],
   ], H);
   sk.tilt.add(shell);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < v.fins; i++) {
     const fin = cyl(R * 1.03, R * 1.03, 0.006, steel());
-    fin.position.y = -0.045 + i * 0.016;
+    fin.position.y = -0.045 * D + i * 0.016;
     sk.tilt.add(fin);
   }
   const plate = logo(body, R * 1.2, R * 0.3);
@@ -447,8 +484,8 @@ function ledPar(body) {
   sk.lenses.push(lens);
   lensFace(sk.tilt, 0.078, R * 0.88, body.cells > 1 ? body.cells : 12, lens);
   sk.emitters.push(emitter(sk.tilt, 0.08, R * 0.8));
-  sk.height = 0.35;
-  sk.radius = 0.16;
+  sk.height = 0.35 * v.size;
+  sk.radius = 0.16 * v.size;
   return sk;
 }
 
@@ -1088,7 +1125,7 @@ function mergeStatic(sk) {
 export function buildFixture(body, family = "") {
   const b = body || { type: "generic", style: { body: "#26282c", accent: "#9aa4b2", finish: "matte" }, cells: 1 };
   const make = b.heads > 1 && b.moving ? (bb) => multiHead(bb, b.heads) : (BUILDERS[b.type] || BUILDERS.generic);
-  const sk = make(b, family.toLowerCase());
+  const sk = make({ ...b, v: variantOf(family) }, family.toLowerCase());
   mergeStatic(sk);
   return sk;
 }
