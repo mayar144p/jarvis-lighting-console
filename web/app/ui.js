@@ -99,6 +99,28 @@ export function confirmBox(title, text, { ok = "OK", danger = false } = {}) {
   });
 }
 
+// A question with its own buttons (the desktop app's "Close Jarvis?" and
+// "Other computers…" boxes come here instead of the system's grey box).
+// Resolves with the index of the pressed button; closing it is `cancel`.
+export function choiceBox(title, { message = "", detail = "", buttons = ["OK"], primary = 0, cancel = 0, danger = -1 } = {}) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (i) => { if (!done) { done = true; resolve(i); close(); } };
+    // "Cancel" sits on the left, the main button on the right
+    const rest = buttons.map((_, i) => i).filter((i) => i !== cancel && i !== primary);
+    const order = cancel === primary ? [...rest, primary] : [cancel, ...rest, primary].filter((i) => i >= 0 && i < buttons.length);
+    const close = modal({
+      title,
+      body: h("div.choice-body",
+        message ? h("p.choice-message", message) : null,
+        detail ? h("p.choice-detail", detail) : null),
+      foot: order.map((i) => h("button.btn" + (i === danger ? ".danger" : i === primary ? ".primary" : ""),
+        { onclick: () => finish(i) }, buttons[i])),
+      onClose: () => { if (!done) { done = true; resolve(cancel); } },
+    });
+  });
+}
+
 export function promptBox(title, label, value = "", { ok = "OK", placeholder = "" } = {}) {
   return new Promise((resolve) => {
     let done = false;

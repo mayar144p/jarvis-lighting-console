@@ -6145,3 +6145,37 @@ def test_remote_desk() -> None:
     from app import config
     check("a desk that answers the network always needs its code", config.HOST in ("127.0.0.1", "localhost", "::1")
           or config.requires_token())
+
+
+def test_desk_popups() -> None:
+    """Every box the desk shows is in its own look: the pairing-code box, the
+    drop-down lists, and the desktop app's own questions (Close Jarvis?,
+    Other computers…), which used to be the system's grey boxes."""
+    print("Pop-ups in the desk's own look")
+    import re as _re
+    web = [f for f in (ROOT / "web").rglob("*.js") if "vendor" not in f.parts]
+    grey = [f.name for f in web
+            if _re.search(r"(?<![\w.])(window\.)?(prompt|alert|confirm)\(\s*[\"'`]", f.read_text(encoding="utf-8"))]
+    check("no page code opens the browser's grey prompt/alert/confirm box", not grey, str(grey))
+    api = (ROOT / "web" / "app" / "api.js").read_text(encoding="utf-8")
+    check("the pairing code is asked in the desk's own box, once for every waiting request",
+          "promptBox(" in api and "await askToken()" in api and "if (asking) return asking" in api)
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("drop-down lists open as a dark card with the purple pick (base-select)",
+          "@supports (appearance: base-select)" in css and "::picker(select)" in css and "option:checked" in css)
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    pre = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
+    pkg = (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+    check("the desktop app asks through the page (preload bridge, shipped in the build)",
+          'preload: path.join(__dirname, "preload.js")' in mj and "exposeInMainWorld(\"jarvisDesk\"" in pre and '"preload.js"' in pkg)
+    check("...the window stays isolated and sandboxed", "contextIsolation: true, sandbox: true" in mj)
+    body = mj[mj.index("async function phonesDialog"):]
+    body = body[:body.index("\n}\n")]
+    check("Close Jarvis? and Other computers… use the desk's boxes; the system box is only the fallback",
+          "showMessageBox" not in body and "showMessageBoxSync" not in mj and mj.count("dialog.showMessageBox(") == 1)
+    check("...a question waits for a reloaded page instead of going to the old one",
+          "pageUp.delete(w.webContents)" in mj and '"did-start-loading"' in mj)
+    ui = (ROOT / "web" / "app" / "ui.js").read_text(encoding="utf-8")
+    br = (ROOT / "web" / "app" / "deskbridge.js").read_text(encoding="utf-8")
+    check("the page answers with the pressed button (closing it = the safe choice)",
+          "export function choiceBox" in ui and "resolve(cancel)" in ui and "desk.answer(q.id, i)" in br)

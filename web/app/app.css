@@ -112,6 +112,30 @@ input[type=text], input[type=url], input[type=search], input[type=number], input
 }
 textarea { height: auto; padding: 8px 10px; resize: vertical; width: 100%; line-height: 1.45; }
 input:focus, textarea:focus, select:focus { border-color: var(--accent); outline: none; }
+/* Drop-down lists in the desk's own look (dark card, purple pick) instead of
+   the system's grey list.  Older engines keep the system list. */
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  select { display: inline-flex; align-items: center; gap: 6px; font: inherit; cursor: pointer; }
+  select:hover { border-color: var(--muted); }
+  select:disabled { opacity: .55; cursor: default; }
+  select::picker-icon { color: var(--muted); font-size: 10px; transition: rotate .15s ease; }
+  select:open::picker-icon { rotate: 180deg; }
+  select:open { border-color: var(--accent); }
+  ::picker(select) {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border-2); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 5px; margin-block: 4px;
+    max-height: min(420px, 60vh); overflow-y: auto; scrollbar-width: thin;
+  }
+  option { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 10px; border-radius: 5px; color: var(--text); background: none; }
+  option:hover, option:focus-visible { background: var(--accent-bg); outline: none; }
+  option:checked { color: var(--accent); font-weight: 600; }
+  option:disabled { color: var(--muted); }
+  option::checkmark { color: var(--accent); }
+  optgroup { padding: 2px 0; }
+  optgroup legend { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+}
 input[type=number] { font-family: var(--mono); }
 input.num { width: 76px; }
 .field { display: flex; flex-direction: column; gap: 4px; }
@@ -1768,3 +1792,10 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .sf-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .sf-name small { flex-basis: 100%; }
 .sf-acts { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* questions from the desktop app (choiceBox) */
+.choice-body { display: grid; gap: 10px; max-width: 520px; }
+.choice-message { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.choice-detail { margin: 0; white-space: pre-wrap; color: var(--text-2); line-height: 1.5; user-select: text; overflow-wrap: anywhere; }
+.modal-foot { flex-wrap: wrap; }
+.modal-foot .btn { flex-shrink: 0; }

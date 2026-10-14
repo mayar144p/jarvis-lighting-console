@@ -7,7 +7,7 @@
 //
 //   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
 "use strict";
-const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, powerSaveBlocker, screen, session, shell } = require("electron");
 const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -251,7 +251,7 @@ function openPart(part) {
   const win = new BrowserWindow({
     ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
     icon: path.join(__dirname, "res", "icon.png"),
-    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
+    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") },
   });
   open.set(part, win);
   reopen.add(part);
@@ -269,7 +269,9 @@ function openPart(part) {
   win.on("close", (e) => {
     remember();
     // the last window closes the desk: ask, so a stray click can't end a show
-    if (!quitting && open.size === 1 && !confirmQuit(win)) e.preventDefault();
+    if (quitting || open.size !== 1) return;
+    e.preventDefault();
+    confirmQuit(win).then((yes) => { if (yes && !win.isDestroyed()) win.close(); });
   });
   win.on("closed", () => {
     open.delete(part);
@@ -277,16 +279,74 @@ function openPart(part) {
     if (!open.size) app.quit();
   });
   guard(win.webContents);
+  win.webContents.on("did-start-loading", () => pageUp.delete(win.webContents));   // asks wait for the new page
   return win;
 }
 
-function confirmQuit(win) {
-  const r = dialog.showMessageBoxSync(win, {
-    type: "question", buttons: ["Keep the desk open", "Close Jarvis"], defaultId: 0, cancelId: 0,
-    message: "Close Jarvis?", detail: "The show is saved. The lights stop getting DMX from this computer.",
+// ---------------------------------------------------------------- questions
+// The app's questions show inside the desk page, in its own look (preload.js
+// + deskbridge.js).  A window whose page isn't up yet gets the system box.
+const pageUp = new WeakSet();
+const asks = new Map();
+let askNo = 0;
+ipcMain.on("desk:ready", (e) => pageUp.add(e.sender));
+ipcMain.on("desk:answer", (_e, id, index) => {
+  const done = asks.get(id);
+  if (done) { asks.delete(id); done(Number.isInteger(index) ? index : -1); }
+});
+
+function waitForPage(wc, ms) {
+  if (pageUp.has(wc)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      if (wc.isDestroyed() || pageUp.has(wc) || Date.now() - t0 > ms) { clearInterval(tick); resolve(!wc.isDestroyed() && pageUp.has(wc)); }
+    }, 100);
   });
-  if (r === 1) quitting = true;
-  return r === 1;
+}
+
+// q: { title, message, detail, buttons, primary, cancel, danger, type }
+// resolves with the pressed button's index (closing the box is `cancel`)
+async function ask(win, q) {
+  win = win && !win.isDestroyed() ? win : [...open.values()][0];
+  const cancel = q.cancel ?? 0;
+  if (win && !win.isDestroyed()) {
+    const wc = win.webContents;
+    if (await waitForPage(wc, 8000)) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+      const id = ++askNo;
+      // the page reloading or the window going away answers `cancel`
+      let drop;
+      const gone = new Promise((resolve) => {
+        asks.set(id, resolve);
+        drop = () => { if (asks.delete(id)) resolve(cancel); };
+        wc.on("did-start-loading", drop);
+        wc.on("destroyed", drop);
+      });
+      wc.send("desk:ask", { id, ...q, cancel });
+      const i = await gone;
+      if (!wc.isDestroyed()) { wc.off("did-start-loading", drop); wc.off("destroyed", drop); }
+      return i < 0 ? cancel : i;
+    }
+  }
+  const r = await dialog.showMessageBox(win, {
+    type: q.type || "info", buttons: q.buttons, defaultId: q.primary ?? 0, cancelId: cancel,
+    message: q.message || q.title, detail: q.detail || "",
+  });
+  return r.response;
+}
+
+let quitAsk = null;
+function confirmQuit(win) {
+  if (!quitAsk) {
+    quitAsk = ask(win, {
+      title: "Close Jarvis?", type: "question", buttons: ["Keep the desk open", "Close Jarvis"], primary: 0, cancel: 0, danger: 1,
+      detail: "The show is saved. The lights stop getting DMX from this computer.",
+    }).then((r) => { if (r === 1) quitting = true; return r === 1; })
+      .finally(() => { quitAsk = null; });
+  }
+  return quitAsk;
 }
 
 // keys that would close or reload a window belong to the desk during a
@@ -332,7 +392,7 @@ function menu() {
       { type: "separator" },
       { label: "Other computers, phones and tablets…", click: phonesDialog },
       { type: "separator" },
-      { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: () => { if (confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
+      { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
     ] },
     { label: "View", submenu: [
       { role: "togglefullscreen", accelerator: "F11" },
@@ -357,21 +417,21 @@ async function restartEngine() {
   await stopEngine();
   try { await startEngine(); } finally { restarting = false; }
   trustEngine();
-  for (const [part, w] of open) w.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
+  for (const [part, w] of open) { pageUp.delete(w.webContents); w.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : "")); }
 }
 
 async function phonesDialog() {
   const win = BrowserWindow.getFocusedWindow();
   const d = desk();
   if (!d.remotes) {
-    const r = await dialog.showMessageBox(win, {
-      type: "question", buttons: ["Allow phones and tablets", "Cancel"], defaultId: 0, cancelId: 1,
+    const r = await ask(win, {
+      title: "Other computers, phones and tablets", type: "question", buttons: ["Allow phones and tablets", "Cancel"], primary: 0, cancel: 1,
       message: "Use this desk from another computer, a phone or a tablet?",
       detail: "The desk then answers on this computer's network, locked with a pairing code you type there once. "
         + "Another computer gets the whole desk - patch, program, the 3D - working on this computer's show; a phone can have just the faders. "
         + "It must be on the same network as this computer, or joined to it by Tailscale (for another town or country).",
     });
-    if (r.response !== 0) return;
+    if (r !== 0) return;
     Object.assign(d, { remotes: true, code: newCode() });
     saveState();
     await restartEngine();
@@ -382,8 +442,8 @@ async function phonesDialog() {
   const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)" : "");
   const buttons = ["OK", "New code", "Stop allowing others"];
   if (!fwOk) buttons.push("Let it through Windows Firewall");
-  const r = await dialog.showMessageBox(win, {
-    type: "info", buttons, defaultId: 0, cancelId: 0,
+  const r = await ask(win, {
+    title: "Other computers, phones and tablets", type: "info", buttons, primary: 0, cancel: 0, danger: 2,
     message: `Pairing code: ${showCode(d.code)}`,
     detail: (addrs.length ? `On the other computer, phone or tablet, open:\n${addrs.map(where).join("\n")}\nthen type the code. A computer gets the whole desk.`
       + `\n\nJust the faders and buttons (a remote in your hand):\n  http://${addrs[0]}:${port}/?window=playbacks`
@@ -391,12 +451,12 @@ async function phonesDialog() {
       + (fwOk ? "" : "\n\nIf the page doesn't load on the other device, Windows Firewall is blocking it: press \"Let it through Windows Firewall\" (Windows asks for permission once).")
       + "\n\n\"New code\" signs every other device out.",
   });
-  if (r.response === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
-  if (r.response === 2) { d.remotes = false; saveState(); await restartEngine(); }
-  if (r.response === 3) {
+  if (r === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
+  if (r === 2) { d.remotes = false; saveState(); await restartEngine(); }
+  if (r === 3) {
     const ok = firewallAllow(port);
-    await dialog.showMessageBox(win, {
-      type: ok ? "info" : "warning", buttons: ["OK"],
+    await ask(win, {
+      title: "Windows Firewall", type: ok ? "info" : "warning", buttons: ["OK"],
       message: ok ? "Windows Firewall now lets the desk in" : "Windows Firewall wasn't changed",
       detail: ok ? `From this network and Tailscale only, on port ${port}. Load the page on the other device again.`
         : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Jarvis (and Python) on private and public networks.",
