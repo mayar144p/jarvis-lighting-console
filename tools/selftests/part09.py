@@ -6222,3 +6222,18 @@ def test_gdtf_own_3d_and_placeholders() -> None:
     mj = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
     check("placeholders differ per model (shape, ribs, base, size from the name), the same model always the same",
           "export function variantOf" in mj and "v: variantOf(family)" in mj and '"square"' in mj and '"tapered"' in mj)
+
+
+def test_desktop_launch_quiet() -> None:
+    """run-desktop.bat started the app with "npm start", which kept a terminal
+    open for the whole show; the update splash's "…" read as "â€¦" (no
+    charset); npm install through shell:true printed DEP0190."""
+    print("The desktop app opens without a terminal")
+    bat = (ROOT / "run-desktop.bat").read_text(encoding="ascii")
+    check("run-desktop.bat starts Electron itself (no terminal kept open), and its window closes",
+          'start "" "node_modules\\electron\\dist\\electron.exe" .' in bat and "npm start" not in bat.replace('"npm start"', ""))
+    check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
+          "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the update splash is UTF-8 (\"…\", not \"â€¦\")", "data:text/html;charset=utf-8," in mj and "<meta charset='utf-8'>" in mj)
+    check("npm install runs without shell:true (no DEP0190 warning)", "shell: process.platform" not in mj and '"/d", "/s", "/c"' in mj)
