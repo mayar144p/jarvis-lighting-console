@@ -120,3 +120,6 @@ docs/backup/
 
 # ---- the desktop app (desktop/) ---------------------------------------
 node_modules/
+
+# the desktop shortcut run-desktop.bat makes (points at this computer's copy)
+Jarvis.lnk

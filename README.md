@@ -67,7 +67,10 @@ and the desktop app.
 
 ### The desktop app (testing)
 
-**Windows:** double-click `run-desktop.bat`. **Mac/Linux:** `./run-desktop.sh`.
+**Windows:** double-click `run-desktop.bat`. It opens the desk and closes
+its own window; it also leaves a **Jarvis** shortcut beside it that opens
+the desk with no black window at all (drag it to the desktop or taskbar).
+**Mac/Linux:** `./run-desktop.sh`.
 The first time it fetches Electron (about 100 MB, needs
 [Node.js](https://nodejs.org)). It's the same desk, in its own windows:
 

@@ -146,8 +146,12 @@ async function selfUpdate() {
   const found = findPython();
   if (!found) return;
   const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
-  splash.loadURL("data:text/html," + encodeURIComponent(
-    "<body style='margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0d;color:#c9cad3;font:14px system-ui'>Jarvis: checking for updates…</body>"));
+  // charset: without it Windows reads the "…" as "â€¦"
+  splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
+    "<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0d;"
+    + "color:#c9cad3;font:14px system-ui;border:1px solid #303037;box-sizing:border-box'>"
+    + "<div style='text-align:center'><b style='color:#ececf0;letter-spacing:.08em'>JARVIS</b>"
+    + "<div style='margin-top:6px;color:#8e8e9a'>Checking for updates…</div></div></body>"));
   splash.once("ready-to-show", () => splash.show());
   const run = (cmd, args, opts = {}) => new Promise((resolve) => {
     const p = spawn(cmd, args, { cwd: ROOT, windowsHide: true, ...opts });
@@ -162,8 +166,10 @@ async function selfUpdate() {
   if (m) {
     const changed = await run("git", ["diff", "--name-only", m[1], m[2], "--", "desktop/"]);
     if (/desktop\/package(-lock)?\.json/.test(changed)) {
-      await run(process.platform === "win32" ? "npm.cmd" : "npm", ["install", "--no-audit", "--no-fund"],
-        { cwd: __dirname, shell: process.platform === "win32" });
+      // npm on Windows is a .cmd: run it through cmd.exe ourselves (shell:true
+      // with an argument list is what printed Node's DEP0190 warning)
+      if (process.platform === "win32") await run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "npm install --no-audit --no-fund"], { cwd: __dirname });
+      else await run("npm", ["install", "--no-audit", "--no-fund"], { cwd: __dirname });
     }
     if (changed.trim()) {                     // the app itself changed: open the new one
       splash.destroy();
