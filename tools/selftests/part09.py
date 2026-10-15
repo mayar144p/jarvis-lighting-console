@@ -6232,6 +6232,8 @@ def test_desktop_launch_quiet() -> None:
     bat = (ROOT / "run-desktop.bat").read_text(encoding="ascii")
     check("run-desktop.bat starts Electron itself (no terminal kept open), and its window closes",
           'start "" "node_modules\\electron\\dist\\electron.exe" .' in bat and "npm start" not in bat.replace('"npm start"', ""))
+    check("...told not to hook onto this window (it stayed open, empty, beside the desk)",
+          bat.index("set ELECTRON_NO_ATTACH_CONSOLE=1") < bat.index('start "" "node_modules'))
     check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
           "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
