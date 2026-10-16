@@ -546,12 +546,30 @@ one Ctrl+Z, and that brings back the show that was open.
 
 ## Look and help
 
-**Settings → Screen & 3D**, per computer:
-- **Show dark:** the panels in dim red for a dark venue. Eyes stay used to
-  the dark, and the 3D view keeps its true colours.
-- **Panel brightness** and an **accent colour**.
+**Settings → Screen & 3D → Look**, per computer:
+- **Density:** *Compact* fits more on screen, *Roomy* gives every button
+  and row more room; *Standard* sits between. (**Gig mode** above makes
+  everything big for touch screens.)
+- **Size:** text and controls at 90-140%. A bigger size needs a wider
+  screen - the desk is laid out for 1280 px, so a 1440 px screen goes to
+  110% and a 1920 px one to 140%; sizes that don't fit are greyed.
+- **Accent:** eight colours or your own.
+- **Panel brightness**, and **Show dark:** the panels in dim red for a dark
+  venue. Eyes stay used to the dark, and the 3D view keeps its true colours.
+- **Reduce motion:** nothing slides, fades or pulses.
 - **Hover help:** rest the pointer on any control for what it does (on by
-  default).
+  default). **Look back to how it came** undoes all of it.
+
+Which panels show, on which side and how wide is the **workspace** button
+in the top bar (each workspace keeps its own; Alt+1..9 switches).
+
+**Arranging lights:** select some, then the fixture list's **⋯**: line them
+up in a row across the stage or at the same height, space them evenly left
+to right or front to back, or flip them left ↔ right. **Clear the
+selection's values** takes only those lights out of the programmer.
+**Settings → Venue → Describe the room** builds a room from words ("a 12 x
+8 m club, bar on the left, DJ booth on a 40 cm riser"); *What would it
+build?* shows what it understood first.
 
 **Wheels:** under the programmer's tabs, a wheel for each attribute of the
 open tab that the selected lights have (dimmer, colour, pan / tilt, zoom,

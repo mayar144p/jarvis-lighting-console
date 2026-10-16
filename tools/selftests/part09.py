@@ -7057,3 +7057,34 @@ def test_gobo_twin_repeated() -> None:
     check("ADJ Inno Spot Pro: 7 slots here, 6 there - no guessing which is which",
           fixlib.twin_gobos("American DJ", "Inno Spot Pro", 7) == [], "")
     check("the pictures are in the bundle", all(fixlib.gobo_picture(p) for p in auro), "")
+
+
+def test_look_and_reach() -> None:
+    """The screen fits the operator (density, size, accent of their own,
+    reduced motion), and every desk action can be reached from the screens
+    - not only by the AI or a command line."""
+    print("The screen fits the operator; every action has a way in")
+    import re
+    from app import engine_base
+    th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
+    check("Look: density, size, reduced motion and your own accent colour, kept per computer",
+          all(k in th for k in ("DENSITIES", "SIZES", "motion", "resetTheme", "HEX.test"))
+          and ':root[data-density="compact"]' in css and ':root[data-motion="reduced"]' in css
+          and "maxScale()" in st and "Look back to how it came" in st, "")
+    check("a bigger size never zooms past what the window holds (the desk needs 1280 px of room)",
+          "Math.min(want, maxScale())" in th and "/ 1280" in th, "")
+    check("full-screen sizes are divided by the zoom (nothing spills off the screen)",
+          "calc(100dvh / var(--ui-zoom, 1))" in css and "calc(1280px / var(--ui-zoom, 1))" in css, "")
+    check("buttons and chips follow the density", "height: var(--btn-h)" in css and "min-height: var(--chip-h)" in css, "")
+    web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js")
+                  if "vendor" not in p.parts and "streamdeck" not in p.parts)
+    named = set(re.findall(r'["\'`]([a-z][a-z0-9_]+)["\'`]', web))
+    # reached another way: their own routes (save / load / scan / CSV / RDM),
+    # queries other screens answer, or the assistant's building blocks
+    elsewhere = {"cue_info", "fx_status", "get_limits", "import_scan", "import_show", "load_show", "patch_clear",
+                 "patch_from_csv", "patch_list", "rdm_compare", "remap_heads", "save_show", "set_venue",
+                 "venue_build", "venue_info"}
+    missing = sorted(a for a in engine_base.ACTIONS if a not in named and a not in elsewhere)
+    check("every desk action has a button, menu or setting (a new one needs a way in on screen)", not missing, missing)

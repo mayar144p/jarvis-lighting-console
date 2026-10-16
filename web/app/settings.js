@@ -3,7 +3,7 @@
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, ACCENTS } from "./theme.js";
+import { themeNow, setTheme, resetTheme, maxScale, ACCENTS, DENSITIES, SIZES } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -204,7 +204,7 @@ export async function openSettings() {
   const ht = h("input", { type: "number", min: 2.2, step: 0.1, value: auto ? "" : room.height, placeholder: "auto" });
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
-  const quality = h("select.select",
+  const quality = h("select.select", { style: { minWidth: "340px" } },
     h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (a good graphics card)"),
     h("option", { value: "auto" }, "Medium: adapts to this computer"),
     h("option", { value: "fast" }, "Low: older laptops, no shadows"));
@@ -243,12 +243,13 @@ export async function openSettings() {
         h("label.field", h("span", "Width (m)"), w), h("label.field", h("span", "Depth (m)"), d), h("label.field", h("span", "Ceiling (m)"), ht),
         h("div.field", h("span", " "), h("button.btn", {
           onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
-        }, "Resize room")))]],
+        }, "Resize room"))),
+      describeRoomRow()]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
       themeRow(),
       h("h3", "3D view"),
-      h("div.form-grid", h("label.field", h("span", "Quality"), quality))]],
+      h("label.field", h("span", "Quality"), quality)]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
       webMidiRow(),
@@ -392,6 +393,27 @@ function huePanel() {
   return box;
 }
 
+// A room from words ("a 12 x 8 m club, bar on the left, DJ booth on a
+// 40 cm riser"): first what the desk understood, then build it.
+function describeRoomRow() {
+  const text = h("textarea", { rows: 2, placeholder: "e.g. a 12 x 8 m club, 4 m ceiling, bar on the left, DJ booth on a 40 cm riser", style: { width: "100%" } });
+  const said = h("p.muted.small", "");
+  const check = async () => {
+    const r = await run("venue_describe", { text: text.value, apply: false }, { silentError: true });
+    said.textContent = r.ok ? `Understood: ${(r.understood || []).join(", ") || "nothing yet"}` + ((r.unsure || []).length ? ` · guessed: ${r.unsure.join(", ")}` : "") : (r.error || "");
+    return r;
+  };
+  return h("div",
+    h("h3", "Describe the room"),
+    text, said,
+    h("div.row-btns",
+      h("button.btn", { onclick: check }, "What would it build?"),
+      h("button.btn.primary", { onclick: async () => {
+        if (!(await confirmBox("Build the room", "Replace the room with this one? Your lights stay patched (Ctrl+Z undoes it).", { ok: "Build" }))) return;
+        run("venue_describe", { text: text.value }, { toast: true });
+      } }, "Build it")));
+}
+
 // A backup desk: this computer follows the main desk live and takes over
 // the lights if the main one stops.  The main desk's pairing code stays on
 // this computer and never comes back to this page.
@@ -498,24 +520,47 @@ function oscOutRow() {
 
 // MIDI on this device: a controller plugged into the computer the
 // browser runs on plays the buttons given its notes.
-// Show dark, the accent colour and the panels' brightness (this computer)
+// How the screen looks on this computer: density, size, accent, panels'
+// brightness, Show dark, motion and hover help.  Kept per computer.
 function themeRow() {
-  const t = themeNow();
-  const dark = h("input", { type: "checkbox", checked: t.mode === "showdark" });
-  dark.addEventListener("change", () => setTheme({ mode: dark.checked ? "showdark" : "normal" }));
-  const bright = h("input", { type: "range", min: 30, max: 100, step: 5, value: Math.round(t.bright * 100), "aria-label": "Panel brightness" });
-  bright.addEventListener("input", () => setTheme({ bright: +bright.value / 100 }));
-  const sw = h("div.qe-swatches", ...Object.entries(ACCENTS).map(([k, [c]]) => h("button.qe-sw" + (t.accent === k ? ".on" : ""), {
-    type: "button", title: k, "aria-label": `Accent ${k}`, style: { background: c },
-    onclick: (e) => { setTheme({ accent: k }); sw.querySelectorAll(".qe-sw").forEach((b) => b.classList.toggle("on", b === e.currentTarget)); },
-  })));
-  const tips = h("input", { type: "checkbox", checked: tipsOn() });
-  tips.addEventListener("change", () => setTips(tips.checked));
-  return h("div",
-    h("h3", "Look"),
-    h("label.check", tips, h("span", "Hover help: hold the pointer on any control for what it does")),
-    h("label.check", dark, h("span", "Show dark: the panels in dim red for a dark venue (the 3D view keeps its colours)")),
-    h("div.form-grid", h("label.field", h("span", "Panel brightness"), bright), h("div.field", h("span", "Accent"), sw)));
+  const box = h("div");
+  const paint = () => {
+    const t = themeNow();
+    const seg = (items, now, pick, fits = () => true) => h("div.seg", ...items.map(([k, label]) =>
+      h("button" + (k === now ? ".on" : ""), { type: "button", "aria-pressed": String(k === now), disabled: !fits(k),
+        title: fits(k) ? null : "Needs a wider screen", onclick: () => { pick(k); paint(); } }, label)));
+    const dark = h("input", { type: "checkbox", checked: t.mode === "showdark" });
+    dark.addEventListener("change", () => setTheme({ mode: dark.checked ? "showdark" : "normal" }));
+    const bright = h("input", { type: "range", min: 30, max: 100, step: 5, value: Math.round(t.bright * 100), "aria-label": "Panel brightness" });
+    bright.addEventListener("input", () => setTheme({ bright: +bright.value / 100 }));
+    const custom = /^#/.test(t.accent);
+    const pickColour = h("input", { type: "color", value: custom ? t.accent : (ACCENTS[t.accent] || ACCENTS.violet)[0], "aria-label": "Your own accent colour", title: "Your own colour" });
+    pickColour.addEventListener("change", () => { setTheme({ accent: pickColour.value }); paint(); });
+    const sw = h("div.qe-swatches", ...Object.entries(ACCENTS).map(([k, [c]]) => h("button.qe-sw" + (t.accent === k ? ".on" : ""), {
+      type: "button", title: k, "aria-label": `Accent ${k}`, style: { background: c }, onclick: () => { setTheme({ accent: k }); paint(); },
+    })), h("label.qe-sw-custom" + (custom ? ".on" : ""), pickColour));
+    const motion = h("input", { type: "checkbox", checked: t.motion === "reduced" });
+    motion.addEventListener("change", () => setTheme({ motion: motion.checked ? "reduced" : "full" }));
+    const tips = h("input", { type: "checkbox", checked: tipsOn() });
+    tips.addEventListener("change", () => setTips(tips.checked));
+    box.replaceChildren(
+      h("h3", "Look"),
+      h("p.muted.small", "This computer only. Which panels show, where and how wide: the workspace button in the top bar (each workspace keeps its own)."),
+      h("div.look-rows",
+        h("div.look-row", h("span", "Density"), seg(Object.entries(DENSITIES), t.density, (k) => setTheme({ density: k })),
+          h("span.muted.small", "more on screen, or more room around it")),
+        h("div.look-row", h("span", "Size"), seg(SIZES.map((z) => [z, `${Math.round(z * 100)}%`]), t.scale, (k) => setTheme({ scale: k }), (z) => z <= maxScale() + 1e-6),
+          h("span.muted.small", "text and controls (a bigger size needs a wider screen)")),
+        h("div.look-row", h("span", "Accent"), sw),
+        h("div.look-row", h("span", "Panel brightness"), bright)),
+      h("div.look-checks",
+        h("label.check", dark, h("span", "Show dark: the panels in dim red for a dark venue (the 3D view keeps its colours)")),
+        h("label.check", motion, h("span", "Reduce motion: no sliding, fading or pulsing")),
+        h("label.check", tips, h("span", "Hover help: hold the pointer on any control for what it does"))),
+      h("div.row-btns", h("button.btn.ghost", { onclick: () => { resetTheme(); paint(); } }, "Look back to how it came")));
+  };
+  paint();
+  return box;
 }
 
 function webMidiRow() {

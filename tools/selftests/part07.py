@@ -529,7 +529,7 @@ def test_desktop_only() -> None:
           not (web / "manifest.webmanifest").exists() and not (web / "app" / "tablet.js").exists()
           and not (web / "remote.html").exists() and 'rel="manifest"' not in html and "apple-touch-icon" not in html, "")
     check("no phone layout: no bottom tabs, no narrow-screen rules, a desktop minimum width",
-          "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: 1280px" in css
+          "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: calc(1280px / var(--ui-zoom, 1))" in css
           and "(max-width: 820px)" not in css, "")
     api = (web / "app" / "api.js").read_text(encoding="utf-8")
     check("a quiet stream is dropped and re-opened; coming back online retries at once",
