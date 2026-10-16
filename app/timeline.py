@@ -12,6 +12,7 @@ cue list); the engine owns the clock and fires the events.
 from __future__ import annotations
 
 import copy
+import json
 import math
 
 TRACK_KINDS = ("cue", "button", "fx", "level")
@@ -126,8 +127,21 @@ def normalise(raw) -> dict:
                         "duration": round(_num(a.get("duration"), 0, 0, MAX_LENGTH), 3),
                         "offset": round(_num(a.get("offset"), 0, -MAX_LENGTH, MAX_LENGTH), 3)}
     doc["markers"] = sorted(
-        [{"t": round(_num(m.get("t"), 0, 0, MAX_LENGTH), 3), "name": str(m.get("name") or "")[:30]}
+        [{"t": round(_num(m.get("t"), 0, 0, MAX_LENGTH), 3), "name": str(m.get("name") or "")[:30],
+          # what the part sounds like (Find the song's parts): for the show designer
+          **({"hear": str(m["hear"])[:140]} if m.get("hear") else {})}
          for m in raw.get("markers") or [] if isinstance(m, dict)], key=lambda m: m["t"])[:200]
+    # the song in words (from rekordbox: its mood) and the show designed for
+    # it (Auto show keeps it, so one part can be changed later by asking)
+    if raw.get("notes"):
+        doc["notes"] = str(raw["notes"])[:200]
+    des = raw.get("design")
+    if isinstance(des, dict):
+        try:
+            if len(json.dumps(des)) <= 60000:
+                doc["design"] = json.loads(json.dumps(des))
+        except (TypeError, ValueError):
+            pass
     ids = set()
     for t in raw.get("tracks") or []:
         track = clean_track(t, doc)

@@ -90,6 +90,48 @@ class SongsMixin:
                 "summary": f"song \"{s['name']}\" {verb} ({len(doc['tracks'])} track(s), "
                            f"{sum(len(v) for v in cues.values())} cue(s))"}
 
+    def _a_songs_import(self, tracks=None, **_):
+        """Songs from tracks' parts with no music file (from a rekordbox USB
+        stick: [{name, bpm, length, markers, notes}]): each song gets a
+        timeline with its parts, ready for Make shows for songs.  A song of
+        the same name with no show yet takes the new parts; one with a show
+        is left alone."""
+        if not isinstance(tracks, list) or not tracks:
+            raise ValueError("no tracks to add")
+        songs = self._songs()
+        added, updated, skipped = [], [], []
+        for t in tracks[:MAX_SONGS]:
+            if not isinstance(t, dict) or len(t.get("markers") or []) < 2:
+                skipped.append(str((t or {}).get("name") or "?")[:40] if isinstance(t, dict) else "?")
+                continue
+            name = _clean_name(t.get("name"), "Track")
+            try:
+                fb = round(max(0.0, min(float(t.get("first_beat") or 0.0), 60.0)), 3)
+            except (TypeError, ValueError):
+                fb = 0.0
+            doc = tl_mod.normalise({"length": t.get("length"), "bpm": t.get("bpm"), "markers": t.get("markers"),
+                                    "notes": t.get("notes"), "tracks": []})
+            same = next((x for x in songs if x["name"].lower() == name.lower()), None)
+            if same:
+                if same["timeline"].get("tracks"):
+                    skipped.append(name)           # it has its show: keep it
+                    continue
+                same["timeline"] = doc
+                same["first_beat"] = fb
+                updated.append(name)
+                continue
+            if len(songs) >= MAX_SONGS:
+                skipped.append(name)
+                continue
+            n = 1 + max((int(x["id"][1:]) for x in songs if x["id"][1:].isdigit()), default=0)
+            songs.append({"id": f"s{n}", "name": name, "timeline": doc, "cues": {}, "deck": None, "first_beat": fb})
+            added.append(name)
+        if not added and not updated:
+            raise ValueError("no songs added" + (f" ({len(skipped)} skipped: already have a show, or no parts)" if skipped else ""))
+        return {"songs": self.songs_public(), "added": added, "updated": updated, "skipped": skipped,
+                "summary": f"{len(added)} song(s) added" + (f", {len(updated)} updated" if updated else "")
+                           + (f", {len(skipped)} skipped" if skipped else "") + " - next: Make shows for songs"}
+
     def _song_apply(self, s: dict) -> None:
         """The song's timeline and cues back on the desk (stopped)."""
         if self.tl["playing"]:
@@ -156,7 +198,9 @@ class SongsMixin:
         for other in self._songs():
             if other is not s and (other.get("deck") or {}).get("track") == t:
                 other["deck"] = None            # one song per track
-        fb = float(first_beat) if first_beat is not None else float((s.get("deck") or {}).get("first_beat", 0.0))
+        # beat 1: as given, as tied before, or rekordbox's beat grid (a song from its USB stick)
+        fb = float(first_beat) if first_beat is not None else float(
+            (s.get("deck") or {}).get("first_beat", s.get("first_beat", 0.0)))
         s["deck"] = {"track": t, "first_beat": round(max(0.0, min(fb, 60.0)), 3)}
         return {"songs": self.songs_public(), "summary": f"\"{s['name']}\" plays when track {t} is on the master deck"}
 
@@ -330,8 +374,14 @@ class SongsMixin:
                     deck = {"track": int(deck["track"]), "first_beat": float(deck.get("first_beat") or 0.0)}
                 except (KeyError, TypeError, ValueError):
                     deck = None
-            out.append({"id": sid, "name": _clean_name(s.get("name"), sid),
-                        "timeline": tl_mod.normalise(s["timeline"]), "cues": cues, "deck": deck})
+            song = {"id": sid, "name": _clean_name(s.get("name"), sid),
+                    "timeline": tl_mod.normalise(s["timeline"]), "cues": cues, "deck": deck}
+            try:
+                if s.get("first_beat"):                # beat 1 from rekordbox's beat grid
+                    song["first_beat"] = round(max(0.0, min(float(s["first_beat"]), 60.0)), 3)
+            except (TypeError, ValueError):
+                pass
+            out.append(song)
             if len(out) >= MAX_SONGS:
                 break
         self.songs = out

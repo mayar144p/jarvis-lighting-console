@@ -13,6 +13,7 @@ import json
 import mimetypes
 import os
 import re
+import struct
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
+from app import (artnet, autoshow, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape, streamdeck)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -761,7 +762,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/scan", "/api/console/ai",
                          "/api/console/generate", "/api/console/midi",
                          "/api/console/underlay", "/api/console/audio",
-                         "/api/console/autoshow", "/api/console/rdm",
+                         "/api/console/autoshow", "/api/console/rdm", "/api/console/rekordbox",
                          "/api/console/look", "/api/console/room", "/api/console/sound",
                          "/api/console/media_frame", "/api/console/assistant"):
                 return self._console_post(route, body, query)
@@ -835,6 +836,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._console_result(eng, result)
         if route == "/api/console/load":
             result = eng.act("load_show", name=str(body.get("name", "")))
+            return self._console_result(eng, result)
+        if route == "/api/console/rekordbox":
+            # Songs from a rekordbox USB stick: the browser sends each track's
+            # beat grid, phrases and path (not the whole stick); read here,
+            # added as songs with their parts and no music (one undo step).
+            items = body.get("tracks") if isinstance(body.get("tracks"), list) else []
+            tracks, failed = [], []
+            for it in items[:200]:
+                try:
+                    tracks.append(rekordbox.from_upload(it))
+                except (ValueError, KeyError, IndexError, TypeError, struct.error, binascii.Error) as exc:
+                    failed.append({"name": str((it or {}).get("name") or "?")[:60] if isinstance(it, dict) else "?",
+                                   "error": str(exc)[:120]})
+            if body.get("preview"):
+                return self._console_result(eng, {"ok": True, "tracks": tracks, "failed": failed})
+            if not tracks:
+                return self._console_result(eng, {"ok": False, "failed": failed,
+                                                  "error": "no track had rekordbox's phrase analysis"})
+            result = eng.act("songs_import", tracks=tracks)
+            result["failed"] = failed
             return self._console_result(eng, result)
         if route == "/api/console/rdm":
             # RDM: ask the lights what they are.  Network I/O off the lock,
@@ -977,6 +998,10 @@ class Handler(BaseHTTPRequestHandler):
             # Preview a whole-show design for this rig, or build a design
             # the operator has already seen (never a second model call).
             playback = int(body.get("playback") or 1)
+            if body.get("refine"):
+                # change the show on the timeline as asked; built with apply, like a new one
+                return self._console_result(eng, autoshow.refine(
+                    eng, str(body["refine"]), offline=bool(body.get("offline"))))
             if body.get("apply") and isinstance(body.get("design"), dict):
                 return self._console_result(eng, autoshow.build(eng, body["design"], playback))
             return self._console_result(eng, autoshow.design(
