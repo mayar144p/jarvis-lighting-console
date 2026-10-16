@@ -98,7 +98,9 @@ export function openBugReport(head = null) {
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
     window.open(d.url, "_blank", "noopener");
-    toast(`Report saved as ${d.zip}. Drag it into the GitHub page that opened, then Submit.`, "ok", 9000);
+    toast(window.jarvisDesk
+      ? `GitHub opened in your browser. ${d.zip} is in your Downloads folder (it just opened): drag it into the GitHub page, then Submit.`
+      : `Report saved as ${d.zip} in your downloads. Drag it into the GitHub page that opened, then Submit.`, "ok", 12000);
     close();
   };
   const saveBtn = h("button.btn.primary", { onclick: () => send(false) }, "Save report and open GitHub");
