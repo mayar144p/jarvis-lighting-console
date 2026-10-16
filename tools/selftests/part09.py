@@ -7162,7 +7162,7 @@ def test_modes_and_checkin() -> None:
               "[{uid:'a',name:'Chauvet Intimidator Spot 360',footprint:14},{uid:'b',name:'ADJ Mega Par Profile',footprint:4},{uid:'c',name:'ADJ Mega Par Profile',footprint:4}]).map(p=>[p.head.head,p.dev.uid]),"
               "chips:R.connectionChips({tempo:{prodj:true,decks:2,master_deck:1},osc:{on:true,port:8000,count:3},hue:{paired:true,links:4},standby:{following:true,host:'10.0.0.2:8787'}},[{name:'APC mini mk2',layout:'Akai APC mini'}]).map(c=>c.text),"
               "quiet:R.connectionChips({tempo:{prodj:true,decks:0}}).map(c=>c.k+':'+c.text),none:R.connectionChips({}).length}))")
-        out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, timeout=30).stdout or "{}")
+        out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout or "{}")
         check("the ready workspaces: Set up and Live modes, the rest Program",
               "setup:setup" in out.get("modes", []) and "live:live" in out.get("modes", [])
               and "programming:program" in out.get("modes", []) and out.get("old") == "program", out.get("modes"))
