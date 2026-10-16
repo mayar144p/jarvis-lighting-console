@@ -68,7 +68,6 @@ LASER_ROLES = frozenset({"laser_on", "laser_pattern", "laser_size",
                          "laser_rot", "laser_x", "laser_y", "laser_speed",
                          "laser_colour"}) | LASER_BEAM_ROLES
 FX_ROLES = SFX_ROLES | LASER_ROLES
-AUX_ROLES = frozenset(f"aux{i}" for i in range(1, 25))
 _AUX_RE = re.compile(r"^aux\s*(\d{1,2})\b")
 
 # Beam-shape roles, used for the beam palette and the 3D body shapes.

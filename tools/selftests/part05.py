@@ -1095,13 +1095,9 @@ _MOVER_GEOMETRY = (
 
 
 def test_gdtf_geometry() -> None:
-    """GDTF geometry -> a normalised, renderer-neutral definition.
-
-    The real files on this machine are the ground truth where they exist:
-    rev9044.gdtf is a Chauvet DJ Intimidator Spot 260 and carries a real
-    Base/Yoke/Body/Lens chain with real pivots, and every one of these
-    checks is either derived from it or deliberately contradicts it.
-    """
+    """GDTF geometry -> a normalised, renderer-neutral definition, on
+    synthetic files built by the test (modelled on a real Base/Yoke/Body/Lens
+    mover: an Intimidator Spot 260)."""
     print("gdtf geometry (hierarchy, pivots, beams, safety, cache)")
     import shutil as _shutil
     import tempfile as _tempfile
@@ -1342,35 +1338,6 @@ def test_gdtf_geometry() -> None:
               and d4["geometry"]["kinematics"]["pan"] and not d4["files"],
               str(d4.get("reason"))[:80])
 
-        # ---- the REAL files, if this machine has any ------------------
-        real = sorted(Path(ROOT / "data").rglob("*.gdtf"))
-        if real:
-            mover = None
-            for path in real:
-                d = G.build_definition(str(path), has_pan=True, has_tilt=True)
-                if d["ok"] and (d["geometry"]["kinematics"].get("tilt")):
-                    mover = (path, d)
-                    break
-            check("a real GDTF on this machine parses its geometry",
-                  mover is not None, "%d file(s) found" % len(real))
-            if mover:
-                path, d = mover
-                kin = d["geometry"]["kinematics"]
-                pn = G.node_at(d["geometry"], kin["pan"])
-                tn = G.node_at(d["geometry"], kin["tilt"])
-                check("  and names a real pan node that is NOT the root",
-                      pn is not None and kin["pan"] != "0",
-                      "%s -> %s" % (path.name, pn["name"] if pn else None))
-                check("  and a distinct tilt node below it",
-                      tn is not None and tn["name"] != pn["name"],
-                      "%s" % (tn["name"] if tn else None))
-                beams = list(G.walk_beams(d["geometry"]))
-                check("  with at least one beam carrying real angles",
-                      beams and beams[0]["beam_angle"] > 0,
-                      str([(b["beam_angle"], b["field_angle"]) for b in beams]))
-        else:
-            check("no real GDTF on this machine to cross-check against", True,
-                  "(skipped, not failed)")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)
 

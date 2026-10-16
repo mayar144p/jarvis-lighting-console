@@ -46,7 +46,6 @@ DOWNLOAD_URL = f"{BASE}/downloadFile.php"
 # searched locally.
 LIST_TTL_S = 24 * 60 * 60
 DEFAULT_TIMEOUT = 20.0
-PAGE = 400          # fixtures.get() page size when we read the DB back
 
 
 class GdtfShareError(Exception):

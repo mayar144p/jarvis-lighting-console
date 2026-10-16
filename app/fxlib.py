@@ -514,7 +514,6 @@ FX: dict[str, dict] = {
                         "fn": _shutter_flicker},
 }
 
-GROUPS = ("dimmer", "colour", "position", "beam")
 
 
 def _groups(spec) -> tuple:

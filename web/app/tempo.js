@@ -4,7 +4,7 @@
 // Tap the pill (or T) on the beat; Shift+T says "this is the 1".
 import { run } from "./actions.js";
 import { state, on } from "./store.js";
-import { $, h, menu, promptBox } from "./ui.js";
+import { $, menu, promptBox } from "./ui.js";
 
 const SRC = { manual: "", tap: "tap", midi: "MIDI", prodj: "CDJ", browser: "MIDI", audio: "audio", link: "Link" };
 let recv = { t: 0, beats: 0, bpm: 120 };        // the last word from the desk, in this page's clock

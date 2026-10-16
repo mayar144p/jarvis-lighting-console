@@ -15,9 +15,6 @@ from app import link as link_mod
 from app import tempo as tempo_mod
 from app.engine_base import _truthy
 
-# effects can lock one cycle to this many beats
-BEAT_CHOICES = (0.25, 0.5, 1, 2, 4, 8, 16, 32)
-
 
 class TempoMixin:
     def _tempo(self) -> tempo_mod.Clock:

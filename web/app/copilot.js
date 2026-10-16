@@ -318,8 +318,7 @@ async function design() {
 const STYLES = ["Techno warehouse", "House party", "EDM festival drop", "Hip hop club", "Chill lounge", "Wedding dance", "Latin night"];
 let autoDesign = null;
 
-function sectionBar(sections, length) {
-  const total = length || (sections.length ? sections[sections.length - 1].end : 1) || 1;
+function sectionBar(sections) {
   return h("div.auto-bar", ...sections.map((s) => {
     const seg = h("i", { title: `${s.name} · ${s.start.toFixed(0)}-${s.end.toFixed(0)} s` }, s.name);
     seg.style.flexGrow = String(Math.max(0.5, s.end - s.start));

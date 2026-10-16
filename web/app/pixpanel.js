@@ -139,4 +139,3 @@ export function renderPix(force = false) {
     h("p.muted.small", "Pixel bars and panels count cell by cell. Bring the lights up first: this paints colour, not brightness."));
 }
 
-export function stopAllVideos() { for (const id of [...players.keys()]) stopVideo(id); }

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Jarvis - Mac/Linux launcher (run.bat is the Windows one).
+# Jarvis in the browser - Mac/Linux (on Windows, run-desktop.bat opens the app).
 #
 # The body is one function, read whole before it runs, so the update step
 # can safely replace this very file.

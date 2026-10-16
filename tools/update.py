@@ -1,4 +1,4 @@
-"""Bring Jarvis up to date before it starts (run.bat / run.sh call this).
+"""Bring Jarvis up to date before it starts (run.sh and the desktop app call this).
 
 Safe by construction: it only ever FAST-FORWARDS the branch you are on to
 its upstream, so it never merges, never rewrites anything and never

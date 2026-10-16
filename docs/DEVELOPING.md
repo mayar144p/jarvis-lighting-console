@@ -62,7 +62,8 @@ is the 15-minute check with real lights.
 ## Project layout
 
 ```
-├── run.bat / run.sh       launchers (Windows / Mac & Linux)
+├── run-desktop.bat/.sh   the desktop app (Windows / Mac & Linux)
+├── run.sh                the desk in a browser (Mac & Linux)
 ├── .env.example           configuration template
 ├── docs/ARCHITECTURE.md   how the pieces fit together
 ├── app/

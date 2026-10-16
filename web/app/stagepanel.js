@@ -1,7 +1,7 @@
 // The 3D stage in the middle of the desk, and its HUD.
 import { Stage } from "/js/stage/stage.js";
 import { setScreenMediaLoader } from "/js/stage/venue.js";
-import { get, modelBytes, post, token } from "./api.js";
+import { modelBytes, post, token } from "./api.js";
 import { modelDefs } from "./real3d.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, patch } from "./store.js";

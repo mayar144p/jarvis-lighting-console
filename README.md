@@ -29,9 +29,10 @@ undo, the patch lock and dry run mean the same thing whichever you used.
 
 ## Quick start
 
-1. **Windows:** double-click `run.bat`. **Mac/Linux:** `./run.sh`.
-   Both create `.env` from `.env.example` on first run and open
-   <http://localhost:8787>. Or run `python app/main.py` yourself.
+1. **Windows:** double-click `run-desktop.bat` (the desktop app, below).
+   **Mac/Linux:** `./run-desktop.sh`, or `./run.sh` for the desk in a
+   browser (<http://localhost:8787>). Both create `.env` from
+   `.env.example` on first run. Or run `python app/main.py` yourself.
 
    **Updates are automatic.** Each launch fetches the latest version and
    fast-forwards to it. It's skipped with a one-line note when you're
@@ -85,8 +86,7 @@ The first time it fetches Electron (about 100 MB, needs
 - **Safe during a show:** Ctrl+R, F5 and Ctrl+W do nothing; closing the last
   window asks first; the screens don't sleep while it's open.
 
-Your shows and `.env` are the same as with `run.bat` (it runs the same
-`data/` folder).
+From the repo it uses the repo's `data/` folder and `.env`.
 
 **The installer (another PC, nothing to install first).** GitHub → Actions →
 "Desktop app (installers)" → Run workflow. A few minutes later the
@@ -114,8 +114,8 @@ to the same account; then use the Tailscale address the dialog shows
 (100.x.x.x). Only your button presses travel (about 0.15 s Sweden -
 Australia), the 3D draws on your own computer, and the fades, effects and
 timeline run on the lights' computer, so the light stays smooth. Never open
-the port on your router to the internet. Started with `run.bat` instead of
-the app: put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
+the port on your router to the internet. Started with `run.sh` or
+`python app/main.py` instead of the app: put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
 `.env`.
 
 **USB DMX:** Settings → Output → "USB DMX interface (Enttec USB Pro and
@@ -129,9 +129,9 @@ DMXking ultraDMX and clones); the cheap "Open DMX" kind does not.
 app → Open.
 
 **Updates:** `run-desktop.bat` / `.sh` (the app from this repo) brings
-itself up to date every time it opens, like `run.bat`: "checking for
+itself up to date every time it opens: "checking for
 updates…", then the newest version (it reopens itself when the app changed).
-Same rules as `run.bat`: never with your own edits, never touching your
+Never with your own edits, never touching your
 data, skipped offline or with `AUTO_UPDATE=false`. An installed copy (the
 installer) doesn't update itself yet: that needs a place to publish
 installers, which waits until Jarvis leaves testing.
@@ -152,7 +152,7 @@ installers, which waits until Jarvis leaves testing.
 |---|---|---|
 | `APP_NAME` / `APP_SUBTITLE` | JARVIS / Lighting Assistant | branding: the name in the title and top bar (the screens' own words say "the desk") |
 | `HOST` / `PORT` | 127.0.0.1 / 8787 | bind address and web port |
-| `AUTO_UPDATE` | true | `run.bat` / `run.sh` fetch the latest version on launch |
+| `AUTO_UPDATE` | true | the desktop app and `run.sh` fetch the latest version on launch |
 | `CONSOLE_TOKEN` | *(empty)* | required when `HOST` is not loopback; sent as `X-Jarvis-Token` |
 | `LLM_API_KEY` | *(empty)* | empty: the copilot runs offline |
 | `LLM_BASE_URL` | Gemini's OpenAI endpoint | any OpenAI-compatible endpoint |

@@ -3977,7 +3977,7 @@ def test_ai_switch() -> None:
 
 
 def test_ai_engine_fetch() -> None:
-    """An app installed before the engine shipped with it (or run.bat): the
+    """An app installed before the engine shipped with it: the
     offline AI's download fetches llama.cpp's server first, from llama.cpp's
     own releases, the build for this computer; an unsafe archive is refused."""
     print("The offline AI's engine, fetched when the app has none")
@@ -6141,7 +6141,7 @@ def test_remote_desk() -> None:
     check("...and says a computer gets the whole desk, with a Tailscale address marked",
           "A computer gets the whole desk" in mj and "isTailscale" in mj)
     ex = (ROOT / ".env.example").read_text(encoding="utf-8")
-    check("run.bat: HOST=0.0.0.0 and a CONSOLE_TOKEN let other computers in (documented)", "HOST=0.0.0.0" in ex)
+    check(".env: HOST=0.0.0.0 and a CONSOLE_TOKEN let other computers in (documented)", "HOST=0.0.0.0" in ex)
     from app import config
     check("a desk that answers the network always needs its code", config.HOST in ("127.0.0.1", "localhost", "::1")
           or config.requires_token())
@@ -6236,6 +6236,11 @@ def test_desktop_launch_quiet() -> None:
           bat.index("set ELECTRON_NO_ATTACH_CONSOLE=1") < bat.index('start "" "node_modules'))
     check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
           "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
+    check("the desktop app is the Windows launcher (run.bat is gone)", not (ROOT / "run.bat").exists())
+    import re as _re
+    reads = [f.name for f in (ROOT / "tools" / "selftests").glob("part*.py")
+             if _re.search(r'ROOT\s*/\s*"data"', f.read_text(encoding="utf-8"))]
+    check("no selftest reads your own data/ (they run on scratch data)", not reads, str(reads))
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the update splash is UTF-8 (\"…\", not \"â€¦\")", "data:text/html;charset=utf-8," in mj and "<meta charset='utf-8'>" in mj)
     check("npm install runs without shell:true (no DEP0190 warning)", "shell: process.platform" not in mj and '"/d", "/s", "/c"' in mj)

@@ -368,7 +368,7 @@ async function steps() {
   await click(`#fx-rows tr[data-head="${tno}"]:not(.fold) td.c-name`, `fixture #${tno} row`);
   await click('#swatches button[title="Blue"]', "Blue swatch");
   ({ F, V } = await layers("one blue"));
-  const [r1, g1, b1] = lin(F[tno] && F[tno].hex);
+  const [r1, , b1] = lin(F[tno] && F[tno].hex);
   check(b1 > r1 * 3, `${tag}the picked light (#${tno}) is blue`, F[tno] && F[tno].hex);
   const changed = lights(V).filter((h) => h !== tno && before[h] && F[h] && (before[h].hex !== F[h].hex || Math.abs(+before[h].a - +F[h].a) > 0.01));
   check(!changed.length, `${tag}no other light changed`, changed.slice(0, 10).map((h) => `#${h} ${before[h].hex}->${F[h].hex}`).join(", "));

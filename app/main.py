@@ -1,6 +1,6 @@
 """Jarvis desktop server - stdlib only.
 
-Run:  python app/main.py   (or double-click run.bat)
+Run:  python app/main.py   (or run-desktop.bat / run-desktop.sh for the app)
 Then: http://localhost:8787
 """
 from __future__ import annotations

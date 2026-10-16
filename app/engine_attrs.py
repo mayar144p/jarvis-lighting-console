@@ -645,30 +645,29 @@ class AttrMixin:
         # is this fixture's white.  A light that mixes AND has a wheel (a
         # CMY wash's colour wheel) needs its wheel open too, or the wheel
         # tints the white it mixed.
-        if True:
-            dark = self._DARK_SLOT
-            for role in ("wheel", "gobo"):
-                if role in roles:
-                    out[role] = 0
-                    slots = self._wheel_slots(head, role)
-                    for s in slots:
-                        if s["name"].strip().lower() in ("open", "white", "clear"):
-                            out[role] = int(s["value"])
-                            break
-                    else:
-                        # slot 0 is "Blackout" on some lights (a Swarm's colour
-                        # channel): white is then the first slot that lights
-                        first = next((s for s in slots if int(s["value"]) <= 0 or s.get("from", 1) == 0), None)
-                        if first and dark.match(str(first["name"])):
-                            # a slot that says white ("Full white", "RGBW white")
-                            # before the first that merely lights (often red)
-                            rgb = lambda n: all(re.search(rf"\b{c}\b", n, re.I) for c in ("red", "green", "blue"))  # noqa: E731
-                            lit = next((s for s in slots if re.search(r"\b(white|open|clear)\b", str(s["name"]), re.I)
-                                        and not dark.match(str(s["name"]))), None) \
-                                or next((s for s in slots if rgb(str(s["name"]))), None) \
-                                or next((s for s in slots if not dark.match(str(s["name"]))), None)
-                            if lit:
-                                out[role] = int(lit["value"])
+        dark = self._DARK_SLOT
+        for role in ("wheel", "gobo"):
+            if role in roles:
+                out[role] = 0
+                slots = self._wheel_slots(head, role)
+                for s in slots:
+                    if s["name"].strip().lower() in ("open", "white", "clear"):
+                        out[role] = int(s["value"])
+                        break
+                else:
+                    # slot 0 is "Blackout" on some lights (a Swarm's colour
+                    # channel): white is then the first slot that lights
+                    first = next((s for s in slots if int(s["value"]) <= 0 or s.get("from", 1) == 0), None)
+                    if first and dark.match(str(first["name"])):
+                        # a slot that says white ("Full white", "RGBW white")
+                        # before the first that merely lights (often red)
+                        rgb = lambda n: all(re.search(rf"\b{c}\b", n, re.I) for c in ("red", "green", "blue"))  # noqa: E731
+                        lit = next((s for s in slots if re.search(r"\b(white|open|clear)\b", str(s["name"]), re.I)
+                                    and not dark.match(str(s["name"]))), None) \
+                            or next((s for s in slots if rgb(str(s["name"]))), None) \
+                            or next((s for s in slots if not dark.match(str(s["name"]))), None)
+                        if lit:
+                            out[role] = int(lit["value"])
         q = self.zero_question(head)
         if q and q["dark"]:
             out[q["role"]] = q["lit"]          # 0 is dark on this light: white is its white slot

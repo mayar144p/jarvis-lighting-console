@@ -68,9 +68,16 @@ function findPython() {
 
 // Installed, the shows, fixtures, settings (.env) and inbox live in the
 // user's own folder (AppData\Roaming\Jarvis): they survive updates and a
-// reinstall.  From the repo: the repo's data/ and .env, as run.bat uses.
+// reinstall.  From the repo: the repo's data/ and .env (made from
+// .env.example the first time).
 function userFolders() {
-  if (!PACKED) return {};
+  if (!PACKED) {
+    const env = path.join(ROOT, ".env");
+    if (!fs.existsSync(env)) {
+      try { fs.copyFileSync(path.join(ROOT, ".env.example"), env); } catch { /* no example: defaults */ }
+    }
+    return {};
+  }
   const ud = app.getPath("userData");
   const env = path.join(ud, ".env");
   if (!fs.existsSync(env)) {
@@ -137,7 +144,7 @@ function firewallAllow(port) {
 }
 
 // Jarvis from the repo brings itself up to date every time it opens, like
-// run.bat: tools/update.py fast-forwards to the latest version (never with
+// run.sh: tools/update.py fast-forwards to the latest version (never with
 // local edits; your data is never touched).  If the update changed the app
 // itself, it opens again on the new version.  The installed app has no
 // repo to update from, so it skips this.

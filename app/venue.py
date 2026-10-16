@@ -371,20 +371,6 @@ def bounds(v: dict) -> dict:
             "h": h or 20.0}
 
 
-def stage_height_at(v: dict, x: float, z: float) -> float:
-    """Floor height at (x, z): the stage deck, a riser, or the floor."""
-    best = 0.0
-    s = (v or {}).get("stage")
-    if s and abs(x - s["x"]) <= s["width"] / 2 and s["z"] <= z <= s["z"] + s["depth"]:
-        best = max(best, s["height"])
-    for o in (v or {}).get("objects") or []:
-        if o["kind"] not in ("riser", "balcony"):
-            continue
-        if abs(x - o["x"]) <= o["w"] / 2 and abs(z - o["z"]) <= o["d"] / 2:
-            best = max(best, o["y"] + o["h"])
-    return best
-
-
 def rig(v: dict, ident: str) -> dict | None:
     for r in (v or {}).get("rigging") or []:
         if r["id"] == ident:
@@ -624,23 +610,22 @@ def keep_rig_inside(v: dict, r: dict) -> bool:
 
 def _fit_rig(r: dict, inside, pull, box, top) -> int:
     lo_x, hi_x, lo_z, hi_z = box
-    if True:
-        a, bb = list(r["a"]), list(r["b"])
-        if callable(top):
-            top = top(a, bb)
-        if inside(a[0], a[2]) and inside(bb[0], bb[2]) and max(a[1], bb[1]) <= top:
-            return 0
-        # slide the whole piece in first, so it keeps its length
-        sx = (lo_x - min(a[0], bb[0]) if min(a[0], bb[0]) < lo_x else 0) or \
-             (hi_x - max(a[0], bb[0]) if max(a[0], bb[0]) > hi_x else 0)
-        sz = (lo_z - min(a[2], bb[2]) if min(a[2], bb[2]) < lo_z else 0) or \
-             (hi_z - max(a[2], bb[2]) if max(a[2], bb[2]) > hi_z else 0)
-        for p in (a, bb):
-            p[0], p[2] = p[0] + sx, p[2] + sz
-            p[0], p[2] = pull(p[0], p[2])              # still out (too long, or an L-room corner)
-            p[1] = round(min(p[1], top), 3)
-        r["a"], r["b"] = a, bb
-        return 1
+    a, bb = list(r["a"]), list(r["b"])
+    if callable(top):
+        top = top(a, bb)
+    if inside(a[0], a[2]) and inside(bb[0], bb[2]) and max(a[1], bb[1]) <= top:
+        return 0
+    # slide the whole piece in first, so it keeps its length
+    sx = (lo_x - min(a[0], bb[0]) if min(a[0], bb[0]) < lo_x else 0) or \
+         (hi_x - max(a[0], bb[0]) if max(a[0], bb[0]) > hi_x else 0)
+    sz = (lo_z - min(a[2], bb[2]) if min(a[2], bb[2]) < lo_z else 0) or \
+         (hi_z - max(a[2], bb[2]) if max(a[2], bb[2]) > hi_z else 0)
+    for p in (a, bb):
+        p[0], p[2] = p[0] + sx, p[2] + sz
+        p[0], p[2] = pull(p[0], p[2])              # still out (too long, or an L-room corner)
+        p[1] = round(min(p[1], top), 3)
+    r["a"], r["b"] = a, bb
+    return 1
 
 
 def rig_transform(v: dict, r: dict, turn: float | None = None, length: float | None = None,

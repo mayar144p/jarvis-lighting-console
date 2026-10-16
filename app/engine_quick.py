@@ -672,10 +672,6 @@ class QuickMixin:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
         return fixture_kind.head_class(h)
 
-    def _lights_only(self, heads) -> list[int]:
-        by = {h["head_no"]: h for h in self.patch}
-        return [n for n in heads if n in by and self._head_class(by[n]) == "light"]
-
     def _heads_for_target(self, t: dict, fx: bool = False) -> list[int]:
         """Heads for a target: {group}, {heads}, {type} or all.  A light
         button only ever reaches lights; an FX button only effects."""
