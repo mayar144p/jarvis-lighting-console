@@ -6252,4 +6252,6 @@ def test_desktop_launch_quiet() -> None:
     check("no selftest reads your own data/ (they run on scratch data)", not reads, str(reads))
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the update splash is UTF-8 (\"…\", not \"â€¦\")", "data:text/html;charset=utf-8," in mj and "<meta charset='utf-8'>" in mj)
+    check("a bug report's zip goes to Downloads and its folder opens (no Save As box in the desk)",
+          '"will-download"' in mj and "setSavePath" in mj and "showItemInFolder" in mj and "quietDownloads();" in mj)
     check("npm install runs without shell:true (no DEP0190 warning)", "shell: process.platform" not in mj and '"/d", "/s", "/c"' in mj)

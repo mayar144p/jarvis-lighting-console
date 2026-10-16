@@ -6,7 +6,7 @@
 //   cd desktop && npm install && cd .. && node tools/desktopcheck.mjs
 //   (Linux with no screen: xvfb-run -a node tools/desktopcheck.mjs)
 //   DESKTOP_EXE=path/to/Jarvis.exe node tools/desktopcheck.mjs   (a built app)
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,19 @@ check("the desk works through the app (patch 2 lights)", r && r.ok, JSON.stringi
 let linked = false;
 for (let i = 0; i < 60 && !linked; i++) { linked = await win.evaluate(() => document.querySelector("#fx-count")?.textContent.trim() === "2"); if (!linked) await sleep(500); }
 check("the window's live link to the engine works (the list shows them)", linked);
+
+// a save (photo, export, bug report) lands in Downloads - no Save As box in the middle of the desk
+const DL = mkdtempSync(join(tmpdir(), "jarvis-dl-"));
+await app.evaluate(({ app: a }, dir) => a.setPath("downloads", dir), DL);
+await win.evaluate(() => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["hello"], { type: "text/plain" }));
+  a.download = "jarvis-save-check.txt";
+  a.click();
+});
+let saved = false;
+for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "jarvis-save-check.txt")); if (!saved) await sleep(250); }
+check("a save goes straight into Downloads (no Save As box)", saved, DL);
 
 // Show mode from the menu: the 3D, the programmer and the playbacks each in a window
 await app.evaluate(({ Menu }) => Menu.getApplicationMenu().items.find((m) => m.label === "Desk").submenu.items[0].click());

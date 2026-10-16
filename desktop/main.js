@@ -424,6 +424,24 @@ function trustEngine() {
   });
 }
 
+// Saves (a photo, a video, an export, a bug report) go straight into the
+// Downloads folder, as in a browser - not a Save As box in the middle of
+// the desk.  A bug report's zip is then shown in its folder, ready to drag
+// into the GitHub page that opened in the browser.
+function quietDownloads() {
+  session.defaultSession.on("will-download", (_e, item) => {
+    const dir = app.getPath("downloads");
+    const name = path.basename(item.getFilename() || "jarvis-download");
+    const ext = path.extname(name), stem = name.slice(0, name.length - ext.length);
+    let file = path.join(dir, name);
+    for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, `${stem} (${i})${ext}`);
+    item.setSavePath(file);
+    item.once("done", (_ev, state) => {
+      if (state === "completed" && /^jarvis-report-/.test(name)) shell.showItemInFolder(file);
+    });
+  });
+}
+
 // the engine started again with new settings; the windows follow it
 async function restartEngine() {
   restarting = true;
@@ -499,6 +517,7 @@ app.whenReady().then(async () => {
     return;
   }
   trustEngine();
+  quietDownloads();
   // the desk's screens may use MIDI controllers (Web MIDI), full screen and
   // a microphone / line input (Sound: the beat, the drop) - audio only;
   // nothing else (camera, screen capture, location...) is ever granted
