@@ -1297,6 +1297,10 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return None
+        if route == "/api/console/standby_feed":
+            # a backup desk following this one (it holds the pairing code)
+            have = re.sub(r"[^0-9a-f]", "", str(query.get("have", "")))[:16]
+            return self._json(self._engine().standby_feed(have))
         if route == "/api/console/streamdeck_plugin":
             data = streamdeck.plugin_zip()
             self.send_response(200)

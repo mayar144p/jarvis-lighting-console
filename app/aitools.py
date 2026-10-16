@@ -77,6 +77,7 @@ NEVER = frozenset({
     "backup", "backup_now", "backup_shows", "backup_restore",
     "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "hue_link",
     "song_save", "song_load", "song_rename", "song_delete", "song_link", "song_follow",
+    "standby", "standby_take", "standby_stop",
     "set_dmx_target", "set_lock", "unlock", "set_limits", "clear_limits", "set_orient",
     "remember_open", "light_test", "light_tested", "zero_dark", "motion_set", "motion_test",
     "motion_test_end", "motion_get", "import_scan", "patch_from_csv", "export_patch",

@@ -1823,3 +1823,5 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .songs-table td { padding: 6px; border-top: 1px solid var(--border); vertical-align: middle; }
 .songs-table tr.is-current td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .songs-table .song-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+
+.standby-box .row-btns { align-items: flex-end; flex-wrap: wrap; }

@@ -873,6 +873,11 @@ class ShowMixin:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:          # ValueError: bad JSON or not text
             raise ValueError(f"cannot read show {label!r}: it is damaged ({exc})") from exc
+        return self._apply_show_payload(payload, label)
+
+    def _apply_show_payload(self, payload: dict, label: str) -> dict:
+        """A show (a saved file's contents, or the main desk's for a backup
+        desk) onto this desk, replacing what is there."""
         payload = self._clean_payload(payload)
         heads = [self._head_from_layout(h) for h in payload.get("patch") or []]
         groups = list(payload.get("groups") or [])

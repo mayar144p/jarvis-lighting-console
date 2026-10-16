@@ -6881,3 +6881,117 @@ def test_scratch_show_dir() -> None:
         got = subprocess.run([sys.executable, "-c", "from app import config; print(config.CONSOLE_SHOW_DIR)"],
                              cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60).stdout.strip()
         check("another relative folder still sits next to the app", Path(got).resolve() == (ROOT / "myshows").resolve(), got)
+
+
+def test_backup_desk() -> None:
+    """A backup desk: a second desk follows a real main desk (its own
+    process, locked with a pairing code) - the show and what is live - with
+    its output off, and takes over the lights when the main one dies."""
+    print("A backup desk follows the main desk and takes over")
+    import os
+    import subprocess
+    import sys
+    import urllib.error
+    import urllib.request
+    from app import engine as eng
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    code = "BKUP234567"                 # the desk's key; the operator types it as BKUP2-34567
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        env = dict(os.environ, PORT=str(port), HOST="0.0.0.0", CONSOLE_TOKEN=code, CONSOLE_DRY_RUN="true",
+                   FIXTURE_DB=str(db), CONSOLE_DATA_DIR=str(tmp / "main"), CONSOLE_SHOW_DIR=str(tmp / "main" / "shows"),
+                   CONSOLE_AUTOSAVE="false", MIDI_ENABLED="false", GDTF_SHARE_USER="", GDTF_SHARE_PASSWORD="")
+        proc = subprocess.Popen([sys.executable, os.path.join("app", "main.py")], env=env, cwd=str(ROOT),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def main(action, **params):
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/console", method="POST",
+                                         data=json.dumps({"action": action, "params": params}).encode(),
+                                         headers={"Content-Type": "application/json", "X-Jarvis-Token": code})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.loads(r.read().decode()).get("result") or {}
+
+        b = None
+        try:
+            up = False
+            for _ in range(60):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2)
+                    up = True
+                    break
+                except Exception:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.3)
+            check("the main desk is up, locked with its pairing code", up, "")
+            if not up:
+                return
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/api/console/standby_feed", timeout=5)
+                refused = False
+            except urllib.error.HTTPError as exc:
+                refused = exc.code in (401, 403)
+            check("the main desk's feed needs its pairing code", refused, "")
+            main("add_heads", query="LED PAR 4ch", qty=4)
+            main("select_all")
+            main("set_intensity", level=100)
+            main("record_cue", playback=1, name="Full")
+            main("set_intensity", level=30)
+            main("record_cue", playback=1, name="Low")
+            main("clear_programmer")
+            main("cue_go", playback=1, cue=1)
+            main("save_show", name="gig")
+
+            b = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "backup" / "shows")
+            b.act("set_output", state=True)
+            r = b.act("standby", host=f"127.0.0.1:{port}", code="WRONG-00000")
+            check("a wrong pairing code is refused", not r.get("ok") and "pairing code" in (r.get("error") or ""), r)
+            r = b.act("standby", host=f"127.0.0.1:{port}", code="BKUP2-34567", after=1.5)
+            check("the backup follows the main desk", r.get("ok") and b.standby_public()["following"], r)
+            check("... with its own output off (one desk sends at a time)", not b.live, b.live)
+            check("... and has the main desk's show: its lights and cues",
+                  len(b.patch) == 4 and [c["name"] for c in b.playbacks[0]["stack"]] == ["Full", "Low"], len(b.patch))
+            check("... and its live state: playback 1 on cue 1",
+                  b.playbacks[0]["active"] and b.playbacks[0]["index"] == 0, b.playbacks[0]["index"])
+
+            def wait(cond, s=6.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.05)
+                return cond()
+
+            main("cue_go", playback=1, cue=2)
+            main("master", level=60)
+            check("GO on the main desk: the backup is on cue 2 within a second",
+                  wait(lambda: b.playbacks[0]["index"] == 1 and b.master == 60), (b.playbacks[0]["index"], b.master))
+            main("add_heads", query="LED PAR 4ch", qty=2)
+            check("a light added on the main desk appears on the backup", wait(lambda: len(b.patch) == 6), len(b.patch))
+            main("select_heads", heads=[5])
+            main("set_intensity", level=77)
+            check("the main desk's programmer too (it is live on the lights)",
+                  wait(lambda: any(v == 196 or v == 77 for v in (b.programmer.get(5) or {}).values())), b.programmer.get(5))
+            check("the pairing code is never on the backup's screens",
+                  code not in json.dumps(b.snapshot(), default=str), "")
+            check("... nor in its saved show", code not in b._autosave_payload(), "")
+            proc.kill()
+            proc.wait(timeout=10)
+            t0 = time.monotonic()
+            check("the main desk dies: the backup takes over by itself",
+                  wait(lambda: bool(b.standby_public()["took_over"]), 8.0), b.standby_public())
+            check("... after about the 1.5 s it was given", 1.0 <= time.monotonic() - t0 <= 4.0, round(time.monotonic() - t0, 2))
+            check("... its output is on now", b.live, "")
+            check("... carrying on from the main desk's last state: cue 2, master 60%",
+                  b.playbacks[0]["active"] and b.playbacks[0]["index"] == 1 and b.master == 60, "")
+            check("... and every screen is told", (b.snapshot().get("notice") or {}).get("id") == "standby_took_over", "")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+            if b:
+                b.shutdown()

@@ -271,6 +271,7 @@ export async function openSettings() {
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
     ["backup", "Backup", [backupPanel()]],
     ["hue", "Philips Hue", [huePanel()]],
+    ["standby", "Backup desk", [standbyPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -388,6 +389,44 @@ function huePanel() {
     lampsBox);
   paint();
   refresh().then(() => { if (st.paired) lamps(); });
+  return box;
+}
+
+// A backup desk: this computer follows the main desk live and takes over
+// the lights if the main one stops.  The main desk's pairing code stays on
+// this computer and never comes back to this page.
+function standbyPanel() {
+  const box = h("div.standby-box");
+  let st = (state.snap && state.snap.standby) || {};
+  const host = h("input", { type: "text", placeholder: "e.g. 192.168.1.20:8787", spellcheck: "false", autocomplete: "off", style: { width: "200px" }, value: st.host || "" });
+  const code = h("input", { type: "password", placeholder: st.has_code ? "(kept)" : "ABCDE-23456", autocomplete: "off", style: { width: "150px" } });
+  const after = h("input", { type: "number", min: 1, max: 30, step: 1, value: st.after || 3, style: { width: "70px" } });
+  const auto = h("input", { type: "checkbox", checked: st.auto !== false });
+  const status = h("div.out-status");
+  const paint = () => {
+    status.replaceChildren(
+      st.took_over ? h("div.out-bad", `⚠ This desk took over the lights (${st.took_over.why}).` + (st.main_back ? " The main desk is back: only one of them should send - stop the other one's output." : ""))
+        : st.following ? h(st.error ? "div.out-bad" : "div.out-ok", st.error ? `⚠ ${st.error}` : `✓ Following ${st.host}${st.show_file ? ` (show “${st.show_file}”)` : ""} · seen ${st.seen_s ?? "?"} s ago · this desk's output is off`)
+          : h("div.muted.small", "Not following a main desk."));
+  };
+  const act = async (name, params) => { const r = await run(name, params, { toast: true }); if (r.ok && r.standby) { st = r.standby; paint(); } return r; };
+  box.append(
+    h("p.muted.small", "Run a second computer as a spare: it copies the main desk's show and what is live (cues, faders, master, programmer, timeline, buttons) "
+      + "twice a second with its own output off. If the main desk stops answering, this one takes over the lights where the main one was. "
+      + "On the main desk, allow other computers (the desktop app: Desk → Other computers, phones and tablets) to see its address and pairing code."),
+    h("div.row-btns",
+      h("label.field", h("span", "Main desk address"), host),
+      h("label.field", h("span", "Its pairing code"), code)),
+    h("div.row-btns",
+      h("label.check", auto, h("span", "Take over by itself when the main desk is quiet for")), after, h("span.muted.small", "seconds")),
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: () => act("standby", { host: host.value.trim(), ...(code.value.trim() ? { code: code.value.trim() } : {}), after: +after.value || 3, auto: auto.checked }) }, "Follow the main desk"),
+      h("button.btn.danger", { onclick: async () => {
+        if (await confirmBox("Take over the lights", "This desk's output goes on and it carries on from the main desk's last state. Stop the main desk's output if it is still running.", { ok: "Take over", danger: true })) act("standby_take", {});
+      } }, "Take over now"),
+      h("button.btn.ghost", { onclick: () => act("standby_stop", {}) }, "Stop following")),
+    status);
+  paint();
   return box;
 }
 

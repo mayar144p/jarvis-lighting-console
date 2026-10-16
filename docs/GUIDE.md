@@ -477,6 +477,34 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
 
+### A backup desk
+
+A second computer can stand by as a spare desk, so a dead laptop doesn't
+take the show with it:
+
+1. On the **main** desk: **Desk → Other computers, phones and tablets…**
+   and allow them. Note its address (e.g. `192.168.1.20:8787`) and pairing
+   code.
+2. On the **backup** desk: **Settings → Backup desk**, type the address and
+   the code, and **Follow the main desk**.
+
+The backup copies the main desk's show (every change: lights, cues, buttons,
+the room…) and what is live (each playback's cue and fader, the master,
+blackout, the programmer, the timeline and the buttons that are on) twice a
+second. Its own output stays **off** while it follows, and the status bar
+says *BACKUP DESK*: two desks sending to the same lights would fight. Cue
+actions (OSC to QLab, macros) run on the main desk only.
+
+If the main desk stops answering for the seconds you set (3 by default),
+the backup **takes over**: its output goes on and it carries on from the
+main desk's last cue, faders, timeline and buttons, and every screen says
+so. **Take over now** does it by hand (e.g. when the main desk's output
+broke but the computer still answers). If the main desk comes back, the
+backup warns that both are sending; it never hands back by itself - stop
+one of them. Both desks need to reach the lights (the same network, or a
+USB box moved over). The pairing code stays on the backup computer and is
+never saved in a show.
+
 ### Philips Hue lamps
 
 Smart bulbs can follow the desk, so a party room or a small bar needs no
