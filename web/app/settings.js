@@ -1,6 +1,6 @@
 // Settings: output, the venue, MIDI and OSC, controllers, the theme, AI.
 
-import { get, post } from "./api.js";
+import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
 import { themeNow, setTheme, ACCENTS } from "./theme.js";
@@ -257,7 +257,9 @@ export async function openSettings() {
       h("h3", "OSC"),
       oscRow(),
       h("h3", "OSC out"),
-      oscOutRow()]],
+      oscOutRow(),
+      h("h3", "Stream Deck"),
+      streamDeckRow()]],
     ["library", "Fixtures", [
       h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
       h("div.row-btns", h("button.btn", {
@@ -268,6 +270,8 @@ export async function openSettings() {
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
     ["backup", "Backup", [backupPanel()]],
+    ["hue", "Philips Hue", [huePanel()]],
+    ["standby", "Backup desk", [standbyPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -318,6 +322,114 @@ function backupPanel() {
   return box;
 }
 
+// Philips Hue: smart lamps follow desk lights (a party room, a small bar).
+// Pair once with the bridge's round button; each lamp then picks the desk
+// light it copies.  The bridge's key never comes to this page.
+function huePanel() {
+  const box = h("div.hue-box");
+  const host = h("input", { type: "text", placeholder: "e.g. 192.168.1.20", spellcheck: "false", autocomplete: "off", style: { width: "180px" } });
+  const found = h("div.chip-row");
+  const status = h("div.out-status");
+  const lampsBox = h("div");
+  const heads = () => ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, `${x.head_no} · ${x.name}`]);
+  let st = (state.snap && state.snap.hue) || {};
+  const paint = () => {
+    host.value = host.value || st.host || "";
+    status.replaceChildren(st.paired
+      ? h(st.error ? "div.out-bad" : "div.out-ok", st.error ? `⚠ ${st.error}` : `✓ Paired with the bridge at ${st.host} · ${st.links} lamp(s) follow the desk`)
+      : h("div.out-bad", "Not paired: press the round button on top of the Hue bridge, then Pair within 30 seconds."));
+  };
+  const refresh = async () => { const r = await run("hue", {}, { silentError: true }); if (r.ok) { st = r.hue; paint(); } };
+  const lamps = async () => {
+    const r = await run("hue_lights", {}, { toast: true });
+    if (!r.ok) return;
+    const byLamp = {};
+    for (const [hd, lp] of Object.entries(st.map || {})) byLamp[lp] = hd;
+    lampsBox.replaceChildren(h("table.hue-lamps",
+      h("tr", h("th", "Hue lamp"), h("th", "Follows desk light"), h("th", "")),
+      ...r.lamps.map((lp) => {
+        const pick = h("select", { "aria-label": `Desk light for ${lp.name}` },
+          h("option", { value: "" }, "-"),
+          ...heads().map(([n, label]) => h("option", { value: n, selected: String(byLamp[lp.id]) === String(n) }, label)));
+        pick.addEventListener("change", async () => {
+          const was = byLamp[lp.id];
+          const res = pick.value ? await run("hue_link", { head: +pick.value, lamp: lp.id }, { toast: true })
+            : was ? await run("hue_link", { head: +was, lamp: "" }, { toast: true }) : { ok: true };
+          if (res.ok && res.hue) { st = res.hue; paint(); }
+          lamps();
+        });
+        return h("tr",
+          h("td", lp.name, lp.colour ? "" : h("span.muted.small", " (white only)"), lp.reachable ? "" : h("span.muted.small", " · not reachable")),
+          h("td", pick),
+          h("td", h("button.btn.small", { onclick: () => run("hue_flash", { lamp: lp.id }, { toast: true }) }, "Blink")));
+      })));
+  };
+  box.append(
+    h("p.muted.small", "Hue lamps copy a desk light's colour and brightness, so a room with smart bulbs needs no DMX. "
+      + "The bridge takes about ten changes a second in all: fine for looks and slow fades, too slow for chases and strobes."),
+    h("div.row-btns",
+      h("label.field", h("span", "Bridge address"), host),
+      h("button.btn", { onclick: async () => {
+        const r = await run("hue_find", {}, { toast: true });
+        found.replaceChildren(...((r.ok && r.bridges) || []).map((b) => h("button.chip", { onclick: () => { host.value = b.host; } }, `${b.name} ${b.host}`)));
+      } }, "Find"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("hue_pair", { host: host.value.trim() }, { toast: true });
+        if (r.ok) { st = r.hue; paint(); lamps(); }
+      } }, "Pair")),
+    found,
+    status,
+    h("div.row-btns",
+      h("button.btn", { onclick: lamps }, "Show the lamps"),
+      h("button.btn.ghost", { onclick: async () => {
+        if (!(await confirmBox("Forget the Hue bridge", "Its lamps stop following the desk until you pair again.", { ok: "Forget" }))) return;
+        const r = await run("hue", { forget: true }, { toast: true });
+        if (r.ok) { st = r.hue; paint(); lampsBox.replaceChildren(); }
+      } }, "Forget the bridge")),
+    lampsBox);
+  paint();
+  refresh().then(() => { if (st.paired) lamps(); });
+  return box;
+}
+
+// A backup desk: this computer follows the main desk live and takes over
+// the lights if the main one stops.  The main desk's pairing code stays on
+// this computer and never comes back to this page.
+function standbyPanel() {
+  const box = h("div.standby-box");
+  let st = (state.snap && state.snap.standby) || {};
+  const host = h("input", { type: "text", placeholder: "e.g. 192.168.1.20:8787", spellcheck: "false", autocomplete: "off", style: { width: "200px" }, value: st.host || "" });
+  const code = h("input", { type: "password", placeholder: st.has_code ? "(kept)" : "ABCDE-23456", autocomplete: "off", style: { width: "150px" } });
+  const after = h("input", { type: "number", min: 1, max: 30, step: 1, value: st.after || 3, style: { width: "70px" } });
+  const auto = h("input", { type: "checkbox", checked: st.auto !== false });
+  const status = h("div.out-status");
+  const paint = () => {
+    status.replaceChildren(
+      st.took_over ? h("div.out-bad", `⚠ This desk took over the lights (${st.took_over.why}).` + (st.main_back ? " The main desk is back: only one of them should send - stop the other one's output." : ""))
+        : st.following ? h(st.error ? "div.out-bad" : "div.out-ok", st.error ? `⚠ ${st.error}` : `✓ Following ${st.host}${st.show_file ? ` (show “${st.show_file}”)` : ""} · seen ${st.seen_s ?? "?"} s ago · this desk's output is off`)
+          : h("div.muted.small", "Not following a main desk."));
+  };
+  const act = async (name, params) => { const r = await run(name, params, { toast: true }); if (r.ok && r.standby) { st = r.standby; paint(); } return r; };
+  box.append(
+    h("p.muted.small", "Run a second computer as a spare: it copies the main desk's show and what is live (cues, faders, master, programmer, timeline, buttons) "
+      + "twice a second with its own output off. If the main desk stops answering, this one takes over the lights where the main one was. "
+      + "On the main desk, allow other computers (the desktop app: Desk → Other computers, phones and tablets) to see its address and pairing code."),
+    h("div.row-btns",
+      h("label.field", h("span", "Main desk address"), host),
+      h("label.field", h("span", "Its pairing code"), code)),
+    h("div.row-btns",
+      h("label.check", auto, h("span", "Take over by itself when the main desk is quiet for")), after, h("span.muted.small", "seconds")),
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: () => act("standby", { host: host.value.trim(), ...(code.value.trim() ? { code: code.value.trim() } : {}), after: +after.value || 3, auto: auto.checked }) }, "Follow the main desk"),
+      h("button.btn.danger", { onclick: async () => {
+        if (await confirmBox("Take over the lights", "This desk's output goes on and it carries on from the main desk's last state. Stop the main desk's output if it is still running.", { ok: "Take over", danger: true })) act("standby_take", {});
+      } }, "Take over now"),
+      h("button.btn.ghost", { onclick: () => act("standby_stop", {}) }, "Stop following")),
+    status);
+  paint();
+  return box;
+}
+
 // OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
 function oscRow() {
   const o = (state.snap && state.snap.osc) || {};
@@ -335,6 +447,33 @@ function oscRow() {
     h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
     note,
     h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
+}
+
+// The Stream Deck plugin: GO, blackout, buttons, tap and macros on the
+// keys; the grand master and playback faders on the dials (Stream Deck +).
+// It talks OSC, so OSC in has to be on.
+function streamDeckRow() {
+  const o = (state.snap && state.snap.osc) || {};
+  const download = async () => {
+    const t = token();
+    const r = await fetch("/api/console/streamdeck_plugin", { headers: t ? { "X-Jarvis-Token": t } : {} });
+    if (!r.ok) { toast(`download failed (${r.status})`, "bad"); return; }
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, "com.jarvis.desk.streamDeckPlugin"])[1];
+    const url = URL.createObjectURL(await r.blob());
+    const a = h("a", { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Saved. Double-click it to add Jarvis to the Stream Deck app.");
+  };
+  return h("div",
+    h("div.row-btns", h("button.btn", { onclick: download }, "Get the Stream Deck plugin"),
+      h("span.muted.small", "Stream Deck app 6.4 or newer, on Windows or Mac")),
+    h("p.muted.small", "Double-click the file to install it, then drag GO, Blackout, Desk button, Tap tempo or Macro onto keys, and Grand master or Playback fader onto the dials. "
+      + (o.on ? `It talks to OSC in on port ${o.port}: if you change the port, change it in a key's settings too.`
+        : "Turn on OSC in above first: the plugin talks to it (port 8000 unless you change it in a key's settings).")
+      + " On another computer, put this desk's address in a key's settings."));
 }
 
 // OSC out: where the desk's OSC goes (QLab, Resolume, a video server), and

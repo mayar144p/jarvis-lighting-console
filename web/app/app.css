@@ -1810,3 +1810,18 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .stage-hud.drawn-hud { top: 46px; left: 10px; }
 .type-ic.drawn { outline: 1px dashed rgba(245, 165, 36, .8); outline-offset: 1px; border-radius: 3px; color: #f5c46a; }
 .preview3d .cap .drawn-note { color: #f5c46a; }
+
+/* Settings -> Philips Hue: one row per lamp */
+.hue-box .row-btns { align-items: flex-end; }
+.hue-lamps { width: auto; min-width: 60%; border-collapse: collapse; margin-top: 8px; }
+.hue-lamps th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; }
+.hue-lamps td { padding: 4px 6px; border-top: 1px solid var(--border); vertical-align: middle; }
+.hue-lamps select { max-width: 220px; }
+
+/* Songs */
+.songs-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.songs-table td { padding: 6px; border-top: 1px solid var(--border); vertical-align: middle; }
+.songs-table tr.is-current td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.songs-table .song-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+
+.standby-box .row-btns { align-items: flex-end; flex-wrap: wrap; }

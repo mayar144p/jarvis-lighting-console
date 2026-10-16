@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import (artnet, autoshow, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
-                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape)
+                 fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape, streamdeck)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
 from tools import import_gdtf  # noqa: E402
@@ -1292,6 +1292,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Content-Length", str(len(data)))
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        if route == "/api/console/standby_feed":
+            # a backup desk following this one (it holds the pairing code)
+            have = re.sub(r"[^0-9a-f]", "", str(query.get("have", "")))[:16]
+            return self._json(self._engine().standby_feed(have))
+        if route == "/api/console/streamdeck_plugin":
+            data = streamdeck.plugin_zip()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{streamdeck.FILE_NAME}"')
             self.send_header("Content-Length", str(len(data)))
             self._security_headers()
             self.end_headers()

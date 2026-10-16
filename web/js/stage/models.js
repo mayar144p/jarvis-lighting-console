@@ -511,41 +511,62 @@ function parCan(body) {
 
 function profile(body) {
   const sk = skeleton();
-  bracket(sk, body, 0.13, 0.19);
+  const v = body.v || PLAIN;
+  const S = Math.min(1.2, v.size);                     // a 26° Source Four or a big zoom profile
+  const L = v.len;
+  const rearR = 0.15 * S, barR = 0.075 * S, barL = 0.36 * L;
+  bracket(sk, body, rearR - 0.02, 0.19 * S);
   const H = housing(body.style);
-  const rear = lathe([
-    [0.001, -0.25], [0.1, -0.245], [0.14, -0.2], [0.15, -0.05], [0.12, 0.0], [0.09, 0.02],
-  ], H);
-  sk.tilt.add(rear);
-  const barrel = lathe([
-    [0.075, 0.0], [0.075, 0.22], [0.085, 0.23], [0.085, 0.36], [0.095, 0.37], [0.09, 0.38],
-  ], H);
-  sk.tilt.add(barrel);
+  if (v.shape === "square") {                          // an LED profile: a boxy body, fins down its sides
+    const box = rbox(rearR * 1.9, 0.27, rearR * 1.9, 0.03, H);
+    box.position.y = -0.115;
+    sk.tilt.add(box);
+    for (let i = 0; i < v.fins + 2; i++) {             // cooling rings round the body
+      const fin = rbox(rearR * 1.96, 0.006, rearR * 1.96, 0.004, steel());
+      fin.position.y = -0.22 + i * 0.2 / (v.fins + 2);
+      sk.tilt.add(fin);
+    }
+  } else {
+    const tail = v.shape === "tapered" ? 0.6 : 1;      // an older lamp body that narrows to the back
+    sk.tilt.add(lathe([
+      [0.001, -0.25], [rearR * 0.66 * tail, -0.245], [rearR * 0.93 * tail, -0.2], [rearR, -0.05],
+      [rearR * 0.8, 0.0], [barR * 1.2, 0.02],
+    ], H));
+  }
+  sk.tilt.add(lathe([
+    [barR, 0.0], [barR, barL * 0.6], [barR * 1.13, barL * 0.64], [barR * 1.13, barL], [barR * 1.27, barL + 0.01], [barR * 1.2, barL + 0.02],
+  ], H));
   for (let i = 0; i < 4; i++) {                        // shutter handles
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
     const h = rbox(0.02, 0.012, 0.06, 0.004, steel());
-    h.position.set(Math.cos(a) * 0.095, 0.05, Math.sin(a) * 0.095);
+    h.position.set(Math.cos(a) * barR * 1.27, 0.05, Math.sin(a) * barR * 1.27);
     h.rotation.y = -a;
     sk.tilt.add(h);
   }
   const knob = cyl(0.016, 0.016, 0.03, trim(body.style), 12);
-  knob.position.set(0, 0.29, 0.1);
+  knob.position.set(0, barL * 0.8, barR * 1.33);
   knob.rotation.x = Math.PI / 2;
   sk.tilt.add(knob);
+  if (v.handles) {                                     // a carry handle on top
+    const grip = rbox(0.018, 0.16, 0.018, 0.006, steel());
+    grip.position.set(0, -0.1, -rearR - 0.035);
+    sk.tilt.add(grip);
+  }
   const plate = logo(body, 0.2, 0.05);
   if (plate) {
     plate.rotation.set(0, Math.PI / 2, Math.PI / 2);
-    plate.position.set(0.151, -0.12, 0);
+    plate.position.set(rearR + 0.001, -0.12, 0);
     sk.tilt.add(plate);
   }
   const lens = lensMaterial();
   sk.lenses.push(lens);
-  const l = disc(0.078, lens);
-  l.position.y = 0.379;
+  const front = barL + 0.019;
+  const l = disc(barR * 1.04, lens);
+  l.position.y = front;
   sk.tilt.add(l);
-  sk.emitters.push(emitter(sk.tilt, 0.38, 0.07));
-  sk.height = 0.6;
-  sk.radius = 0.3;
+  sk.emitters.push(emitter(sk.tilt, front + 0.001, barR * 0.93));
+  sk.height = 0.22 + front;
+  sk.radius = 0.3 * S;
   return sk;
 }
 
@@ -591,17 +612,33 @@ function fresnel(body) {
 
 function panel(body, w, d, cells, cellR) {
   const sk = skeleton();
+  const v = body.v || PLAIN;
+  const t = 0.08 * v.depth;                            // a slim LED panel or a deep one
   bracket(sk, body, w / 2 + 0.01, 0.12);
   const H = housing(body.style);
-  const box = rbox(w, 0.08, d, 0.012, H);
+  const box = rbox(w, t, d, 0.012, H);
+  box.position.y = 0.04 - t / 2;
   sk.tilt.add(box);
+  for (let i = 0; i < v.fins; i++) {                   // cooling fins on the back
+    const fin = rbox(w * 0.86, 0.02, 0.006, 0.002, steel());
+    fin.position.set(0, 0.03 - t - 0.008, -d / 2 + (i + 1) * d / (v.fins + 1));
+    sk.tilt.add(fin);
+  }
+  if (v.handles) {                                     // side handles
+    for (const sx of [-1, 1]) {
+      const grip = rbox(0.016, 0.02, d * 0.5, 0.006, steel());
+      grip.position.set(sx * (w / 2 + 0.012), 0.04 - t / 2, 0);
+      sk.tilt.add(grip);
+    }
+  }
   const lens = lensMaterial();
   sk.lenses.push(lens);
   const nx = Math.max(1, Math.round(Math.sqrt(cells * w / d)));
   const nz = Math.max(1, Math.ceil(cells / nx));
   // few big cells (a GLP Matrix Eye 4 is 2 x 2) are drawn big
   const r = Math.min(cellR * Math.max(1, 5 / Math.max(nx, nz)), Math.min(w / nx, d / nz) * 0.42);
-  const geo = new THREE.CircleGeometry(r, 18);
+  // round lenses, or square LED cells
+  const geo = v.shape === "square" ? new THREE.PlaneGeometry(r * 1.8, r * 1.8) : new THREE.CircleGeometry(r, 18);
   geo.rotateX(-Math.PI / 2);
   // each cell its own colour, in reading order (row by row)
   const at = (k) => [-w / 2 + ((k % nx) + 0.5) * w / nx, -d / 2 + (Math.floor(k / nx) + 0.5) * d / nz];
@@ -644,12 +681,23 @@ function batten(body) {
     sk.pan.add(b);
   }
   sk.tilt.position.y = 0.08;
+  const v = body.v || PLAIN;
+  const bh = 0.07 * v.depth, bd = 0.08 * Math.sqrt(v.depth);   // a slim pixel bar or a chunky wash bar
   const H = housing(body.style);
-  const bar = rbox(len, 0.07, 0.08, 0.012, H);
+  const bar = rbox(len, bh, bd, 0.012, H);
+  bar.position.y = 0.035 - bh / 2;
   sk.tilt.add(bar);
+  for (let i = 0; i < v.fins; i++) {                   // cooling fins along the back
+    const fin = rbox(len * 0.9, 0.012, 0.004, 0.001, steel());
+    fin.position.set(0, 0.035 - bh - 0.005, -bd / 2 + (i + 1) * bd / (v.fins + 1));
+    sk.tilt.add(fin);
+  }
   const lens = lensMaterial();
   sk.lenses.push(lens);
-  const geo = new THREE.PlaneGeometry(len / n * 0.78, 0.055);
+  // square LED cells, or round lenses
+  const geo = v.shape === "round"
+    ? new THREE.CircleGeometry(Math.min(len / n * 0.4, bd * 0.36), 16)
+    : new THREE.PlaneGeometry(len / n * 0.78, bd * 0.69);
   geo.rotateX(-Math.PI / 2);
   // each cell its own colour (a pixel chase runs along the bar): the stage
   // colours the instances from the light's cells
@@ -658,7 +706,7 @@ function batten(body) {
   sk.pixels = inst;
   const plate = logo(body, 0.2, 0.05);
   if (plate) {
-    plate.position.set(len / 2 - 0.14, 0, 0.0405);
+    plate.position.set(len / 2 - 0.14, 0, bd / 2 + 0.0005);
     sk.tilt.add(plate);
   }
   const beams = Math.min(4, Math.max(2, Math.round(len / 0.35)));
@@ -675,26 +723,49 @@ function batten(body) {
 
 function strobe(body, family) {
   const sk = skeleton();
+  const v = body.v || PLAIN;
   const jdc = /jdc/.test(String(family || ""));
-  const w = jdc ? 0.95 : 0.52;
+  const w = (jdc ? 0.95 : 0.52) * Math.min(1.15, Math.max(0.85, v.size));
+  const dp = 0.16 * v.depth;
   bracket(sk, body, w / 2 + 0.01, 0.11);
   const H = housing(body.style);
-  const box = rbox(w, 0.12, 0.16, 0.02, H);
+  const box = rbox(w, 0.12, dp, 0.02, H);
   sk.tilt.add(box);
   const lens = lensMaterial();
   sk.lenses.push(lens);
-  const tube = cyl(0.018, 0.018, w * 0.82, lens, 16);
-  tube.rotation.z = Math.PI / 2;
-  tube.position.y = 0.05;
-  sk.tilt.add(tube);
-  const refl = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.15, metalness: 1 }));
-  refl.rotation.x = -Math.PI / 2;
-  refl.position.y = 0.035;
-  sk.tilt.add(refl);
+  if (jdc || v.shape === "square" || v.shape === "tapered") {
+    // an LED strobe: its face a grid of LED cells
+    const nx = jdc ? 12 : 8, nz = 3;
+    const cw = (w * 0.9) / nx, cd = (dp * 0.8) / nz;
+    const geo = new THREE.PlaneGeometry(cw * 0.8, cd * 0.8);
+    geo.rotateX(-Math.PI / 2);
+    const face = new THREE.InstancedMesh(geo, lens, nx * nz);
+    const m = new THREE.Matrix4();
+    for (let k = 0; k < nx * nz; k++) {
+      m.makeTranslation(-w * 0.45 + ((k % nx) + 0.5) * cw, 0.061, -dp * 0.4 + (Math.floor(k / nx) + 0.5) * cd);
+      face.setMatrixAt(k, m);
+    }
+    sk.tilt.add(face);
+  } else {
+    // a xenon strobe: one tube in front of a mirror
+    const tube = cyl(0.018, 0.018, w * 0.82, lens, 16);
+    tube.rotation.z = Math.PI / 2;
+    tube.position.y = 0.05;
+    sk.tilt.add(tube);
+    const refl = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, dp * 0.75),
+      new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.15, metalness: 1 }));
+    refl.rotation.x = -Math.PI / 2;
+    refl.position.y = 0.035;
+    sk.tilt.add(refl);
+  }
+  for (let i = 0; i < v.fins; i++) {                   // cooling fins on the back
+    const fin = rbox(w * 0.85, 0.012, 0.005, 0.001, steel());
+    fin.position.set(0, -0.066, -dp / 2 + (i + 1) * dp / (v.fins + 1));
+    sk.tilt.add(fin);
+  }
   const plate = logo(body, 0.22, 0.055);
   if (plate) {
-    plate.position.set(-w / 2 + 0.15, 0, 0.081);
+    plate.position.set(-w / 2 + 0.15, 0, dp / 2 + 0.001);
     sk.tilt.add(plate);
   }
   sk.emitters.push(emitter(sk.tilt, 0.061, 0.08, { flat: true }));

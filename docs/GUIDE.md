@@ -156,6 +156,33 @@ another button or the whole page; what the buttons do stays the same.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### A light show per song
+
+A song can keep its own show, so the same track looks the same every night:
+
+1. **♪ Audio → Add audio**, then **Find the song's parts**: the desk listens
+   to how loud each 8-bar phrase is and puts *Intro, Build, Drop, Breakdown,
+   Outro* markers on the timeline (move or rename them if it guessed wrong;
+   your own markers named *verse, chorus, bridge…* work too).
+2. **Auto show** now builds one section per part, at those very bars: the
+   drop hits where the drop is.
+3. **Songs → Keep the timeline as a song**. The song keeps the timeline
+   (music, markers, tracks) and the cue lists its cue tracks play.
+
+**Songs** lists them: **Play** puts a song's timeline and cues back and
+plays it; **Edit** puts it on the timeline to change, then **Update**. Any
+number of songs share the same playback: each brings its own cues with it.
+Ctrl+Z undoes keeping, deleting and renaming.
+
+**With Pro DJ Link (CDJs / XDJs):** play the track on the tempo-master deck
+and press **Tie to deck** next to its song (the desk remembers the track's
+rekordbox id - the same USB stick gives the same id every night). Tick
+**Songs follow the DJ decks**: when the master deck plays a tied track, its
+song starts from where the deck is, runs at the deck's speed (pitch
+included), jumps when the DJ jumps, pauses when the deck pauses, and stops
+when the next track has no song. The deck plays the music; the desk stays
+quiet.
+
 ### Turned trusses and the room map
 
 Turn a truss in Arrange and the lights on it turn with it, just as the real
@@ -450,6 +477,54 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
 
+### A backup desk
+
+A second computer can stand by as a spare desk, so a dead laptop doesn't
+take the show with it:
+
+1. On the **main** desk: **Desk → Other computers, phones and tablets…**
+   and allow them. Note its address (e.g. `192.168.1.20:8787`) and pairing
+   code.
+2. On the **backup** desk: **Settings → Backup desk**, type the address and
+   the code, and **Follow the main desk**.
+
+The backup copies the main desk's show (every change: lights, cues, buttons,
+the room…) and what is live (each playback's cue and fader, the master,
+blackout, the programmer, the timeline and the buttons that are on) twice a
+second. Its own output stays **off** while it follows, and the status bar
+says *BACKUP DESK*: two desks sending to the same lights would fight. Cue
+actions (OSC to QLab, macros) run on the main desk only.
+
+If the main desk stops answering for the seconds you set (3 by default),
+the backup **takes over**: its output goes on and it carries on from the
+main desk's last cue, faders, timeline and buttons, and every screen says
+so. **Take over now** does it by hand (e.g. when the main desk's output
+broke but the computer still answers). If the main desk comes back, the
+backup warns that both are sending; it never hands back by itself - stop
+one of them. Both desks need to reach the lights (the same network, or a
+USB box moved over). The pairing code stays on the backup computer and is
+never saved in a show.
+
+### Philips Hue lamps
+
+Smart bulbs can follow the desk, so a party room or a small bar needs no
+DMX. **Settings → Philips Hue**:
+
+1. **Find** looks for the bridge (or type its address: the Hue app shows it
+   under Settings → My Hue system → the bridge).
+2. Press the round button on top of the bridge, then **Pair** within 30
+   seconds.
+3. **Show the lamps**: next to each Hue lamp, pick the desk light it follows.
+   **Blink** makes a lamp blink once, to find it in the room.
+
+Each lamp copies its desk light's colour and brightness (blackout and the
+grand master too). Patch a plain colour light for each lamp (e.g. *LED PAR
+4ch* on a spare universe) and program it like any other light. Which light
+drives which lamp is saved with the show; the pairing stays on this computer
+and is never saved in a show. The bridge takes about ten changes a second in
+all, so lamps follow looks and slow fades well; chases and strobes are too
+fast for them.
+
 ## New shows: templates and the demo
 
 The first time the desk opens with nothing patched, it offers **the demo**:
@@ -518,6 +593,27 @@ tried on a real unit yet: if a button does the wrong thing, **Settings → MIDI
 The pads always play the page that's on screen, and the screen follows the
 page you pick on the controller. Other controllers still play buttons by
 their MIDI note (Edit → a button → MIDI).
+
+### Stream Deck
+
+**Settings → MIDI & OSC → Get the Stream Deck plugin** saves
+`com.jarvis.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
+(6.4 or newer) adds a *Jarvis* group:
+
+| Key / dial | What it does | Its settings |
+|---|---|---|
+| GO, Back | the next / previous cue | a playback number (empty: the selected one) |
+| Blackout | on / off, the key lights red while it is on | - |
+| Desk button | one of the buttons, held while the key is held | page and button number (counted left to right, top to bottom) |
+| Tap tempo | taps the beat | - |
+| Macro | runs a macro | its name |
+| Grand master (dial) | turn: the master; press: full / out | % per click |
+| Playback fader (dial) | turn: that playback's fader; press: full / out | playback number, % per click |
+
+The plugin talks to **OSC in**, so switch that on first (port 8000). A Stream
+Deck on another computer works too: put the desk's address and port in any
+key's settings (all keys share them). The dials start at 100% when the
+Stream Deck app starts; the first turn sets the desk to the dial's level.
 
 ## MVR plots (Vectorworks, Capture, grandMA3…)
 

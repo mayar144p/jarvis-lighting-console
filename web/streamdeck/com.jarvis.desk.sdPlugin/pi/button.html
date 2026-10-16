@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Desk button</title>
+<style>
+  body { font: 12px/1.4 -apple-system, "Segoe UI", sans-serif; color: #ddd; background: #2d2d2d; margin: 0; padding: 8px 12px; }
+  label { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
+  input { background: #3d3d3d; color: #eee; border: 1px solid #555; border-radius: 3px; padding: 4px 6px; font: inherit; min-width: 0; }
+  input:focus { outline: 1px solid #6aa0ff; }
+  .hint { color: #999; margin: 2px 0 8px 104px; }
+  hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
+</style></head><body>
+<label>Page <input data-key="page" type="number" min="1" max="99" placeholder="1"></label>
+<label>Button <input data-key="slot" type="number" min="1" max="999" placeholder="e.g. 3"></label>
+<p class="hint">The desk's buttons pane: page 1, button 3 is the third button on page 1, counted left to right, top to bottom. Held while the key is held.</p>
+<label>Label <input data-key="label" placeholder="shown on the key"></label>
+<hr>
+<label>Desk computer <input data-global="host" placeholder="127.0.0.1"></label>
+<label>OSC port <input data-global="port" type="number" min="1" max="65535" placeholder="8000"></label>
+<p class="hint">Turn on Settings → MIDI &amp; OSC → OSC in on the desk. These two are shared by every Jarvis key.</p>
+<script src="pi.js"></script>
+</body></html>

@@ -230,7 +230,10 @@ MIDI_DEVICE = _get("MIDI_DEVICE", "")             # name substring or index
 MIDI_MAP = _get("MIDI_MAP", "")                   # empty = data/midi_map.json if present
 CONSOLE_SHOW_DIR = Path(_get("CONSOLE_SHOW_DIR", str(DATA / "shows")))
 if not CONSOLE_SHOW_DIR.is_absolute():          # anchor to jarvis/, not the CWD
-    CONSOLE_SHOW_DIR = ROOT / CONSOLE_SHOW_DIR
+    # "data/shows" means the data folder in use: with CONSOLE_DATA_DIR (tests,
+    # check tools) the shows go to the scratch folder too, never to data/
+    parts = CONSOLE_SHOW_DIR.parts
+    CONSOLE_SHOW_DIR = DATA.joinpath(*parts[1:]) if parts and parts[0] == "data" else ROOT / CONSOLE_SHOW_DIR
 # Autosave the engine state (patch, programmer, playbacks, mode, FX) after
 # every successful change to data/autosave.json, and restore it on the
 # next start.  Saved shows (SAVE SHOW / LOAD) stay separate and explicit.

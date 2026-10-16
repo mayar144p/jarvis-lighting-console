@@ -134,6 +134,15 @@ function renderStatus() {
     : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
   out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
     : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  // a backup desk standing by: its output is off on purpose
+  const sb = s.standby || {};
+  if (sb.following) {
+    out.className = sb.error ? "bad" : "warn";
+    out.textContent = `○ BACKUP DESK - following ${sb.host}` + (sb.error ? ` · ⚠ ${String(sb.error).slice(0, 70)}` : ", output off until it takes over");
+  } else if (sb.took_over && sb.main_back) {
+    out.className = "bad";
+    out.textContent = "⚠ The main desk is back and this backup desk is sending too: stop one of them";
+  }
   // frame timing: a steady beat, or the lights stutter
   const tm = $("#st-timing");
   const t = o.timing;

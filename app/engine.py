@@ -71,13 +71,16 @@ from app.engine_desk import DeskMixin
 from app.engine_cuemodes import CueModesMixin
 from app.engine_roam import RoamMixin
 from app.engine_osc import OscMixin
+from app.engine_hue import HueMixin
+from app.engine_songs import SongsMixin
+from app.engine_standby import StandbyMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -263,6 +266,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             "step_fx": copy.deepcopy(self._steps()),
             "parked": copy.deepcopy(self.__dict__.get("parked") or {}),
             "macros": copy.deepcopy(self.__dict__.get("macros") or []),
+            "songs": copy.deepcopy(self.__dict__.get("songs") or []),
             "moves": [dict(m, params=dict(m.get("params") or {})) for m in self.moves],
             "timeline": json.loads(json.dumps(self.timeline)),
             "mode": self.mode,
@@ -313,6 +317,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             self.sound_cfg = copy.deepcopy(state["sound_cfg"])
         if "macros" in state:
             self.macros = copy.deepcopy(state["macros"])
+        if "songs" in state:
+            self.songs = copy.deepcopy(state["songs"])
         if "parked" in state:
             self.parked = copy.deepcopy(state["parked"])
         if "step_fx" in state:
@@ -1313,6 +1319,9 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "macros": [dict(m) for m in self._macros()],
                 "osc": self.osc_public(),
                 "osc_out": self.osc_out_public(),
+                "hue": self.hue_public(),
+                "songs": self.songs_public(),
+                "standby": self.standby_public(),
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),

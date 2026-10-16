@@ -102,6 +102,8 @@ class ShowMixin:
             "timeline": self.timeline,
             "output_target": self.dmx_target,
             "osc_out": self._osc_out_saved(),
+            "hue": self._hue_saved(),
+            "songs": self._songs_saved(),
             "meta": {"master": self.master,
                      "show_file": self.show_file, **self._tempo_saved()},
         }
@@ -333,6 +335,8 @@ class ShowMixin:
         if isinstance(payload.get("output_target"), dict):
             self.dmx_target = clean_dmx_target(payload["output_target"])
         self._osc_out_load(payload.get("osc_out"))
+        self._hue_load(payload.get("hue"))
+        self._songs_load(payload.get("songs"))
         for b in payload.get("quick") or []:
             try:
                 self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
@@ -418,6 +422,8 @@ class ShowMixin:
                 "timeline": json.loads(json.dumps(self.timeline, default=str)),
                 "output_target": dict(self.dmx_target),
                 "osc_out": self._osc_out_saved(),
+                "hue": self._hue_saved(),
+                "songs": self._songs_saved(),
                 "meta": {"master": self.master, **self._tempo_saved()},
             }
             text = json.dumps(payload, indent=2)
@@ -867,6 +873,11 @@ class ShowMixin:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:          # ValueError: bad JSON or not text
             raise ValueError(f"cannot read show {label!r}: it is damaged ({exc})") from exc
+        return self._apply_show_payload(payload, label)
+
+    def _apply_show_payload(self, payload: dict, label: str) -> dict:
+        """A show (a saved file's contents, or the main desk's for a backup
+        desk) onto this desk, replacing what is there."""
         payload = self._clean_payload(payload)
         heads = [self._head_from_layout(h) for h in payload.get("patch") or []]
         groups = list(payload.get("groups") or [])
@@ -931,6 +942,8 @@ class ShowMixin:
                 self._reflow_mounts()
                 self.patch_rev += 1
             self._osc_out_load(payload.get("osc_out"))
+            self._hue_load(payload.get("hue"))
+            self._songs_load(payload.get("songs"))
         return {"file": label, "heads": len(heads), "show_file": label,
                 "stale_heads": self._stale_heads(heads, playbacks),
                 "summary": f"loaded show {label!r} ({len(heads)} heads)"}

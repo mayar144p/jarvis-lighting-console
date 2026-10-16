@@ -207,9 +207,18 @@ def parse_prodj_status(pkt: bytes) -> dict | None:
     if len(pkt) < 0x8A or pkt[:10] != PRODJ_MAGIC or pkt[0x0A] != PRODJ_STATUS:
         return None
     flags = pkt[0x89]
-    return {"device": pkt[0x21], "name": pkt[0x0B:0x1F].split(b"\0", 1)[0].decode("ascii", "replace").strip(),
-            "playing": bool(flags & F_PLAYING), "master": bool(flags & F_MASTER),
-            "synced": bool(flags & F_SYNC), "on_air": bool(flags & F_ONAIR)}
+    out = {"device": pkt[0x21], "name": pkt[0x0B:0x1F].split(b"\0", 1)[0].decode("ascii", "replace").strip(),
+           "playing": bool(flags & F_PLAYING), "master": bool(flags & F_MASTER),
+           "synced": bool(flags & F_SYNC), "on_air": bool(flags & F_ONAIR),
+           # the loaded track's rekordbox id (0: none), as the songs know it
+           "track": int.from_bytes(pkt[0x2C:0x30], "big")}
+    if len(pkt) >= 0x94:
+        pitch = int.from_bytes(pkt[0x8C:0x90], "big")
+        out["speed"] = round(pitch / 0x100000, 4) if 0 < pitch < 0x200000 else 1.0
+    if len(pkt) >= 0xA4:
+        beat = int.from_bytes(pkt[0xA0:0xA4], "big")
+        out["beat"] = beat if 0 < beat < 0xFFFFFFFF else None   # the beat in the track's grid, from 1
+    return out
 
 
 class DeckFollower:

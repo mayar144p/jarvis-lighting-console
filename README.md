@@ -142,7 +142,7 @@ installers, which waits until Jarvis leaves testing.
 
 | Guide | What's in it |
 |---|---|
-| [docs/GUIDE.md](docs/GUIDE.md) | **The user guide**: the desk, venue, visualiser, quick buttons, timeline, shows, workspaces, keyboard, the copilot and AI, connecting a rig, safety, templates, OSC out, controllers, MVR, the fixture library, lasers |
+| [docs/GUIDE.md](docs/GUIDE.md) | **The user guide**: the desk, venue, visualiser, quick buttons, timeline, shows, workspaces, keyboard, songs, the copilot and AI, connecting a rig, safety, templates, OSC out, controllers and the Stream Deck, Philips Hue, a backup desk, MVR, the fixture library, lasers |
 | [docs/DEVELOPING.md](docs/DEVELOPING.md) | tests, the project layout, the visual checks on your own PC |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the engine and the front end fit together |
 | [docs/REAL_LIGHT_CHECKLIST.md](docs/REAL_LIGHT_CHECKLIST.md) | checking the desk against real lights |

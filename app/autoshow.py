@@ -233,6 +233,31 @@ def _palette(brief: str) -> list[str]:
     return ["#1f4bff", "#ff00d4", "#ffffff", "#00e5ff"]
 
 
+# how much a part of a song asks of the lights, by its name
+PART_ENERGY = (("intro", 0.25), ("build", 0.65), ("drop", 1.0), ("break", 0.35), ("groove", 0.55),
+               ("outro", 0.2), ("verse", 0.5), ("chorus", 0.85), ("bridge", 0.45), ("hook", 0.85))
+
+
+def song_sections(a: dict) -> list[tuple[str, int, float]]:
+    """(name, bars, energy) from the timeline's markers, when they name the
+    song's parts (Find the song's parts, or the operator's own): the show
+    then follows this song, not a template."""
+    marks = [m for m in a.get("markers") or [] if m.get("name")]
+    named = [m for m in marks if any(m["name"].strip().lower().startswith(k) for k, _ in PART_ENERGY)]
+    if len(named) < 2:
+        return []
+    bar = 240.0 / (a.get("bpm") or 120.0)
+    end = float(a.get("duration") or 0) or (named[-1]["t"] + 16 * bar)
+    out = []
+    for i, m in enumerate(named):
+        nxt = named[i + 1]["t"] if i + 1 < len(named) else end
+        bars = max(1, min(64, int(round((nxt - m["t"]) / bar))))
+        low = m["name"].strip().lower()
+        energy = next(e for k, e in PART_ENERGY if low.startswith(k)) if any(low.startswith(k) for k, _ in PART_ENERGY) else 0.5
+        out.append((m["name"].strip()[:30], bars, energy))
+    return out
+
+
 def fallback_design(a: dict, brief: str = "") -> dict:
     """A sound club show with no model: a template song structure, looks
     chosen per group from what it is and where it hangs."""
@@ -242,6 +267,9 @@ def fallback_design(a: dict, brief: str = "") -> dict:
     if "chill" in brief.lower() or "wedding" in brief.lower() or "lounge" in brief.lower():
         sections = [("Welcome", 16, 0.3), ("Groove", 16, 0.5), ("Lift", 16, 0.7),
                     ("Groove 2", 16, 0.5), ("Close", 8, 0.25)]
+    from_song = song_sections(a)
+    if from_song:
+        sections = from_song             # the song's own parts (the timeline's markers)
     groups = a["groups"]
     targets = a["targets"]
     base = [k for k in groups if not k.endswith("@all")]

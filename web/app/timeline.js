@@ -6,6 +6,7 @@ import { post, token } from "./api.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, menu, modal, toast, promptBox, typingInField } from "./ui.js";
+import { songParts, loudness } from "./songparts.js";
 
 const LANE_H = 46;
 const KINDS = [["cue", "Cue track", "GO a playback's cues at set times"],
@@ -42,7 +43,7 @@ function fmt(t) {
 
 function pos() {
   if (!transport.playing) return transport.pos;
-  return Math.min(transport.length, transport.pos + (performance.now() - stamp) / 1000);
+  return Math.min(transport.length, transport.pos + (performance.now() - stamp) / 1000 * (transport.rate || 1));
 }
 
 // ------------------------------------------------------------ drawing
@@ -415,6 +416,20 @@ function detectBpm() {
   return bestLag ? Math.round(6000 / bestLag * 10) / 10 : null;
 }
 
+/** The song's parts (intro, build, drop, breakdown, outro) as markers, from
+ * its loudness phrase by phrase - Auto show then follows this song. */
+function findParts() {
+  if (!audio || !audio.decoded) { toast("The audio is still loading - try again in a moment"); return; }
+  const d = doc();
+  let bpm = d.bpm;
+  if (!bpm || bpm === 120) bpm = detectBpm() || bpm || 120;   // 120 is the default, not a measurement
+  const env = loudness(audio.decoded.getChannelData(0), audio.decoded.sampleRate, 20);
+  const off = (d.audio && d.audio.offset) || 0;
+  const parts = songParts(env, 20, bpm).map((p) => ({ t: +(p.t + off).toFixed(2), name: p.name }));
+  if (parts.length < 2) { toast("No clear parts in this song: add markers by hand (Add a marker at the playhead)"); return; }
+  run("timeline_set", { bpm, markers: parts }, { toast: `${parts.length} parts: ${parts.map((p) => p.name).join(", ")}` });
+}
+
 async function uploadAudio(file) {
   if (file.size > 22 * 1024 * 1024) { toast("Audio must be under 22 MB", "bad"); return; }
   toast("Uploading audio…");
@@ -444,7 +459,9 @@ function syncAudio() {
   if (!audio || !d.audio || audio.id !== d.audio.id) return;
   const want = pos() - (d.audio.offset || 0);
   const el = audio.el;
-  if (transport.playing && want >= 0 && want < audio.duration) {
+  // a song following a DJ deck: the deck plays the music, the desk stays quiet
+  if (transport.playing && !transport.deck && want >= 0 && want < audio.duration) {
+    if (el.playbackRate !== (transport.rate || 1)) el.playbackRate = transport.rate || 1;
     if (Math.abs(el.currentTime - want) > 0.08) el.currentTime = want;
     if (el.paused) el.play().catch(() => { /* needs a click first */ });
   } else if (!el.paused) {
@@ -541,12 +558,14 @@ export function initTimeline() {
       const bpm = detectBpm();
       if (bpm) run("timeline_set", { bpm }, { toast: `Tempo ${bpm} BPM` });
     } },
+    { label: "Find the song's parts", hint: "intro, build, drop… as markers", disabled: !doc().audio, run: findParts },
     { label: "Add a marker at the playhead", run: async () => {
       const name = await promptBox("Marker", "Name (verse, drop, chorus…)", "");
       if (name) run("timeline_set", { markers: [...(doc().markers || []), { t: +pos().toFixed(2), name }] });
     } },
     { label: "Remove audio", disabled: !doc().audio, danger: true, run: () => run("timeline_set", { clear_audio: true }) },
   ]));
+  $("#tl-songs").addEventListener("click", () => import("./songs.js").then((m) => m.openSongs()));
   $("#tl-audio-file").addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";

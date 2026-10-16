@@ -4732,7 +4732,11 @@ def test_dj_master_and_phrase() -> None:
     check("a master that stopped saying so for 3 s no longer counts", f.master(6.5) is None)
     st = T.parse_prodj_status(fakes.build_prodj_status(3, master=False, playing=True, name="XDJ-1000"))
     check("a status packet read: device, name, playing, master",
-          st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False}, str(st))
+          st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False,
+                 "track": 0, "speed": 1.0, "beat": None}, str(st))
+    st = T.parse_prodj_status(fakes.build_prodj_status(2, master=True, track=4711, beat=65, pitch_pct=4.0))
+    check("... and the track's rekordbox id, its beat and the deck's speed",
+          st["track"] == 4711 and st["beat"] == 65 and abs(st["speed"] - 1.04) < 1e-3, str(st))
     check("not a status packet: nothing", T.parse_prodj_status(b"x" * 200) is None and T.parse_prodj_status(fakes.build_prodj_beat(1, 120, 1)) is None)
     c = T.Clock(128, 0.0)
     c.mark_phrase(10.0)
@@ -6393,3 +6397,663 @@ def test_show_backup() -> None:
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     dj = dialogs_js()
     check("Settings -> Backup, and Show -> Restore from backup…", '"backup", "Backup"' in st and "Restore from backup…" in dj)
+
+
+def _ws_frame(text: str) -> bytes:
+    """A server -> client WebSocket text frame (servers don't mask)."""
+    data = text.encode("utf-8")
+    n = len(data)
+    head = bytes([0x81, n]) if n < 126 else bytes([0x81, 126]) + n.to_bytes(2, "big") if n < 65536 \
+        else bytes([0x81, 127]) + n.to_bytes(8, "big")
+    return head + data
+
+
+def _ws_read(conn) -> dict | None:
+    """One client -> server frame (masked), as JSON; None when closed."""
+    def exact(k):
+        buf = b""
+        while len(buf) < k:
+            got = conn.recv(k - len(buf))
+            if not got:
+                return None
+            buf += got
+        return buf
+    head = exact(2)
+    if head is None:
+        return None
+    n = head[1] & 0x7F
+    if n == 126:
+        n = int.from_bytes(exact(2), "big")
+    elif n == 127:
+        n = int.from_bytes(exact(8), "big")
+    mask = exact(4) if head[1] & 0x80 else b"\0\0\0\0"
+    data = bytes(b ^ mask[i % 4] for i, b in enumerate(exact(n) or b""))
+    return json.loads(data) if head[0] & 0x0F == 1 else {}
+
+
+def test_streamdeck_plugin() -> None:
+    """The Stream Deck plugin: the download is a whole plugin, and under
+    Node it turns key presses and dial turns into OSC the desk acts on."""
+    print("Stream Deck plugin")
+    import base64
+    import hashlib
+    import io
+    import shutil
+    import subprocess
+    import zipfile
+    from app import engine as eng
+    from app import streamdeck
+
+    z = zipfile.ZipFile(io.BytesIO(streamdeck.plugin_zip()))
+    names = set(z.namelist())
+    root = "com.jarvis.desk.sdPlugin/"
+    man = json.loads(z.read(root + "manifest.json"))
+    check("the download is the plugin folder, manifest at its root", streamdeck.FILE_NAME.endswith(".streamDeckPlugin")
+          and all(n.startswith(root) for n in names), sorted(names)[:3])
+    want = {man["CodePath"], man["Icon"] + ".png", man["CategoryIcon"] + ".png"}
+    for a in man["Actions"]:
+        want |= {a["Icon"] + ".png", a["Icon"] + "@2x.png", a["PropertyInspectorPath"]}
+        want |= {s["Image"] + ".png" for s in a["States"]} | {s["Image"] + "@2x.png" for s in a["States"]}
+    missing = sorted(w for w in want if root + w not in names)
+    check("every file the manifest names is in it (pictures at 1x and 2x, settings pages)", not missing, missing)
+    check("every action is one of ours", all(a["UUID"].startswith("com.jarvis.desk.") for a in man["Actions"]), "")
+    bo = next(a for a in man["Actions"] if a["UUID"].endswith(".blackout"))
+    check("blackout has two states, and the plugin flips them (not the app)",
+          len(bo["States"]) == 2 and bo.get("DisableAutomaticStates") is True, bo)
+    check("a page links its script", b'src="pi.js"' in z.read(root + "pi/button.html"), "")
+
+    node = shutil.which("node")
+    if not node:
+        print("   (no Node.js here: the plugin itself is not run)")
+        return
+    plugin = Path(streamdeck.FOLDER) / "bin" / "plugin.js"
+    from app import osc
+    probe = (f"const p=require({json.dumps(str(plugin))});"
+             "const m=(a,e,s,st)=>p.messagesFor(a,e,s,st).map(b=>b.toString('hex'));"
+             "console.log(JSON.stringify({go:m('com.jarvis.desk.go','keyDown',{playback:'2'}),"
+             "goSel:m('com.jarvis.desk.go','keyDown',{}),up:m('com.jarvis.desk.go','keyUp',{}),"
+             "btn:m('com.jarvis.desk.button','keyDown',{page:'2',slot:'5'}),"
+             "rel:m('com.jarvis.desk.button','keyUp',{slot:'5'}),"
+             "bad:m('com.jarvis.desk.button','keyDown',{button:'../x'}),"
+             "mac:m('com.jarvis.desk.macro','keyDown',{macro:'Walk-in'}),"
+             "one:m('com.jarvis.desk.master','dial',{},{level:1}),"
+             "fad:m('com.jarvis.desk.fader','dial',{playback:'3'},{level:50})}))")
+    out = json.loads(subprocess.run([node, "-e", probe], capture_output=True, text=True, timeout=30).stdout)
+    dec = {k: [osc.parse(bytes.fromhex(x))[0] for x in v] for k, v in out.items()}
+    check("GO on playback 2 is /jarvis/go 2, as the desk reads it", dec["go"] == [("/jarvis/go", [2])], dec["go"])
+    check("GO with no playback: the selected one; a key's release sends nothing",
+          dec["goSel"] == [("/jarvis/go", [])] and dec["up"] == [], dec)
+    check("a desk button by page and number: down 1, up 0",
+          dec["btn"] == [("/jarvis/button/q2-5", [1])] and dec["rel"] == [("/jarvis/button/q1-5", [0])], dec)
+    check("a made-up button id sends nothing", dec["bad"] == [], dec["bad"])
+    check("a macro by name", dec["mac"] == [("/jarvis/macro", ["Walk-in"])], dec["mac"])
+    lv = dec["one"][0][1][0]
+    check("a dial at 1% sends 0.01 (never '1', which the desk reads as full)", abs(lv - 0.01) < 1e-6, dec["one"])
+    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/jarvis/playback/3/level"
+          and abs(dec["fad"][0][1][0] - 0.5) < 1e-6, dec["fad"])
+
+    # The whole way: a fake Stream Deck app starts the plugin, presses keys
+    # and turns dials; the desk's OSC in does what they say.
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        srv.settimeout(15)
+        proc = None
+        conn = None
+        try:
+            oport = _free_port()
+            check("OSC in on", e.act("osc", state=True, port=oport).get("ok"), "")
+            proc = subprocess.Popen([node, str(plugin), "-port", str(srv.getsockname()[1]),
+                                     "-pluginUUID", "U1", "-registerEvent", "registerPlugin", "-info", "{}"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            conn, _ = srv.accept()
+            conn.settimeout(10)
+            req = b""
+            while b"\r\n\r\n" not in req:
+                req += conn.recv(4096)
+            key = next(ln.split(b":", 1)[1].strip() for ln in req.split(b"\r\n")
+                       if ln.lower().startswith(b"sec-websocket-key"))
+            accept = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC11B85").digest())
+            conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                         b"Sec-WebSocket-Accept: " + accept + b"\r\n\r\n")
+            first = [_ws_read(conn), _ws_read(conn)]
+            check("it registers with the Stream Deck app, then asks for its settings",
+                  first[0] == {"event": "registerPlugin", "uuid": "U1"}
+                  and first[1].get("event") == "getGlobalSettings", first)
+            send = lambda obj: conn.sendall(_ws_frame(json.dumps(obj)))
+            send({"event": "didReceiveGlobalSettings", "payload": {"settings": {"host": "127.0.0.1", "port": oport}}})
+
+            def wait(cond, s=5.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.02)
+                return cond()
+
+            send({"event": "willAppear", "action": "com.jarvis.desk.blackout", "context": "K1",
+                  "payload": {"settings": {}, "state": 0}})
+            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            check("the Blackout key blacks the desk out", wait(lambda: e.blackout is True), e.blackout)
+            st = _ws_read(conn)
+            check("... and lights its key (state 1)", st == {"event": "setState", "context": "K1", "payload": {"state": 1}}, st)
+            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            check("a second press brings the lights back", wait(lambda: e.blackout is False), e.blackout)
+            _ws_read(conn)
+            send({"event": "willAppear", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "controller": "Encoder"}})
+            fb = _ws_read(conn)
+            check("the master dial shows its name and level", fb.get("event") == "setFeedback"
+                  and fb["payload"]["value"] == "100%", fb)
+            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "ticks": -10}})
+            check("ten clicks left: the grand master at 70%", wait(lambda: e.master == 70), e.master)
+            fb = _ws_read(conn)
+            check("... and the dial says so", fb["payload"]["value"] == "70%", fb)
+            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "ticks": -23}})
+            check("a dial at 1% puts the master at 1%, not full", wait(lambda: e.master == 1), e.master)
+            _ws_read(conn)
+            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            check("pressing the dial: out", wait(lambda: e.master == 0), e.master)
+            _ws_read(conn)
+            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            check("pressing again: full", wait(lambda: e.master == 100), e.master)
+            conn.close()
+            conn = None
+            try:
+                proc.wait(timeout=5)
+                gone = True
+            except subprocess.TimeoutExpired:
+                gone = False
+            check("it stops when the Stream Deck app goes away", gone, "")
+        finally:
+            if conn:
+                conn.close()
+            if proc and proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            if proc and proc.stderr:
+                proc.stderr.close()
+            srv.close()
+            e.act("osc", state=False)
+            e.shutdown()
+
+
+class _FakeHue:
+    """A Hue bridge on 127.0.0.1: its pairing button, its lamps, and every
+    lamp change Jarvis sent."""
+
+    def __init__(self) -> None:
+        import http.server
+        import threading
+        fake = self
+        self.button = False
+        self.puts: list[tuple[str, dict, float]] = []
+        self.user = "k3yThatStaysOnThisComputer"
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _reply(self, obj):
+                body = json.dumps(obj).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _body(self):
+                return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"null")
+
+            def do_POST(self):
+                self._body()
+                if not fake.button:
+                    return self._reply([{"error": {"type": 101, "address": "", "description": "link button not pressed"}}])
+                self._reply([{"success": {"username": fake.user}}])
+
+            def do_GET(self):
+                if self.path != f"/api/{fake.user}/lights":
+                    return self._reply([{"error": {"type": 1, "description": "unauthorized user"}}])
+                lamps = {str(i): {"name": f"Lamp {i}", "modelid": "LCA001",
+                                  "state": {"on": False, "bri": 1, "xy": [0.3, 0.3], "reachable": True}}
+                         for i in range(1, 25)}
+                lamps["25"] = {"name": "Plug", "state": {"on": False, "reachable": True}}
+                self._reply(lamps)
+
+            def do_PUT(self):
+                body = self._body()
+                lamp = self.path.split("/")[-2]
+                fake.puts.append((lamp, body, time.monotonic()))
+                self._reply([{"success": {f"/lights/{lamp}/state/on": body.get("on")}}])
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.host = f"127.0.0.1:{self.srv.server_address[1]}"
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def last(self, lamp: str) -> dict | None:
+        got = [b for lp, b, _ in self.puts if lp == lamp]
+        return got[-1] if got else None
+
+    def close(self) -> None:
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+def test_hue() -> None:
+    """Philips Hue lamps follow the desk: pairing with the bridge's button,
+    linking a desk light to a lamp, its colour and brightness sent (only
+    changes, never faster than the bridge takes), the key kept off shows."""
+    print("Philips Hue lamps follow the desk")
+    from app import engine as eng
+    from app import hue
+
+    x, y = hue.rgb_to_xy(255, 0, 0)
+    check("red is red on a Hue lamp (xy about 0.70, 0.30)", abs(x - 0.7006) < 0.002 and abs(y - 0.2993) < 0.002, (x, y))
+    x, y = hue.rgb_to_xy(255, 255, 255)
+    check("white is near the D65 white point", abs(x - 0.3227) < 0.003 and abs(y - 0.329) < 0.003, (x, y))
+    check("dark is off; 50% is half brightness", hue.lamp_state("#ff0000", 0) == {"on": False}
+          and hue.lamp_state("#ff0000", 0.5)["bri"] == 127, hue.lamp_state("#ff0000", 0.5))
+    check("1% is still on (bri 3), never 0", hue.lamp_state("#ffffff", 0.01)["bri"] >= 1, "")
+
+    fake = _FakeHue()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        shows = tmp / "data" / "shows"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=20)
+            check("nothing paired at first", e.act("hue")["hue"]["paired"] is False, "")
+            r = e.act("hue_pair", host=fake.host)
+            check("Pair before the button is pressed: told to press it",
+                  not r.get("ok") and "round button" in (r.get("error") or ""), r)
+            fake.button = True
+            r = e.act("hue_pair", host=fake.host)
+            check("press the button, Pair: paired", r.get("ok") and r["hue"]["paired"], r)
+            check("a bad address is refused", not e.act("hue_pair", host="http://x/; rm").get("ok"), "")
+            lamps = e.act("hue_lights")["lamps"]
+            check("the bridge's lamps are listed, which take colour and which don't",
+                  len(lamps) == 25 and lamps[0]["colour"] and not lamps[-1]["colour"], lamps[-1])
+            check("a light that isn't on the desk can't be linked", not e.act("hue_link", head=99, lamp="1").get("ok"), "")
+            check("a lamp is a number", not e.act("hue_link", head=1, lamp="../1").get("ok"), "")
+            r = e.act("hue_link", head=1, lamp="3")
+            check("light 1 drives lamp 3", r.get("ok") and r["hue"]["map"] == {"1": "3"}, r)
+
+            def wait(cond, s=4.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.03)
+                return cond()
+
+            check("a dark light: its lamp is turned off", wait(lambda: fake.last("3") == {"on": False, "transitiontime": 1}),
+                  fake.last("3"))
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=50)
+            e.act("set_colour", hex="#ff0000")
+            got = lambda: fake.last("3") or {}
+            check("red at 50%: the lamp goes red at half", wait(lambda: got().get("on") is True and got().get("bri") == 127
+                                                                and abs(got()["xy"][0] - 0.7006) < 0.003), got())
+            n = len(fake.puts)
+            time.sleep(0.5)
+            check("nothing changes: nothing is sent", len(fake.puts) == n, len(fake.puts) - n)
+            e.act("blackout", state=1)
+            check("blackout: the lamp goes off", wait(lambda: got().get("on") is False), got())
+            e.act("blackout", state=0)
+            wait(lambda: got().get("on") is True)
+            check("a second link moves a lamp, never two lights on one lamp",
+                  e.act("hue_link", head=2, lamp="3")["hue"]["map"] == {"2": "3"}, e.hue_public()["map"])
+            for i in range(1, 21):
+                e.act("hue_link", head=i, lamp=str(i))
+            e.act("select_heads", heads=list(range(1, 21)))
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#0000ff")
+            t0 = time.monotonic()
+            wait(lambda: all((fake.last(str(i)) or {}).get("on") for i in range(1, 21)), 6.0)
+            took = time.monotonic() - t0
+            stamps = [t for _, b, t in fake.puts if t >= t0]
+            worst = max(sum(1 for u in stamps if s <= u < s + 1.0) for s in stamps) if stamps else 0
+            check("twenty lamps change: at most about ten a second (the bridge's limit), all arrive",
+                  worst <= hue.RATE + 2 and all((fake.last(str(i)) or {}).get("on") for i in range(1, 21)),
+                  f"worst {worst}/s, {took:.1f}s")
+            snap = json.dumps(e.snapshot(), default=str)
+            check("the bridge's key is never on screen", fake.user not in snap, "")
+            e.act("save_show", name="party")
+            text = (shows / "party.json").read_text(encoding="utf-8")
+            check("the links are saved with the show, the key is not",
+                  '"hue"' in text and fake.user not in text and '"20": "20"' in text, "")
+            check("the key stays on this computer (DATA/hue.json)", fake.user in (shows.parent / "hue.json").read_text(), "")
+            e.act("hue_link", head=1, lamp="")
+            e.act("load_show", name="party")
+            check("loading the show brings the links back", e.hue_public()["map"].get("1") == "1", e.hue_public()["map"])
+            fake.close()
+            e.act("set_colour", hex="#00ff00")
+            check("the bridge goes away: said, the desk carries on",
+                  wait(lambda: "no Hue bridge" in (e.hue_public().get("error") or "")), e.hue_public())
+            check("... and its thread is still there for when it comes back", e.hue_public()["running"], "")
+            r = e.act("hue", forget=True)
+            check("forget: unpaired, and the key is gone from the computer",
+                  not r["hue"]["paired"] and fake.user not in (shows.parent / "hue.json").read_text(), r)
+        finally:
+            e.shutdown()
+            try:
+                fake.close()
+            except Exception:
+                pass
+
+
+def test_songs() -> None:
+    """A light show per song: the song's parts found from its loudness, an
+    Auto show that follows them, songs kept with their cues and played
+    back, and a CDJ (Pro DJ Link) starting the song tied to its track."""
+    print("A light show per song")
+    import shutil
+    import subprocess
+    from app import autoshow
+    from app import engine as eng
+    from app import tempo as T
+
+    node = shutil.which("node")
+    if node:
+        js = (f"import({json.dumps((ROOT / 'web' / 'app' / 'songparts.js').as_uri())}).then(m=>{{"
+              "const bpm=128,bar=240/bpm,rate=20,env=[];"
+              "const plan=[[16,.3],[8,.6],[16,1],[16,.35],[8,.65],[16,1],[16,.25]];let k=0;"
+              "for(const [b,l] of plan)for(let i=0;i<b*bar*rate;i++)env.push(l*(0.9+0.2*((k++*7919)%13)/13));"
+              "console.log(JSON.stringify({club:m.songParts(env,rate,bpm),flat:m.songParts(new Array(4000).fill(.5),rate,bpm),"
+              "none:m.songParts([],rate,bpm)}))})")
+        out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True,
+                                        timeout=30).stdout or "{}")
+        check("a club track's parts are found: intro, build, drop, breakdown, build, drop, outro",
+              [p["name"] for p in out.get("club", [])] == ["Intro", "Build", "Drop", "Breakdown", "Build 2", "Drop 2", "Outro"],
+              out.get("club"))
+        bar = 240 / 128
+        check("... at the right bars (16, 24, 40, 56, 64, 80)",
+              [round(p["t"] / bar) for p in out["club"]] == [0, 16, 24, 40, 56, 64, 80], [p["t"] for p in out["club"]])
+        check("a song as loud all through is one part (nothing made up); no audio, no parts",
+              len(out["flat"]) == 1 and out["none"] == [], out)
+    else:
+        print("   (no Node.js here: the parts finder is not run)")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        shows = tmp / "shows"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            bar = 240 / 128
+            marks = [{"t": 0, "name": "Intro"}, {"t": 16 * bar, "name": "Build"}, {"t": 24 * bar, "name": "Drop"},
+                     {"t": 40 * bar, "name": "Outro"}]
+            e.act("timeline_set", bpm=128, length=round(56 * bar, 2), markers=marks)
+            a = autoshow.analyse(e)
+            secs = autoshow.song_sections(a)
+            check("Auto show takes the song's own parts from the markers (bars, energy)",
+                  [(n, b) for n, b, _ in secs] == [("Intro", 16), ("Build", 8), ("Drop", 16), ("Outro", 16)]
+                  and dict((n, en) for n, _, en in secs)["Drop"] == 1.0, secs)
+            d = autoshow.fallback_design(a)
+            check("... and its show has one section per part", [s["name"] for s in d["sections"]] == ["Intro", "Build", "Drop", "Outro"],
+                  [s["name"] for s in d["sections"]])
+            autoshow.build(e, d, playback=1)
+            check("the cues start where the parts do",
+                  [round(c["t"] / bar) for c in next(t for t in e.timeline["tracks"] if t["kind"] == "cue")["clips"]] == [0, 16, 24, 40],
+                  "")
+            r = e.act("song_save", name="Track A")
+            check("keep it as a song", r.get("ok") and r["songs"]["songs"][0]["name"] == "Track A", r)
+            a_cues = [c["name"] for c in e.playbacks[0]["stack"]]
+            # a second song, built on the same playback
+            e.act("timeline_set", bpm=100, length=120, markers=[{"t": 0, "name": "Intro"}, {"t": 38.4, "name": "Drop"}])
+            autoshow.build(e, autoshow.fallback_design(autoshow.analyse(e)), playback=1)
+            e.act("song_save", name="Track B")
+            check("a second song's show replaced the first one's cues on the desk",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], "")
+            sid = {s["name"]: s["id"] for s in e.songs_public()["songs"]}
+            r = e.act("song_load", id=sid["Track A"])
+            check("playing Track A brings back its own cues and timeline",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == a_cues and e.timeline["bpm"] == 128, r)
+            e.act("timeline_set", timeline={"tracks": []})
+            r = e.act("song_save", name="x")
+            check("an empty timeline can't be kept as a song", not r.get("ok") and "empty" in (r.get("error") or ""), r)
+            e.act("song_load", id=sid["Track A"])
+            e.act("song_delete", id=sid["Track B"])
+            e.act("undo")
+            check("a deleted song comes back with Ctrl+Z", len(e.songs_public()["songs"]) == 2, e.songs_public())
+            check("tying a song with no deck playing says so", "master deck" in (e.act("song_link", id=sid["Track A"]).get("error") or ""), "")
+            e.act("song_link", id=sid["Track A"], track=4711, first_beat=0.0)
+            e.act("song_link", id=sid["Track B"], track=99)
+            e.act("save_show", name="set")
+            e.act("song_delete", id=sid["Track B"])
+            e.act("load_show", name="set")
+            check("songs are saved with the show, tied tracks and all",
+                  [(s["name"], s["track"]) for s in e.songs_public()["songs"]] == [("Track A", 4711), ("Track B", 99)],
+                  e.songs_public())
+
+            # the decks: a CDJ plays the tied tracks
+            e.song_follow = True                    # (the action also starts the Pro DJ Link listener)
+            deck = lambda **kw: e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(1, master=True, **kw)))
+            deck(track=4711, beat=1, playing=True)
+            check("the master deck plays track 4711: Track A starts, from its first beat",
+                  e.songs_public()["following"] == sid["Track A"] and e.tl["playing"] and e._tl_now() < 0.3
+                  and e.timeline["bpm"] == 128, (e.songs_public(), e._tl_now()))
+            check("... and the desk keeps quiet: the deck plays the music", e._tl_transport()["deck"] is True, "")
+            deck(track=4711, beat=33, playing=True)
+            check("the DJ jumps ahead to beat 33: the song follows (32 beats on)",
+                  abs(e._tl_now() - 32 * 60 / 128) < 0.1, e._tl_now())
+            deck(track=4711, beat=34, playing=True, pitch_pct=4.0)
+            check("the deck pitched +4%: the song runs 4% faster", abs(e.tl.get("rate", 1) - 1.04) < 1e-3, e.tl.get("rate"))
+            e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(2, master=False, track=99, beat=1)))
+            check("another (not master) deck loading a track changes nothing",
+                  e.songs_public()["following"] == sid["Track A"], "")
+            deck(track=4711, beat=34, playing=False)
+            check("the deck pauses: so does the song", not e.tl["playing"], "")
+            deck(track=99, beat=1, playing=True)
+            check("the next track (99): Track B takes over, its own cues on the desk",
+                  e.songs_public()["following"] == sid["Track B"] and e.tl["playing"]
+                  and [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], e.songs_public())
+            deck(track=5, beat=1, playing=True)
+            check("a track with no song: the song stops", not e.tl["playing"] and e.songs_public()["following"] is None, "")
+            e.act("song_follow", state=False)
+            check("following off: back to normal speed", e.tl.get("rate", 1.0) == 1.0 and not e._tl_transport()["deck"], "")
+        finally:
+            e.shutdown()
+
+
+def test_scratch_show_dir() -> None:
+    """Tests and check tools run on scratch data: a .env's relative show
+    folder ("data/shows", as .env.example has it) follows CONSOLE_DATA_DIR,
+    so a check never writes into the real data/ folder."""
+    print("Scratch data keeps the shows too")
+    import os
+    import subprocess
+    import sys
+    with tempfile.TemporaryDirectory() as td:
+        env = dict(os.environ, CONSOLE_DATA_DIR=td, CONSOLE_SHOW_DIR="data/shows")
+        got = subprocess.run([sys.executable, "-c", "from app import config; print(config.CONSOLE_SHOW_DIR)"],
+                             cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60).stdout.strip()
+        check("CONSOLE_SHOW_DIR=data/shows with a scratch data folder: the shows are in the scratch folder",
+              Path(got).resolve() == (Path(td) / "shows").resolve(), got)
+        env["CONSOLE_SHOW_DIR"] = "myshows"
+        got = subprocess.run([sys.executable, "-c", "from app import config; print(config.CONSOLE_SHOW_DIR)"],
+                             cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60).stdout.strip()
+        check("another relative folder still sits next to the app", Path(got).resolve() == (ROOT / "myshows").resolve(), got)
+
+
+def test_backup_desk() -> None:
+    """A backup desk: a second desk follows a real main desk (its own
+    process, locked with a pairing code) - the show and what is live - with
+    its output off, and takes over the lights when the main one dies."""
+    print("A backup desk follows the main desk and takes over")
+    import os
+    import subprocess
+    import sys
+    import urllib.error
+    import urllib.request
+    from app import engine as eng
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    code = "BKUP234567"                 # the desk's key; the operator types it as BKUP2-34567
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        env = dict(os.environ, PORT=str(port), HOST="0.0.0.0", CONSOLE_TOKEN=code, CONSOLE_DRY_RUN="true",
+                   FIXTURE_DB=str(db), CONSOLE_DATA_DIR=str(tmp / "main"), CONSOLE_SHOW_DIR=str(tmp / "main" / "shows"),
+                   CONSOLE_AUTOSAVE="false", MIDI_ENABLED="false", GDTF_SHARE_USER="", GDTF_SHARE_PASSWORD="")
+        proc = subprocess.Popen([sys.executable, os.path.join("app", "main.py")], env=env, cwd=str(ROOT),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def main(action, **params):
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/console", method="POST",
+                                         data=json.dumps({"action": action, "params": params}).encode(),
+                                         headers={"Content-Type": "application/json", "X-Jarvis-Token": code})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.loads(r.read().decode()).get("result") or {}
+
+        b = None
+        try:
+            up = False
+            for _ in range(60):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2)
+                    up = True
+                    break
+                except Exception:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.3)
+            check("the main desk is up, locked with its pairing code", up, "")
+            if not up:
+                return
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/api/console/standby_feed", timeout=5)
+                refused = False
+            except urllib.error.HTTPError as exc:
+                refused = exc.code in (401, 403)
+            check("the main desk's feed needs its pairing code", refused, "")
+            main("add_heads", query="LED PAR 4ch", qty=4)
+            main("select_all")
+            main("set_intensity", level=100)
+            main("record_cue", playback=1, name="Full")
+            main("set_intensity", level=30)
+            main("record_cue", playback=1, name="Low")
+            main("clear_programmer")
+            main("cue_go", playback=1, cue=1)
+            main("save_show", name="gig")
+
+            b = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "backup" / "shows")
+            b.act("set_output", state=True)
+            r = b.act("standby", host=f"127.0.0.1:{port}", code="WRONG-00000")
+            check("a wrong pairing code is refused", not r.get("ok") and "pairing code" in (r.get("error") or ""), r)
+            r = b.act("standby", host=f"127.0.0.1:{port}", code="BKUP2-34567", after=1.5)
+            check("the backup follows the main desk", r.get("ok") and b.standby_public()["following"], r)
+            check("... with its own output off (one desk sends at a time)", not b.live, b.live)
+            check("... and has the main desk's show: its lights and cues",
+                  len(b.patch) == 4 and [c["name"] for c in b.playbacks[0]["stack"]] == ["Full", "Low"], len(b.patch))
+            check("... and its live state: playback 1 on cue 1",
+                  b.playbacks[0]["active"] and b.playbacks[0]["index"] == 0, b.playbacks[0]["index"])
+
+            def wait(cond, s=6.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.05)
+                return cond()
+
+            main("cue_go", playback=1, cue=2)
+            main("master", level=60)
+            check("GO on the main desk: the backup is on cue 2 within a second",
+                  wait(lambda: b.playbacks[0]["index"] == 1 and b.master == 60), (b.playbacks[0]["index"], b.master))
+            main("add_heads", query="LED PAR 4ch", qty=2)
+            check("a light added on the main desk appears on the backup", wait(lambda: len(b.patch) == 6), len(b.patch))
+            main("select_heads", heads=[5])
+            main("set_intensity", level=77)
+            check("the main desk's programmer too (it is live on the lights)",
+                  wait(lambda: any(v == 196 or v == 77 for v in (b.programmer.get(5) or {}).values())), b.programmer.get(5))
+            check("the pairing code is never on the backup's screens",
+                  code not in json.dumps(b.snapshot(), default=str), "")
+            check("... nor in its saved show", code not in b._autosave_payload(), "")
+            proc.kill()
+            proc.wait(timeout=10)
+            t0 = time.monotonic()
+            check("the main desk dies: the backup takes over by itself",
+                  wait(lambda: bool(b.standby_public()["took_over"]), 8.0), b.standby_public())
+            check("... after about the 1.5 s it was given", 1.0 <= time.monotonic() - t0 <= 4.0, round(time.monotonic() - t0, 2))
+            check("... its output is on now", b.live, "")
+            check("... carrying on from the main desk's last state: cue 2, master 60%",
+                  b.playbacks[0]["active"] and b.playbacks[0]["index"] == 1 and b.master == 60, "")
+            check("... and every screen is told", (b.snapshot().get("notice") or {}).get("id") == "standby_took_over", "")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+            if b:
+                b.shutdown()
+
+
+def test_placeholder_variety() -> None:
+    """Lights with no maker's 3D are drawn from their kind; profiles,
+    strobes, bars and panels now differ per model too (size, length, body,
+    cells, fins, handles) - and the same model always looks the same."""
+    print("Placeholder 3D: profiles, strobes, bars and panels differ per model")
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        print("   (no Node.js here: the models are not built)")
+        return
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    models = (ROOT / "web" / "js" / "stage" / "models.js").as_uri()
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three')return{{url:'{vend}three.module.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    js = ("import{register}from'node:module';"
+          f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));"
+          "const T=await import('three');"
+          f"const{{buildFixture}}=await import({json.dumps(models)});"
+          "const sig=(t,f)=>{const sk=buildFixture({type:t,style:{body:'#222',accent:'#999',finish:'matte'},cells:t==='bar'?12:1},f);"
+          "const s=new T.Box3().setFromObject(sk.root).getSize(new T.Vector3());let v=0;"
+          "sk.root.traverse(o=>{if(o.isMesh)v+=o.geometry.attributes.position.count*(o.isInstancedMesh?o.count:1)});"
+          "return [s.x.toFixed(3),s.y.toFixed(3),s.z.toFixed(3),v,sk.emitters.length].join('/')};"
+          "const rows={profile:['ETC Source Four 26','Chauvet Ovation E-910FC','Robe ParFect','Martin ELP CL'],"
+          "strobe:['Martin Atomic 3000','Chauvet Shocker','ADJ Freq 16','Showtec Sunstrip'],"
+          "bar:['Chauvet COLORband PiX','ADJ Mega Bar','Elation Sixbar 1000','Showtec Pixel Bar 12'],"
+          "wash_panel:['Chauvet COLORado Panel Q40','ADJ Flat Par','Elation SixPar 200','Robe Tetra']};"
+          "const out={};for(const[t,fs]of Object.entries(rows)){out[t]={sigs:fs.map(f=>sig(t,f)),again:sig(t,fs[0])}}"
+          "console.log(JSON.stringify(out))")
+    r = subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, timeout=60)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        check("the placeholder models build under Node", False, (r.stderr or r.stdout)[-400:])
+        return
+    for kind, name in (("profile", "profiles"), ("strobe", "strobes"), ("bar", "bars"), ("wash_panel", "panels")):
+        sigs = out[kind]["sigs"]
+        check(f"four {name}: four different placeholders, each with its beam(s)",
+              len(set(sigs)) == 4 and all(int(s.split("/")[-1]) >= 1 for s in sigs), sigs)
+        check(f"... and the same {name[:-1]} always looks the same", out[kind]["again"] == sigs[0], "")
+
+
+def test_gobo_twin_repeated() -> None:
+    """A light whose file has no gobo pictures takes them from the same
+    light in the other library - also when that one lists the wheel twice
+    (each gobo still, then shaking); never when the count is simply off
+    (which slot is which can't be told, and a wrong gobo is worse)."""
+    print("Gobo pictures from the other library: a wheel listed twice")
+    from app import fixlib
+    fixlib._TWINS.clear()
+    auro = fixlib.twin_gobos("Cameo", "Auro Spot 300", 6)
+    check("Cameo Auro Spot 300: its 6 real gobos (the other library lists 12: each still, then shaking)",
+          len(auro) == 6 and len(set(auro)) == 6 and all(a.startswith("qlc:") for a in auro), auro)
+    viper = fixlib.twin_gobos("Martin", "MAC Viper AirFX", 5)
+    check("Martin MAC Viper AirFX: its 5 (the first round of the wheel)", len(viper) == 5, viper)
+    check("ADJ Inno Spot Pro: 7 slots here, 6 there - no guessing which is which",
+          fixlib.twin_gobos("American DJ", "Inno Spot Pro", 7) == [], "")
+    check("the pictures are in the bundle", all(fixlib.gobo_picture(p) for p in auro), "")

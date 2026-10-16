@@ -1,0 +1,72 @@
+{
+  "Name": "Jarvis Lighting Desk",
+  "Version": "1.0.0.0",
+  "Author": "Jarvis",
+  "Description": "GO, blackout, the desk's buttons, tap tempo and macros on the keys; the grand master and playback faders on the dials. Talks to the desk over OSC (Settings -> MIDI & OSC -> OSC in).",
+  "URL": "https://github.com/mayar144p/jarvis-lighting-console",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.4" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "12" }
+  ],
+  "CodePath": "bin/plugin.js",
+  "Nodejs": { "Version": "20", "Debug": "disabled" },
+  "Icon": "imgs/plugin",
+  "Category": "Jarvis",
+  "CategoryIcon": "imgs/category",
+  "Actions": [
+    {
+      "UUID": "com.jarvis.desk.go", "Name": "GO", "Icon": "imgs/go",
+      "Tooltip": "The next cue on a playback (empty: the selected one)",
+      "PropertyInspectorPath": "pi/playback.html", "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/go", "Title": "GO", "TitleAlignment": "bottom", "FontSize": "12" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.back", "Name": "Back", "Icon": "imgs/back",
+      "Tooltip": "The previous cue on a playback",
+      "PropertyInspectorPath": "pi/playback.html", "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/back", "Title": "BACK", "TitleAlignment": "bottom", "FontSize": "12" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.blackout", "Name": "Blackout", "Icon": "imgs/blackout",
+      "Tooltip": "Blackout on / off", "PropertyInspectorPath": "pi/desk.html", "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [
+        { "Image": "imgs/blackout", "Title": "B.O.", "TitleAlignment": "bottom", "FontSize": "12" },
+        { "Image": "imgs/blackout-on", "Title": "B.O. ON", "TitleAlignment": "bottom", "FontSize": "12" }
+      ]
+    },
+    {
+      "UUID": "com.jarvis.desk.button", "Name": "Desk button", "Icon": "imgs/button",
+      "Tooltip": "One of the desk's buttons (page and number): held while the key is held",
+      "PropertyInspectorPath": "pi/button.html", "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/button", "TitleAlignment": "bottom", "FontSize": "11" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.tap", "Name": "Tap tempo", "Icon": "imgs/tap",
+      "Tooltip": "Tap the beat", "PropertyInspectorPath": "pi/desk.html", "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/tap", "Title": "TAP", "TitleAlignment": "bottom", "FontSize": "12" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.macro", "Name": "Macro", "Icon": "imgs/macro",
+      "Tooltip": "Run one of the desk's macros (its name)",
+      "PropertyInspectorPath": "pi/macro.html", "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/macro", "TitleAlignment": "bottom", "FontSize": "11" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.master", "Name": "Grand master", "Icon": "imgs/master",
+      "Tooltip": "Turn: the grand master. Press: full / out",
+      "PropertyInspectorPath": "pi/desk.html", "Controllers": ["Encoder"],
+      "Encoder": { "layout": "$B1", "TriggerDescription": { "Rotate": "Grand master", "Push": "Full / out" } },
+      "States": [{ "Image": "imgs/master" }]
+    },
+    {
+      "UUID": "com.jarvis.desk.fader", "Name": "Playback fader", "Icon": "imgs/fader",
+      "Tooltip": "Turn: a playback's fader. Press: full / out",
+      "PropertyInspectorPath": "pi/playback.html", "Controllers": ["Encoder"],
+      "Encoder": { "layout": "$B1", "TriggerDescription": { "Rotate": "Fader", "Push": "Full / out" } },
+      "States": [{ "Image": "imgs/fader" }]
+    }
+  ]
+}

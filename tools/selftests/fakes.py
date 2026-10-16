@@ -95,13 +95,19 @@ def bundle(*messages: bytes) -> bytes:
     return out
 
 
-def build_prodj_status(device: int, master: bool = False, playing: bool = True, name: str = "CDJ-3000") -> bytes:
+def build_prodj_status(device: int, master: bool = False, playing: bool = True, name: str = "CDJ-3000",
+                       track: int = 0, beat: int | None = None, pitch_pct: float = 0.0) -> bytes:
+    """A CDJ status packet: who's master and playing, the loaded track's
+    rekordbox id, the beat it is on and its speed (tests, the virtual deck)."""
     p = bytearray(0xD4)
     p[:10] = PRODJ_MAGIC
     p[0x0A] = PRODJ_STATUS
     p[0x0B:0x0B + len(name)] = name.encode("ascii")[:20]
     p[0x21] = device & 0xFF
+    p[0x2C:0x30] = int(track).to_bytes(4, "big")
     p[0x89] = (F_PLAYING if playing else 0) | (F_MASTER if master else 0)
+    p[0x8C:0x90] = int(round(0x100000 * (1 + pitch_pct / 100.0))).to_bytes(4, "big")
+    p[0xA0:0xA4] = (0xFFFFFFFF if beat is None else int(beat)).to_bytes(4, "big")
     return bytes(p)
 
 
