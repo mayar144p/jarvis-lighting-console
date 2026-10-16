@@ -71,13 +71,14 @@ from app.engine_desk import DeskMixin
 from app.engine_cuemodes import CueModesMixin
 from app.engine_roam import RoamMixin
 from app.engine_osc import OscMixin
+from app.engine_hue import HueMixin
 from app.engine_sound import SoundMixin
 from app.engine_tempo import TempoMixin
 from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -1313,6 +1314,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "macros": [dict(m) for m in self._macros()],
                 "osc": self.osc_public(),
                 "osc_out": self.osc_out_public(),
+                "hue": self.hue_public(),
                 "moves": [dict(m) for m in self.moves],
                 "auto_groups": self._auto_groups(),
                 "venues": self._venue_list(),

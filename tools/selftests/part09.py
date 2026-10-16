@@ -6577,3 +6577,167 @@ def test_streamdeck_plugin() -> None:
             srv.close()
             e.act("osc", state=False)
             e.shutdown()
+
+
+class _FakeHue:
+    """A Hue bridge on 127.0.0.1: its pairing button, its lamps, and every
+    lamp change Jarvis sent."""
+
+    def __init__(self) -> None:
+        import http.server
+        import threading
+        fake = self
+        self.button = False
+        self.puts: list[tuple[str, dict, float]] = []
+        self.user = "k3yThatStaysOnThisComputer"
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _reply(self, obj):
+                body = json.dumps(obj).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _body(self):
+                return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"null")
+
+            def do_POST(self):
+                self._body()
+                if not fake.button:
+                    return self._reply([{"error": {"type": 101, "address": "", "description": "link button not pressed"}}])
+                self._reply([{"success": {"username": fake.user}}])
+
+            def do_GET(self):
+                if self.path != f"/api/{fake.user}/lights":
+                    return self._reply([{"error": {"type": 1, "description": "unauthorized user"}}])
+                lamps = {str(i): {"name": f"Lamp {i}", "modelid": "LCA001",
+                                  "state": {"on": False, "bri": 1, "xy": [0.3, 0.3], "reachable": True}}
+                         for i in range(1, 25)}
+                lamps["25"] = {"name": "Plug", "state": {"on": False, "reachable": True}}
+                self._reply(lamps)
+
+            def do_PUT(self):
+                body = self._body()
+                lamp = self.path.split("/")[-2]
+                fake.puts.append((lamp, body, time.monotonic()))
+                self._reply([{"success": {f"/lights/{lamp}/state/on": body.get("on")}}])
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.host = f"127.0.0.1:{self.srv.server_address[1]}"
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def last(self, lamp: str) -> dict | None:
+        got = [b for lp, b, _ in self.puts if lp == lamp]
+        return got[-1] if got else None
+
+    def close(self) -> None:
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+def test_hue() -> None:
+    """Philips Hue lamps follow the desk: pairing with the bridge's button,
+    linking a desk light to a lamp, its colour and brightness sent (only
+    changes, never faster than the bridge takes), the key kept off shows."""
+    print("Philips Hue lamps follow the desk")
+    from app import engine as eng
+    from app import hue
+
+    x, y = hue.rgb_to_xy(255, 0, 0)
+    check("red is red on a Hue lamp (xy about 0.70, 0.30)", abs(x - 0.7006) < 0.002 and abs(y - 0.2993) < 0.002, (x, y))
+    x, y = hue.rgb_to_xy(255, 255, 255)
+    check("white is near the D65 white point", abs(x - 0.3227) < 0.003 and abs(y - 0.329) < 0.003, (x, y))
+    check("dark is off; 50% is half brightness", hue.lamp_state("#ff0000", 0) == {"on": False}
+          and hue.lamp_state("#ff0000", 0.5)["bri"] == 127, hue.lamp_state("#ff0000", 0.5))
+    check("1% is still on (bri 3), never 0", hue.lamp_state("#ffffff", 0.01)["bri"] >= 1, "")
+
+    fake = _FakeHue()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        shows = tmp / "data" / "shows"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=20)
+            check("nothing paired at first", e.act("hue")["hue"]["paired"] is False, "")
+            r = e.act("hue_pair", host=fake.host)
+            check("Pair before the button is pressed: told to press it",
+                  not r.get("ok") and "round button" in (r.get("error") or ""), r)
+            fake.button = True
+            r = e.act("hue_pair", host=fake.host)
+            check("press the button, Pair: paired", r.get("ok") and r["hue"]["paired"], r)
+            check("a bad address is refused", not e.act("hue_pair", host="http://x/; rm").get("ok"), "")
+            lamps = e.act("hue_lights")["lamps"]
+            check("the bridge's lamps are listed, which take colour and which don't",
+                  len(lamps) == 25 and lamps[0]["colour"] and not lamps[-1]["colour"], lamps[-1])
+            check("a light that isn't on the desk can't be linked", not e.act("hue_link", head=99, lamp="1").get("ok"), "")
+            check("a lamp is a number", not e.act("hue_link", head=1, lamp="../1").get("ok"), "")
+            r = e.act("hue_link", head=1, lamp="3")
+            check("light 1 drives lamp 3", r.get("ok") and r["hue"]["map"] == {"1": "3"}, r)
+
+            def wait(cond, s=4.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.03)
+                return cond()
+
+            check("a dark light: its lamp is turned off", wait(lambda: fake.last("3") == {"on": False, "transitiontime": 1}),
+                  fake.last("3"))
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=50)
+            e.act("set_colour", hex="#ff0000")
+            got = lambda: fake.last("3") or {}
+            check("red at 50%: the lamp goes red at half", wait(lambda: got().get("on") is True and got().get("bri") == 127
+                                                                and abs(got()["xy"][0] - 0.7006) < 0.003), got())
+            n = len(fake.puts)
+            time.sleep(0.5)
+            check("nothing changes: nothing is sent", len(fake.puts) == n, len(fake.puts) - n)
+            e.act("blackout", state=1)
+            check("blackout: the lamp goes off", wait(lambda: got().get("on") is False), got())
+            e.act("blackout", state=0)
+            wait(lambda: got().get("on") is True)
+            check("a second link moves a lamp, never two lights on one lamp",
+                  e.act("hue_link", head=2, lamp="3")["hue"]["map"] == {"2": "3"}, e.hue_public()["map"])
+            for i in range(1, 21):
+                e.act("hue_link", head=i, lamp=str(i))
+            e.act("select_heads", heads=list(range(1, 21)))
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#0000ff")
+            t0 = time.monotonic()
+            wait(lambda: all((fake.last(str(i)) or {}).get("on") for i in range(1, 21)), 6.0)
+            took = time.monotonic() - t0
+            stamps = [t for _, b, t in fake.puts if t >= t0]
+            worst = max(sum(1 for u in stamps if s <= u < s + 1.0) for s in stamps) if stamps else 0
+            check("twenty lamps change: at most about ten a second (the bridge's limit), all arrive",
+                  worst <= hue.RATE + 2 and all((fake.last(str(i)) or {}).get("on") for i in range(1, 21)),
+                  f"worst {worst}/s, {took:.1f}s")
+            snap = json.dumps(e.snapshot(), default=str)
+            check("the bridge's key is never on screen", fake.user not in snap, "")
+            e.act("save_show", name="party")
+            text = (shows / "party.json").read_text(encoding="utf-8")
+            check("the links are saved with the show, the key is not",
+                  '"hue"' in text and fake.user not in text and '"20": "20"' in text, "")
+            check("the key stays on this computer (DATA/hue.json)", fake.user in (shows.parent / "hue.json").read_text(), "")
+            e.act("hue_link", head=1, lamp="")
+            e.act("load_show", name="party")
+            check("loading the show brings the links back", e.hue_public()["map"].get("1") == "1", e.hue_public()["map"])
+            fake.close()
+            e.act("set_colour", hex="#00ff00")
+            check("the bridge goes away: said, the desk carries on",
+                  wait(lambda: "no Hue bridge" in (e.hue_public().get("error") or "")), e.hue_public())
+            check("... and its thread is still there for when it comes back", e.hue_public()["running"], "")
+            r = e.act("hue", forget=True)
+            check("forget: unpaired, and the key is gone from the computer",
+                  not r["hue"]["paired"] and fake.user not in (shows.parent / "hue.json").read_text(), r)
+        finally:
+            e.shutdown()
+            try:
+                fake.close()
+            except Exception:
+                pass

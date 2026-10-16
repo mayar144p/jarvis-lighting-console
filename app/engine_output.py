@@ -197,6 +197,7 @@ class OutputMixin:
         if ev:
             ev.set()
         self._osc_stop()
+        self._hue_stop()
         try:
             self._autosave(force=True)     # never lose the last edit
         except Exception:

@@ -39,6 +39,7 @@ MAX_HISTORY = 8
 DENY_ACTIONS = frozenset({
     "set_output", "set_dmx_target", "set_dry_run", "save_show", "load_show",
     "backup", "backup_now", "backup_shows", "backup_restore",
+    "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "hue_link",
     "venue_save", "venue_open", "venue_delete",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_status",

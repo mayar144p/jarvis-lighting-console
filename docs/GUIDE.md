@@ -450,6 +450,26 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
 
+### Philips Hue lamps
+
+Smart bulbs can follow the desk, so a party room or a small bar needs no
+DMX. **Settings → Philips Hue**:
+
+1. **Find** looks for the bridge (or type its address: the Hue app shows it
+   under Settings → My Hue system → the bridge).
+2. Press the round button on top of the bridge, then **Pair** within 30
+   seconds.
+3. **Show the lamps**: next to each Hue lamp, pick the desk light it follows.
+   **Blink** makes a lamp blink once, to find it in the room.
+
+Each lamp copies its desk light's colour and brightness (blackout and the
+grand master too). Patch a plain colour light for each lamp (e.g. *LED PAR
+4ch* on a spare universe) and program it like any other light. Which light
+drives which lamp is saved with the show; the pairing stays on this computer
+and is never saved in a show. The bridge takes about ten changes a second in
+all, so lamps follow looks and slow fades well; chases and strobes are too
+fast for them.
+
 ## New shows: templates and the demo
 
 The first time the desk opens with nothing patched, it offers **the demo**:

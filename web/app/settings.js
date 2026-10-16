@@ -270,6 +270,7 @@ export async function openSettings() {
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
     ["backup", "Backup", [backupPanel()]],
+    ["hue", "Philips Hue", [huePanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -317,6 +318,76 @@ function backupPanel() {
       h("button.btn.ghost", { onclick: () => set("") }, "Turn off")),
     status);
   load();
+  return box;
+}
+
+// Philips Hue: smart lamps follow desk lights (a party room, a small bar).
+// Pair once with the bridge's round button; each lamp then picks the desk
+// light it copies.  The bridge's key never comes to this page.
+function huePanel() {
+  const box = h("div.hue-box");
+  const host = h("input", { type: "text", placeholder: "e.g. 192.168.1.20", spellcheck: "false", autocomplete: "off", style: { width: "180px" } });
+  const found = h("div.chip-row");
+  const status = h("div.out-status");
+  const lampsBox = h("div");
+  const heads = () => ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, `${x.head_no} · ${x.name}`]);
+  let st = (state.snap && state.snap.hue) || {};
+  const paint = () => {
+    host.value = host.value || st.host || "";
+    status.replaceChildren(st.paired
+      ? h(st.error ? "div.out-bad" : "div.out-ok", st.error ? `⚠ ${st.error}` : `✓ Paired with the bridge at ${st.host} · ${st.links} lamp(s) follow the desk`)
+      : h("div.out-bad", "Not paired: press the round button on top of the Hue bridge, then Pair within 30 seconds."));
+  };
+  const refresh = async () => { const r = await run("hue", {}, { silentError: true }); if (r.ok) { st = r.hue; paint(); } };
+  const lamps = async () => {
+    const r = await run("hue_lights", {}, { toast: true });
+    if (!r.ok) return;
+    const byLamp = {};
+    for (const [hd, lp] of Object.entries(st.map || {})) byLamp[lp] = hd;
+    lampsBox.replaceChildren(h("table.hue-lamps",
+      h("tr", h("th", "Hue lamp"), h("th", "Follows desk light"), h("th", "")),
+      ...r.lamps.map((lp) => {
+        const pick = h("select", { "aria-label": `Desk light for ${lp.name}` },
+          h("option", { value: "" }, "-"),
+          ...heads().map(([n, label]) => h("option", { value: n, selected: String(byLamp[lp.id]) === String(n) }, label)));
+        pick.addEventListener("change", async () => {
+          const was = byLamp[lp.id];
+          const res = pick.value ? await run("hue_link", { head: +pick.value, lamp: lp.id }, { toast: true })
+            : was ? await run("hue_link", { head: +was, lamp: "" }, { toast: true }) : { ok: true };
+          if (res.ok && res.hue) { st = res.hue; paint(); }
+          lamps();
+        });
+        return h("tr",
+          h("td", lp.name, lp.colour ? "" : h("span.muted.small", " (white only)"), lp.reachable ? "" : h("span.muted.small", " · not reachable")),
+          h("td", pick),
+          h("td", h("button.btn.small", { onclick: () => run("hue_flash", { lamp: lp.id }, { toast: true }) }, "Blink")));
+      })));
+  };
+  box.append(
+    h("p.muted.small", "Hue lamps copy a desk light's colour and brightness, so a room with smart bulbs needs no DMX. "
+      + "The bridge takes about ten changes a second in all: fine for looks and slow fades, too slow for chases and strobes."),
+    h("div.row-btns",
+      h("label.field", h("span", "Bridge address"), host),
+      h("button.btn", { onclick: async () => {
+        const r = await run("hue_find", {}, { toast: true });
+        found.replaceChildren(...((r.ok && r.bridges) || []).map((b) => h("button.chip", { onclick: () => { host.value = b.host; } }, `${b.name} ${b.host}`)));
+      } }, "Find"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("hue_pair", { host: host.value.trim() }, { toast: true });
+        if (r.ok) { st = r.hue; paint(); lamps(); }
+      } }, "Pair")),
+    found,
+    status,
+    h("div.row-btns",
+      h("button.btn", { onclick: lamps }, "Show the lamps"),
+      h("button.btn.ghost", { onclick: async () => {
+        if (!(await confirmBox("Forget the Hue bridge", "Its lamps stop following the desk until you pair again.", { ok: "Forget" }))) return;
+        const r = await run("hue", { forget: true }, { toast: true });
+        if (r.ok) { st = r.hue; paint(); lampsBox.replaceChildren(); }
+      } }, "Forget the bridge")),
+    lampsBox);
+  paint();
+  refresh().then(() => { if (st.paired) lamps(); });
   return box;
 }
 
