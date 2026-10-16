@@ -1909,3 +1909,11 @@ body[data-mode="setup"] .playbacks { display: none; }
 .topbar[data-fit="4"] > .cmd-group { min-width: 90px; }
 .topbar[data-fit="4"] #undo-label, .topbar[data-fit="4"] #ai-btn span, .topbar[data-fit="4"] #lock-label { display: none; }
 .topbar[data-fit="4"] :is(#ai-btn, #lock-btn) { padding: 0 9px; }
+/* the last fold: the effect buttons and the mode switch at their tightest */
+.topbar[data-fit="5"] #ws-name, .topbar[data-fit="5"] #out-sub, .topbar[data-fit="5"] .brand-name, .topbar[data-fit="5"] #tempo-src,
+.topbar[data-fit="5"] #undo-label, .topbar[data-fit="5"] #ai-btn span, .topbar[data-fit="5"] #lock-label { display: none; }
+.topbar[data-fit="5"] :is(#ai-btn, #lock-btn) { padding: 0 9px; }
+.topbar[data-fit="5"] > .cmd-group { min-width: 70px; }
+.topbar[data-fit="5"] .mode-seg button { padding: 0 5px; }
+.topbar[data-fit="5"] :is(#fx-arm, #fx-kill) { padding: 0 7px; }
+.topbar[data-fit="5"] .show-name { max-width: 90px; }

@@ -208,7 +208,7 @@ function fitTopbar() {
     const tb = $(".topbar");
     const stage = (n) => { if (tb.dataset.fit !== String(n)) tb.dataset.fit = String(n); };
     stage(0);
-    for (let n = 1; n <= 4 && tb.scrollWidth > tb.clientWidth + 1; n++) stage(n);
+    for (let n = 1; n <= 5 && tb.scrollWidth > tb.clientWidth + 1; n++) stage(n);
   });
 }
 
