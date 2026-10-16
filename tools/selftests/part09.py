@@ -6241,6 +6241,10 @@ def test_desktop_launch_quiet() -> None:
           'start "" "node_modules\\electron\\dist\\electron.exe" .' in bat and "npm start" not in bat.replace('"npm start"', ""))
     check("...told not to hook onto this window (it stayed open, empty, beside the desk)",
           bat.index("set ELECTRON_NO_ATTACH_CONSOLE=1") < bat.index('start "" "node_modules'))
+    check("npm \"up to date\" with Electron itself missing: its downloader runs again, and a clear message if that fails",
+          bat.index('call npm install') < bat.index('call node "node_modules\\electron\\install.js"') < bat.index(":ready")
+          and "Electron could not be downloaded" in bat and "set ELECTRON_SKIP_BINARY_DOWNLOAD=" in bat
+          and "install.js" in (ROOT / "run-desktop.sh").read_text(encoding="utf-8"), "")
     check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
           "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
     check("the desktop app is the only way in (run.bat and run.sh are gone)",
