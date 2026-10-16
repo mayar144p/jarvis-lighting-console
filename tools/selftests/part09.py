@@ -6336,3 +6336,60 @@ def test_open_dmx() -> None:
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     check("Settings offers the two kinds of box, with the Windows VCP hint",
           'value: "opendmx"' in st and "Load VCP" in st)
+
+
+def test_show_backup() -> None:
+    """A dead laptop at a gig must not take the show with it: every save
+    is copied to a folder off the computer (cloud / USB stick), and a show
+    comes back from there."""
+    print("Shows backed up off the computer")
+    import tempfile
+    import time as _time
+    from app import engine as eng
+    from app import fixtures
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        stick = tmp / "usb"
+        stick.mkdir()
+        shows = tmp / "data" / "shows"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            check("off until a folder is chosen", e.act("backup").get("on") is False)
+            check("a folder that isn't there is refused (a stick not plugged in)",
+                  not e.act("backup", folder=str(tmp / "nope")).get("ok"))
+            check("...and a relative path too", not e.act("backup", folder="usb").get("ok"))
+            r = e.act("backup", folder=str(stick))
+            check("a USB stick / cloud folder is taken", r.get("ok") and r["on"] and r["where"].endswith("Jarvis shows"), str(r))
+            e.act("add_heads", query="PAR", qty=2)
+            r = e.act("save_show", name="gig")
+            check("saving says it is backed up", r.get("backed_up") and "backed up" in r.get("summary", ""), str(r.get("summary")))
+            _time.sleep(0.3)
+            check("...and the show is in the backup folder", (stick / "Jarvis shows" / "gig.json").is_file())
+            e.act("add_heads", query="PAR", qty=1)
+            e.act("save_show", name="gig")
+            _time.sleep(0.3)
+            check("...with its earlier versions", len(list((stick / "Jarvis shows" / "versions" / "gig").glob("*.json"))) >= 1)
+            check("backing up never holds up the save (a thread of its own)", "copy_later" in
+                  (ROOT / "app" / "engine_shows.py").read_text(encoding="utf-8"))
+        finally:
+            e.shutdown()
+        (shows / "gig.json").unlink()                            # the laptop "died"
+        e2 = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            check("the backup folder is remembered (not in a show)", e2.act("backup").get("folder") == str(stick))
+            listed = e2.act("backup_shows")
+            check("the backed-up shows are listed", [s["name"] for s in listed.get("shows", [])] == ["gig"], str(listed))
+            r = e2.act("backup_restore", name="gig")
+            check("restore brings the show back and opens it", r.get("ok") and len(e2.patch) == 3, str(r.get("summary")))
+            check("a name that isn't in the backup is refused", not e2.act("backup_restore", name="nope").get("ok"))
+            check("back up all shows now", e2.act("backup_now").get("copied") == 1)
+            check("turn it off", e2.act("backup", folder="").get("on") is False)
+        finally:
+            e2.shutdown()
+    from app import aitools
+    check("the AI never touches backups", {"backup", "backup_now", "backup_shows", "backup_restore"} <= set(aitools.NEVER))
+    st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
+    dj = dialogs_js()
+    check("Settings -> Backup, and Show -> Restore from backup…", '"backup", "Backup"' in st and "Restore from backup…" in dj)

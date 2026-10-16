@@ -468,7 +468,35 @@ export async function openShowMenu(anchor, menuFn) {
     { label: "Ready? check…", hint: "before doors", run: openReadyCheck },
     current ? { label: "Earlier versions…", run: () => openVersions(current) } : null,
     current ? { label: "Export (download)", run: () => exportShow(current) } : null,
+    "-",
+    { label: "Restore from backup…", hint: "a show from the USB stick / cloud folder", run: openBackupRestore },
+    { label: "Backup settings…", hint: "where every saved show is copied", run: () => import("./settings.js").then((m) => m.openSettingsAt("backup")) },
   ]);
+}
+
+// Shows copied off this computer (Settings -> Backup): pick one to bring back.
+export async function openBackupRestore() {
+  const r = await run("backup_shows", {}, { silentError: true });
+  if (!r.ok) return;
+  if (!r.on) {
+    if (await confirmBox("No backup folder yet", "Choose where every saved show is copied - a OneDrive or Dropbox folder, or a USB stick - in Settings -> Backup.", { ok: "Open Settings" })) {
+      import("./settings.js").then((m) => m.openSettingsAt("backup"));
+    }
+    return;
+  }
+  const when = (x) => (x.saved ? new Date(x.saved).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
+  let close = null;
+  const body = h("div",
+    h("p.muted.small", `From ${r.where}. Restoring opens the show; a show of the same name on this computer is kept as an earlier version first.`),
+    r.shows.length ? h("div.show-files", ...r.shows.map((x) => h("div.show-file",
+      h("div.sf-name", h("b", x.name), h("small.muted", `${when(x)}${x.versions ? ` · ${x.versions} earlier version${x.versions > 1 ? "s" : ""}` : ""}`)),
+      h("div.sf-acts", h("button.btn.small.primary", { onclick: async () => {
+        if (!(await confirmBox("Restore show", `Restore “${x.name}” from the backup and open it?`, { ok: "Restore" }))) return;
+        const res = await run("backup_restore", { name: x.name }, { toast: true });
+        if (res.ok && close) close();
+      } }, "Restore")))))
+      : h("p.muted", "The backup folder has no shows yet - they appear after the next save."));
+  close = modal({ title: "Restore from backup", wide: true, body });
 }
 
 async function openShowFile(name) {

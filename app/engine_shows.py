@@ -428,8 +428,59 @@ class ShowMixin:
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
-        return {"file": label, "show_file": label, "version_kept": kept,
-                "summary": f"saved show {label!r}"}
+        backed = self._backup().copy_later(self.show_dir, label)       # off the computer too
+        return {"file": label, "show_file": label, "version_kept": kept, "backed_up": backed,
+                "summary": f"saved show {label!r}" + (" (and backed up)" if backed else "")}
+
+    # -- backup off the computer (app/showbackup.py) -----------------------
+    def _backup(self):
+        b = self.__dict__.get("_backup_obj")
+        if b is None:
+            from app import showbackup
+            b = self._backup_obj = showbackup.Backup(self.show_dir.parent / "backup.json")
+        return b
+
+    def _a_backup(self, folder=None, **_):
+        """Where every saved show is copied (a OneDrive / Dropbox folder, a USB
+        stick); folder "" turns it off.  Without folder: how it stands, and
+        the places worth offering."""
+        from app import showbackup
+        b = self._backup()
+        st = b.set_folder(folder) if folder is not None else b.status()
+        if folder:
+            b.copy_later(self.show_dir, None)                          # everything there now
+        return {**st, "places": showbackup.places(), "age": showbackup.age_text(st.get("last")),
+                "summary": (f"shows are backed up to {st['where']}" if st["on"] else "backup is off")
+                if folder is not None else ""}
+
+    def _a_backup_now(self, **_):
+        """Copy every show (and its versions) to the backup folder now."""
+        r = self._backup().copy_now(self.show_dir, None)
+        if r["error"]:
+            raise ValueError(f"backup failed: {r['error']}")
+        return {**self._backup().status(), "copied": r["copied"],
+                "summary": f"backed up {r['copied']} show(s)"}
+
+    def _a_backup_shows(self, **_):
+        """The shows in the backup folder (to restore one)."""
+        rows = self._backup().shows()
+        return {"shows": rows, **self._backup().status(), "summary": f"{len(rows)} show(s) in the backup"}
+
+    def _a_backup_restore(self, name="", **_):
+        """Bring a show back from the backup folder and open it.  A show of the
+        same name here is kept as a version first, so this can be undone."""
+        label = self._safe_name(name)
+        src = self._backup().fetch(label, self.show_dir)
+        text = src.read_text(encoding="utf-8")
+        self.show_dir.mkdir(parents=True, exist_ok=True)
+        path = self.show_dir / f"{label}.json"
+        kept = self._keep_version(path, text)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+        r = self._a_load_show(name=label)
+        r["summary"] = f"restored {label!r} from the backup" + (" (the copy that was here is kept as a version)" if kept else "")
+        return r
 
     def _a_rdm_compare(self, devices=None, universes=None, **_):
         """Line up what the lights said over RDM with the patch: each light

@@ -267,6 +267,7 @@ export async function openSettings() {
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
+    ["backup", "Backup", [backupPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -284,6 +285,37 @@ export async function openSettings() {
   show(last);
   const body = h("div.settings", nav, pane);
   modal({ title: "Settings", body, wide: true });
+}
+
+// Backup: every saved show copied off this computer (a dead laptop at a
+// gig must not take the show with it) - a cloud folder or a USB stick.
+function backupPanel() {
+  const box = h("div.backup-box");
+  const folder = h("input", { type: "text", placeholder: "e.g. C:\\Users\\you\\OneDrive or E:\\", spellcheck: "false", style: { width: "100%" } });
+  const places = h("div.chip-row");
+  const status = h("div.out-status");
+  const paint = (r) => {
+    folder.value = r.folder || "";
+    status.replaceChildren(r.on
+      ? h(r.last_error ? "div.out-bad" : "div.out-ok", r.last_error ? `⚠ The last copy failed: ${r.last_error}` : `✓ Every saved show is copied to ${r.where} · last copy ${r.age}`)
+      : h("div.out-bad", "Off: shows live only on this computer."));
+    places.replaceChildren(...(r.places || []).map((p) => h("button.chip", { title: p.path, onclick: () => { folder.value = p.path; } }, p.label)));
+  };
+  const load = async () => { const r = await run("backup", {}, { silentError: true }); if (r.ok) paint(r); };
+  const set = async (value) => { const r = await run("backup", { folder: value }, { toast: true }); if (r.ok) paint(r); };
+  box.append(
+    h("p.muted.small", "Every time a show is saved, it (and its earlier versions) is copied here too, under “Jarvis shows”. "
+      + "A OneDrive, Dropbox or Google Drive folder syncs it to the cloud by itself; a USB stick goes home with you."),
+    h("label.field", h("span", "Backup folder"), folder),
+    places,
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: () => set(folder.value.trim()) }, "Use this folder"),
+      h("button.btn", { onclick: async () => { const r = await run("backup_now", {}, { toast: true }); if (r.ok) load(); } }, "Back up all shows now"),
+      h("button.btn", { onclick: () => import("./dialogs.js").then((m) => m.openBackupRestore()) }, "Restore from backup…"),
+      h("button.btn.ghost", { onclick: () => set("") }, "Turn off")),
+    status);
+  load();
+  return box;
 }
 
 // OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.
