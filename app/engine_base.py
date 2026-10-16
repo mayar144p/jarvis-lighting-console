@@ -54,7 +54,7 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9 _-]{1,40}$")
 # on the output thread's path (build_frames) does I/O.
 SELF_LOCKED_ACTIONS = frozenset({
     "patch_from_csv", "save_show", "load_show", "restore_version",
-    "show_versions", "show_export",
+    "show_versions", "show_export", "backup_now", "backup_restore",
 })
 
 # --- undo ------------------------------------------------------------------
@@ -91,7 +91,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
+    "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -136,6 +136,7 @@ READY_ERROR_WINDOW_S = 60.0
 _READ_ONLY = frozenset({"show_templates", "status", "timecode_ltc", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "show_files", "rdm_compare",
+                        "backup", "backup_now", "backup_shows",
                         "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get"})
 
 # Actions where a run of calls is one intent, so they collapse into a
@@ -655,6 +656,7 @@ ACTIONS = (
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen",
+    "backup", "backup_now", "backup_shows", "backup_restore",
     "osc_out", "osc_send", "timecode_ltc",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
@@ -681,6 +683,7 @@ _OFFISH = re.compile(r"\b(off|blackout|disabled?|stop)\b", re.I)
 
 DMX_TARGET_DEFAULT = {"mode": "auto", "host": "", "transport": ""}
 DMX_TARGET_MODES = ("auto", "node", "broadcast", "usb")
+USB_KINDS = ("usbpro", "opendmx")
 
 
 def clean_dmx_target(raw) -> dict:
@@ -690,13 +693,13 @@ def clean_dmx_target(raw) -> dict:
     mode = str(raw.get("mode") or "auto").lower()
     mode = mode if mode in DMX_TARGET_MODES else "auto"
     transport = str(raw.get("transport") or "").lower()
-    transport = transport if transport in ("artnet", "sacn") else ""
     host = str(raw.get("host") or "").strip()
     if mode == "usb":                  # a USB DMX box: host is its serial port
         from app import usbdmx
-        if usbdmx.valid_port(host):
-            return {"mode": "usb", "host": host, "transport": "usbpro"}
+        if usbdmx.valid_port(host):    # Enttec Pro-style (usbpro) or a cheap Open DMX box (opendmx)
+            return {"mode": "usb", "host": host, "transport": transport if transport in USB_KINDS else "usbpro"}
         mode, host = "auto", ""
+    transport = transport if transport in ("artnet", "sacn") else ""
     if host and host != "multicast":
         try:
             host = str(ipaddress.IPv4Address(host))

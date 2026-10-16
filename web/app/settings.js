@@ -28,8 +28,22 @@ function outputSection(con) {
   // a USB box shows up as a serial port (COM3, /dev/ttyUSB0): one universe
   const usbPort = h("select.select", { "aria-label": "USB interface port" });
   const usbField = h("label.field", h("span", "USB interface"), usbPort);
-  const usbHint = h("p.muted.small", "Enttec DMX USB Pro and compatible boxes (DMXking ultraDMX…). One box is one universe: universe 1. "
-    + "Not in the list? Plug it in, then Re-check network.");
+  // two kinds of box: one with its own processor (Enttec Pro protocol), or
+  // a bare FTDI chip the computer drives itself (the cheap "Open DMX" kind)
+  const usbKind = h("select.select", { "aria-label": "Kind of USB box" },
+    h("option", { value: "usbpro" }, "Enttec DMX USB Pro and compatible (DMXking ultraDMX…)"),
+    h("option", { value: "opendmx" }, "Open DMX / cheap FTDI box (~20 EUR)"));
+  const kindField = h("label.field", h("span", "Kind of box"), usbKind);
+  const usbHint = h("p.muted.small");
+  const syncHint = () => {
+    usbHint.textContent = usbKind.value === "opendmx"
+      ? "Enttec Open DMX USB and the cheap clones: this computer makes the DMX signal itself (~30 times a second). "
+        + "On Windows the box must show up as a COM port: Device Manager -> the USB Serial Converter -> Advanced -> tick Load VCP. "
+        + "One box is one universe: universe 1."
+      : "Boxes with their own processor: Enttec DMX USB Pro / Mk2, DMXking ultraDMX and clones. One box is one universe: universe 1. "
+        + "Not in the list? Plug it in, then Re-check network.";
+  };
+  usbKind.addEventListener("change", syncHint);
   const ip = h("input", { type: "text", inputmode: "decimal", placeholder: "e.g. 2.0.0.10", spellcheck: "false", autocomplete: "off" });
   const proto = h("select.select",
     h("option", { value: "" }, `Default (${(con.transport || "artnet") === "sacn" ? "sACN" : "Art-Net"})`),
@@ -44,7 +58,8 @@ function outputSection(con) {
     ip.disabled = mode.value === "auto";
     ip.parentElement.style.opacity = ip.disabled ? 0.5 : 1;
     ip.parentElement.hidden = proto.parentElement.hidden = usb;
-    usbField.hidden = usbHint.hidden = !usb;
+    usbField.hidden = usbHint.hidden = kindField.hidden = !usb;
+    syncHint();
     findBtn.hidden = usb;
   };
   const showPorts = (net) => {
@@ -53,14 +68,15 @@ function outputSection(con) {
     usbPort.replaceChildren(...(ports.length ? ports : [""]).concat(cur && !ports.includes(cur) ? [cur] : [])
       .map((p) => h("option", { value: p, selected: p === cur }, p || "None found")));
   };
-  const target = () => mode.value === "usb" ? { mode: "usb", host: usbPort.value } :
+  const target = () => mode.value === "usb" ? { mode: "usb", host: usbPort.value, transport: usbKind.value } :
     { mode: mode.value, host: mode.value === "auto" ? "" : ip.value.trim(), transport: proto.value };
   mode.addEventListener("change", syncIp);
 
   const verdict = (net) => {
     const r = net.resolved || {};
-    const lines = [h("div", h("b", "Sending to "), h("span.mono", r.transport === "usbpro" ? r.host : `${r.host}:${r.port}`),
-      ` · ${r.transport === "usbpro" ? "USB interface, universe 1" : r.transport === "sacn" ? "sACN" : "Art-Net"}`,
+    const usbOut = r.transport === "usbpro" || r.transport === "opendmx";
+    const lines = [h("div", h("b", "Sending to "), h("span.mono", usbOut ? r.host : `${r.host}:${r.port}`),
+      ` · ${r.transport === "opendmx" ? "Open DMX box, universe 1" : usbOut ? "USB interface, universe 1" : r.transport === "sacn" ? "sACN" : "Art-Net"}`,
       net.target.mode === "auto" && net.env_host ? " (from DMX_HOST in .env)" : "",
       ` · ${con.hz || 40} Hz`)];
     const c = net.check;
@@ -84,6 +100,7 @@ function outputSection(con) {
       mode.value = net.target.mode;
       ip.value = net.target.host || "";
       proto.value = net.target.mode === "usb" ? "" : net.target.transport || "";
+      if (net.target.mode === "usb") usbKind.value = net.target.transport || "usbpro";
       routes = { ...(net.target.routes || {}) };
       priority.value = net.target.priority ?? "";
       priField.hidden = (net.resolved || {}).transport !== "sacn";
@@ -151,7 +168,7 @@ function outputSection(con) {
     h("div.form-grid.out-grid",
       h("label.field", h("span", "Send DMX to"), mode),
       h("label.field", h("span", "Node / broadcast IP"), ip),
-      h("label.field", h("span", "Protocol"), proto), usbField),
+      h("label.field", h("span", "Protocol"), proto), usbField, kindField),
     usbHint,
     h("div.row-btns",
       h("button.btn.primary", { onclick: () => apply(target()) }, "Apply"),
@@ -250,6 +267,7 @@ export async function openSettings() {
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
+    ["backup", "Backup", [backupPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -267,6 +285,37 @@ export async function openSettings() {
   show(last);
   const body = h("div.settings", nav, pane);
   modal({ title: "Settings", body, wide: true });
+}
+
+// Backup: every saved show copied off this computer (a dead laptop at a
+// gig must not take the show with it) - a cloud folder or a USB stick.
+function backupPanel() {
+  const box = h("div.backup-box");
+  const folder = h("input", { type: "text", placeholder: "e.g. C:\\Users\\you\\OneDrive or E:\\", spellcheck: "false", style: { width: "100%" } });
+  const places = h("div.chip-row");
+  const status = h("div.out-status");
+  const paint = (r) => {
+    folder.value = r.folder || "";
+    status.replaceChildren(r.on
+      ? h(r.last_error ? "div.out-bad" : "div.out-ok", r.last_error ? `⚠ The last copy failed: ${r.last_error}` : `✓ Every saved show is copied to ${r.where} · last copy ${r.age}`)
+      : h("div.out-bad", "Off: shows live only on this computer."));
+    places.replaceChildren(...(r.places || []).map((p) => h("button.chip", { title: p.path, onclick: () => { folder.value = p.path; } }, p.label)));
+  };
+  const load = async () => { const r = await run("backup", {}, { silentError: true }); if (r.ok) paint(r); };
+  const set = async (value) => { const r = await run("backup", { folder: value }, { toast: true }); if (r.ok) paint(r); };
+  box.append(
+    h("p.muted.small", "Every time a show is saved, it (and its earlier versions) is copied here too, under “Jarvis shows”. "
+      + "A OneDrive, Dropbox or Google Drive folder syncs it to the cloud by itself; a USB stick goes home with you."),
+    h("label.field", h("span", "Backup folder"), folder),
+    places,
+    h("div.row-btns",
+      h("button.btn.primary", { onclick: () => set(folder.value.trim()) }, "Use this folder"),
+      h("button.btn", { onclick: async () => { const r = await run("backup_now", {}, { toast: true }); if (r.ok) load(); } }, "Back up all shows now"),
+      h("button.btn", { onclick: () => import("./dialogs.js").then((m) => m.openBackupRestore()) }, "Restore from backup…"),
+      h("button.btn.ghost", { onclick: () => set("") }, "Turn off")),
+    status);
+  load();
+  return box;
 }
 
 // OSC in: TouchOSC, Bitfocus Companion, QLab ... play the show.

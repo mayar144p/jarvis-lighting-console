@@ -74,6 +74,7 @@ CONFIRM = {
 # Never, whatever the request: network, the lock, calibration on the real
 # light, the AI's own preview and undo (the operator has Ctrl+Z).
 NEVER = frozenset({
+    "backup", "backup_now", "backup_shows", "backup_restore",
     "set_dmx_target", "set_lock", "unlock", "set_limits", "clear_limits", "set_orient",
     "remember_open", "light_test", "light_tested", "zero_dark", "motion_set", "motion_test",
     "motion_test_end", "motion_get", "import_scan", "patch_from_csv", "export_patch",
