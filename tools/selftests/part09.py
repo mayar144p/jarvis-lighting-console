@@ -4732,7 +4732,11 @@ def test_dj_master_and_phrase() -> None:
     check("a master that stopped saying so for 3 s no longer counts", f.master(6.5) is None)
     st = T.parse_prodj_status(fakes.build_prodj_status(3, master=False, playing=True, name="XDJ-1000"))
     check("a status packet read: device, name, playing, master",
-          st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False}, str(st))
+          st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False,
+                 "track": 0, "speed": 1.0, "beat": None}, str(st))
+    st = T.parse_prodj_status(fakes.build_prodj_status(2, master=True, track=4711, beat=65, pitch_pct=4.0))
+    check("... and the track's rekordbox id, its beat and the deck's speed",
+          st["track"] == 4711 and st["beat"] == 65 and abs(st["speed"] - 1.04) < 1e-3, str(st))
     check("not a status packet: nothing", T.parse_prodj_status(b"x" * 200) is None and T.parse_prodj_status(fakes.build_prodj_beat(1, 120, 1)) is None)
     c = T.Clock(128, 0.0)
     c.mark_phrase(10.0)
@@ -6741,3 +6745,139 @@ def test_hue() -> None:
                 fake.close()
             except Exception:
                 pass
+
+
+def test_songs() -> None:
+    """A light show per song: the song's parts found from its loudness, an
+    Auto show that follows them, songs kept with their cues and played
+    back, and a CDJ (Pro DJ Link) starting the song tied to its track."""
+    print("A light show per song")
+    import shutil
+    import subprocess
+    from app import autoshow
+    from app import engine as eng
+    from app import tempo as T
+
+    node = shutil.which("node")
+    if node:
+        js = (f"import({json.dumps((ROOT / 'web' / 'app' / 'songparts.js').as_uri())}).then(m=>{{"
+              "const bpm=128,bar=240/bpm,rate=20,env=[];"
+              "const plan=[[16,.3],[8,.6],[16,1],[16,.35],[8,.65],[16,1],[16,.25]];let k=0;"
+              "for(const [b,l] of plan)for(let i=0;i<b*bar*rate;i++)env.push(l*(0.9+0.2*((k++*7919)%13)/13));"
+              "console.log(JSON.stringify({club:m.songParts(env,rate,bpm),flat:m.songParts(new Array(4000).fill(.5),rate,bpm),"
+              "none:m.songParts([],rate,bpm)}))})")
+        out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True,
+                                        timeout=30).stdout or "{}")
+        check("a club track's parts are found: intro, build, drop, breakdown, build, drop, outro",
+              [p["name"] for p in out.get("club", [])] == ["Intro", "Build", "Drop", "Breakdown", "Build 2", "Drop 2", "Outro"],
+              out.get("club"))
+        bar = 240 / 128
+        check("... at the right bars (16, 24, 40, 56, 64, 80)",
+              [round(p["t"] / bar) for p in out["club"]] == [0, 16, 24, 40, 56, 64, 80], [p["t"] for p in out["club"]])
+        check("a song as loud all through is one part (nothing made up); no audio, no parts",
+              len(out["flat"]) == 1 and out["none"] == [], out)
+    else:
+        print("   (no Node.js here: the parts finder is not run)")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        shows = tmp / "shows"
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=shows)
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            bar = 240 / 128
+            marks = [{"t": 0, "name": "Intro"}, {"t": 16 * bar, "name": "Build"}, {"t": 24 * bar, "name": "Drop"},
+                     {"t": 40 * bar, "name": "Outro"}]
+            e.act("timeline_set", bpm=128, length=round(56 * bar, 2), markers=marks)
+            a = autoshow.analyse(e)
+            secs = autoshow.song_sections(a)
+            check("Auto show takes the song's own parts from the markers (bars, energy)",
+                  [(n, b) for n, b, _ in secs] == [("Intro", 16), ("Build", 8), ("Drop", 16), ("Outro", 16)]
+                  and dict((n, en) for n, _, en in secs)["Drop"] == 1.0, secs)
+            d = autoshow.fallback_design(a)
+            check("... and its show has one section per part", [s["name"] for s in d["sections"]] == ["Intro", "Build", "Drop", "Outro"],
+                  [s["name"] for s in d["sections"]])
+            autoshow.build(e, d, playback=1)
+            check("the cues start where the parts do",
+                  [round(c["t"] / bar) for c in next(t for t in e.timeline["tracks"] if t["kind"] == "cue")["clips"]] == [0, 16, 24, 40],
+                  "")
+            r = e.act("song_save", name="Track A")
+            check("keep it as a song", r.get("ok") and r["songs"]["songs"][0]["name"] == "Track A", r)
+            a_cues = [c["name"] for c in e.playbacks[0]["stack"]]
+            # a second song, built on the same playback
+            e.act("timeline_set", bpm=100, length=120, markers=[{"t": 0, "name": "Intro"}, {"t": 38.4, "name": "Drop"}])
+            autoshow.build(e, autoshow.fallback_design(autoshow.analyse(e)), playback=1)
+            e.act("song_save", name="Track B")
+            check("a second song's show replaced the first one's cues on the desk",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], "")
+            sid = {s["name"]: s["id"] for s in e.songs_public()["songs"]}
+            r = e.act("song_load", id=sid["Track A"])
+            check("playing Track A brings back its own cues and timeline",
+                  [c["name"] for c in e.playbacks[0]["stack"]] == a_cues and e.timeline["bpm"] == 128, r)
+            e.act("timeline_set", timeline={"tracks": []})
+            r = e.act("song_save", name="x")
+            check("an empty timeline can't be kept as a song", not r.get("ok") and "empty" in (r.get("error") or ""), r)
+            e.act("song_load", id=sid["Track A"])
+            e.act("song_delete", id=sid["Track B"])
+            e.act("undo")
+            check("a deleted song comes back with Ctrl+Z", len(e.songs_public()["songs"]) == 2, e.songs_public())
+            check("tying a song with no deck playing says so", "master deck" in (e.act("song_link", id=sid["Track A"]).get("error") or ""), "")
+            e.act("song_link", id=sid["Track A"], track=4711, first_beat=0.0)
+            e.act("song_link", id=sid["Track B"], track=99)
+            e.act("save_show", name="set")
+            e.act("song_delete", id=sid["Track B"])
+            e.act("load_show", name="set")
+            check("songs are saved with the show, tied tracks and all",
+                  [(s["name"], s["track"]) for s in e.songs_public()["songs"]] == [("Track A", 4711), ("Track B", 99)],
+                  e.songs_public())
+
+            # the decks: a CDJ plays the tied tracks
+            e.song_follow = True                    # (the action also starts the Pro DJ Link listener)
+            deck = lambda **kw: e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(1, master=True, **kw)))
+            deck(track=4711, beat=1, playing=True)
+            check("the master deck plays track 4711: Track A starts, from its first beat",
+                  e.songs_public()["following"] == sid["Track A"] and e.tl["playing"] and e._tl_now() < 0.3
+                  and e.timeline["bpm"] == 128, (e.songs_public(), e._tl_now()))
+            check("... and the desk keeps quiet: the deck plays the music", e._tl_transport()["deck"] is True, "")
+            deck(track=4711, beat=33, playing=True)
+            check("the DJ jumps ahead to beat 33: the song follows (32 beats on)",
+                  abs(e._tl_now() - 32 * 60 / 128) < 0.1, e._tl_now())
+            deck(track=4711, beat=34, playing=True, pitch_pct=4.0)
+            check("the deck pitched +4%: the song runs 4% faster", abs(e.tl.get("rate", 1) - 1.04) < 1e-3, e.tl.get("rate"))
+            e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(2, master=False, track=99, beat=1)))
+            check("another (not master) deck loading a track changes nothing",
+                  e.songs_public()["following"] == sid["Track A"], "")
+            deck(track=4711, beat=34, playing=False)
+            check("the deck pauses: so does the song", not e.tl["playing"], "")
+            deck(track=99, beat=1, playing=True)
+            check("the next track (99): Track B takes over, its own cues on the desk",
+                  e.songs_public()["following"] == sid["Track B"] and e.tl["playing"]
+                  and [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], e.songs_public())
+            deck(track=5, beat=1, playing=True)
+            check("a track with no song: the song stops", not e.tl["playing"] and e.songs_public()["following"] is None, "")
+            e.act("song_follow", state=False)
+            check("following off: back to normal speed", e.tl.get("rate", 1.0) == 1.0 and not e._tl_transport()["deck"], "")
+        finally:
+            e.shutdown()
+
+
+def test_scratch_show_dir() -> None:
+    """Tests and check tools run on scratch data: a .env's relative show
+    folder ("data/shows", as .env.example has it) follows CONSOLE_DATA_DIR,
+    so a check never writes into the real data/ folder."""
+    print("Scratch data keeps the shows too")
+    import os
+    import subprocess
+    import sys
+    with tempfile.TemporaryDirectory() as td:
+        env = dict(os.environ, CONSOLE_DATA_DIR=td, CONSOLE_SHOW_DIR="data/shows")
+        got = subprocess.run([sys.executable, "-c", "from app import config; print(config.CONSOLE_SHOW_DIR)"],
+                             cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60).stdout.strip()
+        check("CONSOLE_SHOW_DIR=data/shows with a scratch data folder: the shows are in the scratch folder",
+              Path(got).resolve() == (Path(td) / "shows").resolve(), got)
+        env["CONSOLE_SHOW_DIR"] = "myshows"
+        got = subprocess.run([sys.executable, "-c", "from app import config; print(config.CONSOLE_SHOW_DIR)"],
+                             cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60).stdout.strip()
+        check("another relative folder still sits next to the app", Path(got).resolve() == (ROOT / "myshows").resolve(), got)

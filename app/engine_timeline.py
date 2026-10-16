@@ -23,7 +23,7 @@ class TimelineMixin:
         st = self.tl
         if not st["playing"]:
             return st["pos"]
-        return st["pos0"] + (self._clock() - st["t0"])
+        return st["pos0"] + (self._clock() - st["t0"]) * st.get("rate", 1.0)
 
     def _timeline_public(self) -> dict:
         return {**self.timeline, "transport": self._tl_transport()}
@@ -32,7 +32,10 @@ class TimelineMixin:
         return {"timecode": self.timecode_public(),
                 "playing": self.tl["playing"],
                 "pos": round(min(self._tl_now(), self.timeline["length"]), 3),
-                "length": self.timeline["length"], "loop": self.timeline["loop"]}
+                "length": self.timeline["length"], "loop": self.timeline["loop"],
+                "rate": round(self.tl.get("rate", 1.0), 4),
+                # a song following a DJ deck: the deck plays the music, not the desk
+                "deck": bool((self.__dict__.get("_song_state") or {}).get("song"))}
 
     def _tl_set_doc(self, doc: dict) -> None:
         self.timeline = tl_mod.normalise(doc)

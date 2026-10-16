@@ -1817,3 +1817,9 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .hue-lamps th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; }
 .hue-lamps td { padding: 4px 6px; border-top: 1px solid var(--border); vertical-align: middle; }
 .hue-lamps select { max-width: 220px; }
+
+/* Songs */
+.songs-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.songs-table td { padding: 6px; border-top: 1px solid var(--border); vertical-align: middle; }
+.songs-table tr.is-current td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.songs-table .song-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }

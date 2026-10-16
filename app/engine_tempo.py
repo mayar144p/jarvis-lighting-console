@@ -138,6 +138,10 @@ class TempoMixin:
         """A CDJ's status (UDP 50002): who's master, who's playing."""
         with self.lock:
             self._decks().saw_status(st, time.monotonic())
+            try:
+                self.songs_dj_status(st)
+            except (ValueError, KeyError, TypeError):
+                pass                           # a song that can't play never stops the listener
 
     def _decks(self) -> "tempo_mod.DeckFollower":
         d = self.__dict__.get("_deck_follower")

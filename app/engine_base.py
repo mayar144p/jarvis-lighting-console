@@ -92,7 +92,7 @@ UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash",
-    "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
+    "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "song_follow", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
@@ -659,6 +659,7 @@ ACTIONS = (
     "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen",
     "backup", "backup_now", "backup_shows", "backup_restore",
     "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "hue_link",
+    "song_save", "song_load", "song_rename", "song_delete", "song_link", "song_follow",
     "osc_out", "osc_send", "timecode_ltc",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",

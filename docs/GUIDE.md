@@ -156,6 +156,33 @@ another button or the whole page; what the buttons do stays the same.
   stutters, and the audio follows it. Seeking puts the rig where it would be
   at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
 
+### A light show per song
+
+A song can keep its own show, so the same track looks the same every night:
+
+1. **♪ Audio → Add audio**, then **Find the song's parts**: the desk listens
+   to how loud each 8-bar phrase is and puts *Intro, Build, Drop, Breakdown,
+   Outro* markers on the timeline (move or rename them if it guessed wrong;
+   your own markers named *verse, chorus, bridge…* work too).
+2. **Auto show** now builds one section per part, at those very bars: the
+   drop hits where the drop is.
+3. **Songs → Keep the timeline as a song**. The song keeps the timeline
+   (music, markers, tracks) and the cue lists its cue tracks play.
+
+**Songs** lists them: **Play** puts a song's timeline and cues back and
+plays it; **Edit** puts it on the timeline to change, then **Update**. Any
+number of songs share the same playback: each brings its own cues with it.
+Ctrl+Z undoes keeping, deleting and renaming.
+
+**With Pro DJ Link (CDJs / XDJs):** play the track on the tempo-master deck
+and press **Tie to deck** next to its song (the desk remembers the track's
+rekordbox id - the same USB stick gives the same id every night). Tick
+**Songs follow the DJ decks**: when the master deck plays a tied track, its
+song starts from where the deck is, runs at the deck's speed (pitch
+included), jumps when the DJ jumps, pauses when the deck pauses, and stops
+when the next track has no song. The deck plays the music; the desk stays
+quiet.
+
 ### Turned trusses and the room map
 
 Turn a truss in Arrange and the lights on it turn with it, just as the real
