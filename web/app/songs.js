@@ -19,9 +19,9 @@ export async function keepAsSong() {
   return run("song_save", { name }, { toast: true });
 }
 
-export function openSongs() {
+export function openSongs(fresh = null) {
   let close = null;
-  let latest = null;                   // the newest list an action answered with
+  let latest = fresh && fresh.songs ? fresh : null;   // the newest list an action answered with
   const body = h("div.songs-box");
   const act = (a, p, o) => run(a, p, o).then((r) => { if (r && r.songs) latest = r.songs; paint(); return r; });
   const paint = () => {
@@ -61,7 +61,7 @@ export function openSongs() {
         h("button.btn.primary", { onclick: () => keepAsSong().then((r) => { if (r && r.songs) latest = r.songs; paint(); }) }, "Keep the timeline as a song"),
         s.songs.length ? h("button.btn", { onclick: () => { close(); openSongShows(); } }, "Make shows for songs…") : "",
         h("button.btn", { title: "Songs from the DJ's USB stick: rekordbox's parts and tempo, no music files",
-          onclick: () => { close(); import("./rekordbox.js").then((m) => m.openRekordboxImport(openSongs)); } }, "Add songs from a rekordbox USB…"),
+          onclick: () => { close(); import("./rekordbox.js").then((m) => m.openRekordboxImport((list) => openSongs(list))); } }, "Add songs from a rekordbox USB…"),
         cur ? h("button.btn", { onclick: () => act("song_save", { id: cur.id }, { toast: true }) }, `Update “${cur.name}”`) : ""),
       h("label.check", follow, h("span", "Songs follow the DJ decks (Pro DJ Link)")),
       h("p.muted.small", s.follow ? (s.deck ? `The master deck is playing track ${s.deck}.` : "Waiting for the master deck to play a track.")

@@ -63,7 +63,7 @@ export function openRekordboxImport(done) {
     const chosen = [...list.querySelectorAll("input[data-i]:checked")].map((c) => found[+c.dataset.i]);
     if (!chosen.length) { toast("Tick a track"); return; }
     add.disabled = true;
-    let added = 0;
+    let added = 0, songs = null;          // songs: the desk's list as the last batch left it
     const failed = [];
     for (let i = 0; i < chosen.length; i += 20) {
       status.textContent = `Adding ${Math.min(i + 20, chosen.length)} of ${chosen.length}…`;
@@ -80,10 +80,11 @@ export function openRekordboxImport(done) {
       failed.push(...(r.failed || []));
       if (r.ok === false && !(r.failed || []).length) failed.push({ name: "", error: d.error || r.error });
       added += (r.added || []).length + (r.updated || []).length;
+      if (r.songs) songs = r.songs;
     }
     status.textContent = `${added} song(s) added.` + (failed.length ? ` ${failed.length} not: ${failed.slice(0, 3).map((f) => `${f.name} (${f.error})`).join("; ")}` : "");
     toast(`${added} song(s) from rekordbox - next: Make shows for songs`, added ? "ok" : "bad", 6000);
     add.disabled = false;
-    if (added && done) { close(); done(); }
+    if (added && done) { close(); done(songs); }
   });
 }
