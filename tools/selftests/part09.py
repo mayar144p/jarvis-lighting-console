@@ -6855,8 +6855,43 @@ def test_songs() -> None:
             check("the next track (99): Track B takes over, its own cues on the desk",
                   e.songs_public()["following"] == sid["Track B"] and e.tl["playing"]
                   and [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], e.songs_public())
+            deck(track=4711, beat=1, playing=True)
+            pb1 = e.playbacks[0]
+            check("Track B to Track A: A's first look fades in from B's (no cut to black)",
+                  pb1["active"] and pb1["fade"] and pb1["fade"]["dur"] >= 2.0 and pb1["fade"]["from"], pb1.get("fade"))
+            # between songs: the autopilot's own looks (playback 3)
+            check("the autopilot can't fill in while it shares the songs' playback",
+                  "playback 1" in (e.songs_public()["fallback_problem"] or ""), e.songs_public()["fallback_problem"])
+            e.act("autopilot", playback=3)
+            check("... nor with fewer than 2 looks", "2 looks" in (e.songs_public()["fallback_problem"] or ""), "")
+            e.act("select_all")
+            for lvl, nm in ((40, "Warm"), (90, "Busy")):
+                e.act("set_intensity", level=lvl)
+                e.act("record_cue", playback=3, name=nm)
+            e.act("clear_programmer")
+            check("with its own playback and looks, it can", e.songs_public()["fallback_problem"] is None, "")
             deck(track=5, beat=1, playing=True)
-            check("a track with no song: the song stops", not e.tl["playing"] and e.songs_public()["following"] is None, "")
+            pb3 = e.playbacks[2]
+            check("a track with no song: the song stops, its look fades out",
+                  not e.tl["playing"] and e.songs_public()["following"] is None
+                  and pb1["level"] == 0 and pb1.get("xfade"), (pb1["level"], pb1.get("xfade")))
+            check("... and the autopilot takes over, fading its looks in",
+                  e.autopilot_public()["on"] and pb3["active"] and pb3["level"] == 100 and pb3.get("xfade")
+                  and e.songs_public()["fallback"], (e.autopilot_public(), pb3["level"]))
+            deck(track=4711, beat=40, playing=True)
+            check("a tied track again: the autopilot hands back (fades out), the song fades in",
+                  not e.autopilot_public()["on"] and pb3["level"] == 0 and pb1["level"] == 100 and pb1.get("xfade")
+                  and e.songs_public()["following"] == sid["Track A"], (pb3["level"], pb1["level"]))
+            ok, said = e.osc_handle("/jarvis/song", ["track b"])
+            check("a laptop DJ (no Pro DJ Link): /jarvis/song <name> from a Stream Deck key plays it",
+                  ok and e.__dict__.get("song_current") == sid["Track B"] and e.tl["playing"], said)
+            ok, said = e.osc_handle("/jarvis/song", ["nope"])
+            check("... a song that isn't there is refused", not ok and "no song" in said, said)
+            deck(track=4711, beat=41, playing=True)
+            e.act("song_follow", state=None, between="hold")
+            deck(track=6, beat=1, playing=True)
+            check("'hold' between songs: the last look stays, no autopilot",
+                  not e.autopilot_public()["on"] and pb1["level"] == 100 and pb1["active"], "")
             e.act("song_follow", state=False)
             check("following off: back to normal speed", e.tl.get("rate", 1.0) == 1.0 and not e._tl_transport()["deck"], "")
         finally:

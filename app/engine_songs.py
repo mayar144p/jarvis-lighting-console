@@ -26,6 +26,7 @@ from app.engine_base import _truthy
 
 MAX_SONGS = 200
 DRIFT_S = 0.25          # re-seek a following song when it is this far off the deck
+XFADE_S = 2.0           # one song's look into the next, or into the autopilot
 
 
 def _clean_name(name, fallback: str) -> str:
@@ -52,7 +53,9 @@ class SongsMixin:
                           for s in self._songs()],
                 "current": self.__dict__.get("song_current"),
                 "follow": bool(self.__dict__.get("song_follow")),
-                "following": st.get("song"), "deck": st.get("deck_track")}
+                "following": st.get("song"), "deck": st.get("deck_track"),
+                "between": self.__dict__.get("song_between", "autopilot"),
+                "fallback": bool(st.get("auto")), "fallback_problem": self._song_fallback_problem()}
 
     # -- keep / play ---------------------------------------------------------
     def _a_song_save(self, name=None, id=None, **_):
@@ -109,6 +112,12 @@ class SongsMixin:
         s = self._song(id)
         self._song_apply(s)
         self._song_rate(1.0)
+        # started by hand: following the decks, the master deck's track
+        # decides again at its next report (the deck wins)
+        st = self.__dict__.get("_song_state")
+        if st:
+            st["song"] = None
+            self._song_fallback(False)
         if _truthy(play):
             self._a_timeline_play(at=float(at) if at is not None else 0.0)
         return {"song": s["id"], "songs": self.songs_public(), "transport": self._tl_transport(),
@@ -150,8 +159,16 @@ class SongsMixin:
         s["deck"] = {"track": t, "first_beat": round(max(0.0, min(fb, 60.0)), 3)}
         return {"songs": self.songs_public(), "summary": f"\"{s['name']}\" plays when track {t} is on the master deck"}
 
-    def _a_song_follow(self, state=True, **_):
-        """Songs follow the decks (Pro DJ Link) on / off."""
+    def _a_song_follow(self, state=True, between=None, **_):
+        """Songs follow the decks (Pro DJ Link) on / off.  between: what the
+        lights do while the deck plays a track with no song - "autopilot"
+        (its looks, picked by the music) or "hold" (the last look stays)."""
+        if between is not None:
+            if between not in ("autopilot", "hold"):
+                raise ValueError("between songs: autopilot or hold")
+            self.song_between = between
+        if state is None:
+            return {"songs": self.songs_public(), "summary": f"between songs: {self.song_between}"}
         on = _truthy(state)
         self.song_follow = on
         err = None
@@ -161,6 +178,7 @@ class SongsMixin:
             st = self.__dict__.get("_song_state") or {}
             if st.get("song") and self.tl["playing"]:
                 self._a_timeline_pause()
+            self._song_fallback(False)
             self._song_state = {}
             self._song_rate(1.0)
         if err:
@@ -181,9 +199,53 @@ class SongsMixin:
             st["t0"] = now
         st["rate"] = rate
 
+    def _song_pbs(self, song: dict) -> list[dict]:
+        out = []
+        for n in song.get("cues") or {}:
+            try:
+                out.append(self._playback(int(n)))
+            except (ValueError, TypeError):
+                continue
+        return out
+
+    def _song_fallback_problem(self) -> str | None:
+        """Why the autopilot can't fill in between songs, or None."""
+        if self.__dict__.get("song_between", "autopilot") != "autopilot":
+            return None
+        ap = self._ap()
+        song_pbs = {int(n) for s in self._songs() for n in (s.get("cues") or {}) if str(n).isdigit()}
+        if ap["playback"] in song_pbs:
+            return (f"the autopilot runs playback {ap['playback']}, which the songs use: "
+                    "give it a playback of its own (its looks) in the autopilot's settings")
+        if len(self.playbacks[ap["playback"] - 1]["stack"]) < 2:
+            return f"the autopilot's playback {ap['playback']} needs at least 2 looks (cues)"
+        return None
+
+    def _song_fallback(self, on: bool) -> None:
+        """Between songs, the autopilot's looks (faded in); off again, faded out."""
+        st = self.__dict__.setdefault("_song_state", {})
+        ap = self._ap()
+        if on:
+            if st.get("auto") or ap["on"] or self._song_fallback_problem() \
+                    or self.__dict__.get("song_between", "autopilot") != "autopilot":
+                return
+            pb = self._playback(ap["playback"])
+            self._a_playback_level(playback=pb["n"], level=0)
+            self._a_autopilot(state=True)
+            if not pb["active"]:
+                self._goto(pb, 0, self._clock())        # a look at once, not at the next pick
+            self._a_playback_level(playback=pb["n"], level=100, xfade=XFADE_S)
+            st["auto"] = True
+        elif st.get("auto"):
+            self._a_autopilot(state=False)
+            self._a_playback_level(playback=ap["playback"], level=0, xfade=XFADE_S)
+            st["auto"] = False
+
     def songs_dj_status(self, status: dict) -> None:
         """A CDJ's status (called with the lock held): the tempo master's
-        track, beat and speed drive the song tied to that track."""
+        track, beat and speed drive the song tied to that track.  A new song
+        fades in from the look before it; a track with no song hands over
+        to the autopilot (or holds the last look)."""
         st = self.__dict__.setdefault("_song_state", {})
         master = self._decks().master(time.monotonic())
         if status.get("device") != master:
@@ -194,21 +256,44 @@ class SongsMixin:
             return
         song = next((s for s in self._songs() if track and (s.get("deck") or {}).get("track") == track), None)
         if song is None:
-            if st.get("song") and self.tl["playing"]:
-                self._a_timeline_pause()         # the DJ moved on to a track with no song
-            st["song"] = None
+            if st.get("song"):
+                # the DJ moved on to a track with no song
+                if self.tl["playing"]:
+                    self._a_timeline_pause()
+                old = next((s for s in self._songs() if s["id"] == st["song"]), None)
+                if old and self.__dict__.get("song_between", "autopilot") == "autopilot" \
+                        and not self._song_fallback_problem():
+                    for pb in self._song_pbs(old):
+                        self._a_playback_level(playback=pb["n"], level=0, xfade=XFADE_S)
+                st["song"] = None
+            if status.get("playing"):
+                self._song_fallback(True)
             return
         bpm = float(song["timeline"].get("bpm") or 120.0)
         first = float(song["deck"].get("first_beat") or 0.0)
         beat = status.get("beat")
         want = first + (beat - 1) * 60.0 / bpm if beat and beat > 0 else None
         if st.get("song") != song["id"]:
+            now = self._clock()
+            # what is on stage now, so the new song's look fades in from it
+            before = {pb["n"]: (self._pb_values(pb, now) if pb["active"] and pb["index"] >= 0 else {},
+                                self._pb_level_now(pb, now)) for pb in self._song_pbs(song)}
+            self._song_fallback(False)
             self._song_apply(song)
             st["song"] = song["id"]
             st["beat"] = None
             if status.get("playing"):
                 self._song_rate(status.get("speed") or 1.0)
                 self._a_timeline_play(at=want or 0.0)
+            for pb in self._song_pbs(song):
+                was, lvl = before.get(pb["n"], ({}, 100))
+                if pb["active"] and pb.get("fade") is not None:
+                    pb["fade"]["from"] = was
+                    pb["fade"]["dur"] = max(float(pb["fade"].get("dur") or 0.0), XFADE_S)
+                    pb["fade"]["parts"] = {}
+                if pb.get("level", 100) < 100:          # faded out (or fading out) between songs
+                    pb["level"], pb["xfade"] = lvl, None    # from where it is now, back up
+                    self._a_playback_level(playback=pb["n"], level=100, xfade=XFADE_S)
             return
         self._song_rate(status.get("speed") or 1.0)
         if not status.get("playing"):

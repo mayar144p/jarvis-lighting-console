@@ -183,6 +183,22 @@ included), jumps when the DJ jumps, pauses when the deck pauses, and stops
 when the next track has no song. The deck plays the music; the desk stays
 quiet.
 
+**Changing songs.** The desk follows the deck that is tempo master, so in a
+mix the lights change when the master moves to the new deck (most DJs hand
+it over during the mix). The new song's look fades in from the one before
+over 2 seconds - no cut to black. **Between songs** (the master plays a
+track with no song) the Songs window offers:
+- **Autopilot** (default): the song's look fades out and the autopilot's
+  own looks fade in, picked by the music, until a tied track plays again.
+  Give the autopilot a playback of its own with a few looks (cues); the
+  Songs window says so if it shares the songs' playback.
+- **Hold the last look**: the lights stay as they were.
+
+**A laptop DJ** (Serato, Traktor, rekordbox on a laptop) sends no track
+over the network, so songs don't start by themselves. Start one with
+**Play**, or from a Stream Deck / Companion key with the OSC message
+`/jarvis/song <name>`; run the autopilot for the rest.
+
 ### Turned trusses and the room map
 
 Turn a truss in Arrange and the lights on it turn with it, just as the real

@@ -59,7 +59,16 @@ export function openSongs() {
         cur ? h("button.btn", { onclick: () => act("song_save", { id: cur.id }, { toast: true }) }, `Update “${cur.name}”`) : ""),
       h("label.check", follow, h("span", "Songs follow the DJ decks (Pro DJ Link)")),
       h("p.muted.small", s.follow ? (s.deck ? `The master deck is playing track ${s.deck}.` : "Waiting for the master deck to play a track.")
-        : "On: when the tempo master CDJ plays a tied track, its song starts in step with the deck, at the deck's speed, and pauses with it."),
+        : "On: when the tempo master CDJ plays a tied track, its song starts in step with the deck, at the deck's speed, and pauses with it. "
+          + "The next song's look fades in from the one before (2 s)."),
+      h("div.look-row", h("span", "Between songs"),
+        h("div.seg", ...[["autopilot", "Autopilot"], ["hold", "Hold the last look"]].map(([k, label]) =>
+          h("button" + ((s.between || "autopilot") === k ? ".on" : ""), { type: "button",
+            onclick: () => act("song_follow", { state: null, between: k }) }, label))),
+        h("span.muted.small", (s.between || "autopilot") === "autopilot"
+          ? "a track with no song: the autopilot's looks fade in, picked by the music; the next tied track takes over again"
+          : "a track with no song: the last look stays")),
+      s.fallback_problem ? h("p.small.out-bad", `⚠ The autopilot can't fill in: ${s.fallback_problem}.`) : "",
       s.songs.length ? h("table.songs-table", h("tbody", ...rows)) : h("p.muted", "No songs yet."));
   };
   paint();
