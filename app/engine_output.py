@@ -13,6 +13,7 @@ from app import config, netif
 from app.artnet import ArtNetSender
 from app.engine_base import (
     DMX_TARGET_MODES,
+    USB_KINDS,
     _clamp,
     _truthy,
     clean_dmx_target,
@@ -229,7 +230,7 @@ class OutputMixin:
             return self._sender
         transport, host, port = self._dmx_resolved()
         cur = self._sender
-        routes = {int(k): v for k, v in (self.dmx_target.get("routes") or {}).items()} if transport != "usbpro" else {}
+        routes = {int(k): v for k, v in (self.dmx_target.get("routes") or {}).items()} if transport not in USB_KINDS else {}
         pri = self.dmx_target.get("priority", config.SACN_PRIORITY)
         if cur is not None and (getattr(cur, "transport", "artnet"), cur.host,
                                 cur.port) == (transport, host, port) and getattr(cur, "priority", pri) == pri:
@@ -240,6 +241,9 @@ class OutputMixin:
         if transport == "usbpro":
             from app.usbdmx import UsbProSender
             new = UsbProSender(host, self.dry_run)
+        elif transport == "opendmx":
+            from app.usbdmx import OpenDmxSender
+            new = OpenDmxSender(host, self.dry_run)
         elif transport == "sacn":
             new = SacnSender(host, port, config.DMX_NET, self.dry_run,
                              priority=self.dmx_target.get("priority", config.SACN_PRIORITY),
@@ -268,7 +272,7 @@ class OutputMixin:
         """
         t = self.dmx_target
         if t.get("mode") == "usb":
-            return "usbpro", t["host"], 0
+            return t.get("transport") or "usbpro", t["host"], 0
         transport = t.get("transport") or config.DMX_TRANSPORT
         if transport == config.DMX_TRANSPORT:
             port = config.DMX_PORT
@@ -341,15 +345,19 @@ class OutputMixin:
         if cur["mode"] not in DMX_TARGET_MODES:
             raise ValueError("mode is auto, node, broadcast or usb")
         if cur["mode"] == "usb":
-            # a USB DMX interface (Enttec DMX USB Pro and compatible) on a serial port
+            # a USB DMX interface on a serial port: Enttec DMX USB Pro and
+            # compatible (usbpro), or a cheap Open DMX / FTDI box (opendmx)
             from app import usbdmx
             if not usbdmx.valid_port(cur["host"]):
                 raise ValueError("give the USB interface's port, e.g. COM3 or /dev/ttyUSB0")
+            if cur.get("transport") not in USB_KINDS:
+                cur["transport"] = "usbpro"
             self.dmx_target = clean_dmx_target(cur)
+            kind = "Open DMX box" if self.dmx_target["transport"] == "opendmx" else "USB interface"
             return {"target": dict(self.dmx_target),
-                    "resolved": {"transport": "usbpro", "host": cur["host"], "port": 0},
-                    "summary": f"DMX output: USB interface on {cur['host']} (universe 1)"}
-        if cur["transport"] == "usbpro":
+                    "resolved": {"transport": self.dmx_target["transport"], "host": cur["host"], "port": 0},
+                    "summary": f"DMX output: {kind} on {cur['host']} (universe 1)"}
+        if cur["transport"] in USB_KINDS:
             cur["transport"] = ""
         if cur["transport"] not in ("", "artnet", "sacn"):
             raise ValueError("transport is artnet or sacn")
@@ -385,7 +393,7 @@ class OutputMixin:
             transport, host, port = self._dmx_resolved()
         verdict = None
         from app import usbdmx
-        if transport == "usbpro":
+        if transport in USB_KINDS:
             ports = usbdmx.list_ports()
             verdict = {"ok": host in ports, "via": None, "suggest": None,
                        "message": "the USB interface is plugged in" if host in ports else

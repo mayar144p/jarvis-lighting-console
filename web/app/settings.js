@@ -28,8 +28,22 @@ function outputSection(con) {
   // a USB box shows up as a serial port (COM3, /dev/ttyUSB0): one universe
   const usbPort = h("select.select", { "aria-label": "USB interface port" });
   const usbField = h("label.field", h("span", "USB interface"), usbPort);
-  const usbHint = h("p.muted.small", "Enttec DMX USB Pro and compatible boxes (DMXking ultraDMX…). One box is one universe: universe 1. "
-    + "Not in the list? Plug it in, then Re-check network.");
+  // two kinds of box: one with its own processor (Enttec Pro protocol), or
+  // a bare FTDI chip the computer drives itself (the cheap "Open DMX" kind)
+  const usbKind = h("select.select", { "aria-label": "Kind of USB box" },
+    h("option", { value: "usbpro" }, "Enttec DMX USB Pro and compatible (DMXking ultraDMX…)"),
+    h("option", { value: "opendmx" }, "Open DMX / cheap FTDI box (~20 EUR)"));
+  const kindField = h("label.field", h("span", "Kind of box"), usbKind);
+  const usbHint = h("p.muted.small");
+  const syncHint = () => {
+    usbHint.textContent = usbKind.value === "opendmx"
+      ? "Enttec Open DMX USB and the cheap clones: this computer makes the DMX signal itself (~30 times a second). "
+        + "On Windows the box must show up as a COM port: Device Manager -> the USB Serial Converter -> Advanced -> tick Load VCP. "
+        + "One box is one universe: universe 1."
+      : "Boxes with their own processor: Enttec DMX USB Pro / Mk2, DMXking ultraDMX and clones. One box is one universe: universe 1. "
+        + "Not in the list? Plug it in, then Re-check network.";
+  };
+  usbKind.addEventListener("change", syncHint);
   const ip = h("input", { type: "text", inputmode: "decimal", placeholder: "e.g. 2.0.0.10", spellcheck: "false", autocomplete: "off" });
   const proto = h("select.select",
     h("option", { value: "" }, `Default (${(con.transport || "artnet") === "sacn" ? "sACN" : "Art-Net"})`),
@@ -44,7 +58,8 @@ function outputSection(con) {
     ip.disabled = mode.value === "auto";
     ip.parentElement.style.opacity = ip.disabled ? 0.5 : 1;
     ip.parentElement.hidden = proto.parentElement.hidden = usb;
-    usbField.hidden = usbHint.hidden = !usb;
+    usbField.hidden = usbHint.hidden = kindField.hidden = !usb;
+    syncHint();
     findBtn.hidden = usb;
   };
   const showPorts = (net) => {
@@ -53,14 +68,15 @@ function outputSection(con) {
     usbPort.replaceChildren(...(ports.length ? ports : [""]).concat(cur && !ports.includes(cur) ? [cur] : [])
       .map((p) => h("option", { value: p, selected: p === cur }, p || "None found")));
   };
-  const target = () => mode.value === "usb" ? { mode: "usb", host: usbPort.value } :
+  const target = () => mode.value === "usb" ? { mode: "usb", host: usbPort.value, transport: usbKind.value } :
     { mode: mode.value, host: mode.value === "auto" ? "" : ip.value.trim(), transport: proto.value };
   mode.addEventListener("change", syncIp);
 
   const verdict = (net) => {
     const r = net.resolved || {};
-    const lines = [h("div", h("b", "Sending to "), h("span.mono", r.transport === "usbpro" ? r.host : `${r.host}:${r.port}`),
-      ` · ${r.transport === "usbpro" ? "USB interface, universe 1" : r.transport === "sacn" ? "sACN" : "Art-Net"}`,
+    const usbOut = r.transport === "usbpro" || r.transport === "opendmx";
+    const lines = [h("div", h("b", "Sending to "), h("span.mono", usbOut ? r.host : `${r.host}:${r.port}`),
+      ` · ${r.transport === "opendmx" ? "Open DMX box, universe 1" : usbOut ? "USB interface, universe 1" : r.transport === "sacn" ? "sACN" : "Art-Net"}`,
       net.target.mode === "auto" && net.env_host ? " (from DMX_HOST in .env)" : "",
       ` · ${con.hz || 40} Hz`)];
     const c = net.check;
@@ -84,6 +100,7 @@ function outputSection(con) {
       mode.value = net.target.mode;
       ip.value = net.target.host || "";
       proto.value = net.target.mode === "usb" ? "" : net.target.transport || "";
+      if (net.target.mode === "usb") usbKind.value = net.target.transport || "usbpro";
       routes = { ...(net.target.routes || {}) };
       priority.value = net.target.priority ?? "";
       priField.hidden = (net.resolved || {}).transport !== "sacn";
@@ -151,7 +168,7 @@ function outputSection(con) {
     h("div.form-grid.out-grid",
       h("label.field", h("span", "Send DMX to"), mode),
       h("label.field", h("span", "Node / broadcast IP"), ip),
-      h("label.field", h("span", "Protocol"), proto), usbField),
+      h("label.field", h("span", "Protocol"), proto), usbField, kindField),
     usbHint,
     h("div.row-btns",
       h("button.btn.primary", { onclick: () => apply(target()) }, "Apply"),

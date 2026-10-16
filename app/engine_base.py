@@ -681,6 +681,7 @@ _OFFISH = re.compile(r"\b(off|blackout|disabled?|stop)\b", re.I)
 
 DMX_TARGET_DEFAULT = {"mode": "auto", "host": "", "transport": ""}
 DMX_TARGET_MODES = ("auto", "node", "broadcast", "usb")
+USB_KINDS = ("usbpro", "opendmx")
 
 
 def clean_dmx_target(raw) -> dict:
@@ -690,13 +691,13 @@ def clean_dmx_target(raw) -> dict:
     mode = str(raw.get("mode") or "auto").lower()
     mode = mode if mode in DMX_TARGET_MODES else "auto"
     transport = str(raw.get("transport") or "").lower()
-    transport = transport if transport in ("artnet", "sacn") else ""
     host = str(raw.get("host") or "").strip()
     if mode == "usb":                  # a USB DMX box: host is its serial port
         from app import usbdmx
-        if usbdmx.valid_port(host):
-            return {"mode": "usb", "host": host, "transport": "usbpro"}
+        if usbdmx.valid_port(host):    # Enttec Pro-style (usbpro) or a cheap Open DMX box (opendmx)
+            return {"mode": "usb", "host": host, "transport": transport if transport in USB_KINDS else "usbpro"}
         mode, host = "auto", ""
+    transport = transport if transport in ("artnet", "sacn") else ""
     if host and host != "multicast":
         try:
             host = str(ipaddress.IPv4Address(host))

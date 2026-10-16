@@ -6255,3 +6255,84 @@ def test_desktop_launch_quiet() -> None:
     check("a bug report's zip goes to Downloads and its folder opens (no Save As box in the desk)",
           '"will-download"' in mj and "setSavePath" in mj and "showItemInFolder" in mj and "quietDownloads();" in mj)
     check("npm install runs without shell:true (no DEP0190 warning)", "shell: process.platform" not in mj and '"/d", "/s", "/c"' in mj)
+
+
+def test_open_dmx() -> None:
+    """The cheap "Open DMX" USB boxes (an FTDI chip, no processor): the
+    computer sends break + start code + 512 channels itself, ~30 times a
+    second, and keeps sending (the lights drop out otherwise)."""
+    print("Open DMX boxes (the computer makes the DMX)")
+    import os
+    import tempfile
+    import time as _time
+    from app import engine as eng
+    from app import fixtures, usbdmx
+    calls = []
+
+    class Box:
+        def __init__(self, name): calls.append(("open", name))
+        def send_break(self): calls.append(("break",))
+        def write(self, d): calls.append(("write", bytes(d)))
+        def close(self): calls.append(("close",))
+
+    s = usbdmx.OpenDmxSender("COM9", dry_run=False, opener=Box)
+    s.send(1, bytes([255, 10]))
+    s.send(2, bytes([1]))                                 # one box, one universe
+    _time.sleep(0.25)
+    s.close()
+    writes = [c[1] for c in calls if c[0] == "write"]
+    seq = [c[0] for c in calls if c[0] in ("break", "write")]
+    check("every frame is a break, then start code 0 + all 512 channels",
+          writes and all(len(w) == 513 and w[0] == 0 for w in writes) and writes[0][1:3] == bytes([255, 10])
+          and seq[:4] == ["break", "write", "break", "write"], str(seq[:6]))
+    check("...sent over and over on its own (~30 a second), not only when the desk changes",
+          4 <= len(writes) <= 12, str(len(writes)))
+    check("...universe 2 is left out, not an error", s.skipped_universes == 1)
+
+    class Broken(Box):
+        def write(self, d): raise OSError("unplugged")
+    t = usbdmx.OpenDmxSender("COM9", dry_run=False, opener=Broken)
+    t.send(1, b"\xff")
+    _time.sleep(0.1)
+    alive = t._thread.is_alive()
+    t.close()
+    check("an unplugged box is reported and tried again (the sender doesn't die)", alive and t.errors >= 1
+          and "unplugged" in (t.last_error or ""), str(t.stats()))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("set_dmx_target", mode="usb", host="COM7", transport="opendmx")
+            check("Settings -> Output: a USB box of the Open DMX kind", r.get("ok")
+                  and r["target"] == {"mode": "usb", "host": "COM7", "transport": "opendmx"}
+                  and "Open DMX" in r.get("summary", ""), str(r))
+            check("...and the engine drives it with the Open DMX sender", type(e._get_sender()).__name__ == "OpenDmxSender")
+            r2 = e.act("set_dmx_target", mode="usb", host="COM7", transport="nonsense")
+            check("an unknown kind of box is the Pro kind", r2["target"]["transport"] == "usbpro", str(r2.get("target")))
+            if hasattr(os, "openpty"):
+                master, slave = os.openpty()
+                e.act("set_dmx_target", mode="usb", host=os.ttyname(slave), transport="opendmx")
+                heads = e.act("add_heads", query="Dimmer", qty=1)["heads"] or e.act("add_heads", query="PAR", qty=1)["heads"]
+                e.act("select_heads", heads=heads)
+                e.act("set_intensity", level=100)
+                snd = e._get_sender()
+                snd.dry_run = False
+                e._dispatch(e.build_frames())
+                _time.sleep(0.3)
+                os.set_blocking(master, False)
+                got = b""
+                try:
+                    while True:
+                        got += os.read(master, 65536)
+                except (BlockingIOError, OSError):
+                    pass
+                snd.close()
+                check("through a real serial port: whole frames, the light at full", len(got) >= 513 * 3
+                      and got[0] == 0 and max(got[1:513]) == 255, f"{len(got)} bytes")
+        finally:
+            e.shutdown()
+    st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
+    check("Settings offers the two kinds of box, with the Windows VCP hint",
+          'value: "opendmx"' in st and "Load VCP" in st)

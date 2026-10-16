@@ -117,10 +117,13 @@ the port on your router to the internet. Running the engine on its own
 (`python app/main.py`, for development): put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
 `.env`.
 
-**USB DMX:** Settings → Output → "USB DMX interface (Enttec USB Pro and
-compatible)" and pick its port (COM3...). One box is one universe
-(universe 1). Most USB boxes speak this protocol (Enttec DMX USB Pro / Mk2,
-DMXking ultraDMX and clones); the cheap "Open DMX" kind does not.
+**USB DMX:** Settings → Output → "A USB DMX box", its port (COM3...) and the
+kind of box. One box is one universe (universe 1). **Enttec DMX USB Pro and
+compatible** (Pro / Mk2, DMXking ultraDMX and clones) have their own processor.
+**Open DMX** boxes (Enttec Open DMX USB and the ~20 EUR FTDI clones) are driven
+by this computer, which sends the DMX signal ~30 times a second. On Windows
+such a box must show up as a COM port: Device Manager → the USB Serial
+Converter → Advanced → tick "Load VCP".
 **MIDI** controllers work in the app as in the browser.
 
 **Mac:** the same workflow builds `Jarvis.dmg` (artifact
