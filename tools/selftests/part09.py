@@ -6855,6 +6855,10 @@ def test_songs() -> None:
             check("the next track (99): Track B takes over, its own cues on the desk",
                   e.songs_public()["following"] == sid["Track B"] and e.tl["playing"]
                   and [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], e.songs_public())
+            # Track B has played a while (its own fade long done), as in a set: the
+            # clock may not even tick between two calls here (Windows: 16 ms)
+            if e.playbacks[0].get("fade"):
+                e.playbacks[0]["fade"]["t0"] -= 30.0
             deck(track=4711, beat=1, playing=True)
             pb1 = e.playbacks[0]
             check("Track B to Track A: A's first look fades in from B's (no cut to black)",
