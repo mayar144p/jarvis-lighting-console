@@ -537,40 +537,50 @@ SoundSwitch, Capture and the mobile-DJ forums.  Jarvis already has what
 most of them sell as their headline (3D in the app, timeline + timecode,
 Pro DJ Link / Ableton Link / MIDI clock, sound-to-light, autopilot,
 GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
-Open, roughly by value for a DJ / small-venue operator:
 
-1. **Cheap USB boxes ("Open DMX" / FTDI, ~20 EUR).**  QLC+ and Freestyler
-   drive them; Jarvis only speaks the Enttec Pro protocol.  The most
-   common first interface a DJ buys.  The computer makes the DMX timing
-   itself (break + 250 kbaud via the FTDI driver).
-2. **A light show per song (SoundSwitch's AutoScripting).**  Analyse the
-   DJ's tracks once (beats, phrases: intro / verse / chorus / drop),
-   keep a scripted show per track, and play it when that track is on the
-   deck (Pro DJ Link says which).  Autopilot today picks looks live; this
-   would make each song look the same every night and editable.
-3. **Stream Deck and outside triggers.**  ONYX takes Telnet / UDP; QLC+
-   users bridge with keystrokes; Freestyler has a community plugin.
-   Jarvis has OSC in: add a small Stream Deck plugin (buttons, GO,
-   blackout, faders on the dials) and "copy this button's OSC address".
-4. **Show backup off the computer.**  Forum worry #1: a dead laptop at a
-   gig.  Copy each saved show (and versions) to a folder the operator
-   picks (OneDrive / Dropbox / a USB stick), and "Restore from backup".
-5. **A backup desk (grandMA3's full tracking backup).**  A second
-   computer follows the show live and takes over output if the first
-   stops.  The remote desk is half of it already.
-6. **Philips Hue / smart lights (Lightkey).**  For bars, homes and
-   streams with no DMX.
-7. **Languages.**  The screens are English only (Swedish first?).
-8. **NDI video in / out (ONYX 4.10).**  Later; screens and LED walls.
+**Done 2026-10-16** (PRs #98, #99 and the one after):
+1. Cheap "Open DMX" / FTDI USB boxes (app/usbdmx.py, OpenDmxSender).
+2. A light show per song: Find the song's parts, Auto show per part,
+   Songs (keep / play / edit), tied to Pro DJ Link tracks and following
+   the master deck's beat and pitch (app/engine_songs.py).
+3. Stream Deck plugin (web/streamdeck/, over OSC in).
+4. Show backup off the computer + Restore from backup (app/showbackup.py).
+5. A backup desk: follows the main desk live, takes over if it stops
+   (app/engine_standby.py).
+6. Philips Hue lamps follow desk lights (app/hue.py).
+- Placeholder 3D variety for profiles, strobes, bars and panels.
+- The UI fits the operator: density, size (zoom, capped to what the
+  window holds), eight accents or your own, reduced motion; every desk
+  action has a way in on screen (selftest `test_look_and_reach`).
+- The installer's "Include the offline AI" tick (done 2026-10-08, A12).
 
-Improve / fix (from our own lists):
-- Installed app updates itself (needs a place to publish installers).
-- Mac app signed and notarised (Apple developer account, 99 USD/year).
-- Placeholder 3D variety for profiles, strobes, bars and panels too.
-- ADJ Encore FR150z is read as a generic light (no strobe model).
-- Library rules baselines: 250 lights still show stand-in gobo pictures,
-  4 multi-head lights not coloured per head (tools/rules_known.json).
-- The installer's "Include the offline AI" tick (A12).
+**Still open, in order:**
+1. **Languages.**  The screens are English only.  Plan: all on-screen
+   words through one `t("...")` table per language (web/app/i18n/),
+   English as the key so nothing breaks while a language is partial;
+   Swedish first, then German / Spanish.  The guide stays English.
+2. **The installed app updates itself.**  Needs a place to publish
+   installers (GitHub Releases on this repo is enough): electron-updater
+   with the release feed, a "new version - restart to update" line, never
+   while live.
+3. **Mac app signed and notarised.**  Needs an Apple developer account
+   (99 USD/year); then the build signs and notarises in CI with the
+   account's secrets.
+4. **ADJ Encore FR150z** is read as a generic light (no strobe model): a
+   profile of its own in app/fixlib/jarvis.json (fog volume, its LEDs).
+5. **Gobo pictures for the last 248 lights.**  Neither bundled library
+   has pictures for them (226 have no twin in the other library, the rest
+   a twin without pictures or with a different count).  They come from the
+   maker's GDTF (*Get the maker's gobos*, a GDTF Share account).  Next
+   step: on that fetch, add the light to a "fixed" list so the library
+   rule stops counting it.
+6. **Library rules baselines:** 16 lights in `lit_shows_colour`, 4
+   multi-head lights not coloured per head (tools/rules_known.json).
+7. **The report relay** (A11): send bug reports without a GitHub account.
+8. **NDI video in / out (ONYX 4.10)** - later.  Screens and LED walls:
+   NDI in as a media source for the 3D's screens and the pixel mapper, NDI
+   out of the 3D view.  Needs the NDI SDK (a native library, free licence,
+   per-platform), so it is a desktop-app add-on, not the engine's stdlib.
 
 ## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07) - DONE (but the installer tick)
 
