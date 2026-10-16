@@ -1,7 +1,7 @@
 // Jarvis: boot the desk.
 import { get, openStream } from "./api.js";
 import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./store.js";
-import { $, $$ } from "./ui.js";
+import { $ } from "./ui.js";
 import { initTopbar } from "./topbar.js";
 import { initFixtures } from "./fixtures.js";
 import { initStage } from "./stagepanel.js";

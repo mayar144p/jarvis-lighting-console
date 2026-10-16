@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from app import fixtures
+from tools.selftests import fakes
 from tools.selftests.common import ROOT, _free_udp_port, _valueerror, _wait_until, check
 
 
@@ -405,7 +406,7 @@ def test_midi(tmp: Path) -> None:
     fixtures.seed_generics(db)
     e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "midi_shows")
     e.act("add_heads", query="LED PAR 4ch", qty=2)   # something to program
-    fake = midi.FakeMidiSource()
+    fake = fakes.FakeMidiSource()
     runner = midi.MidiManager(e, mapper=midi.MidiMapper(), source=fake,
                                devices=[])
     try:

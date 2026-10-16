@@ -147,12 +147,6 @@ def span_at(pts, z: float) -> tuple[float, float] | None:
     return best
 
 
-def depth_at(pts, x: float) -> tuple[float, float] | None:
-    """The longest stretch of floor front to back at x: (z0, z1)."""
-    flipped = [[p[1], p[0]] for p in pts]
-    return span_at(flipped, x)
-
-
 def clip(subject, x0: float, z0: float, x1: float, z1: float) -> list[list[float]]:
     """The part of a polygon inside a rectangle (Sutherland-Hodgman)."""
     def cut(poly, keep, meet):

@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 from app import fixtures
+from tools.selftests import fakes
 from tools.selftests.common import ROOT, check, dialogs_js, stage_js
 
 
@@ -111,7 +112,7 @@ def test_button_midi() -> None:
             r = e.act("quick_set", page=1, slot=2, button={"kind": "flash", "midi": 200})
             check("a note past 127 is refused", not r.get("ok"), str(r))
             e.act("quick_set", page=1, slot=3, button={"kind": "fx", "fx": "rainbow", "mode": "latch", "midi": 40})
-            m = midi.MidiManager(e, mapper=midi.MidiMapper(), source=midi.FakeMidiSource(), devices=[])
+            m = midi.MidiManager(e, mapper=midi.MidiMapper(), source=fakes.FakeMidiSource(), devices=[])
             m.handle(midi.parse_short(0x90, 36, 100))
             check("the note plays the button, not the map's GO",
                   "q1-1" in e.quick_active and not e.playbacks[0]["active"], str(list(e.quick_active)))

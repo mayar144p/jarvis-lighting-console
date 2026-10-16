@@ -3,7 +3,6 @@
 // tooltip, and controls that had none get one here.  Off in Settings ->
 // Screen & 3D.  The control's title stays its title (it's only borrowed
 // while the pointer is on it), so screen readers and the checks still read it.
-import { $ } from "./ui.js";
 
 const KEY = "jarvis.tips";
 // controls that had no explanation of their own

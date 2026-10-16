@@ -218,7 +218,6 @@ export function aimBlock(...after) {
   return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, speed, heads, ...after.filter(Boolean));
 }
 
-export const isFollowing = () => following;
 /** The Follow speed picked (seconds; 0 = instant): the spot buttons use it too. */
 export const followGlide = () => glide;
 

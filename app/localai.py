@@ -332,7 +332,7 @@ def auto_download(live: bool = False) -> str:
 
 # ------------------------------------------------------------------ the engine
 # An app installed before the engine shipped with it (or the browser
-# version, run.bat): the desk fetches llama.cpp's server itself, ~30 MB,
+# version, run-desktop.bat): the desk fetches llama.cpp's server itself, ~30 MB,
 # from llama.cpp's own releases, into DATA/ai/engine/.
 RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15"
 

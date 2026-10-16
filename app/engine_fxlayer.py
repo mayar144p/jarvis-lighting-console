@@ -318,7 +318,6 @@ class FxLayerMixin:
         self._rest_cache = None
         self._hold_cache = None
         self._motion_cache = {}
-        self._zq_cache = None
         self._dark_cache = None
 
     # -- movement speed, for the visualiser ------------------------------

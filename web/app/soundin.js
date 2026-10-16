@@ -112,8 +112,3 @@ export function stopListening() {
   try { localStorage.setItem("jarvis.listen", "0"); } catch (e) { /* ignore */ }
 }
 
-/** Listen to a given stream instead of the microphone (a line in, a test). */
-export function listenTo(mediaStream) {
-  if (stream) stopListening();
-  attach(mediaStream);
-}

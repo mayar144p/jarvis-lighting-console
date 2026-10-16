@@ -288,8 +288,6 @@ class _Probe:
 
     def __init__(self, port: int) -> None:
         self.socks: list[socket.socket] = []
-        self.canon_owned = False
-        self.canon_shared = False
         self.src_port = 0
         self._open(port)
 
@@ -316,12 +314,10 @@ class _Probe:
         canon = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             canon.bind(("", port))
-            self.canon_owned = True
         except OSError:
             try:
                 canon.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 canon.bind(("", port))
-                self.canon_shared = True
             except OSError:
                 canon.close()
                 return

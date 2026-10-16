@@ -1262,8 +1262,6 @@ function showTab(name) {
   try { localStorage.setItem("jarvis.progtab", name); } catch (e) { /* ignore */ }
 }
 
-export function focusTab(name) { showTab(name); }
-
 function wireActs() {
   $("#prog-clear").addEventListener("click", () => run("clear_programmer"));
   $("#prog-record").addEventListener("click", () => openCueDialog());

@@ -530,10 +530,6 @@ function laserBlock(ls) {
     ...rows);
 }
 
-export function renderMovePanel(force = false) {
-  render(force);
-}
-
 function render(force = false) {
   const box = $("#move-panel");
   if (!box) return;

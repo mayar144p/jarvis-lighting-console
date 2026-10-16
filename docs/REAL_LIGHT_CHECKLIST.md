@@ -21,7 +21,7 @@ effect at once.
 ## 1. Connect (2 min)
 
 - [ ] Plug the laptop straight into the node (or into the same switch).
-- [ ] Start the desk (`run.bat` / `run.sh`).  The top bar says **BLIND**
+- [ ] Start the desk (`run-desktop.bat` / `run-desktop.sh`).  The top bar says **BLIND**
       (amber): nothing goes out yet.
 - [ ] **Settings → Output** → **Find nodes**.  Your node is listed.  Press
       **Use this node**.  (Some nodes don't answer: type its IP and choose

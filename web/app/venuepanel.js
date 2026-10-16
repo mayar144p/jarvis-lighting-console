@@ -645,7 +645,6 @@ export function setArranging(on) {
     : "Drag to orbit · right-drag to pan · scroll to zoom · click a light to select";
 }
 
-export function isArranging() { return arranging; }
 
 export function initVenuePanel(theStage) {
   const offPick = on("snapshot", () => { offPick(); venuePicker(); });   // the first snapshot only

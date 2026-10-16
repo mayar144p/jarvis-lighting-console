@@ -792,7 +792,7 @@ def test_wheel_slots() -> None:
 
 
 def test_auto_update() -> None:
-    """run.bat/run.sh fast-forward to the latest version, and never
+    """The desktop app fast-forwards to the latest version, and never
     anything riskier; old fixture imports are re-read after an update."""
     print("update on launch (fast-forward only, fixture refresh)")
     import os as _os

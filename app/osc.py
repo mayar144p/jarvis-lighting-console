@@ -100,9 +100,3 @@ def build(addr: str, *args) -> bytes:
             body += _s(str(a))
     return _s(addr) + _s(tags) + body
 
-
-def bundle(*messages: bytes) -> bytes:
-    out = b"#bundle\0" + struct.pack(">Q", 1)
-    for m in messages:
-        out += struct.pack(">i", len(m)) + m
-    return out

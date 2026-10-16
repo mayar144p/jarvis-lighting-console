@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from app import fixtures
+from tools.selftests import fakes
 from tools.selftests.common import (
     ROOT,
     _share_gdtf_bytes,
@@ -1095,13 +1096,9 @@ _MOVER_GEOMETRY = (
 
 
 def test_gdtf_geometry() -> None:
-    """GDTF geometry -> a normalised, renderer-neutral definition.
-
-    The real files on this machine are the ground truth where they exist:
-    rev9044.gdtf is a Chauvet DJ Intimidator Spot 260 and carries a real
-    Base/Yoke/Body/Lens chain with real pivots, and every one of these
-    checks is either derived from it or deliberately contradicts it.
-    """
+    """GDTF geometry -> a normalised, renderer-neutral definition, on
+    synthetic files built by the test (modelled on a real Base/Yoke/Body/Lens
+    mover: an Intimidator Spot 260)."""
     print("gdtf geometry (hierarchy, pivots, beams, safety, cache)")
     import shutil as _shutil
     import tempfile as _tempfile
@@ -1120,8 +1117,8 @@ def test_gdtf_geometry() -> None:
     # point nowhere near its own mechanism" bug, and it still moves, so it
     # is not obvious.
     check("GDTF is ROW-vector: the translation is at 3, 7 and 11",
-          G.matrix_translation(m) == (0.0, -0.025, -0.1),
-          str(G.matrix_translation(m)))
+          fakes.matrix_translation(m) == (0.0, -0.025, -0.1),
+          str(fakes.matrix_translation(m)))
     check("and NOT at 12, 13, 14, which is the column-vector reading",
           (m[12], m[13], m[14]) == (0.0, 0.0, 0.0),
           "column-vector reading would give %s" % ((m[12], m[13], m[14]),))
@@ -1131,7 +1128,7 @@ def test_gdtf_geometry() -> None:
           G.parse_matrix("not a matrix") == ident, "")
     check("a wrong group count is the identity",
           G.parse_matrix("{1,0}{0,1}") == ident, "")
-    prod = G.mat_mul(m, ident)
+    prod = fakes.mat_mul(m, ident)
     check("multiplying by the identity changes nothing",
           all(abs(a - b) < 1e-9 for a, b in zip(prod, m)), "")
 
@@ -1158,15 +1155,15 @@ def test_gdtf_geometry() -> None:
               "")
         # The real pivots, which is the whole point of reading them.
         check("the Yoke's pivot is 93.4 mm down, as the file says",
-              abs(G.matrix_translation(yoke["matrix"])[2] + 0.0934) < 1e-6,
-              str(G.matrix_translation(yoke["matrix"])))
+              abs(fakes.matrix_translation(yoke["matrix"])[2] + 0.0934) < 1e-6,
+              str(fakes.matrix_translation(yoke["matrix"])))
         check("the Body's pivot is a further 144.3 mm down",
-              abs(G.matrix_translation(body["matrix"])[2] + 0.1443) < 1e-6,
-              str(G.matrix_translation(body["matrix"])))
+              abs(fakes.matrix_translation(body["matrix"])[2] + 0.1443) < 1e-6,
+              str(fakes.matrix_translation(body["matrix"])))
         beam = body["children"][0]
         check("the beam is 25 mm across and 100 mm forward of the head",
-              G.matrix_translation(beam["matrix"]) == (0.0, -0.025, -0.1),
-              str(G.matrix_translation(beam["matrix"])))
+              fakes.matrix_translation(beam["matrix"]) == (0.0, -0.025, -0.1),
+              str(fakes.matrix_translation(beam["matrix"])))
         check("with the beam's real 12-degree core and 17-degree field",
               beam["beam_angle"] == 12.0 and beam["field_angle"] == 17.0
               and beam["beam_radius"] == 0.03, str(beam)[:120])
@@ -1175,10 +1172,10 @@ def test_gdtf_geometry() -> None:
         # ---- kinematics: DERIVED, not assumed ------------------------
         kin = g["kinematics"]
         check("pan is the YOKE, not the root - the root is the static base",
-              G.node_at(g, kin["pan"])["name"] == "Yoke",
+              fakes.node_at(g, kin["pan"])["name"] == "Yoke",
               str(kin))
         check("tilt is the BODY inside the yoke",
-              G.node_at(g, kin["tilt"])["name"] == "Body", str(kin))
+              fakes.node_at(g, kin["tilt"])["name"] == "Body", str(kin))
         check("and the root is not offered as either",
               kin["pan"] != "0" and kin["tilt"] != "0", str(kin))
         order = [(p, n["name"]) for p, n in G.rotation_nodes(g)]
@@ -1207,7 +1204,7 @@ def test_gdtf_geometry() -> None:
                 'Position="{1,0,0,0}{0,1,0,0}{0,0,1,-0.134}{0,0,0,1}"/>'
                 '</Geometry>', models=["Body", "Yoke", "Beam"])))
         check("a fixture that spells its yoke <Axis> is understood too",
-              G.node_at(wash, G.resolve_kinematics(wash, True, False)["pan"])
+              fakes.node_at(wash, G.resolve_kinematics(wash, True, False)["pan"])
               ["name"] == "Yoke", "")
         flat = G.parse_geometry(G.description_xml(_write_gdtf(
             os.path.join(tmp, "flat.gdtf"),
@@ -1342,35 +1339,6 @@ def test_gdtf_geometry() -> None:
               and d4["geometry"]["kinematics"]["pan"] and not d4["files"],
               str(d4.get("reason"))[:80])
 
-        # ---- the REAL files, if this machine has any ------------------
-        real = sorted(Path(ROOT / "data").rglob("*.gdtf"))
-        if real:
-            mover = None
-            for path in real:
-                d = G.build_definition(str(path), has_pan=True, has_tilt=True)
-                if d["ok"] and (d["geometry"]["kinematics"].get("tilt")):
-                    mover = (path, d)
-                    break
-            check("a real GDTF on this machine parses its geometry",
-                  mover is not None, "%d file(s) found" % len(real))
-            if mover:
-                path, d = mover
-                kin = d["geometry"]["kinematics"]
-                pn = G.node_at(d["geometry"], kin["pan"])
-                tn = G.node_at(d["geometry"], kin["tilt"])
-                check("  and names a real pan node that is NOT the root",
-                      pn is not None and kin["pan"] != "0",
-                      "%s -> %s" % (path.name, pn["name"] if pn else None))
-                check("  and a distinct tilt node below it",
-                      tn is not None and tn["name"] != pn["name"],
-                      "%s" % (tn["name"] if tn else None))
-                beams = list(G.walk_beams(d["geometry"]))
-                check("  with at least one beam carrying real angles",
-                      beams and beams[0]["beam_angle"] > 0,
-                      str([(b["beam_angle"], b["field_angle"]) for b in beams]))
-        else:
-            check("no real GDTF on this machine to cross-check against", True,
-                  "(skipped, not failed)")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)
 

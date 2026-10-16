@@ -820,7 +820,9 @@ Tools: `tools/rigcheck.py` (every light type + ~15 brands + CO2 / flame /
 spark / confetti / hazer / laser, hung / stood / dragged / snapped on
 trusses, a pole and a pipe in an L-shaped room; every action and button
 kind; DMX vs 3D feed: 4,266 checks) and `tools/rigcheck_3d.mjs` (the same
-lights in the real visualiser: model, beam, where it lands, SFX firing).
+lights in the real visualiser: model, beam, where it lands, SFX firing). Both
+retired 2026-10-16 (their beam maths predated the lights' base yaw);
+`gigcheck.py`, `vischeck.mjs` and the selftest cover the same ground.
 Fixed:
 - **Lights looking at the roof after "aim here":** a mode with fine pan but
   no fine tilt got a 16-bit tilt (full tilt, also on the rig); an
