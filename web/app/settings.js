@@ -1,6 +1,6 @@
 // Settings: output, the venue, MIDI and OSC, controllers, the theme, AI.
 
-import { get, post } from "./api.js";
+import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
 import { themeNow, setTheme, ACCENTS } from "./theme.js";
@@ -257,7 +257,9 @@ export async function openSettings() {
       h("h3", "OSC"),
       oscRow(),
       h("h3", "OSC out"),
-      oscOutRow()]],
+      oscOutRow(),
+      h("h3", "Stream Deck"),
+      streamDeckRow()]],
     ["library", "Fixtures", [
       h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
       h("div.row-btns", h("button.btn", {
@@ -335,6 +337,33 @@ function oscRow() {
     h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
     note,
     h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
+}
+
+// The Stream Deck plugin: GO, blackout, buttons, tap and macros on the
+// keys; the grand master and playback faders on the dials (Stream Deck +).
+// It talks OSC, so OSC in has to be on.
+function streamDeckRow() {
+  const o = (state.snap && state.snap.osc) || {};
+  const download = async () => {
+    const t = token();
+    const r = await fetch("/api/console/streamdeck_plugin", { headers: t ? { "X-Jarvis-Token": t } : {} });
+    if (!r.ok) { toast(`download failed (${r.status})`, "bad"); return; }
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, "com.jarvis.desk.streamDeckPlugin"])[1];
+    const url = URL.createObjectURL(await r.blob());
+    const a = h("a", { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Saved. Double-click it to add Jarvis to the Stream Deck app.");
+  };
+  return h("div",
+    h("div.row-btns", h("button.btn", { onclick: download }, "Get the Stream Deck plugin"),
+      h("span.muted.small", "Stream Deck app 6.4 or newer, on Windows or Mac")),
+    h("p.muted.small", "Double-click the file to install it, then drag GO, Blackout, Desk button, Tap tempo or Macro onto keys, and Grand master or Playback fader onto the dials. "
+      + (o.on ? `It talks to OSC in on port ${o.port}: if you change the port, change it in a key's settings too.`
+        : "Turn on OSC in above first: the plugin talks to it (port 8000 unless you change it in a key's settings).")
+      + " On another computer, put this desk's address in a key's settings."));
 }
 
 // OSC out: where the desk's OSC goes (QLab, Resolume, a video server), and

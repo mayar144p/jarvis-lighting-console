@@ -368,6 +368,8 @@ def test_hardening(tmp: Path) -> None:
               call("/manifest.webmanifest") == 404 and call("/remote.html") == 404, "")
         check("the network check answers (Settings -> Output)",
               call("/api/console/network") == 200, "")
+        check("the Stream Deck plugin downloads (Settings -> MIDI & OSC)",
+              call("/api/console/streamdeck_plugin") == 200, "")
         check("the open libraries are searchable over HTTP",
               call("/api/fixtures/library?q=intimidator") == 200, "")
         check("a bad library limit is a 400, not a crash",

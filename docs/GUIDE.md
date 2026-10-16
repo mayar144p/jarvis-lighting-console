@@ -519,6 +519,27 @@ The pads always play the page that's on screen, and the screen follows the
 page you pick on the controller. Other controllers still play buttons by
 their MIDI note (Edit → a button → MIDI).
 
+### Stream Deck
+
+**Settings → MIDI & OSC → Get the Stream Deck plugin** saves
+`com.jarvis.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
+(6.4 or newer) adds a *Jarvis* group:
+
+| Key / dial | What it does | Its settings |
+|---|---|---|
+| GO, Back | the next / previous cue | a playback number (empty: the selected one) |
+| Blackout | on / off, the key lights red while it is on | - |
+| Desk button | one of the buttons, held while the key is held | page and button number (counted left to right, top to bottom) |
+| Tap tempo | taps the beat | - |
+| Macro | runs a macro | its name |
+| Grand master (dial) | turn: the master; press: full / out | % per click |
+| Playback fader (dial) | turn: that playback's fader; press: full / out | playback number, % per click |
+
+The plugin talks to **OSC in**, so switch that on first (port 8000). A Stream
+Deck on another computer works too: put the desk's address and port in any
+key's settings (all keys share them). The dials start at 100% when the
+Stream Deck app starts; the first turn sets the desk to the dial's level.
+
 ## MVR plots (Vectorworks, Capture, grandMA3…)
 
 **Show ▾ -> Import MVR plot…** reads an `.mvr` file. Every light is

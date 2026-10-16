@@ -6393,3 +6393,187 @@ def test_show_backup() -> None:
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     dj = dialogs_js()
     check("Settings -> Backup, and Show -> Restore from backup…", '"backup", "Backup"' in st and "Restore from backup…" in dj)
+
+
+def _ws_frame(text: str) -> bytes:
+    """A server -> client WebSocket text frame (servers don't mask)."""
+    data = text.encode("utf-8")
+    n = len(data)
+    head = bytes([0x81, n]) if n < 126 else bytes([0x81, 126]) + n.to_bytes(2, "big") if n < 65536 \
+        else bytes([0x81, 127]) + n.to_bytes(8, "big")
+    return head + data
+
+
+def _ws_read(conn) -> dict | None:
+    """One client -> server frame (masked), as JSON; None when closed."""
+    def exact(k):
+        buf = b""
+        while len(buf) < k:
+            got = conn.recv(k - len(buf))
+            if not got:
+                return None
+            buf += got
+        return buf
+    head = exact(2)
+    if head is None:
+        return None
+    n = head[1] & 0x7F
+    if n == 126:
+        n = int.from_bytes(exact(2), "big")
+    elif n == 127:
+        n = int.from_bytes(exact(8), "big")
+    mask = exact(4) if head[1] & 0x80 else b"\0\0\0\0"
+    data = bytes(b ^ mask[i % 4] for i, b in enumerate(exact(n) or b""))
+    return json.loads(data) if head[0] & 0x0F == 1 else {}
+
+
+def test_streamdeck_plugin() -> None:
+    """The Stream Deck plugin: the download is a whole plugin, and under
+    Node it turns key presses and dial turns into OSC the desk acts on."""
+    print("Stream Deck plugin")
+    import base64
+    import hashlib
+    import io
+    import shutil
+    import subprocess
+    import zipfile
+    from app import engine as eng
+    from app import streamdeck
+
+    z = zipfile.ZipFile(io.BytesIO(streamdeck.plugin_zip()))
+    names = set(z.namelist())
+    root = "com.jarvis.desk.sdPlugin/"
+    man = json.loads(z.read(root + "manifest.json"))
+    check("the download is the plugin folder, manifest at its root", streamdeck.FILE_NAME.endswith(".streamDeckPlugin")
+          and all(n.startswith(root) for n in names), sorted(names)[:3])
+    want = {man["CodePath"], man["Icon"] + ".png", man["CategoryIcon"] + ".png"}
+    for a in man["Actions"]:
+        want |= {a["Icon"] + ".png", a["Icon"] + "@2x.png", a["PropertyInspectorPath"]}
+        want |= {s["Image"] + ".png" for s in a["States"]} | {s["Image"] + "@2x.png" for s in a["States"]}
+    missing = sorted(w for w in want if root + w not in names)
+    check("every file the manifest names is in it (pictures at 1x and 2x, settings pages)", not missing, missing)
+    check("every action is one of ours", all(a["UUID"].startswith("com.jarvis.desk.") for a in man["Actions"]), "")
+    bo = next(a for a in man["Actions"] if a["UUID"].endswith(".blackout"))
+    check("blackout has two states, and the plugin flips them (not the app)",
+          len(bo["States"]) == 2 and bo.get("DisableAutomaticStates") is True, bo)
+    check("a page links its script", b'src="pi.js"' in z.read(root + "pi/button.html"), "")
+
+    node = shutil.which("node")
+    if not node:
+        print("   (no Node.js here: the plugin itself is not run)")
+        return
+    plugin = Path(streamdeck.FOLDER) / "bin" / "plugin.js"
+    from app import osc
+    probe = (f"const p=require({json.dumps(str(plugin))});"
+             "const m=(a,e,s,st)=>p.messagesFor(a,e,s,st).map(b=>b.toString('hex'));"
+             "console.log(JSON.stringify({go:m('com.jarvis.desk.go','keyDown',{playback:'2'}),"
+             "goSel:m('com.jarvis.desk.go','keyDown',{}),up:m('com.jarvis.desk.go','keyUp',{}),"
+             "btn:m('com.jarvis.desk.button','keyDown',{page:'2',slot:'5'}),"
+             "rel:m('com.jarvis.desk.button','keyUp',{slot:'5'}),"
+             "bad:m('com.jarvis.desk.button','keyDown',{button:'../x'}),"
+             "mac:m('com.jarvis.desk.macro','keyDown',{macro:'Walk-in'}),"
+             "one:m('com.jarvis.desk.master','dial',{},{level:1}),"
+             "fad:m('com.jarvis.desk.fader','dial',{playback:'3'},{level:50})}))")
+    out = json.loads(subprocess.run([node, "-e", probe], capture_output=True, text=True, timeout=30).stdout)
+    dec = {k: [osc.parse(bytes.fromhex(x))[0] for x in v] for k, v in out.items()}
+    check("GO on playback 2 is /jarvis/go 2, as the desk reads it", dec["go"] == [("/jarvis/go", [2])], dec["go"])
+    check("GO with no playback: the selected one; a key's release sends nothing",
+          dec["goSel"] == [("/jarvis/go", [])] and dec["up"] == [], dec)
+    check("a desk button by page and number: down 1, up 0",
+          dec["btn"] == [("/jarvis/button/q2-5", [1])] and dec["rel"] == [("/jarvis/button/q1-5", [0])], dec)
+    check("a made-up button id sends nothing", dec["bad"] == [], dec["bad"])
+    check("a macro by name", dec["mac"] == [("/jarvis/macro", ["Walk-in"])], dec["mac"])
+    lv = dec["one"][0][1][0]
+    check("a dial at 1% sends 0.01 (never '1', which the desk reads as full)", abs(lv - 0.01) < 1e-6, dec["one"])
+    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/jarvis/playback/3/level"
+          and abs(dec["fad"][0][1][0] - 0.5) < 1e-6, dec["fad"])
+
+    # The whole way: a fake Stream Deck app starts the plugin, presses keys
+    # and turns dials; the desk's OSC in does what they say.
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        srv.settimeout(15)
+        proc = None
+        conn = None
+        try:
+            oport = _free_port()
+            check("OSC in on", e.act("osc", state=True, port=oport).get("ok"), "")
+            proc = subprocess.Popen([node, str(plugin), "-port", str(srv.getsockname()[1]),
+                                     "-pluginUUID", "U1", "-registerEvent", "registerPlugin", "-info", "{}"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            conn, _ = srv.accept()
+            conn.settimeout(10)
+            req = b""
+            while b"\r\n\r\n" not in req:
+                req += conn.recv(4096)
+            key = next(ln.split(b":", 1)[1].strip() for ln in req.split(b"\r\n")
+                       if ln.lower().startswith(b"sec-websocket-key"))
+            accept = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC11B85").digest())
+            conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                         b"Sec-WebSocket-Accept: " + accept + b"\r\n\r\n")
+            first = [_ws_read(conn), _ws_read(conn)]
+            check("it registers with the Stream Deck app, then asks for its settings",
+                  first[0] == {"event": "registerPlugin", "uuid": "U1"}
+                  and first[1].get("event") == "getGlobalSettings", first)
+            send = lambda obj: conn.sendall(_ws_frame(json.dumps(obj)))
+            send({"event": "didReceiveGlobalSettings", "payload": {"settings": {"host": "127.0.0.1", "port": oport}}})
+
+            def wait(cond, s=5.0):
+                end = time.monotonic() + s
+                while time.monotonic() < end and not cond():
+                    time.sleep(0.02)
+                return cond()
+
+            send({"event": "willAppear", "action": "com.jarvis.desk.blackout", "context": "K1",
+                  "payload": {"settings": {}, "state": 0}})
+            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            check("the Blackout key blacks the desk out", wait(lambda: e.blackout is True), e.blackout)
+            st = _ws_read(conn)
+            check("... and lights its key (state 1)", st == {"event": "setState", "context": "K1", "payload": {"state": 1}}, st)
+            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            check("a second press brings the lights back", wait(lambda: e.blackout is False), e.blackout)
+            _ws_read(conn)
+            send({"event": "willAppear", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "controller": "Encoder"}})
+            fb = _ws_read(conn)
+            check("the master dial shows its name and level", fb.get("event") == "setFeedback"
+                  and fb["payload"]["value"] == "100%", fb)
+            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "ticks": -10}})
+            check("ten clicks left: the grand master at 70%", wait(lambda: e.master == 70), e.master)
+            fb = _ws_read(conn)
+            check("... and the dial says so", fb["payload"]["value"] == "70%", fb)
+            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+                  "payload": {"settings": {}, "ticks": -23}})
+            check("a dial at 1% puts the master at 1%, not full", wait(lambda: e.master == 1), e.master)
+            _ws_read(conn)
+            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            check("pressing the dial: out", wait(lambda: e.master == 0), e.master)
+            _ws_read(conn)
+            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            check("pressing again: full", wait(lambda: e.master == 100), e.master)
+            conn.close()
+            conn = None
+            try:
+                proc.wait(timeout=5)
+                gone = True
+            except subprocess.TimeoutExpired:
+                gone = False
+            check("it stops when the Stream Deck app goes away", gone, "")
+        finally:
+            if conn:
+                conn.close()
+            if proc and proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            if proc and proc.stderr:
+                proc.stderr.close()
+            srv.close()
+            e.act("osc", state=False)
+            e.shutdown()
