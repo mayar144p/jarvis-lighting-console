@@ -146,15 +146,18 @@ class ShowMixin:
             # still exists.  This is the one path that blocks, and it is
             # never on the output thread.
             return self._write_autosave(text, path)
-        self._writer_pending = text
+        with self._writer_lock:
+            self._writer_pending = text
         self._writer_event.set()
         if force:
-            # The caller wants it on disk NOW (shutdown): wait for the
-            # writer to catch up rather than returning a lie.
+            # The caller wants it on disk NOW (shutdown): wait until the
+            # writer has WRITTEN it - not merely taken it, which left a
+            # moment where the file wasn't there yet (seen on a slow
+            # Windows machine) - rather than returning a lie.
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline:
                 with self._writer_lock:
-                    if self._writer_pending is None:
+                    if self._writer_pending is None and not self._writer_busy:
                         return True
                 time.sleep(0.005)
             return self._write_autosave(text, path)
@@ -183,9 +186,14 @@ class ShowMixin:
                 with self._writer_lock:
                     text, path = self._writer_pending, self._writer_path
                     self._writer_pending = None
-                if text is None or path is None:
+                    self._writer_busy = text is not None and path is not None
+                if not self._writer_busy:
                     break
-                self._write_autosave(text, path)
+                try:
+                    self._write_autosave(text, path)
+                finally:
+                    with self._writer_lock:
+                        self._writer_busy = False
 
     def _start_writer(self) -> None:
         if self._writer is not None or self.autosave_path is None:

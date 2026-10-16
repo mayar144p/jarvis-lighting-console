@@ -519,6 +519,59 @@ So problems arrive with the evidence attached instead of typed by hand.
   bundle, load the rig, reproduce with the checks (DMX, safety,
   programmer fit, 3D), fix, add a test, link the fix to the issue.
 
+**Next (planned 2026-10-16): switch the relay on.**  Cloudflare chosen
+over Firebase (checked 2026-10-16: Workers free = 100,000 requests a day,
+R2 free = 10 GB with free downloads, no card; Firebase needs the Blaze
+plan with a card for Functions and, since 2024/25, for Storage).  Steps:
+the operator makes a free Cloudflare account and an Issues-only GitHub
+token, runs `npx wrangler deploy` in tools/report-relay/ (its README),
+and sends the address; then REPORT_RELAY becomes the default in
+.env.example and the installer, so every desk shows **Send report**.
+Until then: Save report -> the zip in Downloads (its folder opens) + the
+GitHub page in the browser (PR #96).
+
+## A14. Ideas from similar apps (research 2026-10-16)
+
+Compared with grandMA3, ChamSys MagicQ, Obsidian ONYX, QLC+, Lightkey,
+SoundSwitch, Capture and the mobile-DJ forums.  Jarvis already has what
+most of them sell as their headline (3D in the app, timeline + timecode,
+Pro DJ Link / Ableton Link / MIDI clock, sound-to-light, autopilot,
+GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
+Open, roughly by value for a DJ / small-venue operator:
+
+1. **Cheap USB boxes ("Open DMX" / FTDI, ~20 EUR).**  QLC+ and Freestyler
+   drive them; Jarvis only speaks the Enttec Pro protocol.  The most
+   common first interface a DJ buys.  The computer makes the DMX timing
+   itself (break + 250 kbaud via the FTDI driver).
+2. **A light show per song (SoundSwitch's AutoScripting).**  Analyse the
+   DJ's tracks once (beats, phrases: intro / verse / chorus / drop),
+   keep a scripted show per track, and play it when that track is on the
+   deck (Pro DJ Link says which).  Autopilot today picks looks live; this
+   would make each song look the same every night and editable.
+3. **Stream Deck and outside triggers.**  ONYX takes Telnet / UDP; QLC+
+   users bridge with keystrokes; Freestyler has a community plugin.
+   Jarvis has OSC in: add a small Stream Deck plugin (buttons, GO,
+   blackout, faders on the dials) and "copy this button's OSC address".
+4. **Show backup off the computer.**  Forum worry #1: a dead laptop at a
+   gig.  Copy each saved show (and versions) to a folder the operator
+   picks (OneDrive / Dropbox / a USB stick), and "Restore from backup".
+5. **A backup desk (grandMA3's full tracking backup).**  A second
+   computer follows the show live and takes over output if the first
+   stops.  The remote desk is half of it already.
+6. **Philips Hue / smart lights (Lightkey).**  For bars, homes and
+   streams with no DMX.
+7. **Languages.**  The screens are English only (Swedish first?).
+8. **NDI video in / out (ONYX 4.10).**  Later; screens and LED walls.
+
+Improve / fix (from our own lists):
+- Installed app updates itself (needs a place to publish installers).
+- Mac app signed and notarised (Apple developer account, 99 USD/year).
+- Placeholder 3D variety for profiles, strobes, bars and panels too.
+- ADJ Encore FR150z is read as a generic light (no strobe model).
+- Library rules baselines: 250 lights still show stand-in gobo pictures,
+  4 multi-head lights not coloured per head (tools/rules_known.json).
+- The installer's "Include the offline AI" tick (A12).
+
 ## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07) - DONE (but the installer tick)
 
 **Done:** the switch - Online / Local / Auto - in Settings -> AI and the
