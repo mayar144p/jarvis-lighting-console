@@ -168,7 +168,7 @@ class SongsMixin:
                 raise ValueError("between songs: autopilot or hold")
             self.song_between = between
         if state is None:
-            return {"songs": self.songs_public(), "summary": f"between songs: {self.song_between}"}
+            return {"songs": self.songs_public(), "summary": f"between songs: {self.__dict__.get('song_between', 'autopilot')}"}
         on = _truthy(state)
         self.song_follow = on
         err = None

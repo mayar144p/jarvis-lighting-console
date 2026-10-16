@@ -6833,6 +6833,9 @@ def test_songs() -> None:
                   [(s["name"], s["track"]) for s in e.songs_public()["songs"]] == [("Track A", 4711), ("Track B", 99)],
                   e.songs_public())
 
+            r = e.act("song_follow", state=None)
+            check("asking what happens between songs works before anyone chose (the Songs window's buttons do)",
+                  r.get("ok") and "autopilot" in r.get("summary", ""), r)
             # the decks: a CDJ plays the tied tracks
             e.song_follow = True                    # (the action also starts the Pro DJ Link listener)
             deck = lambda **kw: e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(1, master=True, **kw)))
