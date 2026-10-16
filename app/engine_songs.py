@@ -121,6 +121,7 @@ class SongsMixin:
         if _truthy(play):
             self._a_timeline_play(at=float(at) if at is not None else 0.0)
         return {"song": s["id"], "songs": self.songs_public(), "transport": self._tl_transport(),
+                "timeline": self._timeline_public(),
                 "summary": f"song \"{s['name']}\"" + (" playing" if _truthy(play) else " on the timeline")}
 
     def _a_song_rename(self, id=None, name=None, **_):
@@ -210,7 +211,7 @@ class SongsMixin:
 
     def _song_fallback_problem(self) -> str | None:
         """Why the autopilot can't fill in between songs, or None."""
-        if self.__dict__.get("song_between", "autopilot") != "autopilot":
+        if self.__dict__.get("song_between", "autopilot") != "autopilot" or not self._songs():
             return None
         ap = self._ap()
         song_pbs = {int(n) for s in self._songs() for n in (s.get("cues") or {}) if str(n).isdigit()}

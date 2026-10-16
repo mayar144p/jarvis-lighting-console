@@ -43,6 +43,11 @@ class TempoMixin:
         dj = self.__dict__.get("_prodj_last")
         if dj:
             out["deck"] = dj
+        d = self.__dict__.get("_deck_follower")
+        if d is not None:
+            now = time.monotonic()
+            out["decks"] = sum(1 for st in d.status.values() if now - st.get("at", 0) < 5.0)
+            out["master_deck"] = d.master(now)
         out["bar_in_phrase"] = self._tempo().bar_in_phrase(time.monotonic())
         return out
 

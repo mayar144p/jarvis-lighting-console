@@ -5,12 +5,22 @@
 export const MIN_W = 220, MAX_W = 620;
 export const BOTTOMS = ["faders", "buttons", "timeline"];
 
+// The three modes: each job has its screen.
+//   setup    lights, room, connections, checks: the fixture list, the 3D and
+//            the Set up hub (no faders: nothing is being played yet)
+//   program  the programmer, cue lists, palettes, effects, buttons, timeline
+//   live     the show running: the Live view, the 3D, buttons, master
+export const MODES = ["setup", "program", "live"];
+export const MODE_NAMES = { setup: "Set up", program: "Program", live: "Live" };
+
 // the ready ones: what a job wants on screen
 export const BUILTIN = [
-  { id: "programming", name: "Programming", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "busking", name: "Busking", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "theatre", name: "Theatre (cues)", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "show", name: "Show (run only)", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "setup", name: "Set up", mode: "setup", fix: true, prog: true, swap: false, fixW: 0, progW: 400, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "live", name: "Live", mode: "live", fix: false, prog: true, swap: false, fixW: 0, progW: 460, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "programming", name: "Programming", mode: "program", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "busking", name: "Busking", mode: "program", fix: false, prog: true, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "theatre", name: "Theatre (cues)", mode: "program", fix: true, prog: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 300, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "show", name: "Show (run only)", mode: "live", fix: false, prog: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
 ];
 
 export const SIDES = ["left", "right"];
@@ -35,6 +45,11 @@ export function gridFor(w) {
   const names = [...left, "stage", ...right];
   const main = `"${names.join(" ")}"`, dock = `"${names.map(() => "pb").join(" ")}"`;
   const top = w.dockAt === "top";
+  if (w.mode === "setup") {
+    // setting up plays nothing: no faders or buttons, the room gets the height
+    return { cols: [...left.map((n) => cols[n]), "minmax(0, 1fr)", ...right.map((n) => cols[n])].join(" "),
+      rows: "minmax(0, 1fr)", areas: main, fixAt, progAt, top: false };
+  }
   return {
     cols: [...left.map((n) => cols[n]), "minmax(0, 1fr)", ...right.map((n) => cols[n])].join(" "),
     rows: top ? "var(--pb-h) minmax(0, 1fr)" : "minmax(0, 1fr) var(--pb-h)",
@@ -53,6 +68,7 @@ export function clean(w) {
   const width = (v) => { v = Math.round(+v || 0); return v ? Math.max(MIN_W, Math.min(MAX_W, v)) : 0; };
   return {
     id: String(w.id || "").slice(0, 40), name: String(w.name || "Workspace").slice(0, 40),
+    mode: MODES.includes(w.mode) ? w.mode : "program",
     fix: w.fix !== false, prog: w.prog !== false, swap: !!w.swap,
     fixW: width(w.fixW), progW: width(w.progW),
     bottom: BOTTOMS.includes(w.bottom) ? w.bottom : "faders",

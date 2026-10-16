@@ -15,6 +15,56 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 
 It is made for a desktop or laptop screen (1280 px wide and up).
 
+### Three modes: Set up, Program, Live
+
+The switch in the top bar shows the screen for the job in hand; the timeline,
+cue lists and buttons aren't all there at once.
+
+| Mode | On screen | For |
+|---|---|---|
+| **Set up** | the fixture list, the 3D view and the **Set up** hub (no faders: nothing plays yet) | the lights (add, import a plot or CSV, DMX map, address them all), the room (arrange, shape, rigging, describe it in words), the connections (output, nodes, RDM, DJ gear, MIDI / OSC / Stream Deck, Hue, a backup desk), the checks (**venue check-in**, test a light, ready check). Each step says how it stands (6 lights patched · no clashes) |
+| **Program** | the fixture list, the 3D view, the programmer, and the faders / buttons / timeline below | looks, cues, palettes, effects, buttons, the timeline and songs |
+| **Live** | the 3D view, the **Live** view and the buttons, master and BLACKOUT | running the show: what plays now and what comes next |
+
+A new, empty show opens in Set up; otherwise the desk opens as you left
+it. Each mode remembers the workspace you last used for it (the workspace
+button still arranges panels, sides and widths; your own workspaces keep
+their mode).
+
+**The Live view** shows the song playing (or the track on the master deck),
+the part it is in - *Drop 2* - with a bar running to the next part and
+*Breakdown in 6 bars*; the tempo with the beat and Tap / Phrase starts now;
+the autopilot (start, next look, or "covering between songs"); and the hit
+buttons (strobe, flash, blinder, fog... from the Buttons page) big enough to
+hit in the dark. A hit holds while your finger is on it.
+
+**The programmer follows the rig:** with nothing selected it shows the tabs
+the patched lights can use at all - no moving heads, no Position tab.
+
+**What is connected** shows in the status bar as small chips - CDJs ×2 ·
+master 1, Link, MIDI clock, a controller by name, OSC in (Stream Deck,
+Companion), Hue, Backup desk, Songs follow decks - green when well, amber
+when listening but nothing is heard. Click one to set it up. Nothing
+connected, nothing shown.
+
+### Venue check-in
+
+A show made for one rig meets another at each venue. **Set up → Venue
+check-in…** asks the lights here (RDM) and lines them up against the show:
+- lights found as patched;
+- **lights to swap in**: a light of the show that didn't answer, and a light
+  of the same kind found here (*#5 LED PAR isn't here; the SlimPAR at 1.033
+  is a PAR*) - **Use it** makes it take #5's place: its type and address
+  change, its number, place, groups, cues and songs stay (one Ctrl+Z);
+  another found light can be picked instead;
+- patched here but a different light (change it to the one that answered);
+- the show's lights not heard, with no light of their kind (park dark);
+- other lights here (add them).
+
+RDM needs a node with RDM on and lights that support it; without it the
+check-in points to the DMX map and *Change fixture type*, which do the same
+by hand.
+
 ### The venue
 
 The stage sits in a real room: floor, walls, ceiling or an open roof, a stage
@@ -193,6 +243,21 @@ track with no song) the Songs window offers:
   Give the autopilot a playback of its own with a few looks (cues); the
   Songs window says so if it shares the songs' playback.
 - **Hold the last look**: the lights stay as they were.
+
+**Shows for many songs at once:** Songs → **Make shows for songs…**. Pick
+the songs and say what they should be like ("dark techno, red and white,
+hard drops"). For each song in turn the desk puts it on the timeline, finds
+its parts from its music when it has none yet, has the show designed for
+this rig and those parts, builds it and keeps it in the song. The AI
+designs it (Settings → AI): it is told the rig - each group of lights, what
+it can do (colour mixing, pan / tilt, gobos, zoom), where it hangs, the
+room's targets (the DJ, the floor, the crowd) - and the song's tempo, length
+and parts, and answers with a design, never DMX: a look per group per part
+(brightness, colour, aim, effect), strobe and flash hits on the beat or
+the bar, master moves. The desk checks it (nothing a light can't do) and
+builds the cues and the timeline. With no AI, or *the desk's own designer*
+ticked, built-in rules design it the same way. Each song is its own undo
+step; *Edit* a song to change its show by hand.
 
 **A laptop DJ** (Serato, Traktor, rekordbox on a laptop) sends no track
 over the network, so songs don't start by themselves. Start one with

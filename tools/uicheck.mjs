@@ -373,6 +373,9 @@ for (const width of WIDTHS) {
   await p.goto(BASE);
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
+  // an empty show opens in Set up; the steps below check the programmer
+  await p.click('#mode-seg [data-mode="program"]').catch(() => {});
+  await p.waitForTimeout(300);
   const dir = join(outDir, String(width));
   mkdirSync(dir, { recursive: true });
   for (const [name, run, o = {}] of STEPS) {

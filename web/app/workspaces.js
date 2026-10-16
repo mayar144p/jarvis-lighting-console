@@ -5,19 +5,22 @@
 // the screen as you left it.  Switch from the top bar or with Alt+1..9.
 // Kept per computer (each operator's own), not in the show.
 import { $, $$, h, menu, toast, promptBox, confirmBox } from "./ui.js";
-import { BUILTIN, clean, gridFor, MIN_W, MAX_W } from "./wslayouts.js";
+import { BUILTIN, clean, gridFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
+import { renderHub } from "./modehub.js";
+import { state, on } from "./store.js";
 
 const KEY = "jarvis.workspaces";
 
-let saved = { active: "programming", list: [] };
+let saved = { active: "programming", list: [], lastByMode: {} };
 let applying = false;
 
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (raw && Array.isArray(raw.list)) saved = { active: String(raw.active || "programming"), list: raw.list.filter((w) => w && w.id).map(clean) };
+    if (raw && Array.isArray(raw.list)) saved = { active: String(raw.active || "programming"), list: raw.list.filter((w) => w && w.id).map(clean),
+      lastByMode: raw.lastByMode && typeof raw.lastByMode === "object" ? raw.lastByMode : {} };
   } catch (e) { /* private window or a damaged entry: the ready ones */ }
-  for (const b of BUILTIN) if (!saved.list.some((w) => w.id === b.id)) saved.list.splice(BUILTIN.indexOf(b), 0, { ...b });
+  for (const b of BUILTIN) if (!saved.list.some((w) => w.id === b.id)) saved.list.splice(BUILTIN.indexOf(b), 0, clean({ ...b }));
   if (!saved.list.some((w) => w.id === saved.active)) saved.active = "programming";
 }
 function store() {
@@ -59,6 +62,9 @@ function apply(w) {
     b.classList.toggle("ws-nofix", !w.fix);
     b.classList.toggle("ws-noprog", !w.prog);
     b.classList.toggle("ws-swap", !!w.swap);
+    // the job: Set up and Live put their hub where the programmer is
+    b.dataset.mode = w.mode;
+    saved.lastByMode = { ...(saved.lastByMode || {}), [w.mode]: w.id };
     // where each panel sits: the grid from the workspace (wslayouts.js)
     const g = gridFor(w);
     el.style.setProperty("--ws-cols", g.cols);
@@ -66,6 +72,7 @@ function apply(w) {
     el.style.setProperty("--ws-areas", g.areas);
     floatAt($("#fixtures-panel"), g.fixAt, w.fixPos);
     floatAt($("#programmer"), g.progAt, w.progPos);
+    floatAt($("#mode-hub"), g.progAt, w.progPos);
     b.classList.toggle("ws-docktop", g.top);
     if (w.fixW) el.style.setProperty("--fixtures-w", w.fixW + "px"); else el.style.removeProperty("--fixtures-w");
     if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
@@ -82,7 +89,16 @@ function apply(w) {
     applying = false;
   }
   paintButton();
+  renderHub(w.mode);
   window.dispatchEvent(new Event("resize"));      // the 3D view fits its new space
+}
+
+/** Switch to a mode: the workspace last used for it (or its ready one). */
+export function useMode(m) {
+  if (!MODES.includes(m)) return false;
+  const want = (saved.lastByMode || {})[m];
+  const w = saved.list.find((x) => x.id === want && x.mode === m) || saved.list.find((x) => x.mode === m);
+  return w ? useWorkspace(w.id) : false;
 }
 
 // A side panel in its place: a side of the screen (the grid), or floating
@@ -106,7 +122,7 @@ function refloat() {
   const w = activeWorkspace();
   if (!w) return;
   if (w.fixAt === "float") floatAt($("#fixtures-panel"), "float", w.fixPos);
-  if (w.progAt === "float") floatAt($("#programmer"), "float", w.progPos);
+  if (w.progAt === "float") { floatAt($("#programmer"), "float", w.progPos); floatAt($("#mode-hub"), "float", w.progPos); }
 }
 
 /** Switch to a workspace by id or by its place (1..9). */
@@ -207,7 +223,7 @@ function wireMove(panel, field) {
 async function saveAs() {
   const name = await promptBox("New workspace", "Name", "", { ok: "Save", placeholder: "e.g. Festival busking" });
   if (!name || !name.trim()) return;
-  const w = clean({ id: "u" + Date.now().toString(36), name: name.trim() });
+  const w = clean({ id: "u" + Date.now().toString(36), name: name.trim(), mode: (activeWorkspace() || {}).mode });
   capture(w);
   w.name = name.trim().slice(0, 40);
   saved.list.push(w);
@@ -275,6 +291,12 @@ function openMenu(anchor) {
 }
 
 function paintButton() {
+  const cur = activeWorkspace();
+  for (const mb of $$("#mode-seg button")) {
+    const on = !!cur && mb.dataset.mode === cur.mode;
+    mb.classList.toggle("on", on);
+    mb.setAttribute("aria-pressed", String(on));
+  }
   const b = $("#ws-btn");
   if (!b) return;
   const w = activeWorkspace();
@@ -324,8 +346,22 @@ export function initWorkspaces() {
   if (btn) btn.addEventListener("click", () => openMenu(btn));
   wireGrip($("#fixtures-panel"), "--fixtures-w", "fixW");
   wireGrip($("#programmer"), "--prog-w", "progW");
+  wireGrip($("#mode-hub"), "--prog-w", "progW");
   wireMove($("#fixtures-panel"), "fixAt");
   wireMove($("#programmer"), "progAt");
+  wireMove($("#mode-hub"), "progAt");
+  for (const mb of $$("#mode-seg button")) mb.addEventListener("click", () => useMode(mb.dataset.mode));
+  // a new, empty show starts where it needs to: Set up (once per visit)
+  let checked = false;
+  on("snapshot", () => {
+    if (checked || !state.snap) return;
+    checked = true;
+    const cur = activeWorkspace();
+    if (!(state.snap.patch || []).length && cur && cur.mode !== "setup") {
+      useMode("setup");
+      toast(`${MODE_NAMES.setup}: no lights yet - add them here, then Program`);
+    }
+  });
   // whatever changes the screen is kept in the workspace in use
   const later = () => setTimeout(remember, 0);
   for (const sel of ["#pb-mode", "#prog-tabs"]) { const el = $(sel); if (el) el.addEventListener("click", later); }

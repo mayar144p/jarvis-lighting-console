@@ -41,7 +41,7 @@ DENY_ACTIONS = frozenset({
     "backup", "backup_now", "backup_shows", "backup_restore",
     "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "hue_link",
     "song_save", "song_load", "song_rename", "song_delete", "song_link", "song_follow",
-    "standby", "standby_take", "standby_stop",
+    "standby", "standby_take", "standby_stop", "stand_in",
     "venue_save", "venue_open", "venue_delete",
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_status",

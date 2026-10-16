@@ -491,7 +491,7 @@ export function openDmxMap() {
 
 // RDM: the lights say what they are, where they're addressed and in which
 // mode; the list compares that with the patch (needs an RDM node).
-async function openRdm() {
+export async function openRdm() {
   const body = h("div.rdm", h("p.muted", "Asking the lights… (a few seconds)"));
   const close = modal({ title: "Ask the lights (RDM)", wide: true, body });
   const d = await post("/api/console/rdm", {}).catch((e) => ({ error: e.message }));

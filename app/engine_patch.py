@@ -607,6 +607,28 @@ class PatchMixin:
             msg += f"; cues set {', '.join(sorted(lost)[:6])} it doesn't have"
         return {"heads": nums, "moved": moved, "lost": sorted(lost), "summary": msg}
 
+    def _a_stand_in(self, head=None, query="", universe=None, address=None, **_):
+        """At a venue: the light found at universe.address (it answered over
+        RDM as `query`) plays light #head's part - its type and address
+        change, its number, place, groups, cues and songs stay.  One undo."""
+        if head is None or universe is None or address is None:
+            raise ValueError("head, universe and address are required")
+        n = int(head)
+        h = self._head(n)
+        u, a = int(universe), int(address)
+        said = []
+        q = str(query or "").strip()
+        same = q.lower() in f"{h.get('manufacturer') or ''} {h.get('model') or ''}".lower() if q else True
+        if not same:
+            try:
+                said.append(self._a_change_type(heads=[n], query=q)["summary"])
+            except ValueError as exc:
+                said.append(f"kept its type: {exc}")
+        self._a_set_address(head=n, universe=u, address=a)
+        h = self._head(n)
+        return {"head": n, "summary": f"#{n} is the {h.get('model') or 'light'} at {u}.{a:03d} now"
+                                      + (f" ({'; '.join(said)})" if said else "")}
+
     def _a_remove_heads(self, heads=None, head=None, head_end=None, **_):
         wanted = set()
         if heads:

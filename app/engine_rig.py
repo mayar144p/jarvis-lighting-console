@@ -343,6 +343,7 @@ class RigMixin:
         "venue_shape", "venue_build", "venue_describe", "venue_array",
         "venue_room", "venue_stage", "venue_add", "venue_update", "venue_rig",
         "venue_remove", "venue_underlay",
+        "stand_in",
     })
 
     LOCK_LIBRARY = frozenset({
