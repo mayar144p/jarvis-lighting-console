@@ -9,6 +9,7 @@ addresses (a value of 0..1 or 0..100 is a level):
     /jarvis/group/<n>/master <level>
     /jarvis/button/<id> <1 down|0 up>   (id like q1-3)
     /jarvis/macro <name or id>   /jarvis/cmd <command line>
+    /jarvis/song <name>          (plays that song's show from its start)
     /jarvis/tap                  /jarvis/bpm <bpm>
     /jarvis/highlight <0|1>      /jarvis/autopilot <0|1>
 
@@ -246,6 +247,12 @@ class OscMixin:
                 r = self.act("quick_press", id=bid, down=True if a0 is None else bool(float(a0)))
             elif cmd == "macro":
                 r = self.act("macro_run", id=str(a0 if a0 is not None else (rest[0] if rest else "")))
+            elif cmd == "song":
+                # a laptop DJ (no Pro DJ Link) starts a song's show from a key
+                want = str(a0 if a0 is not None else (rest[0] if rest else "")).strip().lower()
+                hit = next((s for s in self.songs_public()["songs"]
+                            if s["name"].lower() == want or s["id"] == want), None)
+                r = self.act("song_load", id=hit["id"], play=True) if hit else {"ok": False, "error": f"no song {want!r}"}
             elif cmd == "cmd":
                 r = self.act("run_command", text=str(a0 or ""))
             elif cmd == "tap":

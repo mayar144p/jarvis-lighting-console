@@ -198,7 +198,7 @@ function syncOperator() {
 }
 
 // Fold the bar a stage at a time (undo's words, then the Copilot / Design
-// words, then the rest) only while it doesn't fit the window.
+// words, then the rest, then the mode switch's padding) only while it doesn't fit the window.
 let fitQueued = false;
 function fitTopbar() {
   if (fitQueued) return;
@@ -208,7 +208,7 @@ function fitTopbar() {
     const tb = $(".topbar");
     const stage = (n) => { if (tb.dataset.fit !== String(n)) tb.dataset.fit = String(n); };
     stage(0);
-    for (let n = 1; n <= 3 && tb.scrollWidth > tb.clientWidth + 1; n++) stage(n);
+    for (let n = 1; n <= 5 && tb.scrollWidth > tb.clientWidth + 1; n++) stage(n);
   });
 }
 

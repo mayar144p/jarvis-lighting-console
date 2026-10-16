@@ -1853,3 +1853,67 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .look-row input[type=range] { width: 220px; }
 .look-checks { display: grid; gap: 6px; margin-bottom: 8px; }
 .seg button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* --------------------------------------------- modes: Set up / Program / Live */
+.mode-seg { margin-right: 6px; }
+.mode-seg button { height: 28px; padding: 0 12px; font-size: 12.5px; }
+.modehub { grid-area: prog; display: none; flex-direction: column; min-width: 0; min-height: 0; }
+body[data-mode="setup"] .programmer, body[data-mode="live"] .programmer { display: none; }
+body[data-mode="setup"] .modehub, body[data-mode="live"] .modehub { display: flex; }
+body.ws-noprog .modehub { display: none !important; }
+body[data-mode="setup"] .playbacks { display: none; }
+.modehub[data-side="float"] { position: absolute; z-index: 20; grid-area: auto; width: var(--prog-w); }
+.mode-hub-body { flex: 1; overflow-y: auto; padding: 4px 14px 16px; }
+.hub-body h3 { margin: 16px 0 6px; }
+.hub-step { border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 10px; margin-bottom: 8px; background: var(--surface); }
+.hub-step-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.hub-step-head .muted { margin-left: auto; text-align: right; }
+.hub-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-2); flex: none; align-self: center; }
+.hub-step.ok .hub-dot { background: var(--ok); }
+.hub-step.todo .hub-dot { background: var(--warn); }
+.hub-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.hub-next { display: flex; gap: 8px; margin-top: 18px; }
+/* Live */
+.hub-body.live { display: grid; gap: 10px; padding-top: 8px; }
+.live-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); display: grid; gap: 6px; }
+.live-k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.live-song { font-size: 18px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-part { font-size: 30px; font-weight: 800; color: var(--accent); line-height: 1.1; min-height: 1.1em; }
+.live-next { font-size: 13px; min-height: 1.2em; }
+.live-progress { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.live-progress i { display: block; height: 100%; background: var(--accent); transition: width .25s linear; }
+.live-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 2px; }
+.live-bpm b { font-size: 26px; font-weight: 800; }
+.live-beat { margin-left: 8px; letter-spacing: 3px; color: var(--accent); font-size: 13px; }
+.live-hits { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.live-hit { min-height: 64px; border-radius: var(--radius); border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 14px; touch-action: none; }
+.live-hit:active, .live-hit.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.live-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.live-pair .live-bpm b { font-size: 22px; }
+
+/* the status bar's connections */
+.st-conn { display: inline-flex; gap: 6px; align-items: center; }
+.st-chip { height: 18px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--border-2); background: transparent; color: var(--text-2); font-size: 11px; cursor: pointer; }
+.st-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.st-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.st-chip.bad { color: var(--live); border-color: color-mix(in srgb, var(--live) 50%, transparent); }
+.st-chip:hover { background: var(--surface-2); }
+
+.song-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; margin: 8px 0; }
+.song-log { max-height: 240px; overflow-y: auto; margin-top: 10px; display: grid; gap: 2px; }
+/* the fold stages for the mode switch: the workspace button keeps its icon
+   (its name in the tooltip), then the switch and the command line tighten */
+.topbar:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) #ws-name { display: none; }
+.topbar[data-fit="4"] #out-sub, .topbar[data-fit="4"] .brand-name, .topbar[data-fit="4"] #tempo-src { display: none; }
+.topbar[data-fit="4"] .mode-seg button { padding: 0 7px; }
+.topbar[data-fit="4"] > .cmd-group { min-width: 90px; }
+.topbar[data-fit="4"] #undo-label, .topbar[data-fit="4"] #ai-btn span, .topbar[data-fit="4"] #lock-label { display: none; }
+.topbar[data-fit="4"] :is(#ai-btn, #lock-btn) { padding: 0 9px; }
+/* the last fold: the effect buttons and the mode switch at their tightest */
+.topbar[data-fit="5"] #ws-name, .topbar[data-fit="5"] #out-sub, .topbar[data-fit="5"] .brand-name, .topbar[data-fit="5"] #tempo-src,
+.topbar[data-fit="5"] #undo-label, .topbar[data-fit="5"] #ai-btn span, .topbar[data-fit="5"] #lock-label { display: none; }
+.topbar[data-fit="5"] :is(#ai-btn, #lock-btn) { padding: 0 9px; }
+.topbar[data-fit="5"] > .cmd-group { min-width: 70px; }
+.topbar[data-fit="5"] .mode-seg button { padding: 0 5px; }
+.topbar[data-fit="5"] :is(#fx-arm, #fx-kill) { padding: 0 7px; }
+.topbar[data-fit="5"] .show-name { max-width: 90px; }

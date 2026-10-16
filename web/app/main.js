@@ -21,6 +21,7 @@ import { initWorkspaces } from "./workspaces.js";
 import { initErrorBadge } from "./errorbadge.js";
 import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
+import { initConnections } from "./connections.js";
 import { initTheme } from "./theme.js";
 import { initHelp } from "./help.js";
 import { initDeskBridge } from "./deskbridge.js";
@@ -71,6 +72,7 @@ async function boot() {
   initCopilot();
   initKeys();
   initWorkspaces();
+  initConnections();
   initErrorBadge();
   wireGig();
   initWelcome();

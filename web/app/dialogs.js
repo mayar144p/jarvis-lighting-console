@@ -583,7 +583,7 @@ async function openVersions(name) {
 // MVR: a plot from Vectorworks, Capture, grandMA3, Depence... comes in
 // with every light patched (its own GDTF, mode and address) and placed;
 // lights hung in a row get a truss.  One Ctrl+Z takes it all back.
-function importMvr() {
+export function importMvr() {
   const pick = h("input", { type: "file", accept: ".mvr", hidden: true });
   document.body.append(pick);
   pick.addEventListener("change", async () => {

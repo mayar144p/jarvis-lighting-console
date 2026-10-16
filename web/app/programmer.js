@@ -31,13 +31,13 @@ const hasSel = () => sel().length > 0;
 const COLOUR_ROLES = ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "lime", "wheel", "cto"];
 const BEAM_ROLES = ["zoom", "focus", "iris", "gobo", "gobo_rot", "prism", "frost", "shutter", "strobe", "prism_rot", "gobo2"];
 
-function capabilities() {
+function capabilities(heads = selectionHeads()) {
   // a laser's or an effect machine's own colour / beam channels are in the
   // Laser and SFX tabs (colour and level don't reach them): the light tabs
   // count real lights only.  Moving counts anything that pans or tilts (a
   // CO2 jet that tilts).
   const roles = new Set(), lightRoles = new Set();
-  for (const hd of selectionHeads()) {
+  for (const hd of heads) {
     const isLight = !hd.body || !hd.body.class || hd.body.class === "light";
     for (const r of hd.map || []) { roles.add(r); if (isLight) lightRoles.add(r); }
   }
@@ -55,13 +55,17 @@ function capabilities() {
 
 function applyTabVisibility() {
   const any = hasSel();
-  const cap = capabilities();
+  // nothing selected: the tabs the rig can use at all (no moving heads in
+  // the patch, no Position tab); an empty show shows them all
+  const rig = (state.snap && state.snap.patch) || [];
+  const cap = any ? capabilities() : capabilities(rig);
+  const none = !any && !rig.length;
   // only SFX machines / hazers / lasers selected: no Level or colour-effect
   // tabs (they did nothing for a confetti cannon)
   const LIGHTISH = new Set(["dimmer", "shutter", "strobe", ...COLOUR_ROLES]);
   const light = [...cap.lightRoles].some((r) => LIGHTISH.has(r));
-  const show = { intensity: !any || light, fx: !any || light,
-    position: !any || cap.position, colour: !any || cap.colour, beam: !any || cap.beam,
+  const show = { intensity: none || light, fx: none || light,
+    position: none || cap.position, colour: none || cap.colour, beam: none || cap.beam,
     laser: any && [...cap.roles].some((r) => r.startsWith("laser_")),
     sfx: any && [...cap.roles].some((r) => r.startsWith("fx_") || r === "fog") && ![...cap.roles].some((r) => r.startsWith("laser_")) };
   $$("#prog-tabs button").forEach((b) => {

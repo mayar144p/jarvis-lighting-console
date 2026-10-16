@@ -123,3 +123,6 @@ node_modules/
 
 # the desktop shortcut run-desktop.bat makes (points at this computer's copy)
 Jarvis.lnk
+
+# the screen check's report and screenshots (node tools/uicheck.mjs screencheck)
+screencheck/

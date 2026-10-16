@@ -80,6 +80,11 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.6 11.7H1.4z"/><path d="M8 6.2v3.4M8 11.4v.1"/></svg>
       <span id="err-count">0</span>
     </button>
+    <div class="seg mode-seg" id="mode-seg" role="group" aria-label="Mode">
+      <button data-mode="setup" title="Set up: the lights, the room, the connections, the checks (F1)">Set up</button>
+      <button data-mode="program" title="Program: the programmer, cues, palettes, effects, buttons, timeline (F2)">Program</button>
+      <button data-mode="live" title="Live: the show running - what plays, what comes next, the hits (F3)">Live</button>
+    </div>
     <button class="tb-btn ws-btn" id="ws-btn" aria-haspopup="menu" title="Workspace: the screen arranged for the job">
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M5.5 2.5v8M10.5 2.5v8M1.5 10.5h13"/></svg>
       <span id="ws-name">Programming</span>
@@ -377,6 +382,12 @@
     </section>
 
     <!-- ------------------------------------------------------ playbacks -->
+    <!-- the Set up and Live modes' hub, where the programmer is in Program -->
+    <section class="panel modehub" id="mode-hub" aria-label="Hub">
+      <div class="panel-head"><h2 id="mode-hub-title">Set up</h2></div>
+      <div class="mode-hub-body" id="mode-hub-body"></div>
+    </section>
+
     <section class="playbacks" id="playbacks" aria-label="Playbacks">
       <div class="pb-grip" id="pb-grip" title="Drag to make this panel taller or shorter (double-click: back to normal)" role="separator" aria-orientation="horizontal"></div>
       <nav class="pb-mode" id="pb-mode" aria-label="Bottom panel">
@@ -450,6 +461,7 @@
     <span id="st-net"></span>
     <span id="st-timing" class="hidden"></span>
     <span id="st-feed"></span>
+    <span id="st-conn" class="st-conn" aria-label="Connected"></span>
     <span class="st-grow" id="st-last"></span>
     <span id="st-save"></span>
   </footer>

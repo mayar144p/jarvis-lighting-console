@@ -4796,7 +4796,8 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("four ready ones: programming, busking, theatre, show", got["ids"] == ["programming", "busking", "theatre", "show"], str(got["ids"]))
+    check("six ready ones: Set up, Live, then programming, busking, theatre, show",
+          got["ids"] == ["setup", "live", "programming", "busking", "theatre", "show"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
@@ -6833,6 +6834,9 @@ def test_songs() -> None:
                   [(s["name"], s["track"]) for s in e.songs_public()["songs"]] == [("Track A", 4711), ("Track B", 99)],
                   e.songs_public())
 
+            r = e.act("song_follow", state=None)
+            check("asking what happens between songs works before anyone chose (the Songs window's buttons do)",
+                  r.get("ok") and "autopilot" in r.get("summary", ""), r)
             # the decks: a CDJ plays the tied tracks
             e.song_follow = True                    # (the action also starts the Pro DJ Link listener)
             deck = lambda **kw: e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(1, master=True, **kw)))
@@ -6855,8 +6859,47 @@ def test_songs() -> None:
             check("the next track (99): Track B takes over, its own cues on the desk",
                   e.songs_public()["following"] == sid["Track B"] and e.tl["playing"]
                   and [c["name"] for c in e.playbacks[0]["stack"]] == ["Intro", "Drop"], e.songs_public())
+            # Track B has played a while (its own fade long done), as in a set: the
+            # clock may not even tick between two calls here (Windows: 16 ms)
+            if e.playbacks[0].get("fade"):
+                e.playbacks[0]["fade"]["t0"] -= 30.0
+            deck(track=4711, beat=1, playing=True)
+            pb1 = e.playbacks[0]
+            check("Track B to Track A: A's first look fades in from B's (no cut to black)",
+                  pb1["active"] and pb1["fade"] and pb1["fade"]["dur"] >= 2.0 and pb1["fade"]["from"], pb1.get("fade"))
+            # between songs: the autopilot's own looks (playback 3)
+            check("the autopilot can't fill in while it shares the songs' playback",
+                  "playback 1" in (e.songs_public()["fallback_problem"] or ""), e.songs_public()["fallback_problem"])
+            e.act("autopilot", playback=3)
+            check("... nor with fewer than 2 looks", "2 looks" in (e.songs_public()["fallback_problem"] or ""), "")
+            e.act("select_all")
+            for lvl, nm in ((40, "Warm"), (90, "Busy")):
+                e.act("set_intensity", level=lvl)
+                e.act("record_cue", playback=3, name=nm)
+            e.act("clear_programmer")
+            check("with its own playback and looks, it can", e.songs_public()["fallback_problem"] is None, "")
             deck(track=5, beat=1, playing=True)
-            check("a track with no song: the song stops", not e.tl["playing"] and e.songs_public()["following"] is None, "")
+            pb3 = e.playbacks[2]
+            check("a track with no song: the song stops, its look fades out",
+                  not e.tl["playing"] and e.songs_public()["following"] is None
+                  and pb1["level"] == 0 and pb1.get("xfade"), (pb1["level"], pb1.get("xfade")))
+            check("... and the autopilot takes over, fading its looks in",
+                  e.autopilot_public()["on"] and pb3["active"] and pb3["level"] == 100 and pb3.get("xfade")
+                  and e.songs_public()["fallback"], (e.autopilot_public(), pb3["level"]))
+            deck(track=4711, beat=40, playing=True)
+            check("a tied track again: the autopilot hands back (fades out), the song fades in",
+                  not e.autopilot_public()["on"] and pb3["level"] == 0 and pb1["level"] == 100 and pb1.get("xfade")
+                  and e.songs_public()["following"] == sid["Track A"], (pb3["level"], pb1["level"]))
+            ok, said = e.osc_handle("/jarvis/song", ["track b"])
+            check("a laptop DJ (no Pro DJ Link): /jarvis/song <name> from a Stream Deck key plays it",
+                  ok and e.__dict__.get("song_current") == sid["Track B"] and e.tl["playing"], said)
+            ok, said = e.osc_handle("/jarvis/song", ["nope"])
+            check("... a song that isn't there is refused", not ok and "no song" in said, said)
+            deck(track=4711, beat=41, playing=True)
+            e.act("song_follow", state=None, between="hold")
+            deck(track=6, beat=1, playing=True)
+            check("'hold' between songs: the last look stays, no autopilot",
+                  not e.autopilot_public()["on"] and pb1["level"] == 100 and pb1["active"], "")
             e.act("song_follow", state=False)
             check("following off: back to normal speed", e.tl.get("rate", 1.0) == 1.0 and not e._tl_transport()["deck"], "")
         finally:
@@ -7088,3 +7131,78 @@ def test_look_and_reach() -> None:
                  "venue_build", "venue_info"}
     missing = sorted(a for a in engine_base.ACTIONS if a not in named and a not in elsewhere)
     check("every desk action has a button, menu or setting (a new one needs a way in on screen)", not missing, missing)
+
+
+def test_modes_and_checkin() -> None:
+    """The screen by job - Set up / Program / Live - with the Live view and
+    the Set up hub; what is connected in the status bar; and the venue
+    check-in that swaps the venue's lights in for the show's."""
+    print("Modes, the Live view, connections and the venue check-in")
+    import shutil
+    import subprocess
+    from app import engine as eng
+    from app import tempo as T
+
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
+    check("the top bar switches Set up / Program / Live; the hub sits where the programmer is",
+          'id="mode-seg"' in html and all(f'data-mode="{m}"' in html for m in ("setup", "program", "live"))
+          and 'id="mode-hub"' in html and "b.dataset.mode = w.mode" in ws and "export function useMode" in ws, "")
+    check("a new, empty show opens in Set up", "useMode(\"setup\")" in ws and "(state.snap.patch || []).length" in ws, "")
+    node = shutil.which("node")
+    if node:
+        app = (ROOT / "web" / "app").as_uri()
+        js = (f"const W=await import('{app}/wslayouts.js');const R=await import('{app}/rigmatch.js');"
+              "const b=Object.fromEntries(W.BUILTIN.map(w=>[w.id,W.clean(w)]));"
+              "console.log(JSON.stringify({modes:Object.values(b).map(w=>w.id+':'+w.mode),"
+              "setupRows:W.gridFor(b.setup).rows,setupAreas:W.gridFor(b.setup).areas,progRows:W.gridFor(b.programming).rows,"
+              "old:W.clean({id:'u1',name:'Mine'}).mode,"
+              "kinds:['Chauvet DJ SlimPAR Q12','ADJ Mega Par Profile','Moving Head Spot 16ch','RGBW Bar 12ch','Clay Paky Sharpy','ETC Source Four 26'].map(R.kindOf),"
+              "pairs:R.pairUp([{head:5,model:'LED PAR 4ch',channels:4},{head:6,model:'Moving Head Spot 16ch',channels:16},{head:7,model:'Hazer'}],"
+              "[{uid:'a',name:'Chauvet Intimidator Spot 360',footprint:14},{uid:'b',name:'ADJ Mega Par Profile',footprint:4},{uid:'c',name:'ADJ Mega Par Profile',footprint:4}]).map(p=>[p.head.head,p.dev.uid]),"
+              "chips:R.connectionChips({tempo:{prodj:true,decks:2,master_deck:1},osc:{on:true,port:8000,count:3},hue:{paired:true,links:4},standby:{following:true,host:'10.0.0.2:8787'}},[{name:'APC mini mk2',layout:'Akai APC mini'}]).map(c=>c.text),"
+              "quiet:R.connectionChips({tempo:{prodj:true,decks:0}}).map(c=>c.k+':'+c.text),none:R.connectionChips({}).length}))")
+        out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout or "{}")
+        check("the ready workspaces: Set up and Live modes, the rest Program",
+              "setup:setup" in out.get("modes", []) and "live:live" in out.get("modes", [])
+              and "programming:program" in out.get("modes", []) and out.get("old") == "program", out.get("modes"))
+        check("Set up has no faders row (nothing plays while setting up)",
+              out.get("setupRows") == "minmax(0, 1fr)" and "pb" not in out.get("setupAreas", "") and "var(--pb-h)" in out.get("progRows", ""), out)
+        check("a light's kind from its name (a 'Par Profile' is a PAR, a Source Four a spot)",
+              out.get("kinds") == ["par", "par", "spot", "bar", "beam", "spot"], out.get("kinds"))
+        check("check-in pairs each missing light with one of its kind found here, each found light once",
+              out.get("pairs") == [[5, "b"], [6, "a"]], out.get("pairs"))
+        check("the status bar lists what is connected", out.get("chips") == ["CDJs ×2 · master 1", "Akai APC mini", "OSC in · 3", "Hue 4", "Backup desk"],
+              out.get("chips"))
+        check("... listening with no player heard is a warning; nothing connected, nothing shown",
+              out.get("quiet") == ["warn:CDJs: none heard"] and out.get("none") == 0, out)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=70)
+            e.act("record_cue", playback=1, name="Look")
+            e.act("clear_programmer")
+            r = e.act("stand_in", head=1, query="LED PAR 8ch", universe=2, address=101)
+            h1 = e._head(1)
+            check("check-in: the venue's light takes #1's place - its type and address",
+                  r.get("ok") and h1["model"] == "LED PAR 8ch" and (h1["universe"], h1["address"]) == (2, 101), r)
+            check("... #1 keeps its cues (they point at the light and its roles)",
+                  1 in {int(k) for k in e.playbacks[0]["stack"][0]["values"]}, "")
+            e.act("undo")
+            h1 = e._head(1)
+            check("... one Ctrl+Z puts it back (type and address together)",
+                  h1["model"] == "LED PAR 4ch" and (h1["universe"], h1["address"]) == (1, 1), (h1["model"], h1["universe"], h1["address"]))
+            r = e.act("stand_in", head=1, query="LED PAR 4ch", universe=1, address=5)
+            check("an address clash is refused, the light stays where it was",
+                  not r.get("ok") and (e._head(1)["universe"], e._head(1)["address"]) == (1, 1), r)
+            e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(2, master=True)))
+            e.tempo_dj_status(T.parse_prodj_status(fakes.build_prodj_status(3)))
+            t = e.tempo_public()
+            check("the CDJs heard and the master deck, for the status bar", t.get("decks") == 2 and t.get("master_deck") == 2, t)
+        finally:
+            e.shutdown()

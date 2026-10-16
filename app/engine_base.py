@@ -661,7 +661,7 @@ ACTIONS = (
     "backup", "backup_now", "backup_shows", "backup_restore",
     "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "hue_link",
     "song_save", "song_load", "song_rename", "song_delete", "song_link", "song_follow",
-    "standby", "standby_take", "standby_stop",
+    "standby", "standby_take", "standby_stop", "stand_in",
     "osc_out", "osc_send", "timecode_ltc",
     "move_save", "move_play", "move_delete", "move_rename",
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
