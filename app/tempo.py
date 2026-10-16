@@ -212,16 +212,6 @@ def parse_prodj_status(pkt: bytes) -> dict | None:
             "synced": bool(flags & F_SYNC), "on_air": bool(flags & F_ONAIR)}
 
 
-def build_prodj_status(device: int, master: bool = False, playing: bool = True, name: str = "CDJ-3000") -> bytes:
-    p = bytearray(0xD4)
-    p[:10] = PRODJ_MAGIC
-    p[0x0A] = PRODJ_STATUS
-    p[0x0B:0x0B + len(name)] = name.encode("ascii")[:20]
-    p[0x21] = device & 0xFF
-    p[0x89] = (F_PLAYING if playing else 0) | (F_MASTER if master else 0)
-    return bytes(p)
-
-
 class DeckFollower:
     """Which deck's beats drive the clock: the master when the players say
     who it is (status within MASTER_S); else the deck already followed,
@@ -254,21 +244,6 @@ class DeckFollower:
             self.following = device
             return True
         return False
-
-
-def build_prodj_beat(device: int, bpm: float, beat: int, pitch_pct: float = 0.0, name: str = "CDJ-3000") -> bytes:
-    """A beat packet as a CDJ sends it (tests, and the virtual deck)."""
-    p = bytearray(0x60)
-    p[:10] = PRODJ_MAGIC
-    p[0x0A] = PRODJ_BEAT
-    p[0x0B:0x0B + len(name)] = name.encode("ascii")[:20]
-    p[0x1F] = 0x01
-    p[0x21] = device & 0xFF
-    p[0x55:0x58] = int(0x100000 * (1 + pitch_pct / 100.0)).to_bytes(3, "big")
-    p[0x5A:0x5C] = int(round(bpm * 100)).to_bytes(2, "big")
-    p[0x5C] = beat
-    p[0x5F] = device & 0xFF
-    return bytes(p)
 
 
 # ---------------------------------------------------------------------------
@@ -311,11 +286,3 @@ class Timecode:
         t = self.seconds
         return f"{int(t // 3600):02d}:{int(t // 60 % 60):02d}:{int(t % 60):02d}:{int((t % 1) * self.fps):02d}"
 
-
-def build_mtc(seconds: float, fps: float = 25.0) -> list[int]:
-    """The eight quarter-frame data bytes for a time (tests, a virtual source)."""
-    rate = {24.0: 0, 25.0: 1, 29.97: 2, 30.0: 3}[fps]
-    fr = int(round((seconds % 1) * fps))
-    s, m, h = int(seconds % 60), int(seconds // 60 % 60), int(seconds // 3600)
-    vals = [fr & 15, fr >> 4, s & 15, s >> 4, m & 15, m >> 4, h & 15, (h >> 4) | (rate << 1)]
-    return [(i << 4) | v for i, v in enumerate(vals)]

@@ -134,20 +134,6 @@ def identity() -> list[float]:
             0.0, 0.0, 0.0, 1.0]
 
 
-def matrix_translation(m: list[float]) -> tuple[float, float, float]:
-    """Translation of a ROW-VECTOR matrix: indices 3, 7, 11."""
-    return (m[3], m[7], m[11])
-
-
-def mat_mul(a: list[float], b: list[float]) -> list[float]:
-    """Row-vector multiply: the transform for `a` THEN `b` is `b * a`."""
-    out = [0.0] * 16
-    for r in range(4):
-        for c in range(4):
-            out[r * 4 + c] = sum(a[k * 4 + c] * b[r * 4 + k] for k in range(4))
-    return out
-
-
 
 # --- parsing --------------------------------------------------------------
 def _f(node, attr: str, dflt: float = 0.0) -> float:
@@ -407,22 +393,6 @@ def resolve_kinematics(root: dict, has_pan: bool, has_tilt: bool) -> dict:
         out["tilt"] = nodes[idx][0]
         out["order"].append("tilt")
     return out
-
-
-def node_at(root: dict, path: str | None) -> dict | None:
-    if not path:
-        return None
-    node = None
-    for i, n in enumerate(root.get("nodes") or []):
-        if str(i) == path:
-            return n
-    parts = path.split("/")
-    node = (root.get("nodes") or [None])[int(parts[0])] if root.get("nodes") else None
-    for p in parts[1:]:
-        if not node:
-            return None
-        node = (node.get("children") or [None])[int(p)]
-    return node
 
 
 # --- model extraction, safely ---------------------------------------------

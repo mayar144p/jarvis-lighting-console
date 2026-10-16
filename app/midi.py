@@ -21,7 +21,7 @@ CCs map to parameters with $value / $pct / $on token substitution:
                       "params": {"attribute": "pan", "value": "$value"}}},
      "steps"  form allows select -> set chains for fixture parameters}
 
-Tests inject FakeMidiSource (a queue with the same shapes winmm
+Tests inject a fake source (tools/selftests/fakes.py: a queue with the same shapes winmm
 produces), so no physical MIDI hardware is ever needed.
 """
 from __future__ import annotations
@@ -212,25 +212,6 @@ class MidiMapper:
 
 
 # -- sources --------------------------------------------------------------
-class FakeMidiSource:
-    """Test double: same queue shapes the winmm callback produces."""
-
-    kind = "fake"
-
-    def __init__(self):
-        self.queue: queue.Queue = queue.Queue()
-        self.closed = False
-
-    def push(self, status: int, data1: int, data2: int) -> None:
-        self.queue.put(("msg", status, data1, data2))
-
-    def push_close(self) -> None:
-        self.queue.put(("close",))
-
-    def close(self) -> None:
-        self.closed = True
-
-
 def enumerate_devices() -> list[dict]:
     """[{"index": i, "name": str}, ...] via winmm; [] off-Windows."""
     if sys.platform != "win32":

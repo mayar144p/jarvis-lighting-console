@@ -29,10 +29,9 @@ undo, the patch lock and dry run mean the same thing whichever you used.
 
 ## Quick start
 
-1. **Windows:** double-click `run-desktop.bat` (the desktop app, below).
-   **Mac/Linux:** `./run-desktop.sh`, or `./run.sh` for the desk in a
-   browser (<http://localhost:8787>). Both create `.env` from
-   `.env.example` on first run. Or run `python app/main.py` yourself.
+1. **Windows:** double-click `run-desktop.bat`. **Mac/Linux:**
+   `./run-desktop.sh`. Jarvis is a desktop app (below); it creates `.env`
+   from `.env.example` on first run.
 
    **Updates are automatic.** Each launch fetches the latest version and
    fast-forwards to it. It's skipped with a one-line note when you're
@@ -63,8 +62,8 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    LIVE**. Until then every frame is built and counted but nothing leaves the
    machine.
 
-Python 3.10+ is required. Node is only needed to run the full test suite
-and the desktop app.
+Python 3.10+ and [Node.js](https://nodejs.org) are required (the installer
+below needs neither).
 
 ### The desktop app (testing)
 
@@ -114,8 +113,8 @@ to the same account; then use the Tailscale address the dialog shows
 (100.x.x.x). Only your button presses travel (about 0.15 s Sweden -
 Australia), the 3D draws on your own computer, and the fades, effects and
 timeline run on the lights' computer, so the light stays smooth. Never open
-the port on your router to the internet. Started with `run.sh` or
-`python app/main.py` instead of the app: put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
+the port on your router to the internet. Running the engine on its own
+(`python app/main.py`, for development): put `HOST=0.0.0.0` and a `CONSOLE_TOKEN=` code of your own in
 `.env`.
 
 **USB DMX:** Settings → Output → "USB DMX interface (Enttec USB Pro and
@@ -152,7 +151,7 @@ installers, which waits until Jarvis leaves testing.
 |---|---|---|
 | `APP_NAME` / `APP_SUBTITLE` | JARVIS / Lighting Assistant | branding: the name in the title and top bar (the screens' own words say "the desk") |
 | `HOST` / `PORT` | 127.0.0.1 / 8787 | bind address and web port |
-| `AUTO_UPDATE` | true | the desktop app and `run.sh` fetch the latest version on launch |
+| `AUTO_UPDATE` | true | the desktop app fetches the latest version on launch |
 | `CONSOLE_TOKEN` | *(empty)* | required when `HOST` is not loopback; sent as `X-Jarvis-Token` |
 | `LLM_API_KEY` | *(empty)* | empty: the copilot runs offline |
 | `LLM_BASE_URL` | Gemini's OpenAI endpoint | any OpenAI-compatible endpoint |

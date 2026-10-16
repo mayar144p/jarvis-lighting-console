@@ -144,7 +144,7 @@ function firewallAllow(port) {
 }
 
 // Jarvis from the repo brings itself up to date every time it opens, like
-// run.sh: tools/update.py fast-forwards to the latest version (never with
+// tools/update.py fast-forwards to the latest version (never with
 // local edits; your data is never touched).  If the update changed the app
 // itself, it opens again on the new version.  The installed app has no
 // repo to update from, so it skips this.

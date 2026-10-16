@@ -84,38 +84,11 @@ def parse_discovery(pkt: bytes) -> dict | None:
     return out
 
 
-def build_alive(node: bytes, bpm: float, beat_origin: float, time_origin_us: int,
-                session: bytes | None = None, mep4: tuple[str, int] | None = None, ttl: int = 5) -> bytes:
-    """An alive message as a peer sends it (the tests' fake peer)."""
-    payload = entry(TIMELINE, struct.pack(">qqq", int(round(60e6 / bpm)), int(round(beat_origin * 1e6)),
-                                          int(time_origin_us)))
-    payload += entry(SESSION, (session or node)[:8].ljust(8, b"\0"))
-    if mep4:
-        payload += entry(MEP4, socket.inet_aton(mep4[0]) + struct.pack(">H", mep4[1]))
-    return DISCOVERY + struct.pack(">BBH", ALIVE, ttl, 0) + node[:8].ljust(8, b"\0") + payload
-
-
 def build_ping(host_us: int, prev_ghost_us: int = 0) -> bytes:
     payload = entry(HOST_TIME, struct.pack(">q", int(host_us)))
     if prev_ghost_us:
         payload += entry(PREV_GHOST, struct.pack(">q", int(prev_ghost_us)))
     return MEASURE + bytes([PING]) + payload
-
-
-def parse_ping(pkt: bytes) -> dict | None:
-    if not pkt.startswith(MEASURE) or len(pkt) < len(MEASURE) + 1 or pkt[len(MEASURE)] != PING:
-        return None
-    ents = entries(pkt[len(MEASURE) + 1:])
-    if HOST_TIME not in ents:
-        return None
-    return {"host": struct.unpack(">q", ents[HOST_TIME][:8])[0], "payload": pkt[len(MEASURE) + 1:]}
-
-
-def build_pong(session: bytes, ghost_us: int, ping_payload: bytes) -> bytes:
-    """What a peer answers a ping with: its session, its ghost time now,
-    and the ping's own entries back."""
-    return (MEASURE + bytes([PONG]) + entry(SESSION, session[:8].ljust(8, b"\0"))
-            + entry(GHOST_TIME, struct.pack(">q", int(ghost_us))) + ping_payload)
 
 
 def parse_pong(pkt: bytes) -> dict | None:

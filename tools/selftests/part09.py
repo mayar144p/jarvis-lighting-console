@@ -1,6 +1,8 @@
 """Self-test suites, part 9: the virtual node and the MIDI monitor."""
 from __future__ import annotations
 
+from tools.selftests import fakes
+
 import json
 import socket
 import tempfile
@@ -234,7 +236,7 @@ def test_beat_clock() -> None:
           and m.live(10.0 + 48 * 60 / 128 / 24), str(m.public(11.0)))
     m.midi_start(20.0)
     check("MIDI Start is the 1", m.beat_in_bar(20.0) == 1 and m.phase(20.0) == 0, "")
-    pkt = tempo.build_prodj_beat(2, 126.0, 3, pitch_pct=2.0)
+    pkt = fakes.build_prodj_beat(2, 126.0, 3, pitch_pct=2.0)
     got = tempo.parse_prodj_beat(pkt)
     check("a CDJ beat packet: tempo with the pitch fader, the beat of the bar",
           got and got["device"] == 2 and abs(got["bpm"] - 128.52) < 0.02 and got["beat"] == 3, str(got))
@@ -284,7 +286,7 @@ def test_beat_clock() -> None:
             port = _free_port()
             check("listening to the CDJs", e._prodj_start(port) is None, "")
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.sendto(tempo.build_prodj_beat(1, 124.0, 2), ("127.0.0.1", port))
+            s.sendto(fakes.build_prodj_beat(1, 124.0, 2), ("127.0.0.1", port))
             s.close()
             deadline = _time.monotonic() + 2
             while _time.monotonic() < deadline and e.tempo.source != "prodj":
@@ -769,7 +771,7 @@ def test_osc() -> None:
 
     m = osc.build("/jarvis/cue", 1, 3)
     check("a message round-trips", osc.parse(m) == [("/jarvis/cue", [1, 3])], str(osc.parse(m)))
-    b = osc.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
+    b = fakes.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
     check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/jarvis/master", "/jarvis/cmd"], "")
     check("junk is nothing", osc.parse(b"hello") == [] and osc.parse(b"") == [], "")
 
@@ -816,7 +818,7 @@ def test_timecode() -> None:
     from app import tempo
 
     tc = tempo.Timecode()
-    got = [tc.quarter_frame(b, 0.0) for b in tempo.build_mtc(3723.4)]
+    got = [tc.quarter_frame(b, 0.0) for b in fakes.build_mtc(3723.4)]
     check("eight quarter frames make one time (+2 frames)", got[:7] == [None] * 7 and abs(got[7] - 3723.48) < 0.01, str(got))
     check("the time reads h:mm:ss:ff", tc.text().startswith("01:02:03"), tc.text())
     with tempfile.TemporaryDirectory() as td:
@@ -826,15 +828,15 @@ def test_timecode() -> None:
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("timeline_set", length=120)
-            for b in tempo.build_mtc(10.0):
+            for b in fakes.build_mtc(10.0):
                 e.tempo_mtc(b)
             check("not following: the timeline stays", not e.tl["playing"], "")
             r = e.act("timecode", state=True, offset=5)
             check("follow timecode", r.get("ok") and e.timecode_public()["follow"], str(r))
-            for b in tempo.build_mtc(10.0):
+            for b in fakes.build_mtc(10.0):
                 e.tempo_mtc(b)
             check("it plays from the timecode less the offset", e.tl["playing"] and abs(e._tl_now() - 5.08) < 0.1, str(e._tl_now()))
-            for b in tempo.build_mtc(40.0):
+            for b in fakes.build_mtc(40.0):
                 e.tempo_mtc(b)
             check("a jump re-seeks", abs(e._tl_now() - 35.08) < 0.1, str(e._tl_now()))
             check("the transport shows it", e.timecode_public()["running"] and "timecode" in e._tl_transport(), "")
@@ -842,7 +844,7 @@ def test_timecode() -> None:
             while e.tl["playing"] and time.monotonic() < deadline:
                 time.sleep(0.05)
             check("the timecode stops: the timeline pauses", not e.tl["playing"], "")
-            for b in tempo.build_mtc(2.0):
+            for b in fakes.build_mtc(2.0):
                 e.tempo_mtc(b)
             check("before the offset: nothing plays", not e.tl["playing"], str(e._tl_now()))
             e.act("timecode", state=False)
@@ -1615,7 +1617,7 @@ def test_on_the_beat() -> None:
 
         # Ableton Link: the pure part
         node = b"peer0001"
-        pkt = link_mod.build_alive(node, 128.0, 2.5, 1_000_000, mep4=("127.0.0.1", 4000))
+        pkt = fakes.build_alive(node, 128.0, 2.5, 1_000_000, mep4=("127.0.0.1", 4000))
         msg = link_mod.parse_discovery(pkt)
         check("a Link alive message reads back", msg and msg["timeline"] == (468750, 2_500_000, 1_000_000)
               and msg["mep4"] == ("127.0.0.1", 4000) and msg["node"] == node.hex(), str(msg))
@@ -1623,8 +1625,8 @@ def test_on_the_beat() -> None:
               and link_mod.parse_discovery(b"hello") is None and link_mod.parse_pong(b"_link_v\x01\x02") is None)
         fol = link_mod.Follower()
         fol.alive(msg, 0)
-        ping = link_mod.parse_ping(link_mod.build_ping(10_000))
-        pong = link_mod.parse_pong(link_mod.build_pong(node, 10_000 + 7_000_000 + 50, ping["payload"]))
+        ping = fakes.parse_ping(link_mod.build_ping(10_000))
+        pong = link_mod.parse_pong(fakes.build_pong(node, 10_000 + 7_000_000 + 50, ping["payload"]))
         fol.pong(pong, 10_100)
         check("the clocks measured: offset from a ping and its pong", fol.offset == 7_000_000, str(fol.offset))
         b = fol.beats(1_000_000 - 7_000_000 + 468750)       # one beat after the origin, in our time
@@ -1641,16 +1643,16 @@ def test_on_the_beat() -> None:
             check("follows Link", err is None, str(err))
             skew = 3_000_000                                   # the session's clock runs 3 s ahead of ours
             ghost0 = int(time.monotonic() * 1e6) + skew
-            alive = link_mod.build_alive(node, 128.0, 2.5, ghost0, mep4=peer.getsockname())
+            alive = fakes.build_alive(node, 128.0, 2.5, ghost0, mep4=peer.getsockname())
             sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline:
                 sender.sendto(alive, ("127.0.0.1", port))
                 try:
                     data, addr = peer.recvfrom(2048)
-                    pg = link_mod.parse_ping(data)
+                    pg = fakes.parse_ping(data)
                     if pg:
-                        peer.sendto(link_mod.build_pong(node, int(time.monotonic() * 1e6) + skew, pg["payload"]), addr)
+                        peer.sendto(fakes.build_pong(node, int(time.monotonic() * 1e6) + skew, pg["payload"]), addr)
                 except socket.timeout:
                     pass
                 tp = e.tempo_public()
@@ -4602,9 +4604,9 @@ def test_gdtf_pan_tilt_parts() -> None:
     geo = g.parse_geometry(xml)
     k = g.resolve_kinematics(geo, True, True)
     check("pan turns the yoke, tilt the head (not the handle and the display)",
-          g.node_at(geo, k["pan"])["name"] == "Yoke" and g.node_at(geo, k["tilt"])["name"] == "Head" and k.get("by") == "channels", str(k))
+          fakes.node_at(geo, k["pan"])["name"] == "Yoke" and fakes.node_at(geo, k["tilt"])["name"] == "Head" and k.get("by") == "channels", str(k))
     k = g.resolve_kinematics(geo, False, True)
-    check("a light with tilt only: just the head", k["pan"] is None and g.node_at(geo, k["tilt"])["name"] == "Head", str(k))
+    check("a light with tilt only: just the head", k["pan"] is None and fakes.node_at(geo, k["tilt"])["name"] == "Head", str(k))
     geo["moves"] = {}
     k = g.resolve_kinematics(geo, True, True)
     check("a file whose channels name no part: the order of the parts, as before", k["pan"] and "by" not in k, str(k))
@@ -4725,13 +4727,13 @@ def test_dj_master_and_phrase() -> None:
     f = T.DeckFollower()
     check("no master known: the first deck leads", f.take(1, 0.0) and not f.take(2, 0.1) and f.take(1, 0.5))
     check("...until it goes quiet for 2 s, then the other one", f.take(2, 2.6) and not f.take(1, 2.7))
-    f.saw_status(T.parse_prodj_status(T.build_prodj_status(1, master=True)), 3.0)
+    f.saw_status(T.parse_prodj_status(fakes.build_prodj_status(1, master=True)), 3.0)
     check("the players say deck 1 is master: deck 1 leads", f.take(1, 3.1) and not f.take(2, 3.2))
     check("a master that stopped saying so for 3 s no longer counts", f.master(6.5) is None)
-    st = T.parse_prodj_status(T.build_prodj_status(3, master=False, playing=True, name="XDJ-1000"))
+    st = T.parse_prodj_status(fakes.build_prodj_status(3, master=False, playing=True, name="XDJ-1000"))
     check("a status packet read: device, name, playing, master",
           st == {"device": 3, "name": "XDJ-1000", "playing": True, "master": False, "synced": False, "on_air": False}, str(st))
-    check("not a status packet: nothing", T.parse_prodj_status(b"x" * 200) is None and T.parse_prodj_status(T.build_prodj_beat(1, 120, 1)) is None)
+    check("not a status packet: nothing", T.parse_prodj_status(b"x" * 200) is None and T.parse_prodj_status(fakes.build_prodj_beat(1, 120, 1)) is None)
     c = T.Clock(128, 0.0)
     c.mark_phrase(10.0)
     spb = 60 / 128
@@ -6236,7 +6238,14 @@ def test_desktop_launch_quiet() -> None:
           bat.index("set ELECTRON_NO_ATTACH_CONSOLE=1") < bat.index('start "" "node_modules'))
     check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
           "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
-    check("the desktop app is the Windows launcher (run.bat is gone)", not (ROOT / "run.bat").exists())
+    check("the desktop app is the only way in (run.bat and run.sh are gone)",
+          not (ROOT / "run.bat").exists() and not (ROOT / "run.sh").exists())
+    st = (ROOT / "desktop" / "stage.mjs").read_text(encoding="utf-8")
+    check("the installer packs no tests: from tools/ only what the engine imports",
+          '["__init__.py", "import_gdtf.py"]' in st and 'endsWith(".py")' not in st)
+    app_src = "".join(f.read_text(encoding="utf-8") for f in (ROOT / "app").glob("*.py"))
+    check("test doubles live with the tests, not in the app",
+          not any(n in app_src for n in ("def build_mtc", "class FakeMidiSource", "def build_prodj_beat", "def build_alive")))
     import re as _re
     reads = [f.name for f in (ROOT / "tools" / "selftests").glob("part*.py")
              if _re.search(r'ROOT\s*/\s*"data"', f.read_text(encoding="utf-8"))]
