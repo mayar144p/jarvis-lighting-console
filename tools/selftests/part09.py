@@ -6995,3 +6995,47 @@ def test_backup_desk() -> None:
                 proc.wait(timeout=10)
             if b:
                 b.shutdown()
+
+
+def test_placeholder_variety() -> None:
+    """Lights with no maker's 3D are drawn from their kind; profiles,
+    strobes, bars and panels now differ per model too (size, length, body,
+    cells, fins, handles) - and the same model always looks the same."""
+    print("Placeholder 3D: profiles, strobes, bars and panels differ per model")
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        print("   (no Node.js here: the models are not built)")
+        return
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    models = (ROOT / "web" / "js" / "stage" / "models.js").as_uri()
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three')return{{url:'{vend}three.module.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    js = ("import{register}from'node:module';"
+          f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));"
+          "const T=await import('three');"
+          f"const{{buildFixture}}=await import({json.dumps(models)});"
+          "const sig=(t,f)=>{const sk=buildFixture({type:t,style:{body:'#222',accent:'#999',finish:'matte'},cells:t==='bar'?12:1},f);"
+          "const s=new T.Box3().setFromObject(sk.root).getSize(new T.Vector3());let v=0;"
+          "sk.root.traverse(o=>{if(o.isMesh)v+=o.geometry.attributes.position.count*(o.isInstancedMesh?o.count:1)});"
+          "return [s.x.toFixed(3),s.y.toFixed(3),s.z.toFixed(3),v,sk.emitters.length].join('/')};"
+          "const rows={profile:['ETC Source Four 26','Chauvet Ovation E-910FC','Robe ParFect','Martin ELP CL'],"
+          "strobe:['Martin Atomic 3000','Chauvet Shocker','ADJ Freq 16','Showtec Sunstrip'],"
+          "bar:['Chauvet COLORband PiX','ADJ Mega Bar','Elation Sixbar 1000','Showtec Pixel Bar 12'],"
+          "wash_panel:['Chauvet COLORado Panel Q40','ADJ Flat Par','Elation SixPar 200','Robe Tetra']};"
+          "const out={};for(const[t,fs]of Object.entries(rows)){out[t]={sigs:fs.map(f=>sig(t,f)),again:sig(t,fs[0])}}"
+          "console.log(JSON.stringify(out))")
+    r = subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, timeout=60)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        check("the placeholder models build under Node", False, (r.stderr or r.stdout)[-400:])
+        return
+    for kind, name in (("profile", "profiles"), ("strobe", "strobes"), ("bar", "bars"), ("wash_panel", "panels")):
+        sigs = out[kind]["sigs"]
+        check(f"four {name}: four different placeholders, each with its beam(s)",
+              len(set(sigs)) == 4 and all(int(s.split("/")[-1]) >= 1 for s in sigs), sigs)
+        check(f"... and the same {name[:-1]} always looks the same", out[kind]["again"] == sigs[0], "")
