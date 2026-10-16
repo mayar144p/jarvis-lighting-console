@@ -159,6 +159,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         self._writer_stop = threading.Event()
         self._writer_lock = threading.Lock()
         self._writer_pending: str | None = None
+        self._writer_busy = False            # the writer has taken a state and is still writing it
         self._writer_path: Path | None = None
         self._start_writer()
         self.master = 100

@@ -1043,6 +1043,21 @@ def test_fx_autosave(tmp: Path) -> None:
         saved_ok = len(payload.get("patch") or []) == 3
     check("autosave writer puts the patch on disk", saved_ok, "")
     d.shutdown()
+    # ...even on a slow disk: a forced save returns only once the file is
+    # WRITTEN, not when the writer has merely taken it (a slow Windows
+    # runner saw no file yet; closing the app then could lose the last edit)
+    import time as _time
+    real_write = eng.Engine._write_autosave
+    eng.Engine._write_autosave = staticmethod(lambda text, path: (_time.sleep(0.15), real_write(text, path))[1])
+    try:
+        slow = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "shows-slow", autosave_path=tmp / "slow.json")
+        slow.act("add_heads", query="LED PAR 4ch", qty=2)
+        slow._autosave(force=True)
+        on_disk = (tmp / "slow.json").is_file()
+        slow.shutdown()
+    finally:
+        del eng.Engine._write_autosave            # back to the mixin's own
+    check("...and on a slow disk a forced save is on disk when it says so", on_disk, "")
     again = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "shows-w2",
                        autosave_path=tmp / "w.json", restore=True)
     check("written autosave restores on the next boot",
