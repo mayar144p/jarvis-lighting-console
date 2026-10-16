@@ -6,7 +6,7 @@ import { state } from "./store.js";
 import { run } from "./actions.js";
 import { h, modal, promptBox, confirmBox, toast } from "./ui.js";
 import { post, token } from "./api.js";
-import { songParts, loudness } from "./songparts.js";
+import { songParts, loudness, musicTraits } from "./songparts.js";
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const songs = () => (state.snap && state.snap.songs) || { songs: [], follow: false };
@@ -43,6 +43,7 @@ export function openSongs() {
             disabled: !s.deck && !x.deck,
             onclick: () => act("song_link", x.deck && !s.deck ? { id: x.id, unlink: true } : { id: x.id }, { toast: true }) },
           x.deck && !s.deck ? "Untie" : "Tie to deck"),
+          h("button.btn.small", { title: "Change part of its show by asking: \u201cmake the second drop harder\u201d", onclick: () => changeSong(x, act) }, "Change…"),
           h("button.btn.small.ghost", { onclick: async () => {
             const n = await promptBox("Rename song", "Name", x.name);
             if (n) act("song_rename", { id: x.id, name: n });
@@ -54,11 +55,13 @@ export function openSongs() {
     const cur = s.songs.find((x) => x.id === s.current);
     body.replaceChildren(
       h("p.muted.small", "A song keeps its own timeline - music, parts, cues and effects - so it looks the same every night. "
-        + "Make one: ♪ Audio → Add audio, Find the song's parts, then Auto show; keep it here. "
+        + "Make one: ♪ Audio → Add audio, Find the song's parts, then Auto show; keep it here - or add the DJ's tracks from their rekordbox USB stick (no music files needed). "
         + "Play a song, or with Pro DJ Link tie it to its track: it then starts by itself when the DJ plays it."),
       h("div.row-btns",
         h("button.btn.primary", { onclick: () => keepAsSong().then((r) => { if (r && r.songs) latest = r.songs; paint(); }) }, "Keep the timeline as a song"),
         s.songs.length ? h("button.btn", { onclick: () => { close(); openSongShows(); } }, "Make shows for songs…") : "",
+        h("button.btn", { title: "Songs from the DJ's USB stick: rekordbox's parts and tempo, no music files",
+          onclick: () => { close(); import("./rekordbox.js").then((m) => m.openRekordboxImport(openSongs)); } }, "Add songs from a rekordbox USB…"),
         cur ? h("button.btn", { onclick: () => act("song_save", { id: cur.id }, { toast: true }) }, `Update “${cur.name}”`) : ""),
       h("label.check", follow, h("span", "Songs follow the DJ decks (Pro DJ Link)")),
       h("p.muted.small", s.follow ? (s.deck ? `The master deck is playing track ${s.deck}.` : "Waiting for the master deck to play a track.")
@@ -83,7 +86,7 @@ export function openSongs() {
 // A show for each song, by the AI (or the desk's own designer): each song in
 // turn goes on the timeline, its parts are found from its music when it has
 // none, the design is made for this rig and these parts, built, and kept.
-async function partsFromMusic(tl) {
+async function decodeMusic(tl) {
   const a = tl.audio;
   if (!a || !a.id) return null;
   const t = token();
@@ -91,12 +94,26 @@ async function partsFromMusic(tl) {
   if (!r.ok) return null;
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   try {
-    const buf = await ctx.decodeAudioData(await r.arrayBuffer());
-    const parts = songParts(loudness(buf.getChannelData(0), buf.sampleRate, 20), 20, tl.bpm || 120);
-    return parts.length >= 2 ? parts.map((p) => ({ t: +(p.t + (a.offset || 0)).toFixed(2), name: p.name })) : null;
+    return await ctx.decodeAudioData(await r.arrayBuffer());
   } finally {
     ctx.close();
   }
+}
+
+/** The song's parts from its music (when it has none), and what each part
+ * sounds like (when that isn't known yet): markers for the designer. */
+async function partsFromMusic(tl) {
+  const marks = tl.markers || [];
+  if (marks.length >= 2 && marks.every((m) => m.hear)) return null;
+  const buf = await decodeMusic(tl);
+  if (!buf) return null;
+  const off = (tl.audio && tl.audio.offset) || 0;
+  const bpm = tl.bpm || 120;
+  const raw = marks.length >= 2 ? marks.map((m) => ({ t: Math.max(0, m.t - off), name: m.name }))
+    : songParts(loudness(buf.getChannelData(0), buf.sampleRate, 20), 20, bpm);
+  if (raw.length < 2) return null;
+  const hear = musicTraits(buf.getChannelData(0), buf.sampleRate, raw, bpm);
+  return raw.map((p, i) => ({ t: +(p.t + off).toFixed(2), name: p.name, hear: (hear[i] || {}).hear || "" }));
 }
 
 export function openSongShows() {
@@ -128,13 +145,13 @@ export function openSongShows() {
       const ld = await run("song_load", { id }, { silentError: true });
       if (!ld.ok) { say(`  couldn't open it: ${ld.error}`, ".out-bad"); continue; }
       const tl = ld.timeline || {};                // this song's (the screen's copy may lag)
-      if (!(tl.markers || []).length) {
-        const parts = await partsFromMusic(tl).catch(() => null);
-        if (parts) {
-          await run("timeline_set", { markers: parts }, { silentError: true });
-          say(`  parts: ${parts.map((p) => p.name).join(", ")}`);
-        } else say("  no parts found (no music on it): a template song shape", ".muted");
-      }
+      const had = (tl.markers || []).length >= 2;
+      const parts = await partsFromMusic(tl).catch(() => null);
+      if (parts) {
+        await run("timeline_set", { markers: parts }, { silentError: true });
+        say(had ? "  listened to its parts: " + parts.map((p) => `${p.name} (${p.hear})`).join(" · ")
+          : `  parts: ${parts.map((p) => p.name).join(", ")}`, ".muted");
+      } else if (!had) say("  no parts found (no music on it): a template song shape", ".muted");
       const des = await post("/api/console/autoshow", { prompt: brief.value.trim() || "A high-energy club night.", offline: offline.checked })
         .catch((e) => ({ error: e.message }));
       const dr = des.result || des;
@@ -152,4 +169,26 @@ export function openSongShows() {
     go.textContent = "Make them again";
     void close;
   });
+}
+
+/** Change part of a song's show by asking, and keep it in the song:
+ * the song on the timeline, the change designed (the AI, or the desk's own
+ * rules), built, kept.  Ctrl+Z undoes the build and the keeping. */
+async function changeSong(x, act) {
+  const ask = await promptBox(`Change “${x.name}”`, "What should change? (the rest stays)", "", { placeholder: "make the second drop harder" });
+  if (!ask) return;
+  const ld = await run("song_load", { id: x.id }, { silentError: true });
+  if (!ld.ok) { toast(ld.error || "couldn't open the song", "bad"); return; }
+  const offline = !((state.status || {}).llm_configured);
+  const d = await post("/api/console/autoshow", { refine: ask, offline }).catch((e) => ({ error: e.message }));
+  const r = d.result || d;
+  if (d.error || r.error || !r.design) {
+    toast(d.error || r.error || "no change came back", "bad", 7000);
+    return;
+  }
+  const b = await post("/api/console/autoshow", { apply: true, design: r.design, playback: r.design.playback || 1 }).catch((e) => ({ error: e.message }));
+  const br = b.result || b;
+  if (b.error || br.ok === false || !br.built) { toast(b.error || br.error || "couldn't build it", "bad"); return; }
+  await act("song_save", { id: x.id }, { silentError: true });
+  toast(`“${x.name}”: ${r.summary || "changed"} (${(r.changed || []).join(", ")})${r.note ? " - " + r.note : ""}`, "ok", 7000);
 }

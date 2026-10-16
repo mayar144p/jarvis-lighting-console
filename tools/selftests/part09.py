@@ -7124,11 +7124,11 @@ def test_look_and_reach() -> None:
     web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js")
                   if "vendor" not in p.parts and "streamdeck" not in p.parts)
     named = set(re.findall(r'["\'`]([a-z][a-z0-9_]+)["\'`]', web))
-    # reached another way: their own routes (save / load / scan / CSV / RDM),
+    # reached another way: their own routes (save / load / scan / CSV / RDM / rekordbox),
     # queries other screens answer, or the assistant's building blocks
     elsewhere = {"cue_info", "fx_status", "get_limits", "import_scan", "import_show", "load_show", "patch_clear",
                  "patch_from_csv", "patch_list", "rdm_compare", "remap_heads", "save_show", "set_venue",
-                 "venue_build", "venue_info"}
+                 "songs_import", "venue_build", "venue_info"}
     missing = sorted(a for a in engine_base.ACTIONS if a not in named and a not in elsewhere)
     check("every desk action has a button, menu or setting (a new one needs a way in on screen)", not missing, missing)
 
@@ -7206,3 +7206,238 @@ def test_modes_and_checkin() -> None:
             check("the CDJs heard and the master deck, for the status bar", t.get("decks") == 2 and t.get("master_deck") == 2, t)
         finally:
             e.shutdown()
+
+
+def _anlz(path: str, bpm: float, first: float, beats: int, mood: int, phrases: list, end_beat: int,
+          masked: bool) -> tuple[bytes, bytes]:
+    """A rekordbox analysis file pair (.DAT, .EXT) as rekordbox lays them out:
+    the path, the beat grid, the phrases (scrambled like rekordbox 6 when
+    masked), with a tag the reader must skip."""
+    import struct as S
+    from app import rekordbox
+
+    def tag(kind: str, head: bytes, body: bytes) -> bytes:
+        return kind.encode() + S.pack(">II", 12 + len(head), 12 + len(head) + len(body)) + head + body
+
+    def pmai(tags: bytes) -> bytes:
+        return b"PMAI" + S.pack(">II", 28, 28 + len(tags)) + b"\0" * 16 + tags
+
+    p = path.encode("utf-16-be") + b"\0\0"
+    ppth = tag("PPTH", S.pack(">I", len(p)), p)
+    grid = b"".join(S.pack(">HHI", i % 4 + 1, int(bpm * 100), int(round((first + i * 60.0 / bpm) * 1000)))
+                    for i in range(beats))
+    pqtz = tag("PQTZ", S.pack(">III", 0, 0x80000, beats), grid)
+    junk = tag("PWAV", S.pack(">II", 4, 0), b"\x10" * 4)
+    body = bytearray(S.pack(">H", mood) + b"\0" * 6 + S.pack(">H", end_beat) + b"\0\0" + b"\x01\0")
+    for i, (beat, kind) in enumerate(phrases):
+        body += S.pack(">HHH", i + 1, beat, kind) + b"\0" * 18
+    if masked:
+        mask = bytes((b + len(phrases)) & 0xFF for b in rekordbox.MASK)
+        body = bytearray(b ^ mask[i % len(mask)] for i, b in enumerate(body))
+    pssi = tag("PSSI", S.pack(">IH", 24, len(phrases)) + bytes(body[:14]), bytes(body[14:]))
+    return pmai(junk + ppth + pqtz), pmai(junk + pssi)
+
+
+def test_ai_shows_listen_import_change() -> None:
+    """The AI show designer hears the music (what each part sounds like),
+    makes songs from a rekordbox USB stick's phrase analysis with no music
+    file, and changes one part of a show when asked."""
+    print("AI shows: hearing the music, rekordbox songs, changing one part")
+    import base64
+    import shutil
+    import subprocess
+    from app import autoshow, llm, rekordbox
+    from app import engine as eng
+    from app import timeline as tl_mod
+
+    # --- rekordbox's analysis files
+    high = [(1, 1), (33, 2), (65, 5), (129, 3), (161, 2), (193, 5), (257, 6)]
+    dat, ext = _anlz("/Contents/Artist/Night Drive (Extended Mix).mp3", 128.0, 0.12, 300, 1, high, 289, masked=True)
+    tags = {**rekordbox.read_tags(dat), **rekordbox.read_tags(ext)}
+    t = rekordbox.track(tags)
+    beat = 60 / 128.0
+    check("a rekordbox track: its parts in the designer's words, at rekordbox's beats",
+          [m["name"] for m in t["markers"]] == ["Intro", "Build", "Drop", "Breakdown", "Build 2", "Drop 2", "Outro"]
+          and abs(t["markers"][2]["t"] - (0.12 + 64 * beat)) < 0.002 and t["bpm"] == 128.0
+          and abs(t["length"] - (0.12 + 288 * beat)) < 0.002 and t["first_beat"] == 0.12, t)
+    check("its name from the file, its mood in words", t["name"] == "Night Drive (Extended Mix)" and t["mood"] == "high"
+          and "high-energy" in t["notes"], t)
+    plain = rekordbox.track({**rekordbox.read_tags(dat), **rekordbox.read_tags(
+        _anlz("x.mp3", 128.0, 0.12, 300, 1, high, 289, masked=False)[1])})
+    check("scrambled phrases (rekordbox 6) read the same as plain ones", plain["markers"] == t["markers"], plain)
+    mid = rekordbox.track({**rekordbox.read_tags(dat), **rekordbox.read_tags(
+        _anlz("x.mp3", 100.0, 0, 300, 2, [(1, 1), (17, 2), (33, 3), (49, 9), (81, 8), (97, 9), (129, 10)], 160, True)[1])})
+    check("a mid-mood track: verses, chorus, bridge (two verses in a row are one part)",
+          [m["name"] for m in mid["markers"]] == ["Intro", "Verse", "Chorus", "Bridge", "Chorus 2", "Outro"], mid["markers"])
+    for bad, why in ((dat[:40], "a cut-off file"), (b"RIFF" + dat[4:], "not an analysis file")):
+        try:
+            rekordbox.track(rekordbox.read_tags(bad))
+            ok = False
+        except ValueError:
+            ok = True
+        check(f"a damaged analysis file is refused, not a crash ({why})", ok, "")
+    try:
+        rekordbox.track(rekordbox.read_tags(dat))
+        ok = False
+    except ValueError as exc:
+        ok = "phrase" in str(exc)
+    check("a track analysed without phrases says so", ok, "")
+    up = rekordbox.from_upload({"tags": {k: base64.b64encode(v).decode() for k, v in tags.items()}})
+    check("the browser's upload (three tags, base64) reads the same", up == t, up)
+    node = shutil.which("node")
+    if node:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "ANLZ0000.DAT"
+            f.write_bytes(dat)
+            app = (ROOT / "web" / "app").as_uri()
+            js = (f"const R=await import('{app}/anlz.js');const fs=await import('node:fs');"
+                  f"const b=fs.readFileSync({json.dumps(str(f))});const ab=b.buffer.slice(b.byteOffset,b.byteOffset+b.length);"
+                  "const t=R.pickTags(ab);console.log(JSON.stringify({keys:Object.keys(t).sort(),"
+                  "pqtz:Buffer.from(t.PQTZ).toString('base64'),path:R.pathOf(t.PPTH)}))")
+            out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True,
+                                            encoding="utf-8", timeout=30).stdout or "{}")
+        check("the browser picks just the path and the beat grid out of a .DAT (the waveforms stay home)",
+              out.get("keys") == ["PPTH", "PQTZ"] and out.get("pqtz") == base64.b64encode(tags["PQTZ"]).decode()
+              and out.get("path") == "/Contents/Artist/Night Drive (Extended Mix).mp3", out)
+        # --- what the music sounds like, part by part
+        js = (f"const M=await import('{app}/songparts.js');const fs=44100,sec=16,N=fs*sec*2,s=new Float32Array(N);"
+              "for(let i=0;i<fs*sec;i++){const t=i/fs,ph=t%0.5;s[i]=(ph<0.12?Math.sin(2*Math.PI*55*t)*Math.exp(-ph*25):0)*0.9+0.05*Math.sin(2*Math.PI*8000*t);}"
+              "for(let i=fs*sec;i<N;i++){const t=i/fs;s[i]=0.25*Math.sin(2*Math.PI*880*t);}"
+              "console.log(JSON.stringify(M.musicTraits(s,fs,[{t:0},{t:sec}],120).map(x=>x.hear)))")
+        hear = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True,
+                                         encoding="utf-8", timeout=60).stdout or "[]")
+        check("it hears a part with a kick and bass from one with only a mid-range tone",
+              len(hear) == 2 and "steady kick" in hear[0] and "heavy bass" in hear[0]
+              and "no kick" in hear[1] and "mid-range lead" in hear[1] and "little bass" in hear[1], hear)
+    tlj = (ROOT / "web" / "app" / "timeline.js").read_text(encoding="utf-8")
+    sj = (ROOT / "web" / "app" / "songs.js").read_text(encoding="utf-8")
+    check("Find the song's parts and Make shows for songs both note what each part sounds like",
+          "musicTraits(" in tlj and "musicTraits(" in sj, "")
+    doc = tl_mod.normalise({"markers": [{"t": 0, "name": "Intro", "hear": "quiet; no kick"}], "notes": "x" * 300,
+                            "design": {"name": "A", "sections": []}})
+    check("the timeline keeps what a part sounds like, the song's notes and the show's design",
+          doc["markers"][0]["hear"] == "quiet; no kick" and len(doc["notes"]) == 200 and doc["design"]["name"] == "A", doc)
+    check("a design too big to keep is left out, not kept half",
+          "design" not in tl_mod.normalise({"design": {"blob": "y" * 70000}}), "")
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        real_av, real_st = llm.available, llm.structured
+        try:
+            # --- songs from the stick
+            r = e.act("songs_import", tracks=[t, mid | {"name": "Slow One"}, {"name": "No parts", "markers": []}])
+            names = [s["name"] for s in e._songs()]
+            check("tracks become songs with their parts and no music; one with no parts is skipped",
+                  r.get("ok") and names == ["Night Drive (Extended Mix)", "Slow One"] and r["skipped"] == ["No parts"]
+                  and e._songs()[0]["timeline"]["audio"] is None and len(e._songs()[0]["timeline"]["markers"]) == 7
+                  and "high-energy" in e._songs()[0]["timeline"].get("notes", ""), r)
+            e.act("undo")
+            check("adding them is one Ctrl+Z", e._songs() == [], [s["name"] for s in e._songs()])
+            e.act("redo")
+            sid = e._songs()[0]["id"]
+            e._song_state = {"deck_track": 4711}
+            e.act("song_link", id=sid)
+            check("tied to the deck, the song starts at rekordbox's beat 1 (no lining up by hand)",
+                  e._song(sid)["deck"] == {"track": 4711, "first_beat": 0.12}, e._song(sid)["deck"])
+            e._songs_load(e._songs_saved())
+            check("saved and opened again: parts, notes and beat 1 are kept",
+                  e._songs()[0].get("first_beat") == 0.12 and e._songs()[0]["timeline"].get("notes")
+                  and len(e._songs()[0]["timeline"]["markers"]) == 7, e._songs()[0])
+            # --- a show for it, with no music file, from the parts
+            e.act("show_template", name="club")
+            e.act("songs_import", tracks=[t])           # the template cleared the songs
+            sid = e._songs()[0]["id"]
+            e.act("song_load", id=sid)
+            a = autoshow.analyse(e)
+            check("no music file: the song's length comes from its parts", abs(a["duration"] - t["length"]) < 0.01, a["duration"])
+            e.act("timeline_set", markers=[{**m, "hear": ("loud; no kick; a strong mid-range lead (voice or melody)"
+                                                          if m["name"] == "Drop 2" else "loud; steady kick")}
+                                           for m in e.timeline["markers"]])
+            brief = autoshow.describe(autoshow.analyse(e))
+            check("the designer is told what each part sounds like and what the song is",
+                  "Drop 2 @" in brief and "no kick; a strong mid-range lead" in brief and "high-energy" in brief, brief[:400])
+            check("and how to use it", "no kick means no strobe" in autoshow.SYSTEM, "")
+            d = autoshow.design(e, "dark techno", offline=True)["design"]
+            secs = {s["name"]: s for s in d["sections"]}
+            check("the desk's own designer follows the parts: one section each, by name",
+                  list(secs) == [m["name"] for m in t["markers"]], list(secs))
+            check("a drop with no kick gets no strobe hits; one with a kick does",
+                  not secs["Drop 2"]["hits"] and secs["Drop"]["hits"], {k: v["hits"] for k, v in secs.items()})
+            check("the design keeps its brief", d.get("brief") == "dark techno", d.get("brief"))
+            b = autoshow.build(e, d, playback=1)
+            check("built, the show's design is kept on the timeline", b["built"]["cues"] == 7
+                  and (e.timeline.get("design") or {}).get("name") == d["name"]
+                  and e.timeline["design"].get("playback") == 1, e.timeline.get("design", {}).get("name"))
+            e.act("song_save", id=sid)
+            check("kept in the song, with its design", (e._song(sid)["timeline"].get("design") or {}).get("name") == d["name"], "")
+            r = e.act("songs_import", tracks=[t])
+            check("adding the track again leaves a song that has its show alone", not r.get("ok") and "skipped" in r.get("error", ""), r)
+
+            # --- change one part by asking
+            r = autoshow.refine(e, "make the second drop harder", offline=True)
+            check("\"make the second drop harder\" changes Drop 2 and nothing else",
+                  r["changed"] == ["Drop 2"] and r["source"] == "offline", r["changed"])
+            new = {s["name"]: s for s in r["design"]["sections"]}
+            check("harder: brighter, a snap in, hits", new["Drop 2"]["fade"] == 0 and new["Drop 2"]["hits"]
+                  and min(lk["intensity"] for lk in new["Drop 2"]["looks"])
+                  >= min(lk["intensity"] for lk in secs["Drop 2"]["looks"]), new["Drop 2"])
+            r = autoshow.refine(e, "the breakdown in red and white", offline=True)
+            cols = {lk.get("colour") for lk in {s["name"]: s for s in r["design"]["sections"]}["Breakdown"]["looks"]} - {None}
+            check("colours for one part", r["changed"] == ["Breakdown"] and cols <= {"#ff1a1a", "#ffffff"} and cols, (r["changed"], cols))
+            r = autoshow.refine(e, "no strobes in the drops", offline=True)
+            check("\"the drops\": every drop", set(r["changed"]) <= {"Drop", "Drop 2"} and "Drop" in r["changed"]
+                  and not any(s["hits"] for s in r["design"]["sections"] if s["name"].startswith("Drop")), r["changed"])
+            for ask, word in (("make it sparkle like unicorns", "didn't understand"), ("", "say what"),
+                              ("no strobes in the intro", "already")):
+                try:
+                    autoshow.refine(e, ask, offline=True)
+                    ok = False
+                except ValueError as exc:
+                    ok = word in str(exc)
+                check(f"a change it can't make says so ({ask or 'nothing asked'})", ok, ask)
+            # the AI: told the show as it is and the ask; its change is checked like a new design
+            seen = {}
+
+            def fake(messages, name, description, schema, temperature=0.7):
+                seen["sys"], seen["user"] = messages[0]["content"], messages[1]["content"]
+                cur = json.loads(messages[0]["content"].split("(JSON):\n", 1)[1].split("\n\nThe operator", 1)[0])
+                for s in cur["sections"]:
+                    if s["name"] == "Outro":
+                        s["looks"][0]["intensity"] = 5
+                        s["looks"][0]["aim"] = "the moon"          # not a target: dropped by the check
+                return cur
+            llm.available, llm.structured = (lambda: True), fake
+            r = autoshow.refine(e, "a darker outro", offline=False)
+            check("the AI gets the show as it is and the ask; only its change comes back",
+                  r["source"] == "llm" and r["changed"] == ["Outro"] and seen.get("user") == "a darker outro"
+                  and "THE SHOW AS IT IS NOW" in seen.get("sys", ""), (r.get("changed"), r.get("source")))
+            out = {s["name"]: s for s in r["design"]["sections"]}["Outro"]["looks"][0]
+            check("what the AI asks for that the rig can't do is dropped", out["intensity"] == 5 and out.get("aim") != "the moon", out)
+            llm.structured = lambda *a, **k: json.loads(json.dumps(autoshow.validate(e.timeline["design"], autoshow.analyse(e))))
+            r = autoshow.refine(e, "make the second drop harder", offline=False)
+            check("an AI answer that changes nothing falls back to the desk's own rules (and says so)",
+                  r["source"] == "offline" and r["changed"] == ["Drop 2"] and "AI" in r.get("note", ""), r.get("note"))
+            llm.available, llm.structured = real_av, real_st
+            b2 = autoshow.build(e, r["design"], playback=1)
+            check("the change builds like a show (one Ctrl+Z)", b2["built"]["cues"] == 7, b2["summary"])
+            e.timeline["design"]["playback"] = 3
+            r = autoshow.refine(e, "make the intro softer", offline=True)
+            check("a change goes back on the playback the show was built on", r["design"].get("playback") == 3, r["design"].get("playback"))
+            e.act("timeline_set", timeline={"markers": [], "tracks": []})
+            try:
+                autoshow.refine(e, "harder", offline=True)
+                ok = False
+            except ValueError as exc:
+                ok = "make one first" in str(exc)
+            check("with no designed show there is nothing to change (it says how to start)", ok, "")
+        finally:
+            llm.available, llm.structured = real_av, real_st
+            e.close() if hasattr(e, "close") else None
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("the screen: change part of the show (Copilot, and each song), songs from a rekordbox USB",
+          'id="auto-ask-form"' in html and "refine: ask" in cj and "changeSong(" in sj
+          and "openRekordboxImport" in sj and "/api/console/rekordbox" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")

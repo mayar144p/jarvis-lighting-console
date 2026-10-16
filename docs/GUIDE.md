@@ -259,6 +259,37 @@ builds the cues and the timeline. With no AI, or *the desk's own designer*
 ticked, built-in rules design it the same way. Each song is its own undo
 step; *Edit* a song to change its show by hand.
 
+**The designer hears the music.** Finding a song's parts also notes what
+each part sounds like - how loud, the drums (a steady kick, half-time, none),
+the bass, a mid-range lead (a voice or a melody: the sound alone can't tell
+which), how bright, rising or falling away - and the designer follows it: no
+kick, no strobes on the beat; a vocal part gets warmer, softer looks with the
+movers on the DJ; a rising part climbs and hits in its last bars. Songs made
+earlier are listened to when Make shows for songs runs on them.
+
+**Songs from a rekordbox USB stick (no music files).** Songs → **Add songs
+from a rekordbox USB…**, pick the DJ's stick (or its PIONEER folder). Every
+track rekordbox analysed with *phrase analysis* on is listed; tick the ones
+you want. Each becomes a song with rekordbox's parts (Intro, Up → Build,
+Down → Breakdown, Chorus → Drop, Outro; or verses, chorus and bridge), its
+tempo and its length - only those few bytes of the analysis files are read,
+not the music. Then **Make shows for songs** designs their shows, and **Tie
+to deck** (play the track on the master CDJ) lines the song up with
+rekordbox's beat 1 by itself. Read from the analysis format as Deep Symmetry
+documents it; checked against files built to that description, not yet
+against a real stick.
+
+**Change part of a show by asking.** Copilot → Design → **Change part of
+it**, or **Change…** next to a song: “make the second drop harder”, “the
+breakdown in blue and white”, “no strobes in the intro”, “movers on the crowd
+in drop 2”. The AI gets the show as it is and changes only what you name; the
+desk checks it like a new show. You see the parts that changed before
+building; one Ctrl+Z undoes it. With no AI the desk's own rules understand
+harder / softer, strobes or no strobes, colours, where the movers aim, and
+slower or snappier fades - and say so when they don't understand. A show
+made before this version has no design kept with it: make it once more
+(Auto show) and it can be changed from then on.
+
 **A laptop DJ** (Serato, Traktor, rekordbox on a laptop) sends no track
 over the network, so songs don't start by themselves. Start one with
 **Play**, or from a Stream Deck / Companion key with the OSC message

@@ -20,6 +20,7 @@ know DMX:
 from __future__ import annotations
 
 import copy
+import json
 import re
 
 from app import fixture_kind, fxlib, llm
@@ -132,17 +133,25 @@ def analyse(eng) -> dict:
     tl = eng.timeline
     audio = tl.get("audio")
     duration = float(audio["duration"]) if audio and audio.get("duration") else 0.0
+    marks = list(tl.get("markers") or [])
+    if not duration and len(marks) >= 2:
+        duration = float(tl.get("length") or 0)       # a song from rekordbox: parts and length, no music file
     return {"groups": groups, "targets": {k: [round(c, 2) for c in t] for k, t in targets.items()},
             "bpm": float(tl.get("bpm") or 120), "duration": duration,
-            "markers": list(tl.get("markers") or []), "venue": v.get("name") or v.get("template") or ""}
+            "markers": marks, "notes": str(tl.get("notes") or ""),
+            "venue": v.get("name") or v.get("template") or ""}
 
 
 def describe(a: dict) -> str:
     """The analysis as a compact brief for the model."""
     lines = [f"Venue: {a['venue'] or 'room'}. Tempo {a['bpm']:g} BPM."
              + (f" Song length {a['duration']:.0f} s." if a["duration"] else " No audio: design about 3 minutes.")]
+    if a.get("notes"):
+        lines.append(f"The song: {a['notes']}")
     if a["markers"]:
-        lines.append("Markers: " + ", ".join(f"{m['name']}@{m['t']:.0f}s" for m in a["markers"]))
+        lines.append("Markers (the song's parts; in brackets what each one sounds like):")
+        lines.extend(f"- {m['name']} @ {m['t']:.0f} s" + (f" ({m['hear']})" if m.get("hear") else "")
+                     for m in a["markers"])
     lines.append("GROUPS (use these keys):")
     for key, g in a["groups"].items():
         c = g["caps"]
@@ -212,7 +221,15 @@ Rules:
 - Movers on a front truss suit aims at the crowd and the DJ; washes on a
   rear truss suit the dance floor; floor PARs and bars suit uplighting
   the back wall and chases; towers and blinders suit hits.
-- Section bars should add up to roughly the song length."""
+- Section bars should add up to roughly the song length.
+- When markers are given, make one section per marker, with the marker's
+  name, so the looks change exactly where the song does.
+- Follow what each part sounds like: no kick means no strobe or flash hits
+  on the beat (slow fades instead); a steady kick suits hits and chases; a
+  mid-range lead (a voice or a melody) suits warmer, softer looks with the
+  movers on the DJ or the stage; heavy bass suits the floor PARs and bars
+  pumping; bright highs suit fast sparkle effects; "rising" suits climbing
+  intensity and hits in its last bars; "falling away" suits a fade down."""
 
 
 def _palette(brief: str) -> list[str]:
@@ -272,6 +289,7 @@ def fallback_design(a: dict, brief: str = "") -> dict:
         sections = from_song             # the song's own parts (the timeline's markers)
     groups = a["groups"]
     targets = a["targets"]
+    hear = {m["name"].strip().lower(): m.get("hear") or "" for m in a.get("markers") or [] if m.get("name")}
     base = [k for k in groups if not k.endswith("@all")]
     strobey = [k for k in base if groups[k]["role"] in ("par", "bar", "wash")] or base[:1]
     out = []
@@ -308,9 +326,15 @@ def fallback_design(a: dict, brief: str = "") -> dict:
                 look["fx"] = fx
             looks.append(look)
         hits = []
-        if name.lower().startswith("build"):
+        heard = hear.get(name.strip().lower(), "")
+        drums = "no kick" not in heard
+        if heard and "rising" in heard and drums and not name.lower().startswith(("build", "drop")):
             hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
-        if name.lower().startswith("drop"):
+        if not drums:
+            pass                         # nothing to hit on: no strobes in a part with no kick
+        elif name.lower().startswith("build"):
+            hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
+        elif name.lower().startswith("drop"):
             hits.append({"kind": "flash", "group": strobey[0], "every": "bar", "last_bars": 0})
         master = [round(40 + 60 * energy)] * 2
         if i == 0:
@@ -382,7 +406,15 @@ def validate(raw, a: dict) -> dict:
                          "master": master, "looks": looks, "hits": hits})
     if not sections:
         raise ValueError("the design has no usable sections for this rig")
-    return {"name": str(raw.get("name") or "Show")[:40], "palette": pal, "sections": sections}
+    out = {"name": str(raw.get("name") or "Show")[:40], "palette": pal, "sections": sections}
+    if raw.get("brief"):
+        out["brief"] = str(raw["brief"])[:300]
+    try:
+        if raw.get("playback"):                 # where it was built (a change goes back there)
+            out["playback"] = max(1, min(64, int(raw["playback"])))
+    except (TypeError, ValueError):
+        pass
+    return out
 
 
 def design(eng, brief: str = "", offline: bool = False) -> dict:
@@ -398,10 +430,11 @@ def design(eng, brief: str = "", offline: bool = False) -> dict:
                  {"role": "user", "content": brief or "A high-energy club night."}],
                 "show_design", "The whole show for this rig, section by section.",
                 DESIGN_SCHEMA, temperature=0.7)
-            return {"design": validate(raw, a), "analysis": _public(a), "source": "llm"}
+            return {"design": validate({**raw, "brief": brief}, a), "analysis": _public(a), "source": "llm"}
         except (llm.LLMError, ValueError) as exc:
             note = f"designed offline (AI: {str(exc)[:160]})"
-    out = {"design": validate(fallback_design(a, brief), a), "analysis": _public(a), "source": "offline"}
+    out = {"design": validate({**fallback_design(a, brief), "brief": brief}, a), "analysis": _public(a),
+           "source": "offline"}
     if note:
         out["note"] = note
     return out
@@ -533,6 +566,7 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
         doc["tracks"].append({"kind": "level", "name": AUTO_PREFIX + "Master", "target": "master", "clips": keys})
     end = times[-1][1] if times else 60.0
     doc["length"] = max(float(a["duration"] or 0), end + 2.0)
+    doc["design"] = {**d, "playback": playback}       # so one part can be changed later by asking
     calls.append({"action": "timeline_set", "params": {"timeline": doc}})
     summary = {"sections": [{"name": s["name"], "start": st, "end": en, "energy": s["energy"]}
                             for s, (st, en) in zip(d["sections"], times)],
@@ -552,3 +586,182 @@ def build(eng, d: dict, playback: int = 1) -> dict:
     return {"summary": f"built \"{d['name']}\": {summary['cues']} cues, "
                        f"{summary['fx_clips']} effect clips, {summary['hits']} hits, "
                        f"{summary['length']:.0f} s on the timeline", "built": summary}
+
+
+# ---------------------------------------------------------------------------
+# change: one part of the show, by asking ("make the second drop harder")
+# ---------------------------------------------------------------------------
+REFINE = """
+THE SHOW AS IT IS NOW (JSON):
+{design}
+
+The operator asks for a change. Change ONLY what they ask for - the
+sections and the things they name - and give back the whole show with
+every other section exactly as it is (same names, bars, looks, hits)."""
+
+REFINE_SCHEMA = DESIGN_SCHEMA
+
+
+def changed_sections(old: dict, new: dict) -> list[str]:
+    """The names of the sections that differ (added, removed or changed)."""
+    a = {s["name"]: s for s in old.get("sections") or []}
+    b = {s["name"]: s for s in new.get("sections") or []}
+    return [n for n in list(b) + [x for x in a if x not in b]
+            if json.dumps(a.get(n), sort_keys=True) != json.dumps(b.get(n), sort_keys=True)]
+
+
+COLOURS = {"red": "#ff1a1a", "blue": "#1f4bff", "green": "#00ff55", "white": "#ffffff", "purple": "#8a2bff",
+           "violet": "#8a2bff", "pink": "#ff3db8", "magenta": "#ff00ff", "orange": "#ff7a00", "amber": "#ffb000",
+           "yellow": "#ffe600", "cyan": "#00e5ff", "teal": "#00c2a8", "gold": "#ffc23d", "warm": "#ffb36b",
+           "ice": "#bfe6ff", "uv": "#5b2bff"}
+ORDINAL = {"first": 1, "1st": 1, "one": 1, "second": 2, "2nd": 2, "two": 2, "third": 3, "3rd": 3, "three": 3,
+           "fourth": 4, "4th": 4, "four": 4, "last": -1, "final": -1}
+PARTS = ("drop", "build", "breakdown", "break", "intro", "outro", "verse", "chorus", "bridge", "groove", "hook")
+
+
+def _targets(d: dict, ask: str) -> list[int]:
+    """Which sections the words name: "the second drop", "drop 2", "the
+    drops", "the intro"... - every section when none is named."""
+    t = ask.lower()
+    secs = d["sections"]
+    for part in PARTS:
+        if not re.search(rf"\b{part}s?\b", t):
+            continue
+        hits = [i for i, s in enumerate(secs) if s["name"].lower().startswith(part)
+                or (part == "break" and s["name"].lower().startswith("breakdown"))]
+        if not hits:
+            continue
+        if re.search(rf"\b(all|every|both|each)\b[^.]*\b{part}|\b{part}s\b", t):
+            return hits
+        m = re.search(rf"\b{part}\s*(\d+)\b", t)
+        if m:
+            n = int(m.group(1))
+            named = [i for i in hits if re.search(rf"\b{n}\b", secs[i]["name"])]
+            if named:
+                return named
+            return [hits[min(n, len(hits)) - 1]]
+        m = re.search(rf"\b({'|'.join(ORDINAL)})\s+{part}", t)
+        if m:
+            n = ORDINAL[m.group(1)]
+            return [hits[-1] if n < 0 else hits[min(n, len(hits)) - 1]]
+        return hits[:1]
+    return list(range(len(secs)))
+
+
+def refine_offline(d: dict, ask: str, a: dict) -> tuple[dict, str]:
+    """The desk's own rules for a change, no AI: harder / softer, strobes in
+    or out, colours, where the movers aim, faster or slower fades."""
+    d = copy.deepcopy(d)
+    t = ask.lower()
+    idx = _targets(d, t)
+    groups = a["groups"]
+    base = [k for k in groups if not k.endswith("@all")]
+    strobey = [k for k in base if groups[k]["role"] in ("par", "bar", "wash")] or base[:1]
+    did = []
+    harder = re.search(r"\b(hard(er)?|bigger|more|punch(ier|y)?|intense|energy|hype|brighter|louder|stronger|heavier|wilder)\b", t)
+    softer = re.search(r"\b(soft(er)?|calm(er)?|less|gentle|gentler|dark(er)?|dimmer|chill(er)?|quieter|subtle|mellow)\b", t)
+    no_strobe = re.search(r"\b(no|without|remove|drop the|lose the|less|fewer)\b[^.]*\b(strobes?|flash(es)?|hits?)\b", t)
+    add_strobe = re.search(r"\b(strobes?|flash(es)?|hits?)\b", t) and not no_strobe
+    cols = [COLOURS[w] for w in re.findall(r"[a-z]+", t) if w in COLOURS]
+    aim = next((k for w, k in (("dj", "dj"), ("crowd", "crowd"), ("audience", "crowd"), ("floor", "floor"),
+                                ("ceiling", "ceiling"), ("back wall", "back_wall"), ("wall", "back_wall"))
+                if re.search(rf"\b(on|at|to|towards?)\s+(the\s+)?{w}\b", t)), None)
+    for i in idx:
+        s = d["sections"][i]
+        if harder and not softer:
+            if s["energy"] >= 1.0 and not no_strobe:
+                # already flat out: hit it more - flashes on every beat, strobes into the next part
+                for h in s["hits"]:
+                    h["every"] = "beat" if h["every"] == "bar" else ("half" if h["every"] == "beat" else h["every"])
+                if strobey and not any(h["kind"] == "strobe" for h in s["hits"]):
+                    s["hits"].append({"kind": "strobe", "group": strobey[-1], "every": "half", "last_bars": 2})
+                for lk in s["looks"]:
+                    if groups[lk["group"]]["caps"]["zoom"]:
+                        lk["zoom"] = "narrow"
+            s["energy"] = round(min(1.0, s["energy"] + 0.25), 2)
+            s["fade"] = 0.0
+            for lk in s["looks"]:
+                lk["intensity"] = min(100, lk["intensity"] + 25)
+            s["master"] = [max((s.get("master") or [80])[0], 85), 100]
+            if strobey and not s["hits"] and not no_strobe:
+                s["hits"].append({"kind": "flash", "group": strobey[0], "every": "bar", "last_bars": 0})
+        if softer and not harder:
+            s["energy"] = round(max(0.0, s["energy"] - 0.25), 2)
+            s["fade"] = max(s["fade"], 3.0)
+            for lk in s["looks"]:
+                lk["intensity"] = max(10, lk["intensity"] - 25)
+                lk.pop("fx", None) if lk.get("fx") in ("strobe", "sparks") else None
+            s["hits"] = []
+        if no_strobe:
+            s["hits"] = []
+        elif add_strobe and strobey:
+            end = re.search(r"\b(end|last|before)\b", t)
+            kind = "flash" if re.search(r"\bflash", t) else "strobe"
+            s["hits"] = [h for h in s["hits"] if h["kind"] != kind] + [
+                {"kind": kind, "group": strobey[0], "every": "bar" if kind == "flash" else "beat",
+                 "last_bars": 2 if end else 0}]
+        if cols:
+            n = 0
+            for lk in s["looks"]:
+                if groups[lk["group"]]["caps"]["colour"] == "mix":
+                    lk["colour"] = cols[n % len(cols)]
+                    n += 1
+        if aim and aim in a["targets"]:
+            for lk in s["looks"]:
+                if groups[lk["group"]]["caps"]["pan_tilt"]:
+                    lk["aim"] = aim
+        if re.search(r"\b(slow(er)?|long(er)?)\s+fades?\b|\bfade (in )?slow", t):
+            s["fade"] = min(20.0, s["fade"] + 3.0)
+        if re.search(r"\b(snap|cut|instant|no fade|quick(er)? fades?|fast(er)? fades?)\b", t):
+            s["fade"] = 0.0
+    for word, flag in (("harder", harder and not softer), ("softer", softer and not harder),
+                       ("no hits", no_strobe), ("hits", add_strobe), ("colour", cols), ("aim", aim)):
+        if flag:
+            did.append(word)
+    if not did and not re.search(r"\bfades?\b", t):
+        raise ValueError("the desk's own designer didn't understand that - try words like harder, softer, "
+                         "strobes, no strobes, red and white, on the crowd, slower fades (or switch the AI on)")
+    names = ", ".join(d["sections"][i]["name"] for i in idx)
+    return d, f"{', '.join(did) or 'fades'} in {names}"
+
+
+def refine(eng, ask: str, offline: bool = False) -> dict:
+    """Change the show on the timeline as asked; the rest stays as it is:
+    {design, changed, analysis, source}.  Nothing is built until it is
+    applied (build), like a new show."""
+    ask = str(ask or "").strip()[:400]
+    if not ask:
+        raise ValueError("say what to change, e.g. \"make the second drop harder\"")
+    a = analyse(eng)
+    if not a["groups"]:
+        raise ValueError("patch some lights first - there is nothing to design for")
+    cur = (eng.timeline or {}).get("design")
+    if not isinstance(cur, dict):
+        raise ValueError("there is no designed show on the timeline to change: make one first (Auto show)")
+    cur = validate(cur, a)
+    note = None
+    if not offline and llm.available():
+        try:
+            raw = llm.structured(
+                [{"role": "system", "content": SYSTEM + "\n\n" + describe(a)
+                  + REFINE.format(design=json.dumps(cur, separators=(",", ":")))},
+                 {"role": "user", "content": ask}],
+                "show_design", "The whole show, with only the asked-for change.",
+                REFINE_SCHEMA, temperature=0.3)
+            new = validate({**raw, "brief": cur.get("brief", ""), "playback": cur.get("playback")}, a)
+            changed = changed_sections(cur, new)
+            if not changed:
+                raise ValueError("the AI changed nothing")
+            return {"design": new, "changed": changed, "analysis": _public(a), "source": "llm",
+                    "summary": f"changed {', '.join(changed)}"}
+        except (llm.LLMError, ValueError) as exc:
+            note = f"changed offline (AI: {str(exc)[:160]})"
+    new, said = refine_offline(cur, ask, a)
+    new = validate(new, a)
+    changed = changed_sections(cur, new)
+    if not changed:
+        raise ValueError(f"nothing to change: {said.split(' in ', 1)[-1]} is already like that")
+    out = {"design": new, "changed": changed, "analysis": _public(a), "source": "offline", "summary": said}
+    if note:
+        out["note"] = note
+    return out

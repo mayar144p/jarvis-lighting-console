@@ -6,7 +6,7 @@ import { post, token } from "./api.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, menu, modal, toast, promptBox, typingInField } from "./ui.js";
-import { songParts, loudness } from "./songparts.js";
+import { songParts, loudness, musicTraits } from "./songparts.js";
 
 const LANE_H = 46;
 const KINDS = [["cue", "Cue track", "GO a playback's cues at set times"],
@@ -425,7 +425,10 @@ function findParts() {
   if (!bpm || bpm === 120) bpm = detectBpm() || bpm || 120;   // 120 is the default, not a measurement
   const env = loudness(audio.decoded.getChannelData(0), audio.decoded.sampleRate, 20);
   const off = (d.audio && d.audio.offset) || 0;
-  const parts = songParts(env, 20, bpm).map((p) => ({ t: +(p.t + off).toFixed(2), name: p.name }));
+  const raw = songParts(env, 20, bpm);
+  // what each part sounds like (drums, bass, a lead, how bright): the show designer reads it
+  const hear = musicTraits(audio.decoded.getChannelData(0), audio.decoded.sampleRate, raw, bpm);
+  const parts = raw.map((p, i) => ({ t: +(p.t + off).toFixed(2), name: p.name, hear: (hear[i] || {}).hear || "" }));
   if (parts.length < 2) { toast("No clear parts in this song: add markers by hand (Add a marker at the playhead)"); return; }
   run("timeline_set", { bpm, markers: parts }, { toast: `${parts.length} parts: ${parts.map((p) => p.name).join(", ")}` });
 }

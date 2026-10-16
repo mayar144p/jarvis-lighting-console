@@ -336,20 +336,43 @@ async function autoshow() {
     const d = await post("/api/console/autoshow", { prompt: text, offline: $("#ai-offline").checked });
     r = d.result || {};
   } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
+  showPlan(r);
+}
+
+/** Change part of the show on the timeline, as asked: previewed like a new one. */
+async function changeShow() {
+  const ask = $("#auto-ask").value.trim();
+  if (!ask) { $("#auto-ask").focus(); return; }
+  const box = $("#auto-plan");
+  box.replaceChildren(h("p.muted", `Changing: “${ask}”…`));
+  let r;
+  try {
+    const d = await post("/api/console/autoshow", { refine: ask, offline: $("#ai-offline").checked });
+    r = d.result || {};
+  } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
+  showPlan(r, ask);
+}
+
+function showPlan(r, ask = "") {
+  const box = $("#auto-plan");
   if (r.error || !r.design) { box.replaceChildren(h("p.muted", r.error || "No design came back")); return; }
   autoDesign = r.design;
+  const changed = new Set(r.changed || []);
   const groups = (r.analysis && r.analysis.groups) || {};
   const bpm = (r.analysis && r.analysis.bpm) || 120;
   const spb = 240 / bpm;
   let t = 0;
   const rough = autoDesign.sections.map((s) => { const start = t; t += s.bars * spb; return { name: s.name, start, end: t, energy: s.energy }; });
+  const by = r.source === "llm" ? "the AI" : "the desk's own designer";
   box.replaceChildren(...[
-    h("div.auto-head", h("b", autoDesign.name), h("span.muted.small", r.source === "llm" ? "designed by the AI" : "designed offline"),
+    h("div.auto-head", h("b", autoDesign.name), h("span.muted.small", ask ? `changed by ${by}` : `designed by ${by}`),
       h("div.sw", ...(autoDesign.palette || []).map((c) => h("i", { style: { background: c }, title: c })))),
     r.note ? h("p.muted.small", r.note) : null,
+    ask ? h("p.small", `“${ask}”: ${r.summary || ""} - the rest stays as it is.`) : null,
     sectionBar(rough),
-    h("ol.auto-sections", ...autoDesign.sections.map((s) => h("li",
+    h("ol.auto-sections", ...autoDesign.sections.map((s) => h("li" + (changed.has(s.name) ? ".changed" : ""),
       h("b", s.name), h("span.muted.small", ` ${s.bars} bars · energy ${Math.round(s.energy * 100)}%`),
+      changed.has(s.name) ? h("span.auto-changed", "changed") : null,
       h("ul", ...s.looks.map((lk) => h("li",
         lk.colour ? h("i.dot", { style: { background: lk.colour } }) : h("i.dot.none"),
         `${(groups[lk.group] || {}).name || lk.group}: ${lk.intensity}%`
@@ -359,16 +382,23 @@ async function autoshow() {
           + (hit.last_bars ? ` in the last ${hit.last_bars} bars` : ""))))))),
     h("div.row-btns",
       h("button.btn.primary", { onclick: async () => {
-        const pb = +$("#auto-pb").value || 1;
-        if (!(await confirmBox("Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
+        const pb = ask ? (autoDesign.playback || +$("#auto-pb").value || 1) : (+$("#auto-pb").value || 1);
+        if (!(await confirmBox(ask ? "Build the change" : "Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
         const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb }).catch((e) => ({ error: e.message }));
         const rr = res.result || {};
         if (res.error || rr.error || !rr.built) { toast(res.error || rr.error || "failed", "bad"); return; }
         toast(rr.summary || "Show built", "ok", 6000);
+        // a song on the timeline: keep the new show in it too
+        const sg = (state.snap && state.snap.songs) || {};
+        const song = (sg.songs || []).find((x) => x.id === sg.current);
+        if (song) box.append(h("div.row-btns", h("button.btn", { onclick: (e) => {
+          e.currentTarget.disabled = true;
+          run("song_save", { id: song.id }, { toast: true });
+        } }, `Keep it in the song “${song.name}”`)));
         const tlBtn = document.querySelector('#pb-mode button[data-mode="timeline"]');
         if (tlBtn) tlBtn.click();
-      } }, "Build it on the timeline"),
-      h("button.btn", { onclick: autoshow }, "Another take")),
+      } }, ask ? "Build the change" : "Build it on the timeline"),
+      ask ? null : h("button.btn", { onclick: autoshow }, "Another take")),
   ].filter(Boolean));
 }
 
@@ -444,6 +474,7 @@ export function initCopilot() {
   });
   $("#design-btn").addEventListener("click", design);
   $("#auto-btn").addEventListener("click", autoshow);
+  $("#auto-ask-form").addEventListener("submit", (e) => { e.preventDefault(); changeShow(); });
   $("#auto-styles").replaceChildren(...STYLES.map((st) => h("button.chip", { onclick: () => { $("#auto-text").value = st; autoshow(); } }, st)));
   $("#doctor-btn").addEventListener("click", diagnose);
   on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
