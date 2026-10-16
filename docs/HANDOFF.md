@@ -17,14 +17,6 @@ Read this first in a new Claude Code session on this repo.
 - Desktop only (no phone / tablet layouts).
 - The name is subject to change: it is `APP_NAME` in `.env` (title and top
   bar).  The screens' own sentences say "the desk", never the name.
-- Use the project's skills (in `.claude/skills/`) and say which one you use
-  for each part:
-  - **ui-ux-pro-max** and **design-for-ai** (usability, clarify, prototype)
-    for anything on screen;
-  - **agent-skills** for debugging, tests, review and git;
-  - **ponytail** for the simplest fix, review, audit and debt;
-  - **fixture-debug** when the operator names a brand or a product to
-    debug ("debug Chauvet", "the Antari Z-1000").
 - Line endings: the repo checks files out CRLF.  `git stash` rewrites the
   working files CRLF, which breaks exact-text edit scripts; strip `\r`
   first (`sed -i 's/\r$//' file`).
@@ -78,8 +70,7 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
    ranges is read as slots; the libsweep has a Blackout check (0 fail).
 
 6. **Brand-by-brand debug** (top 20 brands x 15 products, effects
-   machines first; `tools/brands.py`, `vischeck.mjs --brands`, skill
-   `fixture-debug`):
+   machines first; `tools/brands.py`, `vischeck.mjs --brands`):
    - **Safety:** six lasers switched by a colour / mode channel lit while
      disarmed (Laserworld RS400G...) - held off unless armed and fired;
      MagicFX StadiumBlaster / Blower / Shot III and SwirlFan II were plain
@@ -123,8 +114,7 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
   visualiser, is optional / future.
 - **Then: A10** premium features (controllers with feedback, templates +
   tour + demo show, MVR / GDTF, DJ sync first) and **A11** report-a-bug
-  from the desk into GitHub Issues with a bug bundle (and "fix issue #N"
-  in the fixture-debug skill).
+  from the desk into GitHub Issues with a bug bundle.
 - **A12** plug-and-play offline AI (bundled runtime, one-click or USB "AI
   pack" model) with an Online (Gemini) / Local / Auto switch and automatic
   fallback when Gemini hits its limit.
@@ -136,8 +126,6 @@ can see "no time passed".  `coarse.py`-style runs (monkeypatch
 - The operator runs `docs/REAL_LIGHT_CHECKLIST.md` with their node and
   sends notes; each note becomes a fix.
 - `docs/BACKLOG.md` A8 (library leftovers) and A7/11 (output extras).
-- The ui-ux-pro-max skill's search data is in the repo now (operator's OK,
-  2026-10-02): `python .claude/skills/ui-ux-pro-max/scripts/search.py ...`.
 - 72 old lamp scanners can't be closed from DMX at all; the 3D shows them
   lit in Blackout (true to the real light).  A notice in the Ready? check
   would warn about them.
