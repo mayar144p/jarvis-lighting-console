@@ -552,6 +552,14 @@ function toolsMenu(btn) {
     { label: "Park the selection as it is", hint: "frozen, whatever runs", disabled: !sel.length, run: () => run("park", { heads: sel, mode: "hold" }, { toast: true }) },
     { label: "Unpark the selection", disabled: !sel.length || !sel.some((n) => parked().includes(n)), run: () => run("unpark", { heads: sel }, { toast: true }) },
     { label: `Unpark all${parked().length ? ` (${parked().length})` : ""}`, disabled: !parked().length, run: () => run("unpark", { all: true }, { toast: true }) },
+    { label: "Clear the selection's values", hint: "the rest of the programmer stays", disabled: !sel.length, run: () => run("clear_heads", { heads: sel }, { toast: true }) },
+    "-",
+    // arranging the selected lights in the room (one Ctrl+Z each)
+    { label: "Line up in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Line up at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
+    { label: "Space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
+    { label: "Space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Flip the selection left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
     "-",
     { label: "Remove selected fixtures", danger: true, disabled: !sel.length, run: async () => {
       if (await confirmBox("Remove fixtures", `Remove ${sel.length} fixture(s) from the patch? Ctrl+Z brings them back.`, { ok: "Remove", danger: true })) run("remove_heads", { heads: sel });
