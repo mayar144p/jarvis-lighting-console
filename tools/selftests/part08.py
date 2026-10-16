@@ -569,8 +569,13 @@ def check_js() -> None:
     """node --check every web script: catches the class of bug a browser
     only shows as a blank panel (a stray comma, a missing brace)."""
     print("javascript syntax")
+    # every script the screens load: web/, web/js/ and web/app/ (a syntax
+    # error in one of web/app's modules leaves the whole page blank), and
+    # the Stream Deck plugin
     scripts = sorted((ROOT / "web").glob("*.js")) + sorted(
-        (ROOT / "web" / "js").rglob("*.js"))
+        (ROOT / "web" / "js").rglob("*.js")) + sorted(
+        (ROOT / "web" / "app").rglob("*.js")) + sorted(
+        (ROOT / "web" / "streamdeck").rglob("*.js"))
     if not scripts:
         check("web scripts present", False, "no *.js in web/")
         return
@@ -578,9 +583,19 @@ def check_js() -> None:
     if node is None:
         print("  skip  node not found - cannot syntax-check the web scripts")
         return
+    # The source goes in on stdin with its type said: `node --check file.js`
+    # lets a syntax error through in a .js file (Node's module detection
+    # swallows it), which once shipped a blank page.  A module, or failing
+    # that a classic / CommonJS script.
     for path in scripts:
-        proc = subprocess.run([node, "--check", str(path)],
-                              capture_output=True, text=True)
+        src = path.read_text(encoding="utf-8")
+        proc = subprocess.run([node, "--input-type=module", "--check"], input=src,
+                              capture_output=True, text=True, encoding="utf-8")
+        if proc.returncode != 0:
+            alt = subprocess.run([node, "--input-type=commonjs", "--check"], input=src,
+                                 capture_output=True, text=True, encoding="utf-8")
+            if alt.returncode == 0:
+                proc = alt
         check(f"node --check {path.relative_to(ROOT / 'web').as_posix()}",
               proc.returncode == 0,
               (proc.stderr or "").strip()[:160])
