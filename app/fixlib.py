@@ -1149,6 +1149,11 @@ def twin_gobos(manufacturer: str, model: str, count: int) -> list[str]:
                 if len(pics) == count:
                     out = pics
                     break
+                if len(pics) >= 2 * count and pics[:count] == pics[count:2 * count]:
+                    # the wheel listed twice (each gobo still, then shaking):
+                    # its first round is the wheel, slot for slot
+                    out = pics[:count]
+                    break
             if out:
                 break
     _TWINS[key] = out

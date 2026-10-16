@@ -7039,3 +7039,21 @@ def test_placeholder_variety() -> None:
         check(f"four {name}: four different placeholders, each with its beam(s)",
               len(set(sigs)) == 4 and all(int(s.split("/")[-1]) >= 1 for s in sigs), sigs)
         check(f"... and the same {name[:-1]} always looks the same", out[kind]["again"] == sigs[0], "")
+
+
+def test_gobo_twin_repeated() -> None:
+    """A light whose file has no gobo pictures takes them from the same
+    light in the other library - also when that one lists the wheel twice
+    (each gobo still, then shaking); never when the count is simply off
+    (which slot is which can't be told, and a wrong gobo is worse)."""
+    print("Gobo pictures from the other library: a wheel listed twice")
+    from app import fixlib
+    fixlib._TWINS.clear()
+    auro = fixlib.twin_gobos("Cameo", "Auro Spot 300", 6)
+    check("Cameo Auro Spot 300: its 6 real gobos (the other library lists 12: each still, then shaking)",
+          len(auro) == 6 and len(set(auro)) == 6 and all(a.startswith("qlc:") for a in auro), auro)
+    viper = fixlib.twin_gobos("Martin", "MAC Viper AirFX", 5)
+    check("Martin MAC Viper AirFX: its 5 (the first round of the wheel)", len(viper) == 5, viper)
+    check("ADJ Inno Spot Pro: 7 slots here, 6 there - no guessing which is which",
+          fixlib.twin_gobos("American DJ", "Inno Spot Pro", 7) == [], "")
+    check("the pictures are in the bundle", all(fixlib.gobo_picture(p) for p in auro), "")
