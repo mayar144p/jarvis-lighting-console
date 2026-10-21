@@ -395,13 +395,18 @@ def build_frames(patch: list[dict], prog: dict,
                  defaults=None, overrides: dict | None = None,
                  now: float | None = None,
                  gates: dict | None = None,
-                 rests: dict | None = None, darks: dict | None = None) -> dict[int, bytearray]:
+                 rests: dict | None = None, darks: dict | None = None,
+                 keep: dict | None = None) -> dict[int, bytearray]:
     """Merge programmer + playbacks + effects into 512-byte frames.
 
     `defaults` is an optional {role: value} map of what an UN-driven
     channel should sit at (from app/profiles.py).  It is per head, so the
     engine passes head["defaults"]; a head without one writes 0, which is
     the safe "nothing programmed = dark" default.
+
+    `keep`, when given, is filled with {head_no: values} as resolved for
+    the visualiser (a strobe NOT gated in time), so the look can be built
+    from this tick's merge instead of doing it all again.
     """
     fx_vals = fx_vals or {}
     overrides = overrides or {}
@@ -421,6 +426,13 @@ def build_frames(patch: list[dict], prog: dict,
                               overrides.get(head["head_no"]), now,
                               gates.get(head["head_no"], 0),
                               rests.get(head["head_no"]), darks.get(head["head_no"]))
+        if keep is not None:
+            over = overrides.get(head["head_no"])
+            keep[head["head_no"]] = values if not (over and over.get("strobe") and now is not None) \
+                else resolve_head(head, prog, pb_vals, fx_vals.get(head["head_no"]),
+                                  master, blackout, over, None,
+                                  gates.get(head["head_no"], 0),
+                                  rests.get(head["head_no"]), darks.get(head["head_no"]))
         curve = head.get("curve", "linear")
         roles = head["map"]
         fine_of, base_of = pair_map(roles)

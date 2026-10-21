@@ -7873,3 +7873,63 @@ def test_b6_layouts() -> None:
     dj = (web / "dialogs.js").read_text(encoding="utf-8")
     check("...the screen turns them into buttons", "const DO = {" in dj and "fixBtn" in dj and "Check again" in dj, "")
 
+
+
+def test_look_shares_the_frame() -> None:
+    """The 3D look reuses what the frame just resolved (the screens'
+    stream would otherwise do every light's merge twice a tick): the same
+    rows as a fresh build, a strobe shown un-gated, and nothing shared
+    once anything changed or while in blind."""
+    print("the 3D look shares the frame's merge")
+    from app import engine as eng
+    from app import fixlib, merge
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=4, universe=1)
+            e.act("add_heads", query="Intimidator Wave 360", qty=2, universe=2)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            e.act("record_cue", playback=1)
+            e.act("cue_go", playback=1)
+            e.act("select_all")
+            e.act("set_colour", colour="blue")
+            with e.lock:
+                e.build_frames()
+                shared = e._kept_values(e._frame_patch()) is not None
+                a = e._looks()
+                e._tick_vals = None
+                b = e._looks()
+            check("right after a frame the look uses its values", shared, "")
+            check("...and they are the same rows as a fresh build", a == b, f"{a[:1]} vs {b[:1]}")
+            with e.lock:
+                e.build_frames()
+            e.act("set_intensity", level=20)
+            with e.lock:
+                stale = e._kept_values(e._frame_patch())
+            check("an action since the frame: built fresh", stale is None, "")
+            e.act("blind", state=True)
+            with e.lock:
+                e.build_frames()
+                blind = e._kept_values(e._frame_patch())
+            check("in blind (the 3D and the rig differ): built fresh", blind is None, "")
+            e.act("blind", state=False)
+            head = e.patch[0]
+            over = {head["head_no"]: {"strobe": 10.0}}
+            kept: dict = {}
+            dark_at = next(t / 1000 for t in range(1000) if (t / 1000 * 10.0) % 1.0 > 0.35)
+            merge.build_frames([head], e.programmer, [], None, 100, False,
+                               overrides=over, now=dark_at, keep=kept)
+            plain = merge.resolve_head(head, e.programmer, [], None, 100, False,
+                                       over[head["head_no"]], None)
+            gated = merge.resolve_head(head, e.programmer, [], None, 100, False,
+                                       over[head["head_no"]], dark_at)
+            check("a strobing light: the look gets it un-gated, as before",
+                  gated != plain and kept[head["head_no"]] == plain,
+                  f"{kept[head['head_no']]} vs {plain}")
+        finally:
+            e.shutdown()
