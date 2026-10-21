@@ -34,18 +34,27 @@ class QuickMixin:
                    "macro",
                    # control tiles on the buttons page: a fader, a pan/tilt
                    # pad, the tempo, a cue list, the effects' emergency stop
-                   "fader", "xy", "tempo", "cuelist", "estop")
+                   "fader", "xy", "tempo", "cuelist", "estop",
+                   # page tiles: a heading, a jump to another page, a folder
+                   # (opens a page, with a way back)
+                   "label", "page", "folder")
 
     FX_BUTTONS = frozenset({"sfx", "fog", "laser", "fxkill", "arm"})
 
     # buttons that do one thing and are done: no timer, no radio group
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
-                                  "fader", "xy", "tempo", "cuelist", "estop"})
+                                  "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
+    PAGE_TILES = frozenset({"label", "page", "folder"})
     FADER_OF = ("master", "speed", "playback", "group")
 
     SPLITS = ("odd", "even", "left", "right")
+    # the order an effect runs through its lights (the wave's direction)
+    ORDERS = ("forward", "reverse", "centre_out", "ends_in")
+    # what a button made from the programmer keeps
+    KEEPS = ("intensity", "colour", "position", "beam")
+    KEEP_WORDS = {"intensity": "Brightness", "colour": "Colour", "position": "Position", "beam": "Beam"}
 
-    QUICK_PAGES = 8
+    QUICK_PAGES = 32
 
     QUICK_SIZES = ("wide", "tall", "big")
     # on the beat: a press waits for the next half beat / beat / 2 beats / bar
@@ -64,7 +73,7 @@ class QuickMixin:
     QUICK_SHAPES = ("rounded", "square", "pill", "circle")
     QUICK_FILLS = ("outline", "solid", "glow")
     QUICK_TEXT = ("s", "m", "l", "xl")
-    QUICK_MAX_W, QUICK_MAX_H = 4, 3
+    QUICK_MAX_W, QUICK_MAX_H = 4, 4
     # the named sizes of old shows, as width x height
     SIZE_WH = {"wide": (2, 1), "tall": (1, 2), "big": (2, 2)}
     STYLE_KEYS = ("tint", "shape", "fill", "text", "plain", "blink", "icon_only", "icon", "w", "h", "size")
@@ -101,6 +110,12 @@ class QuickMixin:
             if split not in self.SPLITS:
                 raise ValueError(f"split is one of {', '.join(self.SPLITS)}")
             clean_t["split"] = split
+        # a pattern over the lights in number order: "1100" = 2 on, 2 off
+        pat = str(target.get("pattern") or "").strip()
+        if pat:
+            if not (2 <= len(pat) <= 8 and set(pat) <= {"0", "1"} and "1" in pat):
+                raise ValueError("a pattern is 2-8 of 1 (on) and 0 (off), e.g. 1100")
+            clean_t["pattern"] = pat
         btn = {"id": f"q{page}-{slot}", "page": page, "slot": slot,
                "label": str(raw.get("label") or kind.title())[:24],
                "kind": kind, "mode": mode, "target": clean_t,
@@ -201,6 +216,28 @@ class QuickMixin:
             btn["move"] = mid
         if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
             btn["seconds"] = _fclamp(raw.get("seconds"), 0.2, 600)
+        if kind in self.PAGE_TILES:
+            btn["mode"] = "tap"
+            btn["target"] = {"all": True}
+            if kind != "label":
+                if raw.get("to_page") in (None, ""):
+                    raise ValueError("a go-to-page or folder button needs the page it opens")
+                btn["to_page"] = int(_clamp(raw["to_page"], 1, self.QUICK_PAGES))
+        if kind in ("fx", "move", "custom"):
+            order = str(raw.get("order") or "forward").lower()
+            if order not in self.ORDERS:
+                raise ValueError(f"order is one of {', '.join(self.ORDERS)}")
+            if order != "forward":
+                btn["order"] = order
+            off = raw.get("offset") if isinstance(raw.get("offset"), dict) else {}
+            clean_o = {r: round(_fclamp(off[r], -540, 540), 1) for r in ("pan", "tilt")
+                       if off.get(r) not in (None, "", 0, "0")}
+            if clean_o:
+                btn["offset"] = clean_o
+        if kind == "custom" and isinstance(raw.get("keep"), (list, tuple)):
+            keep = [k for k in self.KEEPS if k in raw["keep"]]
+            if keep and len(keep) < len(self.KEEPS):
+                btn["keep"] = keep
         if kind == "fog":
             btn["level"] = int(_clamp(raw.get("level", 100), 1, 100))
             btn.setdefault("seconds", 10.0)
@@ -426,8 +463,15 @@ class QuickMixin:
                 fx_list.append({"name": f["lib"], "params": p})
             elif f.get("steps"):
                 fx_list.append({"name": "step:" + f["steps"], "params": {k: v for k, v in p.items() if k == "beats"}})
+        keep = raw.get("keep") if isinstance(raw.get("keep"), (list, tuple)) else None
+        if keep:
+            keep = set(keep)
+            values = {n: r for n, r in ((n, {k: v for k, v in row.items() if self._family(k) in keep})
+                                        for n, row in values.items()) if r}
+            fx_list = [i for i in fx_list if self._fx_family(i["name"]) in keep]
         if not values and not fx_list:
-            raise ValueError("nothing to capture - set a look or start an effect on the lights first")
+            raise ValueError("nothing to capture - set a look or start an effect on the lights first"
+                             if not keep else "the programmer has none of that for these lights")
         out = dict(raw, kind="custom", values=values, fx_list=fx_list)
         out.pop("capture", None)
         if not t or t.get("all"):
@@ -435,7 +479,7 @@ class QuickMixin:
         return out
 
     def _quick_clean_style(self, raw: dict, btn: dict) -> None:
-        """How a tile looks: its size in grid cells (1-4 across, 1-3 down;
+        """How a tile looks: its size in grid cells (1-4 across, 1-4 down;
         the old "wide" / "tall" / "big" still work), shape, fill, text
         size, the details line, blinking while on, an icon (or only the
         icon).  Defaults are not stored."""
@@ -448,9 +492,9 @@ class QuickMixin:
                 w = int(raw.get("w") or 1)
                 h = int(raw.get("h") or 1)
             except (TypeError, ValueError):
-                raise ValueError("a tile is 1-4 buttons wide and 1-3 tall") from None
+                raise ValueError("a tile is 1-4 buttons wide and 1-4 tall") from None
             if not (1 <= w <= self.QUICK_MAX_W and 1 <= h <= self.QUICK_MAX_H):
-                raise ValueError("a tile is 1-4 buttons wide and 1-3 tall")
+                raise ValueError("a tile is 1-4 buttons wide and 1-4 tall")
         if (w, h) != (1, 1):
             btn["w"], btn["h"] = w, h
             named = next((k for k, v in self.SIZE_WH.items() if v == (w, h)), None)
@@ -666,7 +710,24 @@ class QuickMixin:
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
         heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
-        return self._split_heads(heads, t.get("split"))
+        heads = self._split_heads(heads, t.get("split"))
+        pat = t.get("pattern")
+        if pat:
+            heads = [n for i, n in enumerate(sorted(heads)) if pat[i % len(pat)] == "1"]
+        return self._ordered(heads, btn.get("order"))
+
+    @staticmethod
+    def _ordered(heads: list[int], order) -> list[int]:
+        """The lights in the order an effect runs through them: forward
+        (number order), reverse, from the centre out, from the ends in."""
+        heads = sorted(heads)
+        if order == "reverse":
+            return heads[::-1]
+        if order in ("centre_out", "ends_in"):
+            mid = (len(heads) - 1) / 2
+            return sorted(heads, key=lambda n: (abs(heads.index(n) - mid) * (1 if order == "centre_out" else -1),
+                                                heads.index(n)))
+        return heads
 
     def _head_class(self, h: dict) -> str:
         """'light', 'laser' or 'sfx' (see fixlib.apply_fx)."""
@@ -810,6 +871,9 @@ class QuickMixin:
                 return {"id": key, "active": False}
             r = self._a_macro_run(id=btn["macro"])
             return {"id": key, "active": False, "summary": r["summary"]}
+        if kind in self.PAGE_TILES:
+            # the screen turns the page; the desk itself does nothing
+            return {"id": key, "active": False, "page": btn.get("to_page"), "summary": btn["label"]}
         if kind in ("go", "release", "preset"):
             if not down:
                 return {"id": key, "active": False}
@@ -901,12 +965,15 @@ class QuickMixin:
                     run["fx_ids"].append(r.get("fx"))
                     self._fx_live(r.get("fx"))
                     centre = self._quick_centre(btn, run["heads"])
-                    if centre:
-                        # it moves around where the button's lights were
-                        # aimed when it was made, not where the programmer is
-                        for row in self.fx:
-                            if row.get("id") == r.get("fx"):
+                    offset = self._quick_offset(btn, run["heads"])
+                    for row in self.fx:
+                        if row.get("id") == r.get("fx"):
+                            if centre:
+                                # it moves around where the button's lights were
+                                # aimed when it was made, not where the programmer is
                                 row["centre"] = centre
+                            if offset:
+                                row["offset"] = offset
                 except ValueError:
                     pass
             self._quick_pace(btn, run)
@@ -1223,6 +1290,29 @@ class QuickMixin:
         names = [btn.get("fx")] if btn.get("kind") == "fx" else [i.get("name") for i in btn.get("fx_list") or []]
         return any(n and (n in motion_mod.ALL_KINDS or n == "roam" or str(n).startswith("shape:")) for n in names)
 
+    def _quick_offset(self, btn: dict, heads: list[int]) -> dict:
+        """{head: {pan, tilt}} a button's movement is moved by, as a
+        fraction of each light's own travel (the button says degrees)."""
+        off = btn.get("offset") or {}
+        if not off:
+            return {}
+        out = {}
+        for n in heads:
+            h = self._head(n)
+            row = {}
+            for role, deg in off.items():
+                if role not in h["map"]:
+                    continue
+                rng = self.role_range([h], role)
+                if rng and rng.get("unit") == "degree" and rng["max"] != rng["min"]:
+                    travel = rng["max"] - rng["min"]
+                else:
+                    travel = 540.0 if role == "pan" else 270.0       # a typical mover, when its file doesn't say
+                row[role] = float(deg) / travel
+            if row:
+                out[n] = row
+        return out
+
     def _quick_centre(self, btn: dict, heads: list[int]) -> dict:
         """{head: {pan, tilt}} the button's movement goes round (captured)."""
         vals = btn.get("values") or {}
@@ -1297,6 +1387,40 @@ class QuickMixin:
             lights = f"light {hit[0]}" if len(hit) == 1 else f"{len(hit)} lights"
             raise ValueError(f"the button “{label}” holds the {what} of {lights} - turn it off to change them")
 
+    def _family(self, role: str) -> str:
+        """Which part of a look a channel is: intensity, colour, position
+        or beam (gobo, zoom, prism...)."""
+        base = str(role).split("@")[0]
+        if base in HTP_ROLES or base in ("shutter", "strobe"):
+            return "intensity"
+        if base in self._COLOUR_ROLES:
+            return "colour"
+        if base.removesuffix("_fine") in self.MOVE_ROLES:
+            return "position"
+        return "beam"
+
+    def _fx_family(self, name: str) -> str:
+        if name in motion_mod.ALL_KINDS or name == "roam" or str(name).startswith("shape:"):
+            return "position"
+        grp = (fxlib_mod.FX.get(name) or {}).get("group")
+        return {"colour": "colour", "dimmer": "intensity"}.get(grp, "beam")
+
+    def _button_families(self, btn: dict) -> list[str]:
+        """What a button sets, as families (a colour-only button: ["colour"])."""
+        fams = {self._family(r) for row in (btn.get("values") or {}).values() for r in row}
+        fams |= {self._family(r) for r in btn.get("attrs") or {}}
+        fams |= {self._fx_family(i.get("name") or "") for i in btn.get("fx_list") or []}
+        if btn.get("colour"):
+            fams.add("colour")
+        if btn.get("level") is not None or btn.get("dim") is not None:
+            fams.add("intensity")
+        return [k for k in self.KEEPS if k in fams]
+
+    def _button_keeps(self, btn: dict, nums: list[int]) -> str:
+        """The tile's line: "Colour · 4 lights", "Colour + Position · 1 light"."""
+        fams = " + ".join(self.KEEP_WORDS[k] for k in self._button_families(btn)) or "Look"
+        return f"{fams} · {len(nums)} light{'' if len(nums) == 1 else 's'}"[:80]
+
     def _button_holds_text(self, btn: dict) -> list[str]:
         """What a captured button keeps, in words: "brightness 40%",
         "colour #00ff00", "Rainbow", "roam", "gobo"..."""
@@ -1327,7 +1451,7 @@ class QuickMixin:
             what.append(", ".join(sorted(beam)[:4]))
         return what
 
-    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, **_):
+    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, keep=None, **_):
         """Make a button of what the selected lights do now - position,
         colour, gobo..., and the movement or effects running on them - and
         turn it on: it holds those lights (the programmer lets go of them)
@@ -1340,24 +1464,118 @@ class QuickMixin:
             target = {"heads": nums}
         if not nums:
             raise ValueError("select the lights first")
+        want = [k for k in self.KEEPS if k in (keep or [])] if isinstance(keep, (list, tuple)) else []
         raw = self._quick_capture({"label": str(label or "My look")[:24], "kind": "custom", "mode": "latch",
-                                   "target": target, "hold": True}, live=True)
+                                   "target": target, "hold": True, **({"keep": want} if want else {})},
+                                  live=True)
         res = self._a_quick_set(page=page, slot="free", button=raw)
         key = res.get("id") or next((b["id"] for b in reversed(self.quick) if b["label"] == raw["label"]), None)
-        # the programmer lets go of these lights: the button has them now
-        mine = {f["id"] for f in self._programmer_fx() if not f.get("live") and set(f.get("heads") or []) & set(nums)}
-        self.fx = [f for f in self.fx if f["id"] not in mine]
-        for n in nums:
-            self.programmer.pop(n, None)
+        # the programmer lets go of what the button has now (of a colour-only
+        # button, only the colour: the movement stays in the programmer)
+        btn = next((b for b in self.quick if b["id"] == key), {})
+        self._programmer_let_go(nums, btn)
         if _truthy(on) and key:
             self._quick_on(key, owner="hand")
-        btn = next((b for b in self.quick if b["id"] == key), {})
         what = self._button_holds_text(btn)
         if btn:
-            btn["keeps"] = ", ".join(what)[:80]     # the tile says what it holds
+            btn["keeps"] = self._button_keeps(btn, nums)     # the tile says what it holds
         where = f"Buttons page {btn.get('page')}, slot {btn.get('slot')}"
         return {"id": key, "summary": f"button “{btn.get('label', label)}” is on ({where}) - it holds {len(nums)} light(s)"
                 + (f" ({', '.join(what)})" if what else "") + "; turn it off to change them"}
+
+    def _programmer_let_go(self, nums: list[int], btn: dict) -> None:
+        fams = set(btn.get("keep") or self.KEEPS)
+        mine = {f["id"] for f in self._programmer_fx() if not f.get("live") and set(f.get("heads") or []) & set(nums)
+                and self._fx_family(f.get("lib") or "") in fams}
+        self.fx = [f for f in self.fx if f["id"] not in mine]
+        for n in nums:
+            row = {k: v for k, v in (self.programmer.get(n) or {}).items() if self._family(k) not in fams}
+            if row:
+                self.programmer[n] = row
+            else:
+                self.programmer.pop(n, None)
+
+    # -- a button opened in the programmer, changed, and saved back -----------
+    EDITABLE = frozenset({"custom", "colour", "flash", "fx", "move"})
+
+    def quick_public_editing(self):
+        return self.__dict__.get("quick_editing")
+
+    def _a_quick_edit(self, id=None, **_):
+        """Open a button in the programmer: its lights selected, its values
+        and effects in the programmer, so it can be changed on stage and
+        saved back with Update button (quick_update)."""
+        btn = next((b for b in self.quick if b["id"] == str(id)), None)
+        if not btn:
+            raise ValueError(f"no button {id}")
+        if btn["kind"] not in self.EDITABLE:
+            raise ValueError("only a look, colour, flash, effect or move button opens in the programmer")
+        self._quick_off(btn["id"], force=True, fade=False)
+        nums = self._quick_heads(btn)
+        if not nums:
+            raise ValueError("this button has no lights in the patch")
+        for f in [f for f in self._programmer_fx() if not f.get("live") and set(f.get("heads") or []) & set(nums)]:
+            self.fx = [x for x in self.fx if x["id"] != f["id"]]
+        for n in nums:
+            self.programmer.pop(n, None)
+            head = self._head(n)
+            row = dict((btn.get("values") or {}).get(str(n)) or {})
+            row.update({r: v for r, v in (btn.get("attrs") or {}).items() if r in head["map"]})
+            if btn.get("colour"):
+                row.update(self._colour_values(head, btn["colour"]))
+            if btn.get("level") is not None:
+                row.update(self._level_values(head, int(btn["level"])))
+            if row:
+                self.programmer[n] = row
+        self.selected = list(nums)
+        wanted = (btn.get("fx_list") or []) if btn["kind"] == "custom" else \
+            [{"name": btn["fx"], "params": btn.get("params") or {}}] if btn["kind"] == "fx" else []
+        if btn["kind"] == "move":
+            mv = next((m for m in self.moves if m["id"] == btn.get("move")), None)
+            wanted = [{"name": mv["lib"], "params": mv["params"]}] if mv else []
+        for item in wanted:
+            ip = item.get("params") or {}
+            try:
+                if item["name"] == "roam":
+                    self._a_roam(zones=ip.get("zones"), heads=nums, speed=ip.get("speed", 1.0),
+                                 size=ip.get("size", 1.0), beats=ip.get("beats"))
+                elif item["name"].startswith("shape:"):
+                    self._a_run_shape(id=item["name"][6:], heads=nums, **ip)
+                elif item["name"].startswith("step:"):
+                    self._a_step_fx_run(id=item["name"][5:], heads=nums, beats=ip.get("beats"))
+                else:
+                    self._a_run_fx_named(item["name"], ip, None, nums, None)
+            except ValueError:
+                pass
+        self.quick_editing = btn["id"]
+        return {"id": btn["id"], "heads": nums,
+                "summary": f"“{btn['label']}” is in the programmer: change it, then Update button"}
+
+    def _a_quick_update(self, id=None, cancel=False, **_):
+        """Save what the programmer holds for a button's lights back into
+        it (the button opened with quick_edit): same place, name and look;
+        only the families it had (or what is there now) go in."""
+        key = str(id or self.__dict__.get("quick_editing") or "")
+        btn = next((b for b in self.quick if b["id"] == key), None)
+        if _truthy(cancel):
+            self.quick_editing = None
+            return {"summary": "button not changed"}
+        if not btn:
+            raise ValueError("no button is open in the programmer")
+        carry = ("label", "mode", "exclusive", "seconds", "quant", "key", "midi", "rate", "free",
+                 "fade_in", "fade_out", "hold", "order", "offset", *self.STYLE_KEYS)
+        raw = {k: btn[k] for k in carry if k in btn}
+        raw.update(kind="custom", target=dict(btn.get("target") or {"all": True}))
+        if btn.get("keep") or btn["kind"] == "colour":
+            raw["keep"] = list(btn.get("keep") or ["colour"])
+        raw = self._quick_capture(raw)
+        new = self._quick_clean(raw, btn["page"], btn["slot"])
+        nums = self._quick_heads(new)
+        new["keeps"] = self._button_keeps(new, nums)
+        self.quick = [new if b["id"] == key else b for b in self.quick]
+        self.quick_editing = None
+        self._programmer_let_go(nums, new)
+        return {"id": key, "button": new, "summary": f"button “{new['label']}” updated ({new['keeps']})"}
 
     def held_public(self) -> list[dict]:
         """The HOLD buttons on now: [{id, label, heads}] (the programmer

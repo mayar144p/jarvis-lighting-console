@@ -972,16 +972,85 @@ on("lite", renderHeld);
 on("snapshot", renderHeld);
 on("selection", renderHeld);
 
+// a button opened in the programmer (Buttons -> Edit -> Open in the
+// programmer): change it on stage, then Update button
+let editKey = "";
+function renderEditing() {
+  const box = $("#prog-editing");
+  if (!box) return;
+  const q = (state.snap && state.snap.quick) || {};
+  const b = q.editing ? (q.buttons || []).find((x) => x.id === q.editing) : null;
+  const key = b ? b.id + b.label : "";
+  if (key === editKey) return;
+  editKey = key;
+  box.hidden = !b;
+  box.replaceChildren(...(b ? [h("div.prog-held-row",
+    h("span", "✎ Editing the button ", h("b", `“${b.label}”`), " - change its lights here, then update it."),
+    h("button.btn.small.primary", { onclick: () => run("quick_update", { id: b.id }, { toast: true }) }, "Update button"),
+    h("button.btn.small", { onclick: () => run("quick_update", { cancel: true }) }, "Cancel"))] : []));
+}
+on("snapshot", renderEditing);
+on("openprogrammer", () => import("./workspaces.js").then((m) => m.useMode("program")).catch(() => {}));
+
+// What goes in a button made from the programmer: each family the
+// programmer holds for these lights, on by default; a colour-only button
+// stacks over a movement button and changes only the colour.
+const KEEP = [["intensity", "Brightness"], ["colour", "Colour"], ["position", "Position / movement"], ["beam", "Beam (gobo, zoom…)"]];
+function familiesFor(heads) {
+  const vals = ((state.snap && state.snap.programmer) || {}).values || {};
+  const have = new Set();
+  for (const n of heads) {
+    for (const r of Object.keys(vals[n] || {})) {
+      const g = GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")];
+      if (g && g !== "other") have.add(g);
+    }
+  }
+  const set = new Set(heads);
+  for (const f of (state.snap && state.snap.fx) || []) {
+    if ((f.from || "programmer") !== "programmer" || !(f.heads || []).some((n) => set.has(n))) continue;
+    have.add(MOVE_FX.has(f.lib) || f.lib === "roam" || f.lib === "shape" ? "position"
+      : /colour|rainbow|alternate/.test(f.lib || "") ? "colour" : /dimmer|pulse|breathe|sparks|strobe/.test(f.lib || "") ? "intensity" : "beam");
+  }
+  return have;
+}
+
 // what the selected lights do now, as a button that holds them
 export async function makeHoldButton() {
   const heads = sel();
   if (!heads.length) { toast("Select the lights first"); return; }
-  const name = await promptBox("Make a button", `A button of everything ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now: brightness, colour or colour effect (rainbow...), movement or roam, gobo and beam. It turns on and holds them - the programmer can't change them until you turn it off. Name it:`, "", { ok: "Make it", placeholder: "e.g. Slow circle red" });
-  if (name === null || name === undefined) return;
+  const have = familiesFor(heads);
+  const keep = new Set(have.size ? have : KEEP.map(([k]) => k));
+  const lights = `${heads.length} light${heads.length === 1 ? "" : "s"}`;
+  const name = h("input", { type: "text", maxlength: 24, placeholder: "e.g. Slow circle red" });
+  const what = h("div.chip-row");
+  const sum = h("p.small");
+  const draw = () => {
+    what.replaceChildren(...KEEP.map(([k, l]) => h("button.chip" + (keep.has(k) ? ".on" : ""), { type: "button",
+      disabled: !have.has(k) && have.size > 0, title: have.has(k) ? "" : "The programmer has none of this for these lights",
+      "aria-pressed": String(keep.has(k)), onclick: () => { if (keep.has(k)) keep.delete(k); else keep.add(k); draw(); } }, l)));
+    const words = KEEP.filter(([k]) => keep.has(k)).map(([, l]) => l.split(" ")[0]);
+    sum.textContent = keep.size ? `The button: ${words.join(" + ")} · ${lights}.` : "Pick at least one.";
+    if (!name.value.trim() && !name.dataset.typed) name.placeholder = words.length === 1 ? `e.g. ${words[0]} for ${lights}` : "e.g. Slow circle red";
+  };
+  name.addEventListener("input", () => { name.dataset.typed = "1"; });
+  draw();
+  const body = h("div.qe",
+    h("p.small", `What ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now, as a button. It turns on and holds what it keeps - the programmer can't change that until you turn it off.`),
+    h("label.small", "Name ", name),
+    h("div.qe-label", "What goes in"), what, sum,
+    h("p.muted.small", "Buttons stack: a Colour-only button pressed over a movement button changes only the colour, and the movement keeps running. Nothing needs to be at full or moving to make a colour button."));
+  const ok = await new Promise((resolve) => {
+    const close = modal({ title: "Make a button", body, onClose: () => resolve(false), foot: [h("span.grow"),
+      h("button.btn", { onclick: () => { close(); resolve(false); } }, "Cancel"),
+      h("button.btn.primary", { onclick: () => { if (!keep.size) return; close(); resolve(true); } }, "Make it")] });
+  });
+  if (!ok) return;
   const groups = (state.snap && state.snap.groups) || [];
   const set = new Set(heads);
   const g = groups.find((x) => x.heads.length === set.size && x.heads.every((n) => set.has(n)));
-  const r = await run("quick_from_programmer", { label: (name || "My look").trim().slice(0, 24), ...(g ? { group: g.n } : { heads }) });
+  const all = keep.size === KEEP.length;
+  const r = await run("quick_from_programmer", { label: (name.value || "My look").trim().slice(0, 24),
+    ...(all ? {} : { keep: [...keep] }), ...(g ? { group: g.n } : { heads }) });
   if (r.ok) toast(r.summary, "ok", 6000);
 }
 

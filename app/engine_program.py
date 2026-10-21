@@ -407,7 +407,9 @@ class ProgrammerMixin:
                     frac = 0.5
                 else:
                     frac = (_logical16(v) / 65535.0) if dom > 255 else (float(v) / 255.0)
-                centre.append(frac)
+                # a button's pan / tilt offset (its degrees, as a fraction)
+                frac += ((row.get("offset") or {}).get(n) or {}).get(role, 0.0)
+                centre.append(min(1.0, max(0.0, frac)))
             eff = self._eff_limits(h, self.floor_safe)
             for role in ("pan", "tilt"):
                 limits.append(eff.get(role, (0.0, 1.0)))

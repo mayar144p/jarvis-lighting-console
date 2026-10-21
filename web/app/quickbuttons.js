@@ -34,6 +34,9 @@ const DOES = [
   ["cuelist", "Cue list", "A playback's cue now and next; tap = GO"],
   ["estop", "E-stop", "Stops every special effect and laser at once, disarms"],
   ["blackout", "Blackout all", "Everything off while held"],
+  ["label", "Heading", "A label only: a heading for a row of buttons"],
+  ["page", "Go to page", "Opens another page of buttons"],
+  ["folder", "Folder", "Opens a page as a folder, with a Back button"],
   ["sfx", "Fire SFX", "Confetti / CO2 / flame / sparks (needs ARM)"],
   ["fog", "Fog / haze", "Fog or haze output"],
   ["laser", "Laser", "Laser output (needs ARM)"],
@@ -57,8 +60,16 @@ const SWATCH = ["#ffffff", "#ff0000", "#ff5a00", "#ffb000", "#ffe600", "#00ff40"
 const TINTS = ["#38bdf8", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#f8fafc", "#64748b"];
 const SPLITS = [["", "All of them"], ["odd", "Odd"], ["even", "Even"], ["left", "Left half"], ["right", "Right half"]];
 const FX_KINDS = new Set(["sfx", "fog", "laser", "arm", "fxkill"]);
-const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill", "fader", "tempo", "cuelist", "estop"]);
-const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill", "fader", "xy", "tempo", "cuelist", "estop"]);
+const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill", "fader", "tempo", "cuelist", "estop", "label", "page", "folder"]);
+// page tiles: a heading, a jump to a page, a folder (a page with a way back)
+const PAGE_TILES = new Set(["label", "page", "folder"]);
+// buttons that open in the programmer (Edit -> Open in the programmer)
+const EDITABLE = new Set(["flash", "colour", "custom", "dim", "capture", "fx", "move"]);
+// the lights in a pattern (2 on, 2 off...) and the order an effect runs through them
+const PATTERNS = [["", "Every light"], ["1100", "2 on, 2 off"], ["0011", "2 off, 2 on"], ["100", "1 in 3"], ["1000", "1 in 4"], ["1110", "3 on, 1 off"]];
+const ORDERS = [["forward", "1 → last"], ["reverse", "Last → 1"], ["centre_out", "Centre out"], ["ends_in", "Ends in"]];
+const folderBack = [];
+const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill", "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"]);
 // tiles that are a control, not a button (drawn live, see controlTile)
 const CONTROL = new Set(["fader", "xy", "tempo", "cuelist"]);
 let locked = false;
@@ -124,7 +135,7 @@ let editing = false;
 /** The buttons page on screen (a controller's pads play this page). */
 export const currentPage = () => page;
 export function setPage(p) {
-  const n = Math.max(1, Math.min((quick().pages || 8), Math.round(p)));
+  const n = Math.max(1, Math.min((quick().pages || 32), Math.round(p)));
   if (n === page) return;
   page = n;
   render(true);
@@ -169,9 +180,14 @@ function targetText(t = {}) {
   else if (t.auto) who = (autoGroups().find((g) => g.key === t.auto) || {}).name || t.auto;
   else if (t.type) who = ([...TYPES, ...FX_TYPES].find(([k]) => k === t.type) || [0, t.type])[1];
   else if (t.heads) who = `${t.heads.length} light${t.heads.length === 1 ? "" : "s"}`;
+  if (t.pattern) who += ` · ${(PATTERNS.find(([k]) => k === t.pattern) || [0, t.pattern])[1]}`;
   return t.split ? `${who} · ${t.split}` : who;
 }
+const pageName = (p) => ((quick().names || {})[p] || `Page ${p}`);
 function modeText(b) {
+  if (b.kind === "page") return `→ ${pageName(b.to_page)}`;
+  if (b.kind === "folder") return `▸ ${pageName(b.to_page)}`;
+  if (b.kind === "label") return "";
   if (ONE_SHOT.has(b.kind)) return "tap";
   if (b.mode === "tap" && b.seconds) return `${b.seconds}s shot`;
   const m = b.mode === "latch" ? "on/off" : b.mode;
@@ -184,13 +200,17 @@ function renderPages() {
   const used = new Set(q.buttons.map((b) => b.page));
   const box = $("#qb-pages");
   const pages = [];
-  for (let p = 1; p <= (q.pages || 8); p++) {
+  if (folderBack.length) {
+    pages.push(h("button.qb-back", { title: `Back to ${pageName(folderBack[folderBack.length - 1])}`,
+      onclick: () => { page = folderBack.pop(); render(true); emit("qbpage", page); } }, "◂ Back"));
+  }
+  for (let p = 1; p <= (q.pages || 32); p++) {
     // pages 1-4 always; later ones once used, or the next free one in Edit
     if (p > 4 && !used.has(p) && p !== page && !(editing && p === Math.max(4, ...used) + 1)) continue;
     pages.push(h("button" + (p === page ? ".on" : ""), {
       dataset: { page: p },
       title: editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
-      onclick: () => { page = p; render(true); emit("qbpage", page); },
+      onclick: () => { folderBack.length = 0; page = p; render(true); emit("qbpage", page); },
       ondblclick: () => renamePage(p),
     }, names[p] || String(p)));
   }
@@ -309,6 +329,15 @@ function render(force = false) {
       continue;
     }
     const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
+    if (b.kind === "label" && !editing) {
+      // a heading: words on the grid, nothing to press
+      const el = h("div.qbtn.qlabel", { title: b.label, dataset: { id: b.id } }, h("b", b.label));
+      el.style.setProperty("--tint", tint);
+      el.classList.add(...lookClasses(b));
+      place(el, slot);
+      cells.push(el);
+      continue;
+    }
     if (CONTROL.has(b.kind) && !editing) {
       const el = controlTile(b);
       el.style.setProperty("--tint", tint);
@@ -349,6 +378,12 @@ function render(force = false) {
       el.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;             // right-click is the speed menu
         e.preventDefault();
+        if (b.kind === "page" || b.kind === "folder") {
+          // the screen turns the page (a folder remembers the way back)
+          if (b.kind === "folder") folderBack.push(page); else folderBack.length = 0;
+          setPage(b.to_page || 1);
+          return;
+        }
         if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
         el.setPointerCapture(e.pointerId);
         el.classList.add("down");
@@ -525,6 +560,8 @@ function fromButton(b) {
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
     control: b && b.control ? { ...b.control } : { what: "master" },
+    toPage: b && b.to_page ? b.to_page : (page < (quick().pages || 32) ? page + 1 : 1),
+    order: (b && b.order) || "forward", offset: { pan: 0, tilt: 0, ...((b && b.offset) || {}) },
   };
   if (b && b.kind === "custom") {
     const only = Object.keys(b).filter((k) => ["level", "hz", "kill", "attrs", "values", "fx_list", "colour"].includes(k) && b[k]);
@@ -584,6 +621,12 @@ function toButton(s) {
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
+  if (d === "page" || d === "folder") b.to_page = +s.toPage || 1;
+  if (["fx", "move", "custom", "capture"].includes(d)) {
+    if (s.order !== "forward") b.order = s.order;
+    if (s.offset.pan || s.offset.tilt) b.offset = { pan: +s.offset.pan || 0, tilt: +s.offset.tilt || 0 };
+  }
+  if (PAGE_TILES.has(d)) delete b.target;
   return b;
 }
 
@@ -619,7 +662,7 @@ function lookSection(s, slot, btn, draw) {
     row("Colour", swatches(TINTS, s.tint, (c) => { s.tint = c; draw(); }, { none: "Auto" })),
     row("Size", h("div.qe-body",
       h("div.chip-row", h("span.qe-mini", "Across"), chips([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.w, (v) => { s.w = v; draw(); })),
-      h("div.chip-row", h("span.qe-mini", "Down"), chips([[1, "1"], [2, "2"], [3, "3"]], s.h, (v) => { s.h = v; draw(); })),
+      h("div.chip-row", h("span.qe-mini", "Down"), chips([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.h, (v) => { s.h = v; draw(); })),
       warn)),
     row("Shape", chips(SHAPES, s.shape, (v) => { s.shape = v; draw(); })),
     row("Fill", chips(FILLS, s.fill, (v) => { s.fill = v; draw(); })),
@@ -708,7 +751,26 @@ function editButton(slot, btn) {
           ...autoGroups().map((g) => ["a" + g.key, `${g.name} (${g.heads.length})`])];
       if (t.heads && tv === "sel") who[1][1] = `${t.heads.length} chosen light${t.heads.length === 1 ? "" : "s"}`;
       kids.push(row("Which lights", chips(who, tv, setT),
-        fxKind ? null : chips(SPLITS, t.split || "", (v) => { if (v) s.target.split = v; else delete s.target.split; draw(); })));
+        fxKind ? null : chips(SPLITS, t.split || "", (v) => { if (v) s.target.split = v; else delete s.target.split; draw(); }),
+        fxKind ? null : chips(PATTERNS, t.pattern || "", (v) => { if (v) s.target.pattern = v; else delete s.target.pattern; draw(); })));
+    }
+    if (d === "page" || d === "folder") {
+      const n = Math.max(8, ...quick().buttons.map((x) => x.page), page + 1);
+      kids.push(row(d === "folder" ? "Opens" : "Goes to", chips(Array.from({ length: Math.min(n, quick().pages || 32) }, (_, i) => [i + 1, pageName(i + 1)]),
+        +s.toPage, (v) => { s.toPage = v; draw(); }),
+      h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name pages by double-clicking them in Edit."
+        : "Pressed, it shows that page. Name pages by double-clicking them in Edit.")));
+    }
+    if (d === "label") kids.push(row("Heading", h("div.qe-note", "Only its name shows, as a heading over a row of buttons; pressing it does nothing.")));
+    if (["fx", "move", "custom", "capture"].includes(d)) {
+      kids.push(row("Order", chips(ORDERS, s.order, (v) => { s.order = v; draw(); }),
+        h("span.qe-note", "Which way the effect runs through the lights (a chase, a wave).")));
+      const moving = d === "move" || (d === "fx" && MOVES.has(s.fx)) || ((d === "custom" || d === "capture") && s.fxList.some((x) => MOVES.has(x)));
+      if (moving) {
+        kids.push(row("Pan offset", slider(s.offset.pan, -180, 180, 5, (v) => { s.offset.pan = v; }, "°")));
+        kids.push(row("Tilt offset", slider(s.offset.tilt, -90, 90, 5, (v) => { s.offset.tilt = v; }, "°"),
+          h("span.qe-note", "Moves the whole movement by these degrees (each light's own travel).")));
+      }
     }
     // what it does, in detail
     if (d === "flash") {
@@ -877,6 +939,15 @@ function editButton(slot, btn) {
         await run("quick_move", { page, slot, to_slot: to, copy: true });
         close();
       } }, "Duplicate") : null,
+      btn && EDITABLE.has(s.does) ? h("button.btn", { title: "Its lights and values go into the programmer: change them on stage, then press Update button there",
+        onclick: async () => {
+          const r = await run("quick_edit", { id: btn.id }, { toast: true });
+          if (!r.ok) return;
+          close();
+          editing = false;
+          render(true);
+          emit("openprogrammer");
+        } }, "Open in the programmer") : null,
       h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", { onclick: async () => { if (await save()) close(); } }, "Save"),

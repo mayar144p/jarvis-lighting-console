@@ -302,6 +302,17 @@ build) deletes the old *Auto · ...* groups (`group_delete auto=true`).
    even, 2 of 4 off, a pattern), order, and pan / tilt offsets for the
    ready-made moves.
 
+**Done (B3):** *Open in the programmer* (Edit → a button) puts a button's
+lights, values and effects in the programmer; *Update button* there saves
+them back (`quick_edit` / `quick_update`).  32 pages; Heading, Go to page
+and Folder (with ◂ Back) tiles; tiles up to 4 x 4.  *Make a button…* shows
+what goes in (Brightness / Colour / Position / Beam); a colour-only button
+says "Colour · 4 lights" and leaves the movement and level in the
+programmer (`keep`).  Buttons take a pattern of lights (2 on 2 off, 1 in
+3...), an order (reverse, centre out, ends in) and pan / tilt offsets in
+degrees.  A colour on lights at 0 % brings them up (or names the ones held
+at 0).  Drag to arrange, colour and icon were already there.
+
 ### B4. Movement, full control
 1. **Moves in real degrees:** pan from -100 to +40, tilt from ... to ...,
    loop / bounce / once, speed in seconds or beats, the light's whole

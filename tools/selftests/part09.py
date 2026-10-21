@@ -4201,7 +4201,7 @@ def test_button_looks() -> None:
             check("2 x 1 is the old 'wide'", b.get("size") == "wide", str(b))
             b = e.act("quick_set", page=1, slot=11, button={"kind": "flash", "shape": "rounded", "fill": "outline", "text": "m"}).get("button") or {}
             check("the defaults aren't stored", not {"shape", "fill", "text", "w", "h", "size"} & set(b), str(b))
-            for bad, why in (({"w": 5}, "too wide"), ({"h": 4}, "too tall"), ({"shape": "hexagon"}, "a shape it doesn't have"),
+            for bad, why in (({"w": 5}, "too wide"), ({"h": 5}, "too tall"), ({"shape": "hexagon"}, "a shape it doesn't have"),
                              ({"fill": "neon"}, "a fill it doesn't have"), ({"text": "huge"}, "a text size it doesn't have"),
                              ({"icon": "unicorn"}, "an icon it doesn't have")):
                 check(f"refused: {why}", not e.act("quick_set", page=1, slot=12, button={"kind": "flash", **bad}).get("ok"))
@@ -4259,14 +4259,14 @@ def test_button_looks() -> None:
             try:
                 with e.lock:
                     pay = json.loads(e._autosave_payload())
-                pay["quick_layout"]["9"] = {"cols": 8}
+                pay["quick_layout"]["33"] = {"cols": 8}
                 pay["quick_layout"]["1"] = {"cols": 7}
                 pay["quick_layout"]["3"] = "junk"
                 e2._restore_payload(pay)
                 lay = e2._quick_public()["layout"]
                 check("after a restart: the grids and the page names come back (the names used to be lost)",
                       lay.get("2") == {"cols": 5, "rows": 4, "height": "l"} and e2.quick_names.get("2") == "Drops", f"{lay} {e2.quick_names}")
-                check("a bad grid in a file is dropped, not trusted", not {"9", "1", "3"} & set(lay), str(lay))
+                check("a bad grid in a file is dropped, not trusted", not {"33", "1", "3"} & set(lay), str(lay))
             finally:
                 e2.shutdown()
             from app import assistant
@@ -7626,3 +7626,85 @@ def aitools_more() -> tuple:
     from app import aitools
     return aitools.MORE
 
+
+
+def test_b3_buttons() -> None:
+    """A15 B3: a button opened in the programmer and updated; page tiles
+    (heading, go to page, folder) and tiles up to 4 x 4; a colour-only
+    button that says so and leaves the movement alone; ready-made programs
+    on a pattern of lights, in an order, moved by degrees; a colour picked
+    on dark lights brings them up."""
+    print("B3 buttons: edit in the programmer, page tiles, colour only, patterns")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "b.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=4)
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            # a colour picked on dark lights
+            e.act("select_heads", heads=[5, 6])
+            r = e.act("set_colour", hex="#ff0000")
+            check("a colour on lights at 0% brings them up (and says so)",
+                  sorted(r.get("brought_up") or []) == [5, 6] and all(lk["a"] for lk in e._looks() if lk["n"] in (5, 6)),
+                  r.get("summary", ""))
+            e.act("set_intensity", level=0)
+            r = e.act("set_colour", hex="#00ff00")
+            check("...but lights put at 0 on purpose stay there, named", not r.get("brought_up") and "at 0%" in r["summary"], r["summary"])
+            # colour only
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle")
+            r = e.act("quick_from_programmer", label="Red", keep=["colour"])
+            b = next(x for x in e.quick if x["id"] == r["id"])
+            roles = {k for row in (b.get("values") or {}).values() for k in row}
+            check("a colour-only button keeps only the colour", b.get("keep") == ["colour"] and roles
+                  and all(e._family(k) == "colour" for k in roles) and not b.get("fx_list"), str(b))
+            check("...and says so on the tile", b.get("keeps") == "Colour · 2 lights", b.get("keeps"))
+            check("...the movement and the level stay in the programmer",
+                  any(f.get("lib") == "circle" for f in e.fx) and (e.programmer.get(1) or {}).get("dimmer") == 100,
+                  str(e.programmer.get(1)))
+            e.act("quick_press", id=b["id"], down=True)            # latch: off
+            # open it in the programmer, change it, update
+            e.act("quick_edit", id=b["id"])
+            check("Edit -> Open in the programmer: its lights selected, its colour in the programmer",
+                  e.selected == [1, 2] and e.quick_editing == b["id"]
+                  and any(e._family(k) == "colour" for k in e.programmer.get(1) or {}), str(e.programmer.get(1)))
+            before = dict((b.get("values") or {}).get("1") or {})
+            e.act("set_colour", hex="#0000ff")
+            r = e.act("quick_update")
+            nb = next(x for x in e.quick if x["id"] == b["id"])
+            check("...Update button saves the change back, same place and name",
+                  nb["label"] == "Red" and nb["slot"] == b["slot"] and nb.get("values", {}).get("1") != before
+                  and nb.get("keep") == ["colour"] and e.quick_public_editing() is None, r.get("summary", ""))
+            # page tiles and sizes
+            r1 = e.act("quick_set", page=1, slot=20, button={"kind": "folder", "label": "Movers", "to_page": 3})
+            r2 = e.act("quick_set", page=1, slot=21, button={"kind": "label", "label": "DROPS"})
+            check("a folder / go-to-page / heading tile", r1.get("button", {}).get("to_page") == 3
+                  and r2.get("button", {}).get("kind") == "label"
+                  and e.act("quick_press", id=r1["id"], down=True).get("page") == 3, str(r1))
+            check("...a go-to-page needs its page", not e.act("quick_set", page=1, slot=22, button={"kind": "page"}).get("ok", True), "")
+            r = e.act("quick_set", page=12, slot=1, button={"kind": "flash", "w": 4, "h": 4})
+            check("pages past 8, tiles up to 4 x 4", r.get("button", {}).get("h") == 4 and e._quick_public()["pages"] == 32, str(r))
+            # patterns, order, offsets
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "fx", "fx": "circle", "order": "reverse",
+                                                         "offset": {"pan": 30}, "target": {"heads": [1, 2, 3, 4], "pattern": "1100"}})
+            fb = r.get("button") or {}
+            check("a ready-made program on 2 on, 2 off, in reverse", e._quick_heads(fb) == [2, 1], str(e._quick_heads(fb)))
+            e.act("quick_press", id=fb["id"], down=True)
+            row = next((f for f in e.fx if f.get("offset")), {})
+            check("...moved by degrees (pan +30 as a share of each light's travel)",
+                  row and all(0 < v.get("pan", 0) < 0.2 for v in row["offset"].values()), str(row.get("offset")))
+            e.act("quick_press", id=fb["id"], down=False)
+            check("...centre out and ends in", e._ordered([1, 2, 3, 4, 5], "centre_out")[0] == 3
+                  and e._ordered([1, 2, 3, 4, 5], "ends_in")[:2] == [1, 5], "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the screen: Open in the programmer / Update button, page tiles, patterns, order, offsets, what goes in",
+          '"quick_edit"' in qb and '"quick_update"' in pj and "Update button" in pj and "folderBack" in qb
+          and "PATTERNS" in qb and "Pan offset" in qb and "What goes in" in pj and "keep: [...keep]" in pj, "")

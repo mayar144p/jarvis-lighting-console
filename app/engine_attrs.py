@@ -705,8 +705,35 @@ class AttrMixin:
             raise ValueError("selected heads have no colour channels")
         note = (f"; {unknown} light(s) have a colour wheel their file doesn't name - "
                 "Colour tab -> Name the colours… once, then colours land on the right slot") if unknown else ""
-        return {"hex": str(hexcol), "heads": touched, "unknown_wheel": unknown,
+        up, dark = self._colour_bring_up(heads)
+        if up:
+            note += f"; {len(up)} light(s) were at 0% - brought up to full so the colour shows"
+        if dark:
+            note += f"; {len(dark)} light(s) are at 0% in the programmer - raise them to see it"
+        return {"hex": str(hexcol), "heads": touched, "unknown_wheel": unknown, "brought_up": up,
                 "summary": f"colour {hexcol} on {touched} head(s)" + note}
+
+    def _colour_bring_up(self, heads: list[dict]) -> tuple[list[int], list[int]]:
+        """A colour picked for lights that are dark (no level anywhere)
+        would show nothing: bring them up to full.  Lights the programmer
+        holds at 0 on purpose stay there (and are named)."""
+        if self.blackout or not self.master:
+            return [], []
+        lit = {lk["n"]: lk.get("a") for lk in self._looks()}
+        busy = {n for f in self.fx for n in f.get("heads") or []}     # a chase may be at its low point
+        up, dark = [], []
+        for h in heads:
+            roles = self._intensity_roles(h)
+            if not roles or lit.get(h["head_no"]) or h["head_no"] in busy:
+                continue
+            mine = self.programmer.get(h["head_no"]) or {}
+            if any(mine.get(r) is not None for r in roles):
+                dark.append(h["head_no"])
+                continue
+            for role, v in self._level_values(h, 100).items():
+                self._set_programmer(h["head_no"], role, v)
+            up.append(h["head_no"])
+        return up, dark
 
     def _a_set_position(self, pan=None, tilt=None, unit=None,
                         head=None, heads_in=None, **_):

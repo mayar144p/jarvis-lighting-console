@@ -152,8 +152,9 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
-**Buttons** in the bottom panel is a grid of instant buttons on up to 8
-pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
+**Buttons** in the bottom panel is a grid of instant buttons on up to 32
+named pages (double-click a page in Edit to name it), like a MagicQ execute
+window. Each one is **hold** (on while pressed),
 **latch** (press on, press off) or **tap**:
 
 | kind | does |
@@ -165,14 +166,24 @@ pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
 | Effect | runs an effect on the target |
 | GO / Release | a playback (GO can jump to a cue) |
 | Preset | applies a recorded preset |
+| Heading | words only, over a row of buttons; pressing does nothing |
+| Go to page | shows another page |
+| Folder | opens a page with a ◂ Back to the one you came from |
 
 Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
-a fixed set of lights. **Suggest buttons for this rig** fills a page from what
+a fixed set of lights, and of those all, odd / even, left / right, or a
+pattern (*2 on, 2 off*, *1 in 3*...). Effect, move and look buttons have an
+**Order** (1 → last, last → 1, centre out, ends in: which way a chase or a
+wave runs) and, for a movement, a **Pan / Tilt offset** in degrees.
+**Change a button on stage:** Edit → the button → *Open in the programmer*
+puts its lights and values in the programmer; change them, then press
+**Update button** in the programmer (same place, name and look).
+**Suggest buttons for this rig** fills a page from what
 is patched. Blackout and the grand master still win over a flash. Pressing a
 button is never an undo step; setting one up is. Buttons save with the show.
 
 **How they look** (Edit -> a button -> *Look*, with a live preview of the
-tile off and on): its colour; its size, 1-4 buttons across and 1-3 down;
+tile off and on): its colour; its size, 1-4 buttons across and 1-4 down;
 its shape (rounded, square, pill, circle); its fill (outline, solid, glow);
 text size S-XL; *Name only* (no small line under it); *Blink while on*
 (slow, and still when the computer asks for less motion); one of 32 icons,
@@ -319,6 +330,14 @@ after it and carry on to where you let go (a dashed ring shows where they
 are aimed right now). The desk does the gliding at the full DMX rate, so
 the real lights glide smoothly even with the page hidden or closed. Nudging
 or re-aiming the lights by hand stops a glide. Remembered on this computer.
+
+**Make a button…** (at the foot of the programmer) shows what goes in -
+Brightness, Colour, Position / movement, Beam - each on when the
+programmer holds it for those lights.  Leave only *Colour* on for a
+colour-only button ("Colour · 4 lights" on the tile): pressed over a
+movement button it changes only the colour, and the movement keeps
+running.  A colour picked for lights at 0% brings them up to full (lights
+you put at 0 yourself stay there, and the desk says so).
 
 **Make a button** (Move tab, and in the Roam row while roaming) makes a
 button straight away for what the selected lights are doing: the roam

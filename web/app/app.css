@@ -1492,6 +1492,10 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 /* a button holding the selected lights */
 .prog-held { padding: 6px 12px; background: rgba(250, 204, 21, .10); border-bottom: 1px solid rgba(250, 204, 21, .35); }
 .prog-held[hidden] { display: none; }
+.prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
+.qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
+.qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.qb-back { font-weight: 700; color: var(--accent); }
 .prog-held-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
 .prog-held-row span { flex: 1; }
 
