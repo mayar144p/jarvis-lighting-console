@@ -474,7 +474,14 @@ class QuickMixin:
             if row:
                 values[str(n)] = row
         fx_list = []
+        # the programmer's own effects only: one another button (or the
+        # timeline) is running on the same lights belongs to that button -
+        # taken in, a colour button also ran the other's wave, and every
+        # save of a button added another copy
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
         for f in self.fx:
+            if f.get("live") or f["id"] in owned:
+                continue
             if not set(f.get("heads") or []) & set(heads) or len(fx_list) >= 4:
                 continue
             p = {k: v for k, v in (f.get("params") or {}).items() if not str(k).startswith("_")}
