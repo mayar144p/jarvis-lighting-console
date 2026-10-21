@@ -924,7 +924,9 @@ class QuickMixin:
         button only ever reaches lights; an FX button only effects."""
         out = self._target_heads(t)
         by = {h["head_no"]: h for h in self.patch}
-        return [n for n in out if (self._head_class(by[n]) != "light") == fx]
+        # (an effects machine with its own LEDs takes a light button's colour too)
+        return [n for n in out if (self._head_class(by[n]) != "light") == fx
+                or (not fx and self._takes_light(by[n]))]
 
     def _target_heads(self, t: dict) -> list[int]:
         patched = [h["head_no"] for h in self.patch]

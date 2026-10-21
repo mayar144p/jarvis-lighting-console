@@ -8047,6 +8047,51 @@ def test_colour_row() -> None:
           "export function makeColourRow" in qb and "makeColourRow" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
 
 
+def test_led_sfx() -> None:
+    """An effects machine with LEDs of its own (an LED CO2 jet): colour and
+    level reach its LEDs - in the programmer and from colour buttons - and
+    never its valve."""
+    print("An LED CO2 jet: its LEDs take colour")
+    from app import engine as eng
+    from app import fixlib
+    ofl = {"name": "LED CO2 Jet 20", "categories": ["Smoke"],
+           "availableChannels": {
+               "CO2 Valve": {"capability": {"type": "Effect", "effectName": "CO2 shot"}},
+               "LED Red": {"capability": {"type": "ColorIntensity", "color": "Red"}},
+               "LED Green": {"capability": {"type": "ColorIntensity", "color": "Green"}},
+               "LED Blue": {"capability": {"type": "ColorIntensity", "color": "Blue"}},
+               "LED Dimmer": {"capability": {"type": "Intensity"}}},
+           "modes": [{"name": "5ch", "channels": ["CO2 Valve", "LED Red", "LED Green", "LED Blue", "LED Dimmer"]}]}
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.store_parsed(db, fixlib.parse_ofl(ofl, "Generic", "generic/led-co2-jet-20.json"), "ofl:generic/led-co2-jet-20.json")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED CO2 Jet 20", qty=1)
+            h = e.patch[0]
+            check("an LED CO2 jet: its valve is the FX output, its LEDs are colours",
+                  h["map"][0] == "fx_fire" and {"red", "green", "blue"} <= set(h["map"]), str(h["map"]))
+            e.act("select_heads", heads=[1])
+            r = e.act("set_colour", colour="#ff0000")
+            e.act("set_intensity", level=100)
+            u = e.build_frames(time.monotonic())
+            u = u[min(u)]
+            check("colour and level reach its LEDs (red, LED dimmer up) - the valve stays shut",
+                  r.get("ok", True) and list(u[:5]) == [0, 255, 0, 0, 255], f"{r.get('error')} {list(u[:5])}")
+            b = e.act("quick_set", page=1, slot=1, button={"kind": "colour", "label": "Blue", "colour": "#0000ff",
+                                                           "mode": "latch", "target": {"heads": [1]}})
+            e.act("clear_programmer")
+            e.act("quick_press", id=b["id"], down=True)
+            u = e.build_frames(time.monotonic())
+            check("...a colour button colours its LEDs too", list(u[min(u)][1:4]) == [0, 0, 255], str(list(u[min(u)][:5])))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the programmer shows Colour and Level for an effects machine with LEDs",
+          'hd.body.class === "sfx" && (hd.map || []).some((r) => LED_ROLES.has(r))' in pj, "")
+
+
 def test_lights_fader() -> None:
     """A fader tile for some lights: their brightness (up from dark) or a
     master (a share of what they do), on the buttons page and in full screen."""
