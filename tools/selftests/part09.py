@@ -7798,6 +7798,18 @@ def test_b4_movement() -> None:
             v = vals.get(1) or {}
             check("...head 1 and head 4 go where they were told", v.get("tilt@1") is not None and v.get("tilt@4") is not None
                   and v["tilt@1"] < v["tilt@4"], str({k: x for k, x in v.items() if k.startswith("tilt")}))
+            # Make a button keeps the wave: across the heads, each head's own from / to
+            e.act("quick_from_programmer", label="Wave", page=1)
+            b = next(x for x in e.quick if x["label"] == "Wave")
+            kept = (b.get("fx_list") or [{}])[0].get("params") or {}
+            check("Make a button keeps the wave through the heads and each head's own from / to",
+                  kept.get("across") == 1.0 and set(kept.get("cells") or {}) == {"1", "4"}, str(kept))
+            e.act("quick_press", id=b["id"], down=True)            # (on when made) off
+            e.act("clear_programmer")
+            e.act("quick_press", id=b["id"], down=True)            # and on again
+            v = e._fx_values().get(1) or {}
+            check("...and the button plays it head by head", v.get("tilt@1") is not None and v.get("tilt@4") is not None
+                  and v["tilt@1"] < v["tilt@4"], str({k: x for k, x in v.items() if k.startswith("tilt")}))
             snap = e.snapshot()
             check("the screen knows each light's travel in degrees", (snap["patch"][0].get("span") or [0])[0] > 0, str(snap["patch"][0].get("span")))
         finally:
