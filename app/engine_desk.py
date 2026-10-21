@@ -92,6 +92,8 @@ class DeskMixin:
             g.pop("master", None)
         else:
             g["master"] = lv
+        # the fader moved last decides for a light in more than one group
+        g["master_seq"] = max([int(x.get("master_seq") or 0) for x in self.groups] + [0]) + 1
         return {"group": g["n"], "master": lv, "summary": f"{g['name']} at {lv}%"}
 
     def _a_desk_strobe(self, hz=0, heads=None, **_):
@@ -121,12 +123,19 @@ class DeskMixin:
         for n, hz in (self.__dict__.get("desk_strobe") or {}).items():
             o = out.setdefault(n, {})
             o["strobe"] = max(o.get("strobe") or 0, hz)
-        # group masters: a share of the level, like the grand master
+        # group masters: a share of the level, like the grand master.  A
+        # light in two groups follows the group whose fader was moved last
+        # (it does not take both: 50% and 50% is not 25%)
+        last: dict[int, tuple[int, int]] = {}
         for g in self.groups:
-            m = g.get("master")
-            if m is None:
+            seq = g.get("master_seq") or (0 if g.get("master") is not None else None)
+            if seq is None:
                 continue
             for n in g["heads"]:
+                if n not in last or seq >= last[n][0]:
+                    last[n] = (seq, g.get("master", 100))
+        for n, (_seq, m) in last.items():
+            if m < 100:
                 o = out.setdefault(n, {})
                 o["scale"] = round(o.get("scale", 100) * m / 100.0, 1)
         # fader tiles for some lights: their brightness, or a master

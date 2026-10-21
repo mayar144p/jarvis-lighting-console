@@ -141,8 +141,12 @@ function render() {
   renderGroupMasters();
   renderCues();
   const s = state.snap || {};
-  gm.set(s.master ?? 100);
-  $("#gm-num").textContent = s.master ?? 100;
+  // the live feed's GM (the full snapshot isn't sent again for a GM move:
+  // read from it, the GM jumped back to its old place - often 100 - the
+  // next time anything else on the dock was touched)
+  const m = state.lite && state.lite.master != null ? state.lite.master : s.master ?? 100;
+  gm.set(m);
+  $("#gm-num").textContent = m;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
 }
 
@@ -187,7 +191,13 @@ function renderGroupMasters() {
     box.replaceChildren(...groups.map((g) => {
       const el = h("div.vfader", { "aria-label": `${g.name} master` });
       const num = h("output", String(g.master ?? 100));
-      const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => { num.textContent = v; run("group_master", { group: g.n, level: v }, { silentError: true }); }, 60) });
+      const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => {
+        num.textContent = v;
+        // kept here too: the fader stays where it was put until the next snapshot says otherwise
+        const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
+        if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
+        run("group_master", { group: g.n, level: v }, { silentError: true });
+      }, 60) });
       grpFaders.set(g.n, { f, num });
       return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label", g.name.slice(0, 8), " ", num));
     }));
@@ -263,7 +273,12 @@ export function initPlaybacks() {
   wireModes();
   gm = vfader($("#gm-fader"), {
     min: 0, max: 100,
-    onInput: throttle((v) => { $("#gm-num").textContent = v; run("master", { level: v }, { silentError: true }); }, 60),
+    onInput: throttle((v) => {
+      $("#gm-num").textContent = v;
+      if (state.snap) state.snap.master = v;
+      if (state.lite) state.lite.master = v;
+      run("master", { level: v }, { silentError: true });
+    }, 60),
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
   // the group faders fold away on a small screen (remembered on this computer)
