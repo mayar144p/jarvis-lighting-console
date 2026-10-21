@@ -139,10 +139,36 @@ function render() {
     c.fd.set(pb.level ?? 100);
   }
   renderGroupMasters();
+  renderCues();
   const s = state.snap || {};
   gm.set(s.master ?? 100);
   $("#gm-num").textContent = s.master ?? 100;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
+}
+
+// The cue list of the playback in focus, beside the faders (the Theatre
+// workspace, or Workspace -> Cue list beside the faders): every cue with
+// its fade, the one live marked; a tap jumps there.
+let cuesKey = "";
+function renderCues() {
+  const box = $("#pb-cues");
+  if (!box || !document.body.classList.contains("ws-cues")) { if (box) cuesKey = ""; return; }
+  const pbs = (state.snap && state.snap.playbacks) || [];
+  const pb = pbs.find((x) => x.n === focusPb) || pbs.find((x) => (x.stack || []).length) || pbs[0];
+  if (!pb) return;
+  const stack = pb.stack || [];
+  const key = JSON.stringify([pb.n, pb.index, stack.map((c) => [c.name, c.fade])]);
+  if (key === cuesKey) return;
+  cuesKey = key;
+  box.replaceChildren(
+    h("div.pb-cues-head", h("b", pb.name || `PB${pb.n}`), h("span.muted.small", ` ${stack.length} cue${stack.length === 1 ? "" : "s"}`),
+      h("button.btn.small.ghost", { title: "Edit the cue list", onclick: () => openCueList(pb.n) }, "Edit…")),
+    stack.length ? h("ol.pb-cues-list", ...stack.map((c, i) => h("li" + (i === pb.index ? ".on" : ""), {
+      title: `GO to cue ${i + 1}`, onclick: () => run("cue_go", { playback: pb.n, cue: i + 1 }),
+    }, h("span.pb-cue-n", String(i + 1)), h("span.pb-cue-name", cueLabel(c)), h("small.muted", c.fade != null ? `${c.fade}s` : ""))))
+      : h("p.muted.small", "No cues yet: set a look, then Record cue."));
+  const on = box.querySelector("li.on");
+  if (on) on.scrollIntoView({ block: "nearest" });
 }
 
 // A fader per group (the first eight): its lights at that share of
@@ -152,6 +178,8 @@ const grpFaders = new Map();
 function renderGroupMasters() {
   const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
   const box = $("#grp-masters");
+  const fold = $("#grp-fold-btn");
+  if (fold) fold.hidden = !groups.length;
   const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
   if (key !== grpKey) {
     grpKey = key;
@@ -238,6 +266,19 @@ export function initPlaybacks() {
     onInput: throttle((v) => { $("#gm-num").textContent = v; run("master", { level: v }, { silentError: true }); }, 60),
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
+  // the group faders fold away on a small screen (remembered on this computer)
+  const fold = $("#grp-fold-btn");
+  const setFold = (folded) => {
+    $("#grp-masters").classList.toggle("folded", folded);
+    fold.setAttribute("aria-expanded", String(!folded));
+    fold.textContent = folded ? "›" : "‹";
+    fold.title = folded ? "Show the group faders" : "Fold the group faders away (more room on a small screen)";
+    try { localStorage.setItem("jarvis.grpFold", folded ? "1" : ""); } catch (e) { /* private window */ }
+  };
+  let folded = false;
+  try { folded = localStorage.getItem("jarvis.grpFold") === "1"; } catch (e) { /* private window */ }
+  setFold(folded);
+  fold.addEventListener("click", () => setFold(!$("#grp-masters").classList.contains("folded")));
   // on a phone the faders are one tab away: Blackout stays in the bottom bar
   on("snapshot", render);
   on("lite", render);

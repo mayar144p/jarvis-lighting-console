@@ -341,7 +341,7 @@ class RigMixin:
         "set_limits", "clear_limits", "set_orient",
         "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
         "venue_shape", "venue_build", "venue_describe", "venue_array",
-        "venue_room", "venue_stage", "venue_add", "venue_update", "keep_facing", "venue_rig",
+        "venue_room", "venue_stage", "venue_add", "venue_update", "keep_facing", "venue_rig", "venue_orient",
         "venue_remove", "venue_underlay",
         "stand_in",
     })
@@ -354,7 +354,7 @@ class RigMixin:
         "show_rename", "show_copy", "show_delete", "backup", "backup_restore", "hue", "hue_pair", "hue_link",
         "song_save", "songs_import", "song_rename", "song_delete", "song_link",
         "venue_save", "venue_open", "venue_delete",
-        "quick_set", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
+        "quick_set", "quick_update", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
         "motion_set", "remember_open",
         "timeline_clip", "timeline_from_playback",
     })
@@ -1116,6 +1116,36 @@ class RigMixin:
         self.patch_rev += 1
         return self._venue_result(("removed" if remove else "saved")
                                   + f" view {name}")
+
+    def _a_venue_orient(self, booth=None, centre=None, front=None, clear=None, **_):
+        """Where the DJ booth and the middle of the room are ([x, z]) and
+        which way the DJ faces (degrees, or "centre": from the booth towards
+        the middle).  Dragging, the camera and the Move tab's map and spot
+        pad then work from the DJ's side.  `clear`: "booth" / "centre" /
+        "front" / "all" back to worked out."""
+        v = venue_mod.normalise(self.venue)
+        o = dict(v.get("orient") or {})
+        if clear:
+            for k in (("booth", "centre", "front") if str(clear) == "all" else (str(clear),)):
+                o.pop(k, None)
+        if booth is not None:
+            o["booth"] = [float(booth[0]), float(booth[-1])]
+        if centre is not None:
+            o["centre"] = [float(centre[0]), float(centre[-1])]
+        if front is not None:
+            if str(front) in ("centre", "middle", "auto"):
+                cur = venue_mod.orientation({**v, "orient": o})
+                dx, dz = cur["centre"][0] - cur["booth"][0], cur["centre"][1] - cur["booth"][2]
+                o["front"] = math.degrees(math.atan2(dx, dz)) % 360
+            else:
+                o["front"] = float(front)
+        v["orient"] = o
+        self.venue = venue_mod.normalise(v)
+        self.patch_rev += 1
+        now = venue_mod.orientation(self.venue)
+        return {**self._venue_result("the DJ booth, the middle and the front set"), "orient": now,
+                "summary": f"DJ booth at x {now['booth'][0]:g} z {now['booth'][2]:g}, middle at x {now['centre'][0]:g} "
+                           f"z {now['centre'][1]:g}, the DJ faces {now['front']:g}°"}
 
     def _a_venue_info(self, **_):
         return {"venue": venue_mod.describe(self.venue),

@@ -90,7 +90,7 @@ def empty() -> dict:
             "stage": None, "zones": [], "rigging": [], "objects": [],
             "cameras": [], "crowd": {"style": "varied", "density": 0.45,
                                      "show": True},
-            "underlay": None, "seq": 0}
+            "underlay": None, "orient": {}, "seq": 0}
 
 
 def _next_id(v: dict, prefix: str) -> str:
@@ -331,7 +331,75 @@ def normalise(raw) -> dict:
                   "density": round(_num(crowd.get("density"), 0.45, 0, 1), 3),
                   "show": crowd.get("show") is not False}
     v["underlay"] = clean_underlay(raw.get("underlay"))
+    v["orient"] = clean_orient(raw.get("orient"))
     return v
+
+
+def clean_orient(raw) -> dict:
+    """Where the operator said the DJ booth and the middle of the room are
+    ([x, z]) and which way the DJ faces (degrees: 0 = towards +z, the
+    audience in every template; 90 = towards +x).  Only what was set."""
+    raw = raw if isinstance(raw, dict) else {}
+    out: dict = {}
+    for k in ("booth", "centre"):
+        p = raw.get(k)
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            out[k] = [round(_num(p[0]), 3), round(_num(p[1]), 3)]
+    if raw.get("front") not in (None, ""):
+        out["front"] = round(_num(raw["front"], 0, -720, 720) % 360, 1)
+    return out
+
+
+def orientation(v: dict) -> dict:
+    """The room from the DJ's side: the booth [x, y, z] (the DJ's eyes), the
+    middle of the room [x, z] and the way the DJ faces (degrees, see
+    clean_orient), each as set, else worked out: the booth from a DJ booth,
+    a mark, a DJ zone or the stage; the middle from the dance floor (or the
+    room); the front from the booth towards the middle."""
+    v = v if isinstance(v, dict) else {}
+    o = v.get("orient") or {}
+    objs = v.get("objects") or []
+    zones = v.get("zones") or []
+    booth = None
+    if o.get("booth"):
+        booth = [o["booth"][0], 1.7, o["booth"][1]]
+    else:
+        ob = next((x for x in objs if x.get("kind") == "dj_booth"), None) \
+            or next((x for x in objs if x.get("kind") == "mark"), None)
+        zn = next((z for z in zones if z.get("kind") == "dj" and z.get("points")), None)
+        st = v.get("stage")
+        if ob:
+            booth = [ob["x"], float(ob.get("y") or 0) + 1.7, ob["z"]]
+        elif zn:
+            cx, cz = zone_centroid(zn)
+            booth = [cx, 1.7, cz]
+        elif st:
+            booth = [st["x"], st["height"] + 1.7, st["z"] + st["depth"] * 0.4]
+    if o.get("centre"):
+        centre = list(o["centre"])
+    else:
+        fl = next((z for z in zones if z.get("kind") in ("dancefloor", "standing") and z.get("points")), None)
+        if fl:
+            centre = [round(c, 3) for c in zone_centroid(fl)]
+        else:
+            b = bounds(v)
+            centre = [round((b["x0"] + b["x1"]) / 2, 3), round((b["z0"] + b["z1"]) / 2, 3)]
+    if booth is None:
+        booth = [centre[0], 1.7, bounds(v)["z0"] + 1.0]
+    if "front" in o:
+        front = float(o["front"])
+    else:
+        dx, dz = centre[0] - booth[0], centre[1] - booth[2]
+        front = round(math.degrees(math.atan2(dx, dz)) % 360, 1) if math.hypot(dx, dz) > 0.3 else 0.0
+    return {"booth": [round(c, 3) for c in booth], "centre": centre, "front": front,
+            "set": sorted(o)}
+
+
+def dj_frame(v: dict) -> tuple[tuple[float, float], tuple[float, float]]:
+    """(forward, right) unit vectors on the floor (x, z) as the DJ sees it."""
+    a = math.radians(orientation(v)["front"])
+    fwd = (math.sin(a), math.cos(a))
+    return fwd, (-fwd[1], fwd[0])
 
 
 def clean_underlay(raw) -> dict | None:
@@ -694,7 +762,9 @@ def describe(v: dict) -> dict:
                       "centre": [round(cx, 2), round(cz, 2)],
                       "size": [round(max(xs) - min(xs), 2), round(max(zs) - min(zs), 2)]})
     s = v.get("stage")
+    o = orientation(v)
     return {"name": v.get("name") or v.get("template") or "", "room": [w, d, h],
+            "dj_booth": [o["booth"][0], o["booth"][2]], "middle": o["centre"], "dj_faces_deg": o["front"],
             "ceiling": (v.get("room") or {}).get("ceiling"),
             "stage": ({"front_z": round(s["z"] + s["depth"], 2), "width": s["width"],
                        "depth": s["depth"], "height": s["height"]} if s else None),

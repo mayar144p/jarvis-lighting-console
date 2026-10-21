@@ -16,7 +16,8 @@ from __future__ import annotations
 import math
 
 # the movement effects this module drives (fxlib names)
-KINDS = ("circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan")
+KINDS = ("circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan", "range")
+RANGE_MODES = ("bounce", "loop", "once")
 # and a shape of your own: key points the heads go round (Move tab -> Shapes)
 ALL_KINDS = KINDS + ("shape",)
 MAX_POINTS = 32
@@ -84,8 +85,40 @@ def shape(kind: str, cycles: float, p: dict, index: int = 0, count: int = 1) -> 
     raise ValueError(f"not a movement effect: {kind}")
 
 
+def range_ends(p: dict, span_deg: tuple[float, float]) -> tuple[tuple[float, float], tuple[float, float]]:
+    """((pan from, to), (tilt from, to)) in degrees from the middle of the
+    travel - the light's whole travel when asked."""
+    out = []
+    for axis, span in zip(("pan", "tilt"), span_deg):
+        span = float(span or 0) or DEFAULT_SPAN_DEG[0 if axis == "pan" else 1]
+        if float(p.get(f"full_{axis}", 0) or 0) >= 0.5:
+            out.append((-span / 2.0, span / 2.0))
+        else:
+            out.append((float(p.get(f"{axis}_a", 0.0)), float(p.get(f"{axis}_b", 0.0))))
+    return out[0], out[1]
+
+
+def range_u(cycles: float, p: dict, index: int = 0, count: int = 1) -> float:
+    """How far from A to B (0..1) a light is: bounce (A, B, A...), loop
+    (A to B, then from A again) or once (A to B, and stays); a spread
+    starts each light a step later (a wave across them)."""
+    count = max(1, int(count))
+    lag = float(p.get("spread", 0.0)) / 360.0 * (index / count) + float(p.get("phase", 0.0)) / 100.0
+    mode = int(round(float(p.get("mode", 0.0))))
+    if mode == 2:                                   # once: in turn, then hold at B
+        return _ease(min(1.0, max(0.0, cycles - lag)))
+    t = cycles + lag
+    if mode == 1:
+        return _ease(t % 1.0)
+    return _ease(_pingpong(t))
+
+
 def amplitude(kind: str, p: dict, span_deg: tuple[float, float]) -> tuple[float, float]:
     """Swing per axis as a fraction of travel, from the size in degrees."""
+    if kind == "range":
+        (pa, pb), (ta, tb) = range_ends(p, span_deg)
+        return (abs(pb - pa) / 2.0 / float(span_deg[0] or DEFAULT_SPAN_DEG[0]),
+                abs(tb - ta) / 2.0 / float(span_deg[1] or DEFAULT_SPAN_DEG[1]))
     size = max(1.0, min(270.0, float(p.get("size", 20.0))))
     pan_span = float(span_deg[0] or DEFAULT_SPAN_DEG[0])
     tilt_span = float(span_deg[1] or DEFAULT_SPAN_DEG[1])
@@ -153,6 +186,18 @@ def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
              span_deg: tuple[float, float], index: int = 0, count: int = 1) -> dict:
     """{"pan": frac, "tilt": frac} for one head at one moment - only the axes
     the shape moves and the lock leaves free."""
+    if kind == "range":
+        # absolute: from A to B degrees of this light's own travel, whatever it was aimed at
+        ends = range_ends(p, span_deg)
+        u = range_u(cycles, p, index, count)
+        out = {}
+        for axis, (a, b), span, (lo, hi) in zip(("pan", "tilt"), ends, span_deg, limits):
+            if a == b and not float(p.get(f"full_{axis}", 0) or 0) and not p.get(f"_set_{axis}"):
+                continue                    # not asked to move (a head's own angle is: _set_)
+            span = float(span or 0) or DEFAULT_SPAN_DEG[0 if axis == "pan" else 1]
+            frac = 0.5 + (a + (b - a) * u) / span
+            out[axis] = min(max(frac, min(lo, hi)), max(lo, hi))
+        return {k: min(1.0, max(0.0, v)) for k, v in out.items()}
     lock = int(round(float(p.get("lock", 0.0))))        # 1: tilt stays, 2: pan stays
     dp, dt = shape(kind, cycles, p, index, count)
     ap, at = amplitude(kind, p, span_deg)

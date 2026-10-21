@@ -1443,6 +1443,9 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 /* the buttons page on the whole screen */
 .qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
 .qb.qb-full .qb-grid { flex: 1; }
+.qb-bo { display: none; font-weight: 700; border-color: var(--live); color: #fca5a5; }
+.qb.qb-full .qb-bo { display: inline-flex; }
+.qb-bo.on { background: var(--live); color: #fff; }
 body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .qctl.qfader.qbig { align-items: center; }
 .qctl.qfader.qbig .qfader-in { writing-mode: vertical-lr; direction: rtl; flex: 1; width: 36px; min-height: 80px; }
@@ -1492,6 +1495,22 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 /* a button holding the selected lights */
 .prog-held { padding: 6px 12px; background: rgba(250, 204, 21, .10); border-bottom: 1px solid rgba(250, 204, 21, .35); }
 .prog-held[hidden] { display: none; }
+.head-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; }
+.head-tilt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.head-tilt input { width: 80px; }
+.head-tilt small { min-width: 36px; color: var(--muted); }
+.mv-deg { display: inline-flex; align-items: center; gap: 4px; }
+.mv-deg input { width: 64px; }
+.mv-now { font-variant-numeric: tabular-nums; }
+.aim-map .am-dj circle { fill: var(--accent-bg); stroke: var(--accent); stroke-width: .06; }
+.aim-map .am-front { stroke: var(--accent); stroke-width: .1; stroke-linecap: round; }
+.aim-map .am-dj-t { fill: var(--accent); font-weight: 700; }
+.aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
+.aim-map .am-mid circle { fill: none; stroke: var(--muted); stroke-width: .05; }
+.prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
+.qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
+.qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.qb-back { font-weight: 700; color: var(--accent); }
 .prog-held-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
 .prog-held-row span { flex: 1; }
 
@@ -1925,3 +1944,44 @@ body[data-mode="setup"] .playbacks { display: none; }
 .toast.turned { pointer-events: auto; border-radius: 12px; display: grid; gap: 6px; }
 .toast.turned .row-btns { margin: 0; }
 .cell-chip .slot-dot { margin-right: 4px; }
+
+/* ---- B6 layouts: no 3D, the cue list beside the faders, small screens ---- */
+body.ws-nostage .stage-wrap { display: none; }
+.pb-cues { display: none; }
+body.ws-cues .pb-cues { display: flex; flex-direction: column; width: clamp(200px, 22vw, 320px); flex: none;
+  border-left: 1px solid var(--border); min-height: 0; overflow: hidden; }
+body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
+.pb-cues-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.pb-cues-head .btn { margin-left: auto; }
+.pb-cues-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.pb-cues-list li { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: center; padding: 4px 8px; cursor: pointer; font-size: 12.5px; }
+.pb-cues-list li:hover { background: rgba(255, 255, 255, .04); }
+.pb-cues-list li.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.pb-cue-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pb-cue-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-fold-btn { align-self: center; min-width: 22px; min-height: 44px; padding: 0 4px; color: var(--muted); }
+.grp-masters { max-width: 46vw; overflow-x: auto; overscroll-behavior: contain; }
+.grp-masters.folded { display: none; }
+/* panels never squeeze below what they can show */
+.fixtures, .programmer, .modehub { min-width: 220px; }
+.fx-table-wrap { min-height: 150px; }              /* the fixture list keeps 5 rows */
+.live-bo { display: none; }
+.prog-why { flex: 1 1 100%; line-height: 1.3; }
+.prog-why:empty { display: none; }
+@media (max-height: 820px) {
+  /* the dock follows the window instead of a fixed height */
+  .workspace { --pb-h: clamp(140px, 27vh, 196px); }
+  body[data-bottom="buttons"] .workspace { --pb-h: clamp(200px, 36vh, 360px); }
+  body[data-bottom="timeline"] .workspace { --pb-h: clamp(210px, 36vh, 360px); }
+  .group-chips { max-height: 64px; }
+  /* Live on 1280 x 720: hits, tempo, autopilot and blackout first */
+  .hub-body.live { display: flex; flex-direction: column; }
+  .hub-body.live .live-bo { display: flex; order: -3; }
+  .hub-body.live .live-k.hits-k { order: -2; }
+  .hub-body.live .live-hits, .hub-body.live .live-nohits { order: -2; }
+  .hub-body.live .live-pair { order: -1; }
+}
+.live-bo { gap: 8px; align-items: center; }
+.live-bo .btn { flex: 1; min-height: 40px; font-weight: 700; }
+.live-bo .btn.on { background: var(--live); border-color: var(--live); color: #fff; }
+

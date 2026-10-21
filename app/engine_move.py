@@ -134,6 +134,14 @@ class MoveMixin:
             if o.get("kind") == "mark" and o.get("name") and not any(
                     s["label"].lower() == str(o["name"]).lower() for s in spots):
                 add("mark:" + str(o["name"]), str(o["name"]), o.get("x", 0), o.get("z", 0), 1.2)
+        # the middle of the room and the DJ, as the operator set them (or worked out)
+        if v.get("room", {}).get("width") or v.get("zones") or v.get("objects"):
+            o = venue_mod.orientation(v)
+            cx, cz = o["centre"]
+            if not any(abs(s["x"] - cx) < 0.3 and abs(s["z"] - cz) < 0.3 and s["y"] == 0 for s in spots):
+                add("middle", "Middle", cx, cz)
+            if not any(s["key"] == "dj" for s in spots):
+                add("dj", "DJ", o["booth"][0], o["booth"][2], 1.2)
         return spots
 
     def _a_aim_spot(self, spot=None, formation=None, heads=None, glide=None, **_):

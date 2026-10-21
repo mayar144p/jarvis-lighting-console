@@ -130,6 +130,7 @@ export function initStage() {
   initVenuePanel(stage);
 
   on("snapshot", syncRig);
+  on("snapshot", (s) => { stage.djView = s && s.venue_orient; });
   on("models3d", showDrawn);
   $("#drawn-chip").addEventListener("click", () => realBodies());
   on("selection", (sel) => stage.setSelected(sel));
@@ -275,7 +276,7 @@ function viewsMenu(btn) {
       ["top", "Plan", "5"], ["overview", "Whole room (3D)", "6"]].map(([v, l, k]) => ({ label: l, hint: `key ${k}`, run: () => stage.view(v) })),
     "-",
     { label: "From the crowd", hint: "Eye level on the dance floor", run: () => stage.viewCrowd() },
-    { label: "From the DJ / stage", hint: "Looking out at the room", run: () => stage.viewStage() },
+    { label: "From the DJ booth", hint: "Looking the way the DJ faces (key 7)", run: () => stage.viewStage() },
     { label: "Through the selected light", hint: sel.length ? `Down #${sel[0]}'s beam` : "Select a light first",
       disabled: !sel.length, run: () => stage.lookThrough(sel[0]) },
     { label: stage.walking ? "Stop walking" : "Walk around", hint: "W A S D to move, drag to look, Esc stops", run: () => {

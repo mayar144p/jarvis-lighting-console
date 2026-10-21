@@ -4201,7 +4201,7 @@ def test_button_looks() -> None:
             check("2 x 1 is the old 'wide'", b.get("size") == "wide", str(b))
             b = e.act("quick_set", page=1, slot=11, button={"kind": "flash", "shape": "rounded", "fill": "outline", "text": "m"}).get("button") or {}
             check("the defaults aren't stored", not {"shape", "fill", "text", "w", "h", "size"} & set(b), str(b))
-            for bad, why in (({"w": 5}, "too wide"), ({"h": 4}, "too tall"), ({"shape": "hexagon"}, "a shape it doesn't have"),
+            for bad, why in (({"w": 5}, "too wide"), ({"h": 5}, "too tall"), ({"shape": "hexagon"}, "a shape it doesn't have"),
                              ({"fill": "neon"}, "a fill it doesn't have"), ({"text": "huge"}, "a text size it doesn't have"),
                              ({"icon": "unicorn"}, "an icon it doesn't have")):
                 check(f"refused: {why}", not e.act("quick_set", page=1, slot=12, button={"kind": "flash", **bad}).get("ok"))
@@ -4259,14 +4259,14 @@ def test_button_looks() -> None:
             try:
                 with e.lock:
                     pay = json.loads(e._autosave_payload())
-                pay["quick_layout"]["9"] = {"cols": 8}
+                pay["quick_layout"]["33"] = {"cols": 8}
                 pay["quick_layout"]["1"] = {"cols": 7}
                 pay["quick_layout"]["3"] = "junk"
                 e2._restore_payload(pay)
                 lay = e2._quick_public()["layout"]
                 check("after a restart: the grids and the page names come back (the names used to be lost)",
                       lay.get("2") == {"cols": 5, "rows": 4, "height": "l"} and e2.quick_names.get("2") == "Drops", f"{lay} {e2.quick_names}")
-                check("a bad grid in a file is dropped, not trusted", not {"9", "1", "3"} & set(lay), str(lay))
+                check("a bad grid in a file is dropped, not trusted", not {"33", "1", "3"} & set(lay), str(lay))
             finally:
                 e2.shutdown()
             from app import assistant
@@ -4427,8 +4427,8 @@ def test_show_templates() -> None:
             e.act("set_intensity", level=50)
             e.act("record_cue", playback=1, name="mine")
             listed = e.act("show_templates")
-            check("five templates to pick from", listed.get("ok") and [t["id"] for t in listed["templates"]]
-                  == ["club", "wedding", "band", "theatre", "corporate"], str(listed.get("templates")))
+            check("six templates to pick from (a Mobile DJ too)", listed.get("ok") and [t["id"] for t in listed["templates"]]
+                  == ["club", "wedding", "band", "theatre", "mobile_dj", "corporate"], str(listed.get("templates")))
             undo0 = len(e._undo)
             for name in showtemplates.TEMPLATES:
                 r = e.act("show_template", name=name)
@@ -4788,7 +4788,9 @@ def test_workspaces() -> None:
 const W = await import(process.argv[1]);
 console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map((w) => JSON.stringify(W.clean(w)) === JSON.stringify(w)),
   bad: W.clean({ id: "x", name: "y".repeat(90), fix: 0, fixW: 5000, progW: 10, bottom: "<b>", dock: -3, tab: "<img>" }),
-  show: W.BUILTIN.find((w) => w.id === "show"), busk: W.BUILTIN.find((w) => w.id === "busking") }));
+  nostage: W.BUILTIN.find((w) => w.id === "nostage"), theatre: W.BUILTIN.find((w) => w.id === "theatre"),
+  grid: W.gridFor(W.clean({ ...W.BUILTIN.find((w) => w.id === "nostage") })),
+  none: W.gridFor(W.clean({ id: "x", fix: false, prog: false, stage: false })) }));
 """
     url = (web / "app" / "wslayouts.js").as_uri()
     r = subprocess.run([node, "--input-type=module", "-e", js, url], capture_output=True, text=True, timeout=30)
@@ -4796,17 +4798,18 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("six ready ones: Set up, Live, then programming, busking, theatre, show",
-          got["ids"] == ["setup", "live", "programming", "busking", "theatre", "show"], str(got["ids"]))
+    check("five ready ones (fewer): Set up, Live, then programming, theatre, no 3D",
+          got["ids"] == ["setup", "live", "programming", "theatre", "nostage"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
           bad["fixW"] == 620 and bad["progW"] == 220 and bad["bottom"] == "faders" and bad["dock"] == 0
           and bad["tab"] == "" and len(bad["name"]) == 40 and bad["fix"] is True, str(bad))
-    check("running a show: the 3D and the buttons, nothing to program with", not got["show"]["fix"] and not got["show"]["prog"]
-          and got["show"]["bottom"] == "buttons")
-    check("busking: the buttons and the programmer, no fixture list", got["busk"]["prog"] and not got["busk"]["fix"]
-          and got["busk"]["bottom"] == "buttons")
+    check("no 3D: the buttons, the programmer and the fixture list, the programmer takes the 3D's room",
+          got["nostage"]["stage"] is False and got["nostage"]["bottom"] == "buttons"
+          and "stage" not in got["grid"]["areas"] and "minmax(0, 1fr)" in got["grid"]["cols"], str(got["grid"]))
+    check("...no 3D and no panels: the dock fills the screen", got["none"]["areas"] == '"pb"', str(got["none"]))
+    check("Theatre shows the cue list beside the faders", got["theatre"]["cues"] is True)
 
 
 def test_bug_report_never_waits_on_git() -> None:
@@ -7625,4 +7628,248 @@ def test_b2_groups() -> None:
 def aitools_more() -> tuple:
     from app import aitools
     return aitools.MORE
+
+
+
+def test_b3_buttons() -> None:
+    """A15 B3: a button opened in the programmer and updated; page tiles
+    (heading, go to page, folder) and tiles up to 4 x 4; a colour-only
+    button that says so and leaves the movement alone; ready-made programs
+    on a pattern of lights, in an order, moved by degrees; a colour picked
+    on dark lights brings them up."""
+    print("B3 buttons: edit in the programmer, page tiles, colour only, patterns")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "b.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=4)
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            # a colour picked on dark lights
+            e.act("select_heads", heads=[5, 6])
+            r = e.act("set_colour", hex="#ff0000")
+            check("a colour on lights at 0% brings them up (and says so)",
+                  sorted(r.get("brought_up") or []) == [5, 6] and all(lk["a"] for lk in e._looks() if lk["n"] in (5, 6)),
+                  r.get("summary", ""))
+            e.act("set_intensity", level=0)
+            r = e.act("set_colour", hex="#00ff00")
+            check("...but lights put at 0 on purpose stay there, named", not r.get("brought_up") and "at 0%" in r["summary"], r["summary"])
+            # colour only
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("run_fx", name="circle")
+            r = e.act("quick_from_programmer", label="Red", keep=["colour"])
+            b = next(x for x in e.quick if x["id"] == r["id"])
+            roles = {k for row in (b.get("values") or {}).values() for k in row}
+            check("a colour-only button keeps only the colour", b.get("keep") == ["colour"] and roles
+                  and all(e._family(k) == "colour" for k in roles) and not b.get("fx_list"), str(b))
+            check("...and says so on the tile", b.get("keeps") == "Colour · 2 lights", b.get("keeps"))
+            check("...the movement and the level stay in the programmer",
+                  any(f.get("lib") == "circle" for f in e.fx) and (e.programmer.get(1) or {}).get("dimmer") == 100,
+                  str(e.programmer.get(1)))
+            e.act("quick_press", id=b["id"], down=True)            # latch: off
+            # open it in the programmer, change it, update
+            e.act("quick_edit", id=b["id"])
+            check("Edit -> Open in the programmer: its lights selected, its colour in the programmer",
+                  e.selected == [1, 2] and e.quick_editing == b["id"]
+                  and any(e._family(k) == "colour" for k in e.programmer.get(1) or {}), str(e.programmer.get(1)))
+            before = dict((b.get("values") or {}).get("1") or {})
+            e.act("set_colour", hex="#0000ff")
+            r = e.act("quick_update")
+            nb = next(x for x in e.quick if x["id"] == b["id"])
+            check("...Update button saves the change back, same place and name",
+                  nb["label"] == "Red" and nb["slot"] == b["slot"] and nb.get("values", {}).get("1") != before
+                  and nb.get("keep") == ["colour"] and e.quick_public_editing() is None, r.get("summary", ""))
+            # page tiles and sizes
+            r1 = e.act("quick_set", page=1, slot=20, button={"kind": "folder", "label": "Movers", "to_page": 3})
+            r2 = e.act("quick_set", page=1, slot=21, button={"kind": "label", "label": "DROPS"})
+            check("a folder / go-to-page / heading tile", r1.get("button", {}).get("to_page") == 3
+                  and r2.get("button", {}).get("kind") == "label"
+                  and e.act("quick_press", id=r1["id"], down=True).get("page") == 3, str(r1))
+            check("...a go-to-page needs its page", not e.act("quick_set", page=1, slot=22, button={"kind": "page"}).get("ok", True), "")
+            r = e.act("quick_set", page=12, slot=1, button={"kind": "flash", "w": 4, "h": 4})
+            check("pages past 8, tiles up to 4 x 4", r.get("button", {}).get("h") == 4 and e._quick_public()["pages"] == 32, str(r))
+            # patterns, order, offsets
+            r = e.act("quick_set", page=2, slot=1, button={"kind": "fx", "fx": "circle", "order": "reverse",
+                                                         "offset": {"pan": 30}, "target": {"heads": [1, 2, 3, 4], "pattern": "1100"}})
+            fb = r.get("button") or {}
+            check("a ready-made program on 2 on, 2 off, in reverse", e._quick_heads(fb) == [2, 1], str(e._quick_heads(fb)))
+            e.act("quick_press", id=fb["id"], down=True)
+            row = next((f for f in e.fx if f.get("offset")), {})
+            check("...moved by degrees (pan +30 as a share of each light's travel)",
+                  row and all(0 < v.get("pan", 0) < 0.2 for v in row["offset"].values()), str(row.get("offset")))
+            e.act("quick_press", id=fb["id"], down=False)
+            check("...centre out and ends in", e._ordered([1, 2, 3, 4, 5], "centre_out")[0] == 3
+                  and e._ordered([1, 2, 3, 4, 5], "ends_in")[:2] == [1, 5], "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the screen: Open in the programmer / Update button, page tiles, patterns, order, offsets, what goes in",
+          '"quick_edit"' in qb and '"quick_update"' in pj and "Update button" in pj and "folderBack" in qb
+          and "PATTERNS" in qb and "Pan offset" in qb and "What goes in" in pj and "keep: [...keep]" in pj, "")
+
+
+def test_b4_movement() -> None:
+    """A15 B4: a move from one angle to another in each light's own
+    degrees (bounce / loop / once, the whole travel when asked), a wave
+    across the lights, each head of a multi-head light its own range, and
+    the screens that say the degrees."""
+    print("B4 movement: A -> B in degrees, waves, head by head")
+    from app import engine as eng
+    from app import fixlib
+    from app import motion
+    span = (540.0, 270.0)
+    lim = ((0.0, 1.0), (0.0, 1.0))
+    p = {"pan_a": -100.0, "pan_b": 40.0, "tilt_a": 0.0, "tilt_b": 0.0, "mode": 0.0, "spread": 0.0, "phase": 0.0}
+    deg = lambda v: round((v["pan"] - 0.5) * 540)  # noqa: E731
+    at = [deg(motion.position("range", t, p, (0.5, 0.5), lim, span)) for t in (0.0, 0.5, 1.0)]
+    check("pan from -100 to +40 degrees and back (bounce)", at == [-100, 40, -100], str(at))
+    once = [deg(motion.position("range", t, dict(p, mode=2.0), (0.5, 0.5), lim, span)) for t in (0.0, 1.0, 3.0)]
+    check("...once: to +40 and it stays", once == [-100, 40, 40], str(once))
+    loop = deg(motion.position("range", 1.0, dict(p, mode=1.0), (0.5, 0.5), lim, span))
+    check("...loop: from -100 again", loop == -100, str(loop))
+    full = [deg(motion.position("range", t, dict(p, full_pan=1.0), (0.5, 0.5), lim, span)) for t in (0.0, 0.5)]
+    check("the whole travel when asked (no 90 / 180 / 270 stops)", full == [-270, 270], str(full))
+    tilt_only = motion.position("range", 0.25, dict(p, pan_a=0.0, pan_b=0.0, tilt_a=-30.0, tilt_b=60.0), (0.5, 0.5), lim, span)
+    check("...an axis with the same from and to stays put", set(tilt_only) == {"tilt"}, str(tilt_only))
+    wave = [deg(motion.position("range", 0.0, dict(p, spread=180.0), (0.5, 0.5), lim, span, i, 4)) for i in range(4)]
+    check("a smooth wave across the lights (each a step on)", len(set(wave)) == 4, str(wave))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                              "qlc:Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Wave 360", mode="33 ch.", qty=1, universe=1, address=1)
+            e.selected = [1]
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="range", heads=[1], params={"tilt_a": -40, "tilt_b": 40, "pan_a": 0, "pan_b": 0,
+                                                                   "mode": 2, "speed": 1,
+                                                                   "cells": {"1": {"tilt_a": -60, "tilt_b": -60},
+                                                                             "4": {"tilt_a": 60, "tilt_b": 60}}})
+            row = next((f for f in e.fx if f.get("lib") == "range"), {})
+            check("head by head on a Wave 360: each head its own from / to", r.get("ok", True) and row.get("across")
+                  and set(row.get("cells") or {}) == {"1", "4"}, str(row.get("cells")))
+            vals = e._fx_values()
+            v = vals.get(1) or {}
+            check("...head 1 and head 4 go where they were told", v.get("tilt@1") is not None and v.get("tilt@4") is not None
+                  and v["tilt@1"] < v["tilt@4"], str({k: x for k, x in v.items() if k.startswith("tilt")}))
+            snap = e.snapshot()
+            check("the screen knows each light's travel in degrees", (snap["patch"][0].get("span") or [0])[0] > 0, str(snap["patch"][0].get("span")))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
+          '"range"' in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
+    check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
+          "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
+
+
+def test_b5_room() -> None:
+    """A15 B5: the room knows the DJ booth, the middle and the front (as
+    set, else worked out), the lights have a Middle spot, the Move map can
+    be turned to the DJ's side and redraws when the room changes, and the
+    3D has a view from the booth."""
+    print("B5 the room: DJ booth, middle, front; the map from the DJ")
+    from app import engine as eng
+    from app import venue as V
+    o = V.orientation(V.template("club"))
+    check("worked out from the room: the booth at the DJ booth, the middle on the dance floor, facing it",
+          o["booth"][2] < o["centre"][1] and abs(o["front"]) < 1 and o["set"] == [], str(o))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "r.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("show_template", name="club")
+            e.act("venue_orient", booth=[3, 12], centre=[0, 6], front="centre")
+            now = e.snapshot()["venue_orient"]
+            check("set by the operator: booth, middle, and the DJ facing the middle",
+                  now["booth"][0] == 3 and now["booth"][2] == 12 and now["centre"] == [0.0, 6.0]
+                  and 190 < now["front"] < 220 and sorted(now["set"]) == ["booth", "centre", "front"], str(now))
+            fwd, right = V.dj_frame(e.venue)
+            check("...the DJ's right is to the right of the way they face", abs(fwd[0] * right[0] + fwd[1] * right[1]) < 1e-6
+                  and fwd[0] * right[1] - fwd[1] * right[0] > 0, f"{fwd} {right}")
+            spots = {s["key"]: s for s in e._move_spots()}
+            check("the lights know where the middle is (a Middle spot, unless the floor's centre is it)",
+                  "middle" in spots or any(abs(s["x"]) < 0.3 and abs(s["z"] - 6) < 0.3 for s in spots.values()), str(list(spots)))
+            e.act("undo")
+            check("...one Ctrl+Z", "booth" not in (e.venue.get("orient") or {}), str(e.venue.get("orient")))
+            e.act("venue_orient", front=90)
+            e.act("venue_orient", clear="all")
+            check("...and back to worked out", e.venue.get("orient") == {}, str(e.venue.get("orient")))
+            check("the AI may set it (undoable) and it is locked with the rig",
+                  "venue_orient" in aitools_more() and "venue_orient" in e.LOCK_PATCH, "")
+            check("the room summary the AI reads names the booth and the middle",
+                  {"dj_booth", "middle", "dj_faces_deg"} <= set(V.describe(e.venue)), "")
+        finally:
+            e.shutdown()
+    af = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
+          "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
+    check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
+          and "x.yaw" in mv, "")
+    check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")
+
+
+def test_b6_layouts() -> None:
+    """A15 B6: layouts without the 3D, the full-screen buttons with their
+    own bar, small screens (the dock follows the window, group faders fold,
+    5 fixture rows, panel minimums, Live's first row), Theatre's cue list,
+    Record cue says why, Ready? fixes as buttons, a Mobile DJ template,
+    a tour per mode."""
+    print("B6 layouts: no 3D, small screens, cue list, ready check, tours")
+    from app import engine as eng
+    from app import showtemplates
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws and '"3D view"' in ws
+          and "body.ws-nostage .stage-wrap { display: none; }" in css and 'classList.contains("ws-nostage")' in st, "")
+    check("full-screen buttons: pages, Edit, Layout and a Blackout of their own", 'id="qb-bo"' in html and ".qb.qb-full .qb-bo" in css, "")
+    check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
+          "clamp(140px, 27vh, 196px)" in css and 'id="grp-fold-btn"' in html and ".grp-masters.folded" in css
+          and ".fx-table-wrap { min-height: 150px; }" in css and ".fixtures, .programmer, .modehub { min-width: 220px; }" in css, "")
+    mh = (web / "modehub.js").read_text(encoding="utf-8")
+    check("Live on 1280 x 720: blackout, hits, tempo and autopilot first", "live-bo" in mh and ".hub-body.live .live-bo { display: flex; order: -3; }" in css, "")
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
+          and '"cue_go"' in pb, "")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    check("Record cue says why it is off", 'id="prog-why"' in html and "Nothing to record yet" in pj, "")
+    wj = (web / "welcome.js").read_text(encoding="utf-8")
+    check("a tour per mode (Set up, Program, Live), offered the first time in each",
+          "SETUP_STEPS" in wj and "LIVE_STEPS" in wj and "offerModeTour" in wj and "offerModeTour" in ws, "")
+    check("a Mobile DJ template with the operator's kind of rig",
+          "mobile_dj" in showtemplates.TEMPLATES and any("wave-360" in x[2].lower() for x in showtemplates.TEMPLATES["mobile_dj"]["lights"]), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("ready_check")
+            dos = {i.get("do") for i in r["items"]}
+            check("Ready? each fix is a button: no lights -> Add", "add" in dos, str(r["items"]))
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            r = e.act("ready_check")
+            dos = {i.get("do") for i in r["items"]}
+            check("...record a cue, save, go live, stay on the floor", {"record", "save", "output"} <= dos, str(dos))
+        finally:
+            e.shutdown()
+    dj = (web / "dialogs.js").read_text(encoding="utf-8")
+    check("...the screen turns them into buttons", "const DO = {" in dj and "fixBtn" in dj and "Check again" in dj, "")
 

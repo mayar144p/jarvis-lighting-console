@@ -884,7 +884,38 @@ function renderProgCells() {
       dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
     n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
     n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
-    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own")].filter(Boolean));
+    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own"),
+    dots[0] ? h("button.chip", { title: "Every head takes head 1's colour", onclick: () => run("set_colour", { hex: dots[0] }) }, "Copy 1 to all") : null,
+    dots[0] && dots[n - 1] && dots[0] !== dots[n - 1] ? h("button.chip", { title: `A gradient from head 1's colour to head ${n}'s`,
+      onclick: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } }, "Spread a gradient") : null,
+    headBar(heads, n)].filter(Boolean));
+}
+
+const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
+  .toString(16).padStart(2, "0")).join("");
+
+// A light with a tilt per head (a Wave 360): its heads as a bar - tilt each
+// head in degrees, or a wave through them - instead of raw channels.
+function headBar(heads, n) {
+  const hd = heads.find((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
+  if (!hd) return null;
+  const tilts = (hd.map || []).filter((r) => r === "tilt").length;
+  const span = (hd.span && hd.span[1]) || 270;
+  const vals = (((state.snap && state.snap.programmer) || {}).values || {})[hd.head_no] || {};
+  const deg = (v) => `${Math.round((v / 255 - 0.5) * span)}°`;
+  const send = throttle((k, v) => run("set_attribute", { attribute: "tilt", value: v, cell: [k] }, { silentError: true }), 60);
+  return h("div.head-bar", { title: "Tilt each head (degrees from straight out)" },
+    h("span.muted.small", "Tilt per head:"),
+    ...Array.from({ length: tilts }, (_, i) => {
+      const v = vals[`tilt@${i + 1}`] ?? 128;
+      const out = h("small", deg(v));
+      const input = h("input", { type: "range", min: 0, max: 255, value: v, "aria-label": `Head ${i + 1} tilt`,
+        oninput: (e) => { out.textContent = deg(+e.target.value); send(i + 1, +e.target.value); } });
+      return h("label.head-tilt", h("b", String(i + 1)), input, out);
+    }),
+    h("button.chip", { title: "A tilt wave through the heads (Move tab for the angles and speed)",
+      onclick: () => run("run_fx", { name: "range", heads: heads.map((x) => x.head_no), across: true,
+        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave"));
 }
 
 // ------------------------------------------------------ in the programmer
@@ -899,7 +930,7 @@ const GROUP_OF = (() => {
   for (const r of ["gobo", "gobo_rot", "prism", "zoom", "focus", "frost", "iris"]) m[r] = "beam";
   return m;
 })();
-const MOVE_FX = new Set(["circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan"]);
+const MOVE_FX = new Set(["circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan", "range"]);
 let progInKey = "";
 let fxGridKey = "";
 let runningKey = "";
@@ -950,6 +981,12 @@ function renderProgIn() {
   $("#prog-clear").disabled = !any;
   $("#prog-record").disabled = !any;
   $("#prog-make").disabled = !any || !hasSel();
+  // a greyed-out button says why (a disabled button shows no tooltip everywhere)
+  const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
+    : !hasSel() ? "Select the lights to make a button of them." : "";
+  $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
+  const w = $("#prog-why");
+  if (w && w.textContent !== why) w.textContent = why;
 }
 
 // a button holding some of the selected lights: say so, with a Turn off
@@ -972,16 +1009,85 @@ on("lite", renderHeld);
 on("snapshot", renderHeld);
 on("selection", renderHeld);
 
+// a button opened in the programmer (Buttons -> Edit -> Open in the
+// programmer): change it on stage, then Update button
+let editKey = "";
+function renderEditing() {
+  const box = $("#prog-editing");
+  if (!box) return;
+  const q = (state.snap && state.snap.quick) || {};
+  const b = q.editing ? (q.buttons || []).find((x) => x.id === q.editing) : null;
+  const key = b ? b.id + b.label : "";
+  if (key === editKey) return;
+  editKey = key;
+  box.hidden = !b;
+  box.replaceChildren(...(b ? [h("div.prog-held-row",
+    h("span", "✎ Editing the button ", h("b", `“${b.label}”`), " - change its lights here, then update it."),
+    h("button.btn.small.primary", { onclick: () => run("quick_update", { id: b.id }, { toast: true }) }, "Update button"),
+    h("button.btn.small", { onclick: () => run("quick_update", { cancel: true }) }, "Cancel"))] : []));
+}
+on("snapshot", renderEditing);
+on("openprogrammer", () => import("./workspaces.js").then((m) => m.useMode("program")).catch(() => {}));
+
+// What goes in a button made from the programmer: each family the
+// programmer holds for these lights, on by default; a colour-only button
+// stacks over a movement button and changes only the colour.
+const KEEP = [["intensity", "Brightness"], ["colour", "Colour"], ["position", "Position / movement"], ["beam", "Beam (gobo, zoom…)"]];
+function familiesFor(heads) {
+  const vals = ((state.snap && state.snap.programmer) || {}).values || {};
+  const have = new Set();
+  for (const n of heads) {
+    for (const r of Object.keys(vals[n] || {})) {
+      const g = GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")];
+      if (g && g !== "other") have.add(g);
+    }
+  }
+  const set = new Set(heads);
+  for (const f of (state.snap && state.snap.fx) || []) {
+    if ((f.from || "programmer") !== "programmer" || !(f.heads || []).some((n) => set.has(n))) continue;
+    have.add(MOVE_FX.has(f.lib) || f.lib === "roam" || f.lib === "shape" ? "position"
+      : /colour|rainbow|alternate/.test(f.lib || "") ? "colour" : /dimmer|pulse|breathe|sparks|strobe/.test(f.lib || "") ? "intensity" : "beam");
+  }
+  return have;
+}
+
 // what the selected lights do now, as a button that holds them
 export async function makeHoldButton() {
   const heads = sel();
   if (!heads.length) { toast("Select the lights first"); return; }
-  const name = await promptBox("Make a button", `A button of everything ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now: brightness, colour or colour effect (rainbow...), movement or roam, gobo and beam. It turns on and holds them - the programmer can't change them until you turn it off. Name it:`, "", { ok: "Make it", placeholder: "e.g. Slow circle red" });
-  if (name === null || name === undefined) return;
+  const have = familiesFor(heads);
+  const keep = new Set(have.size ? have : KEEP.map(([k]) => k));
+  const lights = `${heads.length} light${heads.length === 1 ? "" : "s"}`;
+  const name = h("input", { type: "text", maxlength: 24, placeholder: "e.g. Slow circle red" });
+  const what = h("div.chip-row");
+  const sum = h("p.small");
+  const draw = () => {
+    what.replaceChildren(...KEEP.map(([k, l]) => h("button.chip" + (keep.has(k) ? ".on" : ""), { type: "button",
+      disabled: !have.has(k) && have.size > 0, title: have.has(k) ? "" : "The programmer has none of this for these lights",
+      "aria-pressed": String(keep.has(k)), onclick: () => { if (keep.has(k)) keep.delete(k); else keep.add(k); draw(); } }, l)));
+    const words = KEEP.filter(([k]) => keep.has(k)).map(([, l]) => l.split(" ")[0]);
+    sum.textContent = keep.size ? `The button: ${words.join(" + ")} · ${lights}.` : "Pick at least one.";
+    if (!name.value.trim() && !name.dataset.typed) name.placeholder = words.length === 1 ? `e.g. ${words[0]} for ${lights}` : "e.g. Slow circle red";
+  };
+  name.addEventListener("input", () => { name.dataset.typed = "1"; });
+  draw();
+  const body = h("div.qe",
+    h("p.small", `What ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now, as a button. It turns on and holds what it keeps - the programmer can't change that until you turn it off.`),
+    h("label.small", "Name ", name),
+    h("div.qe-label", "What goes in"), what, sum,
+    h("p.muted.small", "Buttons stack: a Colour-only button pressed over a movement button changes only the colour, and the movement keeps running. Nothing needs to be at full or moving to make a colour button."));
+  const ok = await new Promise((resolve) => {
+    const close = modal({ title: "Make a button", body, onClose: () => resolve(false), foot: [h("span.grow"),
+      h("button.btn", { onclick: () => { close(); resolve(false); } }, "Cancel"),
+      h("button.btn.primary", { onclick: () => { if (!keep.size) return; close(); resolve(true); } }, "Make it")] });
+  });
+  if (!ok) return;
   const groups = (state.snap && state.snap.groups) || [];
   const set = new Set(heads);
   const g = groups.find((x) => x.heads.length === set.size && x.heads.every((n) => set.has(n)));
-  const r = await run("quick_from_programmer", { label: (name || "My look").trim().slice(0, 24), ...(g ? { group: g.n } : { heads }) });
+  const all = keep.size === KEEP.length;
+  const r = await run("quick_from_programmer", { label: (name.value || "My look").trim().slice(0, 24),
+    ...(all ? {} : { keep: [...keep] }), ...(g ? { group: g.n } : { heads }) });
   if (r.ok) toast(r.summary, "ok", 6000);
 }
 

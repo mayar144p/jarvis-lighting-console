@@ -810,7 +810,8 @@ class FxLayerMixin:
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS,
                 "layout": self._quick_layouts(), "layout_default": dict(self.LAYOUT_DEFAULT),
                 "quant": float(self.__dict__.get("quick_quant", 0.0)),
-                "pending": sorted(self.__dict__.get("quick_pending") or {})}
+                "pending": sorted(self.__dict__.get("quick_pending") or {}),
+                "editing": self.__dict__.get("quick_editing")}
 
     # height of the tilt axis above the base, per 3D model (web/js/stage/models.js)
     _AIM_PIVOT = {"moving_spot": 0.465, "moving_hybrid": 0.502, "moving_beam": 0.378,

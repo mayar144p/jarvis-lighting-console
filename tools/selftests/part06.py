@@ -1447,8 +1447,8 @@ def test_custom_buttons() -> None:
             check("an Effect button keeps its knobs (arc, size)", r["button"].get("params") == {"arc": 180.0, "size": 40.0}, "")
 
             e.act("quick_page", page=5, name="Drops")
-            check("pages have names, and there are 8", e.snapshot()["quick"]["names"].get("5") == "Drops"
-                  and e.snapshot()["quick"]["pages"] == 8, str(e.snapshot()["quick"].get("names")))
+            check("pages have names, and there are 32", e.snapshot()["quick"]["names"].get("5") == "Drops"
+                  and e.snapshot()["quick"]["pages"] == 32, str(e.snapshot()["quick"].get("names")))
             e.act("quick_move", page=1, slot=8, to_page=5, to_slot=1)
             check("a button moves to another page", any(b["id"] == "q5-1" for b in e.quick)
                   and not any(b["id"] == "q1-8" for b in e.quick), "")

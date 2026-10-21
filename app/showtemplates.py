@@ -65,6 +65,18 @@ TEMPLATES: dict[str, dict] = {
                      ("Night", "#1a2a8a"), ("Rose", "#ff6f91"), ("Steel", "#9fb4d9"), ("White", "#ffffff")],
         "brief": "A play: pre-set, a warm day scene, an evening, a night scene, a dramatic moment, curtain call.",
     },
+    "mobile_dj": {
+        "label": "Mobile DJ", "venue": "ballroom",
+        "blurb": "A DJ's own rig in a function room: two movers and a Wave 360 on the DJ's truss, uplights round the floor. Party buttons and a night of cues.",
+        "lights": [
+            ("Movers", "ofl", "chauvet-dj/intimidator-spot-260.json", 2, "r3", "both ends"),
+            ("Wave", "qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf", 1, "r3", "spread"),
+            ("Uplights", "qlc", "Chauvet/Chauvet-Freedom-Par-Hex-4.qxf", 4, None, ""),
+        ],
+        "palettes": [("Red", "#ff0000"), ("Blue", "#0033ff"), ("Magenta", "#ff00cc"), ("Cyan", "#00c8ff"),
+                     ("Amber", "#ffb000"), ("Green", "#00ff40"), ("Warm white", "#ffd8a8"), ("White", "#ffffff")],
+        "brief": "A mobile DJ party: dinner, the first dance, a party that builds to big drops, the last song.",
+    },
     "corporate": {
         "label": "Corporate event", "venue": "ballroom",
         "blurb": "Clean white light for the stage and speakers, brand-colour uplighting, a lift for awards and the walk-ons.",

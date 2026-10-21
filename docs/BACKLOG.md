@@ -302,6 +302,17 @@ build) deletes the old *Auto · ...* groups (`group_delete auto=true`).
    even, 2 of 4 off, a pattern), order, and pan / tilt offsets for the
    ready-made moves.
 
+**Done (B3):** *Open in the programmer* (Edit → a button) puts a button's
+lights, values and effects in the programmer; *Update button* there saves
+them back (`quick_edit` / `quick_update`).  32 pages; Heading, Go to page
+and Folder (with ◂ Back) tiles; tiles up to 4 x 4.  *Make a button…* shows
+what goes in (Brightness / Colour / Position / Beam); a colour-only button
+says "Colour · 4 lights" and leaves the movement and level in the
+programmer (`keep`).  Buttons take a pattern of lights (2 on 2 off, 1 in
+3...), an order (reverse, centre out, ends in) and pan / tilt offsets in
+degrees.  A colour on lights at 0 % brings them up (or names the ones held
+at 0).  Drag to arrange, colour and icon were already there.
+
 ### B4. Movement, full control
 1. **Moves in real degrees:** pan from -100 to +40, tilt from ... to ...,
    loop / bounce / once, speed in seconds or beats, the light's whole
@@ -315,12 +326,31 @@ build) deletes the old *Auto · ...* groups (`group_delete auto=true`).
 5. **Wave 360 simplified:** its heads as a bar (tilt per head, wave, colour
    per head) instead of raw channels.
 
+**Done (B4):** a new movement, *A → B* (`range` in fxlib / motion.py):
+from / to in each light's own degrees, bounce / loop / once, the whole
+travel (`full_pan` / `full_tilt`), speed in seconds a trip or beats; the
+arc and the wave spread take any degrees; per-head from / to on multi-head
+lights (`cells`, run across the heads).  The Move tab says what will happen
+in degrees and shows the first light's live pan / tilt in degrees (the
+patch rows carry `span`).  The programmer's head strip: Copy 1 to all,
+Spread a gradient, and on a Wave 360 a tilt bar per head with a Wave.
+
 ### B5. The visualiser knows the room
 1. **Front, centre and the DJ booth:** set where the front and the booth
    are; dragging lights, the camera and the Move pad then work from the
    DJ's point of view, and the lights know where the middle is.
 2. **The plan in Move follows the room:** it updates when objects move
    and can be rotated; fix the tracking between the map and the 3D.
+
+**Done (B5):** the venue keeps where the DJ booth and the middle are and
+which way the DJ faces (`venue_orient`; `venue.orientation` works them out
+when not set: a DJ booth, a mark, a DJ zone or the stage; the dance floor
+or the room's middle; booth → middle).  Move → Aim: the map shows them, sets
+them with a tap, turns *From the DJ* / *From the audience* / 90°, and has a
+spot pad as the DJ sees it; it redraws when objects, trusses or lights move
+(they were missing from its redraw key: the map / 3D tracking bug).  A
+*Middle* spot; the 3D has a DJ view (key 7); the AI's room summary names
+the booth and the middle.
 
 ### B6. Layouts
 1. **No visualiser at all, if wanted:** layouts without the 3D (buttons,
@@ -333,6 +363,16 @@ build) deletes the old *Auto · ...* groups (`group_delete auto=true`).
 3. **From the UI/UX audit:** a colour on lights at 0 % brings them up;
    *Record cue* says why it is off; Ready? check fixes are buttons; a
    *Mobile DJ* template; a tour per mode.
+
+**Done (B6):** workspaces can hide the 3D (`stage: false`; the 3D stops
+drawing) and show the cue list beside the faders (`cues`); the ready ones
+are fewer: Set up, Live, Programming, Theatre (with the cue list), No 3D.
+Full-screen buttons get their own Blackout.  Small screens: the dock's
+height follows the window, group faders fold and scroll, 5 fixture rows,
+panel minimum widths, Live's first row is blackout / hits / tempo /
+autopilot.  Record cue says why it is off; Ready? fixes are buttons (`do`
+on each item); a Mobile DJ template; a tour per mode, offered the first
+time in each.  (The colour-on-dark-lights fix landed in B3.)
 
 ### B7. AI bugs (later)
 The operator will list them.

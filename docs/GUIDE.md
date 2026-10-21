@@ -152,8 +152,9 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
-**Buttons** in the bottom panel is a grid of instant buttons on up to 8
-pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
+**Buttons** in the bottom panel is a grid of instant buttons on up to 32
+named pages (double-click a page in Edit to name it), like a MagicQ execute
+window. Each one is **hold** (on while pressed),
 **latch** (press on, press off) or **tap**:
 
 | kind | does |
@@ -165,14 +166,24 @@ pages, like a MagicQ execute window. Each one is **hold** (on while pressed),
 | Effect | runs an effect on the target |
 | GO / Release | a playback (GO can jump to a cue) |
 | Preset | applies a recorded preset |
+| Heading | words only, over a row of buttons; pressing does nothing |
+| Go to page | shows another page |
+| Folder | opens a page with a ◂ Back to the one you came from |
 
 Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
-a fixed set of lights. **Suggest buttons for this rig** fills a page from what
+a fixed set of lights, and of those all, odd / even, left / right, or a
+pattern (*2 on, 2 off*, *1 in 3*...). Effect, move and look buttons have an
+**Order** (1 → last, last → 1, centre out, ends in: which way a chase or a
+wave runs) and, for a movement, a **Pan / Tilt offset** in degrees.
+**Change a button on stage:** Edit → the button → *Open in the programmer*
+puts its lights and values in the programmer; change them, then press
+**Update button** in the programmer (same place, name and look).
+**Suggest buttons for this rig** fills a page from what
 is patched. Blackout and the grand master still win over a flash. Pressing a
 button is never an undo step; setting one up is. Buttons save with the show.
 
 **How they look** (Edit -> a button -> *Look*, with a live preview of the
-tile off and on): its colour; its size, 1-4 buttons across and 1-3 down;
+tile off and on): its colour; its size, 1-4 buttons across and 1-4 down;
 its shape (rounded, square, pill, circle); its fill (outline, solid, glow);
 text size S-XL; *Name only* (no small line under it); *Blink while on*
 (slow, and still when the computer asks for less motion); one of 32 icons,
@@ -320,6 +331,14 @@ are aimed right now). The desk does the gliding at the full DMX rate, so
 the real lights glide smoothly even with the page hidden or closed. Nudging
 or re-aiming the lights by hand stops a glide. Remembered on this computer.
 
+**Make a button…** (at the foot of the programmer) shows what goes in -
+Brightness, Colour, Position / movement, Beam - each on when the
+programmer holds it for those lights.  Leave only *Colour* on for a
+colour-only button ("Colour · 4 lights" on the tile): pressed over a
+movement button it changes only the colour, and the movement keeps
+running.  A colour picked for lights at 0% brings them up to full (lights
+you put at 0 yourself stay there, and the desk says so).
+
 **Make a button** (Move tab, and in the Roam row while roaming) makes a
 button straight away for what the selected lights are doing: the roam
 (its zones, speed and size), a shape or a movement with its knobs. It is
@@ -353,6 +372,31 @@ and settings are on its Laser or SFX tab.
   it, and the lights follow while it plays. Pixel bars and panels take it
   cell by cell. It paints colour, not brightness: bring the lights up
   first.
+* **Move tab -> Aim: the room from the DJ's side.** The map shows the DJ
+  booth (with an arrow the way the DJ faces) and the middle of the room.
+  *Set: DJ booth / Middle / Front*, then tap the map, to put them where
+  they really are (*Reset* goes back to what the desk works out from the
+  room).  *Map: From the DJ* turns the map so the way the DJ faces is at
+  the top and left is the DJ's left (*From the audience*, or *↻ 90°*).
+  *Spot (DJ)* moves the beams' spot left / right / away / nearer as the DJ
+  sees it, and *● middle* sends them to the middle; the spots list has a
+  *Middle* too.  The map redraws when objects, trusses or lights move.  The
+  3D's **DJ** view (key 7) looks from the booth the way the DJ faces, so
+  dragging lights there works from the DJ's side.
+* **Move tab -> A → B.** A move between two angles in each light's own
+  degrees (0 is the middle of its travel): *pan −100° → +40°*, tilt from
+  and to, or *whole pan* / *whole tilt* for the light's full travel.
+  *Bounce* goes there and back, *loop* starts from A again, *once* goes to
+  B and stays.  Speed is seconds a trip (or on the beat).  The line under
+  it says what will happen, and *Now:* shows where the first light points,
+  in degrees, live.  The arc and the wave take any number of degrees, not
+  only the chips.  *Lights: wave* spreads the start across the lights for
+  a smooth wave (½ wave, 2 waves, or any degrees).  On a multi-head light
+  (a Wave 360) *Per head* gives each head its own tilt from → to.
+* **Head strip** (programmer, multi-head lights): each head's colour dot,
+  *Copy 1 to all*, *Spread a gradient* from head 1 to the last, and on a
+  light with a tilt per head a bar of tilt sliders in degrees and a *Wave*
+  through the heads.
 * **Move tab -> Shapes.** Draw your own movement: key points round where
   the lights aim, a smooth curve or straight lines, starting from a
   triangle, square, star, wave or zig-zag if you like. It runs with the
@@ -413,8 +457,13 @@ A slow computer films smoother at Small.
 ### Workspaces
 
 The top bar's **workspace** button arranges the screen for the job:
-*Programming*, *Busking* (buttons big, no fixture list), *Theatre (cues)*
-(a taller cue dock) and *Show (run only)* (the 3D view and the buttons).
+*Set up*, *Live*, *Programming*, *Theatre (cues)* (the cue list of the
+playback in focus beside the faders: the live cue marked, a tap is GO to
+that cue) and *No 3D (buttons + programmer)* (no visualiser at all: the
+programmer and the buttons get the room, and the computer does no 3D
+work).  The menu's *3D view* and *Cue list beside the faders* turn those on
+or off in any workspace.  (Busking and Show from earlier versions stay in
+your list as your own workspaces.)
 Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
 left it: the fixture list and programmer shown or hidden, which side each
 is on (drag a panel by its title to the side you want - both can go on the
@@ -424,6 +473,19 @@ again), their widths (drag a panel's
 inner edge; double-click for the normal width), the faders / buttons dock at
 the bottom or the top and its height, the programmer's tab. *Save as a new workspace* makes your own. Workspaces belong to this
 computer (each operator's own), not to the show.
+
+**Small screens (1280 x 720):** the dock's height follows the window, the
+group faders fold away (the ‹ beside them) and scroll, the fixture list
+keeps at least 5 rows, and panels never squeeze below what they can show.
+In Live, blackout, the hits, the tempo and the autopilot come first.  In
+full screen the buttons have their own Blackout; pages, Edit and Layout
+work there too.
+
+**Help → Take the tour** shows round the mode on screen (Set up, Program
+or Live); the first time in each mode the desk offers it once.  A greyed
+*Record cue* says why underneath.  **Ready?** puts a button on each thing
+to fix (Add lights, Show the clashes, Record a cue, Save, Output
+settings, Turn on Stay on the floor...) and *Check again*.
 
 ### Keyboard
 
@@ -649,7 +711,8 @@ the computer). It also offers a **template**, or an empty show, and a short
 **tour** of the desk (later: Help → *Take the tour*).
 
 **Show ▾ → New show…** has the templates: **Club night**, **Wedding**,
-**Band / concert**, **Theatre** and **Corporate event**. Each one builds:
+**Band / concert**, **Theatre**, **Mobile DJ** (two movers and a Wave
+360 on the DJ's truss, uplights round the floor) and **Corporate event**. Each one builds:
 - a room of that kind;
 - real lights from the library, hung on its trusses;
 - groups;

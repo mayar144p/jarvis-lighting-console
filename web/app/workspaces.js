@@ -40,6 +40,7 @@ function capture(into) {
   Object.assign(into, clean({
     ...into,
     fix: !b.classList.contains("ws-nofix"), prog: !b.classList.contains("ws-noprog"), swap: b.classList.contains("ws-swap"),
+    stage: !b.classList.contains("ws-nostage"), cues: b.classList.contains("ws-cues"),
     fixAt: into.fixAt, progAt: into.progAt, dockAt: into.dockAt,
     fixW: parseInt(ws().style.getPropertyValue("--fixtures-w"), 10) || 0,
     progW: parseInt(ws().style.getPropertyValue("--prog-w"), 10) || 0,
@@ -62,6 +63,8 @@ function apply(w) {
     b.classList.toggle("ws-nofix", !w.fix);
     b.classList.toggle("ws-noprog", !w.prog);
     b.classList.toggle("ws-swap", !!w.swap);
+    b.classList.toggle("ws-nostage", w.stage === false);
+    b.classList.toggle("ws-cues", !!w.cues);
     // the job: Set up and Live put their hub where the programmer is
     b.dataset.mode = w.mode;
     saved.lastByMode = { ...(saved.lastByMode || {}), [w.mode]: w.id };
@@ -90,6 +93,7 @@ function apply(w) {
   }
   paintButton();
   renderHub(w.mode);
+  import("./welcome.js").then((m) => m.offerModeTour(w.mode)).catch(() => {});
   window.dispatchEvent(new Event("resize"));      // the 3D view fits its new space
 }
 
@@ -141,7 +145,8 @@ function toggle(field) {
   const w = activeWorkspace();
   capture(w);
   w[field] = !w[field];
-  if (!w.fix && !w.prog && field !== "swap") toast("The 3D view and the dock fill the screen");
+  if (!w.fix && !w.prog && w.stage !== false && field !== "swap") toast("The 3D view and the dock fill the screen");
+  if (field === "stage" && w.stage === false) toast("No 3D view: the programmer and the buttons get the room");
   apply(w);
   store();
 }
@@ -271,6 +276,8 @@ function openMenu(anchor) {
     "-",
     { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", run: () => toggle("fix") },
     { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", run: () => toggle("prog") },
+    { label: (cur.stage !== false ? "✓ " : "") + "3D view", hint: "show or hide (no 3D: more room, less work for the computer)", run: () => toggle("stage") },
+    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", run: () => toggle("cues") },
     { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
     { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
     cur.fixAt === "float"

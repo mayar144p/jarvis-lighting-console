@@ -19,6 +19,13 @@ const GLIDES = [[0, "Instant"], [0.25, "Fast"], [0.8, "Medium"], [2, "Slow"]];
 let glide = (() => { try { return +(localStorage.getItem("jarvis.followGlide") || 0); } catch (e) { return 0; } })();
 if (!GLIDES.some(([v]) => v === glide)) glide = 0;
 let aimNow = null;                      // {x, z}: where the desk has the beams while they glide
+// the map turned: "audience" (the stage at the top), "dj" (the way the DJ
+// faces at the top, the DJ's left on the left) or a turn in degrees;
+// remembered on this computer
+let mapTurn = (() => { try { return localStorage.getItem("jarvis.mapTurn") || "audience"; } catch (e) { return "audience"; } })();
+let setting = "";                       // "booth" / "centre" / "front": the next tap on the map sets it
+const orient = () => (state.snap && state.snap.venue_orient) || { booth: [0, 1.7, 0], centre: [0, 6], front: 0 };
+const turnDeg = () => (mapTurn === "audience" ? 0 : mapTurn === "dj" ? 180 + orient().front : +mapTurn || 0) % 360;
 
 const multiHead = () => selectionHeads().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 const movers = () => selectionHeads().filter((x) => (x.map || []).includes("pan") || (x.map || []).includes("tilt"));
@@ -119,20 +126,28 @@ function el(tag, attrs = {}) {
 function floorMap() {
   const { x0, z0, w, d, v, outline } = bounds();
   const pad = 0.4;
-  const svg = el("svg", { viewBox: `${x0 - pad} ${z0 - pad} ${w + pad * 2} ${d + pad * 2}`, preserveAspectRatio: "xMidYMid meet" });
+  // turned: the view box holds the turned room; everything is drawn in
+  // room metres inside one turned group (taps are read back through it)
+  const deg = turnDeg(), rad = deg * Math.PI / 180, mx = x0 + w / 2, mz = z0 + d / 2;
+  const cs = Math.abs(Math.cos(rad)), sn = Math.abs(Math.sin(rad));
+  const vw = w * cs + d * sn, vd = w * sn + d * cs;
+  const svg = el("svg", { viewBox: `${mx - vw / 2 - pad} ${mz - vd / 2 - pad} ${vw + pad * 2} ${vd + pad * 2}`, preserveAspectRatio: "xMidYMid meet" });
+  const room = el("g", { transform: `rotate(${deg} ${mx} ${mz})`, class: "am-turned" });
+  svg.append(room);
+  const upright = (t, x, y) => { if (deg) t.setAttribute("transform", `rotate(${-deg} ${x} ${y})`); return t; };
   // the room as it is: its drawn outline, else its rectangle
-  svg.append(outline ? el("polygon", { points: outline.map((p) => `${p[0]},${p[1]}`).join(" "), class: "am-room" })
+  room.append(outline ? el("polygon", { points: outline.map((p) => `${p[0]},${p[1]}`).join(" "), class: "am-room" })
     : el("rect", { x: x0, y: z0, width: w, height: d, class: "am-room", rx: 0.2 }));
   const st = v.stage;
-  if (st && st.width) svg.append(el("rect", { x: (st.x || 0) - st.width / 2, y: st.z || 0, width: st.width, height: st.depth || 2, class: "am-stage" }));
+  if (st && st.width) room.append(el("rect", { x: (st.x || 0) - st.width / 2, y: st.z || 0, width: st.width, height: st.depth || 2, class: "am-stage" }));
   for (const zn of v.zones || []) {
     if (!(zn.points || []).length) continue;
-    svg.append(el("polygon", { points: zn.points.map((p) => p.join(",")).join(" "), class: "am-zone am-" + zn.kind }));
+    room.append(el("polygon", { points: zn.points.map((p) => p.join(",")).join(" "), class: "am-zone am-" + zn.kind }));
     const cx = zn.points.reduce((a, p) => a + p[0], 0) / zn.points.length;
     const cz = zn.points.reduce((a, p) => a + p[1], 0) / zn.points.length;
     const t = el("text", { x: cx, y: cz, class: "am-label" });
     t.textContent = zn.name || zn.kind;
-    svg.append(t);
+    room.append(upright(t, cx, cz));
   }
   // what stands in the room (bar, DJ booth, speakers...), turned as placed;
   // marks as a small cross
@@ -144,16 +159,16 @@ function floorMap() {
     } else {
       g.append(el("rect", { x: -(o.w || 1) / 2, y: -(o.d || 1) / 2, width: o.w || 1, height: o.d || 1, rx: 0.08 }));
     }
-    svg.append(g);
+    room.append(g);
   }
   // the rigging at its real angle: a turned truss shows turned
   for (const r of v.rigging || []) {
     const [a, b] = [r.a || [0, 0, 0], r.b || [0, 0, 0]];
     if (Math.hypot(b[0] - a[0], b[2] - a[2]) < 0.05) {
       const sz = Math.max(0.3, +r.size || 0.3);
-      svg.append(el("rect", { x: a[0] - sz / 2, y: a[2] - sz / 2, width: sz, height: sz, class: "am-tower" }));
+      room.append(el("rect", { x: a[0] - sz / 2, y: a[2] - sz / 2, width: sz, height: sz, class: "am-tower" }));
     } else {
-      svg.append(el("line", { x1: a[0], y1: a[2], x2: b[0], y2: b[2], class: "am-truss" }));
+      room.append(el("line", { x1: a[0], y1: a[2], x2: b[0], y2: b[2], class: "am-truss" }));
     }
   }
   // the lights, each body turned the way its base faces (with its truss)
@@ -164,23 +179,51 @@ function floorMap() {
     const on = sel.has(hd.head_no), s = on ? 0.32 : 0.22;
     const g = el("g", { transform: `translate(${hd.x} ${hd.z}) rotate(${-(+hd.yaw || 0)})`, class: on ? "am-head on" : "am-head" });
     g.append(el("rect", { x: -s, y: -s * 0.55, width: s * 2, height: s * 1.1, rx: s * 0.4 }));
-    svg.append(g);
+    room.append(g);
   }
+  // the DJ booth, the middle, and an arrow the way the DJ faces
+  const o = orient();
+  const bx = o.booth[0], bz = o.booth[2];
+  const fr = o.front * Math.PI / 180;
+  const dj = el("g", { class: "am-dj" });
+  dj.append(el("circle", { cx: bx, cy: bz, r: 0.35 }),
+    el("line", { x1: bx, y1: bz, x2: bx + Math.sin(fr) * 1.4, y2: bz + Math.cos(fr) * 1.4, class: "am-front" }));
+  const djt = el("text", { x: bx, y: bz + 0.12, class: "am-label am-dj-t" });
+  djt.textContent = "DJ";
+  dj.append(upright(djt, bx, bz));
+  const mid = el("g", { class: "am-mid" });
+  mid.append(el("path", { d: `M${o.centre[0] - 0.4} ${o.centre[1]}H${o.centre[0] + 0.4}M${o.centre[0]} ${o.centre[1] - 0.4}V${o.centre[1] + 0.4}` }),
+    el("circle", { cx: o.centre[0], cy: o.centre[1], r: 0.25 }));
+  room.append(dj, mid);
   const tg = el("g", { class: "aim-target" });
   tg.append(el("circle", { r: 0.5, class: "am-ring" }), el("circle", { r: 0.1, class: "am-dot" }));
   const now = el("g", { class: "aim-now" });
   now.append(el("circle", { r: 0.22, class: "am-now" }));
-  svg.append(tg, now);
+  room.append(tg, now);
   // drag: the lights follow
   let down = false;
-  const at = (ev, final) => {
-    const m = svg.getScreenCTM();
-    if (!m) return;
+  const where = (ev) => {
+    const m = room.getScreenCTM();
+    if (!m) return null;
     const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse());
-    const x = Math.max(x0, Math.min(x0 + w, pt.x)), z = Math.max(z0, Math.min(z0 + d, pt.y));
-    aimTo({ x, y: 0, z }, final);
+    return { x: Math.max(x0, Math.min(x0 + w, pt.x)), z: Math.max(z0, Math.min(z0 + d, pt.y)) };
+  };
+  const at = (ev, final) => {
+    const p = where(ev);
+    if (p) aimTo({ x: p.x, y: 0, z: p.z }, final);
   };
   svg.addEventListener("pointerdown", (ev) => {
+    if (setting) {
+      // Set the DJ booth / the middle / which way the DJ faces: this tap
+      const p = where(ev);
+      if (!p) return;
+      const o2 = orient();
+      const params = setting === "front" ? { front: Math.round((Math.atan2(p.x - o2.booth[0], p.z - o2.booth[2]) * 180 / Math.PI + 360) % 360) }
+        : { [setting]: [+p.x.toFixed(2), +p.z.toFixed(2)] };
+      setting = "";
+      run("venue_orient", params, { toast: true });
+      return;
+    }
     if (!movers().length) { toast("Select moving lights first"); return; }
     down = true;
     svg.setPointerCapture(ev.pointerId);
@@ -200,6 +243,36 @@ export function aimBlock(...after) {
   }, following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor");
   const map = h("div.aim-map", { title: "The room as drawn in Arrange, trusses at their real angle. Drag on it: every selected light points at that spot, wherever its truss is turned. (The pan/tilt pad below moves each light's own pan and tilt.)" });
   map.append(floorMap());
+  const turn = h("div.mv-row", h("span.k", "Map"), h("span.chip-row",
+    ...[["audience", "From the audience", "The stage at the top, as the audience sees it"], ["dj", "From the DJ", "The way the DJ faces at the top: left on the map is the DJ's left"]]
+      .map(([v, l, t]) => h("button.chip.am-turn" + (mapTurn === v ? ".on" : ""), { title: t, dataset: { turn: v }, onclick: () => turnMap(v) }, l)),
+    h("button.chip", { title: "Turn the map a quarter", onclick: () => turnMap(String((turnDeg() + 90) % 360)) }, "↻ 90°")));
+  const set = h("div.mv-row", h("span.k", "Set"), h("span.chip-row",
+    ...[["booth", "DJ booth", "Tap the map where the DJ stands"], ["centre", "Middle", "Tap the middle of the room (where the lights' Middle spot is)"],
+      ["front", "Front", "Tap the way the DJ faces (towards the crowd)"]].map(([k, l, t]) => h("button.chip" + (setting === k ? ".on" : ""), {
+      title: t, onclick: (e) => {
+        setting = setting === k ? "" : k;
+        for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget && !!setting);
+        if (setting) toast(`${t} - the next tap on the map sets it`, "", 3500);
+      } }, l)),
+    (orient().set || []).length ? h("button.chip", { title: "Back to what the desk works out from the room", onclick: () => run("venue_orient", { clear: "all" }, { toast: true }) }, "Reset") : null));
+  // the spot, moved as the DJ sees it: left / right / away / nearer
+  const step = (fwd, right) => {
+    if (!movers().length) { toast("Select moving lights first"); return; }
+    const o = orient(), a = o.front * Math.PI / 180;
+    const f = [Math.sin(a), Math.cos(a)], r = [-f[1], f[0]];
+    const from = target || { x: o.centre[0], z: o.centre[1] };
+    const { x0, z0, w, d } = bounds();
+    const S = 0.75;
+    aimTo({ x: Math.max(x0, Math.min(x0 + w, from.x + (f[0] * fwd + r[0] * right) * S)), y: 0,
+      z: Math.max(z0, Math.min(z0 + d, from.z + (f[1] * fwd + r[1] * right) * S)) }, true);
+  };
+  const pad = h("div.mv-row", h("span.k", "Spot (DJ)"), h("span.chip-row",
+    h("button.chip", { title: "The spot to the DJ's left", onclick: () => step(0, -1) }, "◀ left"),
+    h("button.chip", { title: "The spot further from the DJ", onclick: () => step(1, 0) }, "▲ away"),
+    h("button.chip", { title: "The spot nearer the DJ", onclick: () => step(-1, 0) }, "▼ nearer"),
+    h("button.chip", { title: "The spot to the DJ's right", onclick: () => step(0, 1) }, "right ▶"),
+    h("button.chip", { title: "The middle of the room", onclick: () => { const o = orient(); target = null; aimTo({ x: o.centre[0], y: 0, z: o.centre[1] }, true); } }, "● middle")));
   queueMicrotask(drawTarget);
   const speed = h("div.mv-row", h("span.k", "Aim speed"),
     h("span.chip-row", ...GLIDES.map(([v, l]) => h("button.chip" + (glide === v ? ".on" : ""), {
@@ -215,7 +288,15 @@ export function aimBlock(...after) {
       title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar)",
       onclick: (e) => { fan = v; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); },
     }, l))), h("span.muted.small", "or pick heads (Heads: 1 2 3 4) to move them alone")) : null;
-  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, speed, heads, ...after.filter(Boolean));
+  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, turn, set, pad, speed, heads, ...after.filter(Boolean));
+}
+
+function turnMap(v) {
+  mapTurn = v;
+  try { localStorage.setItem("jarvis.mapTurn", v); } catch (e) { /* private window */ }
+  for (const box of document.querySelectorAll(".aim-map")) box.replaceChildren(floorMap());
+  queueMicrotask(drawTarget);
+  for (const c of document.querySelectorAll(".am-turn")) c.classList.toggle("on", c.dataset.turn === v);
 }
 
 /** The Follow speed picked (seconds; 0 = instant): the spot buttons use it too. */

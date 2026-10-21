@@ -555,11 +555,31 @@ export async function openReadyCheck() {
   const r = await run("ready_check", {});
   if (!r.ok) return;
   const ICON = { ok: "✓", info: "i", warn: "!", bad: "✕" };
+  // each fix as a button that goes straight there
+  const head = (n) => (state.snap && state.snap.patch || []).find((x) => x.head_no === n);
+  const DO = {
+    add: ["Add lights…", () => openAddDialog()],
+    dmx_map: ["Show the clashes", () => import("./fixtures.js").then((m) => m.openDmxMap())],
+    profile: ["Edit the profile…", (i) => head(i.head) && openProfileEditor(head(i.head))],
+    cue_list: ["Open the cue list", () => import("./cuedialogs.js").then((m) => m.openCueList(1))],
+    record: ["Record a cue…", () => import("./cuedialogs.js").then((m) => m.openCueDialog())],
+    change_type: ["The light's menu…", (i) => import("./fixtures.js").then((m) => m.rowMenu({ getBoundingClientRect: () => ({ left: innerWidth / 2 - 120, top: innerHeight / 3, bottom: innerHeight / 3 }) }, i.head))],
+    light_test: ["Test the light…", (i) => head(i.head) && import("./lightdialogs.js").then((m) => m.openLightTest(head(i.head)))],
+    floor_safe: ["Turn it on", () => run("floor_safe", { movement: true }, { toast: true })],
+    output: ["Output settings…", () => import("./settings.js").then((m) => m.openSettingsAt("output"))],
+    save: ["Save the show…", () => saveShow()],
+  };
+  let close = () => {};
+  const fixBtn = (i) => {
+    const d = i.do && DO[i.do];
+    if (!d) return i.fix ? h("small.muted", "→ " + i.fix) : null;
+    return h("button.btn.small", { title: i.fix, onclick: () => { const keep = i.do === "floor_safe"; if (!keep) close(); d[1](i); } }, d[0]);
+  };
   const body = h("div.ready",
     h("p.ready-head." + r.worst, r.ready ? "Ready for doors." : r.worst === "bad" ? "Fix these before the show." : "Worth a look before the show."),
     ...r.items.map((i) => h("div.ready-row." + i.level, h("span.ready-ic", ICON[i.level] || "·"),
-      h("div", h("div", i.text), i.fix ? h("small.muted", "→ " + i.fix) : null))));
-  modal({ title: "Ready?", body });
+      h("div", h("div", i.text), fixBtn(i)))));
+  close = modal({ title: "Ready?", body, foot: [h("span.grow"), h("button.btn", { onclick: () => { close(); openReadyCheck(); } }, "Check again")] });
 }
 
 async function openVersions(name) {
@@ -692,7 +712,8 @@ export function openHelp() {
           h("li", "Record cues onto a playback and press GO."),
           h("li", "When the rig is connected: Go live.")))),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
-      h("button.btn", { onclick: () => { closeTopModal(); startTour(); } }, "Take the tour"),
+      h("button.btn", { title: "A minute round the mode on screen (Set up, Program or Live)", onclick: () => { closeTopModal(); startTour(); } },
+        `Take the tour (${{ setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program"})`),
       h("button.btn", { onclick: () => import("./bugreport.js").then((m) => m.openBugReport()) }, "Report a bug…")],
   });
 }

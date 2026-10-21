@@ -19,13 +19,15 @@ import { shapesRow, setShapeKnobs, shapes } from "./shapeeditor.js";
 
 const MOVES = [
   ["circle", "Circle", "↻"], ["pan_sweep", "Sweep", "↔"], ["tilt_bounce", "Bounce", "↕"],
-  ["figure_eight", "Figure 8", "∞"], ["fan_pan", "Fan", "⋔"],
+  ["figure_eight", "Figure 8", "∞"], ["fan_pan", "Fan", "⋔"], ["range", "A → B", "⇄"],
 ];
 const MOVE_KINDS = new Set([...MOVES.map((m) => m[0]), "shape"]);
 const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 
 // the knobs, remembered while the page is open
-const knobs = { direction: 1, arc: 360, size: 20, secs: 8, wave: false, lock: 0, across: false, zone: "" };
+const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, across: false, zone: "",
+  // A → B: degrees from the middle of each light's travel; bounce / loop / once
+  panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {} };
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -134,14 +136,17 @@ const axes = () => {
     both: ms.some((x) => x.map.includes("pan") && x.map.includes("tilt")) };
 };
 // a movement needs these axes
-const NEEDS = { circle: "both", figure_eight: "both", pan_sweep: "pan", fan_pan: "pan", tilt_bounce: "tilt" };
+const NEEDS = { circle: "both", figure_eight: "both", pan_sweep: "pan", fan_pan: "pan", tilt_bounce: "tilt", range: null };
 const canRun = (name, ax = axes()) => { const n = NEEDS[name]; return !n || (n === "both" ? ax.both : ax[n]); };
 const lasers = () => selectionHeads().filter((x) => (x.map || []).some((r) => r === "laser_on" || r === "laser_y" || r.startsWith("laser_beam")));
 const EYE_SAFE_M = 3;                      // beams stay at least this high over a crowd
 const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
 const params = () => ({
   speed: +(1 / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
-  direction: knobs.direction, spread: knobs.wave ? 360 : 0, lock: knobs.lock,
+  direction: knobs.direction, spread: knobs.spread, lock: knobs.lock,
+  pan_a: knobs.panA, pan_b: knobs.panB, tilt_a: knobs.tiltA, tilt_b: knobs.tiltB, mode: knobs.mode,
+  full_pan: knobs.fullPan ? 1 : 0, full_tilt: knobs.fullTilt ? 1 : 0,
+  ...(Object.keys(knobs.cells).length ? { cells: knobs.cells } : {}),
   ...(knobs.zone && zoneKinds().some(([k]) => k === knobs.zone) ? { zone: knobs.zone } : {}),
 });
 // the room's zones (dance floor, DJ booth...) a movement can be kept on
@@ -374,14 +379,18 @@ function movementBlock() {
       (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
     h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
       ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
+    rangeBlock2(),
     h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
-      ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }))),
+      ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }),
+      degIn(knobs.arc, 10, 360, (v) => { knobs.arc = v; }, "Any arc, in degrees"))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
       ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
         (v) => knobs.size === v, (v) => { knobs.size = v; }))),
     secs,
     h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
-      ...chips([["together", false], ["wave", true]], (v) => knobs.wave === v, (v) => { knobs.wave = v; }))),
+      ...chips([["together", 0, "Every light at the same point"], ["½ wave", 180, "Half a cycle between the first light and the last"],
+        ["wave", 360, "A smooth wave: each light a step behind the one before"], ["2 waves", 720]], (v) => knobs.spread === v, (v) => { knobs.spread = v; }),
+      degIn(knobs.spread, 0, 720, (v) => { knobs.spread = v; }, "The wave's spread, in degrees of the cycle"))),
     multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
       ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
         (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null,
@@ -396,6 +405,65 @@ function movementBlock() {
       fxKnobs(f))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
     h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
+}
+
+// a number of degrees, typed (no fixed stops); Enter or leaving the box applies it
+function degIn(value, min, max, set, title) {
+  return h("label.mv-deg", { title }, h("input", { type: "number", min, max, step: 5, value,
+    onchange: (e) => { const v = Math.max(min, Math.min(max, +e.target.value || 0)); set(v); render(true); reapply(); } }), "°");
+}
+
+// A → B: from one angle to another, in the lights' own degrees (0 = the
+// middle of the travel); the preview says what will happen, and the live
+// line where the first light points now
+function rangeBlock2() {
+  const ms = movers();
+  if (!ms.length) return null;
+  const ax = axes();
+  const span = (ms[0].span || [540, 270]);
+  const sgn = (v) => `${v > 0 ? "+" : ""}${Math.round(v)}°`;
+  const pans = knobs.fullPan ? `pan ${sgn(-span[0] / 2)} → ${sgn(span[0] / 2)} (whole travel)` : knobs.panA !== knobs.panB ? `pan ${sgn(knobs.panA)} → ${sgn(knobs.panB)}` : "";
+  const tilts = knobs.fullTilt ? `tilt ${sgn(-span[1] / 2)} → ${sgn(span[1] / 2)} (whole travel)` : knobs.tiltA !== knobs.tiltB ? `tilt ${sgn(knobs.tiltA)} → ${sgn(knobs.tiltB)}` : "";
+  const what = [pans, tilts].filter(Boolean).join(", ") || "nothing moves yet - set a from and a to";
+  const modeWord = ["bounce (there and back)", "loop (A → B, again from A)", "once (A → B, then stays)"][knobs.mode];
+  const tilt = ms.find((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
+  const heads = tilt ? (tilt.map || []).filter((r) => r === "tilt").length : 0;
+  return h("div.mv-range",
+    h("div.mv-row", h("span.k", "A → B"), h("span.chip-row",
+      ax.pan ? h("span.mv-deg", "Pan ", degIn(knobs.panA, -360, 360, (v) => { knobs.panA = v; knobs.fullPan = false; }, "Pan from, degrees (- is left of centre)"), " → ",
+        degIn(knobs.panB, -360, 360, (v) => { knobs.panB = v; knobs.fullPan = false; }, "Pan to, degrees")) : null,
+      ax.pan ? h("button.chip" + (knobs.fullPan ? ".on" : ""), { title: `The light's whole pan, end to end (${Math.round(span[0])}°)`,
+        onclick: () => { knobs.fullPan = !knobs.fullPan; render(true); reapply(); } }, "whole pan") : null)),
+    ax.tilt ? h("div.mv-row", h("span.k", ""), h("span.chip-row",
+      h("span.mv-deg", "Tilt ", degIn(knobs.tiltA, -180, 180, (v) => { knobs.tiltA = v; knobs.fullTilt = false; }, "Tilt from, degrees (- is down from straight out)"), " → ",
+        degIn(knobs.tiltB, -180, 180, (v) => { knobs.tiltB = v; knobs.fullTilt = false; }, "Tilt to, degrees")),
+      h("button.chip" + (knobs.fullTilt ? ".on" : ""), { title: `The light's whole tilt (${Math.round(span[1])}°)`,
+        onclick: () => { knobs.fullTilt = !knobs.fullTilt; render(true); reapply(); } }, "whole tilt"))) : null,
+    h("div.mv-row", h("span.k", ""), h("span.chip-row",
+      ...chips([["bounce", 0, "A → B → A…"], ["loop", 1, "A → B, then from A again"], ["once", 2, "A → B, then it stays at B"]],
+        (v) => knobs.mode === v, (v) => { knobs.mode = v; }))),
+    heads > 1 ? h("div.mv-row", h("span.k", "Per head"), h("span.chip-row",
+      ...Array.from({ length: heads }, (_, i) => {
+        const c = knobs.cells[i + 1] || {};
+        const setC = (key) => (v) => { knobs.cells = { ...knobs.cells, [i + 1]: { ...c, [key]: v } }; };
+        return h("span.mv-deg", { title: `Head ${i + 1}'s own tilt, from → to (empty: as above)` }, `${i + 1}: `,
+          degIn(c.tilt_a ?? knobs.tiltA, -180, 180, setC("tilt_a")), "→", degIn(c.tilt_b ?? knobs.tiltB, -180, 180, setC("tilt_b")));
+      }),
+      Object.keys(knobs.cells).length ? h("button.chip", { onclick: () => { knobs.cells = {}; render(true); reapply(); } }, "all the same") : null)) : null,
+    h("p.small.mv-preview", `A → B: ${what} · ${modeWord} · ${knobs.secs} s a trip${knobs.spread ? ` · a wave across the lights (${knobs.spread}°)` : ""}.`),
+    h("p.small.muted.mv-now", { id: "mv-now" }, nowText()));
+}
+
+// where the first selected mover points now, in its own degrees (live)
+function nowText() {
+  const ms = movers();
+  if (!ms.length) return "";
+  const hd = ms[0];
+  const lk = (state.looks || {})[hd.head_no];
+  if (!lk || lk.pan === undefined) return "";
+  const span = hd.span || [540, 270];
+  const d = (f, s) => `${f >= 0.5 ? "+" : ""}${Math.round((f - 0.5) * s)}°`;
+  return `Now: #${hd.head_no} pan ${d(lk.pan, span[0])}` + (lk.tilt !== undefined ? `, tilt ${d(lk.tilt, span[1])}` : "");
 }
 
 // ------------------------------------------------------------- My moves
@@ -543,8 +611,9 @@ function render(force = false) {
     running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
     moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
-    state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],
-    ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z])]);
+    state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones,
+      state.snap.venue.objects, state.snap.venue.rigging, state.snap.venue.stage, state.snap.venue_orient],
+    ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z, x.yaw])]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);
     const m = box.querySelector(".mv-master");
@@ -582,5 +651,7 @@ export function initMovePanel() {
   on("snapshot", () => render());
   on("lite", () => render());
   on("selection", () => render());
+  // the live degrees line, without redrawing the tab
+  on("looks", () => { const el = document.getElementById("mv-now"); if (el) { const t = nowText(); if (el.textContent !== t) el.textContent = t; } });
   render(true);
 }
