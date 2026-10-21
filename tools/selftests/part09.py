@@ -7873,3 +7873,49 @@ def test_b6_layouts() -> None:
     dj = (web / "dialogs.js").read_text(encoding="utf-8")
     check("...the screen turns them into buttons", "const DO = {" in dj and "fixBtn" in dj and "Check again" in dj, "")
 
+
+
+def test_page_flow() -> None:
+    """Buttons pages, MagicQ style: a Show button that leaves the preshow
+    (its buttons off) and starts the show page's buttons, and the Pages
+    list (rename, swap, empty) with every reference to a moved button kept."""
+    print("Pages: preshow -> show, and the Pages list")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            pre = e.act("quick_set", page=1, slot=1, button={"kind": "colour", "colour": "#0033ff", "label": "Preshow blue"})["id"]
+            start = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "colour": "#ff0000", "label": "Show red"})["id"]
+            e.act("quick_set", page=1, slot=2, button={"kind": "label", "label": "PRESHOW"})
+            go = e.act("quick_set", page=1, slot=3, button={"kind": "page", "label": "SHOW", "to_page": 2,
+                                                            "release_here": True, "turn_on": [start]})
+            check("a go-to-page tile can turn this page's buttons off and the next page's on",
+                  go["button"].get("release_here") and go["button"].get("turn_on") == [start], str(go["button"]))
+            e.act("quick_press", id=pre, down=True)
+            r = e.act("quick_press", id=go["id"], down=True)
+            check("...pressing SHOW: the preshow look goes off, the show's red comes on, the page turns",
+                  pre not in e.quick_active and start in e.quick_active and r.get("page") == 2, str(r))
+            e.act("quick_page", page=2, name="Show")
+            e.timeline.setdefault("tracks", []).append({"kind": "button", "name": "Hits", "clips": [{"t": 0, "dur": 1, "button": start}]})
+            e.act("quick_page", page=1, swap=2)
+            moved = next(b for b in e.quick if b["label"] == "Show red")
+            tile = next(b for b in e.quick if b["label"] == "SHOW")
+            check("Pages: swap two pages - names, buttons and the go-to-page tile follow",
+                  e.quick_names.get("1") == "Show" and moved["page"] == 1 and tile["page"] == 2
+                  and tile["to_page"] == 1 and tile["turn_on"] == [moved["id"]], f"{e.quick_names} {tile}")
+            clip = e.timeline["tracks"][-1]["clips"][0]
+            check("...a timeline clip still plays the same button", clip["button"] == moved["id"], str(clip))
+            e.act("quick_page", page=2, delete=True)
+            check("...empty a page", not any(b["page"] == 2 for b in e.quick), "")
+            e.act("undo")
+            check("...one Ctrl+Z brings it back", any(b["page"] == 2 for b in e.quick), "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Pages... (name, open, move up / down, delete, add), On the way / And turn on",
+          "function editPages" in qb and 'id="qb-pages-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "release_here" in qb and "turn_on" in qb, "")

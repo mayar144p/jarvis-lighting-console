@@ -170,6 +170,14 @@ window. Each one is **hold** (on while pressed),
 | Go to page | shows another page |
 | Folder | opens a page with a ◂ Back to the one you came from |
 
+A *Go to page* or *Folder* button can also **turn off what's on** on its own
+page and **turn on** some buttons of the page it opens: a *SHOW* button on
+the Preshow page ends the preshow looks and starts the show's first look
+as it turns the page.  **Edit → ☰ Pages…** lists every page: name it, open
+it, move it up or down (its buttons, grid and name go with it, and the
+go-to-page buttons, timeline clips and sound triggers follow), empty it,
+or add the next one.
+
 Targets are all lights, a group, a type (movers, PARs, washes, bars, beams) or
 a fixed set of lights, and of those all, odd / even, left / right, or a
 pattern (*2 on, 2 off*, *1 in 3*...). Effect, move and look buttons have an
