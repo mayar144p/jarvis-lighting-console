@@ -7823,6 +7823,12 @@ def test_b4_movement() -> None:
             check("...edited and saved, it still has no copy of the other's wave", not blue.get("fx_list"), str(blue.get("fx_list")))
             check("...and the wave button runs on", b["id"] in e.quick_active
                   and any(f.get("lib") == "range" for f in e.fx), str(sorted(e.quick_active)))
+            # Move speed: this movement's speed, pan and tilt together, live; the desk's master untouched
+            mv = next(f for f in e.fx if f.get("lib") == "range")
+            e.act("fx_tweak", id=mv["id"], params={"speed": 0.25, "pan_speed": 0.0, "tilt_speed": 0.5})
+            check("Move speed changes only that movement (no restart), the desk's Speed master stays",
+                  mv in e.fx and mv["params"]["speed"] == 0.25 and mv["params"]["tilt_speed"] == 0.5 and e.speed_master == 1.0,
+                  str(mv["params"]))
             snap = e.snapshot()
             check("the screen knows each light's travel in degrees", (snap["patch"][0].get("span") or [0])[0] > 0, str(snap["patch"][0].get("span")))
         finally:
@@ -7830,7 +7836,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
