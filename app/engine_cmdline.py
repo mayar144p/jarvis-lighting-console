@@ -78,7 +78,7 @@ class CommandMixin:
 
     def _cmd_help(self) -> str:
         return (
-            "selection    1-4   1.3.5   all   none   *   group 3\n"
+            "selection    1-4   1 thru 4   1.3.5   all   none   *   group 3\n"
             "attributes   1-4 pan 90   1-4 dimmer 50   1-4 red 255\n"
             "             1-4 tilt off   1-4 wheel full   1-4 dimmer +10\n"
             "cues         go   back   cue 3 go   cue 3 at 50   3 at 50\n"
@@ -108,9 +108,9 @@ class CommandMixin:
         that is now empty, and silently acting on the current selection
         instead is how a command line fires the wrong thing.
 
-        A selection is a RANGE (`1-4`), a LIST (`1.3.5`, which is how every
-        console spells "heads 1, 3 and 5" without commas), `all`, `none`,
-        `*`, or `group N`.
+        A selection is a RANGE (`1-4`, or `1 thru 4` as consoles say it), a
+        LIST (`1.3.5`, which is how every console spells "heads 1, 3 and 5"
+        without commas), `all`, `none`, `*`, or `group N`.
         """
         if i >= len(tokens):
             return (set(self.selected), i, False)
@@ -133,6 +133,13 @@ class CommandMixin:
                 raise ValueError(f"no group {num} - you have {have}")
             return ({int(h) for h in g["heads"]}, i + 2, True)
         head = re.fullmatch(r"(\d+(?:\.\d+)*)(?:-(\d+))?", tok)
+        # `1 thru 4` is `1-4`.  Without this `thru` fell through to the
+        # aim verb and `1 thru 4 70` pointed head 1 at pan 4, tilt 70.
+        if head and _is_int(tok) and i + 2 < len(tokens) \
+                and tokens[i + 1].lower() == "thru" and _is_int(tokens[i + 2]):
+            tok = f"{tok}-{tokens[i + 2]}"
+            head = re.fullmatch(r"(\d+(?:\.\d+)*)(?:-(\d+))?", tok)
+            i += 2
         if head:
             if head.group(2):
                 lo, hi = sorted((int(head.group(1)), int(head.group(2))))

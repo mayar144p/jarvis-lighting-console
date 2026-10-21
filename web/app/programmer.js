@@ -853,7 +853,7 @@ function renderProgCells() {
   // each head's colour now (the first light's), so you can see what you set
   const look = heads.length ? (state.looks || {})[heads[0].head_no] : null;
   const dots = Array.from({ length: n }, (_, i) => (look && look.cells && look.cells[i] && look.cells[i].hex) || "");
-  const key = JSON.stringify([n, state.cells || [], dots]);
+  const key = JSON.stringify([n, state.cells || [], dots, tab === "position"]);
   if (key === cellsKey) return;
   cellsKey = key;
   box.hidden = n < 2;
@@ -888,7 +888,7 @@ function renderProgCells() {
     dots[0] ? h("button.chip", { title: "Every head takes head 1's colour", onclick: () => run("set_colour", { hex: dots[0] }) }, "Copy 1 to all") : null,
     dots[0] && dots[n - 1] && dots[0] !== dots[n - 1] ? h("button.chip", { title: `A gradient from head 1's colour to head ${n}'s`,
       onclick: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } }, "Spread a gradient") : null,
-    headBar(heads, n)].filter(Boolean));
+    tab === "position" ? headBar(heads, n) : null].filter(Boolean));
 }
 
 const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
@@ -1386,6 +1386,7 @@ function showTab(name) {
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
+  renderProgCells();                               // (the tilt per head shows on Position)
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
   if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)

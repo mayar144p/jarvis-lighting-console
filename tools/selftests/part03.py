@@ -1114,6 +1114,15 @@ def test_command_line(tmp: Path) -> None:
         r = cmd("%d.%d" % (m0, p0))
         check("`1.3` is the list form, as every console spells it",
               r.get("ok") and r.get("selection") == sorted([m0, p0]), str(r))
+        r = cmd("%d thru %d" % (movers[0], movers[-1]))
+        check("`1 thru 4` is the same range as `1-4`",
+              r.get("ok") and r["selection"] == movers, str(r))
+        r = cmd("%d thru %d dimmer 50" % (movers[0], movers[-1]), dry=True)
+        check("and a command after it acts on the whole range, not head 1",
+              r.get("ok") and {"action": "select_heads",
+                               "params": {"heads": movers}} in r["steps"]
+              and not any(s["action"] == "set_position" for s in r["steps"]),
+              str(r))
         r = cmd("all")
         check("`all` selects every patched head",
               r["selection"] == sorted(h["head_no"] for h in e.patch), str(r))
