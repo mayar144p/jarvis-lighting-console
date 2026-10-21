@@ -8018,6 +8018,24 @@ def test_colour_row() -> None:
             e.act("quick_press", id=row[1]["id"], down=True)       # off again (an edit to undo comes next)
             e.act("undo")
             check("the whole row is one Ctrl+Z", not any(b["id"] in r["ids"] for b in e.quick), "")
+            # any two colour buttons on the same lights: one at a time, without a row
+            gr = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "label": "Colour", "colour": "#00ff00",
+                                                            "mode": "latch", "target": {"all": True}})
+            rd = e.act("quick_set", page=2, slot=2, button={"kind": "colour", "label": "Colour", "colour": "#ff0000",
+                                                            "mode": "latch", "target": {"heads": [1, 2, 3]}})
+            b4 = e.act("quick_set", page=2, slot=3, button={"kind": "colour", "label": "Blue 4", "colour": "#0000ff",
+                                                            "mode": "latch", "target": {"heads": [4]}})
+            mv = e.act("quick_set", page=2, slot=4, button={"kind": "fx", "fx": "rainbow", "label": "Rainbow",
+                                                            "mode": "latch", "target": {"all": True}})
+            for b in (gr, mv, rd):
+                e.act("quick_press", id=b["id"], down=True)
+            check("a colour button turns off another colour button on the same lights (not an effect button)",
+                  rd["id"] in e.quick_active and gr["id"] not in e.quick_active and mv["id"] in e.quick_active, str(sorted(e.quick_active)))
+            e.act("quick_press", id=b4["id"], down=True)
+            check("...one on other lights stays on beside it", rd["id"] in e.quick_active and b4["id"] in e.quick_active, "")
+            e.act("quick_press", id=gr["id"], down=True)
+            check("...and one for all of them turns both off", gr["id"] in e.quick_active
+                  and rd["id"] not in e.quick_active and b4["id"] not in e.quick_active, str(sorted(e.quick_active)))
         finally:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
