@@ -1085,8 +1085,10 @@ export async function makeHoldButton() {
     h("p.muted.small", "Buttons stack: a Colour-only button pressed over a movement button changes only the colour, and the movement keeps running. Nothing needs to be at full or moving to make a colour button."));
   const ok = await new Promise((resolve) => {
     const close = modal({ title: "Make a button", body, onClose: () => resolve(false), foot: [h("span.grow"),
-      h("button.btn", { onclick: () => { close(); resolve(false); } }, "Cancel"),
-      h("button.btn.primary", { onclick: () => { if (!keep.size) return; close(); resolve(true); } }, "Make it")] });
+      h("button.btn", { onclick: () => { resolve(false); close(); } }, "Cancel"),
+      // answer first: closing the window counts as Cancel (onClose), and
+      // whichever answer comes first is the one that counts
+      h("button.btn.primary", { onclick: () => { if (!keep.size) return; resolve(true); close(); } }, "Make it")] });
   });
   if (!ok) return;
   const groups = (state.snap && state.snap.groups) || [];
