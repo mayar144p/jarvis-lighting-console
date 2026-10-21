@@ -1492,6 +1492,13 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 /* a button holding the selected lights */
 .prog-held { padding: 6px 12px; background: rgba(250, 204, 21, .10); border-bottom: 1px solid rgba(250, 204, 21, .35); }
 .prog-held[hidden] { display: none; }
+.head-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; }
+.head-tilt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.head-tilt input { width: 80px; }
+.head-tilt small { min-width: 36px; color: var(--muted); }
+.mv-deg { display: inline-flex; align-items: center; gap: 4px; }
+.mv-deg input { width: 64px; }
+.mv-now { font-variant-numeric: tabular-nums; }
 .prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
 .qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
 .qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }

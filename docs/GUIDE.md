@@ -372,6 +372,20 @@ and settings are on its Laser or SFX tab.
   it, and the lights follow while it plays. Pixel bars and panels take it
   cell by cell. It paints colour, not brightness: bring the lights up
   first.
+* **Move tab -> A → B.** A move between two angles in each light's own
+  degrees (0 is the middle of its travel): *pan −100° → +40°*, tilt from
+  and to, or *whole pan* / *whole tilt* for the light's full travel.
+  *Bounce* goes there and back, *loop* starts from A again, *once* goes to
+  B and stays.  Speed is seconds a trip (or on the beat).  The line under
+  it says what will happen, and *Now:* shows where the first light points,
+  in degrees, live.  The arc and the wave take any number of degrees, not
+  only the chips.  *Lights: wave* spreads the start across the lights for
+  a smooth wave (½ wave, 2 waves, or any degrees).  On a multi-head light
+  (a Wave 360) *Per head* gives each head its own tilt from → to.
+* **Head strip** (programmer, multi-head lights): each head's colour dot,
+  *Copy 1 to all*, *Spread a gradient* from head 1 to the last, and on a
+  light with a tilt per head a bar of tilt sliders in degrees and a *Wave*
+  through the heads.
 * **Move tab -> Shapes.** Draw your own movement: key points round where
   the lights aim, a smooth curve or straight lines, starting from a
   triangle, square, star, wave or zig-zag if you like. It runs with the

@@ -51,7 +51,7 @@ const FX = [["rainbow", "Rainbow"], ["colour_chase", "Colour chase"], ["alternat
   ["pulse", "Pulse"], ["dimmer_chase", "Dimmer chase"], ["sparks", "Sparks"], ["circle", "Circle"],
   ["pan_sweep", "Sweep"], ["tilt_bounce", "Bounce"], ["figure_eight", "Figure 8"], ["fan_pan", "Fan"],
   ["gobo_spin", "Gobo spin"], ["prism_fan", "Prism fan"], ["zoom_pulse", "Zoom pulse"], ["strobe_random", "Random strobe"]];
-const MOVES = new Set(["circle", "pan_sweep", "tilt_bounce", "figure_eight", "fan_pan"]);
+const MOVES = new Set(["circle", "pan_sweep", "tilt_bounce", "figure_eight", "fan_pan", "range"]);
 const TYPES = [["spot", "Spots"], ["beam", "Beams"], ["wash", "Washes"], ["par", "PARs"], ["bar", "Bars"]];
 const FX_TYPES = [["confetti", "Confetti"], ["co2", "CO2"], ["flame", "Flames"], ["spark", "Sparks"],
   ["sfx", "Other effects"], ["atmos", "Fog / haze"], ["laser", "Lasers"]];

@@ -7708,3 +7708,62 @@ def test_b3_buttons() -> None:
     check("the screen: Open in the programmer / Update button, page tiles, patterns, order, offsets, what goes in",
           '"quick_edit"' in qb and '"quick_update"' in pj and "Update button" in pj and "folderBack" in qb
           and "PATTERNS" in qb and "Pan offset" in qb and "What goes in" in pj and "keep: [...keep]" in pj, "")
+
+
+def test_b4_movement() -> None:
+    """A15 B4: a move from one angle to another in each light's own
+    degrees (bounce / loop / once, the whole travel when asked), a wave
+    across the lights, each head of a multi-head light its own range, and
+    the screens that say the degrees."""
+    print("B4 movement: A -> B in degrees, waves, head by head")
+    from app import engine as eng
+    from app import fixlib
+    from app import motion
+    span = (540.0, 270.0)
+    lim = ((0.0, 1.0), (0.0, 1.0))
+    p = {"pan_a": -100.0, "pan_b": 40.0, "tilt_a": 0.0, "tilt_b": 0.0, "mode": 0.0, "spread": 0.0, "phase": 0.0}
+    deg = lambda v: round((v["pan"] - 0.5) * 540)  # noqa: E731
+    at = [deg(motion.position("range", t, p, (0.5, 0.5), lim, span)) for t in (0.0, 0.5, 1.0)]
+    check("pan from -100 to +40 degrees and back (bounce)", at == [-100, 40, -100], str(at))
+    once = [deg(motion.position("range", t, dict(p, mode=2.0), (0.5, 0.5), lim, span)) for t in (0.0, 1.0, 3.0)]
+    check("...once: to +40 and it stays", once == [-100, 40, 40], str(once))
+    loop = deg(motion.position("range", 1.0, dict(p, mode=1.0), (0.5, 0.5), lim, span))
+    check("...loop: from -100 again", loop == -100, str(loop))
+    full = [deg(motion.position("range", t, dict(p, full_pan=1.0), (0.5, 0.5), lim, span)) for t in (0.0, 0.5)]
+    check("the whole travel when asked (no 90 / 180 / 270 stops)", full == [-270, 270], str(full))
+    tilt_only = motion.position("range", 0.25, dict(p, pan_a=0.0, pan_b=0.0, tilt_a=-30.0, tilt_b=60.0), (0.5, 0.5), lim, span)
+    check("...an axis with the same from and to stays put", set(tilt_only) == {"tilt"}, str(tilt_only))
+    wave = [deg(motion.position("range", 0.0, dict(p, spread=180.0), (0.5, 0.5), lim, span, i, 4)) for i in range(4)]
+    check("a smooth wave across the lights (each a step on)", len(set(wave)) == 4, str(wave))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                              "qlc:Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Wave 360", mode="33 ch.", qty=1, universe=1, address=1)
+            e.selected = [1]
+            e.act("set_intensity", level=100)
+            r = e.act("run_fx", name="range", heads=[1], params={"tilt_a": -40, "tilt_b": 40, "pan_a": 0, "pan_b": 0,
+                                                                   "mode": 2, "speed": 1,
+                                                                   "cells": {"1": {"tilt_a": -60, "tilt_b": -60},
+                                                                             "4": {"tilt_a": 60, "tilt_b": 60}}})
+            row = next((f for f in e.fx if f.get("lib") == "range"), {})
+            check("head by head on a Wave 360: each head its own from / to", r.get("ok", True) and row.get("across")
+                  and set(row.get("cells") or {}) == {"1", "4"}, str(row.get("cells")))
+            vals = e._fx_values()
+            v = vals.get(1) or {}
+            check("...head 1 and head 4 go where they were told", v.get("tilt@1") is not None and v.get("tilt@4") is not None
+                  and v["tilt@1"] < v["tilt@4"], str({k: x for k, x in v.items() if k.startswith("tilt")}))
+            snap = e.snapshot()
+            check("the screen knows each light's travel in degrees", (snap["patch"][0].get("span") or [0])[0] > 0, str(snap["patch"][0].get("span")))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
+          '"range"' in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
+    check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
+          "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")

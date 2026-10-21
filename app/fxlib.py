@@ -54,6 +54,7 @@ t=2.5 without a rig.
 from __future__ import annotations
 
 import functools
+import math
 
 from .fx import wave
 
@@ -302,6 +303,17 @@ def _tilt_bounce(base, have, p, elapsed, index, count):
     _w(base, "tilt", wave("triangle", elapsed * p["speed"] + off))
 
 
+def _range(base, have, p, elapsed, index, count):
+    """From one angle to another (the engine works it out in degrees per
+    light, app/motion.py); here: a sweep between the two as a share of a
+    typical travel, for previews without a rig."""
+    off = p["spread"] * (index / max(1, count)) / 360.0
+    u = 0.5 - 0.5 * math.cos(2.0 * math.pi * (elapsed * p["speed"] + off))
+    for role, a, b, span in (("pan", p["pan_a"], p["pan_b"], 540.0), ("tilt", p["tilt_a"], p["tilt_b"], 270.0)):
+        if a != b and _satisfies(have, (role,)):
+            _w(base, role, 0.5 + (a + (b - a) * u) / span)
+
+
 def _circle(base, have, p, elapsed, index, count):
     """Pan and tilt together, tracing an ellipse.  Needs BOTH."""
     if not (_satisfies(have, PAN) and _satisfies(have, TILT)):
@@ -443,6 +455,15 @@ _MOVE = (("speed", "speed (turns/s)", 0.125, 0.005, 2.0), ("size", "size (deg)",
          ("arc", "arc (deg)", 360.0, 10.0, 360.0), ("direction", "direction", 1.0, -1.0, 1.0),
          ("lock", "lock", 0.0, 0.0, 2.0), ("spread", "spread", 0.0, 0.0, 720.0),
          ("phase", "phase", 0.0, 0.0, 100.0))
+# a move between two angles, in degrees from the middle of the light's travel
+# (-100 is 100 degrees left / down of centre); mode 0 bounce, 1 loop, 2 once;
+# full_pan / full_tilt: the light's whole travel, end to end
+_RANGE = (("speed", "speed (trips/s)", 0.125, 0.005, 2.0),
+          ("pan_a", "pan from (deg)", -45.0, -360.0, 360.0), ("pan_b", "pan to (deg)", 45.0, -360.0, 360.0),
+          ("tilt_a", "tilt from (deg)", 0.0, -180.0, 180.0), ("tilt_b", "tilt to (deg)", 0.0, -180.0, 180.0),
+          ("mode", "bounce / loop / once", 0.0, 0.0, 2.0),
+          ("full_pan", "whole pan travel", 0.0, 0.0, 1.0), ("full_tilt", "whole tilt travel", 0.0, 0.0, 1.0),
+          ("spread", "spread", 0.0, 0.0, 720.0), ("phase", "phase", 0.0, 0.0, 100.0))
 _LEVELS = (("speed", "rate", 1.0, 0.01, 20.0), ("rate", "rate", 4.0, 1.0, 40.0),
            ("spread", "spread", 0.0, 0.0, 720.0),
            ("phase", "phase", 0.0, 0.0, 100.0),
@@ -491,6 +512,8 @@ FX: dict[str, dict] = {
                     "needs": (TILT,), "params": _MOVE, "fn": _tilt_bounce},
     "fan_pan": {"label": "Fan pan", "group": "position", "needs": (PAN,),
                 "params": _MOVE, "fn": _fan_pan},
+    "range": {"label": "Move A → B", "group": "position", "needs": (("pan", "tilt"),),
+              "params": _RANGE, "fn": _range},
     "circle": {"label": "Circle", "group": "position", "needs": (PAN, TILT),
                "params": _MOVE, "fn": _circle},
     "figure_eight": {"label": "Figure eight", "group": "position",

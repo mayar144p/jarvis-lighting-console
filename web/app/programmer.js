@@ -884,7 +884,38 @@ function renderProgCells() {
       dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
     n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
     n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
-    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own")].filter(Boolean));
+    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own"),
+    dots[0] ? h("button.chip", { title: "Every head takes head 1's colour", onclick: () => run("set_colour", { hex: dots[0] }) }, "Copy 1 to all") : null,
+    dots[0] && dots[n - 1] && dots[0] !== dots[n - 1] ? h("button.chip", { title: `A gradient from head 1's colour to head ${n}'s`,
+      onclick: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } }, "Spread a gradient") : null,
+    headBar(heads, n)].filter(Boolean));
+}
+
+const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
+  .toString(16).padStart(2, "0")).join("");
+
+// A light with a tilt per head (a Wave 360): its heads as a bar - tilt each
+// head in degrees, or a wave through them - instead of raw channels.
+function headBar(heads, n) {
+  const hd = heads.find((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
+  if (!hd) return null;
+  const tilts = (hd.map || []).filter((r) => r === "tilt").length;
+  const span = (hd.span && hd.span[1]) || 270;
+  const vals = (((state.snap && state.snap.programmer) || {}).values || {})[hd.head_no] || {};
+  const deg = (v) => `${Math.round((v / 255 - 0.5) * span)}°`;
+  const send = throttle((k, v) => run("set_attribute", { attribute: "tilt", value: v, cell: [k] }, { silentError: true }), 60);
+  return h("div.head-bar", { title: "Tilt each head (degrees from straight out)" },
+    h("span.muted.small", "Tilt per head:"),
+    ...Array.from({ length: tilts }, (_, i) => {
+      const v = vals[`tilt@${i + 1}`] ?? 128;
+      const out = h("small", deg(v));
+      const input = h("input", { type: "range", min: 0, max: 255, value: v, "aria-label": `Head ${i + 1} tilt`,
+        oninput: (e) => { out.textContent = deg(+e.target.value); send(i + 1, +e.target.value); } });
+      return h("label.head-tilt", h("b", String(i + 1)), input, out);
+    }),
+    h("button.chip", { title: "A tilt wave through the heads (Move tab for the angles and speed)",
+      onclick: () => run("run_fx", { name: "range", heads: heads.map((x) => x.head_no), across: true,
+        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave"));
 }
 
 // ------------------------------------------------------ in the programmer
@@ -899,7 +930,7 @@ const GROUP_OF = (() => {
   for (const r of ["gobo", "gobo_rot", "prism", "zoom", "focus", "frost", "iris"]) m[r] = "beam";
   return m;
 })();
-const MOVE_FX = new Set(["circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan"]);
+const MOVE_FX = new Set(["circle", "figure_eight", "pan_sweep", "tilt_bounce", "fan_pan", "range"]);
 let progInKey = "";
 let fxGridKey = "";
 let runningKey = "";

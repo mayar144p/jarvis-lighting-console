@@ -297,6 +297,18 @@ class ProgrammerMixin:
         space = params.get("space") if isinstance(params, dict) else None
         if space:
             p["space"] = self._clean_space(space)
+        cells = params.get("cells") if isinstance(params, dict) else None
+        cell_p: dict = {}
+        if name == "range" and isinstance(cells, dict):
+            # head by head on a multi-head light: {"2": {"tilt_a": -30, "tilt_b": 60}}
+            for k, row in list(cells.items())[:16]:
+                if not isinstance(row, dict) or not str(k).isdigit():
+                    continue
+                spec = {key: (lo, hi) for (key, _l, _d, lo, hi) in fxlib_mod.FX["range"]["params"]}
+                clean = {key: max(spec[key][0], min(spec[key][1], float(v))) for key, v in row.items()
+                         if key in ("pan_a", "pan_b", "tilt_a", "tilt_b") and v not in (None, "")}
+                if clean:
+                    cell_p[str(int(k))] = clean
         zone = params.get("zone") if isinstance(params, dict) else None
         if zone and name in motion_mod.KINDS:
             # drawn on a zone's floor (the dance floor...) instead of round the aim
@@ -305,6 +317,9 @@ class ProgrammerMixin:
         row = {"id": self._fx_seq, "lib": name, "params": p,
                "heads": [h["head_no"] for h in capable],
                "t0": time.monotonic(), "duration": dur}
+        if cell_p:
+            row["cells"] = cell_p
+            across = True
         if across and any(merge._repeated(h["map"]) for h in capable):
             # run it ACROSS each light's own heads (a Wave 360's four cells
             # and tilts) as if every head were a light of its own; with no
@@ -312,7 +327,7 @@ class ProgrammerMixin:
             row["across"] = True
             if "phase" in p and not (isinstance(params, dict) and params.get("phase")):
                 p["phase"] = 100.0
-            if name in motion_mod.KINDS and not (isinstance(params, dict) and params.get("spread")):
+            if name in motion_mod.KINDS and not cell_p and not (isinstance(params, dict) and params.get("spread")):
                 p["spread"] = 360.0                       # the heads spread evenly round the shape
         self.fx.append(row)
         msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
@@ -417,7 +432,11 @@ class ProgrammerMixin:
             if p.get("zone"):
                 vals = self._zone_move(row, kind, sized, h, k, where, len(units))
             else:
-                vals = motion_mod.position(kind, row["_turns"], sized, tuple(centre), tuple(limits),
+                pk = sized
+                if k and row.get("cells", {}).get(str(k)):
+                    own = row["cells"][str(k)]
+                    pk = {**sized, **own, **{f"_set_{a}": 1 for a in ("pan", "tilt") if f"{a}_a" in own}}   # this head's own from / to
+                vals = motion_mod.position(kind, row["_turns"], pk, tuple(centre), tuple(limits),
                                            cap[2][i], where, len(units))
             dst = out.setdefault(n, {})
             for role, frac in vals.items():

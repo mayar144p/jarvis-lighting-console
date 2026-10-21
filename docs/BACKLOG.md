@@ -326,6 +326,15 @@ at 0).  Drag to arrange, colour and icon were already there.
 5. **Wave 360 simplified:** its heads as a bar (tilt per head, wave, colour
    per head) instead of raw channels.
 
+**Done (B4):** a new movement, *A → B* (`range` in fxlib / motion.py):
+from / to in each light's own degrees, bounce / loop / once, the whole
+travel (`full_pan` / `full_tilt`), speed in seconds a trip or beats; the
+arc and the wave spread take any degrees; per-head from / to on multi-head
+lights (`cells`, run across the heads).  The Move tab says what will happen
+in degrees and shows the first light's live pan / tilt in degrees (the
+patch rows carry `span`).  The programmer's head strip: Copy 1 to all,
+Spread a gradient, and on a Wave 360 a tilt bar per head with a Wave.
+
 ### B5. The visualiser knows the room
 1. **Front, centre and the DJ booth:** set where the front and the booth
    are; dragging lights, the camera and the Move pad then work from the

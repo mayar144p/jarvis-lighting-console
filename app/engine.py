@@ -1297,7 +1297,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                                for k, v in self.programmer.items()},
                     "attrs": self._touched_attrs(),
                 },
-                "patch": [dict(h, yaw=self._head_yaw(h), body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), gobos2=self._gobo2_images(h), better_mode=self._better_mode(h))
+                "patch": [dict(h, yaw=self._head_yaw(h), body=fixture_kind.describe(h), gate=self._gate_info(h), tested=self._tested(h), gobos=self._gobo_images(h), gobos2=self._gobo2_images(h), better_mode=self._better_mode(h),
+                                span=list(self._move_span(h)) if ("pan" in h["map"] or "tilt" in h["map"]) else None)
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
                 "groups": [{"n": g["n"], "name": g["name"],
