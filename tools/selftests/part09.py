@@ -7810,6 +7810,19 @@ def test_b4_movement() -> None:
             v = e._fx_values().get(1) or {}
             check("...and the button plays it head by head", v.get("tilt@1") is not None and v.get("tilt@4") is not None
                   and v["tilt@1"] < v["tilt@4"], str({k: x for k, x in v.items() if k.startswith("tilt")}))
+            # another button for the same light (a colour) leaves the wave button's effect out
+            e.act("set_colour", colour="#0000ff")
+            e.act("quick_from_programmer", label="Blue", page=1)
+            blue = next(x for x in e.quick if x["label"] == "Blue")
+            check("a button made while another runs a wave on the same light: only its own colour",
+                  not blue.get("fx_list") and blue.get("values"), str(blue.get("fx_list")))
+            e.act("quick_edit", id=blue["id"])
+            e.act("set_colour", colour="#00ff00")
+            e.act("quick_update")
+            blue = next(x for x in e.quick if x["label"] == "Blue")
+            check("...edited and saved, it still has no copy of the other's wave", not blue.get("fx_list"), str(blue.get("fx_list")))
+            check("...and the wave button runs on", b["id"] in e.quick_active
+                  and any(f.get("lib") == "range" for f in e.fx), str(sorted(e.quick_active)))
             snap = e.snapshot()
             check("the screen knows each light's travel in degrees", (snap["patch"][0].get("span") or [0])[0] > 0, str(snap["patch"][0].get("span")))
         finally:
