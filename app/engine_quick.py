@@ -1138,6 +1138,14 @@ class QuickMixin:
                 for other in [b for b in self.quick if b.get("exclusive") == btn["exclusive"]
                               and b["id"] != key and b["id"] in self.quick_active]:
                     self._quick_off(other["id"], force=True)
+            if self._colour_only(btn):
+                # a light shows one colour: another colour button on any of
+                # the same lights goes off (as a colour row does)
+                mine = set(self._quick_heads(btn))
+                for other in [b for b in self.quick if b["id"] != key and b["id"] in self.quick_active
+                              and self._colour_only(b)]:
+                    if mine & set(self.quick_active[other["id"]].get("heads") or self._quick_heads(other)):
+                        self._quick_off(other["id"], force=True)
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
                    "owners": set(), "fx_ids": []}
             if btn["kind"] == "move":
@@ -1604,6 +1612,14 @@ class QuickMixin:
             return "position"
         grp = (fxlib_mod.FX.get(name) or {}).get("group")
         return {"colour": "colour", "dimmer": "intensity"}.get(grp, "beam")
+
+    def _colour_only(self, btn: dict) -> bool:
+        """A button that only sets colour (a Colour button, or one made from
+        the programmer that keeps just the colour)."""
+        if btn.get("kind") == "colour":
+            return True
+        return btn.get("kind") == "custom" and not btn.get("hz") and not btn.get("kill") \
+            and self._button_families(btn) == ["colour"]
 
     def _button_families(self, btn: dict) -> list[str]:
         """What a button sets, as families (a colour-only button: ["colour"])."""
