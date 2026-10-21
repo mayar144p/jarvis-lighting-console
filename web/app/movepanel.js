@@ -377,12 +377,7 @@ function movementBlock() {
       ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
         ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
       (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
-    h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
-      ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
     rangeBlock2(),
-    h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
-      ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }),
-      degIn(knobs.arc, 10, 360, (v) => { knobs.arc = v; }, "Any arc, in degrees"))),
     h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
       ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
         (v) => knobs.size === v, (v) => { knobs.size = v; }))),
@@ -394,9 +389,17 @@ function movementBlock() {
     multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
       ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
         (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null,
-    h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
-      ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
-        (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),
+    // the knobs used now and then fold away (remembered while the page is open)
+    h("details.mv-more", { open: knobs.more, ontoggle: (e) => { knobs.more = e.currentTarget.open; } },
+      h("summary", "More: direction, arc, lock"),
+      h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
+        ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
+      h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
+        ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }),
+        degIn(knobs.arc, 10, 360, (v) => { knobs.arc = v; }, "Any arc, in degrees"))),
+      h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
+        ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
+          (v) => knobs.lock === v, (v) => { knobs.lock = v; })))),
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
@@ -643,7 +646,10 @@ function render(force = false) {
   if (aim) aim.replaceChildren(axes().both ? aimBlock(spotsBlock(), roamBlock())
     : h("div.mv-sec", h("h3", "Aim"), h("p.muted.small", `The selected lights only ${axes().tilt ? "tilt" : "pan"}, so they can't be aimed at a spot: use the pad below.`)));
   if (nudge) nudge.replaceChildren(nudgeBlock());
-  box.replaceChildren(...[movementBlock(), ownBlock(), floorBlock(), rangeBlock(sel), laserBlock(ls)].filter(Boolean));
+  // each block on its sub-tab (Move / Limits; Point is the aim map and the pad)
+  const tag = (el, k) => { if (el) el.dataset.in = k; return el; };
+  box.replaceChildren(...[tag(movementBlock(), "move"), tag(ownBlock(), "move"), tag(floorBlock(), "limits"),
+    tag(rangeBlock(sel), "limits"), tag(laserBlock(ls), "limits")].filter(Boolean));
   loadOwn();
 }
 

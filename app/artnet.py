@@ -753,7 +753,7 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
     # Broadcast came up empty: that is not proof of absence, because Wi-Fi
     # AP filtering and client isolation drop it silently.  Sweep the local
     # /24s by unicast before reporting a negative.
-    swept = 0
+    swept = skipped = 0
     subnets: list[str] = []
     took: dict = {"broadcast": round(time.monotonic() - (deadline - timeout), 2)}
     if sweep_subnets and not rows:
@@ -765,6 +765,9 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
         # negative result is only meaningful if we say how hard we looked
         # (an address the computer itself called unreachable was looked at too)
         swept = int(found.get("swept") or found.get("polls_sent") or 0)
+        # addresses the sweep had no time to poll (a busy computer): said,
+        # so "no node" is never taken as a full search when it wasn't
+        skipped = int(found.get("skipped") or 0)
         subnets = found.get("subnets") or []
         if found.get("nodes") or found.get("universes"):
             for row in found["universes"]:
@@ -784,13 +787,15 @@ def scan(timeout: float = 2.0, port: int = ART_NET_PORT,
         message = (f"no Art-Net node answered.  Tried broadcast, loopback and "
                    f"{swept} unicast address(es) on {where}.  If the rig is "
                    f"powered, check: node power, the network cable, and "
-                   f"that the node's Art-Net port is enabled.")
+                   f"that the node's Art-Net port is enabled.") + (
+                   f"  {skipped} address(es) were not polled (the computer was too busy) - "
+                   f"try again." if skipped else "")
     else:
         message = ("no Art-Net traffic observed (broadcast only - no local "
                    "network to sweep)")
     return {"universes": rows, "nodes": list(nodes.values()), "error": None,
             "polls_sent": polled + swept, "replies": replies, "frames": frames,
-            "tried": tried, "swept": swept, "subnets": subnets, "took": took,
+            "tried": tried, "swept": swept, "skipped": skipped, "subnets": subnets, "took": took,
             "message": message}
 
 

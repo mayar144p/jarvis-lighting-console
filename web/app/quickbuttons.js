@@ -417,6 +417,7 @@ function render(force = false) {
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
   $("#qb-pages-btn").hidden = !editing;
+  $("#qb-colrow").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
   $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
   updateControls();
@@ -430,7 +431,8 @@ function render(force = false) {
 // A fader, an XY pad, the tempo and a cue list live on the page as tiles:
 // drawn once, their numbers kept current from the live feed.
 const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
-function faderValue(c) {
+function faderValue(c, b) {
+  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? 0;
   if (c.what === "master") return snapOrLite("master") ?? 100;
   if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
   if (c.what === "playback") {
@@ -447,7 +449,7 @@ function controlTile(b) {
   const head = h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label));
   if (b.kind === "fader") {
     const c = b.control || { what: "master" };
-    const v = faderValue(c);
+    const v = faderValue(c, b);
     const out = h("output.qval", faderText(c, v));
     const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
@@ -491,7 +493,7 @@ function updateControls() {
     if (b.kind === "fader") {
       const inp = el.querySelector(".qfader-in");
       if (inp.dataset.busy) continue;
-      const v = faderValue(b.control || { what: "master" });
+      const v = faderValue(b.control || { what: "master" }, b);
       inp.value = v;
       el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
     } else if (b.kind === "tempo") {
@@ -591,7 +593,7 @@ function toButton(s) {
   if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
   if (s.quant !== "" && !NO_QUANT.has(kind)) b.quant = +s.quant;
-  if (!NO_TARGET.has(d)) b.target = { ...s.target };
+  if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
     if (s.exclusive.trim()) b.exclusive = s.exclusive.trim();
@@ -620,7 +622,8 @@ function toButton(s) {
   if (d === "go" || d === "release") b.playback = +s.playback || 1;
   if (d === "go" && s.cue !== "") b.cue = +s.cue;
   if (d === "preset") b.preset = +s.preset;
-  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 } : { what: s.control.what };
+  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 }
+    : s.control.what === "lights" ? { what: "lights", mode: s.control.mode || "level" } : { what: s.control.what };
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
@@ -697,6 +700,33 @@ function lookMenu(el, b) {
     { label: "Paste look on every button of this page", disabled: !lookClip,
       run: () => run("quick_style", { page, style: lookClip }) },
   ]);
+}
+
+// + Colour row: one colour button per colour for some lights, in one radio
+// group (pressing one turns the others off), side by side on this page
+export function makeColourRow(heads = null) {
+  const sel = heads || ((state.snap && state.snap.selected) || []);
+  const s = { who: sel.length ? "sel" : (groups()[0] ? "g" + groups()[0].n : "sel"),
+    colours: ["#ff0000", "#0033ff", "#00ff40", "#ffffff", "#ff00cc", "#00c8ff", "#ffb000", "#7a00ff"], name: "" };
+  const body = h("div.qe");
+  const draw = () => {
+    body.replaceChildren(
+      row("Which lights", chips([["sel", `Selected (${sel.length})`], ...groups().map((g) => ["g" + g.n, g.name])], s.who, (v) => { s.who = v; draw(); })),
+      row("Colours", h("div.chip-row", ...SWATCH.map((c) => h("button.qe-sw" + (s.colours.includes(c) ? ".on" : ""), {
+        type: "button", title: c, style: { background: c }, "aria-pressed": String(s.colours.includes(c)),
+        onclick: () => { s.colours = s.colours.includes(c) ? s.colours.filter((x) => x !== c) : [...s.colours, c]; draw(); } })))),
+      row("One at a time", h("input.qe-tag", { type: "text", maxlength: 20, value: s.name, placeholder: "radio group name (optional)",
+        oninput: (e) => { s.name = e.target.value; } })),
+      h("div.qe-note", `${s.colours.length} buttons on ${pageName(page)}, side by side. Pressing one turns the others in the row off; press it again for none.`));
+  };
+  draw();
+  const close = modal({ title: "Make a colour row", body, foot: [h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel"),
+    h("button.btn.primary", { onclick: async () => {
+      if (s.who === "sel" && !sel.length) { toast("Select the lights first, or pick a group", "bad"); return; }
+      const r = await run("quick_colour_row", { colours: s.colours, page, name: s.name.trim(),
+        ...(s.who === "sel" ? { heads: sel } : { group: +s.who.slice(1) }) }, { toast: true });
+      if (r.ok) { close(); render(true); }
+    } }, "Make the row")] });
 }
 
 // Edit -> Pages: every page in one list - name it, open it, move it up or
@@ -793,7 +823,7 @@ function editButton(slot, btn) {
       lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
-    if (!NO_TARGET.has(d)) {
+    if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
       const who = fxKind
         ? [["all", "All effects"], ["sel", `Selected (${selected.length})`], ...FX_TYPES.map(([k, l]) => ["t" + k, l])]
         : [["all", "All lights"], ["sel", `Selected (${selected.length})`], ...groups().map((g) => ["g" + g.n, g.name]),
@@ -841,8 +871,14 @@ function editButton(slot, btn) {
     if (d === "dim") kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
     if (d === "fader") {
       const c = s.control;
-      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group"]], c.what,
-        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1 }; draw(); })));
+      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group master"],
+        ["lights", "Some lights", "These lights' own fader (pick them below)"]], c.what,
+        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); })));
+      if (c.what === "lights") {
+        kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
+          ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"]], c.mode || "level",
+        (v) => { c.mode = v; draw(); })));
+      }
       if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
       if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
         : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
@@ -1111,6 +1147,7 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {

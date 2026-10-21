@@ -9,7 +9,7 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 | **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
 | **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** its chip's ⋯ (or a right-click on the chip or its folder) adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
 | **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
-| **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits) |
+| **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits). The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves; direction / arc / lock under *More*), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **FX** - *Effects*, *Running* (with how many run) and *Step & paint* |
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
 | **Status bar** | output target and rate, network, feed health, last save |
 
@@ -169,6 +169,17 @@ window. Each one is **hold** (on while pressed),
 | Heading | words only, over a row of buttons; pressing does nothing |
 | Go to page | shows another page |
 | Folder | opens a page with a ◂ Back to the one you came from |
+
+A **Fader** tile can also be **Some lights**: pick the lights (the
+selection, a group, a type, odd / even...) and whether the fader is
+*their brightness* (up from dark, over whatever else they do - a light's
+own dimmer on the buttons page, in full screen too) or *a master* (a share
+of what they are doing, like the grand master for just those lights).
+
+**+ Colour row…** (in Edit, or a light's right-click menu) makes a row of
+colour buttons for the selected lights or a group in one go: one button
+per colour, side by side, all *one at a time* - pressing Blue turns Red off,
+pressing it again leaves the light's own colour.
 
 A *Go to page* or *Folder* button can also **turn off what's on** on its own
 page and **turn on** some buttons of the page it opens: a *SHOW* button on

@@ -110,7 +110,14 @@ def normalise(roles) -> set[str]:
     do nothing an effect can drive, and offering it everything is the same
     lie as offering it nothing.
     """
-    return set(_normalised(tuple(str(r) for r in roles or ())))
+    return set(_normalised_of(roles))
+
+
+def _normalised_of(roles) -> frozenset:
+    try:
+        return _normalised(tuple(roles or ()))   # a patch map: strings already
+    except TypeError:                            # something unhashable in it
+        return _normalised(tuple(str(r) for r in roles or ()))
 
 
 @functools.lru_cache(maxsize=1024)
@@ -681,9 +688,10 @@ def apply(name: str, base: dict, roles, params: dict | None = None,
     spec = FX.get(name)
     if not spec:
         raise ValueError("unknown effect %r" % (name,))
-    have = normalise(roles)
-    if name not in _available_for(frozenset(have)):
+    fz = _normalised_of(roles)
+    if name not in _available_for(fz):
         raise ValueError("%s: %s" % (name, why_not(roles, name)))
+    have = set(fz)
     p = defaults(name)
     p.update({k: float(v) for k, v in (params or {}).items()
               if k in p and v is not None})

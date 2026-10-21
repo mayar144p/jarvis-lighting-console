@@ -515,8 +515,21 @@ class AttrMixin:
     def _gobo2_role(self, head: dict) -> str | None:
         """A second gobo wheel (MAC 2000: "Gobo Wheel 2, Gobo & Function",
         not its "..., Position/Velocity" channel): its channel, when the
-        file names one with slots."""
+        file names one with slots.  Remembered per fixture file and channel
+        list: every screen's snapshot asks for every light."""
         ranges = self.head_ranges(head)
+        cache = self.__dict__.setdefault("_gobo2_cache", {})
+        key = (id(ranges), tuple(head.get("map") or ()))
+        hit = cache.get(key)
+        if hit is not None and hit[0] is ranges:
+            return hit[1]
+        if len(cache) > 512:
+            cache.clear()
+        role = self._find_gobo2(head, ranges)
+        cache[key] = (ranges, role)
+        return role
+
+    def _find_gobo2(self, head: dict, ranges: dict) -> str | None:
         for r in head.get("map") or []:
             if not r.startswith("aux"):
                 continue

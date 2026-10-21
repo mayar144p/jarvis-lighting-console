@@ -129,6 +129,26 @@ class DeskMixin:
             for n in g["heads"]:
                 o = out.setdefault(n, {})
                 o["scale"] = round(o.get("scale", 100) * m / 100.0, 1)
+        # fader tiles for some lights: their brightness, or a master
+        vals = self.__dict__.get("fader_vals")
+        if vals:
+            by = {h["head_no"]: h for h in self.patch}
+            for b in self.quick:
+                v = vals.get(b["id"])
+                c = b.get("control") or {}
+                if v is None or b["kind"] != "fader" or c.get("what") != "lights":
+                    continue
+                for n in self._quick_heads(b):
+                    o = out.setdefault(n, {})
+                    if c.get("mode") == "master":
+                        if v < 100:
+                            o["scale"] = round(o.get("scale", 100) * v / 100.0, 1)
+                    elif v > 0:
+                        o["level"] = max(o.get("level") or 0, v)
+                        head = by.get(n)
+                        gate = self._shutter_role(head) if head else None
+                        if gate and not any(r in HTP_ROLES for r in head["map"]):
+                            o.setdefault("set", {})[gate] = self._open_value(head, gate)
         hl = self.__dict__.get("highlight")
         if hl and hl.get("on"):
             sel = set(self.selected)

@@ -184,6 +184,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         # interpolates between ticks instead of stepping.
         self._look_seq = 0
         self._look_cache: tuple[float, str, int] | None = None
+        self._tick_vals: tuple | None = None    # build_frames' resolved heads
         self._look_cache_lock = threading.Lock()
         self._look_wanted = -1e9
         # Bumped by every successful edit, so a live client knows when the
@@ -716,19 +717,37 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         makes it benchmarkable and testable on its own; this method only
         snapshots the state it needs and hands it over.
         """
+        live = now is None                # the real clock: what the 3D can share
         now = time.monotonic() if now is None else now
-        frames = merge.build_frames(self._frame_patch(), self._live_programmer(now),
+        patch = self._frame_patch()
+        overrides = self._override_vals(now=now)
+        kept: dict = {}
+        frames = merge.build_frames(patch, self._live_programmer(now),
                                     self._active_playbacks(now),
                                     self._fx_values(now, rig=True),
                                     self.master, self.blackout,
-                                    overrides=self._override_vals(now=now), now=now,
-                                    gates=self._gates(), rests=self._rests(), darks=self._darks())
+                                    overrides=overrides, now=now,
+                                    gates=self._gates(), rests=self._rests(), darks=self._darks(),
+                                    keep=kept)
+        # what each head resolved to, for this tick's 3D look (_looks): the
+        # same merge, so the screens need not do it all over again.  Stamped
+        # when it is ready (Windows' clock steps 16 ms at a time); a frame
+        # built for a made-up time is not the look now
+        self._tick_vals = ((time.monotonic(), self._tick_key(patch), kept, overrides)
+                           if live else None)
         # colour matching scales what the looks / cues / effects ask for; a
         # raw channel the operator holds is written after it, untouched
         self._write_colour_cal(frames)
         if not self.blackout:
             self._write_raw(frames)
         return frames
+
+    def _tick_key(self, patch: list) -> tuple:
+        """What the tick's resolved values depend on beyond the clock.  In
+        blind the wire and the 3D differ (the 3D shows the blind
+        programmer), so nothing is shared then."""
+        return (self.act_rev, id(patch), self.patch_rev, self.master, self.blackout,
+                self.__dict__.get("_blind_live") is not None)
 
     def _raw_holds(self) -> dict:
         """{head_no: {slot: value}}: bytes written straight to the wire,

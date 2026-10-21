@@ -7919,3 +7919,167 @@ def test_page_flow() -> None:
     check("the screen: Pages... (name, open, move up / down, delete, add), On the way / And turn on",
           "function editPages" in qb and 'id="qb-pages-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "release_here" in qb and "turn_on" in qb, "")
+
+
+def test_colour_row() -> None:
+    """Make a colour row: one colour button per colour for some lights, in
+    one radio group - pressing one turns the other colours off."""
+    print("Buttons: a colour row in one go")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "F"})
+            r = e.act("quick_colour_row", heads=[2], colours=["#ff0000", "#0033ff", "#00ff40"], page=1)
+            row = [b for b in e.quick if b["id"] in (r.get("ids") or [])]
+            check("three colour buttons for light 2, side by side after what is there",
+                  [b["slot"] for b in row] == [2, 3, 4] and [b["label"] for b in row] == ["Red", "Blue", "Green"]
+                  and all(b["target"] == {"heads": [2]} and b["mode"] == "latch" for b in row), str(r))
+            check("...all in one radio group", len({b.get("exclusive") for b in row}) == 1 and row[0].get("exclusive"), "")
+            e.act("quick_press", id=row[0]["id"], down=True)
+            e.act("quick_press", id=row[1]["id"], down=True)
+            check("...pressing Blue turns Red off", row[1]["id"] in e.quick_active and row[0]["id"] not in e.quick_active, "")
+            look = next(lk for lk in e._looks() if lk["n"] == 2)
+            check("...and light 2 is blue", look["hex"].lower() in ("#0033ff", "#0000ff") or look["hex"][5:] > look["hex"][1:3], look["hex"])
+            e.act("quick_press", id=row[1]["id"], down=True)       # off again (an edit to undo comes next)
+            e.act("undo")
+            check("the whole row is one Ctrl+Z", not any(b["id"] in r["ids"] for b in e.quick), "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: + Colour row... in Edit, and on a light's menu",
+          "export function makeColourRow" in qb and "makeColourRow" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
+
+
+def test_lights_fader() -> None:
+    """A fader tile for some lights: their brightness (up from dark) or a
+    master (a share of what they do), on the buttons page and in full screen."""
+    print("Buttons: a fader for any lights")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            lv = e.act("quick_set", page=1, slot=1, button={"kind": "fader", "label": "PAR 2", "control": {"what": "lights"},
+                                                            "target": {"heads": [2]}})
+            check("a fader for one light", lv.get("button", {}).get("control") == {"what": "lights", "mode": "level"}, str(lv))
+            a = lambda n: next(lk["a"] for lk in e._looks() if lk["n"] == n)  # noqa: E731
+            check("...it starts dark", a(2) == 0, "")
+            e.act("quick_fader", id=lv["id"], level=60)
+            check("...up to 60%: that light lifts from dark, the others stay", abs(a(2) - 0.6) < 0.02 and a(1) == 0, str(a(2)))
+            e.act("select_heads", heads=[1, 3])
+            e.act("set_intensity", level=100)
+            m = e.act("quick_set", page=1, slot=2, button={"kind": "fader", "label": "Sides", "control": {"what": "lights", "mode": "master"},
+                                                           "target": {"heads": [1, 3]}})
+            e.act("quick_fader", id=m["id"], level=25)
+            check("a master fader: a share of what they do (full -> 25%)", abs(a(1) - 0.25) < 0.02 and abs(a(3) - 0.25) < 0.02, str(a(1)))
+            check("the screen sees the faders' places", e._quick_public()["faders"] == {lv["id"]: 60, m["id"]: 25}, str(e._quick_public()["faders"]))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
+          '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
+
+
+def test_programmer_subtabs() -> None:
+    """The busy programmer tabs in parts: Position (Point / Move / Limits),
+    Beam (Quick / All channels), FX (Effects / Running / Step & paint);
+    every part of those tabs is on one of them, and the rarely used knobs
+    fold away."""
+    print("Programmer: Position, Beam and FX in parts")
+    import re
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
+    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "jarvis.sub." in pj
+          and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
+    check("each sub-tab hides the others' parts",
+          all(f'.tab-pane[data-sub="{k}"] [data-in]:not([data-in="{k}"])' in css for ks in subs.values() for k in ks), "")
+    tagged = set(re.findall(r'data-in="([a-z]+)"', html)) | set(re.findall(r'tag\([a-zA-Z]+\([^)]*\), "([a-z]+)"\)', mv))
+    check("every part is on a sub-tab (the aim and pad on Point, movements on Move, limits on Limits)",
+          tagged >= {k for ks in subs.values() for k in ks}, str(sorted(tagged)))
+    check("FX shows how many effects run on its Running sub-tab", "sub-count" in pj, "")
+    check("rarely used knobs fold: direction, arc, lock; the shutter's open-value finder once it is known",
+          "More: direction, arc, lock" in mv and "Find its open value" in pj, "")
+
+
+def test_look_shares_the_frame() -> None:
+    """The 3D look reuses what the frame just resolved (the screens'
+    stream would otherwise do every light's merge twice a tick): the same
+    rows as a fresh build, a strobe shown un-gated, and nothing shared
+    once anything changed or while in blind."""
+    print("the 3D look shares the frame's merge")
+    from app import engine as eng
+    from app import fixlib, merge
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=4, universe=1)
+            e.act("add_heads", query="Intimidator Wave 360", qty=2, universe=2)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            e.act("record_cue", playback=1)
+            e.act("cue_go", playback=1)
+            e.act("select_all")
+            e.act("set_colour", colour="blue")
+            with e.lock:
+                e.build_frames()
+                shared = e._kept_values(e._frame_patch()) is not None
+                a = e._looks()
+                e._tick_vals = None
+                b = e._looks()
+            check("right after a frame the look uses its values", shared, "")
+            check("...and they are the same rows as a fresh build", a == b, f"{a[:1]} vs {b[:1]}")
+            with e.lock:
+                e.build_frames()
+                tick = e._tick_vals
+                # Windows' clock steps 16 ms: a 10 ms build can read 30 ms old
+                e._tick_vals = (tick[0] - 0.030, *tick[1:])
+                late = e._kept_values(e._frame_patch()) is not None
+                e._tick_vals = (tick[0] - 0.2, *tick[1:])
+                stopped = e._kept_values(e._frame_patch()) is None
+                e.build_frames(now=time.monotonic() + 5.0)
+                made_up = e._tick_vals is None
+            check("...still when the clock read a step late (Windows)", late, "")
+            check("the output stopped: an old frame is not shown", stopped, "")
+            check("a frame built for another time is not the look now", made_up, "")
+            with e.lock:
+                e.build_frames()
+            e.act("set_intensity", level=20)
+            with e.lock:
+                stale = e._kept_values(e._frame_patch())
+            check("an action since the frame: built fresh", stale is None, "")
+            e.act("blind", state=True)
+            with e.lock:
+                e.build_frames()
+                blind = e._kept_values(e._frame_patch())
+            check("in blind (the 3D and the rig differ): built fresh", blind is None, "")
+            e.act("blind", state=False)
+            head = e.patch[0]
+            over = {head["head_no"]: {"strobe": 10.0}}
+            kept: dict = {}
+            dark_at = next(t / 1000 for t in range(1000) if (t / 1000 * 10.0) % 1.0 > 0.35)
+            merge.build_frames([head], e.programmer, [], None, 100, False,
+                               overrides=over, now=dark_at, keep=kept)
+            plain = merge.resolve_head(head, e.programmer, [], None, 100, False,
+                                       over[head["head_no"]], None)
+            gated = merge.resolve_head(head, e.programmer, [], None, 100, False,
+                                       over[head["head_no"]], dark_at)
+            check("a strobing light: the look gets it un-gated, as before",
+                  gated != plain and kept[head["head_no"]] == plain,
+                  f"{kept[head['head_no']]} vs {plain}")
+        finally:
+            e.shutdown()

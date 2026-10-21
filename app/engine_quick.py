@@ -45,7 +45,7 @@ class QuickMixin:
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
                                   "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
     PAGE_TILES = frozenset({"label", "page", "folder"})
-    FADER_OF = ("master", "speed", "playback", "group")
+    FADER_OF = ("master", "speed", "playback", "group", "lights")
 
     SPLITS = ("odd", "even", "left", "right")
     # the order an effect runs through its lights (the wave's direction)
@@ -198,6 +198,11 @@ class QuickMixin:
             btn["control"] = {"what": what}
             if what in ("playback", "group"):
                 btn["control"]["n"] = int(_clamp(c.get("n", 1), 1, 999))
+            if what == "lights":
+                # some lights' own fader: their brightness (lifts them from
+                # dark, like a flash held at that level) or a master (a share
+                # of whatever they do)
+                btn["control"]["mode"] = "master" if c.get("mode") == "master" else "level"
             btn["mode"] = "tap"
         if kind == "cuelist":
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
@@ -724,6 +729,48 @@ class QuickMixin:
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    COLOUR_NAMES = {"#ff0000": "Red", "#0033ff": "Blue", "#00ff40": "Green", "#ffffff": "White",
+                    "#ff00cc": "Magenta", "#00c8ff": "Cyan", "#ffb000": "Amber", "#7a00ff": "UV",
+                    "#ffe600": "Yellow", "#ff5a00": "Orange", "#00ffcc": "Teal", "#ff3c8c": "Pink"}
+
+    def _a_quick_colour_row(self, colours=None, heads=None, group=None, page=None, name="", **_):
+        """A row of colour buttons for some lights, in one go: one button per
+        colour, all in one radio group (pressing one turns the others off),
+        side by side in the first free run of slots on the page."""
+        cols = [c for c in (_hex_or_none(x) for x in (colours or [])) if c][:12]
+        if not cols:
+            raise ValueError("pick at least one colour")
+        if group not in (None, ""):
+            g = self._group(group=group)
+            target, who = {"group": g["n"]}, g["name"]
+        else:
+            nums = sorted({int(x) for x in (heads if heads is not None else self.selected)})
+            if not nums:
+                raise ValueError("select the lights first (or pick a group)")
+            for n in nums:
+                self._head(n)
+            target = {"heads": nums}
+            who = self._head(nums[0]).get("name") or f"#{nums[0]}" if len(nums) == 1 else f"{len(nums)} lights"
+        page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
+        lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
+        used = {b["slot"] for b in self.quick if b["page"] == page}
+        total = lay["cols"] * lay["rows"]
+        start = next((s for s in range(1, total - len(cols) + 2)
+                      if all(s + i not in used for i in range(len(cols)))), None)
+        if start is None:
+            raise ValueError(f"page {page} has no {len(cols)} free buttons side by side - pick another page")
+        tag = (str(name).strip() or f"Colour {who}")[:20]
+        ids = []
+        for i, c in enumerate(cols):
+            btn = self._quick_clean({"kind": "colour", "colour": c, "mode": "latch", "target": dict(target),
+                                     "exclusive": tag, "label": f"{self.COLOUR_NAMES.get(c, c)}"[:24]},
+                                    page, start + i)
+            self.quick.append(btn)
+            ids.append(btn["id"])
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"ids": ids, "page": page, "group": tag,
+                "summary": f"{len(ids)} colour buttons for {who} on page {page} (one at a time: “{tag}”)"}
 
     def _quick_free_slot(self, page=None) -> tuple[int, int]:
         """The first empty (page, slot), from `page` on (default page 1)."""
@@ -1848,6 +1895,12 @@ class QuickMixin:
             return self._a_speed_master(pct=max(10, v * 2))           # 50 = 1x
         if c["what"] == "playback":
             return self._a_playback_level(playback=c["n"], level=v)
+        if c["what"] == "lights":
+            vals = self.__dict__.setdefault("fader_vals", {})
+            vals[btn["id"]] = int(v)
+            n = len(self._quick_heads(btn))
+            word = "brightness" if c.get("mode") != "master" else "master"
+            return {"id": btn["id"], "level": int(v), "summary": f"{btn['label']}: {word} {int(v)}% on {n} light(s)"}
         return self._a_group_master(group=c["n"], level=v)
 
     def _a_quick_xy(self, id=None, pan=None, tilt=None, **_):

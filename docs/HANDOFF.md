@@ -35,7 +35,7 @@ each, merging each one when it is green.  B7 waits for the operator.
 export CONSOLE_DATA_DIR=$(mktemp -d) CONSOLE_AUTOSAVE=false PYTHONIOENCODING=cp1252
 python3 tools/selftest.py             # ~3,860 checks, ~1 min
 ruff check --select F app tools
-python3 tools/oddcheck.py             # ~16,000 checks, ~9 min
+python3 tools/oddcheck.py             # ~16,000 checks, under 1 min
 node tools/uicheck.mjs screencheck --widths 1440   # ~10 min; nightly runs 1280/1440/1920
 for f in web/app/*.js; do node --check $f; done
 ```
