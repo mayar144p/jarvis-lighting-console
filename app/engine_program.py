@@ -799,7 +799,22 @@ class ProgrammerMixin:
 
     def _wheel_colours(self, h: dict) -> list[int]:
         """The DMX values of a light's colour-wheel colours - only for a
-        light that can't mix (it runs the colour effects on its wheel)."""
+        light that can't mix (it runs the colour effects on its wheel).
+        Remembered per channel list and fixture file: a colour effect asks
+        for every light on every frame."""
+        m = h.get("map") or []
+        ranges = self.head_ranges(h)
+        cache = self.__dict__.setdefault("_wheel_cols_cache", {})
+        hit = cache.get(id(m))
+        if hit is not None and hit[0] is m and hit[1] is ranges:
+            return hit[2]
+        if len(cache) > 4096:
+            cache.clear()
+        vals = self._find_wheel_colours(h)
+        cache[id(m)] = (m, ranges, vals)
+        return vals
+
+    def _find_wheel_colours(self, h: dict) -> list[int]:
         roles = set(h.get("map") or [])
         if "wheel" not in roles or len(fxlib_mod._palette(fxlib_mod.normalise(list(roles)))) >= 2:
             return []

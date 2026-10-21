@@ -110,16 +110,24 @@ class LooksMixin:
         looks broken even though the DMX is correct.  Absent means "not
         driven", and the visualiser keeps its geometric default.
         """
-        now = time.monotonic() if now is None else now
-        prog = self._programmer_now(now)
-        pb_vals = self._active_playbacks(now)
-        fx_vals = self._fx_values(now)
-        overrides = self._override_vals()
+        patch = self._frame_patch()            # the floor lock, as on the wire
+        kept = self._kept_values(patch) if now is None else None
+        if kept is not None:
+            values_of, overrides = kept
+        else:
+            now = time.monotonic() if now is None else now
+            prog = self._programmer_now(now)
+            pb_vals = self._active_playbacks(now)
+            fx_vals = self._fx_values(now)
+            overrides = self._override_vals()
         out = []
-        for head in self._frame_patch():       # the floor lock, as on the wire
+        for head in patch:
             over = overrides.get(head["head_no"])
-            values = self._resolve_head(head, prog, pb_vals,
-                                        fx_vals.get(head["head_no"]), over)
+            if kept is not None:
+                values = values_of[head["head_no"]]
+            else:
+                values = self._resolve_head(head, prog, pb_vals,
+                                            fx_vals.get(head["head_no"]), over)
             intensity = None
             for role in HTP_ROLES:
                 if role in values:
@@ -150,8 +158,7 @@ class LooksMixin:
                 row["pan"] = pan
             if tilt is not None:
                 row["tilt"] = tilt
-            reps = merge._repeated(head["map"])
-            n_cells = max(reps.get(r, 0) for r in ("tilt", "pan", "red", "green", "blue", "white")) if reps else 0
+            reps, n_cells, span, g2, (a_in, a_rot) = self._look_static(head)
             if n_cells > 1:
                 # each head of a multi-head light: its own colour, tilt and
                 # pan (a light's second zoom or strobe is an Aux channel, and
@@ -182,13 +189,6 @@ class LooksMixin:
             # Only sent when the profile actually declares a range, so a
             # generic with no GDTF keeps the historical behaviour and
             # gains no bytes.
-            ranges = self.head_ranges(head)
-            span = {}
-            for role, key in (("pan", "pan"), ("tilt", "tilt")):
-                r = ranges.get(key)
-                if r and r.get("min") is not None and r.get("max") is not None \
-                        and r.get("unit") == "degree":
-                    span[role] = [r["min"], r["max"]]
             if span:
                 row["deg"] = span
             # Beam shaping for the visualiser, 0..1 per driven channel, so
@@ -198,10 +198,8 @@ class LooksMixin:
                     for r in _BEAM_LOOK_ROLES if r in values
                     and r not in ("strobe", "shutter")}
             # the second gobo wheel, and an animation wheel in the beam
-            g2 = self._gobo2_role(head)
             if g2 and g2 in values:
                 beam["gobo2"] = round(max(0, min(255, int(values[g2]))) / 255.0, 3)
-            a_in, a_rot = self._anim_roles(head)
             if a_in and int(values.get(a_in, 0) or 0) > 8:
                 beam["anim"] = round(int(values[a_in]) / 255.0, 3)
                 if a_rot:
@@ -241,6 +239,45 @@ class LooksMixin:
                 row["mv"] = mv
             out.append(row)
         return out
+
+    def _look_static(self, head: dict) -> tuple:
+        """What a light's look rows need that only the patch or its fixture
+        file can change: its repeated channels and head count, its pan /
+        tilt travel in degrees, the second gobo wheel and the animation
+        wheel.  Worked out once, not 40 times a second for every light."""
+        ranges = self.head_ranges(head)
+        cache = self.__dict__.get("_look_static_cache")
+        if cache is None or cache[0] != self.patch_rev or len(cache[1]) > 4096:
+            # (the floor lock hands out copies of the heads: bounded)
+            cache = self._look_static_cache = (self.patch_rev, {})
+        hit = cache[1].get(id(head))
+        if hit is not None and hit[0] is head and hit[1] is ranges:
+            return hit[2]
+        reps = merge._repeated(head["map"])
+        n_cells = max(reps.get(r, 0) for r in ("tilt", "pan", "red", "green", "blue", "white")) if reps else 0
+        span = {}
+        for role, key in (("pan", "pan"), ("tilt", "tilt")):
+            r = ranges.get(key)
+            if r and r.get("min") is not None and r.get("max") is not None \
+                    and r.get("unit") == "degree":
+                span[role] = [r["min"], r["max"]]
+        out = (reps, n_cells, span, self._gobo2_role(head), self._anim_roles(head))
+        cache[1][id(head)] = (head, ranges, out)
+        return out
+
+    def _kept_values(self, patch: list) -> tuple[dict, dict] | None:
+        """This tick's resolved heads from build_frames, or None when they
+        are stale: older than two DMX periods (the output stopped), or
+        anything changed since (an action, the patch, the master,
+        blackout, blind)."""
+        tick = self._tick_vals
+        if tick is None or tick[1] != self._tick_key(patch) or tick[1][-1]:
+            return None
+        if not 0 <= time.monotonic() - tick[0] <= 2.0 / float(config.DMX_HZ):
+            return None
+        if len(tick[2]) != len(patch):
+            return None
+        return tick[2], tick[3]
 
     _LASER_HEX = (("red", "#ff2020"), ("green", "#22ff44"), ("blue", "#2244ff"),
                   ("yellow", "#ffee22"), ("cyan", "#22ffee"), ("magenta", "#ff22dd"),
@@ -565,21 +602,41 @@ class LooksMixin:
     _EMIT_RGB = {"white": (255, 255, 255), "amber": (255, 176, 32), "uv": (110, 40, 255),
                  "lime": (168, 255, 60), "warm_white": (255, 214, 160), "cool_white": (225, 235, 255)}
 
+    def _hex_roles(self, head: dict) -> tuple:
+        """What _hex_for needs to know about a light's channel list, worked
+        out once per list: (roles, lime is its green, has RGB, CMY LEDs,
+        the extra emitters it has, has CMY)."""
+        m = head["map"]
+        cache = self.__dict__.setdefault("_hex_roles_cache", {})
+        hit = cache.get(id(m))
+        if hit is not None and hit[0] is m:
+            return hit[1]
+        if len(cache) > 4096:
+            cache.clear()
+        roles = set(m)
+        # red + lime + blue (an ETC Source Four LED): the lime is its green
+        lime_green = "lime" in roles and "green" not in roles and bool(roles & {"red", "blue"})
+        cmy = bool(roles & {"cyan", "magenta", "yellow"})
+        out = (roles, lime_green, bool(roles & {"red", "green", "blue"}),
+               cmy_are_leds(roles) and cmy,
+               tuple((role, rgb) for role, rgb in self._EMIT_RGB.items()
+                     if role in roles and not (role == "lime" and lime_green)),
+               cmy)
+        cache[id(m)] = (m, out)
+        return out
+
     def _hex_for(self, head: dict, values: dict) -> str:
         """The colour the 3D shows: the emitters mixed (RGB, white, amber,
         UV, lime), CMY, or the colour wheel's slot (its colour from the
         fixture file, or a name it was taught)."""
-        roles = set(head["map"])
+        roles, lime_green, rgb_roles, leds, emits, cmy_roles = self._hex_roles(head)
         r = g = b = 0.0
         lit = False
-        # red + lime + blue (an ETC Source Four LED): the lime is its green
-        lime_green = "lime" in roles and "green" not in roles and bool(roles & {"red", "blue"})
-        if roles & {"red", "green", "blue"} and any(k in values for k in ("red", "green", "blue")):
+        if rgb_roles and any(k in values for k in ("red", "green", "blue")):
             r, g, b = (float(values.get(k, 0)) for k in ("red", "green", "blue"))
             if lime_green:
                 g = float(values.get("lime", 0))
             lit = True
-        leds = cmy_are_leds(roles) and roles & {"cyan", "magenta", "yellow"}
         if leds and any(values.get(k) for k in ("cyan", "magenta", "yellow")):
             # cyan / magenta / yellow LEDs beside RGB: the light is built so
             # that all of them at full make white, so the mix is balanced
@@ -598,15 +655,13 @@ class LooksMixin:
             peak = max(bal) or 1.0
             r, g, b = (c * min(255.0, top) / peak for c in bal)
             lit = True
-        for role, rgb in self._EMIT_RGB.items():
+        for role, rgb in emits:
             v = values.get(role)
-            if role == "lime" and lime_green:
-                continue
-            if role in roles and v:
+            if v:
                 k = float(v) / 255.0
                 r, g, b = r + rgb[0] * k, g + rgb[1] * k, b + rgb[2] * k
                 lit = True
-        if not lit and roles & {"cyan", "magenta", "yellow"} and (
+        if not lit and cmy_roles and (
                 any(k in values for k in ("cyan", "magenta", "yellow")) or not self._emitters(head)):
             # CMY filters (on a lamp: no colour LEDs) that nothing drives are
             # out of the beam - open white, not "colour unknown"
