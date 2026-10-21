@@ -302,8 +302,8 @@ const STEPS = [
   ["11-wave360-move", async (p) => { await sel(H.wave)(p); await tab("position")(p); }],
   ["12-moover-colour", async (p) => { await sel(H.wheel)(p); await tab("colour")(p); }],
   ["13-pixelbar-fx", async (p) => { await sel(H.pix)(p); await tab("fx")(p); }],
-  ["14-laser", async (p) => { await sel(H.laser)(p); await p.click('#prog-tabs [data-tab="laser"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="laser"]' }],
-  ["15-sfx", async (p) => { await sel(H.sfx)(p); await p.click('#prog-tabs [data-tab="sfx"]', { timeout: 3000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="sfx"]' }],
+  ["14-laser", async (p) => { await sel(H.laser)(p); await p.click('#prog-tabs [data-tab="laser"]', { timeout: 10000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="laser"]' }],
+  ["15-sfx", async (p) => { await sel(H.sfx)(p); await p.click('#prog-tabs [data-tab="sfx"]', { timeout: 10000 }); await p.waitForTimeout(500); }, { click: '.tab-pane[data-pane="sfx"]' }],
   ["16-faders", async (p) => { await sel(H.few.slice(0, 3))(p); await p.click('#pb-mode [data-mode="faders"]'); await p.waitForTimeout(500); }, { click: "#pb-strip" }],
   ["17-buttons", async (p) => { await p.click('#pb-mode [data-mode="buttons"]'); await p.waitForTimeout(600); }],
   ["18-buttons-edit", async (p) => { await p.click("#qb-edit"); await p.waitForTimeout(500); }],
@@ -367,9 +367,14 @@ for (const width of WIDTHS) {
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
-  await p.addInitScript((big) => {
-    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (big) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
-  }, BIG);
+  // the 3D drawn in software (no graphics card) at 1920 x 1080 kept the
+  // page too busy for clicks on CI's machines (the nightly: 03/04/14/15
+  // timed out there, never on a faster machine): draw it Fast, as with the
+  // big rig - the screen check is about the panels, not the 3D's detail
+  const fast = BIG || (!GPU && width >= 1900);
+  await p.addInitScript((fast) => {
+    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
+  }, fast);
   await p.goto(BASE);
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
