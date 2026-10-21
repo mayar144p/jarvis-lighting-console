@@ -11,7 +11,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, menu, throttle } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -381,6 +381,7 @@ function render(force = false) {
         if (b.kind === "page" || b.kind === "folder") {
           // the screen turns the page (a folder remembers the way back)
           if (b.kind === "folder") folderBack.push(page); else folderBack.length = 0;
+          if (b.release_here || (b.turn_on || []).length) run("quick_press", { id: b.id, down: true }, { silentError: true });
           setPage(b.to_page || 1);
           return;
         }
@@ -415,6 +416,7 @@ function render(force = false) {
   $("#qb-edit").textContent = editing ? "Done" : "Edit";
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
+  $("#qb-pages-btn").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
   $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
   updateControls();
@@ -561,6 +563,7 @@ function fromButton(b) {
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
     control: b && b.control ? { ...b.control } : { what: "master" },
     toPage: b && b.to_page ? b.to_page : (page < (quick().pages || 32) ? page + 1 : 1),
+    releaseHere: !!(b && b.release_here), turnOn: b && b.turn_on ? [...b.turn_on] : [],
     order: (b && b.order) || "forward", offset: { pan: 0, tilt: 0, ...((b && b.offset) || {}) },
   };
   if (b && b.kind === "custom") {
@@ -621,7 +624,13 @@ function toButton(s) {
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
-  if (d === "page" || d === "folder") b.to_page = +s.toPage || 1;
+  if (d === "page" || d === "folder") {
+    b.to_page = +s.toPage || 1;
+    if (s.releaseHere) b.release_here = true;
+    const there = new Set(quick().buttons.filter((x) => x.page === b.to_page).map((x) => x.id));
+    const ons = s.turnOn.filter((x) => there.has(x));
+    if (ons.length) b.turn_on = ons;
+  }
   if (["fx", "move", "custom", "capture"].includes(d)) {
     if (s.order !== "forward") b.order = s.order;
     if (s.offset.pan || s.offset.tilt) b.offset = { pan: +s.offset.pan || 0, tilt: +s.offset.tilt || 0 };
@@ -688,6 +697,46 @@ function lookMenu(el, b) {
     { label: "Paste look on every button of this page", disabled: !lookClip,
       run: () => run("quick_style", { page, style: lookClip }) },
   ]);
+}
+
+// Edit -> Pages: every page in one list - name it, open it, move it up or
+// down (its buttons, grid and name go with it; go-to-page buttons, timeline
+// clips and sound triggers follow), empty it, add the next one
+function editPages() {
+  const body = h("div.qe.pages-list");
+  const draw = () => {
+    const q = quick();
+    const used = new Set(q.buttons.map((b) => b.page));
+    const last = Math.min(q.pages || 32, Math.max(4, page, ...used));
+    const rows = [];
+    for (let p = 1; p <= last; p++) {
+      const n = q.buttons.filter((b) => b.page === p).length;
+      const name = h("input.qe-name", { type: "text", maxlength: 16, value: (q.names || {})[p] || "", placeholder: `Page ${p}`,
+        onchange: (e) => run("quick_page", { page: p, name: e.target.value.trim() }) });
+      rows.push(h("div.page-row" + (p === page ? ".on" : ""),
+        h("span.page-n", String(p)), name, h("small.muted", `${n} button${n === 1 ? "" : "s"}`),
+        h("button.btn.small.ghost", { title: "Open this page", onclick: () => { close(); folderBack.length = 0; setPage(p); } }, "Open"),
+        h("button.btn.small.ghost", { title: "Move up (swap with the page above)", disabled: p === 1,
+          onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, "▲"),
+        h("button.btn.small.ghost", { title: "Move down (swap with the page below)", disabled: p >= (q.pages || 32),
+          onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, "▼"),
+        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !n && !(q.names || {})[p],
+          onclick: async () => {
+            if (!(await confirmBox("Empty page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+            await run("quick_page", { page: p, delete: true }); draw(); render(true);
+          } }, "Delete")));
+    }
+    body.replaceChildren(...rows,
+      last < (q.pages || 32) ? h("button.btn.small", { onclick: async () => {
+        const name = await promptBox("New page", "Name", "", { ok: "Add", placeholder: "e.g. Show" });
+        if (name === null || name === undefined) return;
+        await run("quick_page", { page: last + 1, name: name.trim() || "" });
+        page = last + 1; render(true); draw();
+      } }, "+ Add a page") : null,
+      h("p.qe-note", "A heading tile names a row; a Go to page or Folder tile jumps between pages and can turn the old page's buttons off on the way."));
+  };
+  draw();
+  const close = modal({ title: "Pages", body, foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")] });
 }
 
 // Edit -> Layout: this page's grid
@@ -758,8 +807,20 @@ function editButton(slot, btn) {
       const n = Math.max(8, ...quick().buttons.map((x) => x.page), page + 1);
       kids.push(row(d === "folder" ? "Opens" : "Goes to", chips(Array.from({ length: Math.min(n, quick().pages || 32) }, (_, i) => [i + 1, pageName(i + 1)]),
         +s.toPage, (v) => { s.toPage = v; draw(); }),
-      h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name pages by double-clicking them in Edit."
-        : "Pressed, it shows that page. Name pages by double-clicking them in Edit.")));
+      h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name and order pages with Pages… in Edit."
+        : "Pressed, it shows that page. Name and order pages with Pages… in Edit.")));
+      // on the way there: this page's buttons off (the preshow), some of the
+      // next page's on (the show's start)
+      kids.push(row("On the way", h("div.chip-row", h("button.chip" + (s.releaseHere ? ".on" : ""), { type: "button",
+        title: "Every button that is on, on this page, turns off when this is pressed (e.g. the preshow looks)",
+        onclick: () => { s.releaseHere = !s.releaseHere; draw(); } }, `Turn off what's on on ${pageName(page)}`))));
+      const there = quick().buttons.filter((x) => x.page === +s.toPage && !ONE_SHOT.has(x.kind) && x.kind !== "label");
+      kids.push(row("And turn on", there.length
+        ? chips(there.map((x) => [x.id, x.label]), s.turnOn, (v) => {
+          s.turnOn = s.turnOn.includes(v) ? s.turnOn.filter((x) => x !== v) : [...s.turnOn, v].slice(0, 8);
+          draw();
+        }, { multi: true })
+        : h("div.qe-note", `${pageName(+s.toPage)} has no on / off buttons yet.`)));
     }
     if (d === "label") kids.push(row("Heading", h("div.qe-note", "Only its name shows, as a heading over a row of buttons; pressing it does nothing.")));
     if (["fx", "move", "custom", "capture"].includes(d)) {
@@ -1049,6 +1110,7 @@ export function initQuickButtons() {
   }, true);
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
+  $("#qb-pages-btn").addEventListener("click", editPages);
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {

@@ -1443,6 +1443,10 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 /* the buttons page on the whole screen */
 .qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
 .qb.qb-full .qb-grid { flex: 1; }
+.pages-list { display: flex; flex-direction: column; gap: 4px; }
+.page-row { display: grid; grid-template-columns: 26px minmax(120px, 1fr) 80px repeat(4, auto); gap: 6px; align-items: center; }
+.page-row.on .page-n { color: var(--accent); font-weight: 700; }
+.page-n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .qb-bo { display: none; font-weight: 700; border-color: var(--live); color: #fca5a5; }
 .qb.qb-full .qb-bo { display: inline-flex; }
 .qb-bo.on { background: var(--live); color: #fff; }
