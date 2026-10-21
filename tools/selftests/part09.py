@@ -8095,6 +8095,21 @@ def test_lights_fader() -> None:
             ov = e._override_vals()
             check("...and its strobe speed fader makes it faster (20 a second)", (ov.get(1) or {}).get("strobe") == 20.0
                   and not (ov.get(2) or {}).get("strobe"), str(ov.get(1)))
+            # a light in two groups: the group fader moved last decides (not both multiplied)
+            g2 = e.act("group_create", name="All", heads=[1, 2, 3])
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("set_intensity", level=100)
+            e.act("quick_fader", id=m["id"], level=100)             # (the Sides master tile back to full)
+            e.act("group_master", group=g.get("n", 1), level=50)
+            e.act("group_master", group=g2.get("n", 2), level=80)
+            check("a light in two groups follows the group fader moved last (80%, not 50% x 80%)",
+                  abs(a(1) - 0.8) < 0.02 and abs(a(3) - 0.8) < 0.02, f"{a(1)} {a(3)}")
+            two = a(2)                                              # in All only
+            e.act("group_master", group=g.get("n", 1), level=30)
+            check("...move the other and it takes over the lights they share; a light only in the first stays",
+                  abs(a(1) - 0.3) < 0.02 and abs(a(3) - 0.3) < 0.02 and a(2) == two, f"{a(1)} {a(2)} {a(3)}")
+            e.act("group_master", group=g.get("n", 1), level=100)
+            e.act("group_master", group=g2.get("n", 2), level=100)
             e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed"})
             check("...renamed like any button", next(b for b in e.quick if b["id"] == sp)["label"] == "Movers FX speed", "")
         finally:
@@ -8102,6 +8117,7 @@ def test_lights_fader() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb
+          and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
