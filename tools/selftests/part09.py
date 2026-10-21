@@ -8045,6 +8045,19 @@ def test_look_shares_the_frame() -> None:
             check("...and they are the same rows as a fresh build", a == b, f"{a[:1]} vs {b[:1]}")
             with e.lock:
                 e.build_frames()
+                tick = e._tick_vals
+                # Windows' clock steps 16 ms: a 10 ms build can read 30 ms old
+                e._tick_vals = (tick[0] - 0.030, *tick[1:])
+                late = e._kept_values(e._frame_patch()) is not None
+                e._tick_vals = (tick[0] - 0.2, *tick[1:])
+                stopped = e._kept_values(e._frame_patch()) is None
+                e.build_frames(now=time.monotonic() + 5.0)
+                made_up = e._tick_vals is None
+            check("...still when the clock read a step late (Windows)", late, "")
+            check("the output stopped: an old frame is not shown", stopped, "")
+            check("a frame built for another time is not the look now", made_up, "")
+            with e.lock:
+                e.build_frames()
             e.act("set_intensity", level=20)
             with e.lock:
                 stale = e._kept_values(e._frame_patch())

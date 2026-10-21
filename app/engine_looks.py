@@ -267,12 +267,13 @@ class LooksMixin:
 
     def _kept_values(self, patch: list) -> tuple[dict, dict] | None:
         """This tick's resolved heads from build_frames, or None when they
-        are stale: older than one DMX period, or anything changed since
-        (an action, the patch, the master, blackout, blind)."""
+        are stale: older than two DMX periods (the output stopped), or
+        anything changed since (an action, the patch, the master,
+        blackout, blind)."""
         tick = self._tick_vals
         if tick is None or tick[1] != self._tick_key(patch) or tick[1][-1]:
             return None
-        if not 0 <= time.monotonic() - tick[0] <= 1.0 / float(config.DMX_HZ):
+        if not 0 <= time.monotonic() - tick[0] <= 2.0 / float(config.DMX_HZ):
             return None
         if len(tick[2]) != len(patch):
             return None

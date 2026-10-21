@@ -717,6 +717,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         makes it benchmarkable and testable on its own; this method only
         snapshots the state it needs and hands it over.
         """
+        live = now is None                # the real clock: what the 3D can share
         now = time.monotonic() if now is None else now
         patch = self._frame_patch()
         overrides = self._override_vals(now=now)
@@ -729,8 +730,11 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                                     gates=self._gates(), rests=self._rests(), darks=self._darks(),
                                     keep=kept)
         # what each head resolved to, for this tick's 3D look (_looks): the
-        # same merge, so the screens need not do it all over again
-        self._tick_vals = (now, self._tick_key(patch), kept, overrides)
+        # same merge, so the screens need not do it all over again.  Stamped
+        # when it is ready (Windows' clock steps 16 ms at a time); a frame
+        # built for a made-up time is not the look now
+        self._tick_vals = ((time.monotonic(), self._tick_key(patch), kept, overrides)
+                           if live else None)
         # colour matching scales what the looks / cues / effects ask for; a
         # raw channel the operator holds is written after it, untouched
         self._write_colour_cal(frames)
