@@ -468,6 +468,7 @@ export function rowMenu(btn, head) {
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
+    { label: "Make a colour row of buttons…", hint: "one button per colour, one at a time", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(sameSelection(head))) },
     ...groupItems(head),
     { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
     { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },

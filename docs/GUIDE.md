@@ -170,6 +170,11 @@ window. Each one is **hold** (on while pressed),
 | Go to page | shows another page |
 | Folder | opens a page with a ◂ Back to the one you came from |
 
+**+ Colour row…** (in Edit, or a light's right-click menu) makes a row of
+colour buttons for the selected lights or a group in one go: one button
+per colour, side by side, all *one at a time* - pressing Blue turns Red off,
+pressing it again leaves the light's own colour.
+
 A *Go to page* or *Folder* button can also **turn off what's on** on its own
 page and **turn on** some buttons of the page it opens: a *SHOW* button on
 the Preshow page ends the preshow looks and starts the show's first look

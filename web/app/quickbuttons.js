@@ -417,6 +417,7 @@ function render(force = false) {
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
   $("#qb-pages-btn").hidden = !editing;
+  $("#qb-colrow").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
   $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
   updateControls();
@@ -697,6 +698,33 @@ function lookMenu(el, b) {
     { label: "Paste look on every button of this page", disabled: !lookClip,
       run: () => run("quick_style", { page, style: lookClip }) },
   ]);
+}
+
+// + Colour row: one colour button per colour for some lights, in one radio
+// group (pressing one turns the others off), side by side on this page
+export function makeColourRow(heads = null) {
+  const sel = heads || ((state.snap && state.snap.selected) || []);
+  const s = { who: sel.length ? "sel" : (groups()[0] ? "g" + groups()[0].n : "sel"),
+    colours: ["#ff0000", "#0033ff", "#00ff40", "#ffffff", "#ff00cc", "#00c8ff", "#ffb000", "#7a00ff"], name: "" };
+  const body = h("div.qe");
+  const draw = () => {
+    body.replaceChildren(
+      row("Which lights", chips([["sel", `Selected (${sel.length})`], ...groups().map((g) => ["g" + g.n, g.name])], s.who, (v) => { s.who = v; draw(); })),
+      row("Colours", h("div.chip-row", ...SWATCH.map((c) => h("button.qe-sw" + (s.colours.includes(c) ? ".on" : ""), {
+        type: "button", title: c, style: { background: c }, "aria-pressed": String(s.colours.includes(c)),
+        onclick: () => { s.colours = s.colours.includes(c) ? s.colours.filter((x) => x !== c) : [...s.colours, c]; draw(); } })))),
+      row("One at a time", h("input.qe-tag", { type: "text", maxlength: 20, value: s.name, placeholder: "radio group name (optional)",
+        oninput: (e) => { s.name = e.target.value; } })),
+      h("div.qe-note", `${s.colours.length} buttons on ${pageName(page)}, side by side. Pressing one turns the others in the row off; press it again for none.`));
+  };
+  draw();
+  const close = modal({ title: "Make a colour row", body, foot: [h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel"),
+    h("button.btn.primary", { onclick: async () => {
+      if (s.who === "sel" && !sel.length) { toast("Select the lights first, or pick a group", "bad"); return; }
+      const r = await run("quick_colour_row", { colours: s.colours, page, name: s.name.trim(),
+        ...(s.who === "sel" ? { heads: sel } : { group: +s.who.slice(1) }) }, { toast: true });
+      if (r.ok) { close(); render(true); }
+    } }, "Make the row")] });
 }
 
 // Edit -> Pages: every page in one list - name it, open it, move it up or
@@ -1111,6 +1139,7 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {
