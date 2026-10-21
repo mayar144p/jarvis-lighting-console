@@ -335,7 +335,12 @@ class ProgrammerMixin:
         if skipped:
             msg += " (skipped %d: %s)" % (
                 len(skipped), ", ".join(str(h["head_no"]) for h in skipped[:6]))
-        return {"fx": row["id"], "effect": name, "heads": len(capable),
+        cut = self._range_cut(row) if name == "range" else []
+        if cut:
+            msg += " - " + "; ".join(cut[:3]) + (" (+%d more)" % (len(cut) - 3) if len(cut) > 3 else "")
+            if any("Stay on the floor" in c for c in cut):
+                msg += ". To go the whole way, turn Stay on the floor off (Position -> Limits)"
+        return {"fx": row["id"], "effect": name, "heads": len(capable), "cut": cut,
                 "skipped": [h["head_no"] for h in skipped],
                 "summary": msg}
 
@@ -360,6 +365,39 @@ class ProgrammerMixin:
         if len(self.fx) == before:
             raise ValueError(f"no effect {tid} running")
         return {"stopped": 1, "fx": tid, "summary": f"stopped effect {tid}"}
+
+    def _range_cut(self, row: dict) -> list[str]:
+        """An A -> B the limits cut short, light by light: "#2 tilt stops at
+        -12° (Stay on the floor)" - the light only travels the part it can
+        reach, and the operator should know why."""
+        by_no = {h["head_no"]: h for h in self.patch}
+        out = []
+        for n in row["heads"]:
+            h = by_no.get(n)
+            if not h:
+                continue
+            span = self._move_span(h)
+            eff, own = self._eff_limits(h, self.floor_safe), self._eff_limits(h, False)
+            ps = [row["params"]] + [{**row["params"], **c} for c in (row.get("cells") or {}).values()]
+            for i, axis in enumerate(("pan", "tilt")):
+                if axis not in eff:
+                    continue
+                stops = set()
+                why = "its own limits"
+                for pk in ps:
+                    a, b = motion_mod.range_ends(pk, span)[i]
+                    for d in (a, b):
+                        f = 0.5 + d / span[i]
+                        lo, hi = sorted(eff[axis])
+                        if f < lo - 0.005 or f > hi + 0.005:
+                            edge = lo if f < lo else hi
+                            stops.add(round((edge - 0.5) * span[i]))
+                            olo, ohi = sorted(own[axis])
+                            if olo - 0.005 <= f <= ohi + 0.005:
+                                why = "Stay on the floor"
+                if stops:
+                    out.append("#%d %s stops at %s (%s)" % (n, axis, " / ".join("%+d°" % s for s in sorted(stops)), why))
+        return out
 
     # --- movement effects ------------------------------------------------
     def _move_values(self, row: dict, step: float, base, out: dict) -> None:
