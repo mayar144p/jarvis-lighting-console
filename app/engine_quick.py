@@ -374,6 +374,15 @@ class QuickMixin:
             return {}
         known = fxlib_mod.defaults(name)
         out = {}
+        if _truthy(params.get("across")):
+            out["across"] = 1.0                 # a wave through a multi-head light's heads
+        if isinstance(params.get("cells"), dict):
+            # each head's own from / to (run_fx cleans them again)
+            cells = {str(k): {a: float(x) for a, x in c.items() if a in ("pan_a", "pan_b", "tilt_a", "tilt_b")
+                              and isinstance(x, (int, float)) and not isinstance(x, bool)}
+                     for k, c in list(params["cells"].items())[:16] if str(k).isdigit() and isinstance(c, dict)}
+            if any(cells.values()):
+                out["cells"] = {k: c for k, c in cells.items() if c}
         for k, v in params.items():
             if k in known and v not in (None, ""):
                 try:

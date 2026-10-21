@@ -247,6 +247,8 @@ class ProgrammerMixin:
         reported.  That is the whole contract: an effect runs only where it
         can, and the operator is told where it did not.
         """
+        if isinstance(params, dict) and _truthy(params.get("across")):
+            across = True                   # a copy (a button, a cue, a move) of one run across the heads
         if name not in fxlib_mod.FX:
             raise ValueError(
                 "unknown effect %r - one of %s"
@@ -329,6 +331,12 @@ class ProgrammerMixin:
                 p["phase"] = 100.0
             if name in motion_mod.KINDS and not cell_p and not (isinstance(params, dict) and params.get("spread")):
                 p["spread"] = 360.0                       # the heads spread evenly round the shape
+        # kept with its knobs, so whatever copies the effect (Make a button,
+        # a cue, a preset, My moves) plays the same wave through the heads
+        if row.get("across"):
+            p["across"] = 1.0
+        if cell_p:
+            p["cells"] = cell_p
         self.fx.append(row)
         msg = "%s on %d head(s)" % (fxlib_mod.FX[name]["label"],
                                    len(capable))
