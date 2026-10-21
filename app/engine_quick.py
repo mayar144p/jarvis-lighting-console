@@ -46,6 +46,7 @@ class QuickMixin:
                                   "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
     PAGE_TILES = frozenset({"label", "page", "folder"})
     FADER_OF = ("master", "speed", "playback", "group", "lights")
+    LIGHT_FADERS = ("level", "master", "speed", "strobe")
 
     SPLITS = ("odd", "even", "left", "right")
     # the order an effect runs through its lights (the wave's direction)
@@ -200,9 +201,11 @@ class QuickMixin:
                 btn["control"]["n"] = int(_clamp(c.get("n", 1), 1, 999))
             if what == "lights":
                 # some lights' own fader: their brightness (lifts them from
-                # dark, like a flash held at that level) or a master (a share
-                # of whatever they do)
-                btn["control"]["mode"] = "master" if c.get("mode") == "master" else "level"
+                # dark, like a flash held at that level), a master (a share
+                # of whatever they do), the speed of their effects and moves,
+                # or how fast a strobe on them flashes
+                mode = c.get("mode")
+                btn["control"]["mode"] = mode if mode in self.LIGHT_FADERS else "level"
             btn["mode"] = "tap"
         if kind == "cuelist":
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
@@ -771,6 +774,62 @@ class QuickMixin:
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"ids": ids, "page": page, "group": tag,
                 "summary": f"{len(ids)} colour buttons for {who} on page {page} (one at a time: “{tag}”)"}
+
+    @staticmethod
+    def _fader_speed(v) -> float:
+        """A speed fader's 0-100 as a speed: 50 is as set, 100 twice, 0 a tenth."""
+        return round(max(0.1, float(v) / 50.0), 2)
+
+    @staticmethod
+    def _fader_hz(v) -> float:
+        """A strobe fader's 0-100 as flashes a second: 1 to 20."""
+        return round(1.0 + float(v) * 0.19, 1)
+
+    def _fader_speeds(self) -> list[tuple[set, float]]:
+        """The speed faders that are not at 1x: (their lights, the speed)."""
+        vals = self.__dict__.get("fader_vals")
+        if not vals:
+            return []
+        out = []
+        for b in self.quick:
+            v = vals.get(b["id"])
+            c = b.get("control") or {}
+            if v is None or b["kind"] != "fader" or c.get("what") != "lights" or c.get("mode") != "speed":
+                continue
+            f = self._fader_speed(v)
+            if f != 1.0:
+                out.append((set(self._quick_heads(b)), f))
+        return out
+
+    def _a_quick_group_controls(self, group=None, page=None, **_):
+        """A group's own controls on the buttons page, in one go: a Dimmer
+        fader, a Speed fader (its effects and moves), a Strobe button and a
+        Strobe speed fader, side by side - each renamed like any button."""
+        if group in (None, "") or isinstance(group, (dict, list, bool)):
+            raise ValueError("which group? (its number)")
+        g = self._group(group=group)
+        target = {"group": g["n"]}
+        page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
+        lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
+        used = {b["slot"] for b in self.quick if b["page"] == page}
+        tiles = [{"kind": "fader", "label": f"{g['name']} dimmer", "control": {"what": "lights", "mode": "level"}},
+                 {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}},
+                 {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10},
+                 {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}}]
+        total = lay["cols"] * lay["rows"]
+        start = next((s for s in range(1, total - len(tiles) + 2)
+                      if all(s + i not in used for i in range(len(tiles)))), None)
+        if start is None:
+            raise ValueError(f"page {page} has no {len(tiles)} free buttons side by side - pick another page")
+        ids = []
+        # (the speed and strobe faders change nothing until they are moved)
+        for i, t in enumerate(tiles):
+            btn = self._quick_clean({**t, "label": t["label"][:24], "target": dict(target)}, page, start + i)
+            self.quick.append(btn)
+            ids.append(btn["id"])
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"ids": ids, "page": page,
+                "summary": f"{g['name']}: dimmer, speed, strobe and strobe speed on page {page}"}
 
     def _quick_free_slot(self, page=None) -> tuple[int, int]:
         """The first empty (page, slot), from `page` on (default page 1)."""
@@ -1899,8 +1958,11 @@ class QuickMixin:
             vals = self.__dict__.setdefault("fader_vals", {})
             vals[btn["id"]] = int(v)
             n = len(self._quick_heads(btn))
-            word = "brightness" if c.get("mode") != "master" else "master"
-            return {"id": btn["id"], "level": int(v), "summary": f"{btn['label']}: {word} {int(v)}% on {n} light(s)"}
+            mode = c.get("mode")
+            what = (f"effect speed {self._fader_speed(v):.2f}x" if mode == "speed"
+                    else f"strobe {self._fader_hz(v):g} Hz" if mode == "strobe"
+                    else f"{'master' if mode == 'master' else 'brightness'} {int(v)}%")
+            return {"id": btn["id"], "level": int(v), "summary": f"{btn['label']}: {what} on {n} light(s)"}
         return self._a_group_master(group=c["n"], level=v)
 
     def _a_quick_xy(self, id=None, pan=None, tilt=None, **_):

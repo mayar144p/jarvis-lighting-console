@@ -113,18 +113,22 @@ def range_u(cycles: float, p: dict, index: int = 0, count: int = 1) -> float:
     return _ease(_pingpong(t))
 
 
-def tilt_ratio(p: dict) -> float:
-    """An A -> B's tilt speed as a share of its pan speed (1: together)."""
-    ts, sp = float(p.get("tilt_speed", 0.0) or 0.0), float(p.get("speed", 0.0) or 0.0)
+def axis_ratio(p: dict, axis: str) -> float:
+    """An A -> B's pan or tilt speed as a share of its speed (1: the speed)."""
+    ts, sp = float(p.get(f"{axis}_speed", 0.0) or 0.0), float(p.get("speed", 0.0) or 0.0)
     return ts / sp if ts > 0 and sp > 0 else 1.0
+
+
+def tilt_ratio(p: dict) -> float:
+    return axis_ratio(p, "tilt")
 
 
 def amplitude(kind: str, p: dict, span_deg: tuple[float, float]) -> tuple[float, float]:
     """Swing per axis as a fraction of travel, from the size in degrees."""
     if kind == "range":
         (pa, pb), (ta, tb) = range_ends(p, span_deg)
-        # a tilt on its own, faster speed needs the motor that much faster
-        return (abs(pb - pa) / 2.0 / float(span_deg[0] or DEFAULT_SPAN_DEG[0]),
+        # an axis on its own, faster speed needs the motor that much faster
+        return (abs(pb - pa) / 2.0 / float(span_deg[0] or DEFAULT_SPAN_DEG[0]) * axis_ratio(p, "pan"),
                 abs(tb - ta) / 2.0 / float(span_deg[1] or DEFAULT_SPAN_DEG[1]) * tilt_ratio(p))
     size = max(1.0, min(270.0, float(p.get("size", 20.0))))
     pan_span = float(span_deg[0] or DEFAULT_SPAN_DEG[0])
@@ -196,8 +200,8 @@ def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
     if kind == "range":
         # absolute: from A to B degrees of this light's own travel, whatever it was aimed at
         ends = range_ends(p, span_deg)
-        u = range_u(cycles, p, index, count)
-        ut = range_u(cycles * tilt_ratio(p), p, index, count)     # the tilt at its own speed
+        u = range_u(cycles * axis_ratio(p, "pan"), p, index, count)     # each axis at its own speed
+        ut = range_u(cycles * tilt_ratio(p), p, index, count)
         out = {}
         for axis, (a, b), span, (lo, hi) in zip(("pan", "tilt"), ends, span_deg, limits):
             if a == b and not float(p.get(f"full_{axis}", 0) or 0) and not p.get(f"_set_{axis}"):

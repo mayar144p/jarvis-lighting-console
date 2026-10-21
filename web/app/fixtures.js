@@ -336,6 +336,8 @@ export function groupMenu(anchor, g) {
     { label: `Make it exactly the selection${sel.length ? ` (${sel.length})` : ""}`, disabled: !sel.length || same,
       run: () => run("group_edit", { group: g.n, heads: sel }, { toast: true }) },
     { label: "Select its lights", run: () => select(g.heads) },
+    { label: "Faders on the buttons page", hint: "dimmer, effect speed, strobe, strobe speed",
+      run: () => import("./quickbuttons.js").then((m) => run("quick_group_controls", { group: g.n, page: m.currentPage() }, { toast: true })) },
     { label: "Rename…", run: async () => {
       const name = await promptBox("Rename group", "Name", g.name, { ok: "Rename" });
       if (name && name.trim() && name.trim() !== g.name) run("group_edit", { group: g.n, name: name.trim() }, { toast: true });

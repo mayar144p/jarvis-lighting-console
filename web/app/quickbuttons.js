@@ -432,7 +432,7 @@ function render(force = false) {
 // drawn once, their numbers kept current from the live feed.
 const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
 function faderValue(c, b) {
-  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? 0;
+  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? (c.mode === "speed" ? 50 : c.mode === "strobe" ? 47 : 0);
   if (c.what === "master") return snapOrLite("master") ?? 100;
   if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
   if (c.what === "playback") {
@@ -442,7 +442,8 @@ function faderValue(c, b) {
   const g = groups().find((x) => x.n === c.n);
   return g ? (g.master ?? 100) : 100;
 }
-const faderText = (c, v) => c.what === "speed" ? `${(v / 50).toFixed(2).replace(/0$/, "")}×` : `${Math.round(v)}%`;
+const faderText = (c, v) => c.what === "speed" || c.mode === "speed" ? `${Math.max(0.1, v / 50).toFixed(2).replace(/0$/, "")}×`
+  : c.mode === "strobe" ? `${(1 + v * 0.19).toFixed(1).replace(/\.0$/, "")} Hz` : `${Math.round(v)}%`;
 
 function controlTile(b) {
   const el = h("div.qbtn.qctl.q" + b.kind, { dataset: { id: b.id } });
@@ -876,7 +877,9 @@ function editButton(slot, btn) {
         (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); })));
       if (c.what === "lights") {
         kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
-          ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"]], c.mode || "level",
+          ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"],
+          ["speed", "Effect speed", "How fast their effects and moves run: the middle is as set, up to twice as fast, down to a tenth"],
+          ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 20 a second"]], c.mode || "level",
         (v) => { c.mode = v; draw(); })));
       }
       if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
