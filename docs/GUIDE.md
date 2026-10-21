@@ -170,6 +170,12 @@ window. Each one is **hold** (on while pressed),
 | Go to page | shows another page |
 | Folder | opens a page with a ◂ Back to the one you came from |
 
+A **Fader** tile can also be **Some lights**: pick the lights (the
+selection, a group, a type, odd / even...) and whether the fader is
+*their brightness* (up from dark, over whatever else they do - a light's
+own dimmer on the buttons page, in full screen too) or *a master* (a share
+of what they are doing, like the grand master for just those lights).
+
 **+ Colour row…** (in Edit, or a light's right-click menu) makes a row of
 colour buttons for the selected lights or a group in one go: one button
 per colour, side by side, all *one at a time* - pressing Blue turns Red off,

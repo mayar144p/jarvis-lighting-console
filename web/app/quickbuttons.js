@@ -431,7 +431,8 @@ function render(force = false) {
 // A fader, an XY pad, the tempo and a cue list live on the page as tiles:
 // drawn once, their numbers kept current from the live feed.
 const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
-function faderValue(c) {
+function faderValue(c, b) {
+  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? 0;
   if (c.what === "master") return snapOrLite("master") ?? 100;
   if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
   if (c.what === "playback") {
@@ -448,7 +449,7 @@ function controlTile(b) {
   const head = h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label));
   if (b.kind === "fader") {
     const c = b.control || { what: "master" };
-    const v = faderValue(c);
+    const v = faderValue(c, b);
     const out = h("output.qval", faderText(c, v));
     const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
@@ -492,7 +493,7 @@ function updateControls() {
     if (b.kind === "fader") {
       const inp = el.querySelector(".qfader-in");
       if (inp.dataset.busy) continue;
-      const v = faderValue(b.control || { what: "master" });
+      const v = faderValue(b.control || { what: "master" }, b);
       inp.value = v;
       el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
     } else if (b.kind === "tempo") {
@@ -592,7 +593,7 @@ function toButton(s) {
   if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
   if (s.quant !== "" && !NO_QUANT.has(kind)) b.quant = +s.quant;
-  if (!NO_TARGET.has(d)) b.target = { ...s.target };
+  if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
     if (s.exclusive.trim()) b.exclusive = s.exclusive.trim();
@@ -621,7 +622,8 @@ function toButton(s) {
   if (d === "go" || d === "release") b.playback = +s.playback || 1;
   if (d === "go" && s.cue !== "") b.cue = +s.cue;
   if (d === "preset") b.preset = +s.preset;
-  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 } : { what: s.control.what };
+  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 }
+    : s.control.what === "lights" ? { what: "lights", mode: s.control.mode || "level" } : { what: s.control.what };
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
@@ -821,7 +823,7 @@ function editButton(slot, btn) {
       lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
-    if (!NO_TARGET.has(d)) {
+    if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
       const who = fxKind
         ? [["all", "All effects"], ["sel", `Selected (${selected.length})`], ...FX_TYPES.map(([k, l]) => ["t" + k, l])]
         : [["all", "All lights"], ["sel", `Selected (${selected.length})`], ...groups().map((g) => ["g" + g.n, g.name]),
@@ -869,8 +871,14 @@ function editButton(slot, btn) {
     if (d === "dim") kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
     if (d === "fader") {
       const c = s.control;
-      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group"]], c.what,
-        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1 }; draw(); })));
+      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group master"],
+        ["lights", "Some lights", "These lights' own fader (pick them below)"]], c.what,
+        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); })));
+      if (c.what === "lights") {
+        kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
+          ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"]], c.mode || "level",
+        (v) => { c.mode = v; draw(); })));
+      }
       if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
       if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
         : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
