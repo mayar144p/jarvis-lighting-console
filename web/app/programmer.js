@@ -29,6 +29,7 @@ const hasSel = () => sel().length > 0;
 // What the selection can physically do, so a PAR is never offered a
 // pan/tilt pad and a white strobe never a colour wheel.
 const COLOUR_ROLES = ["red", "green", "blue", "white", "amber", "uv", "cyan", "magenta", "yellow", "lime", "wheel", "cto"];
+const LED_ROLES = new Set(["red", "green", "blue", "white", "amber", "uv", "lime"]);
 const BEAM_ROLES = ["zoom", "focus", "iris", "gobo", "gobo_rot", "prism", "frost", "shutter", "strobe", "prism_rot", "gobo2"];
 
 function capabilities(heads = selectionHeads()) {
@@ -38,7 +39,9 @@ function capabilities(heads = selectionHeads()) {
   // CO2 jet that tilts).
   const roles = new Set(), lightRoles = new Set();
   for (const hd of heads) {
-    const isLight = !hd.body || !hd.body.class || hd.body.class === "light";
+    // (an effects machine with LEDs of its own - an LED CO2 jet - counts for colour and level)
+    const isLight = !hd.body || !hd.body.class || hd.body.class === "light"
+      || (hd.body.class === "sfx" && (hd.map || []).some((r) => LED_ROLES.has(r)));
     for (const r of hd.map || []) { roles.add(r); if (isLight) lightRoles.add(r); }
   }
   return {

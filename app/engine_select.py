@@ -334,13 +334,22 @@ class SelectMixin:
         self.selected = []
         return {"selected": 0}
 
+    LED_ROLES = frozenset({"red", "green", "blue", "white", "amber", "uv", "lime"})
+
+    def _takes_light(self, h: dict) -> bool:
+        """A light - or an effects machine with LEDs of its own (an LED CO2
+        jet): colour and level reach its LEDs.  Its valve, fog or flame stays
+        with the FX buttons (an effect's output only ever follows those)."""
+        cls = self._head_class(h)
+        return cls == "light" or (cls == "sfx" and bool(self.LED_ROLES.intersection(h.get("map") or [])))
+
     def _require_selection(self, lights_only: bool = False) -> list[dict]:
         if not self.selected:
             raise ValueError("nothing selected")
         wanted = set(self.selected)
         heads = [h for h in self.patch if h["head_no"] in wanted]
         if lights_only and heads:
-            lights = [h for h in heads if self._head_class(h) == "light"]
+            lights = [h for h in heads if self._takes_light(h)]
             if not lights:
                 raise ValueError("the selection is only lasers / special effects - "
                                  "use the Laser and SFX tabs or their FX buttons")
