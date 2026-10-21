@@ -24,7 +24,7 @@ from . import venue as venue_mod
 # More of the desk the AI may simply do: undoable, previewed in 3D first.
 MORE = (
     "aim_spot", "autopilot", "autopilot_next", "clear_heads", "cue_info", "cue_set", "desk_strobe", "edit_cue",
-    "floor_safe", "fx_available", "get_limits", "group_flash", "group_master", "insert_cue",
+    "floor_safe", "fx_available", "get_limits", "group_edit", "group_flash", "group_master", "insert_cue",
     "macro_run", "macro_save", "move_cue", "move_play", "move_range", "move_rename", "move_save",
     "nudge", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
     "quick_fader", "quick_from_programmer", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_style",

@@ -7553,3 +7553,76 @@ def test_b1_real_lights() -> None:
                   and "Did the real truss turn too?" in vp, "")
         finally:
             e.shutdown()
+
+
+def test_b2_groups() -> None:
+    """A15 B2: a group changes after it exists (add / take out lights,
+    exactly the selection, rename), the buttons using it follow, and the
+    auto show uses the lights (and the operator's group names) without
+    making "Auto · ..." copies - the old copies can be tidied away."""
+    print("B2 groups: change a group; no more auto copies")
+    from app import autoshow
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "g.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.ensure_venue()
+            e.act("add_heads", query="LED PAR 4ch", qty=6)
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=2)
+            g = e.act("group_create", name="Front", heads=[1, 2])
+            n = g["n"]
+            e.act("select_heads", heads=[3, 4])
+            r = e.act("group_edit", group=n, add=True)
+            check("add the selected lights to a group that exists", e._group(n)["heads"] == [1, 2, 3, 4], str(r))
+            e.act("group_edit", group=n, remove=[2])
+            check("...take one out", e._group(n)["heads"] == [1, 3, 4], str(e._group(n)))
+            e.act("group_edit", group=n, name="Front PARs")
+            check("...rename it", e._group(n)["name"] == "Front PARs", "")
+            e.act("undo")
+            check("...each change is one Ctrl+Z", e._group(n)["name"] == "Front" and e._group(n)["heads"] == [1, 3, 4], str(e._group(n)))
+            e.act("group_edit", group=n, name="Front PARs")
+            check("a group can't be emptied (delete it instead)",
+                  not e.act("group_edit", group=n, remove=[1, 3, 4]).get("ok", True)
+                  or e._group(n)["heads"] == [1, 3, 4], str(e._group(n)))
+            b = e.act("quick_set", page=1, slot="free", button={"kind": "flash", "label": "F", "target": {"group": n}})
+            e.act("group_edit", group=n, heads=[5, 6])
+            e.act("quick_press", id=b.get("id"), down=True)
+            lit = sorted(lk["n"] for lk in e._looks() if lk.get("a"))
+            e.act("quick_press", id=b.get("id"), down=False)
+            check("a button that uses the group follows its new lights", lit == [5, 6], str(lit))
+            check("the AI may change a group (undoable); it is locked with the show",
+                  "group_edit" in aitools_more() and "group_edit" in e.LOCK_LIBRARY, "")
+            # the auto show: no groups of its own, the operator's names
+            e.act("group_edit", group=n, heads=[1, 2, 3, 4, 5, 6])
+            e.groups.append({"n": 99, "name": autoshow.AUTO_PREFIX + "LED PARs · old", "heads": [1, 2]})
+            e.act("timeline_set", bpm=128, audio={"id": "x1", "name": "t.mp3", "duration": 120})
+            a = autoshow.analyse(e)
+            check("the auto show's analysis uses the operator's group name for the same lights",
+                  any(g2["name"] == "Front PARs" for g2 in a["groups"].values()),
+                  str([g2["name"] for g2 in a["groups"].values()]))
+            before = [dict(g2) for g2 in e.groups]
+            out = autoshow.build(e, autoshow.design(e, "techno", offline=True)["design"], playback=1)
+            check("building a show makes no groups and leaves the old ones alone",
+                  e.groups == before, str([g2["name"] for g2 in e.groups]))
+            check("...it says how many old auto copies there are", out["built"]["auto_groups"] == 1, str(out["built"]))
+            check("...the timeline's own tracks stay recognisable",
+                  any(t["name"].startswith(autoshow.AUTO_PREFIX) for t in e.timeline["tracks"]), "")
+            r = e.act("group_delete", auto=True)
+            check("tidy the old copies in one go; the operator's groups stay",
+                  [g2["name"] for g2 in e.groups] == ["Front PARs"], str(r))
+        finally:
+            e.shutdown()
+    fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("the screen: a group's menu (its chip, a right-click), Add to group on a light, Tidy auto copies",
+          "export function groupMenu" in fx and '"group_edit"' in fx and "function groupItems" in fx
+          and "auto: true" in fx and "auto: true" in cj, "")
+
+
+def aitools_more() -> tuple:
+    from app import aitools
+    return aitools.MORE
+

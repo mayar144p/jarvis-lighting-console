@@ -347,7 +347,7 @@ class RigMixin:
     })
 
     LOCK_LIBRARY = frozenset({
-        "group_create", "group_delete", "record_cue", "insert_cue",
+        "group_create", "group_edit", "group_delete", "record_cue", "insert_cue",
         "delete_cue", "move_cue", "rename_cue", "edit_cue", "record_palette",
         "include_palette", "record_preset", "include_preset", "delete_preset", "rename_preset",
         "set_output", "set_dmx_target", "save_show", "load_show", "import_show", "restore_version",

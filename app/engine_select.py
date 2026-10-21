@@ -39,7 +39,61 @@ class SelectMixin:
         return {"n": n, "name": label, "heads": members,
                 "summary": f"group {label}: {len(members)} heads"}
 
-    def _a_group_delete(self, n=None, group=None, **_):
+    def _group(self, n=None, group=None) -> dict:
+        num = int(n if n is not None else group)
+        g = next((g for g in self.groups if int(g["n"]) == num), None)
+        if g is None:
+            raise ValueError(f"no group {num}")
+        return g
+
+    def _a_group_edit(self, n=None, group=None, name=None, add=None, remove=None,
+                      heads=None, **_):
+        """Change a group after it exists: rename it, add or take out lights
+        (`True` means the selection), or set exactly which lights are in it.
+        Buttons, faders and sound links that use the group follow."""
+        g = self._group(n, group)
+
+        def listed(v) -> list[int]:
+            if v is True or v == "selection":
+                if not self.selected:
+                    raise ValueError("nothing selected - pick the lights first")
+                return [int(x) for x in self.selected]
+            if isinstance(v, (int, str)):
+                v = [v]
+            out = [int(x) for x in v or []]
+            for x in out:
+                self._head(x)
+            return out
+
+        members = list(g["heads"])
+        if heads is not None:
+            members = list(dict.fromkeys(listed(heads)))
+        added = [x for x in listed(add) if x not in members] if add not in (None, False) else []
+        members += added
+        gone = set(listed(remove)) if remove not in (None, False) else set()
+        taken = [x for x in members if x in gone]
+        members = [x for x in members if x not in gone]
+        if not members:
+            raise ValueError(f"{g['name']} would have no lights left - delete the group instead")
+        label = g["name"] if name is None else (str(name).strip()[:60] or g["name"])
+        g["heads"], old_name, g["name"] = members, g["name"], label
+        bits = []
+        if label != old_name:
+            bits.append(f"renamed {old_name!r} to {label!r}")
+        if added:
+            bits.append(f"{len(added)} light(s) added")
+        if taken:
+            bits.append(f"{len(taken)} light(s) taken out")
+        return {"n": g["n"], "name": label, "heads": members, "added": added, "removed": taken,
+                "summary": f"group {label}: " + (", ".join(bits) or "no change") + f" ({len(members)} lights)"}
+
+    def _a_group_delete(self, n=None, group=None, auto=False, **_):
+        if _truthy(auto):
+            # tidy the copies the show builder used to make ("Auto · ...")
+            from app.autoshow import AUTO_PREFIX
+            gone = [g["n"] for g in self.groups if str(g["name"]).startswith(AUTO_PREFIX)]
+            self.groups = [g for g in self.groups if g["n"] not in gone]
+            return {"deleted": gone, "summary": f"{len(gone)} auto group(s) tidied away"}
         num = int(n if n is not None else group)
         before = len(self.groups)
         self.groups = [g for g in self.groups if g["n"] != num]

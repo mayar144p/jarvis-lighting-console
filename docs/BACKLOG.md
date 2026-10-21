@@ -277,6 +277,15 @@ the app* keeps the lights facing as they were, so the real ones don't move.
    groups every time; use the operator's groups (or the lights directly)
    instead, and offer to tidy the copies already made.
 
+**Done (B2):** a group's ⋯ (or a right-click on its chip or folder) adds
+the selected lights, takes them out, makes it exactly the selection,
+renames or deletes it (`group_edit`, one Ctrl+Z each); a light's menu adds
+it to a group or takes it out.  Buttons and faders that use the group
+follow.  The auto show makes no groups: each look selects its lights, and
+an operator's group with exactly those lights lends its name to the
+timeline and the buttons; *Tidy N auto copies* (and a button after a
+build) deletes the old *Auto · ...* groups (`group_delete auto=true`).
+
 ### B3. Buttons and pages, MagicQ style
 1. **Edit a button = open it in the programmer** with the same lights and
    values, change it, *Update button*.

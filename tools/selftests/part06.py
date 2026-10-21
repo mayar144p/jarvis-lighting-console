@@ -507,10 +507,9 @@ def test_autoshow() -> None:
                   e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
             e.act("timeline_stop")
             again = autoshow.build(e, d, playback=1)
-            check("building again replaces the auto tracks rather than stacking them",
+            check("building again replaces the auto tracks rather than stacking them, and makes no groups",
                   sum(1 for t in e.timeline["tracks"] if t["kind"] == "cue") == 1
-                  and sum(1 for g in e.groups if g["name"].startswith(autoshow.AUTO_PREFIX))
-                  == len({lk["group"] for s in d["sections"] for lk in s["looks"]}), again["summary"])
+                  and not any(g["name"].startswith(autoshow.AUTO_PREFIX) for g in e.groups), again["summary"])
             ctx = console_ai.rig_context(e)
             check("the copilot sees the room, its rigging and the timeline",
                   "RIGGING" in ctx and "TIMELINE" in ctx and "ROOM" in ctx, ctx[-400:])
