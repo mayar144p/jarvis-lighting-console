@@ -27,7 +27,7 @@ const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 // the knobs, remembered while the page is open
 const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, across: false, zone: "",
   // A → B: degrees from the middle of each light's travel; bounce / loop / once
-  panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {}, tiltSecs: 0, panSecs: 0 };
+  panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {}, tiltSecs: 0, panSecs: 0, mult: 1 };
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -142,12 +142,12 @@ const lasers = () => selectionHeads().filter((x) => (x.map || []).some((r) => r 
 const EYE_SAFE_M = 3;                      // beams stay at least this high over a crowd
 const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
 const params = () => ({
-  speed: +(1 / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
+  speed: +(knobs.mult / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
   direction: knobs.direction, spread: knobs.spread, lock: knobs.lock,
   pan_a: knobs.panA, pan_b: knobs.panB, tilt_a: knobs.tiltA, tilt_b: knobs.tiltB, mode: knobs.mode,
   full_pan: knobs.fullPan ? 1 : 0, full_tilt: knobs.fullTilt ? 1 : 0,
-  tilt_speed: knobs.tiltSecs ? +(1 / knobs.tiltSecs).toFixed(4) : 0,
-  pan_speed: knobs.panSecs ? +(1 / knobs.panSecs).toFixed(4) : 0,
+  tilt_speed: knobs.tiltSecs ? +(knobs.mult / knobs.tiltSecs).toFixed(4) : 0,
+  pan_speed: knobs.panSecs ? +(knobs.mult / knobs.panSecs).toFixed(4) : 0,
   ...(Object.keys(knobs.cells).length ? { cells: knobs.cells } : {}),
   ...(knobs.zone && zoneKinds().some(([k]) => k === knobs.zone) ? { zone: knobs.zone } : {}),
 });
@@ -330,20 +330,41 @@ async function makeButton(button, label) {
   if (r.ok) toast(`Button “${label}” made for ${who} - ${r.summary.replace(/^button /, "Buttons page ").replace(/:.*$/, "")}`, "ok", 4000);
 }
 
-function speedMaster() {
-  const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master) || 1;
-  const input = h("input", { type: "range", min: 10, max: 200, step: 5, value: Math.round(cur * 100) });
-  input.className = "mv-master";
-  const out = h("span.mono.small.mv-master-v", `${Math.round(cur * 100)}%`);
+// Move speed: THIS movement's speed - the whole move, its pan and tilt
+// speeds together (their balance kept).  It changes the movement running on
+// the selected lights without a restart, and a button made from it keeps it.
+// Other buttons and effects are not touched (that is the desk's Speed
+// master, below: every effect at once).
+function moveSpeed() {
+  const input = h("input.mv-mult", { type: "range", min: 10, max: 400, step: 5, value: Math.round(knobs.mult * 100) });
+  const out = h("span.mono.small", `${Math.round(knobs.mult * 100)}%`);
   let t = 0;
   input.addEventListener("input", () => {
-    const pct = +input.value;              // the value NOW, not after a live tick moved the slider
-    out.textContent = pct + "%";
-    masterHeldUntil = Date.now() + 1500;   // live updates wait until the server has it
+    knobs.mult = +input.value / 100;
+    out.textContent = input.value + "%";
     clearTimeout(t);
-    t = setTimeout(() => run("speed_master", { pct }, { silentError: true }), 60);
+    t = setTimeout(() => {
+      const heads = movers().map((x) => x.head_no), p = params();
+      for (const f of running().filter((x) => x.heads.some((n) => heads.includes(n)) && x.lib !== "shape" && x.lib !== "roam")) {
+        const want = { speed: p.speed };
+        if (f.lib === "range") { want.pan_speed = p.pan_speed; want.tilt_speed = p.tilt_speed; }
+        run("fx_tweak", { id: f.id, params: want }, { silentError: true });
+      }
+    }, 80);
   });
-  const set = (pct) => () => { input.value = pct; input.dispatchEvent(new Event("input")); };
+  const set = (v) => () => { input.value = v; input.dispatchEvent(new Event("input")); };
+  return h("div.mv-row", { title: "This movement's speed: the whole move, pan and tilt together. Saved with a button made from it; other buttons keep theirs." },
+    h("span.k", "Move speed"), input, out,
+    h("span.chip-row", h("button.chip", { onclick: set(50) }, "½×"), h("button.chip", { onclick: set(100) }, "1×"),
+      h("button.chip", { onclick: set(200) }, "2×")));
+}
+
+// the desk's Speed master: EVERY running effect and button at once - kept
+// small, and said plainly, so it is not mistaken for this movement's speed
+function speedMaster() {
+  const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master) || 1;
+  const out = h("span.mono.small.mv-master-v", `${Math.round(cur * 100)}%`);
+  const set = (pct) => () => { out.textContent = pct + "%"; masterHeldUntil = Date.now() + 1500; run("speed_master", { pct }, { silentError: true }); };
   // Tap tempo: the desk's beat clock (the pill in the top bar); the Speed
   // master follows it, 120 BPM = 1x, so 60 BPM halves and 240 doubles
   const tap = h("button.chip.mv-tap", { title: "Tap on the beat (or T). 120 BPM = 1×",
@@ -351,9 +372,9 @@ function speedMaster() {
       e.preventDefault();
       tapTempo().then((r) => { if (r && r.tempo) tap.textContent = `${Math.round(r.tempo.bpm)} BPM`; });
     } }, bpmText());
-  return h("div.mv-row", h("span.k", "Speed master"), input, out,
-    h("span.chip-row", h("button.chip", { onclick: set(50) }, "½×"), h("button.chip", { onclick: set(100) }, "1×"),
-      h("button.chip", { onclick: set(200) }, "2×"), tap));
+  return h("div.mv-row.mv-desk", { title: "The desk's Speed master: every effect and button at once (the Speed fader on the buttons page too)" },
+    h("span.k.small", "All effects"), out, h("span.small.muted", cur !== 1 ? "every button and effect runs at this speed" : "the desk's Speed master"),
+    h("span.chip-row", cur !== 1 ? h("button.chip", { onclick: set(100) }, "back to 1×") : null, tap));
 }
 
 function movementBlock() {
@@ -402,6 +423,7 @@ function movementBlock() {
       h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
         ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
           (v) => knobs.lock === v, (v) => { knobs.lock = v; })))),
+    moveSpeed(),
     speedMaster(),
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
@@ -461,7 +483,7 @@ function rangeBlock2() {
           degIn(c.tilt_a ?? knobs.tiltA, -180, 180, setC("tilt_a")), "→", degIn(c.tilt_b ?? knobs.tiltB, -180, 180, setC("tilt_b")));
       }),
       Object.keys(knobs.cells).length ? h("button.chip", { onclick: () => { knobs.cells = {}; render(true); reapply(); } }, "all the same") : null)) : null,
-    h("p.small.mv-preview", `A → B: ${what} · ${modeWord} · ${trip}${knobs.spread ? ` · a wave across the lights (${knobs.spread}°)` : ""}.`),
+    h("p.small.mv-preview", `A → B: ${what} · ${modeWord} · ${trip}${knobs.mult !== 1 ? ` (at ${Math.round(knobs.mult * 100)}%)` : ""}${knobs.spread ? ` · a wave across the lights (${knobs.spread}°)` : ""}.`),
     h("p.small.muted.mv-now", { id: "mv-now" }, nowText()));
 }
 
@@ -635,9 +657,7 @@ function render(force = false) {
     ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z, x.yaw])]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);
-    const m = box.querySelector(".mv-master");
-    if (cur && m && document.activeElement !== m && Date.now() > masterHeldUntil) {
-      m.value = Math.round(cur * 100);
+    if (cur && Date.now() > masterHeldUntil) {
       const v = box.querySelector(".mv-master-v");
       if (v) v.textContent = `${Math.round(cur * 100)}%`;
     }
