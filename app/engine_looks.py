@@ -130,6 +130,10 @@ class LooksMixin:
                 # 3-channel RGB par, ...): the lamp is either passing
                 # light or it is not, so report the gate state, not 0.
                 intensity = self._gate_intensity(head, values)
+            elif intensity and self._gate_closed(head, values):
+                # a dimmer up behind a shutter its file calls Closed: dark
+                # on the real light, so dark here (#105)
+                intensity = 0
             if self.blackout and not self._lamp_only(head):
                 # BLACKOUT: the wire carries the darkest this light can be
                 # sent; the 3D shows it dark (a lamp nothing can close
@@ -427,6 +431,24 @@ class LooksMixin:
             colour = [v for r, v in values.items() if r in leds]
             return round(max(colour) * 100 / 255) if colour else 0
         return 100
+
+    _CLOSED = re.compile(r"^\s*(shutter\s+)?(closed?|black ?out)\b", re.I)
+
+    def _gate_closed(self, head: dict, values: dict) -> bool:
+        """Is this head's shutter/strobe channel, as driven, in a range its
+        file names Closed / Blackout?  Un-driven is not closed."""
+        role = self._shutter_role(head)
+        if role is None or role not in values:
+            return False
+        v = int(values[role])
+        for cap in (self.head_ranges(head).get(role) or {}).get("caps") or []:
+            try:
+                lo, hi, text = int(cap[0]), int(cap[1]), str(cap[2])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if lo <= v <= hi:
+                return bool(self._CLOSED.match(text))
+        return False
 
     @staticmethod
     def _emitters(head: dict) -> set:

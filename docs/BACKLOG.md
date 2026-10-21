@@ -257,6 +257,19 @@ them.  What was already found in the code is noted under each item.
 5. **Rotating a truss flips the real lights:** turning a truss in the 3D
    must change the aiming maths only, never flip pan already programmed.
 
+**Done (B1):** confetti buttons can be Shot / Hold to fire / On-off, and the
+programmer has the same plus STOP (effects stay armed).  The light test's
+colour step, when a colour is wrong, lights each colour channel on its own
+and reports which one lit the wrong thing (the likely cause of #106: the
+light's own menu in another mode, or a wrong colour layout in its file;
+Chauvet's manual was not reachable from here to check).  The programmer has
+a *Desk strobe* (the level flashed from the desk, as Strobe all does) for
+lights whose strobe channel does not strobe the real light, and a Closed
+shutter shows dark in the 3D (#105).  A head tap picks that head on its own
+(Ctrl / Shift adds), with Odd / Even and each head's colour shown.  Turning
+a truss with lights on it asks whether the real truss turned too; *only in
+the app* keeps the lights facing as they were, so the real ones don't move.
+
 ### B2. Groups
 1. **Add / remove lights in a group after it exists** (today there is only
    create and delete): from the selection, from the group's menu, rename.

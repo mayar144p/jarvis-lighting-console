@@ -544,6 +544,18 @@ function renderBeamQuick() {
       ...[["off", "Off"], ["slow", "Slow"], ["medium", "Medium"], ["fast", "Fast"]].map(([k, label]) =>
         h("button.chip", { title: `DMX ${st[k]}`, onclick: set(strobe.role, st[k]) }, label))));
   }
+  // The desk's own strobe: flashes the level, like the Strobe all button -
+  // strobes any light, even one whose strobe channel its file gets wrong
+  if (selectionHeads().length) {
+    const on = (state.snap && state.snap.desk_strobe) || {};
+    const now = selectionHeads().map((x) => on[String(x.head_no)] || 0);
+    const hz = now.every((v) => v === now[0]) ? now[0] : -1;
+    const desk = (v) => () => run("desk_strobe", { hz: v }).then(loadAttributes);
+    rows.push(h("div.chip-row", { title: "Flashes the light's level from the desk at a set speed - use it when the light's own strobe doesn't strobe the real light" },
+      h("span.k", strobe ? "Desk strobe" : "Strobe"),
+      ...[[0, "Off"], [3, "Slow"], [8, "Medium"], [14, "Fast"]].map(([v, label]) =>
+        h("button.chip" + (hz === v && (v || now.some(Boolean)) ? ".on" : ""), { title: v ? `${v} flashes a second` : "stop the desk strobe", onclick: desk(v) }, label))));
+  }
   // A shutter whose "open" value nobody knows sits at 0 - closed on many
   // movers - so the light tilts but never lights.  Find it on the real
   // light, once, and Jarvis remembers it for every head of that model.
@@ -838,26 +850,41 @@ function renderProgCells() {
   const sig = heads.map((x) => x.head_no).join(",");
   if (sig !== cellsSel) { cellsSel = sig; state.cells = []; }       // a new selection starts on All
   const n = Math.max(0, ...heads.map(headCount));
-  const key = JSON.stringify([n, state.cells || []]);
+  // each head's colour now (the first light's), so you can see what you set
+  const look = heads.length ? (state.looks || {})[heads[0].head_no] : null;
+  const dots = Array.from({ length: n }, (_, i) => (look && look.cells && look.cells[i] && look.cells[i].hex) || "");
+  const key = JSON.stringify([n, state.cells || [], dots]);
   if (key === cellsKey) return;
   cellsKey = key;
   box.hidden = n < 2;
   if (n < 2) { state.cells = []; return; }
   const cur = new Set(state.cells || []);
-  const pick = (k) => {
-    if (k === 0) state.cells = [];
-    else {
-      if (cur.has(k)) cur.delete(k); else cur.add(k);
-      state.cells = [...cur].sort((a, b) => a - b);
-      if (state.cells.length === n) state.cells = [];
-    }
+  const set = (list) => {
+    state.cells = list.length === n ? [] : [...new Set(list)].sort((a, b) => a - b);
     renderProgCells();
   };
+  // a tap picks that head on its own (head 1, a colour, head 2, another
+  // colour - each keeps its own); Ctrl / Shift + tap adds it to the others
+  const pick = (k, ev) => {
+    if (k === 0) return set([]);
+    if (ev && (ev.ctrlKey || ev.metaKey || ev.shiftKey)) {
+      if (cur.has(k)) cur.delete(k); else cur.add(k);
+      return set([...cur]);
+    }
+    return set([k]);
+  };
+  const same = (list) => list.length === cur.size && list.every((k) => cur.has(k));
+  const odd = Array.from({ length: n }, (_, i) => i + 1).filter((k) => k % 2);
+  const even = Array.from({ length: n }, (_, i) => i + 1).filter((k) => !(k % 2));
   box.replaceChildren(...[h("span.muted.small", "Heads:"),
     h("button.chip" + (!cur.size ? ".on" : ""), { title: "Every head of the light", onclick: () => pick(0) }, "All"),
-    ...Array.from({ length: n }, (_, i) => h("button.chip" + (cur.has(i + 1) ? ".on" : ""), {
-      title: `Colour, tilt… for head ${i + 1} only (tap more to add)`, onclick: () => pick(i + 1) }, String(i + 1))),
-    cur.size ? h("span.muted.small", "changes go to these heads only") : null].filter(Boolean));
+    ...Array.from({ length: n }, (_, i) => h("button.chip.cell-chip" + (cur.has(i + 1) ? ".on" : ""), {
+      title: `Head ${i + 1} on its own - Ctrl or Shift + tap to add it to the heads already picked`,
+      onclick: (ev) => pick(i + 1, ev) },
+      dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
+    n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
+    n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
+    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own")].filter(Boolean));
 }
 
 // ------------------------------------------------------ in the programmer
@@ -1352,7 +1379,7 @@ export function initProgrammer() {
     if (tab === "tools") renderTools();
     if (tab === "position") renderPad();
   });
-  on("looks", () => { if (tab === "position") renderPad(); });
+  on("looks", () => { renderProgCells(); if (tab === "position") renderPad(); });
   on("selection", () => loadPadInfo());
   on("snapshot", () => loadPadInfo());
   void patch; void select;

@@ -1035,7 +1035,8 @@ class QuickMixin:
             target = {"type": t}
             if t == "confetti":
                 plan += [{"kind": "sfx", "label": "Confetti shot", "mode": "tap", "target": target},
-                         {"kind": "sfx", "label": "Confetti (hold)", "target": target}]
+                         {"kind": "sfx", "label": "Confetti (hold)", "mode": "hold", "target": target},
+                         {"kind": "sfx", "label": "Confetti on/off", "mode": "latch", "target": target}]
             elif t in ("co2", "flame", "spark", "sfx"):
                 plan += [{"kind": "sfx", "label": f"{nm} 1 s", "mode": "tap", "seconds": 1, "target": target},
                          {"kind": "sfx", "label": f"{nm} (hold)", "target": target}]

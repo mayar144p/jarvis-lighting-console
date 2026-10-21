@@ -341,7 +341,7 @@ class RigMixin:
         "set_limits", "clear_limits", "set_orient",
         "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
         "venue_shape", "venue_build", "venue_describe", "venue_array",
-        "venue_room", "venue_stage", "venue_add", "venue_update", "venue_rig",
+        "venue_room", "venue_stage", "venue_add", "venue_update", "keep_facing", "venue_rig",
         "venue_remove", "venue_underlay",
         "stand_in",
     })
@@ -431,11 +431,35 @@ class RigMixin:
         """Store a new venue and carry mounted heads with their rigs - their
         place, and which way they face: a truss turned 90 degrees turns its
         lights 90 degrees, as it does on the real rig."""
-        for h in self.patch:                 # facing pinned to the rig as it WAS
-            self._head_yaw(h)
+        before = {h["head_no"]: self._head_yaw(h) for h in self.patch}   # facing pinned to the rig as it WAS
         self.venue = v
         self._reflow_mounts()
         self.patch_rev += 1
+        # lights a turned rig turned with it: the screen asks whether the
+        # REAL truss turned too - if not, they keep facing as they were, so
+        # the real lights don't swing round (keep_facing)
+        self.__dict__["_turned"] = {n: y for n, y in before.items()
+                                    if abs(((self._head_yaw(self._head(n)) - y + 180) % 360) - 180) > 0.5}
+
+    def _a_keep_facing(self, heads=None, **_):
+        """Only the drawing turned: these lights face as they did before
+        ({head: yaw degrees}, as venue_update's `turned` gave them), so an
+        aimed look points the real lights where it did."""
+        if not isinstance(heads, dict) or not heads:
+            raise ValueError("heads is {head: yaw}")
+        done = []
+        for k, yaw in heads.items():
+            h = self._head(int(k))
+            yaw = float(yaw)
+            m = h.get("mount")
+            r = venue_mod.rig(self.venue, m.get("rig")) if isinstance(m, dict) else None
+            ang = venue_mod.rig_angle(r) if r else None
+            if ang is not None:
+                m["yaw0"] = round(ang - yaw, 3)
+            h["yaw"] = round(yaw, 3)
+            done.append(h["head_no"])
+        self.patch_rev += 1
+        return {"heads": done, "summary": f"{len(done)} light(s) keep facing as before - only the drawing turned"}
 
     def _head_yaw(self, h: dict) -> float:
         """Which way this light's base faces, degrees round the vertical (0:
@@ -869,7 +893,8 @@ class RigMixin:
                     raise ValueError("pieces must be the other pieces of the same shape")
                 v, _o = venue_mod.update_item(v, other["id"], {"a": pc.get("a"), "b": pc.get("b")})
             self._set_venue_doc(v)
-            return self._venue_result(f"turned the shape {cur['group']} ({len(pieces) + 1} pieces)", item=item)
+            return self._venue_result(f"turned the shape {cur['group']} ({len(pieces) + 1} pieces)", item=item,
+                                      turned=self.__dict__.pop("_turned", {}))
         # a piece of a shape (circle, frame...) moved as a whole: the rest of
         # the shape comes with it
         if cur and cur.get("group") and "a" in raw and "b" in raw:
@@ -886,7 +911,7 @@ class RigMixin:
                             "b": [round(other["b"][k] + step[k], 3) for k in range(3)]})
         self._set_venue_doc(v)
         return self._venue_result(f"updated {item['kind']} {item['id']}",
-                                  item=item)
+                                  item=item, turned=self.__dict__.pop("_turned", {}))
 
     # -- the rigging library -----------------------------------------------
     def _a_rig_pieces(self, **_):

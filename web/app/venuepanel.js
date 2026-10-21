@@ -361,7 +361,7 @@ function renderInspector(sel) {
   } else if (s.type === "rig") {
     const found = (venue().rigging || []).find((r) => r.id === s.id);
     if (!found) { box.hidden = true; return; }
-    const upd = (changes) => run("venue_update", { id: s.id, changes });
+    const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
     const len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
     const riders = (state.snap.patch || []).filter((x) => (x.mount || {}).rig === s.id).length;
     const name = h("input", { type: "text", value: found.name || "", placeholder: found.kind });
@@ -407,7 +407,7 @@ function renderInspector(sel) {
   } else if (s.type === "object") {
     const o = (venue().objects || []).find((x) => x.id === s.id);
     if (!o) { box.hidden = true; return; }
-    const upd = (changes) => run("venue_update", { id: s.id, changes });
+    const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
     const name = h("input", { type: "text", value: o.name || "", placeholder: o.kind });
     name.addEventListener("change", () => upd({ name: name.value }));
     body.push(h("div.vi-title", o.name || o.kind.replace("_", " ")),
@@ -421,7 +421,7 @@ function renderInspector(sel) {
   } else if (s.type === "zone") {
     const z = (venue().zones || []).find((x) => x.id === s.id);
     if (!z) { box.hidden = true; return; }
-    const upd = (changes) => run("venue_update", { id: s.id, changes });
+    const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
     const kind = h("select.select.small", ...ZONE_KINDS.map(([k, l]) => h("option", { value: k }, l)));
     kind.value = z.kind;
     kind.addEventListener("change", () => upd({ kind: kind.value }));
@@ -656,7 +656,7 @@ export function initVenuePanel(theStage) {
     selectedHeads: () => (state.snap && state.snap.selected) || [],
     moveLights: (moves, snap) => run("place_many", { moves, rig: snap ? snap.rig : null }, snap ? { toast: true } : {}),
     moveLight: (head, changes) => run("set_place", { head, ...changes }),
-    updateItem: (id, changes) => run("venue_update", { id, changes }),
+    updateItem: (id, changes) => run("venue_update", { id, changes }).then((r) => { askTurned(r); return r; }),
     updateStage: (changes) => run("venue_stage", changes),
     updateUnderlay: (changes) => run("venue_underlay", changes),
     onMeasure,
@@ -719,3 +719,25 @@ export function initVenuePanel(theStage) {
   // keep the inspector in step with the engine
   on("snapshot", () => { if (arranging && editor.sel) renderInspector(editor.sel); });
 }
+
+// A truss turned on screen turns its lights - and an aimed look then swings
+// the REAL lights round to match.  Right when the real truss was turned too;
+// wrong when only the drawing was off, so ask (B1: "rotating a truss
+// inverts the lighting in real life").
+function askTurned(r) {
+  const turned = r && r.turned;
+  const n = turned ? Object.keys(turned).length : 0;
+  if (!n) return;
+  const box = $("#toasts");
+  if (!box) return;
+  box.querySelectorAll(".toast.turned").forEach((t) => t.remove());
+  const t = h("div.toast.turned",
+    h("div", `${n} light${n > 1 ? "s" : ""} turned with the truss. Did the real truss turn too?`),
+    h("div.row-btns",
+      h("button.btn.small.primary", { onclick: () => t.remove() }, "Yes, it turned"),
+      h("button.btn.small", { title: "The real lights keep pointing where they did: only the drawing turns",
+        onclick: async () => { t.remove(); await run("keep_facing", { heads: turned }, { toast: true }); } }, "No, only in the app")));
+  box.append(t);
+  setTimeout(() => t.remove(), 15000);
+}
+
