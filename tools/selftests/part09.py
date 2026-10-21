@@ -7767,3 +7767,54 @@ def test_b4_movement() -> None:
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
+
+
+def test_b5_room() -> None:
+    """A15 B5: the room knows the DJ booth, the middle and the front (as
+    set, else worked out), the lights have a Middle spot, the Move map can
+    be turned to the DJ's side and redraws when the room changes, and the
+    3D has a view from the booth."""
+    print("B5 the room: DJ booth, middle, front; the map from the DJ")
+    from app import engine as eng
+    from app import venue as V
+    o = V.orientation(V.template("club"))
+    check("worked out from the room: the booth at the DJ booth, the middle on the dance floor, facing it",
+          o["booth"][2] < o["centre"][1] and abs(o["front"]) < 1 and o["set"] == [], str(o))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "r.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("show_template", name="club")
+            e.act("venue_orient", booth=[3, 12], centre=[0, 6], front="centre")
+            now = e.snapshot()["venue_orient"]
+            check("set by the operator: booth, middle, and the DJ facing the middle",
+                  now["booth"][0] == 3 and now["booth"][2] == 12 and now["centre"] == [0.0, 6.0]
+                  and 190 < now["front"] < 220 and sorted(now["set"]) == ["booth", "centre", "front"], str(now))
+            fwd, right = V.dj_frame(e.venue)
+            check("...the DJ's right is to the right of the way they face", abs(fwd[0] * right[0] + fwd[1] * right[1]) < 1e-6
+                  and fwd[0] * right[1] - fwd[1] * right[0] > 0, f"{fwd} {right}")
+            spots = {s["key"]: s for s in e._move_spots()}
+            check("the lights know where the middle is (a Middle spot, unless the floor's centre is it)",
+                  "middle" in spots or any(abs(s["x"]) < 0.3 and abs(s["z"] - 6) < 0.3 for s in spots.values()), str(list(spots)))
+            e.act("undo")
+            check("...one Ctrl+Z", "booth" not in (e.venue.get("orient") or {}), str(e.venue.get("orient")))
+            e.act("venue_orient", front=90)
+            e.act("venue_orient", clear="all")
+            check("...and back to worked out", e.venue.get("orient") == {}, str(e.venue.get("orient")))
+            check("the AI may set it (undoable) and it is locked with the rig",
+                  "venue_orient" in aitools_more() and "venue_orient" in e.LOCK_PATCH, "")
+            check("the room summary the AI reads names the booth and the middle",
+                  {"dj_booth", "middle", "dj_faces_deg"} <= set(V.describe(e.venue)), "")
+        finally:
+            e.shutdown()
+    af = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
+          "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
+    check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
+          and "x.yaw" in mv, "")
+    check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")

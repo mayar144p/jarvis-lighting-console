@@ -652,7 +652,7 @@ ACTIONS = (
     "venue_template", "venue_room", "venue_stage", "venue_add",
     "venue_shape", "venue_build", "venue_describe", "venue_array", "venue_align", "venue_ceiling", "venue_preview", "quick_from_programmer",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
-    "venue_camera", "venue_info", "attach_heads", "place_many",
+    "venue_camera", "venue_info", "venue_orient", "attach_heads", "place_many",
     "quick_set", "quick_edit", "quick_update", "quick_press", "quick_release_all", "quick_defaults",
     "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
     "venue_save", "venue_open", "venue_delete",

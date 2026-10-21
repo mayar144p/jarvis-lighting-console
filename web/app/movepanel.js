@@ -611,8 +611,9 @@ function render(force = false) {
     running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
     moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
-    state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones],
-    ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z])]);
+    state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones,
+      state.snap.venue.objects, state.snap.venue.rigging, state.snap.venue.stage, state.snap.venue_orient],
+    ((state.snap && state.snap.patch) || []).map((x) => [x.head_no, x.x, x.z, x.yaw])]);
   if (!force && key === lastKey) {
     const cur = (state.lite && state.lite.speed_master) || (state.snap && state.snap.speed_master);
     const m = box.querySelector(".mv-master");

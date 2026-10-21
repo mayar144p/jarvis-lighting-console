@@ -1499,6 +1499,11 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .mv-deg { display: inline-flex; align-items: center; gap: 4px; }
 .mv-deg input { width: 64px; }
 .mv-now { font-variant-numeric: tabular-nums; }
+.aim-map .am-dj circle { fill: var(--accent-bg); stroke: var(--accent); stroke-width: .06; }
+.aim-map .am-front { stroke: var(--accent); stroke-width: .1; stroke-linecap: round; }
+.aim-map .am-dj-t { fill: var(--accent); font-weight: 700; }
+.aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
+.aim-map .am-mid circle { fill: none; stroke: var(--muted); stroke-width: .05; }
 .prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
 .qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
 .qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }

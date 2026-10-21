@@ -509,6 +509,7 @@ export class Stage {
   }
 
   view(name, instant = false) {
+    if (name === "dj") return this.viewStage();
     const R = this.room;
     const front = this.stageFront;
     const t = new THREE.Vector3(0, Math.min(2.4, R.h * 0.4), Math.max(R.z0 + 1, front * 0.55));
@@ -539,8 +540,16 @@ export class Stage {
     this._flyTo(new THREE.Vector3(x, 1.65, z), new THREE.Vector3(x * 0.5, 2.6, Math.max(0.5, this.stageFront * 0.5)), false);
   }
 
-  /** From the DJ mark (or the stage centre), looking out at the room. */
+  /** From the DJ booth (where the operator set it, else the DJ mark or the
+   *  stage centre), looking the way the DJ faces, at the middle of the room. */
   viewStage() {
+    const o = this.djView;
+    if (o && o.booth && o.centre) {
+      const [x, y, z] = o.booth, a = (o.front || 0) * DEG;
+      const dist = Math.max(3, Math.hypot(o.centre[0] - x, o.centre[1] - z));
+      this._flyTo(new THREE.Vector3(x, y, z), new THREE.Vector3(x + Math.sin(a) * dist, 1.2, z + Math.cos(a) * dist), false);
+      return;
+    }
     const v = (this.built && this.built.venue) || {};
     const mark = (v.objects || []).find((o) => o.kind === "mark");
     const st = v.stage;
@@ -832,7 +841,7 @@ export class Stage {
 
   _wireKeys() {
     const dom = this.renderer.domElement;
-    const views = { 1: "front", 2: "left", 3: "right", 4: "back", 5: "top", 6: "overview" };
+    const views = { 1: "front", 2: "left", 3: "right", 4: "back", 5: "top", 6: "overview", 7: "dj" };
     dom.addEventListener("keydown", (ev) => {
       if (views[ev.key]) { this.view(views[ev.key]); ev.preventDefault(); ev.stopPropagation(); }
       else if (ev.key === "0") { this.view("front"); ev.preventDefault(); ev.stopPropagation(); }

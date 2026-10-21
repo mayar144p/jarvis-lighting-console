@@ -372,6 +372,17 @@ and settings are on its Laser or SFX tab.
   it, and the lights follow while it plays. Pixel bars and panels take it
   cell by cell. It paints colour, not brightness: bring the lights up
   first.
+* **Move tab -> Aim: the room from the DJ's side.** The map shows the DJ
+  booth (with an arrow the way the DJ faces) and the middle of the room.
+  *Set: DJ booth / Middle / Front*, then tap the map, to put them where
+  they really are (*Reset* goes back to what the desk works out from the
+  room).  *Map: From the DJ* turns the map so the way the DJ faces is at
+  the top and left is the DJ's left (*From the audience*, or *↻ 90°*).
+  *Spot (DJ)* moves the beams' spot left / right / away / nearer as the DJ
+  sees it, and *● middle* sends them to the middle; the spots list has a
+  *Middle* too.  The map redraws when objects, trusses or lights move.  The
+  3D's **DJ** view (key 7) looks from the booth the way the DJ faces, so
+  dragging lights there works from the DJ's side.
 * **Move tab -> A → B.** A move between two angles in each light's own
   degrees (0 is the middle of its travel): *pan −100° → +40°*, tilt from
   and to, or *whole pan* / *whole tilt* for the light's full travel.

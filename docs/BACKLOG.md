@@ -342,6 +342,16 @@ Spread a gradient, and on a Wave 360 a tilt bar per head with a Wave.
 2. **The plan in Move follows the room:** it updates when objects move
    and can be rotated; fix the tracking between the map and the 3D.
 
+**Done (B5):** the venue keeps where the DJ booth and the middle are and
+which way the DJ faces (`venue_orient`; `venue.orientation` works them out
+when not set: a DJ booth, a mark, a DJ zone or the stage; the dance floor
+or the room's middle; booth → middle).  Move → Aim: the map shows them, sets
+them with a tap, turns *From the DJ* / *From the audience* / 90°, and has a
+spot pad as the DJ sees it; it redraws when objects, trusses or lights move
+(they were missing from its redraw key: the map / 3D tracking bug).  A
+*Middle* spot; the 3D has a DJ view (key 7); the AI's room summary names
+the booth and the middle.
+
 ### B6. Layouts
 1. **No visualiser at all, if wanted:** layouts without the 3D (buttons,
    faders, programmer); the full-screen buttons fully customisable.
