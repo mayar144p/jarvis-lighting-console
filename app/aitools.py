@@ -23,7 +23,7 @@ from . import venue as venue_mod
 # -- the tiers ---------------------------------------------------------------
 # More of the desk the AI may simply do: undoable, previewed in 3D first.
 MORE = (
-    "aim_spot", "autopilot", "autopilot_next", "clear_heads", "cue_info", "cue_set", "edit_cue",
+    "aim_spot", "autopilot", "autopilot_next", "clear_heads", "cue_info", "cue_set", "desk_strobe", "edit_cue",
     "floor_safe", "fx_available", "get_limits", "group_flash", "group_master", "insert_cue",
     "macro_run", "macro_save", "move_cue", "move_play", "move_range", "move_rename", "move_save",
     "nudge", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
@@ -33,7 +33,7 @@ MORE = (
     "show_versions", "sound_link", "sound_tempo", "sound_trigger", "step_capture", "step_fx_save",
     "tempo_nudge", "tempo_sync", "tempo_tap", "timeline_clip", "timeline_set", "timeline_track",
     "unpark", "venue_add", "venue_align", "venue_array", "venue_camera", "venue_ceiling",
-    "venue_info", "venue_preview", "venue_rig", "venue_room", "venue_stage", "venue_update",
+    "venue_info", "venue_preview", "venue_rig", "venue_room", "venue_stage", "venue_update", "keep_facing",
     "fx_kill", "colour_cal_get", "fx_status",
 )
 # Prepared by the AI, done only when the operator taps "Do it".

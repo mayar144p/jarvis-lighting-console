@@ -7445,3 +7445,111 @@ def test_ai_shows_listen_import_change() -> None:
     check("the screen: change part of the show (Copilot, and each song), songs from a rekordbox USB",
           'id="auto-ask-form"' in html and "refine: ask" in cj and "changeSong(" in sj
           and "openRekordboxImport" in sj and "/api/console/rekordbox" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")
+
+
+def test_b1_real_lights() -> None:
+    """A15 B1, from the first gigs: confetti hold / on-off / stop (#107),
+    the colour channels one by one (#106), a desk strobe for a light whose
+    strobe channel doesn't strobe and a closed shutter dark in 3D (#105),
+    one head of a multi-head light at a time, and a truss turned only in
+    the app keeping the real lights where they were."""
+    from app import engine as eng
+    from app import fixlib
+    from app import venue as V
+    web = ROOT / "web" / "app"
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("jarvis", "chauvet-dj/funfetti-shot"),
+                         ("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")):
+            fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1, universe=1, address=1)
+            e.act("add_heads", query="Funfetti Shot", qty=1, universe=1, address=20)
+            e.act("add_heads", query="Wave 360", mode="33 ch.", qty=1, universe=1, address=40)
+            # -- #107 confetti: a hold button and an on / off button; Stop
+            e.act("fx_arm", state=True)
+            ids = [e.act("quick_set", page=1, slot="free", button={"kind": "sfx", "mode": m, "label": m, "target": {"heads": [2]}}).get("id")
+                   for m in ("hold", "latch")]
+            runs = lambda: e._sfx_public()["runs"]  # noqa: E731
+            check("#107 hold and on / off confetti buttons", all(ids), str(ids))
+            if all(ids):
+                hold, latch = ids
+                e.act("quick_press", id=hold, down=True)
+                held = bool(runs())
+                e.act("quick_press", id=hold, down=False)
+                check("#107 a hold-to-shoot button fires while held and stops on release", held and not runs(), str(runs()))
+                e.act("quick_press", id=latch, down=True)
+                e.act("quick_press", id=latch, down=False)
+                on = bool(runs())
+                e.act("quick_press", id=latch, down=True)
+                e.act("quick_press", id=latch, down=False)
+                check("...an on / off button keeps shooting until pressed again", on and not runs(), str(runs()))
+            e.act("fx_fire", heads=[2], down=True, owner="prog-latch")
+            on = any(r.get("key") == "fire:prog-latch" for r in runs())
+            e.act("fx_fire", heads=[2], down=False, owner="prog-latch")
+            check("...the programmer's On / off and Stop, with the effects still armed", on and not runs()
+                  and e._sfx_public().get("armed", True), str(e._sfx_public()))
+            fx = (web / "fxpanel.js").read_text(encoding="utf-8")
+            check("...the programmer offers hold, on / off, Stop and Make a button", all(w in fx for w in (
+                "Hold to fire", "prog-latch", "STOP", "Make a button", 'make("latch"', 'make("hold"')), "")
+            e.act("quick_fx_defaults")
+            labels = [b.get("label") for b in e.quick]
+            check("...the FX page gets a confetti hold and on / off", "Confetti on/off" in labels and "Confetti (hold)" in labels, str(labels))
+            # -- #105 the Spot 260
+            e.selected = [1]
+            e.act("set_intensity", level=100)
+            e.act("set_attribute", attribute="strobe", value=0)
+            check("#105 a dimmer up behind a Closed shutter is dark in the 3D", e._looks()[0]["a"] == 0, str(e._looks()[0]))
+            e.act("set_attribute", attribute="strobe", value=4)
+            check("...and lit when it is open, not strobing", e._looks()[0]["a"] == 1 and not e._looks()[0].get("hz"), str(e._looks()[0]))
+            e.act("desk_strobe", hz=8)
+            check("...the desk strobe strobes it (the level flashes, like Strobe all)", e._looks()[0].get("hz") == 8, str(e._looks()[0]))
+            e.act("clear_programmer")
+            check("...and Clear stops it", not e.__dict__.get("desk_strobe") and not e._looks()[0].get("hz"), str(e._looks()[0]))
+            pj = (web / "programmer.js").read_text(encoding="utf-8")
+            check("...the programmer has the Desk strobe row", '"desk_strobe"' in pj and "Desk strobe" in pj, "")
+            # -- per head: head 1 red, head 2 blue, each keeps its own
+            e.selected = [3]
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000", cell=[1])
+            e.act("set_colour", hex="#0000ff", cell=[2])
+            cells = [c["hex"] for c in e._looks()[2].get("cells") or []]
+            check("one head at a time on a Wave 360: head 1 red, head 2 blue", cells[:2] == ["#ff0000", "#0000ff"], str(cells))
+            check("...a tap picks that head on its own (Ctrl / Shift adds), Odd / Even, a dot per head",
+                  "return set([k]);" in pj and "ev.ctrlKey" in pj and '"Odd"' in pj and "look.cells" in pj, "")
+            lt = (web / "lightdialogs.js").read_text(encoding="utf-8")
+            check("#106 wrong colours: the test lights each colour channel on its own and says what was wrong",
+                  "Check each colour channel" in lt and "colourChannels" in lt and "findings" in lt, "")
+            # -- a truss turned only in the app
+            e.act("show_template", name="club")
+            rigs: dict = {}
+            for h in e.patch:
+                if "pan" in h["map"] and isinstance(h.get("mount"), dict):
+                    rigs.setdefault(h["mount"]["rig"], []).append(h["head_no"])
+            check("the club template has movers on a truss", bool(rigs), "")
+            if rigs:
+                rid, heads = max(rigs.items(), key=lambda kv: len(kv[1]))
+                r = V.rig(e.venue, rid)
+                yaw0 = {n: e._head_yaw(e._head(n)) for n in heads}
+                mid = [(r["a"][k] + r["b"][k]) / 2 for k in range(3)]
+                turn = lambda p: [round(mid[0] - (p[2] - mid[2]), 3), p[1], round(mid[2] + (p[0] - mid[0]), 3)]  # noqa: E731
+                res = e.act("venue_update", id=rid, changes={"a": turn(r["a"]), "b": turn(r["b"])})
+                turned = res.get("turned") or {}
+                check("turning a truss 90 deg says which lights turned with it", sorted(int(k) for k in turned) == sorted(heads),
+                      f"{turned} {heads}")
+                moved = [abs(((e._head_yaw(e._head(n)) - yaw0[n] + 180) % 360) - 180) for n in heads]
+                e.act("keep_facing", heads=turned)
+                back = [abs(((e._head_yaw(e._head(n)) - yaw0[n] + 180) % 360) - 180) for n in heads]
+                check("...'only in the app': they face as they did, so the real lights don't swing round",
+                      all(abs(m - 90) < 1 for m in moved) and all(b < 0.5 for b in back), f"{moved} {back}")
+                e.act("venue_update", id=rid, changes={"a": [x + 0.5 if i == 0 else x for i, x in enumerate(V.rig(e.venue, rid)["a"])],
+                                                       "b": [x + 0.5 if i == 0 else x for i, x in enumerate(V.rig(e.venue, rid)["b"])]})
+                check("...and stays so when the truss is slid afterwards", all(
+                    abs(((e._head_yaw(e._head(n)) - yaw0[n] + 180) % 360) - 180) < 0.5 for n in heads), "")
+            vp = (web / "venuepanel.js").read_text(encoding="utf-8")
+            check("...the screen asks: did the real truss turn too?", "askTurned" in vp and '"keep_facing"' in vp
+                  and "Did the real truss turn too?" in vp, "")
+        finally:
+            e.shutdown()

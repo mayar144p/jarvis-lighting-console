@@ -1284,6 +1284,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
+                "desk_strobe": {str(k): v for k, v in (self.__dict__.get("desk_strobe") or {}).items()},
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "move_spots": self._move_spots(),
                 "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
@@ -1366,6 +1367,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
+                "desk_strobe": {str(k): v for k, v in (self.__dict__.get("desk_strobe") or {}).items()},
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "blackout": self.blackout,
                 # The lock rides in the hot feed so the client can grey out

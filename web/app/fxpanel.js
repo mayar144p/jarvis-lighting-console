@@ -293,7 +293,8 @@ function renderSfx(attrState) {
   const confetti = fire.filter((n) => loads[n]);
   const jets = fire.filter((n) => !loads[n]);
   if (jets.length) {
-    // CO2, flames, sparks: hold to spray, or a quick shot of a set length
+    // CO2, flames, sparks: hold to spray, a quick shot of a set length, or on
+    // until stopped (each capped at the machine's safe maximum)
     parts.push(h("h3", "CO2 / flames / sparks"),
       h("div.fx-fire-row",
         holdButton("HOLD TO FIRE", "fire.big", () => run("fx_fire", { heads: jets, down: true, owner: "prog-hold" }),
@@ -301,11 +302,18 @@ function renderSfx(attrState) {
           "Fires while held, capped at each machine's safe maximum")),
       h("div.chip-row.fx-shots", h("span.k", "Quick shot"),
         ...[0.5, 1, 3].map((sec) => h("button.chip", { title: `Fire for ${sec} s`,
-          onclick: () => run("fx_fire", { heads: jets, seconds: sec, owner: `prog-shot-${sec}` }) }, `${sec} s`))));
+          onclick: () => run("fx_fire", { heads: jets, seconds: sec, owner: `prog-shot-${sec}` }) }, `${sec} s`))),
+      fireExtras(jets, st, "jets"));
   }
   if (confetti.length) {
-    // one load, no second chance: fires only after a deliberate 1 s hold
-    parts.push(h("h3", "Confetti"), confettiButton(confetti));
+    // the deliberate shot (a 1 s hold: a stray tap can't waste the load),
+    // fire while held, or on until stopped - and Stop always works
+    parts.push(h("h3", "Confetti"), confettiButton(confetti),
+      h("div.fx-fire-row",
+        holdButton("Hold to fire", "", () => run("fx_fire", { heads: confetti, down: true, owner: "prog-hold" }),
+          () => run("fx_fire", { heads: confetti, down: false, owner: "prog-hold" }, { silentError: true }),
+          "Fires while you hold it and stops when you let go")),
+      fireExtras(confetti, st, "confetti"));
   }
   if (fire.length) {
     const conf = confetti;
@@ -350,6 +358,31 @@ function renderSfx(attrState) {
   if (extra.length) parts.push(h("h3", "Settings"), ...extra);
   parts.push(h("p.muted.small", "Fire needs ARM FX and always stops at the machine's limit, even if a button sticks. Fog works without arming. Blackout and KILL FX stop everything."));
   box.replaceChildren(...parts.filter(Boolean));
+}
+
+// What every firing machine gets besides its shot: an on / off switch (on
+// until you switch it off, or the machine's own limit), a STOP that ends
+// every shot from the programmer without disarming, and buttons for the
+// Buttons page (a shot, hold to fire, on / off) for these machines.
+const PROG_FIRE = ["prog-hold", "prog-latch", "prog-confetti", "prog-shot-0.5", "prog-shot-1", "prog-shot-3"];
+function stopFire(heads) {
+  return Promise.all(PROG_FIRE.map((owner) => run("fx_fire", { heads, down: false, owner }, { silentError: true })));
+}
+function fireExtras(heads, st, what) {
+  const on = (st.runs || []).some((r) => r.key === "fire:prog-latch");
+  const name = what === "confetti" ? "Confetti" : "Effect";
+  const make = (mode, label) => run("quick_set", { page: 1, slot: "free",
+    button: { kind: "sfx", mode, label, target: { heads } } }, { toast: true });
+  return h("div",
+    h("div.fx-fire-row",
+      h("button.btn" + (on ? ".on" : ""), { title: "On until you switch it off (or the machine's own limit)",
+        onclick: () => (on ? stopFire(heads) : run("fx_fire", { heads, down: true, owner: "prog-latch" }, { toast: true })) },
+        on ? "On - switch off" : "On / off"),
+      h("button.btn.danger", { title: "Stop every shot from here (effects stay armed)", onclick: () => stopFire(heads) }, "STOP")),
+    h("div.chip-row.fx-shots", h("span.k", "Make a button"),
+      h("button.chip", { title: "One press, one shot", onclick: () => make("tap", `${name} shot`) }, "Shot"),
+      h("button.chip", { title: "Fires while the button is held", onclick: () => make("hold", `${name} (hold)`) }, "Hold to fire"),
+      h("button.chip", { title: "Press on, press again off", onclick: () => make("latch", `${name} on/off`) }, "On / off")));
 }
 
 // Confetti fires only after the button has been held for a full second

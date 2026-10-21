@@ -72,6 +72,7 @@ class ProgrammerMixin:
         self._prog_fade = None
         n = sum(len(v) for v in self.programmer.values())
         self.programmer.clear()
+        self.__dict__.pop("desk_strobe", None)
         # CLEAR drops the effects you started too - not a cue's, a button's
         # or a timeline clip's: those belong to their playback / button
         mine = {f["id"] for f in self._programmer_fx() if not f.get("live")}

@@ -276,6 +276,7 @@ export async function openLightTest(hd) {
   const st = await run("light_test", { head, step: "start" }, { silentError: true });
   if (!st.ok) { toast(st.error || "This light cannot be tested", "bad"); return; }
   const res = { light: null, move: true, colour: true, strobe: true };
+  const findings = [];                         // what the step-by-step checks found
   const many = (st.heads || 1) > 1 ? ` (all ${st.heads} heads)` : "";
   const box = h("div.lt");
   const live = outputState() === "live";
@@ -423,10 +424,48 @@ export async function openLightTest(hd) {
       await run("light_test", { head, step: "colour", hex }, { silentError: true });
       const a = await ask(`It should be ${name.toUpperCase()} now${many}${st.mixing ? "" : " (or the closest colour on its wheel)"}. Is it?`,
         [["Yes", true, "primary"], ["No", false]]);
-      if (!a) return false;
+      if (!a) {
+        if (st.mixing && !closed) await colourChannels();
+        return false;
+      }
     }
     await run("light_test", { head, step: "colour", hex: "#ffffff" }, { silentError: true });
     return true;
+  }
+
+  // Wrong colours on a mixing light (#106: "red shows red plus green and
+  // blue"): light its colour channels one at a time, every other one at 0,
+  // and ask what the real light shows.  One channel lighting more than one
+  // colour, or the wrong head, means the light listens to a different
+  // channel list (its mode or address) - or its file is wrong.
+  const COLOUR_ROLES = ["red", "green", "blue", "white", "amber", "uv", "lime", "cyan", "magenta", "yellow"];
+  async function colourChannels() {
+    const slots = (st.slots || []).filter((c) => COLOUR_ROLES.includes(c.role));
+    if (!slots.length || !await ask("Find out which colour is wrong? Each colour channel lights on its own, the rest at 0.",
+      [["Check each colour channel", true, "primary"], ["Skip", false]])) return;
+    const per = {}, wrong = [];
+    for (const c of slots) per[c.role] = (per[c.role] || 0) + 1;
+    const seen = {};
+    for (const c of slots) {
+      if (closed) break;
+      seen[c.role] = (seen[c.role] || 0) + 1;
+      for (const o of slots) await run("light_test", { head, step: "raw", slot: o.n, value: o === c ? 255 : 0 }, { silentError: true });
+      const which = per[c.role] > 1 ? ` on head ${seen[c.role]} only` : "";
+      const a = await ask(`Channel ${c.n} (${c.label}): only ${c.role.toUpperCase()}${which} should be lit. What does the real light show?`,
+        [["Just that", "ok", "primary"], ["Other colours too", "more"], ["A different colour or head", "other"], ["Nothing", "none"], ["Stop", "stop"]]);
+      if (a === "stop") break;
+      if (a !== "ok") wrong.push({ c, a });
+    }
+    await run("light_test", { head, step: "raw" }, { silentError: true });
+    if (closed) return;
+    const words = { more: "lit other colours too", other: "lit a different colour or head", none: "lit nothing" };
+    findings.push(wrong.length
+      ? `Colour channels that were wrong: ${wrong.map((w) => `ch ${w.c.n} ${w.c.label} ${words[w.a]}`).join("; ")}. `
+        + (wrong.some((w) => w.a === "more") ? "One channel lighting several colours usually means the light's own menu is in another mode, "
+          + "or its file's colour layout is wrong - check the mode, then report the light so its file is fixed. " : "")
+        + "Run the test again and pick Set channels by hand to try each channel."
+      : "Every colour channel lit only its own colour: the mix is right on its own, so another channel (a colour macro or program) "
+        + "is adding colours - run the test again and pick Set channels by hand to find it.");
   }
 
   const close = modal({
@@ -456,6 +495,6 @@ export async function openLightTest(hd) {
   box.replaceChildren(
     h(ok ? "p.out-ok" : "p.out-bad", ok ? `✓ ${hd.model} passed: it lights, moves, changes colour${st.strobe ? " and strobes" : ""} as expected. Every ${hd.model} is ready.`
       : `⚠ ${hd.model} needs attention.`),
-    ...((r.advice || []).map((t) => h("p.small", t))),
+    ...[...findings, ...(r.advice || [])].map((t) => h("p.small", t)),
     ok ? null : h("div.row-btns", h("button.btn", { onclick: () => { close(); openChannels([head]); } }, "Show its DMX channels")));
 }

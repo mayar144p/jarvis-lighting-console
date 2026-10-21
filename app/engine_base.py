@@ -107,7 +107,7 @@ UNDO_EXCLUDED = frozenset({
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "tempo_phrase", "fx_beats", "fx_space", "fx_tweak",
-    "step_fx_run", "highlight", "group_master",
+    "step_fx_run", "highlight", "group_master", "desk_strobe",
     # a macro manages its own undo: its lines are ONE step
     "macro_run", "osc", "timecode", "blind",
     "sound_tempo", "autopilot", "autopilot_next",
@@ -676,7 +676,7 @@ ACTIONS = (
     "step_capture", "step_fx_save", "step_fx_delete", "step_fx_run", "chase_colours", "timeline_build", "quick_quant",
     "run_gradient", "run_media", "media_save", "media_delete",
     "shape_save", "shape_delete", "run_shape", "pad_info",
-    "highlight", "park", "unpark", "group_master",
+    "highlight", "park", "unpark", "group_master", "desk_strobe", "keep_facing",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
     "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy", "roam",

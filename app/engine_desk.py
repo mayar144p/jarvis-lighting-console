@@ -94,9 +94,33 @@ class DeskMixin:
             g["master"] = lv
         return {"group": g["n"], "master": lv, "summary": f"{g['name']} at {lv}%"}
 
+    def _a_desk_strobe(self, hz=0, heads=None, **_):
+        """Strobe the selection by flashing its level from the desk, like
+        the Strobe all button: works on every light, even one whose strobe
+        channel the file describes wrongly (#105).  hz 0 stops it; Clear
+        stops it too."""
+        hz = max(0.0, min(25.0, float(hz or 0)))
+        ns = [int(n) for n in (heads if heads is not None else self.selected)]
+        if not ns:
+            raise ValueError("select some lights first")
+        known = {h["head_no"] for h in self.patch}
+        on = self.__dict__.setdefault("desk_strobe", {})
+        for n in ns:
+            if n not in known:
+                raise ValueError(f"no light #{n}")
+            if hz:
+                on[n] = round(hz, 2)
+            else:
+                on.pop(n, None)
+        return {"desk_strobe": dict(on), "summary": f"desk strobe {hz:g} Hz on {len(ns)} light(s)" if hz
+                else f"desk strobe off on {len(ns)} light(s)"}
+
     # -- into the overrides ----------------------------------------------
     def _desk_overrides(self, out: dict, skip_parked: bool = False) -> None:
         lights = [h for h in self.patch if self._head_class(h) == "light"]
+        for n, hz in (self.__dict__.get("desk_strobe") or {}).items():
+            o = out.setdefault(n, {})
+            o["strobe"] = max(o.get("strobe") or 0, hz)
         # group masters: a share of the level, like the grand master
         for g in self.groups:
             m = g.get("master")
