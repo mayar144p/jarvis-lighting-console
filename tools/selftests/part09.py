@@ -7751,6 +7751,9 @@ def test_b4_movement() -> None:
     two = [motion.position("range", t, tq, (0.5, 0.5), lim, span) for t in (0.25, 0.5)]
     tdeg = [round((v["tilt"] - 0.5) * 270) for v in two]
     check("pan and tilt each at their own speed", deg(two[1]) == 40 and tdeg == [0, -50], f"pan {deg(two[1])} tilt {tdeg}")
+    pq = dict(tq, pan_speed=0.0625)              # the pan at half the speed: half way at t = 0.5
+    half = motion.position("range", 0.5, pq, (0.5, 0.5), lim, span)
+    check("...and the pan at its own speed too", deg(half) == -30 and round((half["tilt"] - 0.5) * 270) == -50, str(half))
     check("...a faster tilt asks the motor for more", motion.amplitude("range", tq, span)[1] == 2 * motion.amplitude("range", dict(tq, tilt_speed=0.0), span)[1], "")
     # a limit (Stay on the floor) cuts -100 short at -20: the light travels
     # -20 .. +40 the whole trip, never waits at the edge
@@ -7802,7 +7805,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
@@ -8017,9 +8020,40 @@ def test_lights_fader() -> None:
             e.act("quick_fader", id=m["id"], level=25)
             check("a master fader: a share of what they do (full -> 25%)", abs(a(1) - 0.25) < 0.02 and abs(a(3) - 0.25) < 0.02, str(a(1)))
             check("the screen sees the faders' places", e._quick_public()["faders"] == {lv["id"]: 60, m["id"]: 25}, str(e._quick_public()["faders"]))
+            # a group's own controls in one tap: dimmer, effect speed, strobe, strobe speed
+            g = e.act("group_create", name="Sides", heads=[1, 3])
+            gc = e.act("quick_group_controls", group=g.get("n", 1), page=2)
+            tiles = [b for b in e.quick if b["id"] in gc.get("ids", [])]
+            check("a group's faders on the buttons page in one tap",
+                  [(b["kind"], (b.get("control") or {}).get("mode")) for b in tiles]
+                  == [("fader", "level"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
+                  and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
+            sp, strobe, rate = tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
+            e.act("run_fx", name="breathe", heads=[1, 3])
+            e.act("run_fx", name="breathe", heads=[2])
+            rows = list(e.fx[-2:])
+            t = time.monotonic()
+            e._fx_values(t)
+            v0 = [r["_v"] for r in rows]
+            e.act("quick_fader", id=sp, level=100)
+            e._fx_values(t + 1.0)
+            grew = [round(r["_v"] - a, 2) for r, a in zip(rows, v0)]
+            check("its speed fader: the group's effects twice as fast, the others as set", grew == [2.0, 1.0], str(grew))
+            e.act("quick_press", id=strobe, down=True)
+            ov = e._override_vals()
+            check("...its strobe button flashes at the button's speed", (ov.get(1) or {}).get("strobe") == 10, str(ov.get(1)))
+            e.act("quick_fader", id=rate, level=100)
+            ov = e._override_vals()
+            check("...and its strobe speed fader makes it faster (20 a second)", (ov.get(1) or {}).get("strobe") == 20.0
+                  and not (ov.get(2) or {}).get("strobe"), str(ov.get(1)))
+            e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed"})
+            check("...renamed like any button", next(b for b in e.quick if b["id"] == sp)["label"] == "Movers FX speed", "")
         finally:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
+          '"Effect speed"' in qb and '"Strobe speed"' in qb
+          and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
 

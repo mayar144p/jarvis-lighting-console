@@ -136,10 +136,14 @@ class DeskMixin:
             for b in self.quick:
                 v = vals.get(b["id"])
                 c = b.get("control") or {}
-                if v is None or b["kind"] != "fader" or c.get("what") != "lights":
+                if v is None or b["kind"] != "fader" or c.get("what") != "lights" or c.get("mode") == "speed":
                     continue
                 for n in self._quick_heads(b):
                     o = out.setdefault(n, {})
+                    if c.get("mode") == "strobe":
+                        if o.get("strobe"):                 # a strobe on them (a button, the desk's): this fast
+                            o["strobe"] = self._fader_hz(v)
+                        continue
                     if c.get("mode") == "master":
                         if v < 100:
                             o["scale"] = round(o.get("scale", 100) * v / 100.0, 1)

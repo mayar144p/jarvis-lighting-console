@@ -715,6 +715,7 @@ class ProgrammerMixin:
         base = None                       # programmer + cues under the effects
         hidden = self._blind_fx_from() if rig else None
         junk: dict[int, dict[str, int]] = {}
+        speeds = self._fader_speeds()        # speed faders on the buttons page, for some lights
         for row in self.fx:
             elapsed = now - row["t0"]
             dur = row.get("duration")
@@ -728,6 +729,9 @@ class ProgrammerMixin:
             # the master changes the SPEED from here on, never jumps the shape
             last = row.get("_last", row["t0"])
             master = 1.0 if row.get("free") else float(self.speed_master) * float(self.__dict__.get("_sound_speed", 1.0))
+            for lights, f in (() if row.get("free") else speeds):
+                if lights.intersection(heads):
+                    master *= f
             step = max(0.0, now - last) * master * float(row.get("rate", 1.0))
             row["_last"] = max(last, now)
             row["_v"] = row.get("_v", 0.0) + step
