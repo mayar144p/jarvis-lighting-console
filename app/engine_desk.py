@@ -178,12 +178,26 @@ class DeskMixin:
         lines = [str(x).strip()[:200] for x in (lines or []) if str(x).strip() and not str(x).strip().startswith("#")]
         if not lines:
             raise ValueError("a macro needs at least one command line")
-        return {"id": ident, "name": (str(raw.get("name") or "").strip() or f"Macro {ident[1:]}")[:30], "lines": lines[:50]}
+        return {"id": ident, "name": (str(raw.get("name") or "").strip() or f"Macro {ident[1:]}")[:30], "lines": lines[:50],
+                "syntax": 2}
+
+    @staticmethod
+    def _macro_line_v2(line: str) -> str:
+        """A line written when `at` meant aim (syntax 1) in today's words:
+        `1-4 at 90` -> `1-4 aim 90`, `3 at 50` (was cue 3) -> `cue 3 at 50`.
+        `at` is a level now, as on other consoles."""
+        toks = line.split()
+        if len(toks) >= 2 and toks[0].isdigit() and toks[1].lower() == "at":
+            return "cue " + line
+        return " ".join("aim" if t.lower() == "at" and not (k >= 2 and toks[k - 2].lower() == "cue") else t
+                        for k, t in enumerate(toks))
 
     def _clean_macro_list(self, raw) -> list[dict]:
         out = []
         for i, m in enumerate(raw or []):
             try:
+                if isinstance(m, dict) and m.get("syntax") != 2 and isinstance(m.get("lines"), list):
+                    m = {**m, "lines": [self._macro_line_v2(str(x)) for x in m["lines"]]}
                 out.append(self._clean_macro(m, str((m or {}).get("id") or f"m{i + 1}")))
             except (ValueError, TypeError, AttributeError):
                 continue

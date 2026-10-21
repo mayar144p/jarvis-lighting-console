@@ -102,7 +102,9 @@ export function useMode(m) {
   if (!MODES.includes(m)) return false;
   const want = (saved.lastByMode || {})[m];
   const w = saved.list.find((x) => x.id === want && x.mode === m) || saved.list.find((x) => x.mode === m);
-  return w ? useWorkspace(w.id, { quiet: true }) : false;
+  // the toast only when the top bar can't show the workspace's name (720p)
+  const named = ($("#ws-name") || {}).offsetWidth > 0;
+  return w ? useWorkspace(w.id, { quiet: named }) : false;
 }
 
 // A side panel in its place: a side of the screen (the grid), or floating

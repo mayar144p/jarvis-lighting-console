@@ -59,16 +59,18 @@ class CommandMixin:
     # operator meant, and a console that made them say `cue 3 go` every
     # time would be typed at and sworn at.
 
-    # `aim` / `at` / `position` are three spellings of one verb, so they
-    # are named once here and folded into CMD_VERBS below.  A console's own
-    # vocabulary is `At`; `aim` is the plain-English one.
-    CMD_AIM = ("aim", "at", "position")
+    # `aim` / `position` are two spellings of one verb, so they are named
+    # once here and folded into CMD_VERBS below.  `at` (and `@`) is NOT one
+    # of them: on MagicQ, Eos and grandMA `1 thru 4 at 70` is a LEVEL, and
+    # an operator typing it here must not get pan 70 instead.
+    CMD_AIM = ("aim", "position")
+    CMD_LEVEL = ("at", "@")
 
     CMD_VERBS = frozenset({
         "go", "back", "cue", "group", "palette", "preset", "master",
         "blackout", "clear", "home", "record", "thru", "off", "help",
         "fan", "select", "store", "align", "distribute", "mirror",
-    } | set(CMD_AIM))
+    } | set(CMD_AIM) | set(CMD_LEVEL))
 
     # What may BEGIN a line.  A verb needs no selection of its own; a
     # selection keyword IS one.  Getting this wrong is why `all` answered
@@ -81,10 +83,11 @@ class CommandMixin:
             "selection    1-4   1 thru 4   1.3.5   all   none   *   group 3\n"
             "attributes   1-4 pan 90   1-4 dimmer 50   1-4 red 255\n"
             "             1-4 tilt off   1-4 wheel full   1-4 dimmer +10\n"
-            "cues         go   back   cue 3 go   cue 3 at 50   3 at 50\n"
+            "level        1-4 at 70   1 thru 4 @ full   at 0\n"
+            "cues         go   back   cue 3 go   3 go   cue 3 at 50\n"
             "recording    record   record 2   1-4 clear   clear\n"
             "looks        palette colour 2   preset 1\n"
-            "aiming       1-4 aim pan 90   1-4 aim 90 -30   1-4 at 90\n"
+            "aiming       1-4 aim pan 90   1-4 aim 90 -30\n"
             "arranging    align x   distribute z   mirror x   mirror x about 0\n"
             "desk         master 60   master full   blackout on\n"
             "A value of `off` REMOVES the attribute; `+N`/`-N` move it by.\n"
@@ -95,7 +98,8 @@ class CommandMixin:
 
     @staticmethod
     def _cmd_tokens(text: str) -> list[str]:
-        return [t for t in str(text or "").replace(",", " ").split() if t]
+        # `1-4@70` is `1-4 @ 70`
+        return [t for t in str(text or "").replace(",", " ").replace("@", " @ ").split() if t]
 
     def _cmd_selection(self, tokens: list[str], i: int) -> tuple[set, int]:
         """Read a leading selection, or return the current one.
@@ -175,6 +179,10 @@ class CommandMixin:
             return ("off", None)
         if text in ("full", "100%", "on"):
             return ("full", None)
+        if text == "out":                       # the Out button: level 0
+            return ("set", 0.0)
+        if text.endswith("%") and len(text) > 1:    # `at 70%`
+            text = text[:-1]
         if text[0] in "+-":
             try:
                 return ("add", float(text))
@@ -214,9 +222,11 @@ class CommandMixin:
 
         first = tokens[0].lower()
         # A bare cue number: `3 go` is a cue, because one head cannot go.
+        # (`3 at 50` is head 3 at 50%, as on every console; `cue 3 at 50`
+        # is the cue.)
         cue_shortcut = False
         if re.fullmatch(r"\d+", first) and len(tokens) >= 2 \
-                and tokens[1].lower() in ("go", "at", "back"):
+                and tokens[1].lower() in ("go", "back"):
             cue_shortcut = True
         # `all`, `none` and `*` ARE selections, so they go through the
         # reader.  `group N` too - but a bare `group` with no number has to
@@ -244,6 +254,10 @@ class CommandMixin:
             raise ValueError("incomplete: " + self._cmd_help())
 
         tok = tokens[i].lower()
+        # `at 70` is `dimmer 70`: the attribute path below reads the value
+        # (full, out, +10...) the same way.
+        if tok in self.CMD_LEVEL:
+            tokens[i] = tok = "dimmer"
         # A selection NAMED in this line always applies.  Without this,
         # `1-2 tilt off` on two heads that have no tilt would fall through
         # to "nothing is selected" and quietly do something else - the
@@ -339,15 +353,13 @@ class CommandMixin:
                                              "n": int(tokens[i + 2])}))
             return self._cmd_finish(line, plan, note_lines, dry)
 
-        # ---- aim: `1-4 aim pan 90 tilt -30`, or `1-4 at 90,128` -----------
+        # ---- aim: `1-4 aim pan 90 tilt -30`, or `1-4 aim 90,128` ---------
         # Degrees when the fixture knows its travel, logical otherwise -
         # and the server decides which, not this parser, because only it
         # knows the fixture.  So both readings are sent and the transcript
-        # says which one was used.
-        if tok in self.CMD_AIM or (
-                len(tokens) == i + 3 and re.fullmatch(r"[-+]?[\d.]+",
-                                                      tokens[i + 1] or "")
-                and re.fullmatch(r"[-+]?[\d.]+", tokens[i + 2] or "")):
+        # says which one was used.  Only the aim words aim: "any word and
+        # two numbers" used to, so `1-4 dimmer 90 -30` moved the lights.
+        if tok in self.CMD_AIM:
             pos: dict = {}
             i += 1
             # Words and bare numbers both work, and the bare form is

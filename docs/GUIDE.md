@@ -516,6 +516,9 @@ Typing in a field never fires the rig.
 
 <kbd>/</kbd> opens it. It searches every action and also takes desk syntax:
 `1-4 red`, `1-8 at 60`, `all dimmer 40`, `1-4 pan 90`, `cue 3 go`.
+`at` (or `@`) is the level, as on other desks: `1 thru 6 at 70`,
+`3 @ full`, `1-4 at out`. `1-4 aim 90 -30` points them (pan, then
+tilt); `cue 3 at 50` runs cue 3 at half.
 
 ## The copilot
 

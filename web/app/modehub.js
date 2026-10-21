@@ -184,7 +184,9 @@ function paintLive() {
       h("button.btn" + (s.blackout ? ".on" : ""), { title: "Blackout (X)", onclick: () => run("blackout", { state: s.blackout ? 0 : 1 }) }, s.blackout ? "BLACKOUT on" : "BLACKOUT"),
       h("span.muted.small", `Master ${s.master ?? 100}%`)),
     h("div.live-k.hits-k", "Hits"),
-    hits.length ? h("div.live-hits", ...hits.map(pressBtn))
+    hits.length ? h("div.live-hits", ...hits.map(pressBtn)) : null,
+    // the same buttons are already in the dock when it shows Buttons (app.css)
+    hits.length ? h("p.muted.small.live-hits-below", "In the Buttons panel below.")
       : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: make them on the Buttons page (Program mode)."),
     h("div.live-pair",
       h("div.live-card",

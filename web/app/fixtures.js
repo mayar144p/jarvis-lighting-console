@@ -305,6 +305,14 @@ function renderGroups() {
         }
       },
     }, `Tidy ${autoCopies().length} auto copies`)] : []));
+  moreBelow();
+}
+
+// More group tiles than fit: the bottom edge fades (a row cut in half
+// read as broken), until you scroll to the end.
+function moreBelow() {
+  const box = $("#group-chips");
+  box.classList.toggle("more-below", box.scrollHeight - box.scrollTop - box.clientHeight > 4);
 }
 
 const autoCopies = () => userGroups().filter((g) => /^auto\s*·/i.test(g.name || ""));
@@ -678,6 +686,8 @@ export function initFixtures() {
   try { folded = localStorage.getItem("jarvis.groupsFolded") === "1"; } catch { /* private window */ }
   setFold(folded);
   fold.addEventListener("click", () => setFold(!$("#group-chips").classList.contains("folded")));
+  $("#group-chips").addEventListener("scroll", moreBelow, { passive: true });
+  new ResizeObserver(moreBelow).observe($("#group-chips"));
   $("#fx-rows").addEventListener("click", rowClick);
   $("#fx-rows").addEventListener("contextmenu", (e) => {
     const tr = e.target.closest("tr[data-head]");
