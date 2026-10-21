@@ -1,8 +1,13 @@
 name: CI
 
+# Once per change: a pull request runs the checks, and main runs them again
+# when it moves.  A push to a work branch with a pull request open used to
+# run every check twice (once for the push, once for the pull request).
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
