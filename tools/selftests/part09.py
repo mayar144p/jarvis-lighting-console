@@ -7620,6 +7620,9 @@ def test_b2_groups() -> None:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("drag lights onto a group (folder or chip), out of its folder, between groups, or onto New group",
+          "function dragStart" in fx and "function dropTarget" in fx and '"group_edit", { group: t.to, add: d.heads }' in fx
+          and '"group_edit", { group: d.from, remove: d.heads }' in fx and "new-group-drop" in fx, "")
     check("the screen: a group's menu (its chip, a right-click), Add to group on a light, Tidy auto copies",
           "export function groupMenu" in fx and '"group_edit"' in fx and "function groupItems" in fx
           and "auto: true" in fx and "auto: true" in cj, "")
@@ -7711,6 +7714,11 @@ def test_b3_buttons() -> None:
     check("the screen: Open in the programmer / Update button, page tiles, patterns, order, offsets, what goes in",
           '"quick_edit"' in qb and '"quick_update"' in pj and "Update button" in pj and "folderBack" in qb
           and "PATTERNS" in qb and "Pan offset" in qb and "What goes in" in pj and "keep: [...keep]" in pj, "")
+    # closing a window counts as Cancel (onClose): Make it must answer
+    # before it closes, or the answer is always "cancelled" and no button
+    # is made (it was, until the operator found it)
+    check("Make a button... answers Make it before the window closes",
+          "resolve(true); close();" in pj and "close(); resolve(true)" not in pj, "")
 
 
 def test_b4_movement() -> None:

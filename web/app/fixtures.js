@@ -81,9 +81,10 @@ function typeIcon(body, n) {
   return ic;
 }
 
-function headRow(hd, child = false) {
+function headRow(hd, child = false, inGroup = null) {
   const b = hd.body || {};
-  return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""), { dataset: { head: hd.head_no } },
+  return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""),
+    { dataset: { head: hd.head_no, ...(inGroup !== null ? { ingroup: inGroup } : {}) }, draggable: "true" },
     h("td.c-no", h("i.lamp"), h("span", hd.head_no)),
     h("td.c-name", h("div.f-name",
       typeIcon(b, hd.head_no),
@@ -101,7 +102,7 @@ function foldRow(c) {
   const first = c.heads[0], lastHd = c.heads[c.heads.length - 1];
   const b = first.body || {};
   const open = expanded.has(first.head_no);
-  return h("tr.fold" + (open ? ".open" : ""), { dataset: { fold: c.heads.map((x) => x.head_no).join(","), head: first.head_no } },
+  return h("tr.fold" + (open ? ".open" : ""), { dataset: { fold: c.heads.map((x) => x.head_no).join(","), head: first.head_no }, draggable: "true" },
     h("td.c-no", h("button.fold-btn", { title: open ? "Fold" : "Show each light", "aria-label": open ? "Fold" : "Show each light",
         "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"), h("span", `${first.head_no}–${lastHd.head_no}`)),
     h("td.c-name", h("div.f-name",
@@ -167,7 +168,7 @@ function render() {
       if (!members.length) continue;                 // (a search that matches nothing in it)
       const open = openFolders.has(g.n) || !!filterText.trim();
       out.push(folderRow(g, members, open));
-      if (open) out.push(...members.map((hd) => headRow(hd, true)));
+      if (open) out.push(...members.map((hd) => headRow(hd, true, g.n)));
     }
     for (const c of clusters(rows.filter((r) => !grouped.has(r.head_no)))) {
       if (c.heads.length < FOLD_MIN) { out.push(...c.heads.map((hd) => headRow(hd))); continue; }
@@ -285,7 +286,7 @@ function renderGroups() {
       onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
     }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`)), { auto: g.key })),
     ...groups.map((g) => holdToFlash(h("button.chip" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · hold to flash`,
+      title: `Select ${g.name} (${g.heads.length}) · hold to flash · drop lights here to add them`, dataset: { group: g.n },
       onclick: (e) => {
         if (e.target.classList.contains("x")) return;
         select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
@@ -296,6 +297,8 @@ function renderGroups() {
       "aria-label": `Change the group ${g.name}`,
       onclick: (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); },
     }, "⋯")), { group: g.n })),
+    // shown only while lights are dragged: drop them here for a new group
+    h("button.chip.new-group-drop", { title: "Drop lights here to make a new group of them", dataset: { newgroup: "1" } }, "＋ New group"),
     ...(autoCopies().length ? [h("button.chip.tidy", {
       title: "Earlier auto shows made copies of groups (“Auto · …”). Shows select their lights directly now; your own groups stay.",
       onclick: async () => {
@@ -666,6 +669,90 @@ export async function scanRig() {
   }
 }
 
+// ---------------------------------------------------------- drag and drop
+// Drag a light (the selection when it is selected, or a folded type) onto
+// a group - its folder in the list or its chip - to put it in.  Dragged out
+// of a group's folder: onto the list outside the folders takes it out,
+// onto another group moves it (Alt copies).  "＋ New group" while dragging.
+const DRAG = "application/x-jarvis-heads";
+let dragging = null;                     // {heads, from}
+function dragStart(e) {
+  const tr = e.target.closest && e.target.closest("tr[data-head]");
+  if (!tr || tr.classList.contains("folder")) return;
+  let heads = tr.dataset.fold ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head];
+  const sel = selected();
+  if (!tr.dataset.fold && sel.includes(heads[0]) && sel.length > 1) heads = [...sel];
+  const from = tr.dataset.ingroup !== undefined ? +tr.dataset.ingroup : null;
+  dragging = { heads, from };
+  e.dataTransfer.setData(DRAG, JSON.stringify(dragging));
+  e.dataTransfer.setData("text/plain", heads.map((n) => "#" + n).join(" "));
+  e.dataTransfer.effectAllowed = "copyMove";
+  document.body.classList.add("dragging-heads");
+}
+function dragEnd() {
+  dragging = null;
+  document.body.classList.remove("dragging-heads");
+  for (const el of document.querySelectorAll(".drop-on")) el.classList.remove("drop-on");
+}
+// where a drop would go: {to: group n} | {out: true} | {make: true} | null
+function dropTarget(el) {
+  if (!dragging || !el || !el.closest) return null;
+  if (el.closest("[data-newgroup]")) return { el: el.closest("[data-newgroup]"), make: true };
+  const chip = el.closest("#group-chips .chip[data-group]");
+  if (chip) return { el: chip, to: +chip.dataset.group };
+  const folder = el.closest("tr.folder");
+  if (folder) return { el: folder, to: +folder.dataset.group };
+  const row = el.closest("tr[data-head]");
+  const inList = el.closest(".fx-table-wrap");
+  if (dragging.from !== null && inList && (!row || row.dataset.ingroup === undefined)) return { el: inList, out: true };
+  if (dragging.from !== null && row && row.dataset.ingroup !== undefined && +row.dataset.ingroup !== dragging.from) {
+    return { el: row, to: +row.dataset.ingroup };
+  }
+  return null;
+}
+function dragOver(e) {
+  const t = dropTarget(e.target);
+  for (const el of document.querySelectorAll(".drop-on")) if (!t || el !== t.el) el.classList.remove("drop-on");
+  if (!t || (t.to !== undefined && t.to === dragging.from)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = t.out ? "move" : (e.altKey || dragging.from === null ? "copy" : "move");
+  t.el.classList.add("drop-on");
+}
+async function drop(e) {
+  const t = dropTarget(e.target);
+  const d = dragging;
+  dragEnd();
+  if (!t || !d) return;
+  e.preventDefault();
+  const groupsNow = userGroups();
+  const name = (n) => (groupsNow.find((g) => g.n === n) || {}).name || `group ${n}`;
+  if (t.make) {
+    const label = await promptBox("New group", `Name for these ${d.heads.length} light(s)`, "", { ok: "Create group", placeholder: "e.g. Back truss spots" });
+    if (label) run("group_create", { name: label, heads: d.heads }, { toast: true });
+    return;
+  }
+  if (t.out) {
+    run("group_edit", { group: d.from, remove: d.heads }, { toast: true });
+    return;
+  }
+  if (t.to === d.from) return;
+  const r = await run("group_edit", { group: t.to, add: d.heads }, { toast: true });
+  // out of one folder into another: a move (Alt keeps it in both)
+  if (r.ok && d.from !== null && !e.altKey) {
+    await run("group_edit", { group: d.from, remove: d.heads }, { silentError: true });
+    toast(`${d.heads.length === 1 ? "Light" : `${d.heads.length} lights`} moved from ${name(d.from)} to ${name(t.to)}`, "ok");
+  }
+}
+function wireDrag() {
+  for (const box of [$("#fx-rows"), $("#group-chips"), $(".fx-table-wrap")]) {
+    if (!box) continue;
+    box.addEventListener("dragover", dragOver);
+    box.addEventListener("drop", drop);
+  }
+  $("#fx-rows").addEventListener("dragstart", dragStart);
+  $("#fx-rows").addEventListener("dragend", dragEnd);
+}
+
 async function makeGroup() {
   const sel = selected();
   if (!sel.length) { toast("Select fixtures first, then make a group"); return; }
@@ -690,6 +777,7 @@ export function initFixtures() {
   $("#group-chips").addEventListener("scroll", moreBelow, { passive: true });
   new ResizeObserver(moreBelow).observe($("#group-chips"));
   $("#fx-rows").addEventListener("click", rowClick);
+  wireDrag();
   $("#fx-rows").addEventListener("contextmenu", (e) => {
     const tr = e.target.closest("tr[data-head]");
     if (tr && tr.dataset.group !== undefined) {
