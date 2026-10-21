@@ -464,13 +464,15 @@ _MOVE = (("speed", "speed (turns/s)", 0.125, 0.005, 2.0), ("size", "size (deg)",
          ("phase", "phase", 0.0, 0.0, 100.0))
 # a move between two angles, in degrees from the middle of the light's travel
 # (-100 is 100 degrees left / down of centre); mode 0 bounce, 1 loop, 2 once;
-# full_pan / full_tilt: the light's whole travel, end to end
+# full_pan / full_tilt: the light's whole travel, end to end; tilt_speed:
+# the tilt's own trips a second (0: the same as the pan's speed)
 _RANGE = (("speed", "speed (trips/s)", 0.125, 0.005, 2.0),
           ("pan_a", "pan from (deg)", -45.0, -360.0, 360.0), ("pan_b", "pan to (deg)", 45.0, -360.0, 360.0),
           ("tilt_a", "tilt from (deg)", 0.0, -180.0, 180.0), ("tilt_b", "tilt to (deg)", 0.0, -180.0, 180.0),
           ("mode", "bounce / loop / once", 0.0, 0.0, 2.0),
           ("full_pan", "whole pan travel", 0.0, 0.0, 1.0), ("full_tilt", "whole tilt travel", 0.0, 0.0, 1.0),
-          ("spread", "spread", 0.0, 0.0, 720.0), ("phase", "phase", 0.0, 0.0, 100.0))
+          ("spread", "spread", 0.0, 0.0, 720.0), ("phase", "phase", 0.0, 0.0, 100.0),
+          ("tilt_speed", "tilt speed (trips/s, 0: with the pan)", 0.0, 0.0, 2.0))
 _LEVELS = (("speed", "rate", 1.0, 0.01, 20.0), ("rate", "rate", 4.0, 1.0, 40.0),
            ("spread", "spread", 0.0, 0.0, 720.0),
            ("phase", "phase", 0.0, 0.0, 100.0),

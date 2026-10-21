@@ -113,12 +113,19 @@ def range_u(cycles: float, p: dict, index: int = 0, count: int = 1) -> float:
     return _ease(_pingpong(t))
 
 
+def tilt_ratio(p: dict) -> float:
+    """An A -> B's tilt speed as a share of its pan speed (1: together)."""
+    ts, sp = float(p.get("tilt_speed", 0.0) or 0.0), float(p.get("speed", 0.0) or 0.0)
+    return ts / sp if ts > 0 and sp > 0 else 1.0
+
+
 def amplitude(kind: str, p: dict, span_deg: tuple[float, float]) -> tuple[float, float]:
     """Swing per axis as a fraction of travel, from the size in degrees."""
     if kind == "range":
         (pa, pb), (ta, tb) = range_ends(p, span_deg)
+        # a tilt on its own, faster speed needs the motor that much faster
         return (abs(pb - pa) / 2.0 / float(span_deg[0] or DEFAULT_SPAN_DEG[0]),
-                abs(tb - ta) / 2.0 / float(span_deg[1] or DEFAULT_SPAN_DEG[1]))
+                abs(tb - ta) / 2.0 / float(span_deg[1] or DEFAULT_SPAN_DEG[1]) * tilt_ratio(p))
     size = max(1.0, min(270.0, float(p.get("size", 20.0))))
     pan_span = float(span_deg[0] or DEFAULT_SPAN_DEG[0])
     tilt_span = float(span_deg[1] or DEFAULT_SPAN_DEG[1])
@@ -190,6 +197,7 @@ def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
         # absolute: from A to B degrees of this light's own travel, whatever it was aimed at
         ends = range_ends(p, span_deg)
         u = range_u(cycles, p, index, count)
+        ut = range_u(cycles * tilt_ratio(p), p, index, count)     # the tilt at its own speed
         out = {}
         for axis, (a, b), span, (lo, hi) in zip(("pan", "tilt"), ends, span_deg, limits):
             if a == b and not float(p.get(f"full_{axis}", 0) or 0) and not p.get(f"_set_{axis}"):
@@ -201,7 +209,7 @@ def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
             lo, hi = min(lo, hi), max(lo, hi)
             fa = min(max(0.5 + a / span, lo), hi)
             fb = min(max(0.5 + b / span, lo), hi)
-            out[axis] = fa + (fb - fa) * u
+            out[axis] = fa + (fb - fa) * (ut if axis == "tilt" else u)
         return {k: min(1.0, max(0.0, v)) for k, v in out.items()}
     lock = int(round(float(p.get("lock", 0.0))))        # 1: tilt stays, 2: pan stays
     dp, dt = shape(kind, cycles, p, index, count)
