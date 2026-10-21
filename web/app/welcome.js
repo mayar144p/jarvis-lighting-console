@@ -89,7 +89,21 @@ function offerTour() {
   toast("New here? Help (?) → Take the tour shows you round in a minute.", "", 6000);
 }
 
-// ---------------------------------------------------------------- the tour
+// ---------------------------------------------------------------- the tours
+// one per mode: what is on screen in Set up, Program and Live
+const SETUP_STEPS = [
+  ["#mode-seg", "Three modes", "Set up, Program, Live: the screen arranged for each job. You are in Set up."],
+  ["#fixtures-panel", "Your lights", "Add lights here (+ Add finds any light in the library). Click to select; groups are folders."],
+  ["#stage-wrap", "The room in 3D", "Where the lights hang and what they do. Arrange moves trusses and lights; the DJ view (7) is from the booth."],
+  ["#mode-hub", "Set up, in order", "The lights, the room, the connections, the checks - each with how it stands now and a button to do it."],
+  ["#output", "Output", "BLIND means nothing reaches the real lights. Go live… when the rig is connected."],
+];
+const LIVE_STEPS = [
+  ["#mode-hub", "Live", "The song and its part, the hits (hold to fire), the tempo and the autopilot."],
+  ["#playbacks", "Buttons", "Your pages of buttons: flashes, colours, moves, effects. Full screen for a touch screen."],
+  ["#bo-btn", "Blackout", "Everything off, at once (X). The grand master is beside it."],
+  ["#mode-seg", "Back to programming", "Program to change looks and record cues; Set up for the room and the lights."],
+];
 const STEPS = [
   ["#show-btn", "Shows", "Save, open and start shows here - New show… has the templates, and MVR plots come in here too."],
   ["#output", "Output", "BLIND means nothing reaches the real lights. Go live… when the rig is connected."],
@@ -100,10 +114,12 @@ const STEPS = [
   ["#ai-btn", "Copilot", "Say what you want - “slow blue wash on the movers” - and the AI does it, in 3D first."],
 ];
 
-/** A short tour: a highlight round each part of the desk, Next / Back. */
-export function startTour() {
-  try { localStorage.setItem("jarvis.toured", "1"); } catch { /* private */ }
-  const steps = STEPS.filter(([sel]) => { const el = $(sel); return el && el.getClientRects().length; });
+/** A short tour of the mode on screen (Set up, Program or Live): a
+ *  highlight round each part, Next / Back. */
+export function startTour(mode = document.body.dataset.mode) {
+  try { localStorage.setItem("jarvis.toured", "1"); localStorage.setItem("jarvis.toured." + mode, "1"); } catch { /* private */ }
+  const list = mode === "setup" ? SETUP_STEPS : mode === "live" ? LIVE_STEPS : STEPS;
+  const steps = list.filter(([sel]) => { const el = $(sel); return el && el.getClientRects().length; });
   if (!steps.length) return;
   let i = 0;
   const ring = h("div.tour-ring", { "aria-hidden": "true" });
@@ -137,6 +153,17 @@ export function startTour() {
   addEventListener("keydown", keys, true);
   addEventListener("resize", show);
   show();
+}
+
+/** The first time in a mode (after the first visit): offer its tour, once. */
+export function offerModeTour(mode) {
+  try {
+    if (localStorage.getItem("jarvis.toured") !== "1" || localStorage.getItem("jarvis.toured." + mode) === "1") return;
+    localStorage.setItem("jarvis.toured." + mode, "1");
+  } catch { return; }
+  if (navigator.webdriver) return;
+  const name = { setup: "Set up", program: "Program", live: "Live" }[mode] || mode;
+  toast(`First time in ${name}? Help (?) → Take the tour shows this mode in a minute.`, "", 6000);
 }
 
 /** Called once at boot: the welcome on a desk that's new and empty. */

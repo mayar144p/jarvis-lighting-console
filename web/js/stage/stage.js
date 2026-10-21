@@ -856,7 +856,8 @@ export class Stage {
   _loop() {
     if (this.destroyed) return;
     this._raf = requestAnimationFrame(this._loop);
-    if (document.hidden) return;
+    // hidden: the window, or a workspace with no 3D view (nothing to draw)
+    if (document.hidden || document.body.classList.contains("ws-nostage")) return;
     const now = performance.now();
     let motion = false;
 

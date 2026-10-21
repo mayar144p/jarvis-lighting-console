@@ -4427,8 +4427,8 @@ def test_show_templates() -> None:
             e.act("set_intensity", level=50)
             e.act("record_cue", playback=1, name="mine")
             listed = e.act("show_templates")
-            check("five templates to pick from", listed.get("ok") and [t["id"] for t in listed["templates"]]
-                  == ["club", "wedding", "band", "theatre", "corporate"], str(listed.get("templates")))
+            check("six templates to pick from (a Mobile DJ too)", listed.get("ok") and [t["id"] for t in listed["templates"]]
+                  == ["club", "wedding", "band", "theatre", "mobile_dj", "corporate"], str(listed.get("templates")))
             undo0 = len(e._undo)
             for name in showtemplates.TEMPLATES:
                 r = e.act("show_template", name=name)
@@ -4788,7 +4788,9 @@ def test_workspaces() -> None:
 const W = await import(process.argv[1]);
 console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map((w) => JSON.stringify(W.clean(w)) === JSON.stringify(w)),
   bad: W.clean({ id: "x", name: "y".repeat(90), fix: 0, fixW: 5000, progW: 10, bottom: "<b>", dock: -3, tab: "<img>" }),
-  show: W.BUILTIN.find((w) => w.id === "show"), busk: W.BUILTIN.find((w) => w.id === "busking") }));
+  nostage: W.BUILTIN.find((w) => w.id === "nostage"), theatre: W.BUILTIN.find((w) => w.id === "theatre"),
+  grid: W.gridFor(W.clean({ ...W.BUILTIN.find((w) => w.id === "nostage") })),
+  none: W.gridFor(W.clean({ id: "x", fix: false, prog: false, stage: false })) }));
 """
     url = (web / "app" / "wslayouts.js").as_uri()
     r = subprocess.run([node, "--input-type=module", "-e", js, url], capture_output=True, text=True, timeout=30)
@@ -4796,17 +4798,18 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("six ready ones: Set up, Live, then programming, busking, theatre, show",
-          got["ids"] == ["setup", "live", "programming", "busking", "theatre", "show"], str(got["ids"]))
+    check("five ready ones (fewer): Set up, Live, then programming, theatre, no 3D",
+          got["ids"] == ["setup", "live", "programming", "theatre", "nostage"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
           bad["fixW"] == 620 and bad["progW"] == 220 and bad["bottom"] == "faders" and bad["dock"] == 0
           and bad["tab"] == "" and len(bad["name"]) == 40 and bad["fix"] is True, str(bad))
-    check("running a show: the 3D and the buttons, nothing to program with", not got["show"]["fix"] and not got["show"]["prog"]
-          and got["show"]["bottom"] == "buttons")
-    check("busking: the buttons and the programmer, no fixture list", got["busk"]["prog"] and not got["busk"]["fix"]
-          and got["busk"]["bottom"] == "buttons")
+    check("no 3D: the buttons, the programmer and the fixture list, the programmer takes the 3D's room",
+          got["nostage"]["stage"] is False and got["nostage"]["bottom"] == "buttons"
+          and "stage" not in got["grid"]["areas"] and "minmax(0, 1fr)" in got["grid"]["cols"], str(got["grid"]))
+    check("...no 3D and no panels: the dock fills the screen", got["none"]["areas"] == '"pb"', str(got["none"]))
+    check("Theatre shows the cue list beside the faders", got["theatre"]["cues"] is True)
 
 
 def test_bug_report_never_waits_on_git() -> None:
@@ -7818,3 +7821,55 @@ def test_b5_room() -> None:
     check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
           and "x.yaw" in mv, "")
     check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")
+
+
+def test_b6_layouts() -> None:
+    """A15 B6: layouts without the 3D, the full-screen buttons with their
+    own bar, small screens (the dock follows the window, group faders fold,
+    5 fixture rows, panel minimums, Live's first row), Theatre's cue list,
+    Record cue says why, Ready? fixes as buttons, a Mobile DJ template,
+    a tour per mode."""
+    print("B6 layouts: no 3D, small screens, cue list, ready check, tours")
+    from app import engine as eng
+    from app import showtemplates
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws and '"3D view"' in ws
+          and "body.ws-nostage .stage-wrap { display: none; }" in css and 'classList.contains("ws-nostage")' in st, "")
+    check("full-screen buttons: pages, Edit, Layout and a Blackout of their own", 'id="qb-bo"' in html and ".qb.qb-full .qb-bo" in css, "")
+    check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
+          "clamp(140px, 27vh, 196px)" in css and 'id="grp-fold-btn"' in html and ".grp-masters.folded" in css
+          and ".fx-table-wrap { min-height: 150px; }" in css and ".fixtures, .programmer, .modehub { min-width: 220px; }" in css, "")
+    mh = (web / "modehub.js").read_text(encoding="utf-8")
+    check("Live on 1280 x 720: blackout, hits, tempo and autopilot first", "live-bo" in mh and ".hub-body.live .live-bo { display: flex; order: -3; }" in css, "")
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
+          and '"cue_go"' in pb, "")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    check("Record cue says why it is off", 'id="prog-why"' in html and "Nothing to record yet" in pj, "")
+    wj = (web / "welcome.js").read_text(encoding="utf-8")
+    check("a tour per mode (Set up, Program, Live), offered the first time in each",
+          "SETUP_STEPS" in wj and "LIVE_STEPS" in wj and "offerModeTour" in wj and "offerModeTour" in ws, "")
+    check("a Mobile DJ template with the operator's kind of rig",
+          "mobile_dj" in showtemplates.TEMPLATES and any("wave-360" in x[2].lower() for x in showtemplates.TEMPLATES["mobile_dj"]["lights"]), "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "w.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            r = e.act("ready_check")
+            dos = {i.get("do") for i in r["items"]}
+            check("Ready? each fix is a button: no lights -> Add", "add" in dos, str(r["items"]))
+            e.act("add_heads", query="Moving Head Spot 16ch", qty=1)
+            r = e.act("ready_check")
+            dos = {i.get("do") for i in r["items"]}
+            check("...record a cue, save, go live, stay on the floor", {"record", "save", "output"} <= dos, str(dos))
+        finally:
+            e.shutdown()
+    dj = (web / "dialogs.js").read_text(encoding="utf-8")
+    check("...the screen turns them into buttons", "const DO = {" in dj and "fixBtn" in dj and "Check again" in dj, "")
+

@@ -457,8 +457,13 @@ A slow computer films smoother at Small.
 ### Workspaces
 
 The top bar's **workspace** button arranges the screen for the job:
-*Programming*, *Busking* (buttons big, no fixture list), *Theatre (cues)*
-(a taller cue dock) and *Show (run only)* (the 3D view and the buttons).
+*Set up*, *Live*, *Programming*, *Theatre (cues)* (the cue list of the
+playback in focus beside the faders: the live cue marked, a tap is GO to
+that cue) and *No 3D (buttons + programmer)* (no visualiser at all: the
+programmer and the buttons get the room, and the computer does no 3D
+work).  The menu's *3D view* and *Cue list beside the faders* turn those on
+or off in any workspace.  (Busking and Show from earlier versions stay in
+your list as your own workspaces.)
 Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
 left it: the fixture list and programmer shown or hidden, which side each
 is on (drag a panel by its title to the side you want - both can go on the
@@ -468,6 +473,19 @@ again), their widths (drag a panel's
 inner edge; double-click for the normal width), the faders / buttons dock at
 the bottom or the top and its height, the programmer's tab. *Save as a new workspace* makes your own. Workspaces belong to this
 computer (each operator's own), not to the show.
+
+**Small screens (1280 x 720):** the dock's height follows the window, the
+group faders fold away (the ‹ beside them) and scroll, the fixture list
+keeps at least 5 rows, and panels never squeeze below what they can show.
+In Live, blackout, the hits, the tempo and the autopilot come first.  In
+full screen the buttons have their own Blackout; pages, Edit and Layout
+work there too.
+
+**Help → Take the tour** shows round the mode on screen (Set up, Program
+or Live); the first time in each mode the desk offers it once.  A greyed
+*Record cue* says why underneath.  **Ready?** puts a button on each thing
+to fix (Add lights, Show the clashes, Record a cue, Save, Output
+settings, Turn on Stay on the floor...) and *Check again*.
 
 ### Keyboard
 
@@ -693,7 +711,8 @@ the computer). It also offers a **template**, or an empty show, and a short
 **tour** of the desk (later: Help → *Take the tour*).
 
 **Show ▾ → New show…** has the templates: **Club night**, **Wedding**,
-**Band / concert**, **Theatre** and **Corporate event**. Each one builds:
+**Band / concert**, **Theatre**, **Mobile DJ** (two movers and a Wave
+360 on the DJ's truss, uplights round the floor) and **Corporate event**. Each one builds:
 - a room of that kind;
 - real lights from the library, hung on its trusses;
 - groups;

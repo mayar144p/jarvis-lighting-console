@@ -179,9 +179,13 @@ function paintLive() {
         h("button.btn.small", { onclick: () => import("./songs.js").then((m) => m.openSongs()) }, "Songs…"),
         h("label.check", h("input", { type: "checkbox", checked: !!sg.follow, onchange: (e) => run("song_follow", { state: e.target.checked }, { toast: true }) }),
           h("span", "Follow the DJ decks")))),
-    h("div.live-k", "Hits"),
+    // on a short screen this row comes first (app.css): blackout and the master in reach
+    h("div.live-bo",
+      h("button.btn" + (s.blackout ? ".on" : ""), { title: "Blackout (X)", onclick: () => run("blackout", { state: s.blackout ? 0 : 1 }) }, s.blackout ? "BLACKOUT on" : "BLACKOUT"),
+      h("span.muted.small", `Master ${s.master ?? 100}%`)),
+    h("div.live-k.hits-k", "Hits"),
     hits.length ? h("div.live-hits", ...hits.map(pressBtn))
-      : h("p.muted.small", "Strobe, flash and blinder buttons show here: make them on the Buttons page (Program mode)."),
+      : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: make them on the Buttons page (Program mode)."),
     h("div.live-pair",
       h("div.live-card",
       h("div.live-k", "Tempo"),

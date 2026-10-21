@@ -364,6 +364,16 @@ the booth and the middle.
    *Record cue* says why it is off; Ready? check fixes are buttons; a
    *Mobile DJ* template; a tour per mode.
 
+**Done (B6):** workspaces can hide the 3D (`stage: false`; the 3D stops
+drawing) and show the cue list beside the faders (`cues`); the ready ones
+are fewer: Set up, Live, Programming, Theatre (with the cue list), No 3D.
+Full-screen buttons get their own Blackout.  Small screens: the dock's
+height follows the window, group faders fold and scroll, 5 fixture rows,
+panel minimum widths, Live's first row is blackout / hits / tempo /
+autopilot.  Record cue says why it is off; Ready? fixes are buttons (`do`
+on each item); a Mobile DJ template; a tour per mode, offered the first
+time in each.  (The colour-on-dark-lights fix landed in B3.)
+
 ### B7. AI bugs (later)
 The operator will list them.
 

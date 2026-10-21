@@ -981,6 +981,12 @@ function renderProgIn() {
   $("#prog-clear").disabled = !any;
   $("#prog-record").disabled = !any;
   $("#prog-make").disabled = !any || !hasSel();
+  // a greyed-out button says why (a disabled button shows no tooltip everywhere)
+  const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
+    : !hasSel() ? "Select the lights to make a button of them." : "";
+  $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
+  const w = $("#prog-why");
+  if (w && w.textContent !== why) w.textContent = why;
 }
 
 // a button holding some of the selected lights: say so, with a Turn off

@@ -530,50 +530,52 @@ class ShowMixin:
         with what to press.  Read-only."""
         items: list[dict] = []
 
-        def add(level, text, fix=""):
-            items.append({"level": level, "text": text, "fix": fix})
+        def add(level, text, fix="", do="", head=None):
+            # `do`: what the screen's button for it opens or does (see openReadyCheck)
+            items.append({"level": level, "text": text, "fix": fix,
+                          **({"do": do} if do else {}), **({"head": head} if head is not None else {})})
 
         if not self.patch:
-            add("bad", "No lights are patched.", "+ Add")
+            add("bad", "No lights are patched.", "+ Add", "add")
         clashes = self._patch_clashes()
         if clashes:
-            add("bad", f"{len(clashes)} DMX clash(es): two lights share channels.", "Fixtures → the red warning → Move")
+            add("bad", f"{len(clashes)} DMX clash(es): two lights share channels.", "Fixtures → the red warning → Move", "dmx_map")
         raw = [h["head_no"] for h in self.patch if not h.get("mapped", True)]
         if raw:
             add("warn", f"{len(raw)} light(s) have channels the desk can't name ({', '.join(f'#{n}' for n in raw[:6])}).",
-                "Edit fixture profile")
+                "Edit fixture profile", "profile", raw[0])
         gone = self._stale_heads(self.patch, self.playbacks)
         if gone:
-            add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues")
+            add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues", "cue_list")
         if not any(pb["stack"] for pb in self.playbacks):
-            add("warn", "No cues recorded yet.", "Record a cue")
+            add("warn", "No cues recorded yet.", "Record a cue", "record")
         always = [h["head_no"] for h in self.patch if self._lamp_only(h)]
         if always:
             add("warn", f"{len(always)} light(s) have no dimmer or shutter in their mode, so Blackout can't "
                         f"darken them ({', '.join(f'#{n}' for n in always[:6])}).",
-                "Pick a mode with a dimmer / shutter, or fix the profile")
+                "Pick a mode with a dimmer / shutter, or fix the profile", "change_type", always[0])
         unsure = [h["head_no"] for h in self.patch
                   if (q := self.zero_question(h)) is not None and q["dark"] is None]
         if unsure:
             add("warn", f"{len(unsure)} light(s) switch on and off with their colour channel, and their file "
                         f"doesn't say if 0 is dark ({', '.join(f'#{n}' for n in unsure[:6])}).",
-                "Right-click one → Test this light (asked once per model)")
+                "Right-click one → Test this light (asked once per model)", "light_test", unsure[0])
         movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
         if movers and not self.floor_safe:
-            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Position tab → Stay on the floor")
+            add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Position tab → Stay on the floor", "floor_safe")
         lasers = [h for h in self.patch if any(r in LASER_ROLES for r in h["map"])]
         if lasers:
             add("info", f"{len(lasers)} laser(s): output only while ARMED; KILL FX stops everything.", "")
         if self.dry_run or not self.live:
-            add("warn", "BLIND / output stopped: nothing reaches the lights yet.", "Go live…")
+            add("warn", "BLIND / output stopped: nothing reaches the lights yet.", "Go live…", "output")
         # the error count is for the whole run: one hiccup an hour ago is
         # history, only a recent failure means the output is broken now
         err_at = self.output.get("last_error_at")
         if self.output.get("errors") and err_at is not None and time.monotonic() - err_at < READY_ERROR_WINDOW_S:
             add("bad", f"{self.output['errors']} DMX send error(s): {self.output.get('last_error') or ''}".strip(),
-                "Settings → Output")
+                "Settings → Output", "output")
         if not self.show_file:
-            add("warn", "The show has never been saved.", "Show ▾ → Save")
+            add("warn", "The show has never been saved.", "Show ▾ → Save", "save")
         if not items or all(i["level"] == "info" for i in items):
             add("ok", "Ready: nothing to fix.")
         worst = next((lv for lv in ("bad", "warn") if any(i["level"] == lv for i in items)), "ok")
