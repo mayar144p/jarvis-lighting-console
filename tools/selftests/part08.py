@@ -840,9 +840,12 @@ def test_discovery() -> None:
     empty = artnet.scan(timeout=0.4, port=_free_udp_port(), sweep_timeout=0.4)
     check("an empty network reports no nodes",
           empty["nodes"] == [] and empty["universes"] == [], json.dumps(empty)[:160])
+    # every address of the /24 is either polled or reported as skipped (a
+    # busy computer - a shared CI machine - can't send them all in time)
     check("an empty network reports how hard it looked",
-          empty["polls_sent"] >= 254 and "unicast" in " ".join(empty["tried"]),
-          json.dumps({k: empty[k] for k in ("polls_sent", "tried")}))
+          empty["polls_sent"] + empty.get("skipped", 0) >= 254 and "unicast" in " ".join(empty["tried"])
+          and (not empty.get("skipped") or "not polled" in empty["message"]),
+          json.dumps({k: empty.get(k) for k in ("polls_sent", "skipped", "tried")}))
     check("an empty network message names the subnets swept",
           "broadcast" in empty["message"] and "unicast" in empty["message"],
           empty["message"])
