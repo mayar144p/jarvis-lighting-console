@@ -571,7 +571,10 @@ function renderBeamQuick() {
       clearTimeout(tmo);
       tmo = setTimeout(() => run("set_attribute", { attribute: strobe.role, value: +find.value }), 50);
     });
-    rows.push(h("div.open-find" + (strobe.open_known ? "" : ".unknown"),
+    const finder = (...kids) => (strobe.open_known
+      ? h("details.open-find", h("summary.small.muted", "Light stays dark on Full? Find its open value"), ...kids)
+      : h("div.open-find.unknown", ...kids));
+    rows.push(finder(
       h("div.small", strobe.open_known
         ? `Opens at ${openV}. If the real light stays dark on Full, find its open value:`
         : "The desk doesn't know which value opens this light's shutter, so Full may leave it dark. Put the dimmer up, slide until the REAL light comes on, then press This is open:"),
@@ -904,8 +907,12 @@ function headBar(heads, n) {
   const vals = (((state.snap && state.snap.programmer) || {}).values || {})[hd.head_no] || {};
   const deg = (v) => `${Math.round((v / 255 - 0.5) * span)}°`;
   const send = throttle((k, v) => run("set_attribute", { attribute: "tilt", value: v, cell: [k] }, { silentError: true }), 60);
-  return h("div.head-bar", { title: "Tilt each head (degrees from straight out)" },
-    h("span.muted.small", "Tilt per head:"),
+  // folded by default: it is a lot of sliders above every tab (remembered)
+  let open = false;
+  try { open = localStorage.getItem("jarvis.headBar") === "1"; } catch { /* private window */ }
+  return h("details.head-bar", { title: "Tilt each head (degrees from straight out)", open,
+    ontoggle: (e) => { try { localStorage.setItem("jarvis.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
+    h("summary.muted.small", `Tilt per head (${tilts})`),
     ...Array.from({ length: tilts }, (_, i) => {
       const v = vals[`tilt@${i + 1}`] ?? 128;
       const out = h("small", deg(v));
@@ -1405,7 +1412,45 @@ function wireActs() {
   $("#prog-make").addEventListener("click", makeHoldButton);
 }
 
+// Sub-tabs inside the busy tabs: Position (Point / Move / Limits), Beam
+// (Quick / All channels), FX (Effects / Running / Step & paint).  Each part
+// of the tab says which sub-tab it is on (data-in); the one picked is
+// remembered on this computer.
+const SUBS = {
+  position: [["point", "Point", "Aim at spots, the room map, the pan / tilt pad"], ["move", "Move", "Movements: circles, A → B in degrees, waves, the light's own moves"],
+    ["limits", "Limits", "Stay on the floor, each light's own range, laser safety"]],
+  beam: [["quick", "Quick", "Strobe, gobo, prism, zoom, iris, frost and focus in one press"], ["all", "All channels", "Every beam channel the light has, as a slider"]],
+  fx: [["effects", "Effects", "The effect library and its knobs"], ["running", "Running", "What is running now, and where it comes from"],
+    ["paint", "Step & paint", "Step effects from your looks; gradients, pictures and video across the lights"]],
+};
+function initSubTabs() {
+  for (const [pane, subs] of Object.entries(SUBS)) {
+    const el = $(`.tab-pane[data-pane="${pane}"]`);
+    if (!el) continue;
+    let cur = subs[0][0];
+    try { cur = localStorage.getItem("jarvis.sub." + pane) || cur; } catch { /* private window */ }
+    if (!subs.some(([k]) => k === cur)) cur = subs[0][0];
+    const nav = h("nav.sub-tabs", { role: "tablist", "aria-label": `${pane} parts` });
+    const pick = (k) => {
+      el.dataset.sub = k;
+      for (const b of nav.children) b.setAttribute("aria-selected", String(b.dataset.sub === k));
+      try { localStorage.setItem("jarvis.sub." + pane, k); } catch { /* private window */ }
+    };
+    nav.append(...subs.map(([k, label, title]) => h("button", { role: "tab", type: "button", dataset: { sub: k }, title, onclick: () => pick(k) },
+      label, h("span.sub-count", { hidden: true }))));
+    el.prepend(nav);
+    pick(cur);
+  }
+  // how many effects are running: on the FX tab's Running sub-tab
+  on("snapshot", () => {
+    const n = ((state.snap && state.snap.fx) || []).length;
+    const c = document.querySelector('.tab-pane[data-pane="fx"] .sub-tabs [data-sub="running"] .sub-count');
+    if (c) { c.hidden = !n; c.textContent = String(n); }
+  });
+}
+
 export function initProgrammer() {
+  initSubTabs();
   wireActs();
   intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
   $$("#int-quick button").forEach((b) => b.addEventListener("click", () => {

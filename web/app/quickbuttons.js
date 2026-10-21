@@ -11,7 +11,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, menu, throttle } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -381,6 +381,7 @@ function render(force = false) {
         if (b.kind === "page" || b.kind === "folder") {
           // the screen turns the page (a folder remembers the way back)
           if (b.kind === "folder") folderBack.push(page); else folderBack.length = 0;
+          if (b.release_here || (b.turn_on || []).length) run("quick_press", { id: b.id, down: true }, { silentError: true });
           setPage(b.to_page || 1);
           return;
         }
@@ -415,6 +416,8 @@ function render(force = false) {
   $("#qb-edit").textContent = editing ? "Done" : "Edit";
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
+  $("#qb-pages-btn").hidden = !editing;
+  $("#qb-colrow").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
   $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
   updateControls();
@@ -428,7 +431,8 @@ function render(force = false) {
 // A fader, an XY pad, the tempo and a cue list live on the page as tiles:
 // drawn once, their numbers kept current from the live feed.
 const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
-function faderValue(c) {
+function faderValue(c, b) {
+  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? 0;
   if (c.what === "master") return snapOrLite("master") ?? 100;
   if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
   if (c.what === "playback") {
@@ -445,7 +449,7 @@ function controlTile(b) {
   const head = h("span.qline", b.icon ? icon(b.icon) : null, h("b", b.label));
   if (b.kind === "fader") {
     const c = b.control || { what: "master" };
-    const v = faderValue(c);
+    const v = faderValue(c, b);
     const out = h("output.qval", faderText(c, v));
     const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
@@ -489,7 +493,7 @@ function updateControls() {
     if (b.kind === "fader") {
       const inp = el.querySelector(".qfader-in");
       if (inp.dataset.busy) continue;
-      const v = faderValue(b.control || { what: "master" });
+      const v = faderValue(b.control || { what: "master" }, b);
       inp.value = v;
       el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
     } else if (b.kind === "tempo") {
@@ -561,6 +565,7 @@ function fromButton(b) {
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
     control: b && b.control ? { ...b.control } : { what: "master" },
     toPage: b && b.to_page ? b.to_page : (page < (quick().pages || 32) ? page + 1 : 1),
+    releaseHere: !!(b && b.release_here), turnOn: b && b.turn_on ? [...b.turn_on] : [],
     order: (b && b.order) || "forward", offset: { pan: 0, tilt: 0, ...((b && b.offset) || {}) },
   };
   if (b && b.kind === "custom") {
@@ -588,7 +593,7 @@ function toButton(s) {
   if (PACED.has(d)) { if (s.rate !== 1) b.rate = s.rate; if (s.free) b.free = true; }
   if (s.icon) b.icon = s.icon;
   if (s.quant !== "" && !NO_QUANT.has(kind)) b.quant = +s.quant;
-  if (!NO_TARGET.has(d)) b.target = { ...s.target };
+  if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) b.target = { ...s.target };
   if (!ONE_SHOT.has(d)) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
     if (s.exclusive.trim()) b.exclusive = s.exclusive.trim();
@@ -617,11 +622,18 @@ function toButton(s) {
   if (d === "go" || d === "release") b.playback = +s.playback || 1;
   if (d === "go" && s.cue !== "") b.cue = +s.cue;
   if (d === "preset") b.preset = +s.preset;
-  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 } : { what: s.control.what };
+  if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 }
+    : s.control.what === "lights" ? { what: "lights", mode: s.control.mode || "level" } : { what: s.control.what };
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
-  if (d === "page" || d === "folder") b.to_page = +s.toPage || 1;
+  if (d === "page" || d === "folder") {
+    b.to_page = +s.toPage || 1;
+    if (s.releaseHere) b.release_here = true;
+    const there = new Set(quick().buttons.filter((x) => x.page === b.to_page).map((x) => x.id));
+    const ons = s.turnOn.filter((x) => there.has(x));
+    if (ons.length) b.turn_on = ons;
+  }
   if (["fx", "move", "custom", "capture"].includes(d)) {
     if (s.order !== "forward") b.order = s.order;
     if (s.offset.pan || s.offset.tilt) b.offset = { pan: +s.offset.pan || 0, tilt: +s.offset.tilt || 0 };
@@ -690,6 +702,73 @@ function lookMenu(el, b) {
   ]);
 }
 
+// + Colour row: one colour button per colour for some lights, in one radio
+// group (pressing one turns the others off), side by side on this page
+export function makeColourRow(heads = null) {
+  const sel = heads || ((state.snap && state.snap.selected) || []);
+  const s = { who: sel.length ? "sel" : (groups()[0] ? "g" + groups()[0].n : "sel"),
+    colours: ["#ff0000", "#0033ff", "#00ff40", "#ffffff", "#ff00cc", "#00c8ff", "#ffb000", "#7a00ff"], name: "" };
+  const body = h("div.qe");
+  const draw = () => {
+    body.replaceChildren(
+      row("Which lights", chips([["sel", `Selected (${sel.length})`], ...groups().map((g) => ["g" + g.n, g.name])], s.who, (v) => { s.who = v; draw(); })),
+      row("Colours", h("div.chip-row", ...SWATCH.map((c) => h("button.qe-sw" + (s.colours.includes(c) ? ".on" : ""), {
+        type: "button", title: c, style: { background: c }, "aria-pressed": String(s.colours.includes(c)),
+        onclick: () => { s.colours = s.colours.includes(c) ? s.colours.filter((x) => x !== c) : [...s.colours, c]; draw(); } })))),
+      row("One at a time", h("input.qe-tag", { type: "text", maxlength: 20, value: s.name, placeholder: "radio group name (optional)",
+        oninput: (e) => { s.name = e.target.value; } })),
+      h("div.qe-note", `${s.colours.length} buttons on ${pageName(page)}, side by side. Pressing one turns the others in the row off; press it again for none.`));
+  };
+  draw();
+  const close = modal({ title: "Make a colour row", body, foot: [h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel"),
+    h("button.btn.primary", { onclick: async () => {
+      if (s.who === "sel" && !sel.length) { toast("Select the lights first, or pick a group", "bad"); return; }
+      const r = await run("quick_colour_row", { colours: s.colours, page, name: s.name.trim(),
+        ...(s.who === "sel" ? { heads: sel } : { group: +s.who.slice(1) }) }, { toast: true });
+      if (r.ok) { close(); render(true); }
+    } }, "Make the row")] });
+}
+
+// Edit -> Pages: every page in one list - name it, open it, move it up or
+// down (its buttons, grid and name go with it; go-to-page buttons, timeline
+// clips and sound triggers follow), empty it, add the next one
+function editPages() {
+  const body = h("div.qe.pages-list");
+  const draw = () => {
+    const q = quick();
+    const used = new Set(q.buttons.map((b) => b.page));
+    const last = Math.min(q.pages || 32, Math.max(4, page, ...used));
+    const rows = [];
+    for (let p = 1; p <= last; p++) {
+      const n = q.buttons.filter((b) => b.page === p).length;
+      const name = h("input.qe-name", { type: "text", maxlength: 16, value: (q.names || {})[p] || "", placeholder: `Page ${p}`,
+        onchange: (e) => run("quick_page", { page: p, name: e.target.value.trim() }) });
+      rows.push(h("div.page-row" + (p === page ? ".on" : ""),
+        h("span.page-n", String(p)), name, h("small.muted", `${n} button${n === 1 ? "" : "s"}`),
+        h("button.btn.small.ghost", { title: "Open this page", onclick: () => { close(); folderBack.length = 0; setPage(p); } }, "Open"),
+        h("button.btn.small.ghost", { title: "Move up (swap with the page above)", disabled: p === 1,
+          onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, "▲"),
+        h("button.btn.small.ghost", { title: "Move down (swap with the page below)", disabled: p >= (q.pages || 32),
+          onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, "▼"),
+        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !n && !(q.names || {})[p],
+          onclick: async () => {
+            if (!(await confirmBox("Empty page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+            await run("quick_page", { page: p, delete: true }); draw(); render(true);
+          } }, "Delete")));
+    }
+    body.replaceChildren(...rows,
+      last < (q.pages || 32) ? h("button.btn.small", { onclick: async () => {
+        const name = await promptBox("New page", "Name", "", { ok: "Add", placeholder: "e.g. Show" });
+        if (name === null || name === undefined) return;
+        await run("quick_page", { page: last + 1, name: name.trim() || "" });
+        page = last + 1; render(true); draw();
+      } }, "+ Add a page") : null,
+      h("p.qe-note", "A heading tile names a row; a Go to page or Folder tile jumps between pages and can turn the old page's buttons off on the way."));
+  };
+  draw();
+  const close = modal({ title: "Pages", body, foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")] });
+}
+
 // Edit -> Layout: this page's grid
 function editLayout() {
   const cur = layoutOf(page);
@@ -744,7 +823,7 @@ function editButton(slot, btn) {
       lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
-    if (!NO_TARGET.has(d)) {
+    if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
       const who = fxKind
         ? [["all", "All effects"], ["sel", `Selected (${selected.length})`], ...FX_TYPES.map(([k, l]) => ["t" + k, l])]
         : [["all", "All lights"], ["sel", `Selected (${selected.length})`], ...groups().map((g) => ["g" + g.n, g.name]),
@@ -758,8 +837,20 @@ function editButton(slot, btn) {
       const n = Math.max(8, ...quick().buttons.map((x) => x.page), page + 1);
       kids.push(row(d === "folder" ? "Opens" : "Goes to", chips(Array.from({ length: Math.min(n, quick().pages || 32) }, (_, i) => [i + 1, pageName(i + 1)]),
         +s.toPage, (v) => { s.toPage = v; draw(); }),
-      h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name pages by double-clicking them in Edit."
-        : "Pressed, it shows that page. Name pages by double-clicking them in Edit.")));
+      h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name and order pages with Pages… in Edit."
+        : "Pressed, it shows that page. Name and order pages with Pages… in Edit.")));
+      // on the way there: this page's buttons off (the preshow), some of the
+      // next page's on (the show's start)
+      kids.push(row("On the way", h("div.chip-row", h("button.chip" + (s.releaseHere ? ".on" : ""), { type: "button",
+        title: "Every button that is on, on this page, turns off when this is pressed (e.g. the preshow looks)",
+        onclick: () => { s.releaseHere = !s.releaseHere; draw(); } }, `Turn off what's on on ${pageName(page)}`))));
+      const there = quick().buttons.filter((x) => x.page === +s.toPage && !ONE_SHOT.has(x.kind) && x.kind !== "label");
+      kids.push(row("And turn on", there.length
+        ? chips(there.map((x) => [x.id, x.label]), s.turnOn, (v) => {
+          s.turnOn = s.turnOn.includes(v) ? s.turnOn.filter((x) => x !== v) : [...s.turnOn, v].slice(0, 8);
+          draw();
+        }, { multi: true })
+        : h("div.qe-note", `${pageName(+s.toPage)} has no on / off buttons yet.`)));
     }
     if (d === "label") kids.push(row("Heading", h("div.qe-note", "Only its name shows, as a heading over a row of buttons; pressing it does nothing.")));
     if (["fx", "move", "custom", "capture"].includes(d)) {
@@ -780,8 +871,14 @@ function editButton(slot, btn) {
     if (d === "dim") kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
     if (d === "fader") {
       const c = s.control;
-      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group"]], c.what,
-        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1 }; draw(); })));
+      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group master"],
+        ["lights", "Some lights", "These lights' own fader (pick them below)"]], c.what,
+        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); })));
+      if (c.what === "lights") {
+        kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
+          ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"]], c.mode || "level",
+        (v) => { c.mode = v; draw(); })));
+      }
       if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
       if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
         : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
@@ -1049,6 +1146,8 @@ export function initQuickButtons() {
   }, true);
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
+  $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {

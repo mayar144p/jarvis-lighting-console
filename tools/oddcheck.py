@@ -41,8 +41,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("DMX_HOST", "127.0.0.1")     # never the real node
 
-from app import engine as eng, fixlib, fixtures  # noqa: E402
+from app import engine as eng, fixlib, fixtures, hue  # noqa: E402
 from app.engine_base import ACTIONS  # noqa: E402
+
+# Looking for Hue bridges listens on the real network for 2 s; given junk 64
+# times that was 2 of the check's 9 minutes, waiting for lamps that are not
+# there.  The action itself is still called (and must not crash).
+hue.discover = lambda timeout=2.0: []
 
 fails: list[str] = []
 oks = 0
@@ -190,10 +195,18 @@ def sec_junk(tmp: Path) -> None:
         e.act("set_intensity", level=100)
         e.act("record_cue", playback=1)
         e.act("quick_defaults")
+        # every action starts from this same small show: junk given to one
+        # action (a timeline made from a playback, 64 times over) must not
+        # bloat the show the next one works on - it grew to tens of
+        # thousands of clips, every Ctrl+Z snapshot copied them, and the
+        # check took 9 minutes instead of under one
+        start = e._undo_state()
         before = len(fails)
         for a in ACTIONS:
             if a in ("undo", "redo", "set_dry_run", "set_output"):
                 continue
+            with e.lock:
+                e._restore_state(start)
             for key, values in JUNK.items():
                 for v in values:
                     call(e, a, timeout=4.0 if a in SLOW else 8.0, **{key: v})

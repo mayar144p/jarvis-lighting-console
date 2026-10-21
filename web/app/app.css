@@ -1443,6 +1443,10 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 /* the buttons page on the whole screen */
 .qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
 .qb.qb-full .qb-grid { flex: 1; }
+.pages-list { display: flex; flex-direction: column; gap: 4px; }
+.page-row { display: grid; grid-template-columns: 26px minmax(120px, 1fr) 80px repeat(4, auto); gap: 6px; align-items: center; }
+.page-row.on .page-n { color: var(--accent); font-weight: 700; }
+.page-n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .qb-bo { display: none; font-weight: 700; border-color: var(--live); color: #fca5a5; }
 .qb.qb-full .qb-bo { display: inline-flex; }
 .qb-bo.on { background: var(--live); color: #fff; }
@@ -1495,7 +1499,9 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 /* a button holding the selected lights */
 .prog-held { padding: 6px 12px; background: rgba(250, 204, 21, .10); border-bottom: 1px solid rgba(250, 204, 21, .35); }
 .prog-held[hidden] { display: none; }
-.head-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; }
+.head-bar { width: 100%; }
+.head-bar[open] { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.head-bar > summary { cursor: pointer; width: 100%; }
 .head-tilt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 .head-tilt input { width: 80px; }
 .head-tilt small { min-width: 36px; color: var(--muted); }
@@ -1966,7 +1972,7 @@ body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
 .fixtures, .programmer, .modehub { min-width: 220px; }
 .fx-table-wrap { min-height: 150px; }              /* the fixture list keeps 5 rows */
 .live-bo { display: none; }
-.prog-why { flex: 1 1 100%; line-height: 1.3; }
+.prog-why { grid-column: 1 / -1; line-height: 1.3; }
 .prog-why:empty { display: none; }
 @media (max-height: 820px) {
   /* the dock follows the window instead of a fixed height */
@@ -1984,4 +1990,20 @@ body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
 .live-bo { gap: 8px; align-items: center; }
 .live-bo .btn { flex: 1; min-height: 40px; font-weight: 700; }
 .live-bo .btn.on { background: var(--live); border-color: var(--live); color: #fff; }
+
+/* sub-tabs inside the busy programmer tabs (programmer.js SUBS) */
+.sub-tabs { display: flex; gap: 2px; padding: 6px 12px 4px; position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--border); }
+.sub-tabs button { flex: 1; padding: 5px 8px; font-size: 12.5px; border-radius: var(--radius-sm); color: var(--text-2); background: transparent; border: 1px solid transparent; }
+.sub-tabs button[aria-selected="true"] { color: var(--accent); background: var(--accent-bg); border-color: var(--accent); font-weight: 600; }
+.sub-count { margin-left: 5px; font-size: 10.5px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: #fff; }
+.tab-pane[data-sub="point"] [data-in]:not([data-in="point"]),
+.tab-pane[data-sub="move"] [data-in]:not([data-in="move"]),
+.tab-pane[data-sub="limits"] [data-in]:not([data-in="limits"]),
+.tab-pane[data-sub="quick"] [data-in]:not([data-in="quick"]),
+.tab-pane[data-sub="all"] [data-in]:not([data-in="all"]),
+.tab-pane[data-sub="effects"] [data-in]:not([data-in="effects"]),
+.tab-pane[data-sub="running"] [data-in]:not([data-in="running"]),
+.tab-pane[data-sub="paint"] [data-in]:not([data-in="paint"]) { display: none !important; }
+details.open-find > summary { cursor: pointer; padding: 4px 0; }
+details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12.5px; padding: 4px 0; }
 

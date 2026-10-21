@@ -7875,6 +7875,143 @@ def test_b6_layouts() -> None:
 
 
 
+def test_page_flow() -> None:
+    """Buttons pages, MagicQ style: a Show button that leaves the preshow
+    (its buttons off) and starts the show page's buttons, and the Pages
+    list (rename, swap, empty) with every reference to a moved button kept."""
+    print("Pages: preshow -> show, and the Pages list")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            pre = e.act("quick_set", page=1, slot=1, button={"kind": "colour", "colour": "#0033ff", "label": "Preshow blue"})["id"]
+            start = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "colour": "#ff0000", "label": "Show red"})["id"]
+            e.act("quick_set", page=1, slot=2, button={"kind": "label", "label": "PRESHOW"})
+            go = e.act("quick_set", page=1, slot=3, button={"kind": "page", "label": "SHOW", "to_page": 2,
+                                                            "release_here": True, "turn_on": [start]})
+            check("a go-to-page tile can turn this page's buttons off and the next page's on",
+                  go["button"].get("release_here") and go["button"].get("turn_on") == [start], str(go["button"]))
+            e.act("quick_press", id=pre, down=True)
+            r = e.act("quick_press", id=go["id"], down=True)
+            check("...pressing SHOW: the preshow look goes off, the show's red comes on, the page turns",
+                  pre not in e.quick_active and start in e.quick_active and r.get("page") == 2, str(r))
+            e.act("quick_page", page=2, name="Show")
+            e.timeline.setdefault("tracks", []).append({"kind": "button", "name": "Hits", "clips": [{"t": 0, "dur": 1, "button": start}]})
+            e.act("quick_page", page=1, swap=2)
+            moved = next(b for b in e.quick if b["label"] == "Show red")
+            tile = next(b for b in e.quick if b["label"] == "SHOW")
+            check("Pages: swap two pages - names, buttons and the go-to-page tile follow",
+                  e.quick_names.get("1") == "Show" and moved["page"] == 1 and tile["page"] == 2
+                  and tile["to_page"] == 1 and tile["turn_on"] == [moved["id"]], f"{e.quick_names} {tile}")
+            clip = e.timeline["tracks"][-1]["clips"][0]
+            check("...a timeline clip still plays the same button", clip["button"] == moved["id"], str(clip))
+            e.act("quick_page", page=2, delete=True)
+            check("...empty a page", not any(b["page"] == 2 for b in e.quick), "")
+            e.act("undo")
+            check("...one Ctrl+Z brings it back", any(b["page"] == 2 for b in e.quick), "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Pages... (name, open, move up / down, delete, add), On the way / And turn on",
+          "function editPages" in qb and 'id="qb-pages-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "release_here" in qb and "turn_on" in qb, "")
+
+
+def test_colour_row() -> None:
+    """Make a colour row: one colour button per colour for some lights, in
+    one radio group - pressing one turns the other colours off."""
+    print("Buttons: a colour row in one go")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "F"})
+            r = e.act("quick_colour_row", heads=[2], colours=["#ff0000", "#0033ff", "#00ff40"], page=1)
+            row = [b for b in e.quick if b["id"] in (r.get("ids") or [])]
+            check("three colour buttons for light 2, side by side after what is there",
+                  [b["slot"] for b in row] == [2, 3, 4] and [b["label"] for b in row] == ["Red", "Blue", "Green"]
+                  and all(b["target"] == {"heads": [2]} and b["mode"] == "latch" for b in row), str(r))
+            check("...all in one radio group", len({b.get("exclusive") for b in row}) == 1 and row[0].get("exclusive"), "")
+            e.act("quick_press", id=row[0]["id"], down=True)
+            e.act("quick_press", id=row[1]["id"], down=True)
+            check("...pressing Blue turns Red off", row[1]["id"] in e.quick_active and row[0]["id"] not in e.quick_active, "")
+            look = next(lk for lk in e._looks() if lk["n"] == 2)
+            check("...and light 2 is blue", look["hex"].lower() in ("#0033ff", "#0000ff") or look["hex"][5:] > look["hex"][1:3], look["hex"])
+            e.act("quick_press", id=row[1]["id"], down=True)       # off again (an edit to undo comes next)
+            e.act("undo")
+            check("the whole row is one Ctrl+Z", not any(b["id"] in r["ids"] for b in e.quick), "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: + Colour row... in Edit, and on a light's menu",
+          "export function makeColourRow" in qb and "makeColourRow" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
+
+
+def test_lights_fader() -> None:
+    """A fader tile for some lights: their brightness (up from dark) or a
+    master (a share of what they do), on the buttons page and in full screen."""
+    print("Buttons: a fader for any lights")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            lv = e.act("quick_set", page=1, slot=1, button={"kind": "fader", "label": "PAR 2", "control": {"what": "lights"},
+                                                            "target": {"heads": [2]}})
+            check("a fader for one light", lv.get("button", {}).get("control") == {"what": "lights", "mode": "level"}, str(lv))
+            a = lambda n: next(lk["a"] for lk in e._looks() if lk["n"] == n)  # noqa: E731
+            check("...it starts dark", a(2) == 0, "")
+            e.act("quick_fader", id=lv["id"], level=60)
+            check("...up to 60%: that light lifts from dark, the others stay", abs(a(2) - 0.6) < 0.02 and a(1) == 0, str(a(2)))
+            e.act("select_heads", heads=[1, 3])
+            e.act("set_intensity", level=100)
+            m = e.act("quick_set", page=1, slot=2, button={"kind": "fader", "label": "Sides", "control": {"what": "lights", "mode": "master"},
+                                                           "target": {"heads": [1, 3]}})
+            e.act("quick_fader", id=m["id"], level=25)
+            check("a master fader: a share of what they do (full -> 25%)", abs(a(1) - 0.25) < 0.02 and abs(a(3) - 0.25) < 0.02, str(a(1)))
+            check("the screen sees the faders' places", e._quick_public()["faders"] == {lv["id"]: 60, m["id"]: 25}, str(e._quick_public()["faders"]))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
+          '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
+
+
+def test_programmer_subtabs() -> None:
+    """The busy programmer tabs in parts: Position (Point / Move / Limits),
+    Beam (Quick / All channels), FX (Effects / Running / Step & paint);
+    every part of those tabs is on one of them, and the rarely used knobs
+    fold away."""
+    print("Programmer: Position, Beam and FX in parts")
+    import re
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
+    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "jarvis.sub." in pj
+          and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
+    check("each sub-tab hides the others' parts",
+          all(f'.tab-pane[data-sub="{k}"] [data-in]:not([data-in="{k}"])' in css for ks in subs.values() for k in ks), "")
+    tagged = set(re.findall(r'data-in="([a-z]+)"', html)) | set(re.findall(r'tag\([a-zA-Z]+\([^)]*\), "([a-z]+)"\)', mv))
+    check("every part is on a sub-tab (the aim and pad on Point, movements on Move, limits on Limits)",
+          tagged >= {k for ks in subs.values() for k in ks}, str(sorted(tagged)))
+    check("FX shows how many effects run on its Running sub-tab", "sub-count" in pj, "")
+    check("rarely used knobs fold: direction, arc, lock; the shutter's open-value finder once it is known",
+          "More: direction, arc, lock" in mv and "Find its open value" in pj, "")
+
+
 def test_look_shares_the_frame() -> None:
     """The 3D look reuses what the frame just resolved (the screens'
     stream would otherwise do every light's merge twice a tick): the same

@@ -45,7 +45,7 @@ class QuickMixin:
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
                                   "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
     PAGE_TILES = frozenset({"label", "page", "folder"})
-    FADER_OF = ("master", "speed", "playback", "group")
+    FADER_OF = ("master", "speed", "playback", "group", "lights")
 
     SPLITS = ("odd", "even", "left", "right")
     # the order an effect runs through its lights (the wave's direction)
@@ -198,6 +198,11 @@ class QuickMixin:
             btn["control"] = {"what": what}
             if what in ("playback", "group"):
                 btn["control"]["n"] = int(_clamp(c.get("n", 1), 1, 999))
+            if what == "lights":
+                # some lights' own fader: their brightness (lifts them from
+                # dark, like a flash held at that level) or a master (a share
+                # of whatever they do)
+                btn["control"]["mode"] = "master" if c.get("mode") == "master" else "level"
             btn["mode"] = "tap"
         if kind == "cuelist":
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
@@ -223,6 +228,13 @@ class QuickMixin:
                 if raw.get("to_page") in (None, ""):
                     raise ValueError("a go-to-page or folder button needs the page it opens")
                 btn["to_page"] = int(_clamp(raw["to_page"], 1, self.QUICK_PAGES))
+                # and on the way: turn off what this page has on (preshow ->
+                # show), and turn on some buttons (the show page's start)
+                if _truthy(raw.get("release_here")):
+                    btn["release_here"] = True
+                ons = [str(x)[:12] for x in (raw.get("turn_on") or []) if str(x).strip()][:8]
+                if ons:
+                    btn["turn_on"] = ons
         if kind in ("fx", "move", "custom"):
             order = str(raw.get("order") or "forward").lower()
             if order not in self.ORDERS:
@@ -599,9 +611,22 @@ class QuickMixin:
         return {"page": page, "layout": cur, "hidden": hidden,
                 "summary": f"page {page}: {cur['cols']} across, {cur['rows']} rows{note}"}
 
-    def _a_quick_page(self, page=1, name="", **_):
-        """Name a page of buttons ("Main", "Movers", "Drops")."""
+    def _a_quick_page(self, page=1, name="", delete=False, swap=None, **_):
+        """Name a page of buttons ("Main", "Movers", "Drops"); `delete`
+        empties it (its buttons, name and grid); `swap` trades places with
+        another page - every go-to-page button, timeline clip and sound
+        trigger follows its buttons to their new place."""
         page = int(_clamp(page, 1, self.QUICK_PAGES))
+        if _truthy(delete):
+            gone = [b for b in self.quick if b["page"] == page]
+            for b in gone:
+                self._quick_off(b["id"], force=True, fade=False)
+            self.quick = [b for b in self.quick if b["page"] != page]
+            self.quick_names = {k: v for k, v in (getattr(self, "quick_names", {}) or {}).items() if k != str(page)}
+            self.quick_layout = {k: v for k, v in self._quick_layouts().items() if k != str(page)}
+            return {"page": page, "summary": f"page {page} emptied ({len(gone)} button(s))"}
+        if swap not in (None, ""):
+            return self._quick_swap_pages(page, int(_clamp(swap, 1, self.QUICK_PAGES)))
         name = str(name or "").strip()[:16]
         names = dict(getattr(self, "quick_names", {}) or {})
         if name:
@@ -610,6 +635,50 @@ class QuickMixin:
             names.pop(str(page), None)
         self.quick_names = names
         return {"page": page, "name": name, "summary": f"page {page}: {name or 'unnamed'}"}
+
+    def _quick_swap_pages(self, a: int, b: int) -> dict:
+        if a == b:
+            return {"summary": "same page"}
+        for x in list(self.quick_active):
+            if any(q["id"] == x and q["page"] in (a, b) for q in self.quick):
+                self._quick_off(x, force=True, fade=False)
+        other = {a: b, b: a}
+        ids = {}
+        out = []
+        for q in self.quick:
+            if q["page"] in other:
+                old = q["id"]
+                q = self._quick_clean(dict(q), other[q["page"]], q["slot"])
+                ids[old] = q["id"]
+            out.append(q)
+        for q in out:                          # page tiles point at the pages' new numbers
+            if q.get("to_page") in other:
+                q["to_page"] = other[q["to_page"]]
+            if q.get("turn_on"):
+                q["turn_on"] = [ids.get(x, x) for x in q["turn_on"]]
+        self.quick = sorted(out, key=lambda q: (q["page"], q["slot"]))
+        for tr in (self.timeline or {}).get("tracks") or []:
+            for c in tr.get("clips") or []:
+                if c.get("button") in ids:
+                    c["button"] = ids[c["button"]]
+        for t in ((self.__dict__.get("sound_cfg") or {}).get("triggers") or []):
+            if t.get("button") in ids:
+                t["button"] = ids[t["button"]]
+        names = dict(getattr(self, "quick_names", {}) or {})
+        na, nb = names.pop(str(a), None), names.pop(str(b), None)
+        if nb:
+            names[str(a)] = nb
+        if na:
+            names[str(b)] = na
+        self.quick_names = names
+        lay = self._quick_layouts()
+        la, lb = lay.pop(str(a), None), lay.pop(str(b), None)
+        if lb:
+            lay[str(a)] = lb
+        if la:
+            lay[str(b)] = la
+        self.quick_layout = lay
+        return {"pages": [a, b], "summary": f"pages {a} and {b} swapped"}
 
     def _a_quick_move(self, page=1, slot=None, to_page=None, to_slot=None, copy=False, **_):
         """Move (or copy) a button to another slot; a button already there
@@ -660,6 +729,48 @@ class QuickMixin:
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+
+    COLOUR_NAMES = {"#ff0000": "Red", "#0033ff": "Blue", "#00ff40": "Green", "#ffffff": "White",
+                    "#ff00cc": "Magenta", "#00c8ff": "Cyan", "#ffb000": "Amber", "#7a00ff": "UV",
+                    "#ffe600": "Yellow", "#ff5a00": "Orange", "#00ffcc": "Teal", "#ff3c8c": "Pink"}
+
+    def _a_quick_colour_row(self, colours=None, heads=None, group=None, page=None, name="", **_):
+        """A row of colour buttons for some lights, in one go: one button per
+        colour, all in one radio group (pressing one turns the others off),
+        side by side in the first free run of slots on the page."""
+        cols = [c for c in (_hex_or_none(x) for x in (colours or [])) if c][:12]
+        if not cols:
+            raise ValueError("pick at least one colour")
+        if group not in (None, ""):
+            g = self._group(group=group)
+            target, who = {"group": g["n"]}, g["name"]
+        else:
+            nums = sorted({int(x) for x in (heads if heads is not None else self.selected)})
+            if not nums:
+                raise ValueError("select the lights first (or pick a group)")
+            for n in nums:
+                self._head(n)
+            target = {"heads": nums}
+            who = self._head(nums[0]).get("name") or f"#{nums[0]}" if len(nums) == 1 else f"{len(nums)} lights"
+        page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
+        lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
+        used = {b["slot"] for b in self.quick if b["page"] == page}
+        total = lay["cols"] * lay["rows"]
+        start = next((s for s in range(1, total - len(cols) + 2)
+                      if all(s + i not in used for i in range(len(cols)))), None)
+        if start is None:
+            raise ValueError(f"page {page} has no {len(cols)} free buttons side by side - pick another page")
+        tag = (str(name).strip() or f"Colour {who}")[:20]
+        ids = []
+        for i, c in enumerate(cols):
+            btn = self._quick_clean({"kind": "colour", "colour": c, "mode": "latch", "target": dict(target),
+                                     "exclusive": tag, "label": f"{self.COLOUR_NAMES.get(c, c)}"[:24]},
+                                    page, start + i)
+            self.quick.append(btn)
+            ids.append(btn["id"])
+        self.quick.sort(key=lambda b: (b["page"], b["slot"]))
+        return {"ids": ids, "page": page, "group": tag,
+                "summary": f"{len(ids)} colour buttons for {who} on page {page} (one at a time: “{tag}”)"}
 
     def _quick_free_slot(self, page=None) -> tuple[int, int]:
         """The first empty (page, slot), from `page` on (default page 1)."""
@@ -872,8 +983,22 @@ class QuickMixin:
             r = self._a_macro_run(id=btn["macro"])
             return {"id": key, "active": False, "summary": r["summary"]}
         if kind in self.PAGE_TILES:
-            # the screen turns the page; the desk itself does nothing
-            return {"id": key, "active": False, "page": btn.get("to_page"), "summary": btn["label"]}
+            # the screen turns the page; the desk does what the tile says on
+            # the way (turn this page's buttons off, turn some on)
+            off, on = [], []
+            if down and kind != "label":
+                if btn.get("release_here"):
+                    for b in self.quick:
+                        if b["page"] == btn["page"] and b["id"] in self.quick_active:
+                            self._quick_off(b["id"], force=True)
+                            off.append(b["id"])
+                for bid in btn.get("turn_on") or []:
+                    if any(b["id"] == bid for b in self.quick) and bid not in self.quick_active:
+                        self._quick_on(bid, owner="hand")
+                        on.append(bid)
+            bits = ([f"{len(off)} off"] if off else []) + ([f"{len(on)} on"] if on else [])
+            return {"id": key, "active": False, "page": btn.get("to_page"), "off": off, "on": on,
+                    "summary": btn["label"] + (f" ({', '.join(bits)})" if bits else "")}
         if kind in ("go", "release", "preset"):
             if not down:
                 return {"id": key, "active": False}
@@ -1770,6 +1895,12 @@ class QuickMixin:
             return self._a_speed_master(pct=max(10, v * 2))           # 50 = 1x
         if c["what"] == "playback":
             return self._a_playback_level(playback=c["n"], level=v)
+        if c["what"] == "lights":
+            vals = self.__dict__.setdefault("fader_vals", {})
+            vals[btn["id"]] = int(v)
+            n = len(self._quick_heads(btn))
+            word = "brightness" if c.get("mode") != "master" else "master"
+            return {"id": btn["id"], "level": int(v), "summary": f"{btn['label']}: {word} {int(v)}% on {n} light(s)"}
         return self._a_group_master(group=c["n"], level=v)
 
     def _a_quick_xy(self, id=None, pan=None, tilt=None, **_):
