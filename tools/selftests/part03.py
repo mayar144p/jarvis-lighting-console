@@ -1114,6 +1114,45 @@ def test_command_line(tmp: Path) -> None:
         r = cmd("%d.%d" % (m0, p0))
         check("`1.3` is the list form, as every console spells it",
               r.get("ok") and r.get("selection") == sorted([m0, p0]), str(r))
+        r = cmd("%d thru %d" % (movers[0], movers[-1]))
+        check("`1 thru 4` is the same range as `1-4`",
+              r.get("ok") and r["selection"] == movers, str(r))
+        r = cmd("%d thru %d dimmer 50" % (movers[0], movers[-1]), dry=True)
+        check("and a command after it acts on the whole range, not head 1",
+              r.get("ok") and {"action": "select_heads",
+                               "params": {"heads": movers}} in r["steps"]
+              and not any(s["action"] == "set_position" for s in r["steps"]),
+              str(r))
+
+        # ---- `at` is a LEVEL, as on MagicQ / Eos / grandMA ---------------
+        def level_of(line):
+            r = cmd(line, dry=True)
+            st = [s for s in r.get("steps") or [] if s["action"] == "set_attr_range"]
+            return r, (st[0]["params"] if st else None)
+        for line, want in (("%d thru %d at 70", 70.0), ("%d-%d@70", 70.0),
+                           ("%d-%d at 70%%", 70.0), ("%d-%d at out", 0.0)):
+            line = line % (pars[0], pars[-1])
+            r, got = level_of(line)
+            check("`%s` sets the level, it does not aim" % line,
+                  r.get("ok") and got and got["attribute"] == "dimmer"
+                  and got.get("value") == want
+                  and not any(s["action"] == "set_position" for s in r["steps"]),
+                  str(r))
+        r, got = level_of("%d at 50" % p0)
+        check("`3 at 50` is head 3 at 50% (the cue is `cue 3 at 50`)",
+              r.get("ok") and got and got["value"] == 50.0
+              and not any(s["action"] == "cue_go" for s in r["steps"]), str(r))
+        r = cmd("%d-%d dimmer 90 -30" % (pars[0], pars[-1]), dry=True)
+        check("a word and two numbers is not an aim (only `aim` aims)",
+              not r.get("ok"), str(r))
+        mig = e._clean_macro_list([{"id": "m1", "name": "old", "lines": [
+            "1-4 at 90 -30", "3 at 50", "cue 2 at 40"]}])
+        check("an old macro's `at` (aim then) is rewritten on load",
+              mig and mig[0]["lines"] == ["1-4 aim 90 -30", "cue 3 at 50",
+                                          "cue 2 at 40"], str(mig))
+        check("and a macro saved now is left alone",
+              e._clean_macro_list(mig)[0]["lines"] == mig[0]["lines"],
+              str(mig))
         r = cmd("all")
         check("`all` selects every patched head",
               r["selection"] == sorted(h["head_no"] for h in e.patch), str(r))

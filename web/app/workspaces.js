@@ -102,7 +102,9 @@ export function useMode(m) {
   if (!MODES.includes(m)) return false;
   const want = (saved.lastByMode || {})[m];
   const w = saved.list.find((x) => x.id === want && x.mode === m) || saved.list.find((x) => x.mode === m);
-  return w ? useWorkspace(w.id) : false;
+  // the toast only when the top bar can't show the workspace's name (720p)
+  const named = ($("#ws-name") || {}).offsetWidth > 0;
+  return w ? useWorkspace(w.id, { quiet: named }) : false;
 }
 
 // A side panel in its place: a side of the screen (the grid), or floating
@@ -129,15 +131,17 @@ function refloat() {
   if (w.progAt === "float") { floatAt($("#programmer"), "float", w.progPos); floatAt($("#mode-hub"), "float", w.progPos); }
 }
 
-/** Switch to a workspace by id or by its place (1..9). */
-export function useWorkspace(which) {
+/** Switch to a workspace by id or by its place (1..9).  `quiet`: no toast
+ *  (a mode button already shows where you are; the toast covered the 3D's
+ *  buttons). */
+export function useWorkspace(which, { quiet = false } = {}) {
   const w = typeof which === "number" ? saved.list[which - 1] : saved.list.find((x) => x.id === which);
   if (!w) return false;
   remember();                                     // the one we leave keeps how it was
   saved.active = w.id;
   store();
   apply(w);
-  toast(`Workspace: ${w.name}`);
+  if (!quiet) toast(`Workspace: ${w.name}`);
   return true;
 }
 
