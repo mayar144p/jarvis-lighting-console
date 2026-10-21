@@ -8027,15 +8027,19 @@ def test_colour_row() -> None:
                                                             "mode": "latch", "target": {"heads": [4]}})
             mv = e.act("quick_set", page=2, slot=4, button={"kind": "fx", "fx": "rainbow", "label": "Rainbow",
                                                             "mode": "latch", "target": {"all": True}})
+            rd2 = e.act("quick_set", page=2, slot=5, button={"kind": "colour", "label": "Red 1-3", "colour": "#ff00ff",
+                                                             "mode": "latch", "target": {"heads": [1, 2, 3]}})
             for b in (gr, mv, rd):
                 e.act("quick_press", id=b["id"], down=True)
-            check("a colour button turns off another colour button on the same lights (not an effect button)",
-                  rd["id"] in e.quick_active and gr["id"] not in e.quick_active and mv["id"] in e.quick_active, str(sorted(e.quick_active)))
+            check("a colour button takes its lights from the colour button already on (not from an effect button)",
+                  rd["id"] in e.quick_active and gr["id"] in e.quick_active and e.quick_active[gr["id"]]["heads"] == [4]
+                  and mv["id"] in e.quick_active, str({k: v.get("heads") for k, v in e.quick_active.items()}))
             e.act("quick_press", id=b4["id"], down=True)
-            check("...one on other lights stays on beside it", rd["id"] in e.quick_active and b4["id"] in e.quick_active, "")
-            e.act("quick_press", id=gr["id"], down=True)
-            check("...and one for all of them turns both off", gr["id"] in e.quick_active
-                  and rd["id"] not in e.quick_active and b4["id"] not in e.quick_active, str(sorted(e.quick_active)))
+            check("...and the one that had them goes off once it has no lights left",
+                  gr["id"] not in e.quick_active and rd["id"] in e.quick_active and b4["id"] in e.quick_active, str(sorted(e.quick_active)))
+            e.act("quick_press", id=rd2["id"], down=True)
+            check("...another colour for the same group: the old one goes off, the other group keeps its colour",
+                  rd["id"] not in e.quick_active and rd2["id"] in e.quick_active and b4["id"] in e.quick_active, str(sorted(e.quick_active)))
         finally:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
