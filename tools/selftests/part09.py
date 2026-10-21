@@ -7986,3 +7986,27 @@ def test_lights_fader() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
+
+
+def test_programmer_subtabs() -> None:
+    """The busy programmer tabs in parts: Position (Point / Move / Limits),
+    Beam (Quick / All channels), FX (Effects / Running / Step & paint);
+    every part of those tabs is on one of them, and the rarely used knobs
+    fold away."""
+    print("Programmer: Position, Beam and FX in parts")
+    import re
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
+    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "jarvis.sub." in pj
+          and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
+    check("each sub-tab hides the others' parts",
+          all(f'.tab-pane[data-sub="{k}"] [data-in]:not([data-in="{k}"])' in css for ks in subs.values() for k in ks), "")
+    tagged = set(re.findall(r'data-in="([a-z]+)"', html)) | set(re.findall(r'tag\([a-zA-Z]+\([^)]*\), "([a-z]+)"\)', mv))
+    check("every part is on a sub-tab (the aim and pad on Point, movements on Move, limits on Limits)",
+          tagged >= {k for ks in subs.values() for k in ks}, str(sorted(tagged)))
+    check("FX shows how many effects run on its Running sub-tab", "sub-count" in pj, "")
+    check("rarely used knobs fold: direction, arc, lock; the shutter's open-value finder once it is known",
+          "More: direction, arc, lock" in mv and "Find its open value" in pj, "")

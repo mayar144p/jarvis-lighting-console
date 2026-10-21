@@ -265,8 +265,8 @@
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>
-          <div id="move-aim"></div>
-          <section class="mv-sec mv-pt" id="mv-pt">
+          <div id="move-aim" data-in="point"></div>
+          <section class="mv-sec mv-pt" id="mv-pt" data-in="point">
             <h3>Pan / tilt</h3>
             <div class="mv-pt-row">
               <div class="pad" id="pad" aria-label="Pan and tilt pad" title="Drag: pan left-right, tilt up-down">
@@ -293,22 +293,28 @@
 
         <div class="tab-pane" data-pane="beam" hidden>
           <div class="palette-strip" data-kind="beam"></div>
-          <div class="beam-quick" id="beam-quick"></div>
-          <div class="attr-list" id="attr-list"></div>
+          <div class="beam-quick" id="beam-quick" data-in="quick"></div>
+          <div class="attr-list" id="attr-list" data-in="all"></div>
         </div>
 
         <div class="tab-pane" data-pane="fx" hidden>
+          <div data-in="effects">
           <h3>Effect library</h3>
           <p class="muted small" id="fxlib-note">Only effects the selection can actually run are shown.</p>
           <div class="fx-grid" id="fx-grid"></div>
           <div class="fx-params" id="fx-params"></div>
+          </div>
+          <div data-in="running">
           <h3>Running</h3>
           <div class="fx-running" id="fx-running"><p class="muted small">No effects running.</p></div>
+          </div>
+          <div data-in="paint">
           <h3>Step effects <small class="muted">from your own looks</small></h3>
           <div class="fx-running" id="stepfx-list"></div>
           <h3>Paint the rig <small class="muted">gradients, pictures and video across the lights</small></h3>
           <div class="pix-pane" id="pix-pane"></div>
-          <details class="more">
+          </div>
+          <details class="more" data-in="effects">
             <summary>Custom wave on one attribute</summary>
             <div class="lfo">
               <label class="field"><span>Attribute</span><select id="lfo-attr"></select></label>
