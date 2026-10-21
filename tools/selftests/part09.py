@@ -7746,6 +7746,12 @@ def test_b4_movement() -> None:
     check("...an axis with the same from and to stays put", set(tilt_only) == {"tilt"}, str(tilt_only))
     wave = [deg(motion.position("range", 0.0, dict(p, spread=180.0), (0.5, 0.5), lim, span, i, 4)) for i in range(4)]
     check("a smooth wave across the lights (each a step on)", len(set(wave)) == 4, str(wave))
+    # the tilt at its own speed: twice the pan's, it is back at A when the pan reaches B
+    tq = dict(p, tilt_a=-50.0, tilt_b=0.0, speed=0.125, tilt_speed=0.25)
+    two = [motion.position("range", t, tq, (0.5, 0.5), lim, span) for t in (0.25, 0.5)]
+    tdeg = [round((v["tilt"] - 0.5) * 270) for v in two]
+    check("pan and tilt each at their own speed", deg(two[1]) == 40 and tdeg == [0, -50], f"pan {deg(two[1])} tilt {tdeg}")
+    check("...a faster tilt asks the motor for more", motion.amplitude("range", tq, span)[1] == 2 * motion.amplitude("range", dict(tq, tilt_speed=0.0), span)[1], "")
     # a limit (Stay on the floor) cuts -100 short at -20: the light travels
     # -20 .. +40 the whole trip, never waits at the edge
     cut_lim = ((0.5 - 20.0 / 540, 1.0), (0.0, 1.0))
@@ -7796,7 +7802,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")

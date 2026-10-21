@@ -27,7 +27,7 @@ const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 // the knobs, remembered while the page is open
 const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, across: false, zone: "",
   // A → B: degrees from the middle of each light's travel; bounce / loop / once
-  panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {} };
+  panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {}, tiltSecs: 0 };
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -146,6 +146,7 @@ const params = () => ({
   direction: knobs.direction, spread: knobs.spread, lock: knobs.lock,
   pan_a: knobs.panA, pan_b: knobs.panB, tilt_a: knobs.tiltA, tilt_b: knobs.tiltB, mode: knobs.mode,
   full_pan: knobs.fullPan ? 1 : 0, full_tilt: knobs.fullTilt ? 1 : 0,
+  tilt_speed: knobs.tiltSecs ? +(1 / knobs.tiltSecs).toFixed(4) : 0,
   ...(Object.keys(knobs.cells).length ? { cells: knobs.cells } : {}),
   ...(knobs.zone && zoneKinds().some(([k]) => k === knobs.zone) ? { zone: knobs.zone } : {}),
 });
@@ -431,6 +432,7 @@ function rangeBlock2() {
   const modeWord = ["bounce (there and back)", "loop (A → B, again from A)", "once (A → B, then stays)"][knobs.mode];
   const tilt = ms.find((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
   const heads = tilt ? (tilt.map || []).filter((r) => r === "tilt").length : 0;
+  const trip = knobs.tiltSecs && knobs.tiltSecs !== knobs.secs && tilts ? `pan ${knobs.secs} s, tilt ${knobs.tiltSecs} s a trip` : `${knobs.secs} s a trip`;
   return h("div.mv-range",
     h("div.mv-row", h("span.k", "A → B"), h("span.chip-row",
       ax.pan ? h("span.mv-deg", "Pan ", degIn(knobs.panA, -360, 360, (v) => { knobs.panA = v; knobs.fullPan = false; }, "Pan from, degrees (- is left of centre)"), " → ",
@@ -441,7 +443,12 @@ function rangeBlock2() {
       h("span.mv-deg", "Tilt ", degIn(knobs.tiltA, -180, 180, (v) => { knobs.tiltA = v; knobs.fullTilt = false; }, "Tilt from, degrees (- is down from straight out)"), " → ",
         degIn(knobs.tiltB, -180, 180, (v) => { knobs.tiltB = v; knobs.fullTilt = false; }, "Tilt to, degrees")),
       h("button.chip" + (knobs.fullTilt ? ".on" : ""), { title: `The light's whole tilt (${Math.round(span[1])}°)`,
-        onclick: () => { knobs.fullTilt = !knobs.fullTilt; render(true); reapply(); } }, "whole tilt"))) : null,
+        onclick: () => { knobs.fullTilt = !knobs.fullTilt; render(true); reapply(); } }, "whole tilt"),
+      // the tilt at its own speed (empty: with the pan, at the Speed above)
+      ax.pan ? h("label.mv-deg.mv-tsecs", { title: "Seconds for one tilt trip - empty: the same as the pan (Speed)" }, "Tilt speed ",
+        h("input", { type: "number", min: 0.5, max: 200, step: 0.5, value: knobs.tiltSecs || "", placeholder: String(knobs.secs),
+          onchange: (e) => { const v = +e.target.value; knobs.tiltSecs = v > 0 ? Math.max(0.5, Math.min(200, v)) : 0; render(true); reapply(); } }),
+        " s a trip") : null)) : null,
     h("div.mv-row", h("span.k", ""), h("span.chip-row",
       ...chips([["bounce", 0, "A → B → A…"], ["loop", 1, "A → B, then from A again"], ["once", 2, "A → B, then it stays at B"]],
         (v) => knobs.mode === v, (v) => { knobs.mode = v; }))),
@@ -453,7 +460,7 @@ function rangeBlock2() {
           degIn(c.tilt_a ?? knobs.tiltA, -180, 180, setC("tilt_a")), "→", degIn(c.tilt_b ?? knobs.tiltB, -180, 180, setC("tilt_b")));
       }),
       Object.keys(knobs.cells).length ? h("button.chip", { onclick: () => { knobs.cells = {}; render(true); reapply(); } }, "all the same") : null)) : null,
-    h("p.small.mv-preview", `A → B: ${what} · ${modeWord} · ${knobs.secs} s a trip${knobs.spread ? ` · a wave across the lights (${knobs.spread}°)` : ""}.`),
+    h("p.small.mv-preview", `A → B: ${what} · ${modeWord} · ${trip}${knobs.spread ? ` · a wave across the lights (${knobs.spread}°)` : ""}.`),
     h("p.small.muted.mv-now", { id: "mv-now" }, nowText()));
 }
 
