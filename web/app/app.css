@@ -1130,6 +1130,7 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .look-more:hover { color: var(--text); }
 /* grouping for big rigs: automatic group chips, folded rows, splits */
 .group-chips .chip.auto { background: transparent; border-style: dashed; }
+.group-chips .chip.tidy { background: transparent; border-style: dashed; color: var(--muted); }
 .group-chips .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); border-style: solid; }
 .group-chips .chip small { color: var(--muted); font-weight: 600; }
 .group-chips .chip-ic { color: var(--muted); margin-right: 2px; }

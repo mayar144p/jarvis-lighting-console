@@ -388,6 +388,12 @@ function showPlan(r, ask = "") {
         const rr = res.result || {};
         if (res.error || rr.error || !rr.built) { toast(res.error || rr.error || "failed", "bad"); return; }
         toast(rr.summary || "Show built", "ok", 6000);
+        // earlier builds made "Auto · ..." copies of groups; this one doesn't
+        const copies = rr.built.auto_groups || 0;
+        if (copies) box.append(h("div.row-btns", h("button.btn", { title: "The show selects its lights directly now; your own groups stay", onclick: (e) => {
+          e.currentTarget.disabled = true;
+          run("group_delete", { auto: true }, { toast: true });
+        } }, `Tidy away the ${copies} “Auto ·” group copies earlier builds made`)));
         // a song on the timeline: keep the new show in it too
         const sg = (state.snap && state.snap.songs) || {};
         const song = (sg.songs || []).find((x) => x.id === sg.current);

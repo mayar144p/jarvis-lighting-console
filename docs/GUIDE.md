@@ -7,7 +7,7 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 | Region | What it does |
 |---|---|
 | **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
-| **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
+| **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** its chip's ⋯ (or a right-click on the chip or its folder) adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
 | **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
 | **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits) |
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
@@ -521,7 +521,11 @@ below.
     the beat, and master fades.
   * **What it builds:** a cue per section, a track per group of effects, the
     hits on the beat grid and the master automation, all laid out on bars
-    and stretched to fit the song.
+    and stretched to fit the song.  It makes no groups of its own: each look
+    picks its lights directly, and when one of your groups has exactly those
+    lights the timeline and the buttons use your group's name.  Copies made
+    by earlier versions (*Auto · …*) can be tidied away in one tap (the
+    *Tidy auto copies* chip under Groups).
 
   You see the plan first. Building it is one <kbd>Ctrl</kbd>+<kbd>Z</kbd>, and
   your own timeline tracks are kept. It works offline too, with a style-aware

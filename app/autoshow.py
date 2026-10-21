@@ -90,10 +90,15 @@ def analyse(eng) -> dict:
         fx_here = set(fxlib.available(h.get("map") or []))
         g["fx"] = fx_here if g["fx"] is None else (g["fx"] & fx_here)
         g["x"] += float(h.get("x") or 0)
+    # the operator's own group with exactly these lights lends its name, so
+    # the timeline and the buttons say "Front PARs", not a made-up name
+    own = {tuple(sorted(int(x) for x in g["heads"])): g["name"] for g in eng.groups
+           if not str(g["name"]).startswith(AUTO_PREFIX)}
     for g in groups.values():
         g["x"] = round(g["x"] / len(g["heads"]), 2)
         g["heads"].sort()
         g["fx"] = sorted(g["fx"] or [])
+        g["name"] = own.get(tuple(g["heads"]), g["name"])
     # everything of one type, when it is spread over several places
     by_role: dict[str, list[int]] = {}
     for g in groups.values():
@@ -477,14 +482,9 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
     pb = eng._playback(playback)
     for n in range(len(pb["stack"]), 0, -1):
         calls.append({"action": "delete_cue", "params": {"playback": playback, "cue": n}})
-    # groups (replacing earlier auto groups)
-    for g in eng.groups:
-        if str(g["name"]).startswith(AUTO_PREFIX):
-            calls.append({"action": "group_delete", "params": {"n": g["n"]}})
+    # no groups of its own: each look selects its lights directly (the
+    # operator's groups keep their names in the analysis, see analyse)
     used = sorted({lk["group"] for s in d["sections"] for lk in s["looks"]})
-    for key in used:
-        calls.append({"action": "group_create", "params": {
-            "name": AUTO_PREFIX + groups[key]["name"], "heads": groups[key]["heads"]}})
     times = _layout(d["sections"], a)
     # one cue per section
     for s, _span in zip(d["sections"], times):
@@ -571,7 +571,9 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
     summary = {"sections": [{"name": s["name"], "start": st, "end": en, "energy": s["energy"]}
                             for s, (st, en) in zip(d["sections"], times)],
                "groups": len(used), "cues": len(times), "fx_clips": len(fx_clips),
-               "hits": len(hit_clips), "length": round(doc["length"], 1)}
+               "hits": len(hit_clips), "length": round(doc["length"], 1),
+               # copies earlier builds made: the screen offers to tidy them
+               "auto_groups": sum(1 for g in eng.groups if str(g["name"]).startswith(AUTO_PREFIX))}
     return calls, summary
 
 

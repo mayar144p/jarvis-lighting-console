@@ -290,15 +290,52 @@ function renderGroups() {
         if (e.target.classList.contains("x")) return;
         select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
       },
+      oncontextmenu: (e) => { e.preventDefault(); groupMenu(atPointer(e), g); },
     }, g.name, h("small", ` ${g.heads.length}`), h("span.x", {
-      title: "Delete group",
-      onclick: async (e) => {
-        e.stopPropagation();
-        if (await confirmBox("Delete group", `Delete the group “${g.name}”? The fixtures stay patched.`, { ok: "Delete", danger: true })) {
-          run("group_delete", { group: g.n });
+      title: "Change this group: add or take out lights, rename, delete",
+      "aria-label": `Change the group ${g.name}`,
+      onclick: (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); },
+    }, "⋯")), { group: g.n })),
+    ...(autoCopies().length ? [h("button.chip.tidy", {
+      title: "Earlier auto shows made copies of groups (“Auto · …”). Shows select their lights directly now; your own groups stay.",
+      onclick: async () => {
+        const n = autoCopies().length;
+        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
+          run("group_delete", { auto: true }, { toast: true });
         }
       },
-    }, "×")), { group: g.n })));
+    }, `Tidy ${autoCopies().length} auto copies`)] : []));
+}
+
+const autoCopies = () => userGroups().filter((g) => /^auto\s*·/i.test(g.name || ""));
+
+// One group's menu (its chip's ⋯, a right-click on the chip or its folder):
+// change the lights in it from the selection, rename, delete.
+export function groupMenu(anchor, g) {
+  const sel = selected();
+  const inG = new Set(g.heads);
+  const add = sel.filter((x) => !inG.has(x));
+  const out = sel.filter((x) => inG.has(x));
+  const same = sel.length === g.heads.length && !add.length;
+  menu(anchor, [
+    { label: add.length ? `Add the ${add.length} selected light(s)` : "Add the selected lights", hint: sel.length ? (add.length ? "" : "all already in it") : "select lights first",
+      disabled: !add.length, run: () => run("group_edit", { group: g.n, add: add }, { toast: true }) },
+    { label: out.length ? `Take the ${out.length} selected light(s) out` : "Take the selected lights out", hint: out.length && out.length === g.heads.length ? "that's all of them: delete instead" : (out.length ? "" : "none of the selection is in it"),
+      disabled: !out.length || out.length === g.heads.length, run: () => run("group_edit", { group: g.n, remove: out }, { toast: true }) },
+    { label: `Make it exactly the selection${sel.length ? ` (${sel.length})` : ""}`, disabled: !sel.length || same,
+      run: () => run("group_edit", { group: g.n, heads: sel }, { toast: true }) },
+    { label: "Select its lights", run: () => select(g.heads) },
+    { label: "Rename…", run: async () => {
+      const name = await promptBox("Rename group", "Name", g.name, { ok: "Rename" });
+      if (name && name.trim() && name.trim() !== g.name) run("group_edit", { group: g.n, name: name.trim() }, { toast: true });
+    } },
+    "-",
+    { label: "Delete group…", danger: true, run: async () => {
+      if (await confirmBox("Delete group", `Delete the group “${g.name}”? The fixtures stay patched.`, { ok: "Delete", danger: true })) {
+        run("group_delete", { group: g.n });
+      }
+    } },
+  ]);
 }
 
 function rowClick(e) {
@@ -388,6 +425,27 @@ function openChangeType(heads) {
 export const atPointer = (e) => ({ getBoundingClientRect: () => ({ left: e.clientX, top: e.clientY, bottom: e.clientY }) });
 
 /** A light's menu (its ⋯ button, a right-click here or on the stage). */
+// A light's menu: put it (and the lights selected with it) in a group, or
+// take it out of one.
+function groupItems(head) {
+  const groups = userGroups();
+  if (!groups.length) return [];
+  const sel = selected();
+  const heads = sel.includes(head) ? sel : [head];
+  const what = heads.length > 1 ? `these ${heads.length}` : "it";
+  const items = [];
+  for (const g of groups.slice(0, 8)) {
+    const inG = new Set(g.heads);
+    if (heads.some((x) => !inG.has(x))) items.push({ label: `Add ${what} to “${g.name}”`, run: () => run("group_edit", { group: g.n, add: heads }, { toast: true }) });
+  }
+  for (const g of groups) {
+    if (!g.heads.includes(head)) continue;
+    const out = heads.filter((x) => g.heads.includes(x));
+    if (out.length < g.heads.length) items.push({ label: `Take ${out.length > 1 ? `these ${out.length}` : "it"} out of “${g.name}”`, run: () => run("group_edit", { group: g.n, remove: out }, { toast: true }) });
+  }
+  return items.length ? ["-", ...items, "-"] : [];
+}
+
 export function rowMenu(btn, head) {
   const hd = patch().find((x) => x.head_no === head);
   if (!hd) return;
@@ -410,6 +468,7 @@ export function rowMenu(btn, head) {
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
+    ...groupItems(head),
     { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
     { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },
     "-",
@@ -622,6 +681,11 @@ export function initFixtures() {
   $("#fx-rows").addEventListener("click", rowClick);
   $("#fx-rows").addEventListener("contextmenu", (e) => {
     const tr = e.target.closest("tr[data-head]");
+    if (tr && tr.dataset.group !== undefined) {
+      const g = userGroups().find((x) => x.n === +tr.dataset.group);
+      if (g) { e.preventDefault(); groupMenu(atPointer(e), g); }
+      return;
+    }
     if (!tr || tr.dataset.fold) return;
     e.preventDefault();
     rowMenu(atPointer(e), +tr.dataset.head);
