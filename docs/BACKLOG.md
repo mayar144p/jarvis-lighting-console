@@ -230,6 +230,91 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A15. Operator's feedback after the first gigs (2026-10-21) - the plan now
+
+The operator's notes from real use, the three open GitHub issues (#105,
+#106, #107) and the UI/UX and layout audits of 2026-10-16.  Six pull
+requests in this order; AI bugs come later (B7), the operator will list
+them.  What was already found in the code is noted under each item.
+
+### B1. Real lights first (GitHub issues and safety)
+1. **Confetti / one-shot effects (#107, Chauvet Funfetti Shot):** a button
+   can be *press to shoot* (one shot), *hold to shoot* or *on / off*; the
+   programmer gets the same three plus Stop, so a shot stops without
+   un-arming FX (today: hold one second in the programmer, and only
+   un-arming stops it).
+2. **Intimidator Wave 360 IRC shows extra colours (#106):** the desk sends
+   exactly what the fixture file says (red picked: R on all four heads,
+   G/B/W 0, dimmer full, shutter "On"), so the 33-channel layout in the
+   file may not be the real light's.  Check it against Chauvet's manual,
+   fix the profile, and add *Test channels one by one* to a light's menu
+   so the operator can confirm on the real light.
+3. **Intimidator Spot 260 strobe (#105):** the programmer's strobe does not
+   strobe (the generated Strobe button does), and the 3D strobes when it
+   should only be lit: the shutter's open / strobe ranges.
+4. **One head at a time on multi-head lights:** picking head 2 after
+   colouring head 1 shows head 1's colour; each head keeps its own.
+5. **Rotating a truss flips the real lights:** turning a truss in the 3D
+   must change the aiming maths only, never flip pan already programmed.
+
+### B2. Groups
+1. **Add / remove lights in a group after it exists** (today there is only
+   create and delete): from the selection, from the group's menu, rename.
+2. **No more "Auto · ..." copies:** the auto show / timeline makes its own
+   groups every time; use the operator's groups (or the lights directly)
+   instead, and offer to tidy the copies already made.
+
+### B3. Buttons and pages, MagicQ style
+1. **Edit a button = open it in the programmer** with the same lights and
+   values, change it, *Update button*.
+2. **Pages fully customisable:** any number of named pages; button kinds:
+   a look, a *label only* (a heading), *go to page*, a folder; size (1-4
+   wide, 1-4 tall), colour, icon; drag to arrange; the full-screen buttons
+   view uses the same pages.
+3. **A colour-only button, obvious:** a button keeps only what was set
+   (colour only, move only, ...) and says so ("Colour · 4 lights"), so a
+   colour button over a move button just changes colour; no need to have
+   the move running or the dimmer at 100 to make it.  The Make-a-button
+   window shows what goes in and how buttons stack.
+4. **Ready-made programs, adjustable:** which lights take part (all, odd /
+   even, 2 of 4 off, a pattern), order, and pan / tilt offsets for the
+   ready-made moves.
+
+### B4. Movement, full control
+1. **Moves in real degrees:** pan from -100 to +40, tilt from ... to ...,
+   loop / bounce / once, speed in seconds or beats, the light's whole
+   range when asked (no 90 / 180 / 270 stops).
+2. **A smooth wave across heads / lights:** a phase spread per head.
+3. **Multi-head lights head by head:** head 1 from A to B degrees, head 2
+   ..., colour per head; a head strip with each head's colour, *copy to
+   all*, *spread a gradient*.
+4. **The preview says what will happen:** the start / end angles and a live
+   degree readout on the light, not only a shape and a ball.
+5. **Wave 360 simplified:** its heads as a bar (tilt per head, wave, colour
+   per head) instead of raw channels.
+
+### B5. The visualiser knows the room
+1. **Front, centre and the DJ booth:** set where the front and the booth
+   are; dragging lights, the camera and the Move pad then work from the
+   DJ's point of view, and the lights know where the middle is.
+2. **The plan in Move follows the room:** it updates when objects move
+   and can be rotated; fix the tracking between the map and the 3D.
+
+### B6. Layouts
+1. **No visualiser at all, if wanted:** layouts without the 3D (buttons,
+   faders, programmer); the full-screen buttons fully customisable.
+2. **Small screens (from the layout audit):** the dock's height follows
+   the window, group faders fold / scroll, the fixture list keeps 5 rows,
+   panels have minimum sizes; Live on 1280x720 shows hits, tempo,
+   autopilot and blackout first; fewer ready-made layouts; Theatre shows
+   the cue list.
+3. **From the UI/UX audit:** a colour on lights at 0 % brings them up;
+   *Record cue* says why it is off; Ready? check fixes are buttons; a
+   *Mobile DJ* template; a tour per mode.
+
+### B7. AI bugs (later)
+The operator will list them.
+
 ## A9. Desktop app and a better visualiser (agreed 2026-10-07)
 
 In this order.  Steps 1 and 2 are the plan; step 3 is optional / future.
