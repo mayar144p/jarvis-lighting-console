@@ -7953,3 +7953,36 @@ def test_colour_row() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the screen: + Colour row... in Edit, and on a light's menu",
           "export function makeColourRow" in qb and "makeColourRow" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
+
+
+def test_lights_fader() -> None:
+    """A fader tile for some lights: their brightness (up from dark) or a
+    master (a share of what they do), on the buttons page and in full screen."""
+    print("Buttons: a fader for any lights")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=3)
+            lv = e.act("quick_set", page=1, slot=1, button={"kind": "fader", "label": "PAR 2", "control": {"what": "lights"},
+                                                            "target": {"heads": [2]}})
+            check("a fader for one light", lv.get("button", {}).get("control") == {"what": "lights", "mode": "level"}, str(lv))
+            a = lambda n: next(lk["a"] for lk in e._looks() if lk["n"] == n)  # noqa: E731
+            check("...it starts dark", a(2) == 0, "")
+            e.act("quick_fader", id=lv["id"], level=60)
+            check("...up to 60%: that light lifts from dark, the others stay", abs(a(2) - 0.6) < 0.02 and a(1) == 0, str(a(2)))
+            e.act("select_heads", heads=[1, 3])
+            e.act("set_intensity", level=100)
+            m = e.act("quick_set", page=1, slot=2, button={"kind": "fader", "label": "Sides", "control": {"what": "lights", "mode": "master"},
+                                                           "target": {"heads": [1, 3]}})
+            e.act("quick_fader", id=m["id"], level=25)
+            check("a master fader: a share of what they do (full -> 25%)", abs(a(1) - 0.25) < 0.02 and abs(a(3) - 0.25) < 0.02, str(a(1)))
+            check("the screen sees the faders' places", e._quick_public()["faders"] == {lv["id"]: 60, m["id"]: 25}, str(e._quick_public()["faders"]))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
+          '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")

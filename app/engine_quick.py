@@ -45,7 +45,7 @@ class QuickMixin:
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
                                   "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
     PAGE_TILES = frozenset({"label", "page", "folder"})
-    FADER_OF = ("master", "speed", "playback", "group")
+    FADER_OF = ("master", "speed", "playback", "group", "lights")
 
     SPLITS = ("odd", "even", "left", "right")
     # the order an effect runs through its lights (the wave's direction)
@@ -198,6 +198,11 @@ class QuickMixin:
             btn["control"] = {"what": what}
             if what in ("playback", "group"):
                 btn["control"]["n"] = int(_clamp(c.get("n", 1), 1, 999))
+            if what == "lights":
+                # some lights' own fader: their brightness (lifts them from
+                # dark, like a flash held at that level) or a master (a share
+                # of whatever they do)
+                btn["control"]["mode"] = "master" if c.get("mode") == "master" else "level"
             btn["mode"] = "tap"
         if kind == "cuelist":
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
@@ -1890,6 +1895,12 @@ class QuickMixin:
             return self._a_speed_master(pct=max(10, v * 2))           # 50 = 1x
         if c["what"] == "playback":
             return self._a_playback_level(playback=c["n"], level=v)
+        if c["what"] == "lights":
+            vals = self.__dict__.setdefault("fader_vals", {})
+            vals[btn["id"]] = int(v)
+            n = len(self._quick_heads(btn))
+            word = "brightness" if c.get("mode") != "master" else "master"
+            return {"id": btn["id"], "level": int(v), "summary": f"{btn['label']}: {word} {int(v)}% on {n} light(s)"}
         return self._a_group_master(group=c["n"], level=v)
 
     def _a_quick_xy(self, id=None, pan=None, tilt=None, **_):
