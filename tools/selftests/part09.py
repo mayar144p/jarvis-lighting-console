@@ -7919,3 +7919,37 @@ def test_page_flow() -> None:
     check("the screen: Pages... (name, open, move up / down, delete, add), On the way / And turn on",
           "function editPages" in qb and 'id="qb-pages-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "release_here" in qb and "turn_on" in qb, "")
+
+
+def test_colour_row() -> None:
+    """Make a colour row: one colour button per colour for some lights, in
+    one radio group - pressing one turns the other colours off."""
+    print("Buttons: a colour row in one go")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "c.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=4)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "F"})
+            r = e.act("quick_colour_row", heads=[2], colours=["#ff0000", "#0033ff", "#00ff40"], page=1)
+            row = [b for b in e.quick if b["id"] in (r.get("ids") or [])]
+            check("three colour buttons for light 2, side by side after what is there",
+                  [b["slot"] for b in row] == [2, 3, 4] and [b["label"] for b in row] == ["Red", "Blue", "Green"]
+                  and all(b["target"] == {"heads": [2]} and b["mode"] == "latch" for b in row), str(r))
+            check("...all in one radio group", len({b.get("exclusive") for b in row}) == 1 and row[0].get("exclusive"), "")
+            e.act("quick_press", id=row[0]["id"], down=True)
+            e.act("quick_press", id=row[1]["id"], down=True)
+            check("...pressing Blue turns Red off", row[1]["id"] in e.quick_active and row[0]["id"] not in e.quick_active, "")
+            look = next(lk for lk in e._looks() if lk["n"] == 2)
+            check("...and light 2 is blue", look["hex"].lower() in ("#0033ff", "#0000ff") or look["hex"][5:] > look["hex"][1:3], look["hex"])
+            e.act("quick_press", id=row[1]["id"], down=True)       # off again (an edit to undo comes next)
+            e.act("undo")
+            check("the whole row is one Ctrl+Z", not any(b["id"] in r["ids"] for b in e.quick), "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the screen: + Colour row... in Edit, and on a light's menu",
+          "export function makeColourRow" in qb and "makeColourRow" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
