@@ -195,8 +195,13 @@ def position(kind: str, cycles: float, p: dict, centre: tuple[float, float],
             if a == b and not float(p.get(f"full_{axis}", 0) or 0) and not p.get(f"_set_{axis}"):
                 continue                    # not asked to move (a head's own angle is: _set_)
             span = float(span or 0) or DEFAULT_SPAN_DEG[0 if axis == "pan" else 1]
-            frac = 0.5 + (a + (b - a) * u) / span
-            out[axis] = min(max(frac, min(lo, hi)), max(lo, hi))
+            # an end past the limits (Stay on the floor, the light's own
+            # range) is moved in to the limit first: the light still travels
+            # the part it can reach the whole trip, never waits at the edge
+            lo, hi = min(lo, hi), max(lo, hi)
+            fa = min(max(0.5 + a / span, lo), hi)
+            fb = min(max(0.5 + b / span, lo), hi)
+            out[axis] = fa + (fb - fa) * u
         return {k: min(1.0, max(0.0, v)) for k, v in out.items()}
     lock = int(round(float(p.get("lock", 0.0))))        # 1: tilt stays, 2: pan stays
     dp, dt = shape(kind, cycles, p, index, count)

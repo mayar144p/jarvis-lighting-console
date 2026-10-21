@@ -7746,6 +7746,28 @@ def test_b4_movement() -> None:
     check("...an axis with the same from and to stays put", set(tilt_only) == {"tilt"}, str(tilt_only))
     wave = [deg(motion.position("range", 0.0, dict(p, spread=180.0), (0.5, 0.5), lim, span, i, 4)) for i in range(4)]
     check("a smooth wave across the lights (each a step on)", len(set(wave)) == 4, str(wave))
+    # a limit (Stay on the floor) cuts -100 short at -20: the light travels
+    # -20 .. +40 the whole trip, never waits at the edge
+    cut_lim = ((0.5 - 20.0 / 540, 1.0), (0.0, 1.0))
+    cut = [deg(motion.position("range", t, p, (0.5, 0.5), cut_lim, span)) for t in (0.0, 0.1, 0.4, 0.5)]
+    check("a trip cut by a limit keeps moving (no wait at the edge)", cut[0] == -20 and cut[0] < cut[1] < cut[2] < cut[3] == 40, str(cut))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "m.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf"),
+                              "qlc:Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Wave 360", mode="33 ch.", qty=1)
+            r = e.act("run_fx", name="range", heads=[1], params={"tilt_a": 40, "tilt_b": -40, "pan_a": 0, "pan_b": 0})
+            check("an A -> B cut short says where it stops and why", bool(r.get("cut")) and "Stay on the floor" in r.get("summary", ""),
+                  str(r.get("summary")))
+            e.act("floor_safe", movement=False)
+            r = e.act("run_fx", name="range", heads=[1], params={"tilt_a": 40, "tilt_b": -40, "pan_a": 0, "pan_b": 0})
+            check("...and nothing to say when it goes the whole way", not r.get("cut"), str(r.get("cut")))
+        finally:
+            e.shutdown()
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "m.db"
