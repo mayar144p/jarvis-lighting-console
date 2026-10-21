@@ -1133,6 +1133,11 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .look-more:hover { color: var(--text); }
 /* grouping for big rigs: automatic group chips, folded rows, splits */
 .group-chips .chip.auto { background: transparent; border-style: dashed; }
+.group-chips .chip.new-group-drop { display: none; border-style: dashed; color: var(--accent); background: transparent; }
+body.dragging-heads .group-chips .chip.new-group-drop { display: inline-flex; }
+body.dragging-heads #group-chips .chip[data-group], body.dragging-heads #fx-rows tr.folder { outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.drop-on, #fx-rows tr.drop-on td { background: var(--accent-bg) !important; outline: 2px solid var(--accent) !important; }
+#fx-rows tr[draggable="true"] { cursor: grab; }
 .group-chips .chip.tidy { background: transparent; border-style: dashed; color: var(--muted); }
 .group-chips .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); border-style: solid; }
 .group-chips .chip small { color: var(--muted); font-weight: 600; }
