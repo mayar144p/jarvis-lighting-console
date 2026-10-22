@@ -8605,3 +8605,45 @@ def test_flash_base_speed() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the editor: Going off - its lights' colour buttons too; empty cells blank while playing",
           '"Going off"' in qb and "b.base = true" in qb and '".blank"' in qb, "")
+
+
+def test_buttons_between_pages() -> None:
+    """A button moves to another page (its first free place); Make a button
+    saves on the page picked; a page that is named but still empty stays in
+    the page list."""
+    print("Buttons between pages")
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=2)
+            e.act("quick_set", page=2, slot=1, button={"kind": "flash", "label": "Taken", "target": {"all": True}})
+            b = e.act("quick_set", page=1, slot=5, button={"kind": "flash", "label": "Mover", "target": {"all": True}})
+            r = e.act("quick_move", page=1, slot=5, to_page=2, to_slot="free")
+            moved = next((x for x in e.quick if x["label"] == "Mover"), {})
+            check("a button moves to another page, into its first free place",
+                  r.get("ok") and moved.get("page") == 2 and moved.get("slot") == 2
+                  and not any(x["page"] == 1 and x["slot"] == 5 for x in e.quick), str((r, moved)))
+            e.act("quick_layout", page=3, cols=4, rows=1)
+            for sl in range(1, 33):
+                e.act("quick_set", page=3, slot=sl, button={"kind": "flash", "label": f"F{sl}", "target": {"all": True}})
+            r = e.act("quick_move", page=2, slot=2, to_page=3, to_slot="free")
+            check("...to a page with no room left: refused, it stays", not r.get("ok") and "full" in (r.get("error") or ""), str(r))
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=60)
+            r = e.act("quick_from_programmer", label="Look", page=4, heads=[1])
+            look = next((x for x in e.quick if x["label"] == "Look"), {})
+            check("Make a button saves on the page picked", r.get("ok") and look.get("page") == 4, str((r.get("error"), look)))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the screen: Page in the button editor, drop on a page's tab, a named empty page stays, the spare tab is a +",
+          'row("Page", chips(pageChoices()' in qb and 'to_slot: "free"' in qb and "function pagesThere" in qb
+          and '"+"' in qb and "qb-newpage" in qb, "")
+    check("Make a button: On the page", '"On the page"' in pj and "page: toPage" in pj, "")

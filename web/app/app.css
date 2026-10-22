@@ -643,6 +643,9 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .qb-empty b { color: var(--text); font-size: 14px; }
 .qbtn.empty { background: transparent; border-style: dashed; border-color: var(--border-2); color: var(--muted); font-size: 18px; }
 .qbtn.empty.blank { border-color: transparent; cursor: default; }
+/* Edit: the spare "+" tab (a new page), and a tab a dragged button can be dropped on */
+#qb-pages .qb-newpage { color: var(--muted); font-weight: 700; }
+#qb-pages button.drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
 /* executors: ten slots, always in their place */
 .pb {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);

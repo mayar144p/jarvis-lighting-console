@@ -1072,6 +1072,21 @@ function familiesFor(heads) {
   return have;
 }
 
+// the buttons page open now (Make a button offers it first), and the pages
+// there are: with buttons, a name or a grid of their own (1-4 always)
+let buttonsPage = 1;
+on("qbpage", (p) => { buttonsPage = +p || 1; });
+function buttonPages() {
+  const q = (state.snap && state.snap.quick) || {};
+  const names = q.names || {};
+  const there = new Set([...(q.buttons || []).map((b) => b.page),
+    ...Object.entries(names).filter(([, v]) => v).map(([k]) => +k), ...Object.keys(q.layout || {}).map(Number)]);
+  const last = Math.max(4, ...there);
+  const out = [];
+  for (let p = 1; p <= last; p++) if (p <= 4 || there.has(p)) out.push([p, names[p] || `Page ${p}`]);
+  return out;
+}
+
 // what the selected lights do now, as a button that holds them
 export async function makeHoldButton() {
   const heads = sel();
@@ -1080,6 +1095,11 @@ export async function makeHoldButton() {
   const keep = new Set(have.size ? have : KEEP.map(([k]) => k));
   const lights = `${heads.length} light${heads.length === 1 ? "" : "s"}`;
   const name = h("input", { type: "text", maxlength: 24, placeholder: "e.g. Slow circle red" });
+  let toPage = buttonPages().some(([p]) => p === buttonsPage) ? buttonsPage : 1;
+  const where = h("div.chip-row");
+  const drawWhere = () => where.replaceChildren(...buttonPages().map(([p, l]) => h("button.chip" + (p === toPage ? ".on" : ""),
+    { type: "button", onclick: () => { toPage = p; drawWhere(); } }, l)));
+  drawWhere();
   const what = h("div.chip-row");
   const sum = h("p.small");
   const draw = () => {
@@ -1096,6 +1116,7 @@ export async function makeHoldButton() {
     h("p.small", `What ${heads.length === 1 ? "this light shows" : `these ${heads.length} lights show`} now, as a button. It turns on and holds what it keeps - the programmer can't change that until you turn it off.`),
     h("label.small", "Name ", name),
     h("div.qe-label", "What goes in"), what, sum,
+    h("div.qe-label", "On the page"), where,
     h("p.muted.small", "Buttons stack: a Colour-only button pressed over a movement button changes only the colour, and the movement keeps running. Nothing needs to be at full or moving to make a colour button."));
   const ok = await new Promise((resolve) => {
     const close = modal({ title: "Make a button", body, onClose: () => resolve(false), foot: [h("span.grow"),
@@ -1110,7 +1131,7 @@ export async function makeHoldButton() {
   const g = groups.find((x) => x.heads.length === set.size && x.heads.every((n) => set.has(n)));
   const all = keep.size === KEEP.length;
   const r = await run("quick_from_programmer", { label: (name.value || "My look").trim().slice(0, 24),
-    ...(all ? {} : { keep: [...keep] }), ...(g ? { group: g.n } : { heads }) });
+    ...(all ? {} : { keep: [...keep] }), ...(g ? { group: g.n } : { heads }), page: toPage });
   if (r.ok) toast(r.summary, "ok", 6000);
 }
 
