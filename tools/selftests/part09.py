@@ -8174,6 +8174,10 @@ def test_lights_fader() -> None:
                   e.lite().get("group_masters", {}).get(str(g.get("n", 1))) == 30, str(e.lite().get("group_masters")))
             e.act("group_master", group=g.get("n", 1), level=100)
             e.act("group_master", group=g2.get("n", 2), level=100)
+            nb = e.act("quick_set", page=3, slot=1, button={"kind": "flash", "label": "Confetti fire", "note": "  both cannons  "})
+            nb2 = e.act("quick_set", page=3, slot=2, button={"kind": "flash", "label": "Plain"})
+            check("a button's description is the operator's own (kept, trimmed), none until written",
+                  nb["button"].get("note") == "both cannons" and "note" not in nb2["button"], str(nb["button"].get("note")))
             e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed", "default": 70})
             mine = next(b for b in e.quick if b["id"] == sp)
             check("...renamed like any button, and its default set by the operator",
@@ -8184,7 +8188,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "renderSideFaders" in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "renderSideFaders" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")

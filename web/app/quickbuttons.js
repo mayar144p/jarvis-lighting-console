@@ -253,11 +253,13 @@ function lookClasses(b) {
     b.text && b.text !== "m" ? "qt-" + b.text : "", b.plain ? "qplain" : "", b.blink ? "qblink" : "",
     b.icon_only && b.icon ? "qicononly" : ""].filter(Boolean);
 }
+// the tile: its name, and under it only a description the operator wrote
+// (what it reaches and how it plays are in its tooltip - "1 light · hold"
+// under CONFETTI FIRE read as if it were a light)
 function tileContent(b) {
   const name = b.icon_only && b.icon ? null : h("b", b.label);
   return [h("span.qline", b.icon ? icon(b.icon) : null, name),
-    b.plain || (b.icon_only && b.icon) ? null
-      : h("small", NO_TARGET.has(b.kind) ? modeText(b) : `${targetText(b.target)} · ${modeText(b)}`)];
+    b.plain || (b.icon_only && b.icon) || !b.note ? null : h("small", b.note)];
 }
 
 function render(force = false) {
@@ -346,12 +348,11 @@ function render(force = false) {
       continue;
     }
     const el = h("button.qbtn" + (b.kind === "estop" ? ".qestop" : "") + (active.has(b.id) ? ".on" : ""), {
-      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${editing ? " (click to edit, drag to move, Alt-drag to copy, right-click: copy / paste the look)" : ""}`,
+      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${b.keeps ? " · " + b.keeps : ""}${editing ? " (click to edit, drag to move, Alt-drag to copy, right-click: copy / paste the look)" : ""}`,
       "aria-label": b.label,
       dataset: { id: b.id },
       draggable: editing ? "true" : null,
     }, ...tileContent(b),
-    b.keeps ? h("small.qkeeps", { title: "What this button holds: " + b.keeps }, b.keeps) : null,
     b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
     PACED.has(b.kind) ? h("span.qrate" + (b.rate || b.free ? "" : ".one"), { title: "Speed (tap to change)" },
       (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
@@ -607,7 +608,7 @@ const row = (label, ...kids) => h("div.qe-row", h("div.qe-label", label), h("div
 function fromButton(b) {
   // the editor's working copy of a button
   const s = {
-    does: b ? b.kind : "flash", label: b ? b.label : "", tint: b ? b.tint || null : null,
+    does: b ? b.kind : "flash", label: b ? b.label : "", note: b ? b.note || "" : "", tint: b ? b.tint || null : null,
     mode: b ? b.mode : "hold", seconds: b && b.seconds ? b.seconds : "", exclusive: b ? b.exclusive || "" : "",
     quant: b && b.quant !== undefined ? b.quant : "",
     target: b ? { ...(b.target || { all: true }) } : { all: true },
@@ -645,6 +646,7 @@ function toButton(s) {
   const kind = d === "dim" || d === "capture" ? "custom" : d;
   const label = s.label.trim() || (DOES.find(([k]) => k === d) || [0, "Button"])[1];
   const b = { kind, label, mode: ONE_SHOT.has(d) ? "tap" : s.mode };
+  if (s.note.trim()) b.note = s.note.trim();
   if (s.tint) b.tint = s.tint;
   if (s.w !== 1 || s.h !== 1) { b.w = s.w; b.h = s.h; }
   if (s.shape !== "rounded") b.shape = s.shape;
@@ -884,6 +886,8 @@ function editButton(slot, btn) {
     const kids = [
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
+      row("Description", h("input.qe-name", { type: "text", value: s.note, maxlength: 40, placeholder: "optional - shown under the name",
+        oninput: (e) => { s.note = e.target.value; } })),
       lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
