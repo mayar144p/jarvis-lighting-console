@@ -303,6 +303,20 @@ const pageUp = new WeakSet();
 const asks = new Map();
 let askNo = 0;
 ipcMain.on("desk:ready", (e) => pageUp.add(e.sender));
+// Show menu -> Save everything to a file: the operator picks where (a USB
+// stick, another drive) - not straight into Downloads like other saves
+ipcMain.handle("desk:saveAs", async (e, name, bytes) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const safe = String(name || "show.jarvis").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) || "show.jarvis";
+  const r = await dialog.showSaveDialog(win, {
+    title: "Save the show and everything it needs",
+    defaultPath: path.join(app.getPath("documents"), safe),
+    filters: [{ name: "Jarvis show (everything)", extensions: ["jarvis"] }],
+  });
+  if (r.canceled || !r.filePath) return null;
+  await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
+  return r.filePath;
+});
 ipcMain.on("desk:answer", (_e, id, index) => {
   const done = asks.get(id);
   if (done) { asks.delete(id); done(Number.isInteger(index) ? index : -1); }
