@@ -8784,3 +8784,54 @@ def test_show_pack() -> None:
     check("the Show menu: Save everything to a file (asks where) / Open everything from a file",
           "Save everything to a file" in dj and "Open everything from a file" in dj and "jarvisDesk.saveAs" in dj
           and "/api/console/unpack" in dj and '"desk:saveAs"' in mj and "showSaveDialog" in mj, "")
+
+
+def test_button_profiles() -> None:
+    """Button profiles: a whole set of pages per kind of show ("Default",
+    "Halloween"), one on the desk at a time, saved with the show."""
+    print("Button profiles (Default, Halloween...)")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "shows")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "Normal", "target": {"all": True}})
+            e.act("quick_page", page=1, name="Main")
+            check("a show starts with the Default profile only",
+                  e._quick_public()["profiles"] == ["Default"] and e._quick_public()["profile"] == "Default", "")
+            e.act("quick_profile", new="Halloween")
+            check("a new profile is empty and in use", e.quick == [] and e._profiles()["active"] == "Halloween", "")
+            e.act("quick_set", page=1, slot=2, button={"kind": "colour", "label": "Pumpkin", "colour": "#ff6600",
+                                                       "target": {"all": True}})
+            e.act("quick_press", id=e.quick[0]["id"], down=True)
+            e.act("quick_profile_use", name="default")
+            check("switching lets go of the old profile's buttons and brings back the other's pages",
+                  not e.quick_active and [b["label"] for b in e.quick] == ["Normal"]
+                  and e.quick_names == {"1": "Main"}, str(e.quick))
+            e.act("save_show", name="gigs")
+            e.act("show_new")
+            check("a new show has only Default", e._profiles()["order"] == ["Default"], "")
+            e.act("load_show", name="gigs")
+            e.act("quick_profile_use", name="Halloween")
+            check("saved with the show: Halloween's buttons come back",
+                  [b["label"] for b in e.quick] == ["Pumpkin"], str(e.quick))
+            e.act("quick_profile", new="Copy", copy=True)
+            check("a copy starts with the buttons in use", [b["label"] for b in e.quick] == ["Pumpkin"], "")
+            e.act("quick_profile", rename="Copy", to="Xmas")
+            e.act("quick_profile", delete="Xmas")
+            check("deleting the profile in use goes back to Default",
+                  e._profiles()["active"] == "Default" and e._profiles()["order"] == ["Default", "Halloween"], "")
+            e.act("undo")
+            check("undo brings a deleted profile back", "Xmas" in e._profiles()["order"], str(e._profiles()["order"]))
+            for bad in ({"delete": "Default"}, {"rename": "Default", "to": "X"}, {"new": "halloween"}):
+                r = e.act("quick_profile", **bad)
+                check(f"refused: {bad}", not r.get("ok", True), str(r))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the buttons bar has the profile picker", "quick_profile_use" in qb and 'id="qb-profile"'
+          in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")

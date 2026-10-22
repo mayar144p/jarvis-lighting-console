@@ -913,6 +913,7 @@ class FxLayerMixin:
         return {"buttons": [dict(b) for b in self.quick],
                 "active": sorted(self.quick_active),
                 "names": dict(getattr(self, "quick_names", {}) or {}),
+                "profile": self._profiles()["active"], "profiles": list(self._profiles()["order"]),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS,
                 "layout": self._quick_layouts(), "layout_default": dict(self.LAYOUT_DEFAULT),
                 "quant": float(self.__dict__.get("quick_quant", 0.0)),

@@ -95,6 +95,7 @@ class ShowMixin:
             "strobe_fader_hz": 30,
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_layout": self.__dict__.get("quick_layout") or {},
+            "quick_profiles": self._profiles_saved(),
             "sound": self._sound_cfg(),
             "step_fx": self._steps(),
             "parked": self.__dict__.get("parked") or {},
@@ -361,6 +362,7 @@ class ShowMixin:
         if isinstance(payload.get("quick_names"), dict):
             self.quick_names = {str(k): str(v)[:16] for k, v in payload["quick_names"].items()}
         self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+        self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
         venue = payload.get("venue")
         if isinstance(venue, dict):
             try:
@@ -378,7 +380,7 @@ class ShowMixin:
             "patch": [], "programmer": {}, "selected": [], "groups": [],
             "palettes": {k: [] for k in self.palettes}, "presets": [],
             "playbacks": [_new_playback(i + 1) for i in range(PLAYBACK_COUNT)],
-            "venue": venue_mod.empty(), "quick": [], "quick_names": {}, "quick_layout": {}, "quick_quant": 0.0,
+            "venue": venue_mod.empty(), "quick": [], "quick_names": {}, "quick_layout": {}, "quick_quant": 0.0, "quick_profiles": None,
             "media": {}, "shapes": [], "step_fx": [], "macros": [], "parked": {}, "moves": [],
             "timeline": tl_mod.empty(), "prog_fx": [], "patch_extra": {}})
         self.quick_active = {}
@@ -429,6 +431,7 @@ class ShowMixin:
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "quick_layout": json.loads(json.dumps(self.__dict__.get("quick_layout") or {})),
                 "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+                "quick_profiles": self._profiles_saved(),
                 "media": json.loads(json.dumps(self._media(), default=str)),
                 "shapes": json.loads(json.dumps(self._shapes(), default=str)),
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
@@ -933,6 +936,7 @@ class ShowMixin:
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
             self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+            self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
             try:
                 qq = float(payload.get("quick_quant") or 0.0)
             except (TypeError, ValueError):

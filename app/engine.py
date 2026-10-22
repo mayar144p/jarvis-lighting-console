@@ -261,6 +261,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_layout": copy.deepcopy(self.__dict__.get("quick_layout") or {}),
             "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+            "quick_profiles": self._profiles_saved(),
             "media": copy.deepcopy(self._media()),
             "shapes": copy.deepcopy(self._shapes()),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
@@ -310,6 +311,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         self.quick_names = dict(state.get("quick_names") or {})
         self.quick_layout = copy.deepcopy(state.get("quick_layout") or {})
         self.quick_quant = float(state.get("quick_quant") or 0.0)
+        self.quick_profiles = self._profiles_load(state.get("quick_profiles"))
         if "media" in state:
             self.media = copy.deepcopy(state["media"])
         if "shapes" in state:

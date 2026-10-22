@@ -283,6 +283,37 @@ function renderPages() {
     }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
+  const prof = $("#qb-profile");
+  if (prof) prof.textContent = `${q.profile || "Default"} ▾`;
+}
+
+// Button profiles: a whole set of pages per kind of show ("Default",
+// "Halloween"); one is on the desk at a time
+function profileMenu(anchor) {
+  const q = quick();
+  const cur = q.profile || "Default";
+  const go = async (action, params) => {
+    const r = await run(action, params, { toast: true });
+    if (r.ok) { folderBack.length = 0; page = 1; render(true); emit("qbpage", page); }
+  };
+  const named = async (title, start = "") => {
+    const n = await promptBox(title, "Name", start, { ok: "Save", placeholder: "e.g. Halloween" });
+    return n && n.trim() ? n.trim() : null;
+  };
+  menu(anchor, [
+    ...(q.profiles || ["Default"]).map((n) => ({ label: (n === cur ? "✓ " : "  ") + n,
+      hint: n === cur ? "in use" : "", run: () => n !== cur && go("quick_profile_use", { name: n }) })),
+    "-",
+    { label: "New profile (empty)…", run: async () => { const n = await named("New button profile"); if (n) go("quick_profile", { new: n }); } },
+    { label: "New profile from these buttons…", hint: "a copy to change", run: async () => {
+      const n = await named("New button profile (a copy)", `${cur} copy`); if (n) go("quick_profile", { new: n, copy: true }); } },
+    cur !== "Default" && { label: `Rename ${cur}…`, run: async () => {
+      const n = await named(`Rename ${cur}`, cur); if (n && n !== cur) run("quick_profile", { rename: cur, to: n }, { toast: true }); } },
+    cur !== "Default" && { label: `Delete ${cur}…`, danger: true, run: async () => {
+      if (await confirmBox(`Delete ${cur}?`, `Its buttons and pages go with it (Ctrl+Z brings them back). The desk goes back to the Default buttons.`, { ok: "Delete", danger: true }))
+        go("quick_profile", { delete: cur });
+    } },
+  ]);
 }
 
 async function renamePage(p) {
@@ -1360,6 +1391,7 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
   $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });

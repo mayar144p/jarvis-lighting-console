@@ -92,7 +92,7 @@ UNDO_COALESCE_S = 1.2
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
-    "quick_press", "quick_release_all", "quick_rate", "group_flash",
+    "quick_press", "quick_release_all", "quick_rate", "group_flash", "quick_profile_use",
     "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "song_follow", "standby", "standby_take", "standby_stop", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
@@ -654,7 +654,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "venue_orient", "attach_heads", "place_many",
     "quick_set", "quick_colour_row", "quick_group_controls", "quick_edit", "quick_update", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
+    "quick_page", "quick_profile", "quick_profile_use", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen",

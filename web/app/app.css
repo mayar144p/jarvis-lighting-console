@@ -2123,3 +2123,5 @@ body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
 details.open-find > summary { cursor: pointer; padding: 4px 0; }
 details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12.5px; padding: 4px 0; }
 
+/* button profiles (Default, Halloween...): the one in use, before the pages */
+.qb-profile { font-weight: 600; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

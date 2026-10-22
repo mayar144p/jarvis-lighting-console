@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import time
@@ -671,6 +672,130 @@ class QuickMixin:
             names.pop(str(page), None)
         self.quick_names = names
         return {"page": page, "name": name, "summary": f"page {page}: {name or 'unnamed'}"}
+
+    # ---- button profiles: whole sets of pages ("Default", "Halloween") ----
+    # The profile in use IS self.quick / quick_names / quick_layout; the
+    # others wait in quick_profiles["sets"], each with the same three.
+    PROFILE_DEFAULT = "Default"
+
+    def _profiles(self) -> dict:
+        p = self.__dict__.get("quick_profiles")
+        if not isinstance(p, dict) or not p.get("order"):
+            p = {"active": self.PROFILE_DEFAULT, "order": [self.PROFILE_DEFAULT], "sets": {}}
+            self.__dict__["quick_profiles"] = p
+        return p
+
+    def _profiles_saved(self) -> dict:
+        """The profiles for a show file / undo (the one in use is self.quick)."""
+        p = self._profiles()
+        return {"active": p["active"], "order": list(p["order"]),
+                "sets": json.loads(json.dumps(p["sets"], default=str))}
+
+    def _profiles_load(self, raw) -> dict:
+        """Profiles from a show file: tidied, the active one's buttons are
+        the show's own `quick` (loaded the usual way)."""
+        if not isinstance(raw, dict):
+            raw = {}
+        order = [str(n).strip()[:24] for n in (raw.get("order") or []) if str(n).strip()]
+        order = list(dict.fromkeys(order)) or [self.PROFILE_DEFAULT]
+        if self.PROFILE_DEFAULT not in order:
+            order.insert(0, self.PROFILE_DEFAULT)
+        active = str(raw.get("active") or "").strip()[:24]
+        if active not in order:
+            active = self.PROFILE_DEFAULT
+        sets = {}
+        for name, s in (raw.get("sets") or {}).items():
+            name = str(name).strip()[:24]
+            if name not in order or name == active or not isinstance(s, dict):
+                continue
+            quick = []
+            for b in s.get("quick") or []:
+                try:
+                    quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            names = s.get("quick_names")
+            sets[name] = {"quick": quick,
+                          "quick_names": {str(k): str(v)[:16] for k, v in names.items()} if isinstance(names, dict) else {},
+                          "quick_layout": self._quick_layout_load(s.get("quick_layout"))}
+        for name in order:                 # a profile with nothing saved yet: empty
+            if name != active and name not in sets:
+                sets[name] = {"quick": [], "quick_names": {}, "quick_layout": {}}
+        return {"active": active, "order": order, "sets": sets}
+
+    def _profile_take(self, name: str) -> None:
+        """Put profile `name`'s buttons on the desk; the one in use is kept."""
+        p = self._profiles()
+        self._a_quick_release_all()
+        self.__dict__["quick_editing"] = None
+        p["sets"][p["active"]] = {"quick": self.quick, "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                                  "quick_layout": self._quick_layouts()}
+        s = p["sets"].pop(name, None) or {}
+        self.quick = list(s.get("quick") or [])
+        self.quick_names = dict(s.get("quick_names") or {})
+        self.quick_layout = dict(s.get("quick_layout") or {})
+        p["active"] = name
+
+    def _profile_name(self, name) -> str:
+        p = self._profiles()
+        name = str(name or "").strip()
+        hit = next((n for n in p["order"] if n.lower() == name.lower()), None)
+        if hit is None:
+            raise ValueError(f"no button profile called {name!r} (there are: {', '.join(p['order'])})")
+        return hit
+
+    def _a_quick_profile_use(self, name="", **_):
+        """Switch to another set of buttons ("Halloween"): every button of
+        the one in use is let go first; its pages wait for next time."""
+        name = self._profile_name(name)
+        if name == self._profiles()["active"]:
+            return {"profile": name, "summary": f"already on the {name} buttons"}
+        self._profile_take(name)
+        n = len(self.quick)
+        return {"profile": name, "summary": f"{name} buttons ({n} button{'s' if n != 1 else ''})"}
+
+    def _a_quick_profile(self, new=None, copy=False, rename=None, to=None, delete=None, **_):
+        """Button profiles: `new` makes one (empty, or a `copy` of the one
+        in use) and switches to it; `rename` + `to`; `delete` (never
+        Default, which is always there)."""
+        p = self._profiles()
+        if new not in (None, ""):
+            name = str(new).strip()[:24]
+            if any(n.lower() == name.lower() for n in p["order"]):
+                raise ValueError(f"there is already a button profile called {name!r}")
+            p["order"].append(name)
+            if _truthy(copy):
+                p["sets"][name] = {"quick": [dict(b) for b in self.quick],
+                                   "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                                   "quick_layout": json.loads(json.dumps(self._quick_layouts()))}
+            self._profile_take(name)
+            return {"profile": name, "summary": f"new button profile {name!r}" + (" (a copy)" if _truthy(copy) else "")}
+        if rename not in (None, ""):
+            old = self._profile_name(rename)
+            name = str(to or "").strip()[:24]
+            if old == self.PROFILE_DEFAULT:
+                raise ValueError("the Default profile keeps its name")
+            if not name:
+                raise ValueError("give the profile a name")
+            if any(n.lower() == name.lower() and n != old for n in p["order"]):
+                raise ValueError(f"there is already a button profile called {name!r}")
+            p["order"] = [name if n == old else n for n in p["order"]]
+            if old in p["sets"]:
+                p["sets"][name] = p["sets"].pop(old)
+            if p["active"] == old:
+                p["active"] = name
+            return {"profile": name, "summary": f"button profile {old!r} is now {name!r}"}
+        if delete not in (None, ""):
+            name = self._profile_name(delete)
+            if name == self.PROFILE_DEFAULT:
+                raise ValueError("the Default profile can't be deleted")
+            if p["active"] == name:
+                self._profile_take(self.PROFILE_DEFAULT)
+            p["sets"].pop(name, None)
+            p["order"] = [n for n in p["order"] if n != name]
+            return {"profile": p["active"], "summary": f"button profile {name!r} deleted"}
+        return {"profile": p["active"], "profiles": list(p["order"]),
+                "summary": f"on the {p['active']} buttons; profiles: {', '.join(p['order'])}"}
 
     def _quick_swap_pages(self, a: int, b: int) -> dict:
         if a == b:
