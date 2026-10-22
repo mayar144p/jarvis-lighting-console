@@ -412,7 +412,10 @@ function speedMaster() {
 }
 
 function movementBlock() {
-  const act = running();
+  // the movements on the SELECTED lights only (one a button runs on another
+  // light is that light's, and showed up here whichever light was picked)
+  const mine = new Set(movers().map((x) => x.head_no));
+  const act = running().filter((f) => f.heads.some((n) => mine.has(n)));
   // tap or type the seconds for one turn; what runs changes as it runs
   const secs = knob({ label: "Speed", unit: "s / turn", value: knobs.secs, min: 0.5, max: 200, presets: TURN_PRESETS, invert: true,
     minusTitle: "Faster (fewer seconds)", plusTitle: "Slower (more seconds)",
