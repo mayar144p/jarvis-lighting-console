@@ -28,7 +28,7 @@ const DOES = [
   ["go", "GO", "GO on a playback"],
   ["release", "Release", "Releases a playback"],
   ["preset", "Preset", "Applies a recorded preset"],
-  ["fader", "Fader", "A fader tile: the master, the Speed master, a playback or a group"],
+  ["fader", "Fader", "A fader tile: the master, the Speed master, a playback, a group - or some lights' brightness, effect speed or strobe speed"],
   ["xy", "XY pad", "Drag to point these lights (pan / tilt)"],
   ["tempo", "Tempo", "Shows the BPM and the beat; tap it on the beat"],
   ["cuelist", "Cue list", "A playback's cue now and next; tap = GO"],
