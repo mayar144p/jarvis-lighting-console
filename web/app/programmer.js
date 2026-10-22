@@ -546,6 +546,17 @@ function renderBeamQuick() {
     rows.push(h("div.chip-row", h("span.k", "Strobe"),
       ...[["off", "Off"], ["slow", "Slow"], ["medium", "Medium"], ["fast", "Fast"]].map(([k, label]) =>
         h("button.chip", { title: `DMX ${st[k]}`, onclick: set(strobe.role, st[k]) }, label))));
+    // strobe buttons: the desk's strobe (always works) or, once Slow /
+    // Medium / Fast above are seen strobing the real light, its own
+    if ("own_strobe" in strobe) {
+      const first = selectionHeads()[0];
+      const own = (v) => () => first && run("own_strobe", { head: first.head_no, on: v }, { toast: true }).then(loadAttributes);
+      const top = strobe.own_hz ? `up to ${strobe.own_hz} Hz` : "as fast as it goes";
+      rows.push(h("div.chip-row", { title: "What a Strobe button (and a strobe-speed fader) does on this model - for every light of this model" },
+        h("span.k", "Strobe buttons"),
+        h("button.chip" + (strobe.own_strobe ? "" : ".on"), { title: "The desk switches the light on and off: works on any light, 20 flashes a second at most", onclick: own(false) }, "Desk strobe"),
+        h("button.chip" + (strobe.own_strobe ? ".on" : ""), { title: `Its own strobe channel: even flashes, ${top} - only if Slow / Medium / Fast above really strobe the light`, onclick: own(true) }, `Its own (${top})`)));
+    }
   }
   // The desk's own strobe: flashes the level, like the Strobe all button -
   // strobes any light, even one whose strobe channel its file gets wrong

@@ -290,8 +290,8 @@ def test_quick_buttons() -> None:
             r = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "label": "x"})
             check("a colour button without a colour is refused", r["ok"] is False, "")
             r = e.act("quick_set", page=2, slot=1, button={"kind": "strobe", "hz": 99, "target": {"group": 7}})
-            check("values are clamped (strobe rate <= 20 Hz)",
-                  r["ok"] and r["button"]["hz"] == 20, json.dumps(r.get("button")))
+            check("values are clamped (strobe rate <= 30 Hz: a light's own strobe)",
+                  r["ok"] and r["button"]["hz"] == 30, json.dumps(r.get("button")))
             e.act("save_show", name="qb")
             e2 = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
             try:
