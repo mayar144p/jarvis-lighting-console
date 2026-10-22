@@ -638,7 +638,7 @@ ACTIONS = (
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
     "cue_info", "set_attr_range", "remap_heads",
     "follow_set", "group_create", "group_edit", "group_delete", "import_scan",
-    "import_show", "include_palette", "locate", "load_show", "master",
+    "import_show", "include_palette", "palette_defaults", "palette_edit", "locate", "load_show", "master",
     "patch_clear", "patch_from_csv", "patch_list",
     "playback_activate", "playback_level", "playback_release",
     "record_cue", "record_palette", "remove_heads", "run_command",

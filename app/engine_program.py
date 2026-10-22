@@ -960,6 +960,14 @@ class ProgrammerMixin:
         entry = {"n": n, "name": label, "values": values}
         if disagree:
             entry["per"] = per                 # the lights differ: each its own
+        if key == "colour":
+            # its tile's colour (a wheel light's too)
+            first = next((h for h in heads if str(h["head_no"]) in per), None)
+            if first is not None:
+                try:
+                    entry["hex"] = self._hex_for(first, per[str(first["head_no"])])
+                except (KeyError, TypeError, ValueError):
+                    pass
         for i, old in enumerate(self.palettes[key]):
             if old["n"] == n:
                 self.palettes[key][i] = entry
@@ -974,6 +982,94 @@ class ProgrammerMixin:
         return {"kind": key, "n": n, "name": label, "disagree": disagree, "per_light": bool(disagree),
                 "roles": sorted(values), "cues": moved,
                 "summary": f"recorded {key} palette {label}{note}"}
+
+    def _a_palette_edit(self, kind=None, palette=None, name=None, delete=False, **_):
+        """Rename a palette, or delete it (the cues keep their values)."""
+        key = str(kind or "").strip().lower()
+        if key not in PALETTE_KINDS:
+            raise ValueError(f"kind must be one of {sorted(PALETTE_KINDS)}")
+        entry = self._by_number_or_name(self.palettes[key], palette)
+        if entry is None:
+            raise ValueError(f"no {key} palette {palette!r}")
+        if _truthy(delete):
+            self.palettes[key] = [p for p in self.palettes[key] if p is not entry]
+            for pb in self.playbacks:              # its cues keep their values, unlinked
+                for cue in pb.get("stack") or []:
+                    if cue.get("refs"):
+                        refs = {h: {r: ref for r, ref in rr.items() if ref != [key, entry["n"]]}
+                                for h, rr in cue["refs"].items()}
+                        cue["refs"] = {h: rr for h, rr in refs.items() if rr}
+            return {"kind": key, "n": entry["n"], "summary": f"deleted {key} palette {entry['name']}"}
+        new = str(name or "").strip()[:32]
+        if not new:
+            raise ValueError("a palette needs a name")
+        entry["name"] = new
+        return {"kind": key, "n": entry["n"], "summary": f"{key} palette {entry['n']} is now {new!r}"}
+
+    DEFAULT_COLOURS = (("White", "#ffffff"), ("Red", "#ff0000"), ("Amber", "#ff8c00"), ("Yellow", "#ffe000"),
+                       ("Green", "#00ff00"), ("Cyan", "#00ffff"), ("Blue", "#0000ff"), ("Pink", "#ff7fbf"),
+                       ("Magenta", "#ff00ff"), ("UV", "#5a00ff"))
+
+    def _a_palette_defaults(self, kind="colour", **_):
+        """The usual palettes for this rig, each light its own values: the
+        colours (White, Red, Amber...), positions (Centre, Down, Out, and a
+        fan / cross over the dance floor) or beams (Narrow, Mid, Wide).
+        One that already exists by name is left as it is."""
+        key = str(kind or "").strip().lower()
+        if key not in PALETTE_KINDS:
+            raise ValueError(f"kind must be one of {sorted(PALETTE_KINDS)}")
+        keep_prog = {h: dict(r) for h, r in self.programmer.items()}
+        keep_sel = list(self.selected)
+        keep_refs = self.__dict__.get("prog_refs")
+        have = {str(p.get("name", "")).lower() for p in self.palettes[key]}
+        made: list[str] = []
+
+        def heads_with(*roles):
+            return [h["head_no"] for h in self.patch if any(r in h["map"] for r in roles)]
+
+        def one(name, heads, apply):
+            if name.lower() in have or not heads:
+                return
+            self.programmer = {}
+            self.selected = list(heads)
+            try:
+                apply()
+                if self.programmer:
+                    self._a_record_palette(kind=key, name=name)
+                    made.append(name)
+            except ValueError:
+                pass
+        try:
+            if key == "colour":
+                lights = heads_with("red", "wheel", "cyan", "colour_macro")
+                for name, hexc in self.DEFAULT_COLOURS:
+                    one(name, lights, lambda hexc=hexc: self._a_set_colour(hex=hexc))
+            elif key == "position":
+                movers = heads_with("pan")
+                movers = [n for n in movers if "tilt" in self._head(n)["map"]]
+                depth = float(((self.venue or {}).get("room") or {}).get("depth") or 10.0)
+                one("Centre", movers, lambda: self._a_set_position(pan=128, tilt=128, unit="255"))
+
+                def down():
+                    for n in movers:
+                        h = self._head(n)
+                        self._a_aim_at(x=float(h.get("x") or 0), y=0.0, z=float(h.get("z") or 0), heads=[n])
+                one("Down", movers, down)
+                one("Out", movers, lambda: self._a_aim_at(x=0.0, y=1.5, z=depth))
+                one("Fan out", movers, lambda: self._a_aim_spot(formation="fan"))
+                one("Cross", movers, lambda: self._a_aim_spot(formation="cross"))
+            else:
+                zooms = heads_with("zoom")
+                for name, v in (("Narrow", 0), ("Mid", 128), ("Wide", 255)):
+                    one(name, zooms, lambda v=v: self._a_set_attribute(attribute="zoom", value=v))
+        finally:
+            self.programmer = keep_prog
+            self.selected = keep_sel
+            if keep_refs is not None:
+                self.__dict__["prog_refs"] = keep_refs
+        if not made:
+            raise ValueError(f"no {key} palettes to add: they are there already, or no light here can do them")
+        return {"kind": key, "made": made, "summary": f"{len(made)} {key} palette(s): {', '.join(made)}"}
 
     @staticmethod
     def _palette_row(entry: dict, head: dict) -> dict:

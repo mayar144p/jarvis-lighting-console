@@ -4800,8 +4800,8 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("five ready ones (fewer): Set up, Live, then programming, theatre, no 3D",
-          got["ids"] == ["setup", "live", "programming", "theatre", "nostage"], str(got["ids"]))
+    check("six ready ones: Set up, Live, then programming, theatre, the desk (palettes), no 3D",
+          got["ids"] == ["setup", "live", "programming", "theatre", "desk", "nostage"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
@@ -9028,3 +9028,45 @@ def test_programmer_pro_tools() -> None:
     tj = (ROOT / "web" / "app" / "timeline.js").read_text(encoding="utf-8")
     check("on screen: delay / fan per cue, playback pages, My moves on the timeline",
           "delayFan" in cd and "renderPages" in pj and "My moves" in tj, "")
+
+
+def test_desk_view() -> None:
+    """The desk view (Programmer -> Palettes, or the Desk workspace): the
+    usual palettes made for the rig (each light its own), palettes renamed
+    and deleted, and the windows / command strip on screen."""
+    print("Desk view: palette windows, the usual palettes, the command strip")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="moving head spot", qty=4)
+            e.act("add_heads", query="LED PAR", qty=4)
+            e.act("select_heads", heads=[1])
+            e.programmer[1] = {"pan": 5}
+            r = e.act("palette_defaults", kind="colour")
+            check("the usual colours, for this rig", r.get("made", [])[:3] == ["White", "Red", "Amber"]
+                  and len(e.palettes["colour"]) == 10, str(r))
+            check("the programmer and the selection are as they were", e.programmer == {1: {"pan": 5}} and e.selected == [1], "")
+            red = next(p for p in e.palettes["colour"] if p["name"] == "Red")
+            check("a colour palette knows its colour (for its tile)", red.get("hex", "").lower() in ("#ff0000",), str(red.get("hex")))
+            r = e.act("palette_defaults", kind="position")
+            check("the usual positions", {"Centre", "Down", "Out"} <= set(r.get("made") or []), str(r))
+            r = e.act("palette_defaults", kind="colour")
+            check("made once: a second time adds nothing", not r.get("ok", True), str(r))
+            e.act("palette_edit", kind="colour", palette=red["n"], name="Blood")
+            check("a palette renamed", any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+            e.act("palette_edit", kind="colour", palette="Blood", delete=True)
+            check("and deleted", not any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+        finally:
+            e.shutdown()
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    ws = (ROOT / "web" / "app" / "wslayouts.js").read_text(encoding="utf-8")
+    check("the windows: Group, Position, Colour, Beam; the strip: select, flip, record, windows, keypad",
+          all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
+                                '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
+    check("the Desk workspace opens on it", 'id: "desk"' in ws and 'tab: "desk"' in ws, "")

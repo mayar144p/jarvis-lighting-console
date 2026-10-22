@@ -94,7 +94,7 @@ function renderHeader() {
     box.textContent = `${heads.length} × ${types.length === 1 ? types[0] : types.length + " types"}`;
     box.classList.add("has");
   }
-  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx"].includes(tab));
+  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx", "desk"].includes(tab));
   applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
   // the same kinds as the "In the programmer" bar (GROUP_OF): a shutter is
@@ -1443,6 +1443,7 @@ function showTab(name) {
   if (name === "fx") loadFx();
   if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
+  if (name === "desk") import("./deskview.js").then((m) => { m.initDeskView(); m.renderDeskView(); });
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
   if (name === "laser" || name === "sfx") {
