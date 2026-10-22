@@ -169,6 +169,15 @@ class ProgrammerMixin:
         thing you cannot run an effect on.
         """
         if name not in (None, ""):
+            if _truthy(_.get("replace")) and str(name).lower() in motion_mod.KINDS:
+                # the Move tab changing a knob: the programmer's own movement on
+                # these lights is replaced, never stacked (the screen asking to
+                # stop it by number raced its own last update and missed it)
+                want = {int(n) for n in (heads if heads is not None else self.selected)}
+                mine = {f["id"] for f in self._programmer_fx()
+                        if not f.get("live") and f.get("lib") in motion_mod.ALL_KINDS
+                        and set(f.get("heads") or []) & want}
+                self.fx = [f for f in self.fx if f["id"] not in mine]
             return self._a_run_fx_named(
                 str(name).lower(), params, duration, heads, group,
                 across=_truthy(_.get("across")))
