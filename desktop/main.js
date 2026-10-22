@@ -270,7 +270,6 @@ function openPart(part) {
   reopen.add(part);
   win.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
   win.once("ready-to-show", () => { if (place.full) win.setFullScreen(true); win.show(); });
-  if (touch().lock) edgeLock(win, true);       // (only while it is full screen)
   const remember = () => {
     if (win.isDestroyed()) return;
     saved[part] = { bounds: win.isFullScreen() || win.isMaximized() ? win.getNormalBounds() : win.getBounds(), full: win.isFullScreen() };
@@ -381,62 +380,18 @@ function guard(wc) {
 
 // ---------------------------------------------------------------- touch
 // On a touch screen a swipe in from an edge leaves the show: Task View (left),
-// the notifications (right), the taskbar (bottom).  Two locks:
-//  - per window, no admin: Windows' "no edge gestures while this window is
-//    full screen" (System.EdgeGesture.DisableTouchWhenFullscreen) on every
-//    desk window - full screen buttons, a Show mode monitor.  Microsoft lists
-//    it for Windows 8 / 10; set from a helper process, so if Windows ignores
-//    it or it fails, the desk carries on as it was.
-//  - the whole computer (Desk menu, asks for admin once): the "Allow Edge
-//    swipe" policy off, as kiosks do - the sure way on Windows 11.
-const touch = () => (saved._touch = saved._touch || { lock: true });
-const EDGE_CS = `using System; using System.Runtime.InteropServices;
-public static class JarvisEdge {
-  [StructLayout(LayoutKind.Sequential, Pack = 4)] public struct PKEY { public Guid fmtid; public uint pid; }
-  [StructLayout(LayoutKind.Explicit, Size = 24)] public struct PVAR { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public short b; }
-  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IPropertyStore { void GetCount(out uint c); void GetAt(uint i, out PKEY k); void GetValue(ref PKEY k, out PVAR v); void SetValue(ref PKEY k, ref PVAR v); void Commit(); }
-  [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr h, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore s);
-  public static int Set(long hwnd, bool on) {
-    Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"); IPropertyStore s;
-    int hr = SHGetPropertyStoreForWindow(new IntPtr(hwnd), ref iid, out s); if (hr != 0) return hr;
-    PKEY k = new PKEY(); k.fmtid = new Guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"); k.pid = 2;
-    PVAR v = new PVAR(); v.vt = 11; v.b = (short)(on ? -1 : 0);
-    s.SetValue(ref k, ref v); s.Commit(); Marshal.ReleaseComObject(s); return 0;
-  }
-  public static int Get(long hwnd) {
-    Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"); IPropertyStore s;
-    if (SHGetPropertyStoreForWindow(new IntPtr(hwnd), ref iid, out s) != 0) return -2;
-    PKEY k = new PKEY(); k.fmtid = new Guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"); k.pid = 2;
-    PVAR v; s.GetValue(ref k, out v); Marshal.ReleaseComObject(s);
-    return v.vt == 11 ? (v.b != 0 ? 1 : 0) : -1;
-  }
-}`;
+// the notifications (right), the taskbar (bottom).  The sure way to stop it
+// on Windows 10 and 11 is the "Allow Edge swipe" policy off, as kiosks do:
+// Desk menu -> Lock touch swipes on this computer (asks for admin once,
+// starts after signing back in; Unlock puts it back).  (Windows' per-window
+// "no edge gestures while full screen" switch only works set from inside
+// the app's own process, and Microsoft lists it for Windows 8 / 10 only.)
 function powershell(script, opts = {}) {
   // -EncodedCommand: the script as UTF-16LE base64, so nothing in it needs quoting
   const enc = Buffer.from(script, "utf16le").toString("base64");
   return spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
     { windowsHide: true, stdio: "ignore", ...opts });
 }
-function edgeLock(win, on) {
-  if (process.platform !== "win32" || !win || win.isDestroyed()) return;
-  try {
-    const b = win.getNativeWindowHandle();
-    const hwnd = b.length >= 8 ? b.readBigUInt64LE(0) : BigInt(b.readUInt32LE(0));
-    // what Windows took is noted in touchlock.log ("set=0 get=1": locked)
-    const log = path.join(app.getPath("userData"), "touchlock.log").replace(/'/g, "''");
-    powershell(`Add-Type -TypeDefinition @'\n${EDGE_CS}\n'@\n$r = [JarvisEdge]::Set(${hwnd}, $${on ? "true" : "false"})\n`
-      + `"set=$r get=$([JarvisEdge]::Get(${hwnd}))" | Out-File -Append -Encoding ascii '${log}'`)
-      .on("error", () => { /* no PowerShell: the swipes stay */ });
-  } catch { /* the desk carries on */ }
-}
-function setTouchLock(on) {
-  touch().lock = on;
-  saveState();
-  for (const w of open.values()) edgeLock(w, on);
-  menu();
-}
-
 const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
 function machineSwipesOff() {
   const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
@@ -505,8 +460,6 @@ function menu() {
       { label: "Other computers, phones and tablets…", click: phonesDialog },
       ...(process.platform === "win32" ? [
         { type: "separator" },
-        { label: "Touch: no edge swipes while full screen", type: "checkbox", checked: touch().lock,
-          click: (item) => setTouchLock(item.checked) },
         machineSwipesOff()
           ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
           : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },

@@ -55,15 +55,13 @@ let linked = false;
 for (let i = 0; i < 60 && !linked; i++) { linked = await win.evaluate(() => document.querySelector("#fx-count")?.textContent.trim() === "2"); if (!linked) await sleep(500); }
 check("the window's live link to the engine works (the list shows them)", linked);
 
-// Windows: the window's "no touch edge swipes while full screen" switch is set
-// (Windows' own read-back, through the app's helper - a finger can't be tested)
+// Windows: the Desk menu offers to lock the touch swipes in from the screen's
+// edges (the "Allow Edge swipe" policy; asks for admin, so not pressed here)
 if (process.platform === "win32") {
-  let took = "";
-  for (let i = 0; i < 60 && !/set=0 get=1/.test(took); i++) {
-    try { took = readFileSync(join(UD, "touchlock.log"), "utf8"); } catch { /* not yet */ }
-    if (!/set=0 get=1/.test(took)) await sleep(500);
-  }
-  check("touch: the window's no-edge-swipes-in-full-screen switch is on (Windows reads it back)", /set=0 get=1/.test(took), took.trim() || "no touchlock.log");
+  const items = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items.find((m) => m.label === "Desk").submenu.items.map((i) => i.label));
+  check("touch: the Desk menu offers to lock (or unlock) the edge swipes on this computer",
+    items.some((l) => /^(Lock|Unlock) touch swipes on this computer/.test(l)), items.join(" | "));
 }
 
 // a save (photo, export, bug report) lands in Downloads - no Save As box in the middle of the desk
