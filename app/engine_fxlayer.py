@@ -499,7 +499,7 @@ class FxLayerMixin:
         if ranges:
             # its even strobe (not a random / pulse range that comes first)
             bands = self._strobe_bands(head, role)
-            band = next((b for b in bands if b["plain"]), None)
+            band = next((b for b in bands if b["plain"]), bands[0] if bands else None)
             lo, hi = (band["lo"], band["hi"]) if band else (int(x) for x in ranges[0])
             at = lambda f: int(round(lo + (hi - lo) * f))  # noqa: E731
             if (band["fast_first"] if band else self._strobe_fast_first(rng, lo, hi)):
