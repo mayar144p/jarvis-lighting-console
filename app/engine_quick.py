@@ -1196,18 +1196,16 @@ class QuickMixin:
                               and b["id"] != key and b["id"] in self.quick_active]:
                     self._quick_off(other["id"], force=True)
             if self._colour_only(btn):
-                # a light shows one colour: a colour button already on gives
-                # up the lights this one takes (another group keeps its own
-                # colour), and goes off once it has no lights left
+                # two colour buttons for the SAME lights (pink and blue for one
+                # group): one at a time - this one turns the other off.  A colour
+                # button for other lights stays on underneath (the show's base
+                # look): the newer colour wins where they share lights, and when
+                # it goes off those lights go back to the one underneath
                 mine = set(self._quick_heads(btn))
                 for other in [b for b in self.quick if b["id"] != key and b["id"] in self.quick_active
                               and self._colour_only(b)]:
-                    orun = self.quick_active[other["id"]]
-                    left = [n for n in (orun.get("heads") or self._quick_heads(other)) if n not in mine]
-                    if not left:
+                    if set(self._quick_heads(other)) == mine:
                         self._quick_off(other["id"], force=True)
-                    elif len(left) < len(orun.get("heads") or []):
-                        orun["heads"] = left
             run = {"since": time.monotonic(), "heads": self._quick_heads(btn),
                    "owners": set(), "fx_ids": []}
             if btn["kind"] == "move":
