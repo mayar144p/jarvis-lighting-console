@@ -270,6 +270,7 @@ function openPart(part) {
   reopen.add(part);
   win.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
   win.once("ready-to-show", () => { if (place.full) win.setFullScreen(true); win.show(); });
+  if (touch().lock) edgeLock(win, true);       // (only while it is full screen)
   const remember = () => {
     if (win.isDestroyed()) return;
     saved[part] = { bounds: win.isFullScreen() || win.isMaximized() ? win.getNormalBounds() : win.getBounds(), full: win.isFullScreen() };
@@ -378,6 +379,104 @@ function guard(wc) {
   });
 }
 
+// ---------------------------------------------------------------- touch
+// On a touch screen a swipe in from an edge leaves the show: Task View (left),
+// the notifications (right), the taskbar (bottom).  Two locks:
+//  - per window, no admin: Windows' "no edge gestures while this window is
+//    full screen" (System.EdgeGesture.DisableTouchWhenFullscreen) on every
+//    desk window - full screen buttons, a Show mode monitor.  Microsoft lists
+//    it for Windows 8 / 10; set from a helper process, so if Windows ignores
+//    it or it fails, the desk carries on as it was.
+//  - the whole computer (Desk menu, asks for admin once): the "Allow Edge
+//    swipe" policy off, as kiosks do - the sure way on Windows 11.
+const touch = () => (saved._touch = saved._touch || { lock: true });
+const EDGE_CS = `using System; using System.Runtime.InteropServices;
+public static class JarvisEdge {
+  [StructLayout(LayoutKind.Sequential, Pack = 4)] public struct PKEY { public Guid fmtid; public uint pid; }
+  [StructLayout(LayoutKind.Explicit, Size = 24)] public struct PVAR { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public short b; }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropertyStore { void GetCount(out uint c); void GetAt(uint i, out PKEY k); void GetValue(ref PKEY k, out PVAR v); void SetValue(ref PKEY k, ref PVAR v); void Commit(); }
+  [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr h, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore s);
+  public static int Set(long hwnd, bool on) {
+    Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"); IPropertyStore s;
+    int hr = SHGetPropertyStoreForWindow(new IntPtr(hwnd), ref iid, out s); if (hr != 0) return hr;
+    PKEY k = new PKEY(); k.fmtid = new Guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"); k.pid = 2;
+    PVAR v = new PVAR(); v.vt = 11; v.b = (short)(on ? -1 : 0);
+    s.SetValue(ref k, ref v); s.Commit(); Marshal.ReleaseComObject(s); return 0;
+  }
+  public static int Get(long hwnd) {
+    Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"); IPropertyStore s;
+    if (SHGetPropertyStoreForWindow(new IntPtr(hwnd), ref iid, out s) != 0) return -2;
+    PKEY k = new PKEY(); k.fmtid = new Guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"); k.pid = 2;
+    PVAR v; s.GetValue(ref k, out v); Marshal.ReleaseComObject(s);
+    return v.vt == 11 ? (v.b != 0 ? 1 : 0) : -1;
+  }
+}`;
+function powershell(script, opts = {}) {
+  // -EncodedCommand: the script as UTF-16LE base64, so nothing in it needs quoting
+  const enc = Buffer.from(script, "utf16le").toString("base64");
+  return spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
+    { windowsHide: true, stdio: "ignore", ...opts });
+}
+function edgeLock(win, on) {
+  if (process.platform !== "win32" || !win || win.isDestroyed()) return;
+  try {
+    const b = win.getNativeWindowHandle();
+    const hwnd = b.length >= 8 ? b.readBigUInt64LE(0) : BigInt(b.readUInt32LE(0));
+    // what Windows took is noted in touchlock.log ("set=0 get=1": locked)
+    const log = path.join(app.getPath("userData"), "touchlock.log").replace(/'/g, "''");
+    powershell(`Add-Type -TypeDefinition @'\n${EDGE_CS}\n'@\n$r = [JarvisEdge]::Set(${hwnd}, $${on ? "true" : "false"})\n`
+      + `"set=$r get=$([JarvisEdge]::Get(${hwnd}))" | Out-File -Append -Encoding ascii '${log}'`)
+      .on("error", () => { /* no PowerShell: the swipes stay */ });
+  } catch { /* the desk carries on */ }
+}
+function setTouchLock(on) {
+  touch().lock = on;
+  saveState();
+  for (const w of open.values()) edgeLock(w, on);
+  menu();
+}
+
+const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
+function machineSwipesOff() {
+  const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
+  return r.status === 0 && /AllowEdgeSwipe\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
+}
+async function machineSwipes(lock) {
+  const win = BrowserWindow.getFocusedWindow();
+  const yes = await ask(win, lock ? {
+    title: "Lock touch swipes on this computer",
+    message: "Turn off the touch swipes in from the screen's edges on this computer?",
+    detail: "No more Task View, notifications or taskbar from a swipe - for every app, until you unlock it here. "
+      + "Windows asks for an administrator's OK once, and it starts after you sign out and back in (or restart).\n\n"
+      + "Also turn off Settings > Bluetooth & devices > Touch > Three- and four-finger touch gestures: "
+      + "those switch apps too, and only Windows' own setting can stop them.",
+    buttons: ["Cancel", "Lock swipes"], primary: 1, cancel: 0,
+  } : {
+    title: "Unlock touch swipes on this computer",
+    message: "Turn the touch swipes in from the screen's edges back on?",
+    detail: "Windows asks for an administrator's OK, and it starts after you sign out and back in.",
+    buttons: ["Cancel", "Unlock swipes"], primary: 1, cancel: 0,
+  });
+  if (yes !== 1) return;
+  const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
+    : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
+  const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
+  await new Promise((resolve) => {
+    powershell(`Start-Process reg.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList ${list}`)
+      .on("exit", resolve).on("error", resolve);
+  });
+  const done = machineSwipesOff() === lock;
+  await ask(win, {
+    title: "Touch swipes",
+    message: done ? (lock ? "Touch swipes are locked on this computer." : "Touch swipes are back on.")
+      : "Nothing changed (the administrator's OK wasn't given).",
+    detail: done ? "Sign out and back in (or restart) for it to start." : "",
+    buttons: ["OK"], cancel: 0,
+  });
+  menu();
+}
+
 function showMode() {
   for (const part of ["stage", "desk", "playbacks"]) openPart(part);
   const all = open.get("main");
@@ -404,6 +503,14 @@ function menu() {
       { label: "Playbacks and buttons", click: () => openPart("playbacks") },
       { type: "separator" },
       { label: "Other computers, phones and tablets…", click: phonesDialog },
+      ...(process.platform === "win32" ? [
+        { type: "separator" },
+        { label: "Touch: no edge swipes while full screen", type: "checkbox", checked: touch().lock,
+          click: (item) => setTouchLock(item.checked) },
+        machineSwipesOff()
+          ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
+          : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
+      ] : []),
       { type: "separator" },
       { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
     ] },
