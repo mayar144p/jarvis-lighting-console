@@ -174,6 +174,34 @@ window.addEventListener("pointerup", () => {
   }
 }, true);
 
+// Edit: a button whose lights aren't its row's - a Spot colour slipped into
+// the row headed "COBRA 100'S".  The row's heading names a group; a button
+// in that row for lights outside the group gets a warning (only in Edit).
+const nameKey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function rowChecker(byslot, cols) {
+  const rows = new Map();
+  for (const [slot, b] of byslot) {
+    if (b.kind !== "label") continue;
+    const k = nameKey(b.label);
+    const g = groups().find((x) => nameKey(x.name) === k) || autoGroups().find((x) => nameKey(x.name) === k);
+    if (g && g.heads) rows.set(Math.floor((slot - 1) / cols), g);
+  }
+  if (!rows.size) return () => null;
+  const everyone = ((state.snap && state.snap.patch) || []).map((x) => x.head_no);
+  return (b, slot) => {
+    const g = rows.get(Math.floor((slot - 1) / cols));
+    const t = b.target;
+    if (!g || !t || (NO_TARGET.has(b.kind) && !(b.kind === "fader" && b.control && b.control.what === "lights"))) return null;
+    const heads = t.all ? everyone : t.group !== undefined ? (groups().find((x) => x.n === t.group) || {}).heads
+      : t.auto ? (autoGroups().find((x) => x.key === t.auto) || {}).heads : t.heads;
+    if (!heads || !heads.length) return null;          // (a light type: can't tell)
+    const mine = new Set(g.heads);
+    if (heads.every((n) => mine.has(n))) return null;
+    const who = t.all ? "All lights" : targetText(t);
+    return { text: who, title: `This button is for ${who}, but its row is headed ${g.name} - pressing it changes ${who}` };
+  };
+}
+
 // "PARs · odd · hold" - what a pad does, in its corner
 function targetText(t = {}) {
   let who = "All";
@@ -296,6 +324,7 @@ function render(force = false) {
     // (never fewer than three rows: two buttons don't fill the screen)
     shown = Math.min(total, Math.max(Math.min(3, lay.rows), last) * COLS);
   }
+  const rowWarn = editing ? rowChecker(byslot, COLS) : () => null;
   box.style.setProperty("--qb-rows", String(Math.ceil(shown / COLS)));
   box.style.setProperty("--qb-cols", String(COLS));
   box.dataset.height = lay.height;
@@ -359,6 +388,8 @@ function render(force = false) {
       (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
     el.style.setProperty("--tint", tint);
     el.classList.add(...lookClasses(b));
+    const warn = rowWarn(b, slot);
+    if (warn) el.append(h("span.qwarn", { title: warn.title }, "⚠ " + warn.text));
     place(el, slot);
     if (editing) {
       el.addEventListener("click", () => editButton(slot, b));
