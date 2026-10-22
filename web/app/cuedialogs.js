@@ -121,6 +121,30 @@ function partTimes(n, c, refresh) {
   }, set ? `${set} part${set > 1 ? "s" : ""}` : "parts");
 }
 
+// A cue's delay (it waits before fading) and fan (the lights start one
+// after another, across the stage) - as on a pro desk
+const FAN_DIRS = [["left", "Left to right"], ["right", "Right to left"], ["centre", "Middle out"], ["edges", "Edges in"]];
+function delayFan(n, c, refresh) {
+  const on = (+c.delay_s || 0) > 0 || (+c.fan_s || 0) > 0;
+  const dir = (FAN_DIRS.find(([k]) => k === c.fan_dir) || FAN_DIRS[0])[1];
+  return h("button.chip.cue-parts" + (on ? ".on" : ""), {
+    title: on ? `Delay ${c.delay_s || 0} s · fan ${c.fan_s || 0} s, ${dir.toLowerCase()}` : "Wait before it fades, or start the lights one after another",
+    onclick: (e) => menu(e.currentTarget, [
+      { label: `Delay: ${c.delay_s || 0} s`, hint: "it waits this long after GO", run: async () => {
+        const v = await promptBox("Delay", "Seconds it waits after GO before fading", String(c.delay_s || 0), { ok: "Set" });
+        if (v !== null) run("edit_cue", { playback: n, cue: c.n, delay: +v || 0 }).then(refresh);
+      } },
+      { label: `Fan: ${c.fan_s || 0} s`, hint: "the last light starts this much after the first", run: async () => {
+        const v = await promptBox("Fan", "Seconds between the first light starting and the last (0 = all together)", String(c.fan_s || 0), { ok: "Set" });
+        if (v !== null) run("edit_cue", { playback: n, cue: c.n, fan: +v || 0 }).then(refresh);
+      } },
+      "-",
+      ...FAN_DIRS.map(([k, l]) => ({ label: (k === (c.fan_dir || "left") ? "✓ " : "  ") + l,
+        run: () => run("edit_cue", { playback: n, cue: c.n, fan_dir: k }).then(refresh) })),
+    ]),
+  }, on ? `${c.delay_s ? `wait ${c.delay_s}s ` : ""}${c.fan_s ? `fan ${c.fan_s}s` : ""}`.trim() : "delay / fan");
+}
+
 const CUE_ACTS = [
   ["quick_press", "Press a button", "id", "button id or name"],
   ["macro_run", "Run a macro", "id", "macro name"],
@@ -188,7 +212,7 @@ export function openCueList(n) {
           (c.actions || []).length ? h("span.chip", { title: c.actions.map((a) => a.action).join(", ") }, "▶" + c.actions.length) : null), h("td", nm, cueTimeline(c, longest),
           (c.fx || []).length ? h("div.cue-fx", { title: "Effects this cue runs (they stop at the next cue or on release)" },
             "⚡ " + c.fx.join(", ")) : null),
-        h("td", fd, partTimes(n, c, () => refresh())), h("td", hd),
+        h("td", fd, partTimes(n, c, () => refresh()), delayFan(n, c, () => refresh())), h("td", hd),
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),

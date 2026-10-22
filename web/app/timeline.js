@@ -139,7 +139,9 @@ function clipLabel(tr, c) {
   }
   if (tr.kind === "fx") {
     const step = c.step && ((state.snap && state.snap.step_fx) || []).find((x) => x.id === c.step);
-    const name = c.step ? (c.label || (step && step.name) || "Step effect") : (FX.find(([k]) => k === c.fx) || [c.fx, c.fx])[1];
+    const mv = c.move && ((state.snap && state.snap.moves) || []).find((x) => x.id === c.move);
+    const name = c.step ? (c.label || (step && step.name) || "Step effect")
+      : c.move ? (c.label || (mv && mv.name) || "Move") : (FX.find(([k]) => k === c.fx) || [c.fx, c.fx])[1];
     const t = c.target || {};
     const who = t.type ? (TARGETS.find(([k]) => k === t.type) || [0, t.type])[1] : t.group ? `group ${t.group}` : t.heads ? `${t.heads.length} light(s)` : "all";
     return `${name} · ${who}`;
@@ -334,12 +336,15 @@ function addClip(tr, t, ev, existing = null) {
     menu(anchor, buttons.map((b) => ({ label: b.label, hint: `${b.kind} · page ${b.page}`,
       run: () => save({ button: b.id, dur: existing ? existing.dur : +(beat()).toFixed(3) }) })));
   } else if (tr.kind === "fx") {
-    const fx = h("select.select", ...FX.map(([k, l]) => h("option", { value: k }, l)));
+    // the effects, and the show's own saved moves (My moves) with their settings
+    const moves = (state.snap && state.snap.moves) || [];
+    const fx = h("select.select", h("optgroup", { label: "Effects" }, ...FX.map(([k, l]) => h("option", { value: k }, l))),
+      moves.length ? h("optgroup", { label: "My moves" }, ...moves.map((m) => h("option", { value: "move:" + m.id }, m.name))) : null);
     const who = h("select.select", ...TARGETS.map(([k, l]) => h("option", { value: k }, l)),
       ...((state.snap && state.snap.groups) || []).map((g) => h("option", { value: "g" + g.n }, "Group: " + g.name)));
     const dur = h("input", { type: "number", min: 0.1, step: 0.5, value: existing ? existing.dur : +(beat() * 16).toFixed(2) });
     if (existing) {
-      fx.value = existing.fx;
+      fx.value = existing.move ? "move:" + existing.move : existing.fx;
       const t0 = existing.target || {};
       who.value = t0.group !== undefined ? "g" + t0.group : t0.type || "all";
     }
@@ -348,7 +353,8 @@ function addClip(tr, t, ev, existing = null) {
       body: h("div.form-grid", h("label.field", h("span", "Effect"), fx), h("label.field", h("span", "On"), who), h("label.field", h("span", "Length (s)"), dur)),
       foot: [h("button.btn", { onclick: () => close() }, "Cancel"), h("button.btn.primary", { onclick: () => {
         const w = who.value;
-        save({ fx: fx.value, dur: +dur.value || 4, target: w === "all" ? { all: true } : w[0] === "g" ? { group: +w.slice(1) } : { type: w } });
+        const pick = fx.value.startsWith("move:") ? { move: fx.value.slice(5), fx: "" } : { fx: fx.value, move: "" };
+        save({ ...pick, dur: +dur.value || 4, target: w === "all" ? { all: true } : w[0] === "g" ? { group: +w.slice(1) } : { type: w } });
         close();
       } }, "Save")],
     });

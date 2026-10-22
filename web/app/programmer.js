@@ -1419,6 +1419,9 @@ function wireTools() {
     const k = b.dataset.orient;
     run("set_orient", k === "clear" ? { heads: sel(), clear: true } : { heads: sel(), [k]: true }, { toast: true });
   }));
+  // FLIP / MIRROR on the Position tab
+  $$("[data-pt]").forEach((b) => b.addEventListener("click", () => run(b.dataset.pt === "flip" ? "flip" : "mirror_pan", {}, { toast: true })));
+  $$("[data-step]").forEach((b) => b.addEventListener("click", () => run("select_step", { step: b.dataset.step }, { toast: true })));
   $("#lineup-btn").addEventListener("click", () => import("./lineup.js").then((m) => m.openLineUp()));
   $("#sel-similar").addEventListener("click", () => {
     const first = sel()[0];

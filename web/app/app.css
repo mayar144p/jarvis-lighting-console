@@ -2131,3 +2131,11 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 .lineup-row .k { width: 64px; color: var(--text-2); }
 .lineup-row .num { width: 72px; }
 .lineup-now { font-weight: 600; }
+/* playback pages beside the faders (P1 = 1-10, P2 = 11-20...) */
+.pb-pages { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; border-right: 1px solid var(--border); background: var(--surface); }
+.pb-pages[hidden] { display: none; }
+.pb-pages button { min-width: 38px; padding: 6px 4px; border-radius: 6px; font-weight: 600; font-size: 12px; color: var(--text-2); background: var(--surface-2); border: 1px solid transparent; position: relative; }
+.pb-pages button.on { color: var(--text); border-color: var(--accent); background: var(--accent-bg); }
+.pb-pages button.unused:not(.on) { opacity: .55; }
+.pb-pages button.live::after { content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.pb[hidden] { display: none; }

@@ -305,6 +305,8 @@ class TimelineMixin:
                 try:
                     if c.get("step"):
                         r = self._a_step_fx_run(id=c["step"], heads=heads or None, beats=c.get("beats"))
+                    elif c.get("move"):
+                        r = self._a_move_play(id=c["move"], heads=heads) if heads else {}
                     else:
                         r = self._a_run_fx(name=c["fx"], heads=heads,
                                            params={"beats": c["beats"]} if c.get("beats") else None) if heads else {}

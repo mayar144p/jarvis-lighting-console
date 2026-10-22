@@ -281,6 +281,8 @@
               <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
               <button class="btn small" id="aim-btn">Aim</button>
               <button class="btn small ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
+              <button class="btn small ghost" data-pt="flip" title="FLIP: the same spot, reached from the other end of the travel (pan half a turn, tilt the other way)">Flip</button>
+              <button class="btn small ghost" data-pt="mirror_pan" title="MIRROR: pan reversed about the middle - left becomes right">Mirror</button>
             </div>
             <div class="row-btns aim-tools">
               <button class="btn small" id="aim-spot" title="Then click once anywhere in the 3D view: every selected mover points there">Aim at one click…</button>
@@ -382,6 +384,11 @@
             <button class="btn" data-query="pan">Movers</button>
             <button class="btn" data-query="gobo">With gobos</button>
           </div>
+          <div class="row-btns">
+            <button class="btn" data-step="prev" title="One light of the selection at a time: the one before">◀ Prev light</button>
+            <button class="btn" data-step="next" title="One light of the selection at a time: what you set goes to it only">Next light ▶</button>
+            <button class="btn ghost" data-step="all" title="All the lights of the selection again">All</button>
+          </div>
         </div>
       </div>
       <!-- the programmer's actions: always here, on every tab -->
@@ -410,6 +417,7 @@
         <button data-mode="timeline" title="The show timeline: cues, hits, effects and levels against the music" aria-label="Timeline">
           <svg viewBox="0 0 16 16"><path d="M1 4h7M4 8h9M2 12h6M11 2v12"/></svg><span>Timeline</span></button>
       </nav>
+      <div class="pb-pages" id="pb-pages" aria-label="Playback pages"></div>
       <div class="pb-strip" id="pb-strip"></div>
       <aside class="pb-cues" id="pb-cues" aria-label="Cue list"></aside>
       <div class="qb" id="qb" hidden>

@@ -8928,3 +8928,103 @@ def test_line_up() -> None:
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
     check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "Keep this mark" in pj
           and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_programmer_pro_tools() -> None:
+    """The programmer, as on a pro desk: palettes keep each light's own
+    values and the cues made from them follow when they are recorded over;
+    FLIP / MIRROR; one light at a time; a cue's delay and fan; saved moves
+    on the timeline; four pages of ten playbacks."""
+    print("Programmer: per-light palettes, flip, fan, moves on the timeline")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=4, universe=1, address=1)
+            hs = [h["head_no"] for h in e.patch]
+            for i, n in enumerate(hs):
+                e.act("set_place", head=n, x=-3 + 2 * i, y=6, z=2)
+                e.programmer.setdefault(n, {}).update({"pan": 20000 + i * 5000, "tilt": 30000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", name="Fan out")
+            check("a palette keeps each light's own values", r.get("per_light") is True, str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=hs)
+            e.act("include_palette", kind="position", n=1)
+            check("each light gets its own back", [e.programmer[n]["pan"] for n in hs] == [20000, 25000, 30000, 35000], "")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1)
+            for i, n in enumerate(hs):
+                e.programmer.setdefault(n, {}).update({"pan": 40000 - i * 5000, "tilt": 31000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", palette=1)
+            vals = e.playbacks[0]["stack"][0]["values"]
+            check("the cue made from it follows when it is recorded over", r.get("cues") == 1
+                  and [vals[n]["pan"] for n in hs] == [40000, 35000, 30000, 25000]
+                  and vals[hs[0]].get("dimmer") == 100, str(vals))
+            e.act("undo")
+            check("undo puts the cue back too", e.playbacks[0]["stack"][0]["values"][hs[0]]["pan"] == 20000, "")
+            e.act("select_heads", heads=[hs[0]])
+            e.act("aim_at", x=2, y=0, z=7)
+            before = dict(e.programmer[hs[0]])
+            e.act("flip")
+            check("FLIP reaches it from the other end", dict(e.programmer[hs[0]]) != before, "")
+            e.act("flip")
+            check("and twice is back where it was", dict(e.programmer[hs[0]]) == before, "")
+            e.act("mirror_pan")
+            check("MIRROR reverses the pan only", e.programmer[hs[0]]["pan"] == 65535 - before["pan"]
+                  and e.programmer[hs[0]]["tilt"] == before["tilt"], "")
+            e.act("select_heads", heads=hs)
+            steps = [e.act("select_step", step=s)["selected"] for s in ("next", "next", "prev")]
+            e.act("select_step", step="all")
+            check("Next / Prev light, then All", steps == [[hs[0]], [hs[1]], [hs[0]]] and e.selected == hs, str(steps))
+            # a cue's delay and fan
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=2)
+            e.act("edit_cue", playback=2, cue=1, fade=1, delay=1, fan=3, fan_dir="left")
+            pb = e.playbacks[1]
+            e._goto(pb, 0, 100.0)
+
+            def lv(t):
+                v = e._pb_values(pb, 100.0 + t)
+                return [v.get(n, {}).get("dimmer", 0) for n in hs]
+            check("the delay: nothing before 1 s", lv(0.5) == [0, 0, 0, 0], str(lv(0.5)))
+            check("the fan: left to right, one after another", lv(2.5) == [100, 50, 0, 0], str(lv(2.5)))
+            check("all there at the end", lv(5.5) == [100, 100, 100, 100], str(lv(5.5)))
+            # a saved move on the timeline
+            e.act("select_heads", heads=hs)
+            e.act("run_fx", name="circle")
+            e.act("move_save", name="Big circle")
+            mid = e.moves[0]["id"]
+            e.act("stop_fx")
+            e.act("timeline_track", kind="fx")
+            tid = e.timeline["tracks"][0]["id"]
+            c = e.act("timeline_clip", track=tid, t=0, move=mid, dur=4, target={"all": True})
+            check("a saved move as a timeline clip", (c.get("clip") or {}).get("move") == mid, str(c))
+            e.act("timeline_play")
+            time.sleep(0.4)
+            check("the timeline plays it", any(f.get("move") == mid for f in e.fx), str(e.fx))
+            e.act("timeline_stop")
+            # four pages of ten playbacks
+            check("40 playbacks", len(e.playbacks) == 40, str(len(e.playbacks)))
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=35)
+            e.act("save_show", name="pro")
+            e.act("show_new")
+            e.act("load_show", name="pro")
+            check("a cue on playback 35 is saved", len(e.playbacks[34]["stack"]) == 1, "")
+        finally:
+            e.shutdown()
+    cd = (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    tj = (ROOT / "web" / "app" / "timeline.js").read_text(encoding="utf-8")
+    check("on screen: delay / fan per cue, playback pages, My moves on the timeline",
+          "delayFan" in cd and "renderPages" in pj and "My moves" in tj, "")

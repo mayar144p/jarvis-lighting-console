@@ -924,13 +924,11 @@ class ProgrammerMixin:
             raise ValueError(f"kind must be one of {sorted(PALETTE_KINDS)}")
         heads = self._require_selection()
         attrs = PALETTE_KINDS[key]
-        # ONE value set, not a per-head row.  Every selected head normally
-        # agrees (a palette is recorded from a selection the operator has
-        # just made uniform), and where they do not, the most common value
-        # is the honest reading - and the operator is told, because
-        # silently averaging a colour nobody asked for is worse than a
-        # clear message.
+        # Each light keeps ITS OWN values (a "Fan out" or an "X" lands right
+        # on every light, as on a pro desk); the most common value is the
+        # palette's own, for a light it was not recorded on.
         votes: dict[str, dict] = {}
+        per: dict[str, dict] = {}
         disagree = 0
         for h in heads:
             row = {k: v for k, v in self.programmer.get(h["head_no"],
@@ -938,6 +936,7 @@ class ProgrammerMixin:
                    if k in attrs}
             if not row:
                 continue
+            per[str(h["head_no"])] = dict(row)
             for role, value in row.items():
                 votes.setdefault(role, {}).setdefault(repr(value), 0)
                 votes[role][repr(value)] += 1
@@ -956,19 +955,79 @@ class ProgrammerMixin:
         if not values:
             raise ValueError(f"programmer holds no {key} values")
         n = int(palette) if palette else len(self.palettes[key]) + 1
-        label = str(name).strip() or f"{key.title()} {n}"
+        old_entry = next((p for p in self.palettes[key] if p["n"] == n), None)
+        label = str(name).strip() or (old_entry or {}).get("name") or f"{key.title()} {n}"
         entry = {"n": n, "name": label, "values": values}
+        if disagree:
+            entry["per"] = per                 # the lights differ: each its own
         for i, old in enumerate(self.palettes[key]):
             if old["n"] == n:
                 self.palettes[key][i] = entry
                 break
         else:
             self.palettes[key].append(entry)
-        note = (f" ({disagree} value(s) differed across the selection - "
-                f"kept the most common)" if disagree else "")
-        return {"kind": key, "n": n, "name": label, "disagree": disagree,
-                "roles": sorted(values),
+        # recorded over: the cues made from it follow
+        moved = self._palette_to_cues(key, entry) if old_entry is not None else 0
+        note = " (each light keeps its own)" if disagree else ""
+        if moved:
+            note += f"; {moved} cue(s) that use it follow"
+        return {"kind": key, "n": n, "name": label, "disagree": disagree, "per_light": bool(disagree),
+                "roles": sorted(values), "cues": moved,
                 "summary": f"recorded {key} palette {label}{note}"}
+
+    @staticmethod
+    def _palette_row(entry: dict, head: dict) -> dict:
+        """What a palette gives one light: its own values when it was
+        recorded on it, else the palette's own - only the channels it has."""
+        own = (entry.get("per") or {}).get(str(head["head_no"]))
+        src = own if own else (entry.get("values") or {})
+        return {r: v for r, v in src.items() if r in (head.get("map") or [])}
+
+    def _palette_refs(self, values: dict) -> dict:
+        """{head: {role: [kind, n]}} for the values that still are what a
+        palette gave them (included and not changed since): a cue recorded
+        from them follows the palette when it is recorded over."""
+        refs = self.__dict__.get("prog_refs") or {}
+        out: dict[str, dict] = {}
+        for h, row in values.items():
+            for role, ref in (refs.get(int(h)) or {}).items():
+                if role not in row:
+                    continue
+                entry = next((p for p in self.palettes.get(ref[0]) or [] if p["n"] == ref[1]), None)
+                head = self._head(int(h)) if entry else None
+                if head and self._palette_row(entry, head).get(role) == row[role]:
+                    out.setdefault(str(h), {})[role] = [ref[0], ref[1]]
+        return out
+
+    def _palette_to_cues(self, key: str, entry: dict) -> int:
+        """A palette recorded over: every cue that took values from it
+        gets the new ones (as on a pro desk)."""
+        moved = 0
+        for pb in self.playbacks:
+            for cue in pb.get("stack") or []:
+                refs = cue.get("refs") or {}
+                hit = False
+                new_vals = {int(k): dict(v) for k, v in (cue.get("values") or {}).items()}
+                new_refs = {h: dict(r) for h, r in refs.items()}
+                for h, roles in refs.items():
+                    try:
+                        head = self._head(int(h))
+                    except (ValueError, KeyError):
+                        continue
+                    row = self._palette_row(entry, head)
+                    for role, ref in roles.items():
+                        if ref[0] != key or ref[1] != entry["n"]:
+                            continue
+                        if role in row:
+                            new_vals.setdefault(int(h), {})[role] = row[role]
+                        else:
+                            new_refs[h].pop(role, None)
+                        hit = True
+                if hit:
+                    cue["values"] = new_vals
+                    cue["refs"] = {h: r for h, r in new_refs.items() if r}
+                    moved += 1
+        return moved
 
     @staticmethod
     def _by_number_or_name(rows: list[dict], ref) -> dict | None:
@@ -995,13 +1054,14 @@ class ProgrammerMixin:
         # not possible to express any more, rather than merely guarded.
         heads = self._require_selection()
         applied, skipped = 0, []
+        refs = self.__dict__.setdefault("prog_refs", {})
         for h in heads:
-            row = {r: v for r, v in (entry.get("values") or {}).items()
-                   if r in (h.get("map") or [])}
+            row = self._palette_row(entry, h)
             if not row:
                 skipped.append(h["head_no"])
                 continue
             self.programmer.setdefault(h["head_no"], {}).update(row)
+            refs.setdefault(h["head_no"], {}).update({r: [key, entry["n"]] for r in row})
             applied += 1
         if not applied:
             raise ValueError(

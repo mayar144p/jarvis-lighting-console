@@ -808,6 +808,8 @@ class ShowMixin:
                     continue
                 row = dict(entry)
                 row["values"] = _palette_values(entry.get("values"))
+                if isinstance(entry.get("per"), dict):
+                    row["per"] = {str(h): _palette_values(v) for h, v in entry["per"].items() if isinstance(v, dict)}
                 fixed.append(row)
             out[str(key)] = fixed
         return out

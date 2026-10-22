@@ -35,7 +35,7 @@ from app.sacn import SacnSender
 # 32768, we stop far earlier).  Explicit universe pinning (set_address)
 # is not capped - only the auto-placer stops here so it can never spin.
 MAX_UNIVERSES = 4096
-PLAYBACK_COUNT = 10
+PLAYBACK_COUNT = 40
 HISTORY_LIMIT = 50
 SAFE_NAME = re.compile(r"^[A-Za-z0-9 _-]{1,40}$")
 
@@ -572,7 +572,8 @@ def _copy_playbacks(playbacks) -> list[dict]:
         copy = dict(pb)
         copy["stack"] = [
             {**cue, "values": {int(h): dict(row)
-                               for h, row in (cue.get("values") or {}).items()}}
+                               for h, row in (cue.get("values") or {}).items()},
+             **({"refs": {h: dict(r) for h, r in cue["refs"].items()}} if cue.get("refs") else {})}
             for cue in (pb.get("stack") or [])
         ]
         out.append(copy)
@@ -643,9 +644,9 @@ ACTIONS = (
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar", "select_split",
-    "select_query", "set_address", "rename_head", "fan",
+    "select_query", "select_step", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
-    "set_limits", "clear_limits", "set_orient", "line_up", "get_limits",
+    "set_limits", "clear_limits", "set_orient", "line_up", "get_limits", "flip", "mirror_pan", "select_step",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",

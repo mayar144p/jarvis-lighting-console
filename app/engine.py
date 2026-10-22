@@ -654,22 +654,26 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             return done
         dur = float(fade.get("dur") or 0.0)
         parts = fade.get("parts") or {}
+        # the cue's delay before it starts, and its fan: each light starting
+        # a little after the one before (rank 0..1 across the lights)
+        delay, fan, rank = float(fade.get("delay") or 0.0), float(fade.get("fan") or 0.0), fade.get("rank") or {}
         longest = max([dur, *[float(v) for v in parts.values()]])
-        if longest <= 0:
+        if longest + delay + fan <= 0:
             return done
-        el = now - float(fade["t0"])
-        if el >= longest:
+        el0 = now - float(fade["t0"]) - delay
+        if el0 >= longest + fan:
             return done
-        if el <= 0:
+        if el0 <= 0:
             return fade["from"]
         src, dst = fade["from"], target
         out = {}
         for head_no in set(src) | set(dst):
             a, b = src.get(head_no) or {}, dst.get(head_no) or {}
             row = {}
+            el = el0 - fan * float(rank.get(head_no, 0.0))
             for attr in set(a) | set(b):
                 d = float(parts.get(self.attr_group(attr), dur)) if parts else dur
-                t = 1.0 if d <= 0 else min(1.0, el / d)
+                t = (1.0 if el > 0 else 0.0) if d <= 0 else max(0.0, min(1.0, el / d))
                 v0, v1 = a.get(attr, 0), b.get(attr, 0)
                 row[attr] = int(round(v0 + (v1 - v0) * t))
             out[head_no] = row
@@ -1278,6 +1282,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
                            "times": c.get("times") or None,
+                           "delay_s": c.get("delay_s") or 0, "fan_s": c.get("fan_s") or 0,
+                           "fan_dir": c.get("fan_dir") or "left",
                            "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f.get("label") or f["name"])
                                   for f in c.get("fx") or []],
                            "empty": not (c.get("values") or {}) and not c.get("fx")}

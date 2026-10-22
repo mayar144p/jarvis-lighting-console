@@ -26,7 +26,7 @@ MORE = (
     "aim_spot", "autopilot", "autopilot_next", "clear_heads", "cue_info", "cue_set", "desk_strobe", "edit_cue",
     "floor_safe", "fx_available", "get_limits", "group_edit", "group_flash", "group_master", "insert_cue",
     "macro_run", "macro_save", "move_cue", "move_play", "move_range", "move_rename", "move_save",
-    "nudge", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
+    "nudge", "flip", "mirror_pan", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
     "quick_colour_row", "quick_group_controls", "quick_edit", "quick_fader", "quick_from_programmer", "quick_update", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_profile", "quick_profile_use", "quick_style",
     "quick_quant", "quick_rate", "quick_release_all", "quick_xy", "ready_check", "rename_cue",
     "rename_preset", "rig_add", "rig_pieces", "rig_report", "rig_trim", "run_media", "select_split",
@@ -180,7 +180,7 @@ def _rows(eng, heads=None, group=None) -> list[dict]:
 _NEEDS = {
     "set_colour": "colour", "chase_colours": "colour", "run_gradient": "colour",
     "set_position": "move", "aim_at": "move", "aim_spot": "move", "roam": "move", "fan": "move",
-    "run_shape": "move", "nudge": "move", "follow_set": "move", "move_play": "move",
+    "run_shape": "move", "nudge": "move", "flip": "move", "mirror_pan": "move", "follow_set": "move", "move_play": "move",
     "set_intensity": "level",
 }
 
