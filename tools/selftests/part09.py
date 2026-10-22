@@ -8087,11 +8087,23 @@ def test_led_sfx() -> None:
             e.act("quick_press", id=b["id"], down=True)
             u = e.build_frames(time.monotonic())
             check("...a colour button colours its LEDs too", list(u[min(u)][1:4]) == [0, 0, 255], str(list(u[min(u)][:5])))
+            # its CO2 button: says why when it can't fire, fires while held when armed
+            fire = e.act("quick_set", page=1, slot=2, button={"kind": "sfx", "label": "CO2 FIRE", "mode": "hold", "target": {"all": True}})
+            r = e.act("quick_press", id=fire["id"], down=True)
+            check("an effect button that can't fire says why (not armed)", not r.get("ok") and "ARM" in (r.get("error") or ""), str(r))
+            e.act("fx_arm", state=True)
+            r = e.act("quick_press", id=fire["id"], down=True)
+            check("...armed, it fires while held", r.get("active") and fire["id"] in e.fx_runs, str(r))
+            e.act("quick_press", id=fire["id"], down=False)
+            check("...and stops when let go", fire["id"] not in e.fx_runs, str(e.fx_runs))
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the programmer shows Colour and Level for an effects machine with LEDs",
           'hd.body.class === "sfx" && (hd.map || []).some((r) => LED_ROLES.has(r))' in pj, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("full screen has its own ARM FX and KILL FX (the top bar is hidden there)",
+          'id="qb-arm"' in html and 'id="qb-kill"' in html and "export function toggleArm" in (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8"), "")
 
 
 def test_lights_fader() -> None:

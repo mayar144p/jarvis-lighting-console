@@ -1243,6 +1243,9 @@ export function initQuickButtons() {
   });
   $("#qb-release").addEventListener("click", () => run("quick_release_all"));
   $("#qb-bo").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
+  // ARM / KILL FX in full screen (the top bar with them is hidden there)
+  $("#qb-arm").addEventListener("click", () => import("./fxpanel.js").then((m) => m.toggleArm()));
+  $("#qb-kill").addEventListener("click", () => run("fx_kill", {}, { toast: true }));
   on("snapshot", () => $("#qb-bo").classList.toggle("on", !!(state.snap && state.snap.blackout)));
   $("#qb-quant").addEventListener("change", (e) => run("quick_quant", { beats: +e.target.value }, { toast: true }));
   on("snapshot", () => render());
