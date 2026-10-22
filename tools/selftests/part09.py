@@ -7846,7 +7846,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "jarvis.moveKnobs" in mv and "loadKnobs(sel)" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")

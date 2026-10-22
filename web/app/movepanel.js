@@ -28,6 +28,35 @@ const SIZES = [["S", 10], ["M", 20], ["L", 40]];
 const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, across: false, zone: "",
   // A → B: degrees from the middle of each light's travel; bounce / loop / once
   panA: -45, panB: 45, tiltA: 0, tiltB: 0, mode: 0, fullPan: false, fullTilt: false, cells: {}, tiltSecs: 0, panSecs: 0, mult: 1 };
+// EACH LIGHT'S OWN: selecting another light shows ITS settings (from the
+// movement running on it, else the ones last used for it, else the
+// defaults) - one set for the whole desk showed the last light's numbers
+const KNOB_DEFAULTS = JSON.parse(JSON.stringify(knobs));
+const PER_LIGHT = ["direction", "arc", "size", "secs", "spread", "lock", "across", "panA", "panB", "tiltA", "tiltB",
+  "mode", "fullPan", "fullTilt", "cells", "tiltSecs", "panSecs", "mult"];
+let perLight = (() => { try { return JSON.parse(localStorage.getItem("jarvis.moveKnobs") || "{}"); } catch { return {}; } })();
+let knobsFor = "";
+function rememberKnobs() {
+  const saved = {};
+  for (const k of PER_LIGHT) saved[k] = JSON.parse(JSON.stringify(knobs[k]));
+  for (const x of movers()) perLight[x.head_no] = saved;
+  try { localStorage.setItem("jarvis.moveKnobs", JSON.stringify(perLight)); } catch { /* private window */ }
+}
+function loadKnobs(sel) {
+  const first = sel[0];
+  const run = first && running().find((f) => f.heads.includes(first.head_no) && f.lib === "range");
+  const mem = first && perLight[first.head_no];
+  for (const k of PER_LIGHT) knobs[k] = JSON.parse(JSON.stringify(mem && mem[k] !== undefined ? mem[k] : KNOB_DEFAULTS[k]));
+  if (run && !mem) {
+    // a movement already running on it (a button's, an older desk's): its own numbers
+    const p = run.params || {};
+    Object.assign(knobs, { panA: p.pan_a ?? knobs.panA, panB: p.pan_b ?? knobs.panB, tiltA: p.tilt_a ?? knobs.tiltA,
+      tiltB: p.tilt_b ?? knobs.tiltB, mode: p.mode ?? knobs.mode, fullPan: !!p.full_pan, fullTilt: !!p.full_tilt,
+      secs: p.speed ? Math.round(10 / p.speed) / 10 : knobs.secs, mult: 1,
+      tiltSecs: p.tilt_speed ? Math.round(10 / p.tilt_speed) / 10 : 0, panSecs: p.pan_speed ? Math.round(10 / p.pan_speed) / 10 : 0,
+      spread: p.spread ?? knobs.spread, cells: p.cells || {}, across: !!p.across });
+  }
+}
 let fine = false;
 let lastKey = "";
 let masterHeldUntil = 0;
@@ -166,6 +195,7 @@ setShapeKnobs(() => params());
 
 async function startMove(name) {
   lastLib = name;
+  rememberKnobs();
   const heads = movers().map((x) => x.head_no);
   if (!heads.length) { toast("Select a moving light first"); return; }
   for (const f of running()) {
@@ -181,7 +211,7 @@ const multiTilt = () => movers().some((x) => (x.map || []).filter((r) => r === "
 // a knob changed while a movement runs on these lights: restart it with the new knobs
 // (one at a time: two quick changes must not both start one)
 let reapplying = Promise.resolve();
-function reapply() { reapplying = reapplying.then(reapplyNow, reapplyNow); return reapplying; }
+function reapply() { rememberKnobs(); reapplying = reapplying.then(reapplyNow, reapplyNow); return reapplying; }
 async function reapplyNow() {
   const heads = movers().map((x) => x.head_no);
   const mine = running().filter((f) => f.heads.some((n) => heads.includes(n)));
@@ -647,6 +677,9 @@ function render(force = false) {
   const box = $("#move-panel");
   if (!box) return;
   const sel = movers();
+  // another light (or lights) selected: show its own settings
+  const selKey = sel.map((x) => x.head_no).join(",");
+  if (selKey !== knobsFor) { knobsFor = selKey; if (sel.length) { loadKnobs(sel); force = true; } }
   // redraw only when what's shown changes: a panel rebuilt on every live
   // update swallows clicks and flickers
   const ls = lasers();
