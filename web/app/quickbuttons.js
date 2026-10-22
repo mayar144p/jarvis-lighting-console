@@ -848,12 +848,12 @@ function editLayout() {
   const body = h("div.qe");
   const q = quick();
   const draw = () => {
-    const maxRows = Math.floor((q.slots || 48) / s.cols);
+    const maxRows = Math.floor((q.slots || 144) / s.cols);
     if (s.rows > maxRows) s.rows = maxRows;
     const past = q.buttons.filter((b) => b.page === page && b.slot > s.cols * s.rows).length;
     body.replaceChildren(
       row("Buttons across", chips([4, 5, 6, 8, 10, 12].map((n) => [n, String(n)]), s.cols, (v) => { s.cols = v; draw(); })),
-      row("Rows", chips(Array.from({ length: Math.min(8, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
+      row("Rows", chips(Array.from({ length: Math.min(12, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
       row("Row height", chips([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"],
         ["fit", "Fill", "The rows share the space there is (a full screen gets tall buttons)"]], s.height, (v) => { s.height = v; draw(); })),
       row("", h("label.check.small", h("input", { type: "checkbox", checked: s.all, onchange: (e) => { s.all = e.target.checked; } }), " Every page")),

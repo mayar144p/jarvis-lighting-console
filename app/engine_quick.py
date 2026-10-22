@@ -80,7 +80,8 @@ class QuickMixin:
     STYLE_KEYS = ("tint", "shape", "fill", "text", "plain", "blink", "icon_only", "icon", "w", "h", "size")
 
     # a page's grid: buttons across, rows, row height (more across = smaller)
-    QUICK_SLOTS = 48                      # the most a page can hold (12 x 4, 8 x 6...)
+    QUICK_SLOTS = 144                     # the most a page can hold (12 x 12, 8 x 18...)
+    QUICK_SUGGEST = 48                    # the most "Suggest buttons" puts on a page
     QUICK_COLS = (4, 5, 6, 8, 10, 12)
     QUICK_HEIGHTS = ("s", "m", "l", "xl", "fit")      # fit: the rows share the space
     LAYOUT_DEFAULT = {"cols": 8, "rows": 3, "height": "fit"}
@@ -906,8 +907,11 @@ class QuickMixin:
         """The first empty (page, slot), from `page` on (default page 1)."""
         start = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         used = {(b["page"], b["slot"]) for b in self.quick}
+        lays = self._quick_layouts()
         for p in range(start, self.QUICK_PAGES + 1):
-            for sl in range(1, self.QUICK_SLOTS + 1):
+            lay = {**self.LAYOUT_DEFAULT, **lays.get(str(p), {})}
+            # a place the page shows (one past its last row would be hidden)
+            for sl in range(1, int(lay["cols"]) * int(lay["rows"]) + 1):
                 if (p, sl) not in used:
                     return p, sl
         raise ValueError("no empty button left")
@@ -1384,7 +1388,7 @@ class QuickMixin:
                          {"kind": "fog", "label": "Haze 30%", "mode": "latch", "level": 30,
                           "seconds": 600, "target": target}]
         made = []
-        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+        for slot, raw in enumerate(plan[:self.QUICK_SUGGEST], start=1):
             btn = self._quick_clean(raw, page, slot)
             self.quick.append(btn)
             made.append(btn)
@@ -1427,16 +1431,16 @@ class QuickMixin:
             plan.append({"kind": "colour", "label": f"All {nm}", "colour": hexc, "mode": "hold"})
         movers = any("pan" in h["map"] or "tilt" in h["map"] for h in self.patch)
         if focus and count in (None, "", 0):
-            count = self.QUICK_SLOTS
+            count = self.QUICK_SUGGEST
         for fx_name in ("rainbow", "dimmer_chase", "sparks", "circle"):
             if fx_name in fxlib_mod.FX and (fx_name != "circle" or movers or count is None):
                 plan.append({"kind": "fx", "label": fxlib_mod.FX[fx_name]["label"], "fx": fx_name})
         plan.append({"kind": "go", "label": "GO PB1", "playback": 1})
         plan.append({"kind": "blackout", "label": "Blackout (hold)"})
         if count not in (None, "", 0):
-            plan = self._quick_ranked(plan, int(_clamp(count, 1, self.QUICK_SLOTS)), focus, movers)
+            plan = self._quick_ranked(plan, int(_clamp(count, 1, self.QUICK_SUGGEST)), focus, movers)
         made = []
-        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+        for slot, raw in enumerate(plan[:self.QUICK_SUGGEST], start=1):
             btn = self._quick_clean(raw, page, slot)
             self.quick.append(btn)
             made.append(btn)
