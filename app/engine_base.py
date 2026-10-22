@@ -645,7 +645,7 @@ ACTIONS = (
     "select_all", "select_group", "select_heads", "select_similar", "select_split",
     "select_query", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
-    "set_limits", "clear_limits", "set_orient", "get_limits",
+    "set_limits", "clear_limits", "set_orient", "line_up", "get_limits",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",

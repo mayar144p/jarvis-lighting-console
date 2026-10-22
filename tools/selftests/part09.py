@@ -8876,3 +8876,55 @@ def test_inverted_aim_matches() -> None:
                   wire("tilt") == plain[0] and abs(look()["pan"] - plain[2]) < 0.002, f"{wire('tilt')} {look()}")
         finally:
             e.shutdown()
+
+
+def test_line_up() -> None:
+    """Line up with the real light: a light whose pan/tilt zero is off (+7
+    / -3 degrees) pointed at three floor marks by hand - the desk learns the
+    error, then aims it onto any spot and the 3D draws it there."""
+    print("Line up a light with the real one")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=1, universe=1, address=1)
+            h = e.patch[0]
+            n = h["head_no"]
+            e.act("set_place", head=n, x=-1, y=6, z=2)
+            e.act("select_heads", heads=[n])
+            r = e.act("line_up", solve=True)
+            check("no marks: it asks for one", not r.get("ok", True), str(r))
+            for x, z in ((0, 6), (3, 8), (-3, 5)):
+                e.patch[0]["align"] = {"pan": 7, "tilt": -3}       # the real light, on the mark
+                e.act("aim_at", x=x, y=0, z=z)
+                e.patch[0].pop("align")
+                e.act("line_up", x=x, z=z)
+            check("three marks kept", len(e.patch[0].get("align_marks") or []) == 3, str(e.patch[0].get("align_marks")))
+            r = e.act("line_up", solve=True)
+            check("it learns the light's real zero", r.get("align") == {"pan": 7.0, "tilt": -3.0}
+                  and r.get("spread", 9) < 0.1, str(r))
+            e.act("aim_at", x=2, y=0, z=7)
+            got = dict(e.programmer[n])
+            e.patch[0]["align"] = {"pan": 7, "tilt": -3}
+            e.act("aim_at", x=2, y=0, z=7)
+            check("a new spot: the DMX the real light needs", got == dict(e.programmer[n]), f"{got} {e.programmer[n]}")
+            look = [r for r in e._looks() if r["n"] == n][0]
+            check("the 3D draws it from the real zero", look.get("deg", {}).get("pan") == [-263.0, 277.0]
+                  and look["deg"]["tilt"] == [-120.0, 114.0], str(look.get("deg")))
+            e.act("save_show", name="lined")
+            e.act("show_new")
+            e.act("load_show", name="lined")
+            check("saved with the show", e.patch[0].get("align") == {"pan": 7.0, "tilt": -3.0}, str(e.patch[0].get("align")))
+            e.act("line_up", head=n, clear=True)
+            check("Forget the line-up", "align" not in e.patch[0], "")
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "Keep this mark" in pj
+          and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")

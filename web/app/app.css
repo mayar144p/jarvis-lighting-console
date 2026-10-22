@@ -2125,3 +2125,9 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 
 /* button profiles (Default, Halloween...): the one in use, before the pages */
 .qb-profile { font-weight: 600; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Line up with the real light */
+.lineup ol { padding-left: 18px; margin: 6px 0 10px; }
+.lineup-row { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+.lineup-row .k { width: 64px; color: var(--text-2); }
+.lineup-row .num { width: 72px; }
+.lineup-now { font-weight: 600; }

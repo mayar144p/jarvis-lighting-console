@@ -1419,6 +1419,7 @@ function wireTools() {
     const k = b.dataset.orient;
     run("set_orient", k === "clear" ? { heads: sel(), clear: true } : { heads: sel(), [k]: true }, { toast: true });
   }));
+  $("#lineup-btn").addEventListener("click", () => import("./lineup.js").then((m) => m.openLineUp()));
   $("#sel-similar").addEventListener("click", () => {
     const first = sel()[0];
     if (first === undefined) { toast("Select one fixture of the type you want"); return; }

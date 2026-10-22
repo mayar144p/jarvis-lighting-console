@@ -192,6 +192,14 @@ class LooksMixin:
             # Only sent when the profile actually declares a range, so a
             # generic with no GDTF keeps the historical behaviour and
             # gains no bytes.
+            off = head.get("align")
+            if off and (off.get("pan") or off.get("tilt")):
+                # lined up with the real light: its travel shifted to where
+                # its zero really is, so the 3D points where the real one does
+                pl, ph, tl, th = self._aim_span(head)
+                span = dict(span or {})
+                span["pan"] = [pl + float(off.get("pan") or 0), ph + float(off.get("pan") or 0)]
+                span["tilt"] = [tl + float(off.get("tilt") or 0), th + float(off.get("tilt") or 0)]
             if span:
                 row["deg"] = span
             # Beam shaping for the visualiser, 0..1 per driven channel, so

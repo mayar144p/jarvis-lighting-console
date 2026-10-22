@@ -338,7 +338,7 @@ class RigMixin:
         "add_heads", "remove_heads", "patch_clear", "auto_patch", "change_type",
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
-        "set_limits", "clear_limits", "set_orient",
+        "set_limits", "clear_limits", "set_orient", "line_up",
         "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
         "venue_shape", "venue_build", "venue_describe", "venue_array",
         "venue_room", "venue_stage", "venue_add", "venue_update", "keep_facing", "venue_rig", "venue_orient",
