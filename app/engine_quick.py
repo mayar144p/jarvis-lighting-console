@@ -206,6 +206,9 @@ class QuickMixin:
                 # or how fast a strobe on them flashes
                 mode = c.get("mode")
                 btn["control"]["mode"] = mode if mode in self.LIGHT_FADERS else "level"
+            if raw.get("default") not in (None, ""):
+                # where its ↺ puts it back (the operator's own, 0-100)
+                btn["default"] = int(_clamp(raw["default"], 0, 100))
             btn["mode"] = "tap"
         if kind == "cuelist":
             btn["playback"] = int(_clamp(raw.get("playback", 1), 1, len(self.playbacks) or 10))
@@ -818,9 +821,10 @@ class QuickMixin:
         return out
 
     def _a_quick_group_controls(self, group=None, page=None, **_):
-        """A group's own controls on the buttons page, in one go: a Dimmer
-        fader, a Speed fader (its effects and moves), a Strobe button and a
-        Strobe speed fader, side by side - each renamed like any button."""
+        """A group's own controls on the buttons page, in one go: a Pulse
+        button, a Speed fader (its effects and moves - the pulse too), a
+        Strobe button and a Strobe speed fader, side by side - each renamed
+        like any button.  (Its level is the group's fader beside Blackout.)"""
         if group in (None, "") or isinstance(group, (dict, list, bool)):
             raise ValueError("which group? (its number)")
         g = self._group(group=group)
@@ -828,10 +832,10 @@ class QuickMixin:
         page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
         used = {b["slot"] for b in self.quick if b["page"] == page}
-        tiles = [{"kind": "fader", "label": f"{g['name']} dimmer", "control": {"what": "lights", "mode": "level"}},
-                 {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}},
+        tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
+                 {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
                  {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10},
-                 {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}}]
+                 {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 47}]
         total = lay["cols"] * lay["rows"]
         start = next((s for s in range(1, total - len(tiles) + 2)
                       if all(s + i not in used for i in range(len(tiles)))), None)
@@ -845,7 +849,7 @@ class QuickMixin:
             ids.append(btn["id"])
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"ids": ids, "page": page,
-                "summary": f"{g['name']}: dimmer, speed, strobe and strobe speed on page {page}"}
+                "summary": f"{g['name']}: pulse, speed, strobe and strobe speed on page {page}"}
 
     def _quick_free_slot(self, page=None) -> tuple[int, int]:
         """The first empty (page, slot), from `page` on (default page 1)."""
