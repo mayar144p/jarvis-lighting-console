@@ -1013,6 +1013,10 @@ class QuickMixin:
     def _quick_heads(self, btn: dict) -> list[int]:
         t = btn.get("target") or {}
         heads = self._heads_for_target(t, fx=btn["kind"] in self.FX_BUTTONS)
+        if btn["kind"] in ("kill", "blackout"):
+            # a blackout darkens the lasers among its lights too
+            by = {h["head_no"]: h for h in self.patch}
+            heads = sorted(set(heads) | {n for n in self._target_heads(t) if self._head_class(by[n]) == "laser"})
         heads = self._split_heads(heads, t.get("split"))
         pat = t.get("pattern")
         if pat:
