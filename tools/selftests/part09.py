@@ -4231,7 +4231,9 @@ def test_button_looks() -> None:
             r = e.act("quick_layout", page=2, cols=4, rows=3, height="xl")
             check("4 big buttons across on page 2", r.get("ok") and e._quick_public()["layout"]["2"] == {"cols": 4, "rows": 3, "height": "xl"}, str(r))
             r = e.act("quick_layout", page=2, cols=12, rows=8)
-            check("never more buttons than a page holds (12 across: 4 rows)", e._quick_public()["layout"]["2"]["rows"] == 4, str(r))
+            check("12 across, 8 rows: room for move buttons too", e._quick_public()["layout"]["2"]["rows"] == 8, str(r))
+            r = e.act("quick_layout", page=2, cols=12, rows=20)
+            check("never more buttons than a page holds (12 across: 12 rows)", e._quick_public()["layout"]["2"]["rows"] == 12, str(r))
             check("refused: 7 across", not e.act("quick_layout", page=2, cols=7).get("ok"))
             check("refused: a row height it doesn't have", not e.act("quick_layout", page=2, height="giant").get("ok"))
             e.act("quick_set", page=3, slot=20, button={"kind": "flash"})
@@ -8085,11 +8087,23 @@ def test_led_sfx() -> None:
             e.act("quick_press", id=b["id"], down=True)
             u = e.build_frames(time.monotonic())
             check("...a colour button colours its LEDs too", list(u[min(u)][1:4]) == [0, 0, 255], str(list(u[min(u)][:5])))
+            # its CO2 button: says why when it can't fire, fires while held when armed
+            fire = e.act("quick_set", page=1, slot=2, button={"kind": "sfx", "label": "CO2 FIRE", "mode": "hold", "target": {"all": True}})
+            r = e.act("quick_press", id=fire["id"], down=True)
+            check("an effect button that can't fire says why (not armed)", not r.get("ok") and "ARM" in (r.get("error") or ""), str(r))
+            e.act("fx_arm", state=True)
+            r = e.act("quick_press", id=fire["id"], down=True)
+            check("...armed, it fires while held", r.get("active") and fire["id"] in e.fx_runs, str(r))
+            e.act("quick_press", id=fire["id"], down=False)
+            check("...and stops when let go", fire["id"] not in e.fx_runs, str(e.fx_runs))
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the programmer shows Colour and Level for an effects machine with LEDs",
           'hd.body.class === "sfx" && (hd.map || []).some((r) => LED_ROLES.has(r))' in pj, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("full screen has its own ARM FX and KILL FX (the top bar is hidden there)",
+          'id="qb-arm"' in html and 'id="qb-kill"' in html and "export function toggleArm" in (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8"), "")
 
 
 def test_lights_fader() -> None:

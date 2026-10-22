@@ -80,7 +80,8 @@ class QuickMixin:
     STYLE_KEYS = ("tint", "shape", "fill", "text", "plain", "blink", "icon_only", "icon", "w", "h", "size")
 
     # a page's grid: buttons across, rows, row height (more across = smaller)
-    QUICK_SLOTS = 48                      # the most a page can hold (12 x 4, 8 x 6...)
+    QUICK_SLOTS = 144                     # the most a page can hold (12 x 12, 8 x 18...)
+    QUICK_SUGGEST = 48                    # the most "Suggest buttons" puts on a page
     QUICK_COLS = (4, 5, 6, 8, 10, 12)
     QUICK_HEIGHTS = ("s", "m", "l", "xl", "fit")      # fit: the rows share the space
     LAYOUT_DEFAULT = {"cols": 8, "rows": 3, "height": "fit"}
@@ -906,8 +907,11 @@ class QuickMixin:
         """The first empty (page, slot), from `page` on (default page 1)."""
         start = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         used = {(b["page"], b["slot"]) for b in self.quick}
+        lays = self._quick_layouts()
         for p in range(start, self.QUICK_PAGES + 1):
-            for sl in range(1, self.QUICK_SLOTS + 1):
+            lay = {**self.LAYOUT_DEFAULT, **lays.get(str(p), {})}
+            # a place the page shows (one past its last row would be hidden)
+            for sl in range(1, int(lay["cols"]) * int(lay["rows"]) + 1):
                 if (p, sl) not in used:
                     return p, sl
         raise ValueError("no empty button left")
@@ -1089,12 +1093,14 @@ class QuickMixin:
             r = self._a_fx_arm(state=not self._sfx_armed())
             return {"id": key, "active": self._sfx_armed(), "summary": r["summary"]}
         if kind in ("sfx", "laser") and down and not self._sfx_armed():
-            raise ValueError("ARM the effects first (the ARM switch in the top bar)")
+            raise ValueError("ARM the effects first (ARM FX: in the top bar, or beside BLACKOUT in full screen)")
         if kind in ("sfx", "fog", "laser") and mode == "tap":
             # a timed shot: runs its seconds (or the machine's limit, or
             # until a confetti tank is empty), whatever the finger does
             if down:
                 self._quick_on(key, owner=f"tap:{time.monotonic():.3f}")
+                if key not in self.quick_active:
+                    raise ValueError(self._sfx_why(btn))
             return {"id": key, "active": key in self.quick_active,
                     "summary": f"{btn['label']} fired"}
         if kind in ("fader", "xy"):
@@ -1159,11 +1165,29 @@ class QuickMixin:
             turn_on = down
         if turn_on:
             self._quick_on(key, owner="hand")
+            if kind in ("sfx", "fog", "laser") and key not in self.quick_active:
+                raise ValueError(self._sfx_why(btn))     # never a silent "nothing happened"
         else:
             self._quick_off(key, owner="hand", force=mode == "latch")
         on = key in self.quick_active
         return {"id": key, "active": on,
                 "summary": f"{btn['label']} {'on' if on else 'off'}"}
+
+    def _sfx_why(self, btn: dict) -> str:
+        """Why an effect button did not fire, in words the operator can act on."""
+        kind = {"sfx": "fire", "fog": "fog", "laser": "laser"}[btn["kind"]]
+        if kind in ("fire", "laser") and not self._sfx_armed():
+            return "ARM the effects first (ARM FX - in the top bar, or beside BLACKOUT in full screen)"
+        heads = self._quick_heads(btn)
+        targets = self._sfx_heads(heads, kind)
+        if not targets:
+            names = ", ".join(sorted({self._head(n).get("name") or self._head(n)["model"] for n in heads})[:3]) or "none"
+            what = {"fire": "a fire / shot channel", "fog": "a fog output", "laser": "a laser output"}[kind]
+            return (f"{btn['label']}: none of its lights has {what} ({names}) - "
+                    "check the light's channels (right-click it -> DMX channels) or the button's lights (Edit)")
+        if min(self._sfx_limit(h, kind) for h in targets) <= 0:
+            return f"{btn['label']}: the confetti is used up - refill it, then Reload (SFX tab)"
+        return f"{btn['label']} did not fire"
 
     def _quick_on(self, key: str, owner: str = "hand") -> None:
         """Hold a button on for `owner` (a hand, or a timeline clip)."""
@@ -1384,7 +1408,7 @@ class QuickMixin:
                          {"kind": "fog", "label": "Haze 30%", "mode": "latch", "level": 30,
                           "seconds": 600, "target": target}]
         made = []
-        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+        for slot, raw in enumerate(plan[:self.QUICK_SUGGEST], start=1):
             btn = self._quick_clean(raw, page, slot)
             self.quick.append(btn)
             made.append(btn)
@@ -1427,16 +1451,16 @@ class QuickMixin:
             plan.append({"kind": "colour", "label": f"All {nm}", "colour": hexc, "mode": "hold"})
         movers = any("pan" in h["map"] or "tilt" in h["map"] for h in self.patch)
         if focus and count in (None, "", 0):
-            count = self.QUICK_SLOTS
+            count = self.QUICK_SUGGEST
         for fx_name in ("rainbow", "dimmer_chase", "sparks", "circle"):
             if fx_name in fxlib_mod.FX and (fx_name != "circle" or movers or count is None):
                 plan.append({"kind": "fx", "label": fxlib_mod.FX[fx_name]["label"], "fx": fx_name})
         plan.append({"kind": "go", "label": "GO PB1", "playback": 1})
         plan.append({"kind": "blackout", "label": "Blackout (hold)"})
         if count not in (None, "", 0):
-            plan = self._quick_ranked(plan, int(_clamp(count, 1, self.QUICK_SLOTS)), focus, movers)
+            plan = self._quick_ranked(plan, int(_clamp(count, 1, self.QUICK_SUGGEST)), focus, movers)
         made = []
-        for slot, raw in enumerate(plan[:self.QUICK_SLOTS], start=1):
+        for slot, raw in enumerate(plan[:self.QUICK_SUGGEST], start=1):
             btn = self._quick_clean(raw, page, slot)
             self.quick.append(btn)
             made.append(btn)

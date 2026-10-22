@@ -33,13 +33,16 @@ function renderBar() {
   const arm = $("#fx-arm");
   arm.classList.toggle("on", !!st.armed);
   arm.textContent = !st.armed ? "ARM FX" : st.armed_forever ? "ARMED · on" : `ARMED ${mmss(st.armed_left || 0)}`;
+  // the full-screen buttons page's own ARM (the top bar is hidden there)
+  const qarm = $("#qb-arm");
+  if (qarm) { qarm.classList.toggle("on", !!st.armed); qarm.textContent = arm.textContent; }
   $("#fx-kill").classList.toggle("hot", (st.runs || []).length > 0);
 }
 
 // how long ARM lasts: remembered for the next time
 let armFor = (() => { try { return localStorage.getItem("jarvis.armfor") || "10"; } catch { return "10"; } })();
 
-function toggleArm() {
+export function toggleArm() {
   const st = sfxState();
   if (st.armed) { run("fx_arm", { state: false }, { toast: true }); return; }
   const choices = [["10", "10 minutes"], ["60", "1 hour"], ["until", "Until I disarm"]];

@@ -1484,6 +1484,10 @@ input.qfader-in::-moz-range-thumb { width: 20px; height: 26px; border-radius: 6p
 .page-n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .qb-bo { display: none; font-weight: 700; border-color: var(--live); color: #fca5a5; }
 .qb.qb-full .qb-bo { display: inline-flex; }
+.qb-fx { display: none; font-weight: 700; }
+body.has-fx .qb.qb-full .qb-fx { display: inline-flex; }
+.qb-fx.on { background: var(--live); color: #fff; border-color: var(--live); }
+.qb-kill { border-color: var(--live); color: #fca5a5; }
 .qb-bo.on { background: var(--live); color: #fff; }
 body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .qctl.qfader.qbig { align-items: center; }
