@@ -718,8 +718,9 @@ async function saveEverything() {
     }
   } catch (e) {
     if (e && e.name === "AbortError") return;             // the Save box was cancelled
-    toast(`Not saved: ${e.message || e}`, "bad");
-    return;
+    if (window.jarvisDesk && window.jarvisDesk.saveAs) { toast(`Not saved: ${e.message || e}`, "bad"); return; }
+    // the browser wouldn't show its Save box (too long after the click, a
+    // policy...): into Downloads instead, below
   }
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
   const a = h("a", { href: url, download: file });
