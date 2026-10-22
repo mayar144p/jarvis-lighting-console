@@ -183,6 +183,9 @@ class QuickMixin:
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
             btn["hz"] = _fclamp(raw.get("hz", 10), 1, 30)
+            # its speed from the strobe-speed fader on its lights (a group's
+            # own strobe), or always its own Hz (a show strobe at 10 Hz)
+            btn["follow_fader"] = _truthy(raw.get("follow_fader", False))
         if kind == "colour" and not btn["colour"]:
             raise ValueError("a colour button needs a colour")
         if kind == "fx":
@@ -857,6 +860,23 @@ class QuickMixin:
         own strobe; one without stops at 20)."""
         return round(1.0 + float(v) * 0.29, 1)
 
+    def _strobe_fader_hz(self) -> dict:
+        """{light: Hz} from the strobe-speed faders - where it is, else its
+        default; a light under two follows the one moved last."""
+        vals = self.__dict__.get("fader_vals") or {}
+        seq = self.__dict__.get("fader_seq") or {}
+        out, when = {}, {}
+        for b in self.quick:
+            c = b.get("control") or {}
+            if b["kind"] != "fader" or c.get("what") != "lights" or c.get("mode") != "strobe":
+                continue
+            v = vals.get(b["id"], b.get("default", 31))
+            t = seq.get(b["id"], 0)
+            for n in self._quick_heads(b):
+                if n not in out or t >= when[n]:
+                    out[n], when[n] = self._fader_hz(v), t
+        return out
+
     def _fader_speeds(self) -> list[tuple[set, float]]:
         """The speed faders that are not at 1x: (their lights, the speed)."""
         vals = self.__dict__.get("fader_vals")
@@ -887,7 +907,7 @@ class QuickMixin:
         used = self._quick_taken(page, lay["cols"])
         tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
                  {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
-                 {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10},
+                 {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10, "follow_fader": True},
                  {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 31}]
         total = lay["cols"] * lay["rows"]
         start = next((s for s in range(1, total - len(tiles) + 2)
@@ -1577,6 +1597,7 @@ class QuickMixin:
         by_id = {b["id"]: b for b in self.quick}
         out: dict[int, dict] = {}
         heads = {h["head_no"]: h for h in self.patch}
+        faders = None
         for key, run in sorted(self.quick_active.items(), key=lambda kv: kv[1]["since"]):
             btn = by_id.get(key) or run.get("btn")
             if not btn:
@@ -1590,11 +1611,20 @@ class QuickMixin:
                 o = out.setdefault(n, {})
                 if kind in ("flash", "strobe"):
                     o["level"] = max(o.get("level") or 0, round(btn.get("level", 100) * (f if kind == "flash" else 1.0)))
+                    if o.get("cap") is not None and kind == "flash":
+                        o["cap"] = max(o["cap"], o["level"])      # pressed after a dimmer button: it flashes
                     gate = self._shutter_role(head)
                     if gate and not any(r in HTP_ROLES for r in head["map"]):
                         o.setdefault("set", {})[gate] = self._open_value(head, gate)
                     if kind == "strobe":
-                        o["strobe"] = max(o.get("strobe") or 0, btn.get("hz", 10))
+                        # the newest strobe button on a light sets its speed
+                        # (like a colour); let go, the one under it is back
+                        hz = btn.get("hz", 10)
+                        if btn.get("follow_fader"):
+                            if faders is None:
+                                faders = self._strobe_fader_hz()
+                            hz = faders.get(n, hz)
+                        o["strobe"] = hz
                     if btn.get("colour"):
                         o.setdefault("set", {}).update(self._colour_values(head, btn["colour"]))
                 elif kind == "colour":
@@ -1976,18 +2006,20 @@ class QuickMixin:
             dims = [int(v) for r, v in vals.items() if r in HTP_ROLES]
             held_level = max(dims) if dims else None
         if level is not None or btn.get("hz"):
-            if level is not None:
-                o["level"] = max(o.get("level") or 0, round(int(level) * f))
             if held_level is not None and f >= 1.0:
                 # a button made from the programmer keeps ITS brightness: a
                 # brighter cue underneath doesn't lift it (master and
-                # blackout still apply after this)
-                o["cap"] = min(o["cap"], held_level) if o.get("cap") is not None else held_level
+                # blackout still apply after this) - and the newest such
+                # button on a light sets it, brighter or dimmer, like its
+                # colour; let go and the one under it is back
+                o["level"] = o["cap"] = held_level
+            elif level is not None:
+                o["level"] = max(o.get("level") or 0, round(int(level) * f))
             gate = self._shutter_role(head)
             if gate and not any(r in HTP_ROLES for r in head["map"]) and (level or btn.get("hz")):
                 sets[gate] = self._open_value(head, gate)
         if btn.get("hz"):
-            o["strobe"] = max(o.get("strobe") or 0, btn["hz"])
+            o["strobe"] = btn["hz"]                       # the newest button's speed
         if btn.get("dim") is not None:
             dim = round(100 - (100 - btn["dim"]) * f)       # eases down to the dim level
             o["cap"] = min(o["cap"], dim) if o.get("cap") is not None else dim
@@ -2108,6 +2140,8 @@ class QuickMixin:
         if c["what"] == "lights":
             vals = self.__dict__.setdefault("fader_vals", {})
             vals[btn["id"]] = int(v)
+            seq = self.__dict__.setdefault("fader_seq", {})
+            seq[btn["id"]] = max(seq.values(), default=0) + 1
             n = len(self._quick_heads(btn))
             mode = c.get("mode")
             what = (f"effect speed {self._fader_speed(v):.2f}x" if mode == "speed"

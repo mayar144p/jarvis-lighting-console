@@ -120,9 +120,11 @@ class DeskMixin:
     # -- into the overrides ----------------------------------------------
     def _desk_overrides(self, out: dict, skip_parked: bool = False) -> None:
         lights = [h for h in self.patch if self._head_class(h) == "light"]
-        for n, hz in (self.__dict__.get("desk_strobe") or {}).items():
+        desk = self.__dict__.get("desk_strobe") or {}
+        faders = self._strobe_fader_hz() if desk else {}
+        for n, hz in desk.items():
             o = out.setdefault(n, {})
-            o["strobe"] = max(o.get("strobe") or 0, hz)
+            o["strobe"] = max(o.get("strobe") or 0, faders.get(n, hz))
         # group masters: a share of the level, like the grand master.  A
         # light in two groups follows the group whose fader was moved last
         # (it does not take both: 50% and 50% is not 25%)
@@ -150,9 +152,7 @@ class DeskMixin:
                 for n in self._quick_heads(b):
                     o = out.setdefault(n, {})
                     if c.get("mode") == "strobe":
-                        if o.get("strobe"):                 # a strobe on them (a button, the desk's): this fast
-                            o["strobe"] = self._fader_hz(v)
-                        continue
+                        continue        # read by the strobe buttons that follow it (_strobe_fader_hz)
                     if c.get("mode") == "master":
                         if v < 100:
                             o["scale"] = round(o.get("scale", 100) * v / 100.0, 1)
