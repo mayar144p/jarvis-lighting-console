@@ -225,10 +225,26 @@ function modeText(b) {
   return b.seconds ? `${m} · ${b.seconds}s` : m;
 }
 
+// the pages there are: ones with buttons, a name or a grid of their own
+// (a page just added and named, still empty, is there too)
+function pagesThere(q = quick()) {
+  return new Set([...q.buttons.map((b) => b.page),
+    ...Object.entries(q.names || {}).filter(([, v]) => v).map(([k]) => +k),
+    ...Object.keys(q.layout || {}).map(Number)].filter((p) => p >= 1));
+}
+// [page, name] for every page there (1-4 always), for page choosers
+export function pageChoices(q = quick()) {
+  const there = pagesThere(q);
+  const last = Math.max(4, ...there);
+  const out = [];
+  for (let p = 1; p <= last; p++) if (p <= 4 || there.has(p)) out.push([p, (q.names || {})[p] || `Page ${p}`]);
+  return out;
+}
+
 function renderPages() {
   const q = quick();
   const names = q.names || {};
-  const used = new Set(q.buttons.map((b) => b.page));
+  const used = pagesThere(q);
   const box = $("#qb-pages");
   const pages = [];
   if (folderBack.length) {
@@ -238,12 +254,27 @@ function renderPages() {
   for (let p = 1; p <= (q.pages || 32); p++) {
     // pages 1-4 always; later ones once used, or the next free one in Edit
     if (p > 4 && !used.has(p) && p !== page && !(editing && p === Math.max(4, ...used) + 1)) continue;
-    pages.push(h("button" + (p === page ? ".on" : ""), {
+    // Edit's spare tab after the last page: a new page to start, not a page yet
+    const spare = p > 4 && !used.has(p) && p !== page;
+    pages.push(h("button" + (p === page ? ".on" : "") + (spare ? ".qb-newpage" : ""), {
       dataset: { page: p },
-      title: editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
+      title: spare ? "A new page: open it and add a button (or drop one here) - it stays once it has a button or a name"
+        : editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
       onclick: () => { folderBack.length = 0; page = p; render(true); emit("qbpage", page); },
       ondblclick: () => renamePage(p),
-    }, names[p] || String(p)));
+      // Edit: drop a button on a page's tab - it moves there (Alt: a copy)
+      ondragover: editing ? (e) => { e.preventDefault(); e.currentTarget.classList.add("drop"); } : null,
+      ondragleave: editing ? (e) => e.currentTarget.classList.remove("drop") : null,
+      ondrop: editing ? async (e) => {
+        e.preventDefault();
+        e.currentTarget.classList.remove("drop");
+        let from = null;
+        try { from = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+        if (!from || from.page === p) return;
+        const r = await run("quick_move", { page: from.page, slot: from.slot, to_page: p, to_slot: "free", copy: e.altKey });
+        if (r.ok) toast(`${e.altKey ? "Copied" : "Moved"} to ${names[p] || `page ${p}`}`, "ok");
+      } : null,
+    }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
 }
@@ -883,7 +914,7 @@ function editPages() {
   const body = h("div.qe.pages-list");
   const draw = () => {
     const q = quick();
-    const used = new Set(q.buttons.map((b) => b.page));
+    const used = pagesThere(q);
     const last = Math.min(q.pages || 32, Math.max(4, page, ...used));
     const rows = [];
     for (let p = 1; p <= last; p++) {
@@ -966,6 +997,8 @@ function editButton(slot, btn) {
       draw();
     };
     const kids = [
+      btn ? row("Page", chips(pageChoices(), s.toPageOf || page, (v) => { s.toPageOf = v; draw(); }),
+        h("span.qe-note", "Pick another page and Save: the button moves there (in Edit you can also drag it onto a page's tab).")) : null,
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
       row("Description", h("input.qe-name", { type: "text", value: s.note, maxlength: 40, placeholder: "optional - shown under the name",
@@ -1183,12 +1216,17 @@ function editButton(slot, btn) {
           h("div.qe-note", "Buttons in the same radio group switch each other off - one colour, one movement at a time."))));
       }
     }
-    body.replaceChildren(...kids);
+    body.replaceChildren(...kids.filter(Boolean));
   };
   draw();
 
   const save = async (toSlot = slot) => {
     const r = await run("quick_set", { page, slot: toSlot, button: toButton(s) });
+    // another page picked: it moves there (the first free place)
+    if (r.ok && s.toPageOf && s.toPageOf !== page) {
+      const m = await run("quick_move", { page, slot: toSlot, to_page: s.toPageOf, to_slot: "free" });
+      if (m.ok) toast(`Moved to ${(quick().names || {})[s.toPageOf] || `page ${s.toPageOf}`}`, "ok");
+    }
     return r.ok;
   };
   const close = modal({

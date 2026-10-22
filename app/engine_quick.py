@@ -718,9 +718,17 @@ class QuickMixin:
 
     def _a_quick_move(self, page=1, slot=None, to_page=None, to_slot=None, copy=False, **_):
         """Move (or copy) a button to another slot; a button already there
-        swaps places with it."""
+        swaps places with it.  to_slot="free": the first empty place on
+        to_page (another page: Edit -> drag onto its tab, or Page in the
+        button's editor)."""
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         to_page = int(_clamp(to_page if to_page not in (None, "") else page, 1, self.QUICK_PAGES))
+        if to_slot == "free":
+            if to_page == page:
+                return {"summary": "already on this page"}
+            got_page, to_slot = self._quick_free_slot(to_page)
+            if got_page != to_page:
+                raise ValueError(f"page {to_page} is full")
         slot, to_slot = int(_clamp(slot, 1, self.QUICK_SLOTS)), int(_clamp(to_slot, 1, self.QUICK_SLOTS))
         src = next((b for b in self.quick if b["page"] == page and b["slot"] == slot), None)
         if not src:
