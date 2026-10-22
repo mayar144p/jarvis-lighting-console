@@ -475,7 +475,8 @@ function controlTile(b) {
         const r = await run("quick_set", { page: b.page, slot: b.slot, button: { ...b, default: x } }, { silentError: true });
         if (r && r.ok !== false) toast(`${b.label}: ↺ now goes back to ${faderText(c, x)}`, "ok");
       } }, "◉");
-    el.append(h("b.qfader-name", { title: b.label }, b.label), h("span.qfader-top", out, h("span.qminis", home, pin)), inp);
+    // the name on the value's line: a one-row tile has room for two lines, not three
+    el.append(h("span.qfader-top", h("b.qfader-name", { title: b.label }, b.label), out, h("span.qminis", home, pin)), inp);
     void head;
   } else if (b.kind === "xy") {
     const dot = h("i.qxy-dot");

@@ -1441,15 +1441,40 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .qctl .qsub { color: var(--muted); font-size: 11px; }
 /* a fader tile is a slider, not a button: quiet face, a thick track, a big knob
    (input.qfader-in: stronger than the page's own input[type=range] look) */
-.qctl.qfader { background: var(--panel, #15171c) !important; box-shadow: none !important; border-style: solid; padding: 6px 8px; gap: 2px; }
-.qfader-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.qfader-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.qfader-top .qval { font-size: 15px; }
+.qctl.qfader { background: var(--panel, #15171c) !important; box-shadow: none !important; border-style: solid; padding: 5px 8px; gap: 2px; }
+.qctl.qfader .qfader-name { flex: 1 1 auto; min-width: 0; max-width: none; font-size: 13px; font-weight: 700; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qfader-top { display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; }
+.qfader-top .qval { font-size: 14px; flex: none; white-space: nowrap; }
+.qfader-top .qminis { flex: none; }
+body.qb-fullscreen .qb.qb-full .qctl.qfader b.qfader-name { font-size: 14px; }
+/* one cell: the name and its buttons on top, the value beside the slider */
+.qctl.qfader:not(.qbig):not(.qwide) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "name name minis" "val slider slider"; align-content: space-between; align-items: center; column-gap: 6px; }
+.qctl.qfader:not(.qbig):not(.qwide) .qfader-top { display: contents; }
+.qctl.qfader:not(.qbig):not(.qwide) .qfader-name { grid-area: name; }
+.qctl.qfader:not(.qbig):not(.qwide) .qval { grid-area: val; font-size: 13px; }
+.qctl.qfader:not(.qbig):not(.qwide) .qminis { grid-area: minis; }
+.qctl.qfader:not(.qbig):not(.qwide) input.qfader-in { grid-area: slider; margin: 0; min-width: 0; }
+/* the smallest rows (S): all on one line - name, slider, value */
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 3px 8px; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qfader-top { display: contents; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qfader-name { flex: 0 1 auto; min-width: 3em; order: 0; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) input.qfader-in { flex: 1 1 40px; min-width: 40px; margin: 0; order: 1; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qval { order: 2; font-size: 13px; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qminis { order: 3; }
+.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qminis { display: none; }
+/* a narrow tile: no room for ↺ ◉ (double-click the slider: back to its default) */
+.qctl.qfader { container-type: inline-size; }
+@container (max-width: 150px) {
+  .qfader-top .qminis { display: none; }
+  .qb-grid[data-height="s"] .qfader-top .qval { display: none; }
+}
 .qminis { display: flex; gap: 3px; }
 .qmini { min-width: 24px; height: 24px; padding: 0 4px; border-radius: 6px; border: 1px solid var(--border); background: transparent;
   color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer; }
 .qmini:hover { color: var(--text); border-color: var(--tint); }
-input.qfader-in { width: 100%; height: 32px; margin: auto 0 0; cursor: pointer; }
+input.qfader-in { width: 100%; height: 26px; margin: auto 0 0; cursor: pointer; flex: none; }
 input.qfader-in::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: rgba(255,255,255,.14); }
 input.qfader-in::-webkit-slider-thumb { width: 22px; height: 28px; margin-top: -9px; border-radius: 6px; background: #e5e7eb; border: 3px solid var(--tint); }
 input.qfader-in::-moz-range-track { height: 10px; border-radius: 5px; background: rgba(255,255,255,.14); }
@@ -1512,6 +1537,10 @@ body.has-fx .qb.qb-full .qb-fx { display: inline-flex; }
 .qb-bo.on { background: var(--live); color: #fff; }
 body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .qctl.qfader.qbig { align-items: center; }
+/* tall and narrow: the name gets its own two lines, the value and its buttons under it */
+.qctl.qfader.qbig .qfader-top { flex-wrap: wrap; justify-content: center; row-gap: 3px; width: 100%; }
+.qctl.qfader.qbig .qfader-name { flex-basis: 100%; text-align: center; white-space: normal; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
 .qctl.qfader.qbig input.qfader-in { writing-mode: vertical-lr; direction: rtl; flex: 1; width: 36px; height: auto; min-height: 80px; margin: 4px auto; }
 .qctl.qfader.qbig input.qfader-in::-webkit-slider-runnable-track { width: 10px; height: 100%; }
 .qctl.qfader.qbig input.qfader-in::-webkit-slider-thumb { width: 28px; height: 22px; margin-top: 0; margin-left: -9px; }

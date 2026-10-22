@@ -8253,6 +8253,10 @@ def test_lights_fader() -> None:
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
           and "renderSideFaders" in qb and "stripMenu" in qb and "jarvis.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("a fader tile shows its name: on the value's line, two lines when tall, one line in S rows",
+          'h("span.qfader-top", h("b.qfader-name"' in qb and "-webkit-line-clamp: 2" in css
+          and '.qb-grid[data-height="s"] .qctl.qfader' in css and "@container (max-width: 150px)" in css, "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
 
