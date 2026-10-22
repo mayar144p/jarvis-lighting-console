@@ -1078,14 +1078,25 @@ class QuickMixin:
                 except ValueError:
                     pass
 
-    def _a_quick_press(self, id=None, page=None, slot=None, down=True, immediate=False, **_):
+    def _a_quick_press(self, id=None, page=None, slot=None, down=True, immediate=False,
+                       seq=None, client=None, **_):
         """Press (down=True) or release (down=False) a quick button.  With
-        a beat setting (quant) the press waits for the next beat / bar."""
+        a beat setting (quant) the press waits for the next beat / bar.
+        `seq` (with the screen's `client`): presses are numbered, and one
+        that arrives after a later one from the same screen is dropped."""
         key = str(id) if id else f"q{int(page)}-{int(slot)}"
         btn = next((b for b in self.quick if b["id"] == key), None)
         if not btn:
             raise ValueError(f"no button {key}")
         down = _truthy(down)
+        if seq is not None:
+            seen = self.__dict__.setdefault("quick_seq", {})
+            k = (str(client or ""), key)
+            if seen.get(k, -1) >= int(seq):
+                return {"id": key, "active": key in self.quick_active, "stale": True}
+            if len(seen) > 4000:
+                seen.clear()
+            seen[k] = int(seq)
         q = 0.0 if immediate else self._quant_of(btn)
         pend = self.__dict__.setdefault("quick_pending", {})
         if q > 0:

@@ -8075,6 +8075,9 @@ def test_led_sfx() -> None:
                "LED Blue": {"capability": {"type": "ColorIntensity", "color": "Blue"}},
                "LED Dimmer": {"capability": {"type": "Intensity"}}},
            "modes": [{"name": "5ch", "channels": ["CO2 Valve", "LED Red", "LED Green", "LED Blue", "LED Dimmer"]}]}
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("button presses go out at once, numbered (not each waiting for the last answer)",
+          "seq: ++pressSeq" in qb and "inflight" not in qb, "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "c.db"
@@ -8107,6 +8110,22 @@ def test_led_sfx() -> None:
             check("...armed, it fires while held", r.get("active") and fire["id"] in e.fx_runs, str(r))
             e.act("quick_press", id=fire["id"], down=False)
             check("...and stops when let go", fire["id"] not in e.fx_runs, str(e.fx_runs))
+            # CO2 on every beat: presses go out at once, numbered; a tap whose
+            # release arrives first can't leave it firing
+            e.act("quick_press", id=fire["id"], down=False, seq=2, client="a")
+            r = e.act("quick_press", id=fire["id"], down=True, seq=1, client="a")
+            check("a press that arrives after its own release is dropped (no stuck CO2)",
+                  r.get("stale") and fire["id"] not in e.fx_runs, str(r))
+            for i in range(3, 13, 2):
+                e.act("quick_press", id=fire["id"], down=True, seq=i, client="a")
+                on = fire["id"] in e.fx_runs
+                e.act("quick_press", id=fire["id"], down=False, seq=i + 1, client="a")
+                if not on or fire["id"] in e.fx_runs:
+                    break
+            check("...fast taps in order each fire and stop", on and fire["id"] not in e.fx_runs, str(e.fx_runs))
+            r = e.act("quick_press", id=fire["id"], down=True, seq=1, client="b")
+            check("...another screen counts its own presses", r.get("active") and not r.get("stale"), str(r))
+            e.act("quick_press", id=fire["id"], down=False, seq=2, client="b")
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")

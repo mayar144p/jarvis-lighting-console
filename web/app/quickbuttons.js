@@ -154,15 +154,16 @@ const NO_QUANT = new Set(["fxkill", "arm", "estop", "tempo", "fader", "xy"]);
 const groups = () => (state.snap && state.snap.groups) || [];
 const autoGroups = () => (state.snap && state.snap.auto_groups) || [];
 
-// press and release are separate requests to a threaded server: a release
-// is only sent once its press was answered, or a quick tap could be handled
-// release-first and leave the button (a flash, a CO2 hold) on
-const inflight = new Map();
+// press and release are separate requests to a threaded server, and they
+// go out the moment the finger moves (waiting for each answer made fast
+// taps - CO2 on every beat - fall seconds behind while the screen was
+// busy).  Each is numbered: the desk drops one that arrives after a later
+// one, so a quick tap handled release-first can't leave a button on.
+const CLIENT = Math.random().toString(36).slice(2, 10);
+let pressSeq = 0;
 function press(btn, down) {
   if (down) held.add(btn.id); else held.delete(btn.id);
-  const before = inflight.get(btn.id) || Promise.resolve();
-  const next = before.then(() => run("quick_press", { id: btn.id, down }, { silentError: false })).catch(() => {});
-  inflight.set(btn.id, next);
+  run("quick_press", { id: btn.id, down, seq: ++pressSeq, client: CLIENT }, { silentError: false }).catch(() => {});
 }
 // a release anywhere lets go of every held button, even if the grid was
 // re-drawn under the finger
