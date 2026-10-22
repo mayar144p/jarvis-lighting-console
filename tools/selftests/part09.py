@@ -8506,5 +8506,7 @@ def test_newest_button_wins() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the strobe button editor: Speed from - its own / the strobe-speed fader",
           '"Speed from"' in qb and "follow_fader" in qb, "")
+    check("Edit: a button whose lights aren't its row's heading group gets a warning (a Spot colour in the Cobra row)",
+          "function rowChecker" in qb and "span.qwarn" in qb and "rowWarn(b, slot)" in qb, "")
     check("the editor: Heading -> Sits beside the buttons / over the row below",
           '"Beside the buttons"' in qb and '"qside"' in qb or ".qside" in qb, "")

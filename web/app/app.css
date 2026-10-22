@@ -1607,6 +1607,9 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
 .qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
 .qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+/* Edit: this button's lights aren't its row's */
+.qwarn { position: absolute; left: 3px; right: 3px; bottom: 3px; padding: 1px 4px; border-radius: 4px; background: #f59e0b; color: #1c1917;
+  font: 700 10px var(--font, inherit); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; pointer-events: none; }
 /* a name beside its buttons: "SPOT 260 | Red | Blue | UV" */
 .qbtn.qlabel.qside { justify-content: center; align-items: flex-start; padding: 4px 10px; border-left: 3px solid var(--tint); border-radius: 4px; }
 .qbtn.qlabel.qside b { font-size: 16px; text-align: left; white-space: normal; overflow-wrap: anywhere; color: var(--text); }
