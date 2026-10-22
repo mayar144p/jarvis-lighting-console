@@ -8122,11 +8122,24 @@ def test_lights_fader() -> None:
             g = e.act("group_create", name="Sides", heads=[1, 3])
             gc = e.act("quick_group_controls", group=g.get("n", 1), page=2)
             tiles = [b for b in e.quick if b["id"] in gc.get("ids", [])]
-            check("a group's faders on the buttons page in one tap",
-                  [(b["kind"], (b.get("control") or {}).get("mode")) for b in tiles]
-                  == [("fader", "level"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
+            check("a group's controls on the buttons page in one tap (pulse, speed, strobe, strobe speed - its level is the group fader)",
+                  [(b["kind"], (b.get("control") or {}).get("mode") or b.get("fx")) for b in tiles]
+                  == [("fx", "pulse"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
                   and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
-            sp, strobe, rate = tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
+            check("...each fader knows where its ↺ puts it back", tiles[1].get("default") == 50 and tiles[3].get("default") == 47,
+                  str([t.get("default") for t in tiles]))
+            pulse, sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
+            e.act("quick_press", id=pulse, down=True)
+            pr = next((f for f in e.fx if f.get("lib") == "pulse"), None)
+            check("...its Pulse button pulses the group", pr is not None and set(pr["heads"]) == {1, 3}, str(pr and pr["heads"]))
+            e.act("quick_fader", id=sp, level=100)
+            t = time.monotonic()
+            e._fx_values(t)
+            v0 = pr["_v"]
+            e._fx_values(t + 1.0)
+            check("...and the Speed fader speeds the pulse up (twice as fast)", round(pr["_v"] - v0, 2) == 2.0, str(pr["_v"] - v0))
+            e.act("quick_press", id=pulse, down=True)
+            e.act("quick_fader", id=sp, level=50)
             e.act("run_fx", name="breathe", heads=[1, 3])
             e.act("run_fx", name="breathe", heads=[2])
             rows = list(e.fx[-2:])
@@ -8159,13 +8172,15 @@ def test_lights_fader() -> None:
                   abs(a(1) - 0.3) < 0.02 and abs(a(3) - 0.3) < 0.02 and a(2) == two, f"{a(1)} {a(2)} {a(3)}")
             e.act("group_master", group=g.get("n", 1), level=100)
             e.act("group_master", group=g2.get("n", 2), level=100)
-            e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed"})
-            check("...renamed like any button", next(b for b in e.quick if b["id"] == sp)["label"] == "Movers FX speed", "")
+            e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed", "default": 70})
+            mine = next(b for b in e.quick if b["id"] == sp)
+            check("...renamed like any button, and its default set by the operator",
+                  mine["label"] == "Movers FX speed" and mine.get("default") == 70, str(mine))
         finally:
             e.shutdown()
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
-          '"Effect speed"' in qb and '"Strobe speed"' in qb
+          '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",

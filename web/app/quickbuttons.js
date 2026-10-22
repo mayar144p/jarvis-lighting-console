@@ -442,6 +442,10 @@ function faderValue(c, b) {
   const g = groups().find((x) => x.n === c.n);
   return g ? (g.master ?? 100) : 100;
 }
+// where a fader's ↺ puts it: the operator's own default, else the natural one
+// (speed 1x, the masters full, a brightness fader down)
+const faderHome = (c, b) => (b && b.default != null ? b.default
+  : c.what === "speed" || c.mode === "speed" ? 50 : c.mode === "strobe" ? 47 : c.what === "lights" && (c.mode || "level") === "level" ? 0 : 100);
 const faderText = (c, v) => c.what === "speed" || c.mode === "speed" ? `${Math.max(0.1, v / 50).toFixed(2).replace(/0$/, "")}×`
   : c.mode === "strobe" ? `${(1 + v * 0.19).toFixed(1).replace(/\.0$/, "")} Hz` : `${Math.round(v)}%`;
 
@@ -454,9 +458,23 @@ function controlTile(b) {
     const out = h("output.qval", faderText(c, v));
     const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
+    const to = (x) => { inp.value = x; out.textContent = faderText(c, x); inp.dataset.busy = "1"; send(x);
+      setTimeout(() => { delete inp.dataset.busy; }, 400); };
     inp.addEventListener("input", () => { out.textContent = faderText(c, +inp.value); inp.dataset.busy = "1"; send(+inp.value); });
     inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
-    el.append(head, out, inp);
+    inp.addEventListener("dblclick", () => to(faderHome(c, b)));
+    // ↺ back to its default; ◉ makes where it is now the default
+    const home = h("button.qmini", { title: `Back to ${faderText(c, faderHome(c, b))} (its default) - double-click the fader does it too`,
+      onclick: (e) => { e.stopPropagation(); to(faderHome(c, b)); } }, "↺");
+    const pin = h("button.qmini", { title: "Make where it is now its default",
+      onclick: async (e) => {
+        e.stopPropagation();
+        const x = +inp.value;
+        const r = await run("quick_set", { page: b.page, slot: b.slot, button: { ...b, default: x } }, { silentError: true });
+        if (r && r.ok !== false) toast(`${b.label}: ↺ now goes back to ${faderText(c, x)}`, "ok");
+      } }, "◉");
+    el.append(h("b.qfader-name", { title: b.label }, b.label), h("span.qfader-top", out, h("span.qminis", home, pin)), inp);
+    void head;
   } else if (b.kind === "xy") {
     const dot = h("i.qxy-dot");
     const pad = h("div.qxy", dot);
@@ -565,6 +583,7 @@ function fromButton(b) {
     playback: b ? b.playback || 1 : 1, cue: b ? b.cue || "" : "", preset: b ? b.preset || "" : "",
     fogLevel: b && b.kind === "fog" ? b.level || 100 : 100,
     control: b && b.control ? { ...b.control } : { what: "master" },
+    fdefault: b && b.default != null ? b.default : null,
     toPage: b && b.to_page ? b.to_page : (page < (quick().pages || 32) ? page + 1 : 1),
     releaseHere: !!(b && b.release_here), turnOn: b && b.turn_on ? [...b.turn_on] : [],
     order: (b && b.order) || "forward", offset: { pan: 0, tilt: 0, ...((b && b.offset) || {}) },
@@ -625,6 +644,7 @@ function toButton(s) {
   if (d === "preset") b.preset = +s.preset;
   if (d === "fader") b.control = s.control.what === "playback" || s.control.what === "group" ? { what: s.control.what, n: +s.control.n || 1 }
     : s.control.what === "lights" ? { what: "lights", mode: s.control.mode || "level" } : { what: s.control.what };
+  if (d === "fader" && s.fdefault != null) b.default = s.fdefault;
   if (d === "cuelist") b.playback = +s.playback || 1;
   if (["sfx", "fog", "laser"].includes(d) && s.seconds !== "") b.seconds = +s.seconds;
   if (d === "fog") b.level = s.fogLevel;
@@ -882,6 +902,8 @@ function editButton(slot, btn) {
           ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 20 a second"]], c.mode || "level",
         (v) => { c.mode = v; draw(); })));
       }
+      kids.push(row("Default", slider(s.fdefault ?? faderHome(c), 0, 100, 1, (v) => { s.fdefault = v; }),
+        h("span.qe-note", "Where its ↺ puts it back (or move the fader there and press its ◉).")));
       if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
       if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
         : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
