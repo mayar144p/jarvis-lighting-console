@@ -378,6 +378,60 @@ function guard(wc) {
   });
 }
 
+// ---------------------------------------------------------------- touch
+// On a touch screen a swipe in from an edge leaves the show: Task View (left),
+// the notifications (right), the taskbar (bottom).  The sure way to stop it
+// on Windows 10 and 11 is the "Allow Edge swipe" policy off, as kiosks do:
+// Desk menu -> Lock touch swipes on this computer (asks for admin once,
+// starts after signing back in; Unlock puts it back).  (Windows' per-window
+// "no edge gestures while full screen" switch only works set from inside
+// the app's own process, and Microsoft lists it for Windows 8 / 10 only.)
+function powershell(script, opts = {}) {
+  // -EncodedCommand: the script as UTF-16LE base64, so nothing in it needs quoting
+  const enc = Buffer.from(script, "utf16le").toString("base64");
+  return spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
+    { windowsHide: true, stdio: "ignore", ...opts });
+}
+const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
+function machineSwipesOff() {
+  const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
+  return r.status === 0 && /AllowEdgeSwipe\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
+}
+async function machineSwipes(lock) {
+  const win = BrowserWindow.getFocusedWindow();
+  const yes = await ask(win, lock ? {
+    title: "Lock touch swipes on this computer",
+    message: "Turn off the touch swipes in from the screen's edges on this computer?",
+    detail: "No more Task View, notifications or taskbar from a swipe - for every app, until you unlock it here. "
+      + "Windows asks for an administrator's OK once, and it starts after you sign out and back in (or restart).\n\n"
+      + "Also turn off Settings > Bluetooth & devices > Touch > Three- and four-finger touch gestures: "
+      + "those switch apps too, and only Windows' own setting can stop them.",
+    buttons: ["Cancel", "Lock swipes"], primary: 1, cancel: 0,
+  } : {
+    title: "Unlock touch swipes on this computer",
+    message: "Turn the touch swipes in from the screen's edges back on?",
+    detail: "Windows asks for an administrator's OK, and it starts after you sign out and back in.",
+    buttons: ["Cancel", "Unlock swipes"], primary: 1, cancel: 0,
+  });
+  if (yes !== 1) return;
+  const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
+    : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
+  const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
+  await new Promise((resolve) => {
+    powershell(`Start-Process reg.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList ${list}`)
+      .on("exit", resolve).on("error", resolve);
+  });
+  const done = machineSwipesOff() === lock;
+  await ask(win, {
+    title: "Touch swipes",
+    message: done ? (lock ? "Touch swipes are locked on this computer." : "Touch swipes are back on.")
+      : "Nothing changed (the administrator's OK wasn't given).",
+    detail: done ? "Sign out and back in (or restart) for it to start." : "",
+    buttons: ["OK"], cancel: 0,
+  });
+  menu();
+}
+
 function showMode() {
   for (const part of ["stage", "desk", "playbacks"]) openPart(part);
   const all = open.get("main");
@@ -404,6 +458,12 @@ function menu() {
       { label: "Playbacks and buttons", click: () => openPart("playbacks") },
       { type: "separator" },
       { label: "Other computers, phones and tablets…", click: phonesDialog },
+      ...(process.platform === "win32" ? [
+        { type: "separator" },
+        machineSwipesOff()
+          ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
+          : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
+      ] : []),
       { type: "separator" },
       { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
     ] },

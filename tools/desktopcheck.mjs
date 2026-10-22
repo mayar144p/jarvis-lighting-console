@@ -55,6 +55,15 @@ let linked = false;
 for (let i = 0; i < 60 && !linked; i++) { linked = await win.evaluate(() => document.querySelector("#fx-count")?.textContent.trim() === "2"); if (!linked) await sleep(500); }
 check("the window's live link to the engine works (the list shows them)", linked);
 
+// Windows: the Desk menu offers to lock the touch swipes in from the screen's
+// edges (the "Allow Edge swipe" policy; asks for admin, so not pressed here)
+if (process.platform === "win32") {
+  const items = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items.find((m) => m.label === "Desk").submenu.items.map((i) => i.label));
+  check("touch: the Desk menu offers to lock (or unlock) the edge swipes on this computer",
+    items.some((l) => /^(Lock|Unlock) touch swipes on this computer/.test(l)), items.join(" | "));
+}
+
 // a save (photo, export, bug report) lands in Downloads - no Save As box in the middle of the desk
 const DL = mkdtempSync(join(tmpdir(), "jarvis-dl-"));
 await app.evaluate(({ app: a }, dir) => a.setPath("downloads", dir), DL);
