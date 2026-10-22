@@ -242,6 +242,14 @@ class ShowMixin:
         for key in ("meta", "palettes", "quick_names", "programmer"):
             if not isinstance(payload.get(key), dict):
                 out[key] = {}
+        # a strobe button saved before it could choose: a group's own strobe
+        # (its "<name> strobe speed" fader beside it) follows that fader,
+        # any other keeps its own Hz
+        speed_faders = {str(b.get("label")) for b in out["quick"] if b.get("kind") == "fader"
+                        and isinstance(b.get("control"), dict) and b["control"].get("mode") == "strobe"}
+        for b in out["quick"]:
+            if b.get("kind") == "strobe" and "follow_fader" not in b:
+                b["follow_fader"] = f"{b.get('label')} speed" in speed_faders
         if out["quick"] and payload.get("strobe_fader_hz") != 30:
             # saved when a strobe fader went 1-20 Hz (now 1-30): its default
             # keeps the same flashes a second

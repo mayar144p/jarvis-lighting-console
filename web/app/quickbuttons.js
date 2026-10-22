@@ -658,7 +658,7 @@ function fromButton(b) {
     quant: b && b.quant !== undefined ? b.quant : "",
     target: b ? { ...(b.target || { all: true }) } : { all: true },
     colour: b ? b.colour || null : null, level: b && b.level !== undefined ? b.level : 100,
-    dim: b && b.dim !== undefined ? b.dim : 30, hz: b ? b.hz || 10 : 10,
+    dim: b && b.dim !== undefined ? b.dim : 30, hz: b ? b.hz || 10 : 10, followFader: !!(b && b.follow_fader),
     fx: b && b.fx ? b.fx : "rainbow", params: b && b.params ? { ...b.params } : {},
     mix: { level: b && b.level !== undefined, dim: b && b.dim !== undefined, colour: !!(b && b.colour),
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
@@ -711,7 +711,7 @@ function toButton(s) {
   if (d === "flash") { b.level = s.level; if (s.colour) b.colour = s.colour; }
   if (d === "dim") b.dim = s.dim;
   if (d === "colour") b.colour = s.colour || "#ffffff";
-  if (d === "strobe") { b.hz = s.hz; if (s.colour) b.colour = s.colour; }
+  if (d === "strobe") { b.hz = s.hz; b.follow_fader = s.followFader; if (s.colour) b.colour = s.colour; }
   if (d === "fx") { b.fx = s.fx; b.params = s.params; }
   if (d === "move") b.move = s.move;
   if (FADES.has(d)) { if (s.fadeIn) b.fade_in = s.fadeIn; if (s.fadeOut) b.fade_out = s.fadeOut; }
@@ -1006,6 +1006,10 @@ function editButton(slot, btn) {
     if (d === "strobe") {
       kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"], [30, "Fastest"]], s.hz,
         (v) => { s.hz = v; draw(); }), slider(s.hz, 1, 30, 0.5, (v) => { s.hz = v; }, " Hz")));
+      kids.push(row("Speed from", chips([[false, "Its own (above)"], [true, "The strobe-speed fader"]], s.followFader,
+        (v) => { s.followFader = v; draw(); })));
+      kids.push(h("div.qe-note", "The newest strobe button on a light sets its speed - let go and the one under it is back. "
+        + "\"The strobe-speed fader\": the speed of a strobe-speed fader on these lights (a group's own strobe)."));
       kids.push(h("div.qe-note", "On each light's own strobe channel when it has one (even flashes, up to what that light can do); "
         + "a light without one is switched on and off by the desk, 20 a second at most."));
       kids.push(row("Colour", swatches(SWATCH, s.colour, (c) => { s.colour = c; draw(); }, { none: "Keep their colour" })));

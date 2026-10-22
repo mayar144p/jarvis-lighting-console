@@ -8419,3 +8419,71 @@ def test_own_strobe() -> None:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the programmer: Strobe buttons -> Desk strobe / Its own", '"own_strobe"' in pj and '"Strobe buttons"' in pj, "")
+
+
+def test_newest_button_wins() -> None:
+    """On the same lights the newest button wins - a show page strobe at
+    10 Hz over a group strobe at its fader's 1 Hz, a dimmer look over a
+    bright one - and letting go brings back the one under it."""
+    print("The newest button on a light wins; let go, the one under it is back")
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "n.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=3)
+            e.act("group_create", name="Spots", heads=[1, 2])
+            g = e.groups[-1]["n"]
+            e.act("quick_group_controls", group=g, page=1)
+            ids = {b["label"]: b["id"] for b in e.quick}
+            check("a group's own strobe follows its strobe-speed fader",
+                  next(b for b in e.quick if b["label"] == "Spots strobe").get("follow_fader") is True, "")
+            e.act("quick_fader", id=ids["Spots strobe speed"], level=0)
+            show = e.act("quick_set", page=2, slot=1, button={"kind": "strobe", "label": "Strobe", "hz": 10, "mode": "hold",
+                                                              "target": {"group": g}})["id"]
+
+            def hz():
+                return {n: o.get("strobe") for n, o in e._override_vals().items() if o.get("strobe")}
+            e.act("quick_press", id=ids["Spots strobe"], down=True)
+            check("the group strobe at its fader's speed (1 Hz)", hz() == {1: 1.0, 2: 1.0}, str(hz()))
+            e.act("quick_press", id=show, down=True)
+            check("...a show strobe pressed on top: its own 10 Hz", hz() == {1: 10.0, 2: 10.0}, str(hz()))
+            e.act("quick_fader", id=ids["Spots strobe speed"], level=50)
+            check("...the fader doesn't touch it", hz() == {1: 10.0, 2: 10.0}, str(hz()))
+            e.act("quick_press", id=show, down=False)
+            check("...let go: the group strobe again, at the fader's speed now", hz() == {1: 15.5, 2: 15.5}, str(hz()))
+            e.act("quick_press", id=ids["Spots strobe"], down=False)
+            old = e._clean_payload({"quick": [{"kind": "strobe", "label": "Spots strobe"}, {"kind": "strobe", "label": "Strobe"},
+                                              {"kind": "fader", "label": "Spots strobe speed",
+                                               "control": {"what": "lights", "mode": "strobe"}}]})
+            check("a show saved before: the group strobe follows its fader, any other keeps its own Hz",
+                  [b.get("follow_fader") for b in old["quick"]] == [True, False, None], str(old["quick"]))
+
+            def look(slot, lvl, rgb):
+                vals = {str(n): {"dimmer": lvl, "red": rgb[0], "green": rgb[1], "blue": rgb[2]} for n in (1, 2)}
+                return e.act("quick_set", page=3, slot=slot, button={"kind": "custom", "label": f"L{slot}", "values": vals,
+                                                                     "hold": True, "mode": "latch", "target": {"heads": [1, 2]}})["id"]
+            bright, dim = look(1, 100, (0, 0, 255)), look(2, 30, (255, 0, 0))
+            e.act("quick_press", id=dim, down=True)
+            e.act("quick_press", id=bright, down=True)
+            o = e._override_vals()[1]
+            check("a bright look pressed over a dim one: bright (the newest wins, not the dimmest)",
+                  o.get("level") == 100 and o.get("cap") == 100, str(o))
+            e.act("quick_press", id=bright, down=True)
+            o = e._override_vals()[1]
+            check("...let go: the dim one again", o.get("level") == 30 and o.get("cap") == 30, str(o))
+            fl = e.act("quick_set", page=3, slot=3, button={"kind": "flash", "label": "F", "mode": "hold",
+                                                            "target": {"heads": [1, 2]}})["id"]
+            e.act("quick_press", id=fl, down=True)
+            o = e._override_vals()[1]
+            check("...a flash pressed on top flashes full", o.get("level") == 100 and (o.get("cap") or 100) >= 100, str(o))
+            e.act("quick_press", id=fl, down=False)
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the strobe button editor: Speed from - its own / the strobe-speed fader",
+          '"Speed from"' in qb and "follow_fader" in qb, "")
