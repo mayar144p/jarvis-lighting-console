@@ -8126,7 +8126,7 @@ def test_lights_fader() -> None:
                   [(b["kind"], (b.get("control") or {}).get("mode") or b.get("fx")) for b in tiles]
                   == [("fx", "pulse"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
                   and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
-            check("...each fader knows where its ↺ puts it back", tiles[1].get("default") == 50 and tiles[3].get("default") == 47,
+            check("...each fader knows where its back-to-default button puts it", tiles[1].get("default") == 50 and tiles[3].get("default") == 47,
                   str([t.get("default") for t in tiles]))
             pulse, sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
             e.act("quick_press", id=pulse, down=True)
