@@ -355,7 +355,7 @@ class RigMixin:
         "song_save", "songs_import", "song_rename", "song_delete", "song_link",
         "venue_save", "venue_open", "venue_delete",
         "quick_set", "quick_colour_row", "quick_group_controls", "quick_update", "quick_defaults", "quick_fx_defaults", "quick_from_laser", "timeline_set", "timeline_track",
-        "motion_set", "remember_open",
+        "motion_set", "remember_open", "own_strobe",
         "timeline_clip", "timeline_from_playback",
     })
 

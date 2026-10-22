@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS modes (
 # Four LED's Locate was magenta).  On start, fixtures imported by an
 # older parser are re-read from their .gdtf files (refresh_imports), so an
 # update reaches the lights you already have without downloading again.
-PARSER_VERSION = 14
+PARSER_VERSION = 15
 
 # Columns added after the first release.  `connect` adds them to an
 # existing database, so an old fixtures.db is upgraded in place rather than
@@ -406,6 +406,7 @@ def role_ranges(db_path: Path, manufacturer: str, model: str,
             "wheel": d.get("wheel") or "",
             "open_from": d.get("open_from"),
             "strobe_ranges": d.get("strobe_ranges") or None,
+            "strobe_hz": d.get("strobe_hz") or None,
             "fast_first": d.get("fast_first"),
             # special effects: what "fire / armed / on" and "off" are, and
             # how long the device may run in one go
@@ -518,6 +519,29 @@ def _gdtf_strobe_ranges(logical) -> list[list[int]] | None:
         later = [m for m in marks if m > start]
         out.append([start, (later[0] - 1) if later else 255])
     return out
+
+
+def _gdtf_strobe_hz(logical) -> list | None:
+    """Beside _gdtf_strobe_ranges, range for range: [Hz from, Hz to, plain
+    strobe?, fast first?] - GDTF gives a strobe's Hz as its physical range."""
+    if logical is None:
+        return None
+    from .fixlib import _NOT_PLAIN_STROBE, _strobe_info
+    out = []
+    for func in _children(logical, "ChannelFunction"):
+        if _dmx_byte(func.get("DMXFrom")) is None:
+            continue
+        words = f"{func.get('Attribute') or ''} {func.get('Name') or ''}".lower()
+        if ("strobe" in words or "pulse" in words or "random" in words) \
+                and "open" not in words and "closed" not in words:
+            try:
+                a, b = float(func.get("PhysicalFrom")), float(func.get("PhysicalTo"))
+            except (TypeError, ValueError):
+                a = b = None
+            if (a, b) == (0.0, 1.0):                # GDTF's default: not said
+                a = b = None
+            out.append(_strobe_info(a, b, "pulse" not in words and not _NOT_PLAIN_STROBE.search(words)))
+    return out or None
 
 
 def _gdtf_open_value(dmx_ch, logical) -> int | None:
@@ -826,6 +850,7 @@ def parse_gdtf(path: Path) -> list[dict]:
                         "wheel": wheel,
                         "open_from": _gdtf_open_value(dmx_ch, logical),
                         "strobe_ranges": _gdtf_strobe_ranges(logical),
+                        "strobe_hz": _gdtf_strobe_hz(logical),
                         "slots": _gdtf_slots(logical, wheels),
                         "name": label,
                         "caps": _gdtf_caps(logical),

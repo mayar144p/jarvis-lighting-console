@@ -144,6 +144,28 @@ def _ofl_caps(cdef: dict) -> list[dict]:
     return [dict(cap, dmxRange=[0, 255])] if isinstance(cap, dict) else []
 
 
+# a strobe range that is not a plain even strobe: random, pulse, ramps,
+# lightning, sound - a strobe button never picks one of those
+_NOT_PLAIN_STROBE = re.compile(r"random|puls|ramp|lightning|sound|music|audio|fast on|slow on|burst|program", re.I)
+
+
+def _hz(text) -> float | None:
+    """'20.6Hz' -> 20.6, '120bpm' -> 2.0; words ('slow', 'fast') -> None."""
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(hz|bpm)?\s*", str(text or ""), re.I)
+    if not m or (not m.group(2) and not isinstance(text, (int, float))):
+        return None
+    v = float(m.group(1))
+    return round(v / 60.0, 3) if (m.group(2) or "").lower() == "bpm" else v
+
+
+def _strobe_info(hz_from, hz_to, plain, fast_first=None) -> list:
+    """One strobe range's [Hz at its start, Hz at its end, plain strobe?,
+    fast first?] - the Hz None when the file doesn't say."""
+    if hz_from is not None and hz_to is not None and hz_from == hz_to:
+        hz_from = hz_to = None
+    return [hz_from, hz_to, bool(plain), fast_first]
+
+
 def _ofl_angle(text) -> float | None:
     m = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*deg", str(text or ""))
     return float(m.group(1)) if m else None
@@ -237,10 +259,17 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
              and c.get("dmxRange")]
     if opens:
         row["open_from"] = min(opens)
-    strobes = [[byte(c["dmxRange"][0]), byte(c["dmxRange"][1])] for c in caps
-               if c.get("type") == "ShutterStrobe" and c.get("dmxRange")
-               and c.get("shutterEffect") not in ("Open", "Closed", None)]
+    strobe_caps = [c for c in caps if c.get("type") == "ShutterStrobe" and c.get("dmxRange")
+                   and c.get("shutterEffect") not in ("Open", "Closed", None)]
+    strobes = [[byte(c["dmxRange"][0]), byte(c["dmxRange"][1])] for c in strobe_caps]
     row["strobe_ranges"] = strobes or None
+    info = []
+    for c in strobe_caps:
+        a, b = c.get("speedStart", c.get("speed")), c.get("speedEnd", c.get("speed"))
+        words = f"{a or ''} {b or ''}".lower()
+        info.append(_strobe_info(_hz(a), _hz(b), c.get("shutterEffect") == "Strobe" and not c.get("randomTiming"),
+                                 True if words.startswith("fast") else False if words.startswith("slow") else None))
+    row["strobe_hz"] = info or None
     for c in caps:
         if c.get("type") == "PanTiltSpeed":
             first = str(c.get("speedStart") or c.get("duration") or "").lower()
@@ -483,7 +512,7 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
         elif "SlowFast" in preset or "slow to fast" in low_name or "slow-fast" in low_name:
             row["fast_first"] = False
     if role in ("shutter", "strobe"):
-        ranges = []
+        ranges, info = [], []
         for c in caps:
             text = (c.text or "").strip().lower()
             # the file's own tag first ("StrobeFreqRange", "PulseFreqRange"), then
@@ -494,8 +523,19 @@ def _qxf_detail(ch, pan_max: float | None, tilt_max: float | None) -> dict:
                 try:
                     ranges.append([int(c.get("Min") or 0), int(c.get("Max") or 0)])
                 except ValueError:
-                    pass
+                    continue
+                preset = c.get("Preset") or ""
+                freq = preset in ("StrobeFreqRange", "PulseFreqRange")
+                try:
+                    a, b = (float(c.get("Res1")), float(c.get("Res2"))) if freq else (None, None)
+                except (TypeError, ValueError):
+                    a = b = None
+                fast = ("FastToSlow" in preset or re.search(r"fast\W*(to|-|>)\W*slow", text) is not None)
+                slow = ("SlowToFast" in preset or re.search(r"slow\W*(to|-|>)\W*fast", text) is not None)
+                info.append(_strobe_info(a, b, not preset.startswith("Pulse") and not _NOT_PLAIN_STROBE.search(text),
+                                         True if fast else False if slow else None))
         row["strobe_ranges"] = ranges or None
+        row["strobe_hz"] = info or None
         for c in caps:
             text = (c.text or "").strip()
             if c.get("Preset") == "ShutterOpen" or (_OPEN_TEXT.match(text) and "close" not in text.lower()):

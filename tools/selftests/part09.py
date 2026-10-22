@@ -8170,7 +8170,7 @@ def test_lights_fader() -> None:
                   [(b["kind"], (b.get("control") or {}).get("mode") or b.get("fx")) for b in tiles]
                   == [("fx", "pulse"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
                   and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
-            check("...each fader knows where its back-to-default button puts it", tiles[1].get("default") == 50 and tiles[3].get("default") == 47,
+            check("...each fader knows where its back-to-default button puts it", tiles[1].get("default") == 50 and tiles[3].get("default") == 31,
                   str([t.get("default") for t in tiles]))
             pulse, sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
             e.act("quick_press", id=pulse, down=True)
@@ -8356,3 +8356,66 @@ def test_look_shares_the_frame() -> None:
                   f"{kept[head['head_no']]} vs {plain}")
         finally:
             e.shutdown()
+
+
+def test_own_strobe() -> None:
+    """Strobe buttons: the desk's strobe (any light, 20 a second at most) or,
+    once the operator says so for a model, the light's own strobe channel -
+    even flashes, as fast as the file says the light goes (up to 30 Hz)."""
+    print("Strobe buttons on a light's own strobe")
+    from app import engine as eng
+    from app import fixlib
+
+    band = fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json")
+    rows = [r for m in band[0]["modes"] for r in m["detail"] if r.get("role") == "strobe"]
+    check("a fixture file's strobe Hz is read (Spot 260: 0 to 20.6 Hz, an even strobe)",
+          rows and (rows[0].get("strobe_hz") or [[None]])[0][:3] == [0.0, 20.6, True], str(rows[0].get("strobe_hz") if rows else None))
+    qlc = fixlib.load("qlc", "Astera/Astera-AX3-Lightdrop.qxf")
+    qhz = [x for m in qlc[0]["modes"] for r in m["detail"] for x in (r.get("strobe_hz") or [])]
+    check("...and a QLC+ file's (its StrobeFreqRange: 0.4 to 25 Hz)", [0.4, 25.0, True] in [x[:3] for x in qhz], str(qhz))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "s.db"
+        fixtures.store_parsed(db, band, "ofl:chauvet-dj/intimidator-spot-260.json")
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=1)
+            e.act("add_heads", query="LED PARty RGBW", qty=1)
+            b = e.act("quick_set", page=1, slot=1, button={"kind": "strobe", "label": "S", "hz": 25, "mode": "latch",
+                                                           "target": {"all": True}})
+            check("a strobe button goes up to 30 Hz", e.act("quick_set", page=1, slot=2, button={
+                "kind": "strobe", "hz": 99})["button"]["hz"] == 30, "")
+            e.act("quick_press", id=b["id"], down=True)
+            ov = e._override_vals()
+            check("by default the desk strobes every light, 20 a second at most (works on any light)",
+                  ov[1].get("strobe") == 20 and ov[2].get("strobe") == 20 and "strobe" not in (ov[1].get("set") or {}), str(ov))
+            r = e.act("own_strobe", head=1, on=True)
+            ov = e._override_vals()
+            check("its own strobe for the Spot 260: its channel at its fastest for 25 Hz, the desk no longer switches it",
+                  r.get("ok") and (ov[1].get("set") or {}).get("strobe") == 76 and not ov[1].get("strobe")
+                  and ov[1].get("strobe_shown") == 20.6, str((r, ov[1])))
+            check("...a light without one still gets the desk strobe", ov[2].get("strobe") == 20, str(ov[2]))
+            e.act("quick_set", page=1, slot=1, button={**b["button"], "hz": 10.3})
+            e.act("quick_press", id=b["id"], down=True)
+            check("...10.3 Hz lands half-way up its 0-20.6 Hz range", (e._override_vals()[1].get("set") or {}).get("strobe") == 42,
+                  str(e._override_vals()[1]))
+            st = e.attribute_state([1])
+            ent = next(x for p in st.get("pages", []) for x in p.get("attrs", []) if x["role"] == "strobe")
+            check("...the programmer shows the choice and the light's top speed",
+                  ent.get("own_strobe") is True and ent.get("own_hz") == 20.6, str({k: ent.get(k) for k in ("own_strobe", "own_hz")}))
+            e.act("own_strobe", head=1, on=False)
+            check("...and back to the desk strobe", e._override_vals()[1].get("strobe") == 10.3, str(e._override_vals()[1]))
+            r = e.act("own_strobe", head=2, on=True)
+            check("a light with no strobe range in its file can't be switched", not r.get("ok"), str(r))
+            # a strobe fader: 1 to 30 Hz; a show saved at 1-20 keeps its Hz
+            check("a strobe fader runs 1 to 30 Hz", e._fader_hz(0) == 1.0 and e._fader_hz(100) == 30.0, "")
+            old = e._clean_payload({"quick": [{"kind": "fader", "control": {"what": "lights", "mode": "strobe"}, "default": 47}]})
+            new = e._clean_payload({"quick": [{"kind": "fader", "control": {"what": "lights", "mode": "strobe"}, "default": 47}],
+                                    "strobe_fader_hz": 30})
+            check("...a show saved before keeps its strobe fader's default speed (9.9 Hz: 47 -> 31)",
+                  old["quick"][0]["default"] == 31 and new["quick"][0]["default"] == 47, str((old["quick"], new["quick"])))
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the programmer: Strobe buttons -> Desk strobe / Its own", '"own_strobe"' in pj and '"Strobe buttons"' in pj, "")

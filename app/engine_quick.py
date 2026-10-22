@@ -182,7 +182,7 @@ class QuickMixin:
         if kind == "flash":
             btn["level"] = int(_clamp(raw.get("level", 100), 0, 100))
         if kind == "strobe":
-            btn["hz"] = _fclamp(raw.get("hz", 10), 1, 20)
+            btn["hz"] = _fclamp(raw.get("hz", 10), 1, 30)
         if kind == "colour" and not btn["colour"]:
             raise ValueError("a colour button needs a colour")
         if kind == "fx":
@@ -408,7 +408,7 @@ class QuickMixin:
         if raw.get("dim") not in (None, ""):
             btn["dim"] = int(_clamp(raw["dim"], 0, 100))
         if raw.get("hz") not in (None, "", 0, "0"):
-            btn["hz"] = _fclamp(raw["hz"], 0.5, 25)
+            btn["hz"] = _fclamp(raw["hz"], 0.5, 30)
         if _truthy(raw.get("kill")):
             btn["kill"] = True
         keep = lambda r: r in ROLES and r not in FX_OUTPUT_ROLES \
@@ -853,8 +853,9 @@ class QuickMixin:
 
     @staticmethod
     def _fader_hz(v) -> float:
-        """A strobe fader's 0-100 as flashes a second: 1 to 20."""
-        return round(1.0 + float(v) * 0.19, 1)
+        """A strobe fader's 0-100 as flashes a second: 1 to 30 (a light's
+        own strobe; one without stops at 20)."""
+        return round(1.0 + float(v) * 0.29, 1)
 
     def _fader_speeds(self) -> list[tuple[set, float]]:
         """The speed faders that are not at 1x: (their lights, the speed)."""
@@ -887,7 +888,7 @@ class QuickMixin:
         tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
                  {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
                  {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10},
-                 {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 47}]
+                 {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 31}]
         total = lay["cols"] * lay["rows"]
         start = next((s for s in range(1, total - len(tiles) + 2)
                       if all(s + i not in used for i in range(len(tiles)))), None)
@@ -1566,6 +1567,7 @@ class QuickMixin:
                 out.setdefault(n, {}).setdefault("set", {}).update(sets)
         self._sound_overrides(out)
         self._desk_overrides(out, skip_parked=skip_parked)
+        self._own_strobes(out)
         return out
 
     def _quick_override_vals(self) -> dict:

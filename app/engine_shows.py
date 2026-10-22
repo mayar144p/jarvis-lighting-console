@@ -92,6 +92,7 @@ class ShowMixin:
             "selected": list(self.selected),
             "venue": self.venue,
             "quick": self.quick,
+            "strobe_fader_hz": 30,
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_layout": self.__dict__.get("quick_layout") or {},
             "sound": self._sound_cfg(),
@@ -241,6 +242,13 @@ class ShowMixin:
         for key in ("meta", "palettes", "quick_names", "programmer"):
             if not isinstance(payload.get(key), dict):
                 out[key] = {}
+        if out["quick"] and payload.get("strobe_fader_hz") != 30:
+            # saved when a strobe fader went 1-20 Hz (now 1-30): its default
+            # keeps the same flashes a second
+            for b in out["quick"]:
+                if b.get("kind") == "fader" and isinstance(b.get("control"), dict) \
+                        and b["control"].get("mode") == "strobe" and isinstance(b.get("default"), (int, float)):
+                    b["default"] = max(0, min(100, round(float(b["default"]) * 0.19 / 0.29)))
         out["palettes"] = {k: v for k, v in out["palettes"].items() if isinstance(v, list)}
         groups, taken = [], set()
         for g in out["groups"]:
@@ -409,6 +417,7 @@ class ShowMixin:
                 "playbacks": [self._pb_saved(pb) for pb in self.playbacks],
                 "venue": json.loads(json.dumps(self.venue, default=str)),
                 "quick": json.loads(json.dumps(self.quick, default=str)),
+                "strobe_fader_hz": 30,
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "quick_layout": json.loads(json.dumps(self.__dict__.get("quick_layout") or {})),
                 "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),

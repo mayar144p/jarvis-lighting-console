@@ -1058,6 +1058,10 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             entry["open"] = self._open_value(heads[0], role)
             entry["open_known"] = self._open_known(heads[0], role)
             entry["steps"] = self.strobe_steps(heads[0], role)
+            band = self._strobe_band(heads[0])
+            if band:
+                entry["own_strobe"] = self._own_strobe(heads[0]) is not None
+                entry["own_hz"] = band["hz_hi"] if band["known"] else None
         if role.startswith("aux") and heads:
             d = self.head_ranges(heads[0]).get(role) or {}
             entry["name"] = str(d.get("name") or role)

@@ -348,19 +348,20 @@ class FxLayerMixin:
         fixture's file marks as strobe (never an 'open' value)."""
         if over and over.get("strobe"):
             return round(float(over["strobe"]), 2)
+        if over and over.get("strobe_shown"):       # a strobe on its own channel
+            return round(float(over["strobe_shown"]), 2)
         role = self._shutter_role(head)
         if role is None or role not in values:
             return 0.0
         v = max(0, min(255, int(values[role])))
         rng = self.head_ranges(head).get(role) or {}
-        ranges = rng.get("strobe_ranges")
-        if ranges:
-            for lo, hi in ranges:
-                if lo <= v <= hi:
-                    pos = (v - lo) / max(1, hi - lo)
-                    if self._strobe_fast_first(rng, lo, hi):      # "fast to slow"
+        if rng.get("strobe_ranges"):
+            for band in self._strobe_bands(head, role):
+                if band["lo"] <= v <= band["hi"]:
+                    pos = (v - band["lo"]) / max(1, band["hi"] - band["lo"])
+                    if band["fast_first"]:                       # "fast to slow"
                         pos = 1 - pos
-                    return round(1 + 19 * pos, 2)
+                    return round(max(0.5, band["hz_lo"] + (band["hz_hi"] - band["hz_lo"]) * pos), 2)
             return 0.0
         opened = self._open_value(head, role)
         if v > opened + 8 and v < 248:        # no ranges known: a guess
@@ -385,6 +386,108 @@ class FxLayerMixin:
                     return False
         return False
 
+    # a strobe range whose file doesn't say its Hz: taken as 1 to 20
+    STROBE_ASSUMED_HZ = (1.0, 20.0)
+    # the desk's own strobe (switching the light on and off) can't go
+    # faster: one DMX frame on, one off at 40 frames a second
+    DESK_STROBE_MAX_HZ = 20.0
+
+    def _strobe_bands(self, head: dict, role: str) -> list[dict]:
+        """Each strobe range of this light's shutter channel: {lo, hi, hz_lo,
+        hz_hi, known (the Hz is from the file), plain (an even strobe, not
+        random / pulse / ramps), fast_first}."""
+        rng = self.head_ranges(head).get(role) or {}
+        info = rng.get("strobe_hz") or []
+        out = []
+        for i, pair in enumerate(rng.get("strobe_ranges") or []):
+            try:
+                lo, hi = int(pair[0]), int(pair[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            a, b, plain, ff = (list(info[i]) + [None] * 4)[:4] if i < len(info) and info[i] else (None,) * 4
+            if plain is None:          # stored before the Hz was read: its words
+                text = " ".join(str(c[2]) for c in rng.get("caps") or []
+                                if len(c) > 2 and int(c[0]) <= hi and int(c[1]) >= lo)
+                plain = not re.search(r"random|puls|ramp|lightning|sound|music|fast on|slow on", text, re.I)
+            if isinstance(a, (int, float)) and isinstance(b, (int, float)) and a != b:
+                out.append({"lo": lo, "hi": hi, "hz_lo": float(min(a, b)), "hz_hi": float(max(a, b)),
+                            "known": True, "plain": bool(plain), "fast_first": a > b})
+            else:
+                out.append({"lo": lo, "hi": hi, "hz_lo": self.STROBE_ASSUMED_HZ[0], "hz_hi": self.STROBE_ASSUMED_HZ[1],
+                            "known": False, "plain": bool(plain),
+                            "fast_first": bool(ff) if ff is not None else self._strobe_fast_first(rng, lo, hi)})
+        return out
+
+    def _strobe_band(self, head: dict) -> dict | None:
+        """The light's own even strobe range - {role, lo, hi, hz_lo, hz_hi,
+        ...} - or None when its file names none."""
+        role = self._shutter_role(head)
+        if role is None:
+            return None
+        bands = self._strobe_bands(head, role)
+        band = next((b for b in bands if b["plain"]), None)
+        return {**band, "role": role} if band else None
+
+    def _own_strobe(self, head: dict) -> dict | None:
+        """The strobe range a strobe button drives instead of switching the
+        light on and off itself - only once the operator has said this
+        model's own strobe really strobes it (Programmer -> Beam): a file
+        that doesn't match the real light would turn it off instead."""
+        band = self._strobe_band(head)
+        if band is None or not (self.head_ranges(head).get(band["role"]) or {}).get("own_strobe"):
+            return None
+        return band
+
+    def _a_own_strobe(self, head=None, on=True, **_):
+        """Strobe buttons on this model use its own strobe channel (even
+        flashes, as fast as the light goes), or - off - the desk's strobe
+        (switching it on and off, 20 a second at most).  For every head of
+        the same model and mode."""
+        if head is None:
+            head = self._require_selection()[0]["head_no"]
+        h = self._head(int(head))
+        band = self._strobe_band(h)
+        if band is None:
+            raise ValueError(f"{h.get('model')}: its file names no strobe range the desk can use")
+        on = _truthy(on)
+        fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
+                              band["role"], "own_strobe", True if on else None)
+        fixtures.invalidate_cache()
+        self._drop_fixture_caches()
+        top = f"up to {band['hz_hi']:g} Hz" if band["known"] else "as fast as it goes"
+        return {"own": on, "summary": f"{h.get('model')}: strobe buttons use its own strobe ({top})" if on
+                else f"{h.get('model')}: strobe buttons use the desk strobe (20 Hz at most)"}
+
+    @staticmethod
+    def _strobe_dmx(band: dict, hz: float) -> int:
+        """The value in this strobe range for `hz` (its fastest beyond it)."""
+        span = band["hz_hi"] - band["hz_lo"]
+        f = 1.0 if span <= 0 else max(0.0, min(1.0, (float(hz) - band["hz_lo"]) / span))
+        if band["fast_first"]:
+            f = 1.0 - f
+        return int(round(band["lo"] + (band["hi"] - band["lo"]) * f))
+
+    def _own_strobes(self, out: dict) -> None:
+        """A strobe on a light (a button, a fader, the desk strobe) runs on
+        the light's own strobe channel when it has one: even flashes, as
+        fast as the light can go.  Otherwise the desk switches it on and
+        off, which can't go past 20 a second."""
+        by = None
+        for n, o in out.items():
+            hz = o.get("strobe")
+            if not hz:
+                continue
+            if by is None:
+                by = {h["head_no"]: h for h in self.patch}
+            head = by.get(n)
+            own = self._own_strobe(head) if head is not None else None
+            if own is None:
+                o["strobe"] = min(float(hz), self.DESK_STROBE_MAX_HZ)
+                continue
+            o.setdefault("set", {})[own["role"]] = self._strobe_dmx(own, float(hz))
+            o["strobe_shown"] = min(float(hz), own["hz_hi"])     # for the 3D view
+            o.pop("strobe", None)
+
     def strobe_steps(self, head: dict, role: str) -> dict:
         """{off, slow, medium, fast}: DMX values for the programmer's strobe
         buttons, inside this light's own first strobe range and the right
@@ -394,9 +497,12 @@ class FxLayerMixin:
         off = self._open_value(head, role)
         ranges = rng.get("strobe_ranges") or []
         if ranges:
-            lo, hi = (int(x) for x in ranges[0])
+            # its even strobe (not a random / pulse range that comes first)
+            bands = self._strobe_bands(head, role)
+            band = next((b for b in bands if b["plain"]), None)
+            lo, hi = (band["lo"], band["hi"]) if band else (int(x) for x in ranges[0])
             at = lambda f: int(round(lo + (hi - lo) * f))  # noqa: E731
-            if self._strobe_fast_first(rng, lo, hi):
+            if (band["fast_first"] if band else self._strobe_fast_first(rng, lo, hi)):
                 return {"off": off, "slow": at(0.95), "medium": at(0.5), "fast": at(0.05)}
             return {"off": off, "slow": at(0.05), "medium": at(0.5), "fast": at(0.95)}
         lo = max(off + 8, 64)

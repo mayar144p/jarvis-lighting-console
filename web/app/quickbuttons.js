@@ -434,7 +434,7 @@ function render(force = false) {
 // drawn once, their numbers kept current from the live feed.
 const snapOrLite = (k) => (state.lite && state.lite[k] !== undefined ? state.lite[k] : state.snap && state.snap[k]);
 function faderValue(c, b) {
-  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? (c.mode === "speed" ? 50 : c.mode === "strobe" ? 47 : 0);
+  if (c.what === "lights") return ((quick().faders || {})[b && b.id]) ?? (c.mode === "speed" ? 50 : c.mode === "strobe" ? 31 : 0);
   if (c.what === "master") return snapOrLite("master") ?? 100;
   if (c.what === "speed") return Math.round(Math.min(100, (snapOrLite("speed_master") || 1) * 50));
   if (c.what === "playback") {
@@ -447,9 +447,9 @@ function faderValue(c, b) {
 // where a fader's ↺ puts it: the operator's own default, else the natural one
 // (speed 1x, the masters full, a brightness fader down)
 const faderHome = (c, b) => (b && b.default != null ? b.default
-  : c.what === "speed" || c.mode === "speed" ? 50 : c.mode === "strobe" ? 47 : c.what === "lights" && (c.mode || "level") === "level" ? 0 : 100);
+  : c.what === "speed" || c.mode === "speed" ? 50 : c.mode === "strobe" ? 31 : c.what === "lights" && (c.mode || "level") === "level" ? 0 : 100);
 const faderText = (c, v) => c.what === "speed" || c.mode === "speed" ? `${Math.max(0.1, v / 50).toFixed(2).replace(/0$/, "")}×`
-  : c.mode === "strobe" ? `${(1 + v * 0.19).toFixed(1).replace(/\.0$/, "")} Hz` : `${Math.round(v)}%`;
+  : c.mode === "strobe" ? `${(1 + v * 0.29).toFixed(1).replace(/\.0$/, "")} Hz` : `${Math.round(v)}%`;
 
 function controlTile(b) {
   const el = h("div.qbtn.qctl.q" + b.kind, { dataset: { id: b.id } });
@@ -992,7 +992,7 @@ function editButton(slot, btn) {
         kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
           ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"],
           ["speed", "Effect speed", "How fast their effects and moves run: the middle is as set, up to twice as fast, down to a tenth"],
-          ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 20 a second"]], c.mode || "level",
+          ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 30 a second - on the light's own strobe; a light without one stops at 20"]], c.mode || "level",
         (v) => { c.mode = v; draw(); })));
       }
       kids.push(row("Default", slider(s.fdefault ?? faderHome(c), 0, 100, 1, (v) => { s.fdefault = v; }),
@@ -1004,8 +1004,10 @@ function editButton(slot, btn) {
     if (d === "cuelist") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), s.playback, (v) => { s.playback = v; draw(); })));
     if (d === "colour") kids.push(row("Colour", swatches(SWATCH, s.colour || "#ffffff", (c) => { s.colour = c; draw(); })));
     if (d === "strobe") {
-      kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"]], s.hz,
-        (v) => { s.hz = v; draw(); }), slider(s.hz, 1, 20, 0.5, (v) => { s.hz = v; }, " Hz")));
+      kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"], [30, "Fastest"]], s.hz,
+        (v) => { s.hz = v; draw(); }), slider(s.hz, 1, 30, 0.5, (v) => { s.hz = v; }, " Hz")));
+      kids.push(h("div.qe-note", "On each light's own strobe channel when it has one (even flashes, up to what that light can do); "
+        + "a light without one is switched on and off by the desk, 20 a second at most."));
       kids.push(row("Colour", swatches(SWATCH, s.colour, (c) => { s.colour = c; draw(); }, { none: "Keep their colour" })));
     }
     if (d === "fx") {
@@ -1058,7 +1060,7 @@ function editButton(slot, btn) {
       if (s.mix.level) kids.push(row("Level", slider(s.level, 5, 100, 5, (v) => { s.level = v; })));
       if (s.mix.dim) kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
       if (s.mix.colour) kids.push(row("Colour", swatches(SWATCH, s.colour || "#ff0000", (c) => { s.colour = c; draw(); })));
-      if (s.mix.strobe) kids.push(row("Strobe", slider(s.hz, 1, 20, 0.5, (v) => { s.hz = v; }, " Hz")));
+      if (s.mix.strobe) kids.push(row("Strobe", slider(s.hz, 1, 30, 0.5, (v) => { s.hz = v; }, " Hz")));
       if (d === "custom" || !s.recapture) {
         kids.push(row("Effects (up to 4)", chips(FX, s.fxList, (v) => {
           s.fxList = s.fxList.includes(v) ? s.fxList.filter((x) => x !== v) : [...s.fxList, v].slice(-4);
