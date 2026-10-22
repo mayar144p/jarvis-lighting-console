@@ -175,6 +175,11 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     if blackout:
         for role in fx_out:                   # blackout stops every effect
             resolved[role] = int((rest or {}).get(role, 0))
+    # a BLACKOUT button on a laser (a group's, or Blackout all): dark while
+    # held, like its lights - the output channel back to off
+    dark_laser = bool(over and over.get("kill"))
+    if dark_laser and "laser_on" in head["map"]:
+        resolved["laser_on"] = int((rest or {}).get("laser_on", 0))
     # A head WITH a dimmer rests with its shutter open: the dimmer is the
     # brightness, and a shutter left at 0 is CLOSED on many movers (a
     # Chauvet Intimidator), which is "it moves but gives no light".
@@ -192,7 +197,7 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # A programmed mode / colour is kept aside and used while it is on.
     switch = (rest or {}).get("_laser_switch")
     if switch:
-        live = ((over or {}).get("set") or {}).get("_laser_live") and not blackout
+        live = ((over or {}).get("set") or {}).get("_laser_live") and not blackout and not dark_laser
         for role, (off, lo, hi, on) in switch.items():
             for key in [k for k in resolved if k.startswith(role + "@")]:
                 del resolved[key]
@@ -208,7 +213,7 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     beams = [r for r in head["map"] if r in _BEAMS]
     if beams:
         live_set = (over or {}).get("set") or {}
-        if live_set.get("_laser_live") and not blackout:
+        if live_set.get("_laser_live") and not blackout and not dark_laser:
             if not any(resolved.get(r) for r in beams):
                 on = int(live_set.get("_beam_on", 255))
                 for r in beams:

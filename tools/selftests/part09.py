@@ -8647,3 +8647,43 @@ def test_buttons_between_pages() -> None:
           'row("Page", chips(pageChoices()' in qb and 'to_slot: "free"' in qb and "function pagesThere" in qb
           and '"+"' in qb and "qb-newpage" in qb, "")
     check("Make a button: On the page", '"On the page"' in pj and "page: toPage" in pj, "")
+
+
+def test_blackout_buttons_lasers() -> None:
+    """A BLACKOUT button (a group's, or Blackout all) darkens a fired laser
+    while held, like its lights; let go, it shines again."""
+    print("Blackout buttons darken the lasers")
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "l.db"
+        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=1)
+            m = e.patch[0]["map"]
+            on_i, b1 = m.index("laser_on"), m.index("laser_beam1")
+            e.act("group_create", name="Lazers", heads=[1])
+            g = e.groups[-1]["n"]
+            e.act("select_heads", heads=[1])
+            e.act("set_attribute", attribute="laser_beam1", value=255)
+            lb = e.act("quick_from_laser", heads=[1], label="L")["button"]["id"]
+            e.act("clear")
+            e.act("fx_arm", state=True, minutes="until")
+            e.act("quick_press", id=lb, down=True)
+
+            def lit():
+                u = e.build_frames(time.monotonic())[1]
+                return u[on_i] > 0 or u[b1] > 0
+            check("the laser shines", lit(), "")
+            for label, button in (("a group's BLACKOUT button", {"kind": "kill", "target": {"group": g}}),
+                                  ("Blackout all", {"kind": "blackout"})):
+                bid = e.act("quick_set", page=2, slot=1, button={"label": "BO", "mode": "hold", **button})["id"]
+                e.act("quick_press", id=bid, down=True)
+                dark = not lit()
+                e.act("quick_press", id=bid, down=False)
+                check(f"{label} darkens the laser while held; let go, it shines again", dark and lit(), "")
+        finally:
+            e.shutdown()
