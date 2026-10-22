@@ -125,6 +125,10 @@ class QuickMixin:
         tint = _hex_or_none(raw.get("tint"))
         if tint:
             btn["tint"] = tint
+        # the line under its name: the operator's own words, or nothing
+        note = str(raw.get("note") or "").strip()[:40]
+        if note:
+            btn["note"] = note
         # its effects' own speed, and whether the Speed master moves them
         if kind in ("fx", "move", "custom"):
             if raw.get("rate") not in (None, "", 1, "1", 1.0):
@@ -1789,7 +1793,7 @@ class QuickMixin:
             return {"summary": "button not changed"}
         if not btn:
             raise ValueError("no button is open in the programmer")
-        carry = ("label", "mode", "exclusive", "seconds", "quant", "key", "midi", "rate", "free",
+        carry = ("label", "note", "mode", "exclusive", "seconds", "quant", "key", "midi", "rate", "free",
                  "fade_in", "fade_out", "hold", "order", "offset", *self.STYLE_KEYS)
         raw = {k: btn[k] for k in carry if k in btn}
         raw.update(kind="custom", target=dict(btn.get("target") or {"all": True}))
