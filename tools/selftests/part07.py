@@ -1438,9 +1438,9 @@ def test_co2_preset() -> None:
             e.shutdown()
     js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
-    check("a hold is released by any pointer release, and stop waits for start",
+    check("a hold is released by any pointer release; stop waits for start (a button: numbered presses)",
           'addEventListener("pointerup", releaseAll, true)' in js and "started.then(() => stop())" in js
-          and "before.then(() => run(\"quick_press\"" in qb, "")
+          and "seq: ++pressSeq, client: CLIENT" in qb, "")
 
 
 def test_aux_channels() -> None:

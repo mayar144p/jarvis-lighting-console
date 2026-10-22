@@ -16,8 +16,10 @@ const CONFETTI = [0xff3b6b, 0xffd23b, 0x3bb8ff, 0x62ff8a, 0xff8a1a, 0xb45cff, 0x
 const KINDS = {
   confetti: { n: 1400, rate: 420, life: [4, 6.5], speed: [6.5, 9.5], spread: 0.32, gravity: -3.2, drag: 1.4,
     size: 0.11, additive: false, flutter: 1.2, floor: true },
-  co2: { n: 900, rate: 520, life: [0.45, 0.95], speed: [9, 12], spread: 0.07, gravity: 0.8, drag: 2.4,
-    size: 0.55, additive: false, alpha: 0.28, colour: [0.92, 0.95, 1] },
+  // (half the puffs, each a little thicker: CO2 fired on every beat kept
+  // the screen too busy to send the next press on time)
+  co2: { n: 450, rate: 260, life: [0.45, 0.95], speed: [9, 12], spread: 0.07, gravity: 0.8, drag: 2.4,
+    size: 0.6, additive: false, alpha: 0.4, colour: [0.92, 0.95, 1] },
   flame: { n: 700, rate: 420, life: [0.3, 0.65], speed: [4.5, 6.5], spread: 0.12, gravity: 2, drag: 1.2,
     size: 0.55, additive: true, alpha: 0.9, fire: true },
   spark: { n: 900, rate: 520, life: [0.7, 1.4], speed: [3.8, 5.6], spread: 0.14, gravity: -7, drag: 0.35,
