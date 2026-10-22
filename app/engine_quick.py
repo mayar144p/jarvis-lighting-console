@@ -828,7 +828,7 @@ class QuickMixin:
             who = self._head(nums[0]).get("name") or f"#{nums[0]}" if len(nums) == 1 else f"{len(nums)} lights"
         page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
-        used = {b["slot"] for b in self.quick if b["page"] == page}
+        used = self._quick_taken(page, lay["cols"])
         total = lay["cols"] * lay["rows"]
         start = next((s for s in range(1, total - len(cols) + 2)
                       if all(s + i not in used for i in range(len(cols)))), None)
@@ -883,7 +883,7 @@ class QuickMixin:
         target = {"group": g["n"]}
         page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
-        used = {b["slot"] for b in self.quick if b["page"] == page}
+        used = self._quick_taken(page, lay["cols"])
         tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
                  {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
                  {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10},
@@ -903,6 +903,16 @@ class QuickMixin:
         return {"ids": ids, "page": page,
                 "summary": f"{g['name']}: pulse, speed, strobe and strobe speed on page {page}"}
 
+    def _quick_taken(self, page: int, cols: int) -> set:
+        """The places on a page with a button - or under a big one."""
+        taken = set()
+        for b in self.quick:
+            if b["page"] == page:
+                taken.add(b["slot"])
+                if int(b.get("w") or 1) > 1 or int(b.get("h") or 1) > 1:
+                    taken |= set(self._quick_cells(b, int(cols), self.QUICK_SLOTS))
+        return taken
+
     def _quick_free_slot(self, page=None) -> tuple[int, int]:
         """The first empty (page, slot), from `page` on (default page 1)."""
         start = int(_clamp(page or 1, 1, self.QUICK_PAGES))
@@ -910,10 +920,22 @@ class QuickMixin:
         lays = self._quick_layouts()
         for p in range(start, self.QUICK_PAGES + 1):
             lay = {**self.LAYOUT_DEFAULT, **lays.get(str(p), {})}
+            cols, rows = int(lay["cols"]), int(lay["rows"])
+            # never inside a big button: the places it covers count as taken
+            covered = set()
+            for b in self.quick:
+                if b["page"] == p and (int(b.get("w") or 1) > 1 or int(b.get("h") or 1) > 1):
+                    covered |= set(self._quick_cells(b, cols, self.QUICK_SLOTS))
             # a place the page shows (one past its last row would be hidden)
-            for sl in range(1, int(lay["cols"]) * int(lay["rows"]) + 1):
-                if (p, sl) not in used:
+            for sl in range(1, cols * rows + 1):
+                if (p, sl) not in used and sl not in covered:
                     return p, sl
+            # the page is full: a new row on it, when it can take one
+            if p == start and (rows + 1) * cols <= self.QUICK_SLOTS:
+                for sl in range(cols * rows + 1, cols * (rows + 1) + 1):
+                    if (p, sl) not in used and sl not in covered:
+                        self._a_quick_layout(page=p, rows=rows + 1)
+                        return p, sl
         raise ValueError("no empty button left")
 
     def _a_group_flash(self, heads=None, group=None, auto=None, down=True, level=100, **_):

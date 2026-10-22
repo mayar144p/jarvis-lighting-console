@@ -8206,6 +8206,12 @@ def test_lights_fader() -> None:
             check("a bigger button takes its space: the ones in the way move over (none lost)",
                   big["button"].get("w") == 2 and at.get("Big") == 1 and len(big.get("moved") or []) == 3
                   and len(at) == 5 and not {at["B2"], at["B9"], at["B10"]} & {1, 2, 9, 10} and at["F"] == 3, str(at))
+            # a new button never lands inside a big one; a full page gets a new row
+            e.act("quick_layout", page=5, cols=4, rows=2)
+            e.act("quick_set", page=5, slot=1, button={"kind": "flash", "label": "Wide", "w": 2, "h": 2})
+            free = [e.act("quick_set", page=5, slot="free", button={"kind": "flash", "label": f"N{k}"})["id"] for k in range(5)]
+            check("new buttons take the next free place, never inside a big button, then a new row",
+                  free == ["q5-3", "q5-4", "q5-7", "q5-8", "q5-9"] and e._quick_public()["layout"]["5"]["rows"] == 3, str(free))
             lay = e.act("quick_layout", page=4, height="xl")
             check("row height: Small..Extra large, and Fill (the rows share the space)", lay.get("ok", True)
                   and e.act("quick_layout", page=4, height="fit").get("ok", True) and "fit" in e.QUICK_HEIGHTS, str(lay))
