@@ -196,15 +196,18 @@ function renderGroupMasters() {
         // kept here too: the fader stays where it was put until the next snapshot says otherwise
         const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
         if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
+        if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
         run("group_master", { group: g.n, level: v }, { silentError: true });
       }, 60) });
       grpFaders.set(g.n, { f, num });
       return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label", g.name.slice(0, 8), " ", num));
     }));
   }
+  const live = (state.lite && state.lite.group_masters) || {};
   for (const g of groups) {
     const it = grpFaders.get(g.n);
-    if (it) { it.f.set(g.master ?? 100); it.num.textContent = g.master ?? 100; }
+    const v = live[g.n] ?? g.master ?? 100;            // the live feed first: it is always current
+    if (it) { it.f.set(v); it.num.textContent = v; }
   }
 }
 

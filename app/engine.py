@@ -1380,6 +1380,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "dry_run": self.dry_run,
                 "live": self.live,
                 "master": self.master,
+                # the group faders, here too: moving one sends no new snapshot
+                "group_masters": {str(g["n"]): g.get("master", 100) for g in self.groups},
                 "speed_master": self.speed_master,
                 "tempo": self.tempo_public(),
                 "sound": self.sound_public(),

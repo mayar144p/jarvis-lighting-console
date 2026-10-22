@@ -11,7 +11,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, vfader } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -528,6 +528,48 @@ function updateControls() {
 }
 
 // ------------------------------------------------------------- full screen
+// The group faders and the GM beside the buttons in full screen (the dock
+// with them is hidden there): the same masters, so both stay in step.
+let sideKey = "";
+const sideFaders = new Map();
+function renderSideFaders() {
+  const box = $("#qb-faders");
+  if (!box) return;
+  if (!$("#qb").classList.contains("qb-full")) { if (sideKey) { box.replaceChildren(); sideKey = ""; sideFaders.clear(); } return; }
+  const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
+  const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
+  if (key !== sideKey) {
+    sideKey = key;
+    sideFaders.clear();
+    const one = (id, name, title, send) => {
+      const el = h("div.vfader", { "aria-label": title });
+      const num = h("output");
+      const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => { num.textContent = v; send(v); }, 60) });
+      sideFaders.set(id, { f, num });
+      return h("div.master.qb-side" + (id === "gm" ? ".gm" : ""), { title }, el, h("span.m-label", name, " ", num));
+    };
+    box.replaceChildren(...groups.map((g) => one(g.n, g.name.slice(0, 8), `${g.name}: a master for this group`, (v) => {
+      const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
+      if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
+      if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
+      run("group_master", { group: g.n, level: v }, { silentError: true });
+    })), one("gm", "GM", "Grand master: every light", (v) => {
+      if (state.snap) state.snap.master = v;
+      if (state.lite) state.lite.master = v;
+      run("master", { level: v }, { silentError: true });
+    }));
+  }
+  const live = (state.lite && state.lite.group_masters) || {};
+  for (const g of groups) {
+    const it = sideFaders.get(g.n);
+    const v = live[g.n] ?? g.master ?? 100;
+    if (it) { it.f.set(v); it.num.textContent = v; }
+  }
+  const gm = sideFaders.get("gm");
+  const m = state.lite && state.lite.master != null ? state.lite.master : (state.snap && state.snap.master) ?? 100;
+  if (gm) { gm.f.set(m); gm.num.textContent = m; }
+}
+
 function setFull(on) {
   const box = $("#qb");
   box.classList.toggle("qb-full", on);
@@ -536,6 +578,7 @@ function setFull(on) {
   if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
   if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
   render(true);
+  renderSideFaders();
 }
 
 // ---------------------------------------------------------------- editor
@@ -1200,7 +1243,9 @@ export function initQuickButtons() {
       el.classList.toggle("pending", waiting.has(el.dataset.id));     // waiting for its beat
     });
     updateControls();
+    renderSideFaders();
   });
+  on("snapshot", () => renderSideFaders());
   // a held button must never stay stuck on if the window loses focus
   window.addEventListener("blur", () => {
     for (const id of [...held]) {

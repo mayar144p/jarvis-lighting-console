@@ -8170,6 +8170,8 @@ def test_lights_fader() -> None:
             e.act("group_master", group=g.get("n", 1), level=30)
             check("...move the other and it takes over the lights they share; a light only in the first stays",
                   abs(a(1) - 0.3) < 0.02 and abs(a(3) - 0.3) < 0.02 and a(2) == two, f"{a(1)} {a(2)} {a(3)}")
+            check("the live feed carries the group faders (every screen's faders stay current)",
+                  e.lite().get("group_masters", {}).get(str(g.get("n", 1))) == 30, str(e.lite().get("group_masters")))
             e.act("group_master", group=g.get("n", 1), level=100)
             e.act("group_master", group=g2.get("n", 2), level=100)
             e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed", "default": 70})
@@ -8182,6 +8184,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+          and "renderSideFaders" in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")
