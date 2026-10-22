@@ -7825,6 +7825,14 @@ def test_b4_movement() -> None:
             check("...edited and saved, it still has no copy of the other's wave", not blue.get("fx_list"), str(blue.get("fx_list")))
             check("...and the wave button runs on", b["id"] in e.quick_active
                   and any(f.get("lib") == "range" for f in e.fx), str(sorted(e.quick_active)))
+            # the Move tab changing a number: the movement is replaced, never stacked
+            if b["id"] in e.quick_active:
+                e.act("quick_press", id=b["id"], down=True)        # (the Wave button off: it holds light 1)
+            for tilt in (10, 20, 30):
+                rr = e.act("run_fx", name="range", heads=[1], replace=True, params={"tilt_a": -tilt, "tilt_b": tilt, "pan_a": 0, "pan_b": 0})
+            ranges = [f for f in e.fx if f.get("lib") == "range" and not f.get("live")]
+            check("changing A -> B's degrees replaces the movement (one, not three stacked)",
+                  len(ranges) == 1 and ranges[0]["params"]["tilt_b"] == 30, f"{len(ranges)} {rr} {[(f.get('lib'), f.get('live'), f.get('cue_pb')) for f in e.fx]}")
             # Move speed: this movement's speed, pan and tilt together, live; the desk's master untouched
             mv = next(f for f in e.fx if f.get("lib") == "range")
             e.act("fx_tweak", id=mv["id"], params={"speed": 0.25, "pan_speed": 0.0, "tilt_speed": 0.5})
@@ -7838,7 +7846,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
@@ -8215,7 +8223,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "renderSideFaders" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "renderSideFaders" in qb and "stripMenu" in qb and "jarvis.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     check("the screen: Fader -> Some lights (their brightness / a master), with Which lights",
           '"Some lights"' in qb and '"Their brightness"' in qb and 'what === "lights"' in qb, "")

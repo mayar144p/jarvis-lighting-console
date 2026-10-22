@@ -169,16 +169,20 @@ async function startMove(name) {
   const heads = movers().map((x) => x.head_no);
   if (!heads.length) { toast("Select a moving light first"); return; }
   for (const f of running()) {
-    if (f.heads.some((n) => heads.includes(n))) await run("stop_fx", { id: f.id }, { silentError: true });
+    if (f.heads.some((n) => heads.includes(n)) && (f.lib === "shape" || f.lib === "roam")) await run("stop_fx", { id: f.id }, { silentError: true });
   }
-  run("run_fx", { name, params: params(), heads, across: knobs.across && multiTilt() }, { toast: true });
+  // replace: the desk swaps out the movement already on these lights (never two at once)
+  run("run_fx", { name, params: params(), heads, across: knobs.across && multiTilt(), replace: true }, { toast: true });
 }
 
 // a Wave 360 has four tilts: a movement can run across them (a tilt wave)
 const multiTilt = () => movers().some((x) => (x.map || []).filter((r) => r === "tilt").length > 1);
 
 // a knob changed while a movement runs on these lights: restart it with the new knobs
-async function reapply() {
+// (one at a time: two quick changes must not both start one)
+let reapplying = Promise.resolve();
+function reapply() { reapplying = reapplying.then(reapplyNow, reapplyNow); return reapplying; }
+async function reapplyNow() {
   const heads = movers().map((x) => x.head_no);
   const mine = running().filter((f) => f.heads.some((n) => heads.includes(n)));
   for (const f of mine) {
@@ -188,7 +192,7 @@ async function reapply() {
       await run("run_shape", { id: f.params.shape, heads: f.heads, speed: p.speed, size: p.size, spread: p.spread, direction: p.direction, zone: p.zone }, { silentError: true });
       continue;
     }
-    await run("run_fx", { name: f.lib, params: params(), heads: f.heads, across: knobs.across && multiTilt() }, { silentError: true });
+    await run("run_fx", { name: f.lib, params: params(), heads: f.heads, across: knobs.across && multiTilt(), replace: true }, { silentError: true });
   }
 }
 

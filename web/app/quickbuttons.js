@@ -533,9 +533,44 @@ function updateControls() {
 // with them is hidden there): the same masters, so both stay in step.
 let sideKey = "";
 const sideFaders = new Map();
+// where the full-screen sliders sit, which way they run and how long they
+// are - set from their own ⚙, remembered on this computer
+const STRIP_DEFAULT = { place: "bottom", dir: "h", size: "m" };
+function stripLook() {
+  try { return { ...STRIP_DEFAULT, ...JSON.parse(localStorage.getItem("jarvis.qbStrip") || "{}") }; } catch { return { ...STRIP_DEFAULT }; }
+}
+function setStripLook(k, v) {
+  const cur = { ...stripLook(), [k]: v };
+  try { localStorage.setItem("jarvis.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
+  applyStripLook();
+}
+function applyStripLook() {
+  const box = $("#qb-faders");
+  if (!box) return;
+  const s = stripLook();
+  box.dataset.place = s.place;
+  box.dataset.dir = s.dir;
+  box.dataset.size = s.size;
+  const body = box.parentElement;
+  if (body) body.dataset.place = s.place;
+}
+function stripMenu(anchor) {
+  const s = stripLook();
+  const pick = (k, v, label) => ({ label: (s[k] === v ? "● " : "○ ") + label, run: () => setStripLook(k, v) });
+  menu(anchor, [
+    pick("place", "bottom", "Under the buttons"), pick("place", "top", "Above the buttons"),
+    pick("place", "left", "Left of the buttons"), pick("place", "right", "Right of the buttons"),
+    "-",
+    pick("dir", "h", "Sliders across (horizontal)"), pick("dir", "v", "Sliders up and down (vertical)"),
+    "-",
+    pick("size", "s", "Short"), pick("size", "m", "Medium"), pick("size", "l", "Long"),
+  ]);
+}
+
 function renderSideFaders() {
   const box = $("#qb-faders");
   if (!box) return;
+  applyStripLook();
   if (!$("#qb").classList.contains("qb-full")) { if (sideKey) { box.replaceChildren(); sideKey = ""; sideFaders.clear(); } return; }
   const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
   const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
@@ -555,7 +590,9 @@ function renderSideFaders() {
       return h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
         h("span.qb-side-top", h("b", name), num), inp);
     };
-    box.replaceChildren(...groups.map((g) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
+    const gear = h("button.qmini.qb-strip-gear", { title: "Where the sliders sit, which way they run, how long they are",
+      onclick: (e) => { e.stopPropagation(); stripMenu(e.currentTarget); } }, "⚙");
+    box.replaceChildren(gear, ...groups.map((g) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
       const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
       if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
       if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
