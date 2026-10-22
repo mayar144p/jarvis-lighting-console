@@ -572,7 +572,7 @@ function renderSideFaders() {
   if (!box) return;
   applyStripLook();
   if (!$("#qb").classList.contains("qb-full")) { if (sideKey) { box.replaceChildren(); sideKey = ""; sideFaders.clear(); } return; }
-  const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
+  const groups = ((state.snap && state.snap.groups) || []).slice(0, 16);
   const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
   if (key !== sideKey) {
     sideKey = key;
