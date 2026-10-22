@@ -8623,7 +8623,7 @@ def test_buttons_between_pages() -> None:
         try:
             e.act("add_heads", query="LED PARty RGBW", qty=2)
             e.act("quick_set", page=2, slot=1, button={"kind": "flash", "label": "Taken", "target": {"all": True}})
-            b = e.act("quick_set", page=1, slot=5, button={"kind": "flash", "label": "Mover", "target": {"all": True}})
+            e.act("quick_set", page=1, slot=5, button={"kind": "flash", "label": "Mover", "target": {"all": True}})
             r = e.act("quick_move", page=1, slot=5, to_page=2, to_slot="free")
             moved = next((x for x in e.quick if x["label"] == "Mover"), {})
             check("a button moves to another page, into its first free place",
