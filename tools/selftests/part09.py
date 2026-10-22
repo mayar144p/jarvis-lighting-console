@@ -8687,3 +8687,14 @@ def test_blackout_buttons_lasers() -> None:
                 check(f"{label} darkens the laser while held; let go, it shines again", dark and lit(), "")
         finally:
             e.shutdown()
+
+
+def test_one_finger_per_button() -> None:
+    """Two fingers on a touch screen: lifting one lets go only of the button
+    it held (a BLACKOUT held with one finger stays on while the other taps a
+    Flash) - it used to let go of every held button."""
+    print("Touch: a finger lets go only of its own button")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("held buttons remember their finger; a lifted finger releases only its own",
+          "const held = new Map();" in qb and "press(b, true, e.pointerId)" in qb
+          and "finger !== e.pointerId" in qb and 'addEventListener("pointercancel", liftFinger, true)' in qb, "")
