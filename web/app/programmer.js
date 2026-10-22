@@ -866,7 +866,13 @@ function renderProgCells() {
   const box = $("#prog-cells");
   const heads = selectionHeads();
   const sig = heads.map((x) => x.head_no).join(",");
-  if (sig !== cellsSel) { cellsSel = sig; state.cells = []; }       // a new selection starts on All
+  if (sig !== cellsSel) {                                            // a new selection starts on All
+    cellsSel = sig;
+    // ...unless the heads were picked in the 3D (Select Elements)
+    const want = state.pendingCells;
+    state.cells = want && sig === String(want.head) ? [...want.cells] : [];
+    state.pendingCells = null;
+  }
   const n = Math.max(0, ...heads.map(headCount));
   // each head's colour now (the first light's), so you can see what you set
   const look = heads.length ? (state.looks || {})[heads[0].head_no] : null;
@@ -1578,6 +1584,17 @@ export function initProgrammer() {
     if (tab === "position") renderPad();
   });
   on("looks", () => { renderProgCells(); if (tab === "position") renderPad(); });
+  // heads of a multi-head light picked in the 3D (Select Elements), in this
+  // window or the 3D's own window
+  const cellsPicked = (m) => {
+    if (!m || !Array.isArray(m.cells)) return;
+    const sel = selectionHeads().map((x) => x.head_no);
+    if (sel.length === 1 && sel[0] === m.head) { state.cells = [...m.cells]; cellsSel = String(m.head); cellsKey = ""; }
+    else state.pendingCells = { head: m.head, cells: [...m.cells] };
+    renderProgCells();
+  };
+  on("cells", cellsPicked);
+  try { new BroadcastChannel("jarvis.cells").onmessage = (ev) => cellsPicked(ev.data); } catch (e) { /* an old browser */ }
   on("selection", () => loadPadInfo());
   on("snapshot", () => loadPadInfo());
   void patch; void select;

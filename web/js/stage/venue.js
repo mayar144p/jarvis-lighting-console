@@ -629,6 +629,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     surfaceMaterial(outdoor ? 0x1d2618 : 0x0b0c0f));
   apron.rotation.x = -Math.PI / 2;
   apron.position.set(R.cx, -0.01, R.z0 + R.d / 2);
+  apron.userData.wireBare = true;                 // no outline in the line drawings
   group.add(apron);
 
   // walls: one per edge of the outline, each knowing which way is out

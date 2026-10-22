@@ -7895,12 +7895,12 @@ def test_b5_room() -> None:
     af = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
           "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
     check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
           and "x.yaw" in mv, "")
-    check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")
+    check("the 3D: a DJ view from the booth (key 7)", '"From the DJ booth"' in sp and 'name === "dj"' in st and "this.djView" in st, "")
 
 
 def test_b6_layouts() -> None:
@@ -9075,3 +9075,79 @@ def test_desk_view() -> None:
           all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
                                 '"dmx", "DMX addresses"', '"set_place"', "Design mode", "pl-rect", "trussPath"))
           and "openPlot" in dv, "")
+
+
+def _node_three(js: str) -> dict:
+    """Run a module script under node with `three` (and its addons) mapped
+    to the vendored copy; the last line it prints, as JSON ({} when node is
+    missing or it failed - the caller's check reports it)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three')return{{url:'{vend}three.module.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=60)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-400:]}
+
+
+def test_vis_toolbar() -> None:
+    """The 3D's toolbar, as on a pro visualiser: Move Camera / Select
+    Fixtures / Select Elements, Fit to whole room, Per / Top / Front / Side
+    / Free views (the flat ones drawn as white lines on black), Pers / Orth
+    and the frame rate; the old buttons still there (>> and the right)."""
+    print("3D toolbar: mouse modes, the views, line drawings, Pers/Orth, FPS")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    st = stage_js()
+    pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the toolbar: Move Camera, Select Fixtures, Select Elements, Fit to whole room",
+          all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+              for k in ('data-mouse="camera"', ">Move Camera<", 'data-mouse="fixtures"', ">Select Fixtures<",
+                        'data-mouse="elements"', ">Select Elements<", 'id="vis-fit"', ">Fit to whole room<")), "")
+    check("...Per / Top / Front / Side / Free View, Pers / Orth, FPS",
+          all(f'data-cam="{k}"' in html for k in ("per", "top", "front", "side", "free"))
+          and all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+                  for k in (">Per View<", ">Top View<", ">Front View<", ">Side View<", ">Free View<",
+                                      'id="vis-proj"', 'id="vis-fps"', "FPS: 0")), "")
+    check("...and everything that was on the 3D before: crowd, zones, lights only, arrange, full screen, >> for the rest",
+          all(f'id="{k}"' in html for k in ("people-btn", "zones-btn", "lightsonly-btn", "arrange-btn", "fullscreen-btn", "views-more"))
+          and "&gt;&gt;" in html and '"Frame the selection"' in sp and '"From the DJ booth"' in sp, "")
+    check("the stage: flat cameras framing the room, line drawings, the mouse modes, a head of a light under the pointer",
+          all(k in st for k in ("OrthographicCamera", "setProjection(kind)", "fitRoom(", "_setWire(", "wireUp(",
+                                "setMouseMode(", "cellAt(", "this.fps", "onElement", "isOrthographicCamera")), "")
+    check("the toolbar is wired: views, mouse, fit, Pers/Orth, FPS; a head picked in 3D reaches the programmer",
+          all(k in sp for k in ("stage.setProjection(", "stage.setMouseMode(", "stage.fitRoom()", '"Pers" : "Orth"', "FPS: ",
+                                'BroadcastChannel("jarvis.cells")'))
+          and 'BroadcastChannel("jarvis.cells")' in pg and "state.pendingCells" in pg, "")
+    # the line drawing itself, run for real: a box becomes its 12 edges and back
+    wire = (ROOT / "web" / "js" / "stage" / "wire.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const W=await import({json.dumps(wire)});"
+        "const g=new T.Group();const mat=new T.MeshStandardMaterial();"
+        "const box=new T.Mesh(new T.BoxGeometry(1,2,3),mat);g.add(box);"
+        "const hull=new T.Mesh(new T.BoxGeometry(1,1,1),new T.MeshBasicMaterial({visible:false}));g.add(hull);"
+        "W.wireUp(g,true);const lines=box.children.find(c=>c.isLineSegments);"
+        "const on={swapped:box.material!==mat,edges:lines?lines.geometry.attributes.position.count/2:0,"
+        "hidesBehind:box.material.colorWrite===false&&box.material.depthWrite!==false,hull:hull.children.length};"
+        "W.wireUp(g,true);const twice=box.children.filter(c=>c.isLineSegments).length;"
+        "W.wireTint(g,W.WIRE_SEL);const tint=lines.material===W.WIRE_SEL;"
+        "W.wireUp(g,false);"
+        "console.log(JSON.stringify({...on,twice,tint,back:box.material===mat,hidden:!lines.visible}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the line drawing is not run)")
+    else:
+        check("a line drawing: a box's surface hides what is behind it and its 12 edges are drawn",
+              got.get("swapped") and got.get("edges") == 12 and got.get("hidesBehind") and got.get("hull") == 0, str(got))
+        check("...drawn once however often it is asked, a selected light's lines in the accent, and back to solid",
+              got.get("twice") == 1 and got.get("tint") and got.get("back") and got.get("hidden"), str(got))
