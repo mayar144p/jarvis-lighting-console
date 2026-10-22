@@ -249,6 +249,8 @@ class QuickMixin:
                 ons = [str(x)[:12] for x in (raw.get("turn_on") or []) if str(x).strip()][:8]
                 if ons:
                     btn["turn_on"] = ons
+        if kind == "label" and raw.get("sits") == "side":
+            btn["sits"] = "side"            # a name at the start of its row, not over the row below
         if kind in ("fx", "move", "custom"):
             order = str(raw.get("order") or "forward").lower()
             if order not in self.ORDERS:

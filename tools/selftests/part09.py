@@ -8484,6 +8484,13 @@ def test_newest_button_wins() -> None:
             e.act("quick_press", id=fl, down=False)
         finally:
             e.shutdown()
+            r = e.act("quick_set", page=4, slot=1, button={"kind": "label", "label": "Spot 260", "sits": "side"})
+            r2 = e.act("quick_set", page=4, slot=2, button={"kind": "label", "label": "Old"})
+            check("a name-only tile can sit beside its buttons (Spot 260 | Red | Blue | UV)",
+                  r["button"].get("sits") == "side" and "sits" not in r2["button"]
+                  and e.act("quick_press", id=r["id"], down=True).get("active") is False, str((r["button"], r2["button"])))
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the strobe button editor: Speed from - its own / the strobe-speed fader",
           '"Speed from"' in qb and "follow_fader" in qb, "")
+    check("the editor: Heading -> Sits beside the buttons / over the row below",
+          '"Beside the buttons"' in qb and '"qside"' in qb or ".qside" in qb, "")

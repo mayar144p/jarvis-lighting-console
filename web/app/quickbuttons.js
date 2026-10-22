@@ -334,7 +334,7 @@ function render(force = false) {
     const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
     if (b.kind === "label" && !editing) {
       // a heading: words on the grid, nothing to press
-      const el = h("div.qbtn.qlabel", { title: b.label, dataset: { id: b.id } }, h("b", b.label));
+      const el = h("div.qbtn.qlabel" + (b.sits === "side" ? ".qside" : ""), { title: b.label, dataset: { id: b.id } }, h("b", b.label));
       el.style.setProperty("--tint", tint);
       el.classList.add(...lookClasses(b));
       place(el, slot);
@@ -653,7 +653,7 @@ const row = (label, ...kids) => h("div.qe-row", h("div.qe-label", label), h("div
 function fromButton(b) {
   // the editor's working copy of a button
   const s = {
-    does: b ? b.kind : "flash", label: b ? b.label : "", note: b ? b.note || "" : "", tint: b ? b.tint || null : null,
+    does: b ? b.kind : "flash", sits: b ? b.sits || "above" : "side", label: b ? b.label : "", note: b ? b.note || "" : "", tint: b ? b.tint || null : null,
     mode: b ? b.mode : "hold", seconds: b && b.seconds ? b.seconds : "", exclusive: b ? b.exclusive || "" : "",
     quant: b && b.quant !== undefined ? b.quant : "",
     target: b ? { ...(b.target || { all: true }) } : { all: true },
@@ -708,6 +708,7 @@ function toButton(s) {
     if (s.seconds !== "" && +s.seconds > 0) b.seconds = +s.seconds;
     if (s.exclusive.trim()) b.exclusive = s.exclusive.trim();
   }
+  if (d === "label" && s.sits === "side") b.sits = "side";
   if (d === "flash") { b.level = s.level; if (s.colour) b.colour = s.colour; }
   if (d === "dim") b.dim = s.dim;
   if (d === "colour") b.colour = s.colour || "#ffffff";
@@ -966,7 +967,11 @@ function editButton(slot, btn) {
         }, { multi: true })
         : h("div.qe-note", `${pageName(+s.toPage)} has no on / off buttons yet.`)));
     }
-    if (d === "label") kids.push(row("Heading", h("div.qe-note", "Only its name shows, as a heading over a row of buttons; pressing it does nothing.")));
+    if (d === "label") {
+      kids.push(row("Sits", chips([["side", "Beside the buttons", "Spot 260 | Red | Blue | UV - the name at the start of the row"],
+        ["above", "Over the row below", "A small heading above a row of buttons"]], s.sits, (v) => { s.sits = v; draw(); })));
+      kids.push(h("div.qe-note", "Only its name shows; pressing it does nothing."));
+    }
     if (["fx", "move", "custom", "capture"].includes(d)) {
       kids.push(row("Order", chips(ORDERS, s.order, (v) => { s.order = v; draw(); }),
         h("span.qe-note", "Which way the effect runs through the lights (a chase, a wave).")));

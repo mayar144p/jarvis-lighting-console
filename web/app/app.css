@@ -1607,6 +1607,10 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: 16px; }
 .prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
 .qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
 .qbtn.qlabel b { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+/* a name beside its buttons: "SPOT 260 | Red | Blue | UV" */
+.qbtn.qlabel.qside { justify-content: center; align-items: flex-start; padding: 4px 10px; border-left: 3px solid var(--tint); border-radius: 4px; }
+.qbtn.qlabel.qside b { font-size: 16px; text-align: left; white-space: normal; overflow-wrap: anywhere; color: var(--text); }
+body.qb-fullscreen .qb.qb-full .qbtn.qlabel.qside b { font-size: 19px; }
 .qb-back { font-weight: 700; color: var(--accent); }
 .prog-held-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
 .prog-held-row span { flex: 1; }
