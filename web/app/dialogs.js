@@ -454,6 +454,8 @@ export async function openShowMenu(anchor, menuFn) {
     { label: "New show…", hint: "a template (club, wedding, band, theatre, corporate) or empty", run: openNewShow },
     { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
+    { label: "Save everything to a file…", hint: "to move it to another computer: the show, its fixtures, per-light settings and files", run: saveEverything },
+    { label: "Open everything from a file…", hint: "a .jarvis file from another computer", run: openEverything },
     { label: "Paperwork…", hint: "light plot, patch sheet, rigging - print / PDF", run: () => window.open("/plot.html", "_blank") },
     { label: "Import MVR plot…", hint: "Vectorworks, Capture, grandMA3: lights patched and placed", run: importMvr },
     { label: "Export as MVR", hint: "the patch and the rigging, for other programs", run: exportMvr },
@@ -676,10 +678,82 @@ async function exportShow(name) {
 export async function saveShow(name) {
   let n = name;
   if (!n) n = await promptBox("Save show", "Show name (letters, digits, dash, underscore)", "", { ok: "Save" });
-  if (!n) return;
+  if (!n) return null;
   const d = await post("/api/console/save", { name: n }).catch((e) => ({ error: e.message }));
   const r = d.result || {};
-  if (d.error || !r.ok) toast(d.error || r.error, "bad"); else toast(r.summary || "Saved", "ok");
+  if (d.error || !r.ok) { toast(d.error || r.error, "bad"); return null; }
+  toast(r.summary || "Saved", "ok");
+  return r.file || n;
+}
+
+// Show menu -> Save everything to a file: the show saved, then it with its
+// fixtures, per-light settings and files as one .jarvis file, where the
+// operator picks (the desktop app asks; a browser that can, asks too)
+async function saveEverything() {
+  const name = await saveShow((state.snap && state.snap.show_file) || "");
+  if (!name) return;
+  const t = token();
+  const r = await fetch("/api/console/pack?show=" + encodeURIComponent(name), { headers: t ? { "X-Jarvis-Token": t } : {} });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    toast(d.error || `could not make the file (${r.status})`, "bad");
+    return;
+  }
+  const file = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, `${name}.jarvis`])[1];
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  try {
+    if (window.jarvisDesk && window.jarvisDesk.saveAs) {
+      const where = await window.jarvisDesk.saveAs(file, bytes);
+      if (where) toast(`Saved everything to ${where}`, "ok", 8000);
+      return;
+    }
+    if (window.showSaveFilePicker) {
+      const fh = await window.showSaveFilePicker({ suggestedName: file,
+        types: [{ description: "Jarvis show (everything)", accept: { "application/zip": [".jarvis"] } }] });
+      const w = await fh.createWritable();
+      await w.write(bytes);
+      await w.close();
+      toast(`Saved everything to ${fh.name}`, "ok", 8000);
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;             // the Save box was cancelled
+    toast(`Not saved: ${e.message || e}`, "bad");
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  const a = h("a", { href: url, download: file });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`${file} is in your Downloads`, "ok", 8000);
+}
+
+// Show menu -> Open everything from a file: a .jarvis file from another
+// computer - its fixtures, settings and files come in, the show opens
+async function openEverything() {
+  const pick = h("input", { type: "file", accept: ".jarvis,.zip", style: { display: "none" } });
+  document.body.append(pick);
+  pick.addEventListener("change", async () => {
+    const file = pick.files && pick.files[0];
+    pick.remove();
+    if (!file) return;
+    const ok = await confirmBox("Open everything from a file",
+      `Open ${file.name}? Its show replaces the one on the desk now (save that first if you want to keep it). `
+      + "Its fixtures and per-light settings are added to this computer.", { ok: "Open it" });
+    if (!ok) return;
+    toast(`Reading ${file.name}…`, "", 2000);
+    const t = token();
+    const r = await fetch("/api/console/unpack", {
+      method: "POST", body: file,
+      headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+    });
+    const d = await r.json().catch(() => ({ error: `could not open it (${r.status})` }));
+    if (!d.ok) { toast(d.error || "could not open it", "bad", 8000); return; }
+    toast(d.summary || "Opened", "ok", 8000);
+  });
+  pick.click();
 }
 
 // ================================================================== help

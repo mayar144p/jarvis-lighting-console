@@ -180,7 +180,7 @@ SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quick
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 SCREEN_MAX = 500 * 1024 * 1024
 UPLOAD_TYPE = "application/x-jarvis-upload"
-RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import"})
+RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import", "/api/console/unpack"})
 
 
 def read_upload(stream, length: int, limit: int) -> bytes:
@@ -528,6 +528,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return self._json({"error": str(exc)}, 400)
             return self._json({**out, "ai": llm.public()})
+        if route == "/api/console/unpack":
+            # Show menu -> Open everything from a file: a show with its
+            # fixtures, per-model settings and files (app/showpack.py)
+            from app import showpack
+            try:
+                data = read_upload(self.rfile, int(self.headers.get("Content-Length") or 0), showpack.MAX_BYTES)
+            except ValueError as exc:
+                self.close_connection = True
+                return self._json({"error": str(exc)}, 400)
+            try:
+                return self._json({"ok": True, **showpack.restore(engine_mod.ENGINE, data)})
+            except ValueError as exc:
+                return self._json({"ok": False, "error": str(exc)})
         if route == "/api/mvr/import":
             # a plot from Vectorworks / Capture / grandMA3...: patched and placed
             try:
@@ -1376,6 +1389,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Disposition", f'attachment; filename="{name}.mvr"')
+            self.send_header("Content-Length", str(len(data)))
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        if route == "/api/console/pack":
+            # Show menu -> Save everything to a file (app/showpack.py)
+            from app import showpack
+            try:
+                fname, data = showpack.build(engine_mod.ENGINE, str(query.get("show", "")))
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
             self.send_header("Content-Length", str(len(data)))
             self._security_headers()
             self.end_headers()

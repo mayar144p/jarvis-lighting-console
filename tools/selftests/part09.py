@@ -8698,3 +8698,89 @@ def test_one_finger_per_button() -> None:
     check("held buttons remember their finger; a lifted finger releases only its own",
           "const held = new Map();" in qb and "press(b, true, e.pointerId)" in qb
           and "finger !== e.pointerId" in qb and 'addEventListener("pointercancel", liftFinger, true)' in qb, "")
+
+
+def test_show_pack() -> None:
+    """Save everything to a file / Open everything from a file: the show
+    (patch, buttons and pages, cues, DMX output...) with its fixtures, the
+    per-light-model settings and its files, onto a computer that has none
+    of them - and the DMX comes out the same."""
+    print("Save everything to a file, open it on another computer")
+    import zipfile
+    from app import config
+    from app import engine as eng
+    from app import fixlib, showpack
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db1 = tmp / "one.db"
+        fixtures.store_parsed(db1, fixlib.load("ofl", "chauvet-dj/intimidator-spot-260.json"),
+                              "ofl:chauvet-dj/intimidator-spot-260.json")
+        e = eng.Engine(db_path=db1, dry_run=True, show_dir=tmp / "shows1")
+        try:
+            e.act("add_heads", query="Intimidator Spot 260", mode="14-channel", qty=2, universe=1, address=10)
+            e.act("group_create", name="Spots", heads=[1, 2])
+            e.act("quick_page", page=2, name="Show")
+            e.act("quick_layout", page=2, cols=6, rows=4)
+            vals = {str(n): {"dimmer": 100, "pan": 40} for n in (1, 2)}
+            e.act("quick_set", page=2, slot=1, button={"kind": "custom", "label": "Look", "values": vals, "hold": True,
+                                                       "mode": "latch", "target": {"group": 1}, "base": True})
+            e.act("quick_set", page=2, slot=2, button={"kind": "label", "label": "SPOTS", "sits": "side"})
+            e.act("quick_set", page=2, slot=3, button={"kind": "fader", "label": "Speed", "control": {"what": "lights", "mode": "speed"},
+                                                       "target": {"group": 1}, "default": 60})
+            e.act("own_strobe", head=1, on=True)
+            e.act("motion_set", head=1, pan_s=3.5, tilt_s=2.0)
+            audio = config.DATA / "audio"
+            audio.mkdir(parents=True, exist_ok=True)
+            (audio / "packcheck0123456789.mp3").write_bytes(b"ID3fake")
+            e.act("quick_set", page=2, slot=4, button={"kind": "flash", "label": "F", "note": "packcheck0123456789",
+                                                       "target": {"all": True}})
+            e.act("quick_press", id="q2-1", down=True)
+            e.act("save_show", name="gig")
+            frame1 = e.build_frames(time.monotonic())[1][:40]
+            name, data = showpack.build(e, "gig")
+            z = zipfile.ZipFile(__import__("io").BytesIO(data))
+            names = z.namelist()
+            check("the file: the show, its fixtures and settings, the files it points at",
+                  name == "gig.jarvis" and {"manifest.json", "show.json", "fixtures.json"} <= set(names)
+                  and "files/audio/packcheck0123456789.mp3" in names, str(names))
+        finally:
+            e.shutdown()
+        (audio / "packcheck0123456789.mp3").unlink()
+        # another computer: an empty library, no shows, the file brought over
+        e2 = eng.Engine(db_path=tmp / "two.db", dry_run=True, show_dir=tmp / "shows2")
+        try:
+            r = showpack.restore(e2, data)
+            check("opening it: the show opens, its fixtures and file come in",
+                  r["show"] == "gig" and r["fixtures"] >= 1 and r["files"] == 1
+                  and (audio / "packcheck0123456789.mp3").is_file() and e2.show_file == "gig", str(r))
+            b = {x["label"]: x for x in e2.quick}
+            check("...with its buttons, pages, layouts, headings and faders",
+                  b.get("Look", {}).get("base") is True and b.get("SPOTS", {}).get("sits") == "side"
+                  and b.get("Speed", {}).get("default") == 60 and (e2.quick_names or {}).get("2") == "Show"
+                  and (e2._quick_layouts().get("2") or {}).get("cols") == 6, str(list(b)))
+            check("...and the per-light settings (its own strobe, movement times)",
+                  e2._own_strobe(e2.patch[0]) is not None and (fixtures.get_motion(tmp / "two.db", "Chauvet DJ", "Intimidator Spot 260") or {}).get("pan_s") == 3.5, "")
+            e2.act("quick_press", id="q2-1", down=True)
+            frame2 = e2.build_frames(time.monotonic())[1][:40]
+            check("...the same DMX as on the first computer", frame1 == frame2,
+                  str([(i + 1, frame1[i], frame2[i]) for i in range(40) if frame1[i] != frame2[i]]))
+            again = showpack.restore(e2, data)
+            check("opening it again: the same show, not a copy", again["show"] == "gig" and not again["renamed"], str(again))
+            (tmp / "shows2" / "gig.json").write_text("{}", encoding="utf-8")
+            other = showpack.restore(e2, data)
+            check("a different show here with its name: it opens under a new name", other["show"] == "gig-2" and other["renamed"], str(other))
+            try:
+                showpack.restore(e2, b"not a zip")
+                bad = "accepted"
+            except ValueError as exc:
+                bad = str(exc)
+            check("a file that isn't one is refused", "not a Jarvis show file" in bad, bad)
+        finally:
+            e2.shutdown()
+            (audio / "packcheck0123456789.mp3").unlink(missing_ok=True)
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the Show menu: Save everything to a file (asks where) / Open everything from a file",
+          "Save everything to a file" in dj and "Open everything from a file" in dj and "jarvisDesk.saveAs" in dj
+          and "/api/console/unpack" in dj and '"desk:saveAs"' in mj and "showSaveDialog" in mj, "")
