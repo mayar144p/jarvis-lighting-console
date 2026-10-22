@@ -31,6 +31,7 @@ const ACTIONS = [
   { t: "Macros…", k: "macros macro script sequence", run: () => openMacros() },
   { t: "Undo", k: "undo oops", run: () => run("undo") },
   ...(HAS_3D ? [{ t: "Stage full screen", k: "full screen stage view", run: () => stagePanel().then((m) => m.toggleFull()) }] : []),
+  { t: "Plot", k: "plot plan front side rig drawing head numbers design", run: () => import("./plot.js").then((m) => m.openPlot()) },
   { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
   { t: "Settings", k: "settings venue stage size midi network", run: () => openSettings() },
   { t: "Help", k: "help keys shortcuts", run: () => openHelp() },

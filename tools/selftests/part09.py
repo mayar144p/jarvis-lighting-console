@@ -9070,3 +9070,8 @@ def test_desk_view() -> None:
           all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
                                 '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
     check("the Desk workspace opens on it", 'id: "desk"' in ws and 'tab: "desk"' in ws, "")
+    pl = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
+    check("the plot: Plan / Front / Side, head numbers / names / DMX, click and box select, Design mode moves lights",
+          all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
+                                '"dmx", "DMX addresses"', '"set_place"', "Design mode", "pl-rect", "trussPath"))
+          and "openPlot" in dv, "")

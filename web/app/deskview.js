@@ -156,6 +156,7 @@ function strip() {
         run("record_cue", { playback: n, cue: pb.index + 1, mode: "merge" }, { toast: true });
       })),
     h("div.dv-sec", h("span.k", "Windows"),
+      key("Plot", "The rig drawn flat with every light's number: select, move", async () => (await import("./plot.js")).openPlot()),
       key("Cues", "The cue list of the focused playback", async () => (await import("./dialogs.js")).openCueList(await focusedPb())),
       key("Patch", "Every light's DMX address", async () => (await import("./fixtures.js")).openDmxMap()),
       key("Outputs", "What goes out to the nodes", async () => (await import("./monitors.js")).openNodeMonitor()),
