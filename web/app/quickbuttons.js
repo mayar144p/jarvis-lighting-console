@@ -11,7 +11,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, vfader } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -542,14 +542,20 @@ function renderSideFaders() {
   if (key !== sideKey) {
     sideKey = key;
     sideFaders.clear();
+    // a wide slider each: the whole name shows, and the buttons keep the width
     const one = (id, name, title, send) => {
-      const el = h("div.vfader", { "aria-label": title });
-      const num = h("output");
-      const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => { num.textContent = v; send(v); }, 60) });
+      const num = h("output.mono");
+      const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title });
+      const go = throttle((v) => send(v), 60);
+      inp.addEventListener("input", () => { num.textContent = inp.value; inp.dataset.busy = "1"; go(+inp.value); });
+      inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
+      inp.addEventListener("dblclick", () => { inp.value = 100; inp.dispatchEvent(new Event("input")); inp.dispatchEvent(new Event("change")); });
+      const f = { set: (v) => { if (!inp.dataset.busy) inp.value = v; } };
       sideFaders.set(id, { f, num });
-      return h("div.master.qb-side" + (id === "gm" ? ".gm" : ""), { title }, el, h("span.m-label", name, " ", num));
+      return h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
+        h("span.qb-side-top", h("b", name), num), inp);
     };
-    box.replaceChildren(...groups.map((g) => one(g.n, g.name.slice(0, 8), `${g.name}: a master for this group`, (v) => {
+    box.replaceChildren(...groups.map((g) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
       const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
       if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
       if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
