@@ -137,7 +137,7 @@ class DeskMixin:
                 if n not in last or seq >= last[n][0]:
                     last[n] = (seq, g.get("master", 100))
         for n, (_seq, m) in last.items():
-            if m < 100:
+            if m < 100 and not (out.get(n) or {}).get("flash"):
                 o = out.setdefault(n, {})
                 o["scale"] = round(o.get("scale", 100) * m / 100.0, 1)
         # fader tiles for some lights: their brightness, or a master
@@ -154,7 +154,7 @@ class DeskMixin:
                     if c.get("mode") == "strobe":
                         continue        # read by the strobe buttons that follow it (_strobe_fader_hz)
                     if c.get("mode") == "master":
-                        if v < 100:
+                        if v < 100 and not o.get("flash"):
                             o["scale"] = round(o.get("scale", 100) * v / 100.0, 1)
                     elif v > 0:
                         o["level"] = max(o.get("level") or 0, v)

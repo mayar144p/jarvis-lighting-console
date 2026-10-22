@@ -8525,3 +8525,83 @@ def test_newest_button_wins() -> None:
           "function rowChecker" in qb and "span.qwarn" in qb and "rowWarn(b, slot)" in qb, "")
     check("the editor: Heading -> Sits beside the buttons / over the row below",
           '"Beside the buttons"' in qb and '"qside"' in qb or ".qside" in qb, "")
+
+
+def test_flash_base_speed() -> None:
+    """A flash goes full whatever the group slider says; a base look turned
+    off takes its lights' colour buttons with it; the speed fader moved last
+    sets a light's speed (like the group sliders); empty cells show nothing
+    while playing."""
+    print("Flash full, base looks, the last speed fader wins")
+    from app import engine as eng
+    from app import fixlib
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PARty RGBW", qty=3)
+            h = e.patch[0]
+            dim = h["address"] - 1 + h["map"].index("dimmer")
+            red = h["address"] - 1 + h["map"].index("red")
+            e.act("group_create", name="Cobras", heads=[1, 2])
+            g = e.groups[-1]["n"]
+            vals = {str(n): {"dimmer": 100, "red": 0, "green": 0, "blue": 255} for n in (1, 2)}
+            base = e.act("quick_set", page=1, slot=1, button={"kind": "custom", "label": "Default", "values": vals, "hold": True,
+                                                              "mode": "latch", "target": {"group": g}, "base": True})
+            check("a button can be marked the show's base look", base["button"].get("base") is True, str(base["button"]))
+            base = base["id"]
+            colour = e.act("quick_set", page=2, slot=1, button={"kind": "colour", "label": "Red", "colour": "#ff0000",
+                                                                "mode": "latch", "target": {"group": g}})["id"]
+            other = e.act("quick_set", page=2, slot=2, button={"kind": "colour", "label": "Green", "colour": "#00ff00",
+                                                               "mode": "latch", "target": {"heads": [3]}})["id"]
+            for x in (base, colour, other):
+                e.act("quick_press", id=x, down=True)
+            e.act("group_master", group=g, level=27)
+            fr = e.build_frames(time.monotonic())[1]
+            check("the group slider at 27% holds them at 27%", fr[dim] == 68, str(fr[dim]))
+            fl = e.act("quick_set", page=3, slot=1, button={"kind": "flash", "label": "Flash", "mode": "hold",
+                                                            "target": {"group": g}})["id"]
+            e.act("quick_press", id=fl, down=True)
+            fr = e.build_frames(time.monotonic())[1]
+            check("a flash goes full (not the slider's 27%), keeping their colour (red)", fr[dim] == 255 and fr[red] == 255,
+                  f"{fr[dim]} {fr[red]}")
+            e.act("quick_press", id=fl, down=False)
+            check("...let go: back to 27%", e.build_frames(time.monotonic())[1][dim] == 68, "")
+            e.act("group_master", group=g, level=100)
+            e.act("quick_press", id=base, down=True)
+            check("the base look off: the colour button on its lights goes off, one on other lights stays",
+                  base not in e.quick_active and colour not in e.quick_active and other in e.quick_active,
+                  str(sorted(e.quick_active)))
+            # speed faders: the last one moved wins where they share lights
+            a = e.act("quick_set", page=4, slot=1, button={"kind": "fader", "label": "Cobras speed",
+                                                           "control": {"what": "lights", "mode": "speed"}, "target": {"group": g}})["id"]
+            b = e.act("quick_set", page=4, slot=2, button={"kind": "fader", "label": "All speed",
+                                                           "control": {"what": "lights", "mode": "speed"}, "target": {"all": True}})["id"]
+            e.act("select_heads", heads=[1, 2])
+            e.act("run_fx", name="rainbow")
+            row = e.fx[-1]
+
+            clock = [time.monotonic()]
+
+            def rate():
+                clock[0] += 10.0                          # always later than the last frame
+                e._fx_values(clock[0])
+                v0 = row["_v"]
+                e._fx_values(clock[0] + 1.0)
+                clock[0] += 1.0
+                return round(row["_v"] - v0, 2)
+            e.act("quick_fader", id=a, level=100)          # 2x
+            e.act("quick_fader", id=b, level=25)           # 0.5x, moved last
+            r1 = rate()
+            e.act("quick_fader", id=a, level=100)          # the Cobras' moved last
+            r2 = rate()
+            check("speed faders on the same lights: the last one moved sets the speed (0.5x, then 2x)",
+                  r1 == 0.5 and r2 == 2.0, f"{r1} {r2}")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the editor: Going off - its lights' colour buttons too; empty cells blank while playing",
+          '"Going off"' in qb and "b.base = true" in qb and '".blank"' in qb, "")

@@ -153,6 +153,8 @@ class QuickMixin:
             if q not in self.QUANTS:
                 raise ValueError("quant (fire on the beat) is 0 (as pressed), 0.5, 1, 2, 4, 8, 16 or 32 beats")
             btn["quant"] = q
+        if kind in self.LIGHT_KINDS and _truthy(raw.get("base", False)):
+            btn["base"] = True              # the show's base look: off takes its lights' colour buttons
         if kind not in self.ONE_SHOT_BUTTONS:
             if raw.get("exclusive") not in (None, ""):
                 btn["exclusive"] = str(raw["exclusive"]).strip()[:20] or None
@@ -881,20 +883,21 @@ class QuickMixin:
                     out[n], when[n] = self._fader_hz(v), t
         return out
 
-    def _fader_speeds(self) -> list[tuple[set, float]]:
-        """The speed faders that are not at 1x: (their lights, the speed)."""
+    def _fader_speeds(self) -> list[tuple[set, float, int]]:
+        """The speed faders that have been moved: (their lights, the speed,
+        when - the last one moved wins where they share lights, like the
+        group sliders for brightness; back at 1x it still wins)."""
         vals = self.__dict__.get("fader_vals")
         if not vals:
             return []
+        seq = self.__dict__.get("fader_seq") or {}
         out = []
         for b in self.quick:
             v = vals.get(b["id"])
             c = b.get("control") or {}
             if v is None or b["kind"] != "fader" or c.get("what") != "lights" or c.get("mode") != "speed":
                 continue
-            f = self._fader_speed(v)
-            if f != 1.0:
-                out.append((set(self._quick_heads(b)), f))
+            out.append((set(self._quick_heads(b)), self._fader_speed(v), seq.get(b["id"], 0)))
         return out
 
     def _a_quick_group_controls(self, group=None, page=None, **_):
@@ -1360,6 +1363,14 @@ class QuickMixin:
             return
         self.quick_active.pop(key, None)
         self._quick_stop_fx(run)
+        if btn and btn.get("base"):
+            # a base look (the show's default): going off, it takes the colour
+            # buttons on its lights with it
+            mine = set(run.get("heads") or self._quick_heads(btn))
+            for other in [b for b in self.quick if b["id"] in self.quick_active and self._colour_only(b)]:
+                theirs = set(self._quick_heads(other))
+                if theirs and theirs <= mine:
+                    self._quick_off(other["id"], force=True)
 
     @staticmethod
     def _quick_rate_value(value) -> float:
@@ -1623,6 +1634,8 @@ class QuickMixin:
                 o = out.setdefault(n, {})
                 if kind in ("flash", "strobe"):
                     o["level"] = max(o.get("level") or 0, round(btn.get("level", 100) * (f if kind == "flash" else 1.0)))
+                    if kind == "flash" and f > 0:
+                        o["flash"] = True       # full: a group slider or master tile doesn't hold it down
                     if o.get("cap") is not None and kind == "flash":
                         o["cap"] = max(o["cap"], o["level"])      # pressed after a dimmer button: it flashes
                     gate = self._shutter_role(head)
@@ -1939,7 +1952,7 @@ class QuickMixin:
             return {"summary": "button not changed"}
         if not btn:
             raise ValueError("no button is open in the programmer")
-        carry = ("label", "note", "mode", "exclusive", "seconds", "quant", "key", "midi", "rate", "free",
+        carry = ("label", "note", "mode", "exclusive", "base", "seconds", "quant", "key", "midi", "rate", "free",
                  "fade_in", "fade_out", "hold", "order", "offset", *self.STYLE_KEYS)
         raw = {k: btn[k] for k in carry if k in btn}
         raw.update(kind="custom", target=dict(btn.get("target") or {"all": True}))
