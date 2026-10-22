@@ -183,6 +183,91 @@ function trussGeo(a, b, size, triangle = false) {
 }
 
 // ---------------------------------------------------------------------------
+// curved rigging: an arc, a circle, a spiral, an S
+// ---------------------------------------------------------------------------
+/** The point `t` (0..1) along a rig piece.  A curved one (`bend` degrees)
+ *  is an arc in plan through both ends, its height going evenly from end
+ *  to end - the same sum as the desk's (app/venue.py curve_point), so a
+ *  light sits on the truss the 3D draws. */
+export function curvePoint(r, t, out = new THREE.Vector3()) {
+  const [ax, ay, az] = r.a, [bx, by, bz] = r.b;
+  t = Math.max(0, Math.min(1, t));
+  const y = ay + (by - ay) * t;
+  const dx = bx - ax, dz = bz - az;
+  const chord = Math.hypot(dx, dz);
+  const th = (+r.bend || 0) * DEG;
+  if (Math.abs(th) < 1e-6 || chord < 1e-9) return out.set(ax + dx * t, y, az + dz * t);
+  const rad = chord / (2 * Math.sin(th / 2));
+  const phi0 = Math.atan2(dz, dx) - th / 2;
+  return out.set(ax + rad * (Math.sin(phi0 + th * t) - Math.sin(phi0)), y,
+    az + rad * (Math.cos(phi0) - Math.cos(phi0 + th * t)));
+}
+
+/** How long a piece is along its curve. */
+export function curveLength(r) {
+  const th = Math.abs((+r.bend || 0) * DEG);
+  const chord = Math.hypot(r.b[0] - r.a[0], r.b[2] - r.a[2]);
+  const flat = th < 1e-6 ? chord : chord * (th / 2) / Math.sin(th / 2);
+  return Math.hypot(flat, r.b[1] - r.a[1]);
+}
+
+/** Points along a curved piece, about `step` m apart (ends included). */
+export function curveSamples(r, step) {
+  const n = Math.max(1, Math.ceil(curveLength(r) / Math.max(0.05, step)));
+  return Array.from({ length: n + 1 }, (_, i) => curvePoint(r, i / n));
+}
+
+/** Box (or triangle) truss lattice along a path of points: the chords
+ *  follow the curve, a zig-zag lacing between each pair of points. */
+function latticeAlong(pts, size, triangle = false) {
+  const h = size / 2;
+  const corners = triangle ? [[-h, -h * 0.58], [h, -h * 0.58], [0, h * 1.15]]
+    : [[-h, -h], [h, -h], [h, h], [-h, h]];
+  // each point's frame: along the path, up, and across
+  const at = pts.map((p, i) => {
+    const t = new THREE.Vector3().subVectors(pts[Math.min(pts.length - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
+    const side = new THREE.Vector3().crossVectors(t, _up);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const up = new THREE.Vector3().crossVectors(side, t).normalize();
+    return corners.map(([cx, cz]) => p.clone().addScaledVector(side, cx).addScaledVector(up, cz));
+  });
+  const out = [];
+  for (let i = 0; i + 1 < at.length; i++) {
+    for (let k = 0; k < corners.length; k++) {
+      out.push(rod(at[i][k], at[i + 1][k], 0.024, 6));
+      const k1 = (k + 1) % corners.length;
+      const flip = (i + k) % 2;
+      out.push(rod(flip ? at[i][k] : at[i + 1][k], flip ? at[i + 1][k1] : at[i][k1], 0.009, 4));
+    }
+  }
+  return out.filter(Boolean);
+}
+
+/** Which curved pieces carry a chain hoist: along the top of each curved
+ *  shape (a spiral hangs from its top turn), one about every 3 m. */
+function hoistedCurves(rigging) {
+  const groups = new Map();
+  for (const r of rigging || []) {
+    if (!r.bend) continue;
+    const k = r.group || r.id;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const out = new Set();
+  for (const list of groups.values()) {
+    const top = Math.max(...list.map((r) => Math.max(r.a[1], r.b[1])));
+    let since = Infinity;
+    for (const r of list) {
+      if (Math.max(r.a[1], r.b[1]) < top - 0.35) continue;
+      if (since >= 3) { out.add(r.id); since = 0; }
+      since += curveLength(r);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // materials (shared per build)
 // ---------------------------------------------------------------------------
 function mats(v) {
@@ -208,13 +293,33 @@ function mats(v) {
 // ---------------------------------------------------------------------------
 const PICK_HULL = new THREE.MeshBasicMaterial({ visible: false });
 
-function buildRig(r, M, room) {
+function buildRig(r, M, room, hoisted) {
   const a = new THREE.Vector3(...r.a), b = new THREE.Vector3(...r.b);
   const g = new THREE.Group();
   g.userData = { venueId: r.id, venueKind: r.kind };
   const vertical = Math.abs(b.y - a.y) > Math.max(Math.abs(b.x - a.x), Math.abs(b.z - a.z));
   const parts = [];
   const dark = [];
+  const bent = !!r.bend && ["truss", "pipe", "ladder"].includes(r.kind);
+  if (bent) {
+    // a curved piece: one smooth lattice (or bar) along the curve
+    const pts = curveSamples(r, r.kind === "pipe" ? 0.25 : Math.max(0.2, r.size));
+    if (r.kind === "pipe") for (let i = 0; i + 1 < pts.length; i++) parts.push(rod(pts[i], pts[i + 1], Math.max(0.024, r.size / 2), 12));
+    else parts.push(...latticeAlong(pts, r.kind === "ladder" ? r.size : r.size, false));
+    if (hoisted && hoisted.has(r.id) && room.h - a.y > 0.6) {
+      dark.push(rod(new THREE.Vector3(a.x, a.y + 0.5, a.z), new THREE.Vector3(a.x, room.h, a.z), 0.008, 4));
+      dark.push(boxGeo(0.2, 0.28, 0.18, a.x, a.y + 0.36, a.z));
+    }
+    const m1 = merged(parts, M.steel), m2 = merged(dark, M.chain);
+    if (m1) g.add(m1);
+    if (m2) g.add(m2);
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const hull = rod(pts[i], pts[i + 1], Math.max(0.15, (r.size || 0.3) * 0.6), 8);
+      if (hull) g.add(new THREE.Mesh(hull, PICK_HULL));
+    }
+    g.traverse((o) => { if (o.isMesh) o.userData = { venueId: r.id, venueKind: r.kind }; });
+    return g;
+  }
   if (r.kind === "truss" || r.kind === "tower") {
     parts.push(...trussGeo(a, b, r.size));
     if (vertical) {
@@ -721,8 +826,9 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   // rigging and objects, one sub-group each so the editor can pick them
   const items = new Map();
+  const hoisted = hoistedCurves(v.rigging);
   for (const r of v.rigging || []) {
-    const g = buildRig(r, M, R);
+    const g = buildRig(r, M, R, hoisted);
     items.set(r.id, g);
     group.add(g);
   }

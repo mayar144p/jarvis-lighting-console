@@ -55,6 +55,16 @@ function bounds() {
 }
 
 // a truss as a pro plot draws it: two chords and the zig-zag between them
+/** A point along a rig piece, on its curve when it is curved (the desk's
+ *  own sum: app/venue.py curve_point). */
+function curveAt(r, t) {
+  const [ax, ay, az] = r.a, [bx, by, bz] = r.b;
+  const dx = bx - ax, dz = bz - az, chord = Math.hypot(dx, dz), th = (+r.bend || 0) * Math.PI / 180;
+  if (Math.abs(th) < 1e-6 || chord < 1e-9) return [ax + dx * t, ay + (by - ay) * t, az + dz * t];
+  const rad = chord / (2 * Math.sin(th / 2)), p0 = Math.atan2(dz, dx) - th / 2;
+  return [ax + rad * (Math.sin(p0 + th * t) - Math.sin(p0)), ay + (by - ay) * t, az + rad * (Math.cos(p0) - Math.cos(p0 + th * t))];
+}
+
 function trussPath(a, b, size) {
   const [x1, y1] = flat(...a), [x2, y2] = flat(...b);
   const len = Math.hypot(x2 - x1, y2 - y1);
@@ -110,7 +120,11 @@ function draw(svg, px = 1000) {
   const [cx0, cy0] = flat(0, 0, 0);
   g.append(s("line", { x1: cx0, y1: -1e3, x2: cx0, y2: 1e3, class: "pl-axis" }));
   if (view !== "plan") g.append(s("line", { x1: -1e3, y1: cy0, x2: 1e3, y2: cy0, class: "pl-axis" }));
-  for (const r of v.rigging || []) g.append(trussPath(r.a, r.b, Math.max(0.2, +r.size || 0.3)));
+  for (const r of v.rigging || []) {
+    // a curved piece (an arc, a spiral, an S): drawn in short straight bits along its curve
+    const n = r.bend ? Math.max(2, Math.ceil(Math.abs(r.bend) / 8)) : 1;
+    for (let i = 0; i < n; i++) g.append(trussPath(curveAt(r, i / n), curveAt(r, (i + 1) / n), Math.max(0.2, +r.size || 0.3)));
+  }
   // the lights
   const sel = new Set(selected());
   // a light is the same size on screen whatever the zoom (22 px), as on a plot

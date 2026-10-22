@@ -9219,3 +9219,139 @@ def test_vis_source() -> None:
     check("the toolbar's source list: Output / Programmer only / Next GO",
           all(k in html for k in ('id="vis-source"', '"output">Output<', '"programmer">Programmer only<', '"next">Next GO<'))
           and 'run("vis_source"' in sp, "")
+
+
+def _node_stage(js: str) -> dict:
+    """Run a script that imports the 3D's own modules (three.js mapped to
+    the vendored WebGPU build, as the page's import map does)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three'||s==='three/webgpu')return{{url:'{vend}three.webgpu.js',shortCircuit:true}};"
+            f"if(s==='three/tsl')return{{url:'{vend}three.tsl.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=90)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-600:]}
+
+
+def test_curved_rigging() -> None:
+    """Curved truss: an arc, a spiral and an S curve (and a smooth circle)
+    from the rigging library - lights spread evenly along the curve, on it,
+    facing along it; the 3D draws the same curve the desk places them on."""
+    print("Curved rigging: arc, spiral, S curve; lights along the curve")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=1, y=5, z=3, radius=5, start=20, end=160)
+    mids = [venue_mod.curve_point(r, k / 4) for r in arc for k in range(5)]
+    check("an arc: every point of every piece on the circle (to 1 cm), the pieces joined",
+          max(abs(math.hypot(p[0] - 1, p[2] - 3) - 5) for p in mids) < 0.01
+          and all(math.dist(arc[i]["b"], arc[i + 1]["a"]) < 1e-6 for i in range(len(arc) - 1)), "")
+    sc = riglib.build("scurve", x=0, y=5, z=6, radius=3, start=0, end=90, rot=30)
+    kink = max(abs(math.degrees((venue_mod.curve_heading(sc[i], 1) - venue_mod.curve_heading(sc[i + 1], 0) + math.pi)
+                                % (2 * math.pi) - math.pi)) for i in range(len(sc) - 1))
+    turns = sum(r["bend"] for r in sc[:len(sc) // 2]), sum(r["bend"] for r in sc[len(sc) // 2:])
+    check("an S curve: one bend each way, smooth all along (no kink)",
+          kink < 0.5 and turns[0] > 80 and turns[1] < -80, f"{kink:.2f} {turns}")
+    sp = riglib.build("spiral", x=-6, y=3, z=5, radius=2, radius_end=1.2, turns=2.5, rise=1.4)
+    check("a spiral: winds 2.5 times round, rising 3.5 m, narrowing to 1.2 m",
+          abs(sum(r["bend"] for r in sp) - 900) < 3 and abs(sp[-1]["b"][1] - sp[0]["a"][1] - 3.5) < 0.01
+          and abs(math.hypot(sp[-1]["b"][0] + 6, sp[-1]["b"][2] - 5) - 1.2) < 0.01, "")
+    v = venue_mod.normalise({"version": 2, "rigging": [{"kind": "truss", "a": [0, 4, 0], "b": [2, 4, 0], "bend": 500},
+                                         {"kind": "truss", "a": [0, 4, 2], "b": [2, 4, 2]}]})
+    check("a piece keeps its bend (kept in range); a straight one has none",
+          v["rigging"][0]["bend"] == 179 and "bend" not in v["rigging"][1], str(v["rigging"]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            s = e.act("rig_add", preset="spiral", radius=2, radius_end=1.2, turns=2.5, rise=1.4, x=-6, z=5, trim=3)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=4, trim=5)
+            c = e.act("rig_add", preset="scurve", radius=3, start=0, end=90, x=0, z=12, trim=5.5)
+            check("spiral, arc and S curve added, each one shape",
+                  s.get("ok") and a.get("ok") and c.get("ok") and s["group"] and a["group"] and c["group"], str((s.get("error"), a.get("error"))))
+            e.act("add_heads", query="Moving Head", qty=12)
+            r = e.act("attach_heads", heads=list(range(1, 11)), rig=s["ids"][3])
+            on = sorted((h for h in e.patch if h["head_no"] <= 10), key=lambda h: h["y"])
+            rigs = {x["id"]: x for x in e.venue["rigging"]}
+            where = []
+            for h in on:
+                m = h["mount"]
+                p = venue_mod.curve_point(rigs[m["rig"]], m["t"])
+                where.append(p)
+            gaps = [venue_mod.length(x) for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            per = sum(gaps) / 10
+            # how far along the curve each one is
+            members = [x for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            along = []
+            for h in on:
+                k = next(i for i, x in enumerate(members) if x["id"] == h["mount"]["rig"])
+                along.append(sum(venue_mod.length(x) for x in members[:k]) + venue_mod.length(members[k]) * h["mount"]["t"])
+            steps = [along[i + 1] - along[i] for i in range(9)]
+            check("ten lights spread evenly along the spiral (as far apart as each other)",
+                  r.get("ok") and max(abs(x - per) for x in steps) < 0.05, f"{per:.2f} {[round(x, 2) for x in steps]}")
+            check("...each hung under the truss, on the curve",
+                  all(h["stance"] == "hang" and abs(h["x"] - p[0]) < 1e-3 and abs(h["z"] - p[2]) < 1e-3 and h["y"] < p[1]
+                      for h, p in zip(on, where)), "")
+            yaw_err = 0.0
+            for h in on:
+                m = h["mount"]
+                want = math.degrees(-venue_mod.curve_heading(rigs[m["rig"]], m["t"]))
+                d = ((e._head_yaw(h) - want + 90) % 180) - 90               # facing along it, either way round
+                yaw_err = max(yaw_err, abs(d))
+            check("...each facing along the curve where it hangs (as the 3D turns it)", yaw_err < 0.5, f"{yaw_err:.2f}")
+            e.act("attach_heads", heads=[11, 12], rig=a["ids"][0])
+            check("two lights on the arc sit on its circle",
+                  all(abs(math.hypot(h["x"], h["z"] - 4) - 5) < 0.02 for h in e.patch if h["head_no"] in (11, 12)), "")
+            t = e.act("rig_trim", id=s["ids"][0], trim=2.5)
+            low = min(min(x["a"][1], x["b"][1]) - x["size"] / 2 for x in e.venue["rigging"] if x.get("group") == s["group"])
+            high = max(x["b"][1] for x in e.venue["rigging"] if x.get("group") == s["group"])
+            check("trimming a spiral moves it whole (its rise kept), its lights with it",
+                  t.get("ok") and abs(low - 2.5) < 1e-3 and abs(high - low - 3.5 - 0.145) < 0.01, f"{low} {high}")
+            rep = e.act("rig_report")["report"]
+            parts = [p["length"] for p in rep["parts"] if isinstance(p["length"], str)]
+            check("the rigging report lists curved sections by their radius",
+                  any(p.startswith("curved, radius 5.0") for p in parts) and any(p.startswith("curved, radius 3.0") for p in parts), str(parts))
+            pts = json.dumps([[x["a"], x["b"], x.get("bend", 0)] for x in e.venue["rigging"] if x.get("group") == a["group"]])
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});"
+        f"const rs={pts}.map(([a,b,bend])=>({{id:'x',kind:'truss',size:0.29,a,b,bend}}));"
+        "const out=rs.map(r=>[0,0.25,0.5,0.75,1].map(t=>V.curvePoint(r,t).toArray()));"
+        "const built=V.buildVenue({room:{width:24,depth:24,height:10,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "rigging:rs.map((r,i)=>({...r,id:'r'+i,group:'g'})),objects:[],zones:[],cameras:[],crowd:{show:false}},[],{people:false});"
+        "const T=await import('three');const box=new T.Box3().setFromObject(built.items.get('r3'));"
+        "console.log(JSON.stringify({out,box:[box.min.toArray(),box.max.toArray()]}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D's curve is not checked)")
+        return
+    want = [[venue_mod.curve_point({"a": a_, "b": b_, "bend": bd}, t) for t in (0, 0.25, 0.5, 0.75, 1)]
+            for a_, b_, bd in json.loads(pts)]
+    worst = max((math.dist(p, q) for row, wrow in zip(got.get("out") or [], want) for p, q in zip(row, wrow)), default=9)
+    check("the 3D's curve is the desk's (the same points to the mm)", bool(got.get("out")) and worst < 1e-3, str(got)[:300])
+    b = got.get("box") or [[0, 0, 0], [0, 0, 0]]
+    mid = venue_mod.curve_point({"a": json.loads(pts)[3][0], "b": json.loads(pts)[3][1], "bend": json.loads(pts)[3][2]}, 0.5)
+    check("...and its truss is drawn round that curve (the lattice round the middle of the piece)",
+          all(b[0][i] - 0.3 <= mid[i] <= b[1][i] + 0.3 for i in range(3)), str(b))
+    rd = (ROOT / "web" / "app" / "rigdialog.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arc / Spiral / S curve in the rigging library, and under + Truss",
+          all(k in rd for k in ('["arc", "Arc"', '["spiral", "Spiral"', '["scurve", "S curve"'))
+          and all(k in vp for k in ('rigDialog("arc")', 'rigDialog("spiral")', 'rigDialog("scurve")', 'rigDialog("circle")')), "")

@@ -209,6 +209,12 @@ def _clean_rig(raw: dict, v: dict) -> dict | None:
         val = _text(raw.get(key), "", 24)
         if val:
             item[key] = val
+    # a curved piece: how far it turns from end to end, degrees round the
+    # vertical (an arc of a circle, a spiral, an S): drawn as a smooth
+    # curve, its lights placed along the curve
+    bend = round(_num(raw.get("bend"), 0.0, -179.0, 179.0), 3)
+    if bend and kind in ("truss", "pipe", "ladder"):
+        item["bend"] = bend
     return item
 
 
@@ -446,19 +452,56 @@ def rig(v: dict, ident: str) -> dict | None:
     return None
 
 
+def bend_of(r: dict) -> float:
+    """How far a curved piece turns, degrees (0: straight)."""
+    try:
+        return float(r.get("bend") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def curve_point(r: dict, t: float) -> list[float]:
+    """The point `t` (0..1) of the way along a piece.  A curved one is an
+    arc in plan through both ends, turning `bend` degrees (positive: the
+    heading atan2(dz, dx) grows), its height going evenly from end to end -
+    the same sum as the 3D (web/js/stage/venue.js curvePoint)."""
+    a, b = r["a"], r["b"]
+    t = max(0.0, min(1.0, float(t)))
+    y = a[1] + (b[1] - a[1]) * t
+    dx, dz = b[0] - a[0], b[2] - a[2]
+    chord = math.hypot(dx, dz)
+    th = math.radians(bend_of(r))
+    if abs(th) < 1e-6 or chord < 1e-9:
+        return [a[0] + dx * t, y, a[2] + dz * t]
+    rad = chord / (2.0 * math.sin(th / 2.0))
+    phi0 = math.atan2(dz, dx) - th / 2.0
+    return [a[0] + rad * (math.sin(phi0 + th * t) - math.sin(phi0)), y,
+            a[2] + rad * (math.cos(phi0) - math.cos(phi0 + th * t))]
+
+
+def curve_heading(r: dict, t: float) -> float:
+    """Which way a piece runs at `t`, radians of atan2(dz, dx)."""
+    dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
+    th = math.radians(bend_of(r))
+    return math.atan2(dz, dx) - th / 2.0 + th * max(0.0, min(1.0, float(t)))
+
+
 def is_vertical(r: dict) -> bool:
     a, b = r["a"], r["b"]
     return abs(b[1] - a[1]) > max(abs(b[0] - a[0]), abs(b[2] - a[2]))
 
 
-def rig_angle(r: dict) -> float | None:
+def rig_angle(r: dict, t: float | None = None) -> float | None:
     """Which way a horizontal rig runs, in degrees round the vertical (0 =
-    along +x, as the 3D turns a light's holder): None for a tower or pole."""
+    along +x, as the 3D turns a light's holder): None for a tower or pole.
+    A curved piece runs a different way at each point: `t` says where."""
     if is_vertical(r):
         return None
     dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
     if math.hypot(dx, dz) < 1e-6:
         return None
+    if t is not None and bend_of(r):
+        return math.degrees(-curve_heading(r, t))
     return math.degrees(math.atan2(-dz, dx))
 
 
@@ -470,8 +513,14 @@ def fold90(a: float) -> float:
 
 
 def length(r: dict) -> float:
+    """How long a piece is (along its curve, when it is curved)."""
     a, b = r["a"], r["b"]
-    return math.dist(a, b)
+    th = math.radians(bend_of(r))
+    if abs(th) < 1e-6:
+        return math.dist(a, b)
+    chord = math.hypot(b[0] - a[0], b[2] - a[2])
+    flat = chord * (th / 2.0) / math.sin(th / 2.0)
+    return math.hypot(flat, b[1] - a[1])
 
 
 def default_orient(r: dict) -> str:
@@ -484,8 +533,8 @@ def default_orient(r: dict) -> str:
 def mount_position(r: dict, t: float, orient: str | None = None) -> dict:
     """Where a head on rig `r` at `t` sits, and which way up."""
     t = max(0.0, min(1.0, float(t)))
-    a, b = r["a"], r["b"]
-    p = [a[i] + (b[i] - a[i]) * t for i in range(3)]
+    a = r["a"]
+    p = curve_point(r, t)
     if not orient and is_vertical(r):
         # clamped to a tower or pole: hung (yoke up) once it is up high -
         # standing upright at 4 m it couldn't tilt down to the floor

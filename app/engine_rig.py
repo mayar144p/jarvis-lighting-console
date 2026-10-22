@@ -453,7 +453,7 @@ class RigMixin:
             yaw = float(yaw)
             m = h.get("mount")
             r = venue_mod.rig(self.venue, m.get("rig")) if isinstance(m, dict) else None
-            ang = venue_mod.rig_angle(r) if r else None
+            ang = venue_mod.rig_angle(r, m.get("t")) if r else None   # (curved: where it hangs)
             if ang is not None:
                 m["yaw0"] = round(ang - yaw, 3)
             h["yaw"] = round(yaw, 3)
@@ -472,7 +472,7 @@ class RigMixin:
         m = h.get("mount")
         if isinstance(m, dict):
             r = venue_mod.rig(self.venue, m.get("rig"))
-            ang = venue_mod.rig_angle(r) if r else None
+            ang = venue_mod.rig_angle(r, m.get("t")) if r else None   # (curved: where it hangs)
             if ang is not None:
                 if m.get("yaw0") is None:
                     m["yaw0"] = round(ang - venue_mod.fold90(ang), 3)
@@ -921,10 +921,16 @@ class RigMixin:
 
     def _a_rig_add(self, preset="straight", piece="box30", x=0.0, y=None, z=None, length=4.0,
                    width=4.0, depth=3.0, diameter=4.0, segments=None, height=3.0, rot=0.0,
-                   name="", trim=None, **_):
+                   name="", trim=None, radius=None, start=0.0, end=180.0, radius_end=None,
+                   turns=2.0, rise=1.0, **_):
         """Add a rigging shape from the library: a straight run, a corner, a
-        frame, a circle, a goal post, a pole or a stand, made of that piece.
-        `trim`: the height it hangs at (default: under the ceiling)."""
+        frame, a circle, an arc, a spiral, an S curve, a goal post, a pole or
+        a stand, made of that piece.  `trim`: the height it hangs at (default:
+        under the ceiling; a spiral's lowest point).  Arc: `radius`, from
+        `start` to `end` degrees (0 along x, 90 towards the audience).
+        Spiral: `radius` -> `radius_end`, `turns`, `rise` metres a turn.
+        S curve: two opposite arcs of `radius`, each `end` - `start`
+        degrees."""
         nv = venue_mod.normalise(self.venue)
         room = (nv.get("room") or {})
         top = float(room.get("height") or 6.0)
@@ -937,9 +943,19 @@ class RigMixin:
         under = max(0.3, min(top - 0.2 - 2 * half, under))
         hang = under + half
         zz = float(z) if z is not None else float(room.get("back", -1) or -1) + float(room.get("depth") or 10) * 0.35
+        curve = {"radius": float(radius) if radius not in (None, "") else None,
+                 "start": float(start or 0), "end": float(end if end not in (None, "") else 180),
+                 "radius_end": float(radius_end) if radius_end not in (None, "") else None,
+                 "turns": float(turns or 2), "rise": float(rise if rise not in (None, "") else 1)}
         items = riglib.build(str(preset), str(piece), float(x or 0), hang, zz, float(length), float(width),
                              float(depth), float(diameter), int(segments) if segments else None,
-                             min(float(height), top), float(rot or 0), str(name or ""))
+                             min(float(height), top), float(rot or 0), str(name or ""), **curve)
+        # a spiral rises: it all fits under the ceiling (lowered if it must be)
+        high = max(max(it["a"][1], it["b"][1]) for it in items)
+        if high > top - 0.2 - half and str(preset) == "spiral":
+            drop = min(high - (top - 0.2 - half), max(0.0, min(it["a"][1] for it in items) - half - 0.3))
+            for it in items:
+                it["a"][1], it["b"][1] = round(it["a"][1] - drop, 3), round(it["b"][1] - drop, 3)
         v = self.venue
         group = None
         if len(items) > 1:
@@ -978,11 +994,18 @@ class RigMixin:
                    if (r.get("group") and x.get("group") == r["group"]) or x["id"] == r["id"]]
         v = self.venue
         n = 0
-        for m in members:
-            if abs(m["a"][1] - m["b"][1]) > 0.5 and math.hypot(m["a"][0] - m["b"][0], m["a"][2] - m["b"][2]) < 0.3:
-                continue                                   # a pole / stand stays on the floor
-            y = round(t + float(m.get("size") or 0.3) / 2, 3)
-            v, _i = venue_mod.update_item(v, m["id"], {"a": [m["a"][0], y, m["a"][2]], "b": [m["b"][0], y, m["b"][2]]})
+        hung = [m for m in members if not (abs(m["a"][1] - m["b"][1]) > 0.5
+                                           and math.hypot(m["a"][0] - m["b"][0], m["a"][2] - m["b"][2]) < 0.3)]
+        rises = any(abs(m["a"][1] - m["b"][1]) > 1e-3 for m in hung)
+        low = min((min(m["a"][1], m["b"][1]) - float(m.get("size") or 0.3) / 2 for m in hung), default=0.0)
+        for m in hung:                                     # (a pole / stand stays on the floor)
+            if rises:
+                # a spiral: the whole shape moves, its lowest point to the trim
+                d = t - low
+                ya, yb = round(m["a"][1] + d, 3), round(m["b"][1] + d, 3)
+            else:
+                ya = yb = round(t + float(m.get("size") or 0.3) / 2, 3)
+            v, _i = venue_mod.update_item(v, m["id"], {"a": [m["a"][0], ya, m["a"][2]], "b": [m["b"][0], yb, m["b"][2]]})
             n += 1
         self._set_venue_doc(v)
         return self._venue_result(f"{r.get('name') or r['kind']} trimmed to {t:g} m ({n} piece(s))", id=r["id"])

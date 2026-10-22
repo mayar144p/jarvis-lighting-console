@@ -547,6 +547,20 @@ function openAdd(btn) {
   ]);
 }
 
+// + Truss: a straight one here and now, or a curve from the rigging library
+const rigDialog = (shape) => import("./rigdialog.js").then((m) => m.openRigDialog("add", shape));
+function openTruss(btn) {
+  menu(btn, [
+    { label: "Straight truss", hint: "A 6 m box truss, flown", run: () => addItem("truss", "Truss") },
+    "-",
+    { label: "Circle…", hint: "a ring of truss", run: () => rigDialog("circle") },
+    { label: "Arc…", hint: "part of a circle: radius, from and to", run: () => rigDialog("arc") },
+    { label: "Spiral…", hint: "winds up and round: turns and rise", run: () => rigDialog("spiral") },
+    { label: "S curve…", hint: "two bends, one each way", run: () => rigDialog("scurve") },
+    { label: "Corner, frame, goal post…", hint: "the rigging library", run: () => rigDialog("frame") },
+  ]);
+}
+
 function openZones(btn) {
   menu(btn, ZONE_KINDS.map(([k, l]) => ({ label: l, run: () => drawZone(k, l) })));
 }
@@ -675,7 +689,7 @@ export function initVenuePanel(theStage) {
   $("#vt-move").addEventListener("click", () => { editor.setMode("translate"); modeButtons(); });
   $("#vt-rotate").addEventListener("click", () => { editor.setMode("rotate"); modeButtons(); });
   $("#vt-add").addEventListener("click", (e) => openAdd(e.currentTarget));
-  $("#vt-truss").addEventListener("click", () => addItem("truss", "Truss"));
+  $("#vt-truss").addEventListener("click", (e) => openTruss(e.currentTarget));
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
   $("#vt-rigging").addEventListener("click", () => import("./rigdialog.js").then((m) => m.openRigDialog()));
