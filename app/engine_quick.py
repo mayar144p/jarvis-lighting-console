@@ -45,6 +45,8 @@ class QuickMixin:
     ONE_SHOT_BUTTONS = frozenset({"go", "release", "preset", "arm", "fxkill", "macro",
                                   "fader", "xy", "tempo", "cuelist", "estop", "label", "page", "folder"})
     PAGE_TILES = frozenset({"label", "page", "folder"})
+    # buttons that act on lights (a "one at a time" tag works per lights for these)
+    LIGHT_KINDS = frozenset({"flash", "strobe", "colour", "kill", "fx", "move", "custom"})
     FADER_OF = ("master", "speed", "playback", "group", "lights")
     LIGHT_FADERS = ("level", "master", "speed", "strobe")
 
@@ -1272,14 +1274,15 @@ class QuickMixin:
         if run is None:
             if btn.get("exclusive"):
                 # a radio group: turning this one on turns the others off.  A
-                # colour button only turns off the ones on its own lights: rows
-                # of colours for several groups (copied from one row, so one
-                # tag) are one colour per group, not one colour on the stage
-                colour = self._colour_only(btn)
-                mine = set(self._quick_heads(btn)) if colour else None
+                # button for lights (a colour, strobe, flash, effect...) only
+                # turns off the ones on its own lights: rows for several groups
+                # (copied from one row, so one tag) are one at a time per
+                # group, not one on the whole stage
+                scoped = btn["kind"] in self.LIGHT_KINDS
+                mine = set(self._quick_heads(btn)) if scoped else None
                 for other in [b for b in self.quick if b.get("exclusive") == btn["exclusive"]
                               and b["id"] != key and b["id"] in self.quick_active]:
-                    if colour and self._colour_only(other) and not mine & set(self._quick_heads(other)):
+                    if scoped and other["kind"] in self.LIGHT_KINDS and not mine & set(self._quick_heads(other)):
                         continue
                     self._quick_off(other["id"], force=True)
             if self._colour_only(btn):

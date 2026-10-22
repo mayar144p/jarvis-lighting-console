@@ -8490,6 +8490,21 @@ def test_newest_button_wins() -> None:
                   red in e.quick_active and amber not in e.quick_active and pink in e.quick_active, str(sorted(e.quick_active)))
             for x in (red, pink):
                 e.act("quick_press", id=x, down=True)
+            # the same for group strobes, flashes, effects and mixes
+            for i, (kind, extra) in enumerate((("strobe", {"hz": 10}), ("flash", {}), ("fx", {"fx": "rainbow"}),
+                                               ("custom", {"level": 50}))):
+                mk2 = lambda slot, grp: e.act("quick_set", page=6 + i, slot=slot, button={  # noqa: E731
+                    "kind": kind, "label": kind, "mode": "latch", "target": {"group": grp}, "exclusive": "Row", **extra})["id"]
+                a1, a2, b1 = mk2(1, g), mk2(2, g), mk2(11, go)
+                e.act("quick_press", id=a1, down=True)
+                e.act("quick_press", id=b1, down=True)
+                both = a1 in e.quick_active and b1 in e.quick_active
+                e.act("quick_press", id=a2, down=True)
+                check(f"...{kind} rows sharing a tag: one at a time per group, other groups stay on",
+                      both and a2 in e.quick_active and a1 not in e.quick_active and b1 in e.quick_active,
+                      str(sorted(e.quick_active)))
+                for x in (a2, b1):
+                    e.act("quick_press", id=x, down=True)
             fl = e.act("quick_set", page=3, slot=3, button={"kind": "flash", "label": "F", "mode": "hold",
                                                             "target": {"heads": [1, 2]}})["id"]
             e.act("quick_press", id=fl, down=True)
