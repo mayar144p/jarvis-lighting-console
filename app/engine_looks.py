@@ -152,8 +152,7 @@ class LooksMixin:
                    "a": round(max(0, min(100, pct)) / 100.0, 3),
                    "hex": self._hex_for(head, values),
                    "on": pct > 0}
-            pan = self._aim01(head, values, "pan")
-            tilt = self._aim01(head, values, "tilt")
+            pan, tilt = self._unorient(head, self._aim01(head, values, "pan"), self._aim01(head, values, "tilt"))
             if pan is not None:
                 row["pan"] = pan
             if tilt is not None:
@@ -168,14 +167,18 @@ class LooksMixin:
                     cv = {r: values.get(f"{r}@{k}", values.get(r, 0)) for r in ("red", "green", "blue", "white")}
                     cell = {"hex": self._hex_for(head, cv) if any(r in values or f"{r}@{k}" in values
                                                                   for r in ("red", "green", "blue", "white")) else row["hex"]}
+                    aim = {}
                     for base in ("tilt", "pan"):
                         t = values.get(f"{base}@{k}", values.get(base))
                         if t is not None and base in head["map"] and (base == "tilt" or reps.get(base, 0) > 1):
                             # the same scaling, limits and inversion as the head's
                             # own aim (a value can be 16-bit / logical, not 0-255)
-                            ct = self._aim01(head, {**values, base: t}, base)
-                            if ct is not None:
-                                cell[base] = ct
+                            aim[base] = self._aim01(head, {**values, base: t}, base)
+                    cp, ct = self._unorient(head, aim.get("pan"), aim.get("tilt"))
+                    if ct is not None:
+                        cell["tilt"] = ct
+                    if cp is not None and "pan" in aim:
+                        cell["pan"] = cp
                     cells.append(cell)
                 row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head
@@ -360,6 +363,21 @@ class LooksMixin:
             return round(logical / 65535.0, 4)
         v = values.get(base, 0)
         return round(max(0, min(255, int(v))) / 255.0, 4)
+
+    @staticmethod
+    def _unorient(head: dict, pan, tilt):
+        """The 3D draws a light as PROGRAMMED (its model is the desk's idea
+        of the light): an inverted or swapped light's wire value, flipped on
+        the way out (merge.py: swap, then invert), flipped back - so the 3D
+        shows where the real, differently-hung light really points."""
+        flags = head.get("orient") or {}
+        if flags.get("invert_pan") and pan is not None:
+            pan = round(1 - pan, 4)
+        if flags.get("invert_tilt") and tilt is not None:
+            tilt = round(1 - tilt, 4)
+        if flags.get("swap"):
+            pan, tilt = tilt, pan
+        return pan, tilt
 
     def look_feed(self, since: int | None = None) -> dict:
         """Per-tick look feed for the visualiser (see §13 fades).

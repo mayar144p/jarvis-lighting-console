@@ -8835,3 +8835,44 @@ def test_button_profiles() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("the buttons bar has the profile picker", "quick_profile_use" in qb and 'id="qb-profile"'
           in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_inverted_aim_matches() -> None:
+    """Aim at a spot on an inverted light: the output flips it ONCE (the
+    aim used to flip it too, so the real light got the plain value and went
+    the other way), and the 3D draws it as programmed - the same spot."""
+    print("Inverted lights: the real light and the 3D agree")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover", "3ch", ["Pan = -270..270", "Tilt = -117..117", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover", mode="3ch", qty=1, universe=1, address=1)
+            h = e.patch[0]["head_no"]
+            e.act("set_place", head=h, x=0, y=6, z=2)
+
+            def wire(role):
+                return [c["value"] for c in e.channel_report([h])["heads"][0]["channels"] if c["role"] == role][0]
+
+            def look():
+                return [r for r in e._looks() if r["n"] == h][0]
+            e.act("select_heads", heads=[h])
+            e.act("set_intensity", level=100)
+            e.act("aim_at", x=3, y=0, z=6)
+            plain = (wire("pan"), wire("tilt"), look()["pan"], look()["tilt"])
+            e.act("set_orient", heads=[h], invert_pan=True, invert_tilt=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("an inverted light is sent the flipped value",
+                  wire("pan") == 255 - plain[0] and wire("tilt") == 255 - plain[1], f"{plain} {wire('pan')} {wire('tilt')}")
+            check("and the 3D still draws it at the same spot",
+                  abs(look()["pan"] - plain[2]) < 0.002 and abs(look()["tilt"] - plain[3]) < 0.002, str(look()))
+            e.act("set_orient", heads=[h], invert_pan=False, invert_tilt=False, swap=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("a swapped light: pan goes out on the tilt channel, the 3D the same spot",
+                  wire("tilt") == plain[0] and abs(look()["pan"] - plain[2]) < 0.002, f"{wire('tilt')} {look()}")
+        finally:
+            e.shutdown()

@@ -989,15 +989,12 @@ class FxLayerMixin:
             p, t = min(fits, key=lambda c: abs(c[0] - near[0]) + abs(c[1] - near[1]))
         else:
             p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
+        # the programmer's (logical) values: the output flips an inverted or
+        # swapped light ONCE on the way out (merge.py).  Flipping here too
+        # cancelled it - the real light was sent the plain value and went
+        # the other way while the 3D showed it right
         fp = (p - pmin) / ((pmax - pmin) or 1)
         ft = (t - tmin) / ((tmax - tmin) or 1)
-        flags = h.get("orient") or {}
-        if flags.get("invert_pan"):
-            fp = 1 - fp
-        if flags.get("invert_tilt"):
-            ft = 1 - ft
-        if flags.get("swap"):
-            fp, ft = ft, fp
         if h_clamped:
             return fp, ft, p, t, "clamped"
         return fp, ft, p, t
