@@ -21,7 +21,10 @@ VERSION = 2
 
 RIG_KINDS = ("truss", "pipe", "tower", "ladder", "stand", "base")
 OBJECT_KINDS = ("dj_booth", "bar", "speaker", "sub", "pillar", "screen",
-                "riser", "balcony", "wall", "table", "door", "mark")
+                "riser", "balcony", "wall", "table", "door", "mark",
+                "drape", "panels")
+DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
+DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
               "vip", "backstage", "stage")
 CEILINGS = ("flat", "open", "none")
@@ -178,7 +181,7 @@ def _clean_stage(raw) -> dict | None:
     return {"x": round(_num(raw.get("x")), 3), "z": round(_num(raw.get("z")), 3),
             "width": round(w, 3), "depth": round(d, 3),
             "height": round(_num(raw.get("height"), 0.6, 0, 10), 3),
-            "colour": _colour(raw.get("colour"), "#26272c")}
+            "colour": _colour(raw.get("colour"), DECK_GREY)}
 
 
 def _clean_item(raw: dict, v: dict, kinds: tuple, prefix: str,
@@ -233,10 +236,17 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     })
     if not item["colour"]:
         del item["colour"]
-    if item["kind"] == "screen":
+    if item["kind"] in ("screen", "panels"):
         # what the LED screen shows: the rig's colours, nothing, or a clip
         c = _text(raw.get("content"), "rig", 300)
         item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:")) else "rig"
+    if item["kind"] == "drape":
+        # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
+        item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)
+    if item["kind"] == "panels":
+        # LED panels in a grid over w x h: each `tile` m square, `gap` m apart
+        item["tile"] = round(_num(raw.get("tile"), 0.5, 0.2, 3.0), 3)
+        item["gap"] = round(_num(raw.get("gap"), 0.15, 0.0, 3.0), 3)
     return item
 
 
@@ -935,7 +945,7 @@ def _concert(v, W, D, H):
                       "ceiling": "open", "floor": "concrete"})
     sw, sd = min(14.0, W * 0.6), 10.0
     v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 1.5,
-                  "colour": "#1b1c21"}
+                  "colour": DECK_GREY}
     top = H - 1.2
     rigs = [_truss(v, "Front truss", -sw / 2, sw / 2, top, sd - 0.8),
             _truss(v, "Mid truss", -sw / 2, sw / 2, top, sd * 0.55),
@@ -945,7 +955,9 @@ def _concert(v, W, D, H):
             _truss(v, "FOH truss", -sw * 0.35, sw * 0.35, top - 1, sd + 8)]
     objs = [_obj(v, "riser", "Drum riser", 0, 3.5, 3.0, 2.5, 0.6, y=1.5),
             _obj(v, "riser", "FOH", 0, D * 0.65, 5.0, 3.0, 0.4),
-            _obj(v, "mark", "Lead", 0, sd - 2.2, 0.5, 0.5, 0.02, y=1.5)]
+            _obj(v, "mark", "Lead", 0, sd - 2.2, 0.5, 0.5, 0.02, y=1.5),
+            # the back of the stage: a grey pleated drape, floor to the grid
+            {**_obj(v, "drape", "Back drape", 0, 0.3, sw + 2.0, 0.25, H - 1.2), "colour": DRAPE_GREY, "fold": 0.45}]
     zones = [_zone(v, "stage", "Stage", -sw / 2, 0, sw / 2, sd),
              _zone(v, "standing", "Standing", -W * 0.45, sd + 1.5, W * 0.45, D * 0.6, 0.75),
              _zone(v, "foh", "FOH", -2.5, D * 0.65 - 1.5, 2.5, D * 0.65 + 1.5)]
@@ -959,6 +971,7 @@ def _theatre(v, W, D, H):
     v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 1.0,
                   "colour": "#2b2320"}
     top = H - 1.5
+    drape = {**_obj(v, "drape", "Back drape", 0, 0.3, sw, 0.2, top - 1.0), "colour": "#26272c", "fold": 0.35}
     rigs = [_truss(v, f"LX {i + 1}", -sw / 2, sw / 2, top, z, "pipe")
             for i, z in enumerate((1.5, 3.5, 5.5, 7.2))]
     rigs.append(_truss(v, "FOH bar", -sw * 0.45, sw * 0.45, top - 1.0, sd + 5.0))
@@ -966,7 +979,7 @@ def _theatre(v, W, D, H):
         rigs.append(_tower(v, f"Boom {s}", x, sd * 0.5, 3.0, "stand"))
     zones = [_zone(v, "stage", "Stage", -sw / 2, 0, sw / 2, sd),
              _zone(v, "seating", "Stalls", -W * 0.42, sd + 2.0, W * 0.42, D - 2.0, 0.6)]
-    return rigs, [_obj(v, "mark", "Centre", 0, sd * 0.6, 0.5, 0.5, 0.02, y=1.0)], zones
+    return rigs, [_obj(v, "mark", "Centre", 0, sd * 0.6, 0.5, 0.5, 0.02, y=1.0), drape], zones
 
 
 def _ballroom(v, W, D, H):

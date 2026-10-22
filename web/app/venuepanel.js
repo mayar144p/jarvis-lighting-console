@@ -27,6 +27,7 @@ const OBJECT_ADD = [
   ["dj_booth", "DJ booth"], ["bar", "Bar"], ["speaker", "Speaker"], ["sub", "Sub"],
   ["pillar", "Pillar"], ["screen", "LED screen"], ["riser", "Riser"], ["table", "Table"],
   ["balcony", "Balcony"], ["wall", "Wall"], ["mark", "Performer mark"],
+  ["drape", "Drape (pleated curtain)"], ["panels", "LED panels (a grid)"],
 ];
 export const ZONE_KINDS = [
   ["dancefloor", "Dance floor"], ["standing", "Standing"], ["seating", "Seating"], ["bar", "Bar"],
@@ -67,6 +68,8 @@ function defaults(kind) {
     case "balcony": return { x, z, w: 6, d: 2, h: 0.25, y: 3 };
     case "wall": return { x, z, w: 4, d: 0.15, h: Math.min(3, H) };
     case "mark": return { x, z: Math.max(0.5, (stage.stageFront || 2) - 1.5), w: 0.5, d: 0.5, h: 0.02, y: 0 };
+    case "drape": return { x, z: z - 2, w: 8, d: 0.25, h: Math.min(6, H - 0.5), fold: 0.45, colour: "#6e7076" };
+    case "panels": return { x, z: z - 2, w: 6, d: 0.1, h: 3, y: 1, tile: 0.5, gap: 0.5 };
     default: return { x, z };
   }
 }

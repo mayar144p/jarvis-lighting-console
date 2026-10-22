@@ -20,7 +20,7 @@ function casts(root) {
 const DEG = Math.PI / 180;
 
 const FLOOR_COLOURS = {
-  concrete: 0x3b3d42, wood: 0x4a3a2c, grass: 0x2c3a24, black: 0x17181b,
+  concrete: 0x45474c, wood: 0x4a3a2c, grass: 0x2c3a24, black: 0x17181b,
   carpet: 0x2d2a33, tiles: 0x4a4c52,
 };
 // how much each floor mirrors the lights on it (a black dance floor, tiles)
@@ -436,6 +436,46 @@ function screenMaterial(content, aspect) {
   return mat;
 }
 
+/** A curtain `w` x `h` with vertical folds `fold` m apart, `depth` deep. */
+export function drapeGeo(w, h, fold, depth) {
+  const n = Math.max(8, Math.min(1200, Math.ceil(w / fold * 10)));
+  const geo = new THREE.PlaneGeometry(w, h, n, 1);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    // a soft sine, a little sharper towards the back of each fold
+    const s = Math.sin((x + w / 2) / fold * Math.PI * 2);
+    p.setZ(i, (depth / 2) * Math.sign(s) * Math.pow(Math.abs(s), 0.8));
+  }
+  geo.translate(0, h / 2, 0);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** LED panels in a grid over `w` x `h`: the backs (boxes) and the faces
+ *  (each mapped to its own part of the picture), merged. */
+export function panelGeo(w, h, d, tile, gap) {
+  const cols = Math.max(1, Math.floor((w + gap) / (tile + gap)));
+  const rows = Math.max(1, Math.floor((h + gap) / (tile + gap)));
+  const gw = cols * tile + (cols - 1) * gap, gh = rows * tile + (rows - 1) * gap;
+  const backs = [], faces = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cx = -gw / 2 + tile / 2 + c * (tile + gap), cy = (h - gh) / 2 + tile / 2 + r * (tile + gap);
+      backs.push(baked(new THREE.BoxGeometry(tile, tile, d), new THREE.Vector3(cx, cy, 0)));
+      const f = new THREE.PlaneGeometry(tile * 0.94, tile * 0.94);
+      const uv = f.attributes.uv;
+      for (let i = 0; i < uv.count; i++) {
+        // where this corner of the panel is on the whole grid, 0..1
+        uv.setXY(i, (cx + (uv.getX(i) - 0.5) * tile * 0.94 + gw / 2) / gw, (cy - (h - gh) / 2 + (uv.getY(i) - 0.5) * tile * 0.94) / gh);
+      }
+      f.translate(cx, cy, d / 2 + 0.003);
+      faces.push(f);
+    }
+  }
+  return { backs: mergeGeometries(backs, false), faces: mergeGeometries(faces, false), cols, rows };
+}
+
 function buildObject(o, M) {
   const g = new THREE.Group();
   g.position.set(o.x, o.y || 0, o.z);
@@ -483,6 +523,26 @@ function buildObject(o, M) {
     case "balcony": {
       add(new THREE.BoxGeometry(w, 0.25, d).translate(0, -0.125, 0), custom || M.object);
       add(new THREE.BoxGeometry(w, 1.0, 0.06).translate(0, 0.5, d / 2), M.black);
+      break;
+    }
+    case "drape": {
+      // a pleated curtain: folds `fold` m apart, `d` deep, hung from a bar
+      g.add(Object.assign(new THREE.Mesh(drapeGeo(w, h, o.fold || 0.4, Math.max(0.04, d)),
+        surfaceMaterial(o.colour ? new THREE.Color(o.colour).getHex() : 0x6e7076, { side: THREE.DoubleSide })), { userData: { drape: true } }));
+      const bar = rod(new THREE.Vector3(-w / 2 - 0.1, h + 0.03, 0), new THREE.Vector3(w / 2 + 0.1, h + 0.03, 0), 0.024, 10);
+      if (bar) add(bar, M.steel);
+      break;
+    }
+    case "panels": {
+      // LED panels in a grid, apart from each other: each shows its part of
+      // the picture (the rig's colours, a clip, an image)
+      const { backs, faces, cols, rows } = panelGeo(w, h, Math.max(0.05, d), o.tile || 0.5, o.gap ?? 0.15);
+      if (backs) add(backs, M.black);
+      const content = o.content || "rig";
+      if (faces) {
+        const face = add(faces, content === "off" ? (custom || M.screen) : screenMaterial(content, w / h));
+        if (content !== "off") face.userData.screen = { content, aspect: w / h, cols, rows };
+      }
       break;
     }
     case "mark": {

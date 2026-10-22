@@ -9355,3 +9355,58 @@ def test_curved_rigging() -> None:
     check("Arc / Spiral / S curve in the rigging library, and under + Truss",
           all(k in rd for k in ('["arc", "Arc"', '["spiral", "Spiral"', '["scurve", "S curve"'))
           and all(k in vp for k in ('rigDialog("arc")', 'rigDialog("spiral")', 'rigDialog("scurve")', 'rigDialog("circle")')), "")
+
+
+def test_room_look() -> None:
+    """The room as a pro visualiser draws it: a grey pleated drape (venue
+    object "drape": width, height, fold), a grey stage deck, LED panels in a
+    grid (object "panels": tile size and gap, each showing its part of the
+    picture)."""
+    print("Room look: pleated drapes, grey deck, LED panels")
+    from app import venue as venue_mod
+
+    v = venue_mod.normalise({"version": 2, "room": {"width": 20, "depth": 20, "height": 8},
+                             "stage": {"width": 10, "depth": 6},
+                             "objects": [{"kind": "drape", "x": 0, "z": 0.3, "w": 12, "h": 6, "d": 0.25, "fold": 9},
+                                         {"kind": "panels", "x": 0, "z": 1, "y": 1, "w": 6, "h": 3, "tile": 0.5, "gap": 0.25,
+                                          "content": "javascript:x"},
+                                         {"kind": "drape", "x": 0, "z": 0, "w": 4, "h": 3}]})
+    dr, pn, dr2 = v["objects"]
+    check("a drape keeps its size and folds (kept in range), a default fold when none is given",
+          dr["kind"] == "drape" and dr["w"] == 12 and dr["h"] == 6 and dr["fold"] == 2.0 and dr2["fold"] == 0.4, str(v["objects"]))
+    check("LED panels keep their tile and gap; what they show is the lights unless it is a clip or picture",
+          pn["tile"] == 0.5 and pn["gap"] == 0.25 and pn["content"] == "rig", str(pn))
+    check("a new stage deck is grey", v["stage"]["colour"] == venue_mod.DECK_GREY, str(v["stage"]))
+    t = venue_mod.template("concert")
+    drapes = [o for o in t["objects"] if o["kind"] == "drape"]
+    check("the concert template: a grey pleated drape across the back of a grey stage",
+          len(drapes) == 1 and drapes[0]["w"] >= t["stage"]["width"] and drapes[0]["colour"] == venue_mod.DRAPE_GREY
+          and drapes[0]["z"] < 1 and t["stage"]["colour"] == venue_mod.DECK_GREY, str(drapes))
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        # (a screen draws on a canvas: a stand-in for one, outside a browser)
+        "globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>null,addEventListener(){}})};"
+        f"const V=await import({json.dumps(venue_js)});"
+        "const g=V.drapeGeo(4,3,0.5,0.3);const p=g.attributes.position;"
+        "let zmin=9,zmax=-9,cross=0,prev=null;"
+        "for(let i=0;i<p.count;i++){if(Math.abs(p.getY(i)-3)>1e-6)continue;const z=p.getZ(i);zmin=Math.min(zmin,z);zmax=Math.max(zmax,z);"
+        "if(prev!==null&&Math.sign(z)!==Math.sign(prev)&&Math.abs(z)>1e-9)cross++;if(Math.abs(z)>1e-9)prev=z;}"
+        "const P=V.panelGeo(6,3,0.1,0.5,0.25);const uv=P.faces.attributes.uv;let umin=9,umax=-9;"
+        "for(let i=0;i<uv.count;i++){umin=Math.min(umin,uv.getX(i),uv.getY(i));umax=Math.max(umax,uv.getX(i),uv.getY(i));}"
+        "const built=V.buildVenue({version:2,room:{width:20,depth:20,height:8,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "stage:{x:0,z:0,width:10,depth:6,height:1,colour:'#55575d'},rigging:[],zones:[],cameras:[],crowd:{show:false},"
+        "objects:[{id:'o1',kind:'drape',x:0,z:0.3,y:0,w:12,h:6,d:0.25,fold:0.4,rot:0},"
+        "{id:'o2',kind:'panels',x:0,z:1,y:1,w:6,h:3,d:0.1,tile:0.5,gap:0.25,rot:0,content:'rig'}]},[],{people:false});"
+        "console.log(JSON.stringify({zmin,zmax,cross,cols:P.cols,rows:P.rows,umin,umax,"
+        "screens:built.screens.length,drape:!!built.items.get('o1').children.find(m=>m.userData.drape)}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the drawings are not checked)")
+        return
+    check("the drape is pleated: folds front and back by its depth, one every half metre (8 on 4 m)",
+          abs(got.get("zmax", 0) - 0.15) < 0.01 and abs(got.get("zmin", 0) + 0.15) < 0.01 and 14 <= got.get("cross", 0) <= 16, str(got))
+    check("LED panels: a grid of 8 x 4 on 6 x 3 m (0.5 m tiles, 0.25 m apart), the picture spread over all of them",
+          got.get("cols") == 8 and got.get("rows") == 4 and got.get("umin", -1) >= -1e-6 and got.get("umax", 9) <= 1 + 1e-6, str(got))
+    check("...and they show the rig's colours like a screen; the drape is drawn in the room",
+          got.get("screens") == 1 and got.get("drape") is True, str(got))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange's + More adds a drape and LED panels", '["drape", "Drape (pleated curtain)"]' in vp and '["panels", "LED panels (a grid)"]' in vp, "")
