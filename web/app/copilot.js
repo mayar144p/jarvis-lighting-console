@@ -5,6 +5,7 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
+import { stagePanel } from "./view3d.js";
 
 const history = [];            // [{role, content}] for follow-ups ("warmer")
 
@@ -132,8 +133,8 @@ function shrink(url, side = 768) {
 
 async function viewShot() {
   try {
-    const m = await import("./stagepanel.js");
-    const st = m.getStage && m.getStage();
+    const m = await stagePanel();
+    const st = m && m.getStage();
     return st ? await shrink(st.photo(1024)) : null;
   } catch (e) { return null; }
 }

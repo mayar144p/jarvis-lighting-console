@@ -116,7 +116,7 @@ async function build(rig) {
     const r = fid ? await act("add_heads", { fixture_id: fid, qty }) : { error: inst.error || "not installed" };
     check(r.ok && (r.heads || []).length === qty, `${tag}${qty} x ${it.name} patched`, r.error || "");
   }
-  await p.goto(BASE);
+  await p.goto(BASE + "?3d=1");
   patch = [];
   for (let i = 0; i < 40 && !patch.length; i++) {
     await sleep(500);

@@ -55,7 +55,7 @@ const b = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
 await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ } });
-await p.goto(BASE);
+await p.goto(BASE + "?3d=1");
 for (let i = 0; i < 40; i++) { if (await p.evaluate(() => window.jarvisStage && window.jarvisStage.fixtures.size)) break; await sleep(500); }
 await sleep(3000);
 const out = await p.evaluate(() => {

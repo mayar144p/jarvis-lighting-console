@@ -8,6 +8,7 @@ import { act, post } from "./api.js";
 import { run } from "./actions.js";
 import { state } from "./store.js";
 import { h, modal, toast } from "./ui.js";
+import { needs3d } from "./view3d.js";
 
 const SHAPES = [
   ["rectangle", "Rectangle"], ["l", "L-shape"], ["t", "T-shape"], ["u", "U-shape"],
@@ -229,10 +230,10 @@ export function openRoomDialog(start = "shape") {
       h("li", "Walls snap to right angles and a 10 cm grid; hold Shift for any angle."),
       h("li", "Type a length while drawing (e.g. 8.5 then Enter) to make the next wall exactly that long."),
       h("li", "Backspace takes the last corner back; Esc stops.")),
-    h("div.row-btns", h("button.btn.primary", { onclick: () => { close(); import("./venuepanel.js").then((m) => m.startDrawRoom()); } }, "Draw the walls")));
+    h("div.row-btns", h("button.btn.primary", { onclick: () => { if (!needs3d("Drawing the walls")) return; close(); import("./venuepanel.js").then((m) => m.startDrawRoom()); } }, "Draw the walls")));
   const planPane = () => h("div",
     h("p", "Upload a floor plan (image or PDF), set its scale by measuring one known wall, then trace the room on it."),
-    h("div.row-btns", h("button.btn.primary", { onclick: () => { close(); import("./venuepanel.js").then((m) => m.startPlanUpload()); } }, "Upload a floor plan…")));
+    h("div.row-btns", h("button.btn.primary", { onclick: () => { if (!needs3d("A floor plan")) return; close(); import("./venuepanel.js").then((m) => m.startPlanUpload()); } }, "Upload a floor plan…")));
 
   const PANES = [["shape", "Shape & size", shapePane], ["describe", "Describe it", describePane], ["template", "Template", templatePane],
     ["draw", "Draw it", drawPane], ["plan", "Floor plan", planPane]];

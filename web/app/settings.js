@@ -8,6 +8,7 @@ import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state } from "./store.js";
+import { HAS_3D, set3d, stagePanel } from "./view3d.js";
 import { run } from "./actions.js";
 import { h, modal, toast, confirmBox } from "./ui.js";
 
@@ -211,8 +212,10 @@ export async function openSettings() {
   try { quality.value = localStorage.getItem("jarvis.quality") || "auto"; } catch (e) { /* ignore */ }
   quality.addEventListener("change", () => {
     try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }
-    import("./stagepanel.js").then((m) => { const st = m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
   });
+  const view3d = h("input", { type: "checkbox", checked: HAS_3D });
+  view3d.addEventListener("change", () => set3d(view3d.checked));
   const gigBox = h("input", { type: "checkbox" });
   gigBox.checked = document.body.classList.contains("gig");
   gigBox.addEventListener("change", () => {
@@ -249,6 +252,7 @@ export async function openSettings() {
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
       themeRow(),
       h("h3", "3D view"),
+      h("label.check", view3d, h("span", "Show the 3D view (off for now while it is rebuilt; the desk reloads)")),
       h("label.field", h("span", "Quality"), quality)]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),

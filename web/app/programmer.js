@@ -7,6 +7,7 @@ import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js"
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 import { renderWheels, initWheels } from "./wheels.js";
+import { needs3d, stagePanel } from "./view3d.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -453,9 +454,9 @@ function wireColourMatch() {
 function wirePad() {
   $("#aim-spot").addEventListener("click", () => {
     if (!hasSel()) { toast("Select the lights to aim first"); return; }
-    import("./stagepanel.js").then((m) => {
-      const st = m.getStage();
-      if (!st) return;
+    stagePanel().then((m) => {
+      const st = m && m.getStage();
+      if (!st) { needs3d("Aiming at a spot"); return; }
       toast("Click a spot in the 3D view (Esc cancels)", "", 4000);
       st.pickPoint((p) => run("aim_at", { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, { toast: true }));
     });

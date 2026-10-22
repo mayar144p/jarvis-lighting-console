@@ -12,7 +12,7 @@ import { run, select } from "./actions.js";
 import { $, h, toast } from "./ui.js";
 import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openReadyCheck } from "./dialogs.js";
 import { askCopilot } from "./copilot.js";
-import { toggleFull } from "./stagepanel.js";
+import { HAS_3D, stagePanel } from "./view3d.js";
 import { openMacros, macroCandidates } from "./macros.js";
 
 const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|go\b|back\b|record\b|store\b|master\b|blackout\b|clear\b|palette\b|preset\b|align\b|distribute\b|mirror\b|home\b|select\b|fan\b|help\b|\?)/i;
@@ -30,7 +30,7 @@ const ACTIONS = [
   { t: "Stop all effects", k: "stop effects fx", run: () => run("stop_fx", {}) },
   { t: "Macros…", k: "macros macro script sequence", run: () => openMacros() },
   { t: "Undo", k: "undo oops", run: () => run("undo") },
-  { t: "Stage full screen", k: "full screen stage view", run: () => toggleFull() },
+  ...(HAS_3D ? [{ t: "Stage full screen", k: "full screen stage view", run: () => stagePanel().then((m) => m.toggleFull()) }] : []),
   { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
   { t: "Settings", k: "settings venue stage size midi network", run: () => openSettings() },
   { t: "Help", k: "help keys shortcuts", run: () => openHelp() },

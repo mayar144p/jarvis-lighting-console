@@ -1,8 +1,8 @@
 // Dialogs: add fixtures, fixture profiles, DMX channels, CSV import, shows
 // and help.  Cues, settings and the one-light dialogs live in their own
 // files and are re-exported here, so `./dialogs.js` still has them all.
-import { FixturePreview } from "/js/stage/stage.js";
 import { get, post, token, modelBytes } from "./api.js";
+import { HAS_3D } from "./view3d.js";
 import { openNewShow, startTour } from "./welcome.js";
 import { state, patch, selected } from "./store.js";
 import { run } from "./actions.js";
@@ -52,10 +52,18 @@ export function openAddDialog(query = "") {
       h("button.btn", { title: "Ask for a light no library has yet: it opens a filled-in request on the desk's GitHub page", onclick: () => requestFixture(search.value) }, "Request it…"),
       h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],
-    onClose: () => { if (preview) { preview.destroy(); preview = null; } },
+    onClose: () => { shut = true; if (preview) { preview.destroy(); preview = null; } },
   });
 
-  preview = new FixturePreview(pv);
+  // the light turning in 3D: only with the 3D view on (three.js loads now)
+  let shut = false;
+  if (HAS_3D) {
+    import("/js/stage/preview.js").then((m) => {
+      if (shut) return;
+      preview = new m.FixturePreview(pv);
+      if (chosen && chosen.body) showModel(chosen);
+    }).catch(() => { /* no 3D graphics here: the list still works */ });
+  }
 
   // the fixture shown on the right must be one of the results on the left:
   // a pick left over from before the search was what "Add to stage" added
