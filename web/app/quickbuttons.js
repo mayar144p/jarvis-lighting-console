@@ -723,13 +723,13 @@ function lookSection(s, slot, btn, draw) {
     el.style.setProperty("--tint", tint);
     el.classList.add(...lookClasses(b), ...(s.h > 1 ? ["qbig"] : s.w > 1 ? ["qwide"] : []));
     el.style.width = `${Math.min(s.w, 3) * 92 + (Math.min(s.w, 3) - 1) * 6}px`;
-    el.style.height = `${s.h * ({ s: 44, m: 56, l: 76, xl: 100 }[lay.height] || 56) + (s.h - 1) * 6}px`;
+    el.style.height = `${s.h * ({ s: 48, m: 72, l: 104, xl: 140 }[lay.height] || 72) + (s.h - 1) * 6}px`;
     return el;
   };
   const used = (x) => quick().buttons.some((o) => o.page === page && o.slot === x && !(btn && o.id === btn.id));
   const fit = tileFit(slot, [s.w, s.h], lay.cols, lay.cols * lay.rows, used);
   const warn = (s.w > 1 || s.h > 1) && (!fit || fit.w < s.w || fit.t < s.h)
-    ? h("span.qe-note.warn", !fit ? "The space it needs is taken: it shows at normal size until it is free."
+    ? h("span.qe-note" + (fit ? ".warn" : ""), !fit ? "The buttons in its way move over to the next free places when you save."
       : "It reaches the edge of the page: it shows as big as fits.")
     : null;
   const toggle = (k, label, title) => h("button.chip" + (s[k] ? ".on" : ""), { type: "button", title,
@@ -848,7 +848,8 @@ function editLayout() {
     body.replaceChildren(
       row("Buttons across", chips([4, 5, 6, 8, 10, 12].map((n) => [n, String(n)]), s.cols, (v) => { s.cols = v; draw(); })),
       row("Rows", chips(Array.from({ length: Math.min(8, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
-      row("Row height", chips([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"]], s.height, (v) => { s.height = v; draw(); })),
+      row("Row height", chips([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"],
+        ["fit", "Fill", "The rows share the space there is (a full screen gets tall buttons)"]], s.height, (v) => { s.height = v; draw(); })),
       row("", h("label.check.small", h("input", { type: "checkbox", checked: s.all, onchange: (e) => { s.all = e.target.checked; } }), " Every page")),
       h("div.qe-note", `${s.cols * s.rows} buttons on the page. Fewer across = bigger buttons. Buttons keep their numbers and flow into the new grid in order.`),
       past ? h("div.qe-note.warn", `${past} button(s) past the last row are kept but not shown - add a row to see them.`) : null);

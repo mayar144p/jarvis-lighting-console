@@ -4227,7 +4227,7 @@ def test_button_looks() -> None:
             check("paste look needs buttons", not e.act("quick_style", ids=[], style={"shape": "pill"}).get("ok"))
             # a page's own grid
             check("a page has the usual grid until it is changed", e._quick_public()["layout"] == {}
-                  and e._quick_public()["layout_default"] == {"cols": 8, "rows": 3, "height": "m"})
+                  and e._quick_public()["layout_default"] == {"cols": 8, "rows": 3, "height": "fit"})
             r = e.act("quick_layout", page=2, cols=4, rows=3, height="xl")
             check("4 big buttons across on page 2", r.get("ok") and e._quick_public()["layout"]["2"] == {"cols": 4, "rows": 3, "height": "xl"}, str(r))
             r = e.act("quick_layout", page=2, cols=12, rows=8)
@@ -4238,7 +4238,7 @@ def test_button_looks() -> None:
             r = e.act("quick_layout", page=3, cols=4, rows=2)
             check("a button past the last row is kept, and said", r.get("hidden") == [20] and any(x["id"] == "q3-20" for x in e.quick)
                   and "kept" in r["summary"], str(r))
-            r = e.act("quick_layout", page=3, cols=8, rows=3, height="m")
+            r = e.act("quick_layout", page=3, cols=8, rows=3, height="fit")
             check("back to the usual grid stores nothing", "3" not in e._quick_public()["layout"], str(e._quick_public()["layout"]))
             r = e.act("quick_layout", page=1, cols=6, all_pages=True)
             check("one grid for every page", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 9)))
@@ -8174,6 +8174,19 @@ def test_lights_fader() -> None:
                   e.lite().get("group_masters", {}).get(str(g.get("n", 1))) == 30, str(e.lite().get("group_masters")))
             e.act("group_master", group=g.get("n", 1), level=100)
             e.act("group_master", group=g2.get("n", 2), level=100)
+            # a bigger button makes room: the buttons in its way move to the next free places
+            for k in (1, 2, 9, 10):
+                e.act("quick_set", page=4, slot=k, button={"kind": "flash", "label": f"B{k}"})
+            e.act("quick_fader", id=e.act("quick_set", page=4, slot=3, button={"kind": "fader", "label": "F",
+                                                                             "control": {"what": "master"}})["id"], level=40)
+            big = e.act("quick_set", page=4, slot=1, button={"kind": "flash", "label": "Big", "w": 2, "h": 2})
+            at = {b["label"]: b["slot"] for b in e.quick if b["page"] == 4}
+            check("a bigger button takes its space: the ones in the way move over (none lost)",
+                  big["button"].get("w") == 2 and at.get("Big") == 1 and len(big.get("moved") or []) == 3
+                  and len(at) == 5 and not {at["B2"], at["B9"], at["B10"]} & {1, 2, 9, 10} and at["F"] == 3, str(at))
+            lay = e.act("quick_layout", page=4, height="xl")
+            check("row height: Small..Extra large, and Fill (the rows share the space)", lay.get("ok", True)
+                  and e.act("quick_layout", page=4, height="fit").get("ok", True) and "fit" in e.QUICK_HEIGHTS, str(lay))
             nb = e.act("quick_set", page=3, slot=1, button={"kind": "flash", "label": "Confetti fire", "note": "  both cannons  "})
             nb2 = e.act("quick_set", page=3, slot=2, button={"kind": "flash", "label": "Plain"})
             check("a button's description is the operator's own (kept, trimmed), none until written",

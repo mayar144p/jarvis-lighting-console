@@ -82,8 +82,8 @@ class QuickMixin:
     # a page's grid: buttons across, rows, row height (more across = smaller)
     QUICK_SLOTS = 48                      # the most a page can hold (12 x 4, 8 x 6...)
     QUICK_COLS = (4, 5, 6, 8, 10, 12)
-    QUICK_HEIGHTS = ("s", "m", "l", "xl")
-    LAYOUT_DEFAULT = {"cols": 8, "rows": 3, "height": "m"}
+    QUICK_HEIGHTS = ("s", "m", "l", "xl", "fit")      # fit: the rows share the space
+    LAYOUT_DEFAULT = {"cols": 8, "rows": 3, "height": "fit"}
 
     def _quick_clean(self, raw: dict, page: int, slot: int) -> dict:
         kind = str(raw.get("kind") or "flash").lower()
@@ -600,7 +600,7 @@ class QuickMixin:
                 c = int(v.get("cols", 8))
                 if not 1 <= p <= self.QUICK_PAGES or c not in self.QUICK_COLS:
                     continue
-                hgt = v.get("height", "m") if v.get("height", "m") in self.QUICK_HEIGHTS else "m"
+                hgt = v.get("height") if v.get("height") in self.QUICK_HEIGHTS else self.LAYOUT_DEFAULT["height"]
                 out[str(p)] = {"cols": c, "rows": int(_clamp(v.get("rows", 3), 1, self.QUICK_SLOTS // c)), "height": hgt}
             except (AttributeError, TypeError, ValueError):
                 continue
@@ -754,7 +754,54 @@ class QuickMixin:
         btn = self._quick_clean(raw, page, slot)
         self.quick.append(btn)
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
-        return {"id": key, "button": btn, "summary": f"button {page}.{slot}: {btn['label']}"}
+        moved = self._quick_make_room(btn)
+        return {"id": key, "button": btn, "moved": moved,
+                "summary": f"button {page}.{slot}: {btn['label']}"
+                           + (f" ({len(moved)} button(s) moved over to make room)" if moved else "")}
+
+    def _quick_cells(self, b: dict, cols: int, total: int) -> list[int]:
+        """The slots a big tile covers besides its own (as far as the page goes)."""
+        w, hgt = int(b.get("w") or 1), int(b.get("h") or 1)
+        col = (b["slot"] - 1) % cols
+        w = max(1, min(w, cols - col))
+        out = []
+        for r in range(hgt):
+            for c in range(w):
+                x = b["slot"] + r * cols + c
+                if (r or c) and x <= total:
+                    out.append(x)
+        return out
+
+    def _quick_make_room(self, btn: dict) -> list[str]:
+        """A bigger button takes the space it needs: the buttons in the way
+        move over to the next free places on the page (the layout adapts)
+        instead of the big one staying small."""
+        if int(btn.get("w") or 1) == 1 and int(btn.get("h") or 1) == 1:
+            return []
+        page = btn["page"]
+        lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
+        cols, total = int(lay["cols"]), int(lay["cols"]) * int(lay["rows"])
+        mine = set(self._quick_cells(btn, cols, total))
+        others = [b for b in self.quick if b["page"] == page and b is not btn]
+        covered = set(mine)
+        for b in others:
+            if b["slot"] not in mine:
+                covered |= set(self._quick_cells(b, cols, total))
+        moved = []
+        for b in [b for b in others if b["slot"] in mine]:
+            used = {o["slot"] for o in self.quick if o["page"] == page}
+            free = next((x for x in range(1, total + 1) if x not in used and x not in covered), None)
+            if free is None:
+                p2, free = self._quick_free_slot(page + 1)       # the page is full: the next page
+            else:
+                p2 = page
+            old = b["id"]
+            r = self._a_quick_move(page=page, slot=b["slot"], to_page=p2, to_slot=free)
+            vals = self.__dict__.get("fader_vals") or {}
+            if old in vals:
+                vals[r["id"]] = vals.pop(old)                   # a fader keeps its place
+            moved.append(r["id"])
+        return moved
 
     COLOUR_NAMES = {"#ff0000": "Red", "#0033ff": "Blue", "#00ff40": "Green", "#ffffff": "White",
                     "#ff00cc": "Magenta", "#00c8ff": "Cyan", "#ffb000": "Amber", "#7a00ff": "UV",

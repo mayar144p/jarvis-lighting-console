@@ -1594,7 +1594,9 @@ body[data-bottom="buttons"] .workspace { --pb-h: clamp(260px, 40vh, 460px); }
 .pb-grip::after { content: ""; position: absolute; left: 50%; top: 3px; width: 48px; height: 4px; margin-left: -24px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .15s; }
 .pb-grip:hover::after, .pb-grip.on::after { opacity: 1; background: var(--accent); }
 body.ws-docktop .pb-grip { top: auto; bottom: -4px; }
-.qb-grid { grid-template-columns: repeat(var(--qb-cols, 8), minmax(0, 1fr)); grid-template-rows: repeat(var(--qb-rows, 3), minmax(var(--qb-rowh, 50px), 1fr)); grid-auto-rows: minmax(var(--qb-rowh, 50px), 1fr); overflow-y: auto; }
+/* rows of the height picked in Layout (Small..Extra large); Fill shares the space */
+.qb-grid { grid-template-columns: repeat(var(--qb-cols, 8), minmax(0, 1fr)); grid-template-rows: repeat(var(--qb-rows, 3), var(--qb-rowh, 72px)); grid-auto-rows: var(--qb-rowh, 72px); align-content: start; overflow-y: auto; }
+.qb-grid[data-height="fit"] { grid-template-rows: repeat(var(--qb-rows, 3), minmax(56px, 1fr)); grid-auto-rows: minmax(56px, 1fr); align-content: stretch; }
 .qbtn b { font-size: 14px; }
 .qbtn small { font-size: 10.5px; }
 .blind-pill small, #out-sub { white-space: nowrap; }
@@ -1706,14 +1708,17 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .stage-no3d { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; margin: 0; }
 
 /* Button looks (Edit -> a button -> Look; Edit -> Layout) */
-.qb-grid[data-height="s"] { --qb-rowh: 40px; }
-.qb-grid[data-height="l"] { --qb-rowh: 72px; }
-.qb-grid[data-height="xl"] { --qb-rowh: 96px; }
+.qb-grid[data-height="s"] { --qb-rowh: 48px; }
+.qb-grid[data-height="m"] { --qb-rowh: 72px; }
+.qb-grid[data-height="l"] { --qb-rowh: 104px; }
+.qb-grid[data-height="xl"] { --qb-rowh: 140px; }
 .qb-grid[data-height="l"] .qbtn b { font-size: 16px; }
 .qb-grid[data-height="xl"] .qbtn b { font-size: 19px; }
 .qbtn.qs-square { border-radius: 2px; border-color: color-mix(in srgb, var(--tint) 65%, transparent); }
 .qbtn.qs-pill { border-radius: 999px; padding-inline: 14px; }
 .qbtn.qs-circle { border-radius: 50%; aspect-ratio: 1 / 1; height: 100%; width: auto; max-width: 100%; justify-self: center; align-self: center; padding: 8px; }
+/* a circle on a wide or tall tile is an oval that fills it */
+.qb-grid .qbtn.qs-circle.qwide, .qb-grid .qbtn.qs-circle.qbig { aspect-ratio: auto; width: 100%; height: 100%; }
 .qbtn.qf-solid { background: color-mix(in srgb, var(--tint) 62%, #0b0f15); border-color: color-mix(in srgb, var(--tint) 80%, #fff 0%); color: #fff; }
 .qbtn.qf-solid small { color: rgba(255, 255, 255, .78); }
 .qbtn.qf-solid .qicon { color: #fff; }
