@@ -462,6 +462,46 @@ def rig(v: dict, ident: str) -> dict | None:
     return None
 
 
+# How a light is mounted (a pro desk's hang types): which way its base
+# faces, as the turn from a light standing on the floor (its base down, its
+# front - the display - to the audience) to how it is mounted, before it is
+# turned to face along its truss.  Rows of a 3 x 3 matrix (x across, y up,
+# z towards the audience); the 3D has the same table (web/js/stage/look.js).
+HANGS = ("hung", "standing", "bottom_front", "top_front", "bottom_rear", "top_rear", "boom_left", "boom_right")
+HANG_BASE = {
+    "standing": ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    "hung": ((-1, 0, 0), (0, -1, 0), (0, 0, 1)),            # upside down under a bar
+    "bottom_front": ((1, 0, 0), (0, 0, -1), (0, 1, 0)),      # on its back, its head towards the audience
+    "top_front": ((-1, 0, 0), (0, 0, 1), (0, 1, 0)),         # ...the same, turned over (display up)
+    "top_rear": ((1, 0, 0), (0, 0, 1), (0, -1, 0)),          # its head towards the back of the stage
+    "bottom_rear": ((-1, 0, 0), (0, 0, -1), (0, -1, 0)),
+    "boom_left": ((0, -1, 0), (1, 0, 0), (0, 0, 1)),         # on its side, its head to the left
+    "boom_right": ((0, 1, 0), (-1, 0, 0), (0, 0, 1)),        # ...to the right (as the audience sees it)
+}
+
+
+def hang_of(h: dict) -> str:
+    """How a light is mounted: one of HANGS (its stance when it is simply
+    hung or standing)."""
+    special = h.get("hang")
+    if special in HANG_BASE and special not in ("hung", "standing"):
+        return special
+    hung = (h.get("stance") == "hang") if h.get("stance") else h.get("kind") == "truss"
+    return "hung" if hung else "standing"
+
+
+def hang_turn(name: str, v) -> tuple[float, float, float]:
+    """A direction in the light's own frame, turned as it is mounted."""
+    m = HANG_BASE.get(name) or HANG_BASE["standing"]
+    return tuple(m[i][0] * v[0] + m[i][1] * v[1] + m[i][2] * v[2] for i in range(3))
+
+
+def hang_unturn(name: str, v) -> tuple[float, float, float]:
+    """A direction in the room (before the truss turn) in the light's own frame."""
+    m = HANG_BASE.get(name) or HANG_BASE["standing"]
+    return tuple(m[0][i] * v[0] + m[1][i] * v[1] + m[2][i] * v[2] for i in range(3))
+
+
 def bend_of(r: dict) -> float:
     """How far a curved piece turns, degrees (0: straight)."""
     try:

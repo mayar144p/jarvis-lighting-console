@@ -9410,3 +9410,107 @@ def test_room_look() -> None:
           got.get("screens") == 1 and got.get("drape") is True, str(got))
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     check("Arrange's + More adds a drape and LED panels", '["drape", "Drape (pleated curtain)"]' in vp and '["panels", "LED panels (a grid)"]' in vp, "")
+
+
+def test_hang_types() -> None:
+    """Hang types as on a pro desk (hung, standing, bottom / top front and
+    rear, boom left / right): the desk's aim and the 3D's model agree for
+    every one - each beam, drawn by the 3D's own model, lands on the spot -
+    and a light on a boom points sideways at rest."""
+    print("Hang types: the aim and the 3D agree, a boom light points sideways")
+    from app import engine as eng
+    from app import fixture_kind
+    from app import venue as venue_mod
+
+    for name, m in venue_mod.HANG_BASE.items():
+        det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+               + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        if det != 1:
+            check(f"hang {name} is a turn (not a mirror)", False, str(m))
+    check("every hang is a real turn of the light", all(name in venue_mod.HANG_BASE for name in venue_mod.HANGS), "")
+    check("a boom light's head points sideways (left / right as the audience sees it), on its back towards the audience",
+          venue_mod.hang_turn("boom_left", (0, 1, 0)) == (-1, 0, 0) and venue_mod.hang_turn("boom_right", (0, 1, 0)) == (1, 0, 0)
+          and venue_mod.hang_turn("bottom_front", (0, 1, 0)) == (0, 0, 1) and venue_mod.hang_turn("top_rear", (0, 1, 0)) == (0, 0, -1), "")
+    look_js = (ROOT / "web" / "js" / "stage" / "look.js").read_text(encoding="utf-8")
+    for name, m in venue_mod.HANG_BASE.items():
+        row = f"{name}: [[{m[0][0]}, {m[0][1]}, {m[0][2]}], [{m[1][0]}, {m[1][1]}, {m[1][2]}], [{m[2][0]}, {m[2][1]}, {m[2][2]}]]"
+        if row not in look_js:
+            check(f"the 3D's table has {name} as the desk's", False, row)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Hangtest", "3ch", ["Pan = -270..270", "Tilt = -135..135", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=16, depth=16, height=8, layout=False)
+            e.act("add_heads", query="Hangtest", mode="3ch", qty=1, universe=1, address=1)
+            n = e.patch[0]["head_no"]
+            r = e.act("set_place", head=n, x=-4, y=2.5, z=3, hang="boom left")
+            h = e._head(n)
+            check("set_place takes a hang type (in words too); the snapshot carries it",
+                  r.get("ok") and h.get("hang") == "boom_left" and r.get("hang") == "boom_left"
+                  and next(p for p in e.snapshot()["patch"] if p["head_no"] == n).get("hang") == "boom_left", str(r))
+            check("a hang that isn't one is refused", not e.act("set_place", head=n, hang="sideways-ish").get("ok"), "")
+            e.act("select_heads", heads=[n])
+            e.act("set_intensity", level=100)
+            body = fixture_kind.describe(h)
+            cases = []
+            targets = [(0.0, 0.0, 6.0), (2.0, 1.0, 9.0), (-4.0, 0.0, 7.0)]
+            for hang in venue_mod.HANGS:
+                for yaw in (0.0, 35.0):
+                    e.act("set_place", head=n, x=-4, y=2.5, z=3, hang=hang)
+                    h["yaw"] = yaw                              # free-standing: it keeps a facing
+                    for tgt in targets:
+                        got = e._aim_solve(h, *tgt, closest=True)
+                        if got is None or len(got) > 4:
+                            continue                            # out of its reach
+                        cases.append({"hang": hang, "yaw": yaw, "pan": got[2], "tilt": got[3], "t": list(tgt)})
+            e.act("set_place", head=n, hang="standing")
+            check("standing again clears the hang", "hang" not in h and h.get("stance") == "stand", str(h.get("hang")))
+            e.act("set_place", head=n, hang="boom_right")
+            e.act("set_place", head=n, stance="hang")
+            check("choosing hang / stand clears it too", "hang" not in h and h["stance"] == "hang", "")
+            time.sleep(1.3)                                 # (moves in a burst are one undo step)
+            e.act("set_place", head=n, hang="top_front")
+            on_back = e._head(n).get("hang")
+            e.act("undo")
+            check("undo puts the hang back as it was", on_back == "top_front" and e._head(n).get("hang") is None
+                  and e._head(n).get("stance") == "hang", str(e._head(n).get("hang")))
+        finally:
+            e.shutdown()
+    check("every hang reaches the spots (enough cases to test)", len({c["hang"] for c in cases}) == len(venue_mod.HANGS), str(len(cases)))
+    # the 3D's own model, turned by the 3D's own table: where does its beam go?
+    models = (ROOT / "web" / "js" / "stage" / "models.js").as_uri()
+    look = (ROOT / "web" / "js" / "stage" / "look.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const{{buildFixture}}=await import({json.dumps(models)});"
+        f"const L=await import({json.dumps(look)});"
+        f"const body={json.dumps(body)};const cases={json.dumps(cases)};"
+        "const out=cases.map(c=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "holder.position.set(-4,2.5,3);holder.rotation.set(0,c.yaw*Math.PI/180,0);"
+        "L.hangQuat(c.hang,sk.native==='hung',sk.root.quaternion);"
+        "sk.pan.rotation.y=c.pan*Math.PI/180;sk.tilt.rotation.x=c.tilt*Math.PI/180;holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];const o=em.node.getWorldPosition(new T.Vector3());"
+        "const d=em.dir.clone().transformDirection(em.node.matrixWorld).normalize();"
+        "const v=new T.Vector3(...c.t).sub(o);const along=v.dot(d);const off=Math.sqrt(Math.max(0,v.lengthSq()-along*along));"
+        "return [c.hang,+off.toFixed(3),along>0]});"
+        "const rest=(()=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "L.hangQuat('boom_left',sk.native==='hung',sk.root.quaternion);holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];return em.dir.clone().transformDirection(em.node.matrixWorld).normalize().toArray().map(x=>+x.toFixed(3))})();"
+        "console.log(JSON.stringify({out,rest}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D model is not checked)")
+        return
+    out = got.get("out") or []
+    worst = {}
+    for hang, off, ahead in out:
+        worst[hang] = max(worst.get(hang, 0), off if ahead else 99)
+    check("for every hang, the 3D's beam lands within 10 cm of where the desk aimed it",
+          len(out) == len(cases) and all(v < 0.1 for v in worst.values()), str(worst) + str(got.get("_error", ""))[:300])
+    rest = got.get("rest") or [0, 0, 0]
+    check("a light on a boom (left) points sideways at rest, in the 3D too", rest[0] < -0.99, str(rest))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: a light's Hang (Hung, Standing, Bottom / Top front and rear, Boom left / right)",
+          all(f'["{k}", ' in vp for k in venue_mod.HANGS) and 'hang: hangSel.value' in vp, "")

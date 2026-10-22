@@ -29,6 +29,17 @@ const OBJECT_ADD = [
   ["balcony", "Balcony"], ["wall", "Wall"], ["mark", "Performer mark"],
   ["drape", "Drape (pleated curtain)"], ["panels", "LED panels (a grid)"],
 ];
+// a pro desk's hang types: [value, name, what it means]
+const HANG_TYPES = [
+  ["hung", "Hung", "Upside down under a bar (normal for a light on a truss)."],
+  ["standing", "Standing", "On the floor or on top of a truss, its base down."],
+  ["bottom_front", "Bottom front", "On its back on an upright, its head towards the audience, the display at the bottom."],
+  ["top_front", "Top front", "On its back on an upright, its head towards the audience, the display at the top."],
+  ["bottom_rear", "Bottom rear", "On its back, its head towards the back of the stage, the display at the bottom."],
+  ["top_rear", "Top rear", "On its back, its head towards the back of the stage, the display at the top."],
+  ["boom_left", "Boom left", "On its side on a boom, its head to the left as the audience sees it: at rest it points sideways."],
+  ["boom_right", "Boom right", "On its side on a boom, its head to the right as the audience sees it: at rest it points sideways."],
+];
 export const ZONE_KINDS = [
   ["dancefloor", "Dance floor"], ["standing", "Standing"], ["seating", "Seating"], ["bar", "Bar"],
   ["vip", "VIP"], ["dj", "DJ / stage area"], ["foh", "FOH / tech"], ["backstage", "Backstage"],
@@ -339,6 +350,12 @@ function renderInspector(sel) {
       ...["hang", "stand"].map((k) => h("button" + ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === k ? ".on" : ""), {
         onclick: () => run("set_place", { head: s.head, stance: k, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }),
       }, k === "hang" ? "Hang" : "Stand")));
+    // how it is mounted, as on a pro desk (the aim and the 3D turn it so)
+    const cur = hd.hang || ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === "hang" ? "hung" : "standing");
+    const hangSel = h("select.select", { title: "How the light is mounted: which way its base faces" },
+      ...HANG_TYPES.map(([k, l]) => h("option", { value: k, selected: k === cur }, l)));
+    hangSel.addEventListener("change", () => run("set_place", { head: s.head, hang: hangSel.value, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }));
+    const hangHint = h("p.muted.small", (HANG_TYPES.find((x) => x[0] === cur) || [])[2] || "");
     body.push(h("div.vi-title", `#${hd.head_no} ${hd.name || hd.model}`),
       h("div.vi-sub", (hd.body && hd.body.label) || hd.model),
       h("div.vi-row", field("X", num(hd.x, (v) => run("set_place", { head: s.head, x: v }))),
@@ -346,7 +363,8 @@ function renderInspector(sel) {
         field("Z", num(hd.z, (v) => run("set_place", { head: s.head, z: v })))),
       field("On", rigSel),
       field("Along", along),
-      field("Mount", stance));
+      field("Mount", stance),
+      field("Hang", hangSel), hangHint);
     if (!moving) {
       const rot = hd.rot || null;
       body.push(h("div.vi-row",

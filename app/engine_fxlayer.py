@@ -10,6 +10,7 @@ import re
 import time
 
 from app import fixture_kind, fixtures, merge
+from app import venue as venue_mod
 from app.merge import FX_OUTPUT_ROLES
 from app.engine_base import _LEVELS_CACHE, _OFFISH, _clamp, _truthy, attr_domain
 from app.engine_support import HTP_ROLES, LASER_ROLES
@@ -936,8 +937,9 @@ class FxLayerMixin:
         import math
         if "pan" not in h["map"] or "tilt" not in h["map"]:
             return None
-        hung = (h.get("stance") == "hang") if h.get("stance") else \
-            h.get("kind") == "truss"
+        # how it is mounted (hung, standing, on its back, on a boom...): the
+        # 3D turns its model by the same table (venue.HANG_BASE)
+        hang = venue_mod.hang_of(h)
         # the tilt axis, where the 3D model has it (measured off each model):
         # a spot's is higher than a wash's; a scanner's mirror sits low and
         # in front of its lamp housing
@@ -949,12 +951,14 @@ class FxLayerMixin:
         # holder - so the DMX points the real light where the 3D shows
         yaw = math.radians(self._head_yaw(h))
         cy_, sy_ = math.cos(yaw), math.sin(yaw)
-        ox, oy, oz = h["x"] + ahead * sy_, h["y"] + (-pivot if hung else pivot), h["z"] + ahead * cy_
+        # the tilt axis (and a scanner's mirror), turned as it is mounted, then as its truss
+        bx, by, bz = venue_mod.hang_turn(hang, (0.0, pivot, ahead))
+        ox, oy, oz = h["x"] + bx * cy_ + bz * sy_, h["y"] + by, h["z"] - bx * sy_ + bz * cy_
         wx, dy, wz = tx - ox, ty - oy, tz - oz
         dx, dz = wx * cy_ - wz * sy_, wx * sy_ + wz * cy_
         n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
         dx, dy, dz = dx / n, dy / n, dz / n
-        lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
+        lx, ly, lz = venue_mod.hang_unturn(hang, (dx, dy, dz))
         t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
         p0 = math.degrees(math.atan2(lx, lz))
         pmin, pmax, tmin, tmax = self._aim_span(h)

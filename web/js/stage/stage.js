@@ -24,6 +24,7 @@ import {
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, flash, turnOf, motorStep,
+  hangOf, hangQuat,
 } from "./look.js";
 
 export { GPU_DEVICE };
@@ -332,15 +333,18 @@ export class Stage {
   /** Hang or stand the model, the right way up, where the patch says. */
   _place(inst) {
     const f = inst.data;
-    const hung = f.stance ? f.stance === "hang" : (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
-    inst.hung = hung;
+    // how it is mounted: hung, standing, on its back, on a boom (the desk
+    // aims with the same table, so the 3D beam is where the real one goes)
+    const hang = hangOf(f);
+    inst.hang = hang;
+    inst.hung = hang === "hung";
     inst.holder.position.set(+f.x || 0, +f.y || 0, +f.z || 0);
-    // which way its base faces (a turned truss turns its lights) - the same
-    // angle the desk aims with, so the 3D beam is where the real one goes
+    // which way its base faces (a turned truss turns its lights)
     inst.holder.rotation.set(0, (+f.yaw || 0) * DEG, 0);
-    const flip = inst.sk.native === "hung" ? !hung : hung;
-    inst.sk.root.rotation.set(0, 0, flip ? Math.PI : 0);
-    inst.pick.position.y = (hung ? -1 : 1) * inst.sk.height / 2;
+    hangQuat(hang, inst.sk.native === "hung", inst.sk.root.quaternion);
+    // the click volume follows the body, whichever way it points
+    hangQuat(hang, false, inst.pick.quaternion);
+    inst.pick.position.set(0, inst.sk.height / 2, 0).applyQuaternion(inst.pick.quaternion);
     inst.staticAim = null;
   }
 
@@ -358,6 +362,12 @@ export class Stage {
     const { h } = this.room;
     const front = this.stageFront;
     const p = new THREE.Vector3(+f.x || 0, +f.y || 0, +f.z || 0);
+    if (inst.hang && inst.hang !== "hung" && inst.hang !== "standing") {
+      // on its back or on a boom: it shines straight out, the way its head points
+      this._setStaticDir(inst, new THREE.Vector3(0, 1, 0).applyQuaternion(hangQuat(inst.hang))
+        .applyAxisAngle(UP, (+f.yaw || 0) * DEG));
+      return;
+    }
     let target;
     if (body.type === "tube") {
       target = new THREE.Vector3(p.x * 1.2, p.y, p.z + 6);

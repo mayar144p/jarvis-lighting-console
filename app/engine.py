@@ -277,7 +277,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient", "mount", "rot", "stance", "align", "align_marks")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks")} for h in self.patch},
             # the programmer's own effects (not a button's, not a cue's):
             # recording a cue takes them off, so undo must put them back
             "prog_fx": [dict(f, params=dict(f.get("params") or {}), heads=list(f.get("heads") or []))
@@ -337,7 +337,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient", "mount", "rot", "stance", "align", "align_marks"):
+            for key in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks"):
                 if key in got:
                     head[key] = got[key]
                 else:

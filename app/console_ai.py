@@ -96,7 +96,7 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "auto_patch": (),
     "patch_list": ("fixtures", "start"),
     "set_address": ("head", "universe", "address"),
-    "set_place": ("head", "heads", "x", "y", "z", "rig", "t", "stance", "snap"),
+    "set_place": ("head", "heads", "x", "y", "z", "rig", "t", "stance", "snap", "hang"),
     "run_command": ("text",),
     # the room, the buttons and the timeline
     "aim_at": ("x", "y", "z", "mark", "zone", "heads"),
