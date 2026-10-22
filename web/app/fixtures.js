@@ -447,7 +447,7 @@ function groupItems(head) {
   const heads = sel.includes(head) ? sel : [head];
   const what = heads.length > 1 ? `these ${heads.length}` : "it";
   const items = [];
-  for (const g of groups.slice(0, 8)) {
+  for (const g of groups.slice(0, 16)) {
     const inG = new Set(g.heads);
     if (heads.some((x) => !inG.has(x))) items.push({ label: `Add ${what} to “${g.name}”`, run: () => run("group_edit", { group: g.n, add: heads }, { toast: true }) });
   }

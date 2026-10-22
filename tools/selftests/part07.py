@@ -176,6 +176,23 @@ def test_group_flash_laser_button() -> None:
                   and b.get("values", {}).get("laser_beam1") == 255 and b["values"].get("laser_beam3") == 200, str(r))
             r = e.act("quick_from_laser", heads=[1])
             check("a PAR can't make a laser button", not r.get("ok"), str(r))
+            # a group fader dims a beam bar's beams too
+            e.act("clear")
+            e.act("group_create", name="Lazers", heads=[3])
+            g = e.groups[-1]
+            e.act("fx_arm", on=True)
+            e.act("quick_press", id=b["id"])
+            lz = e.patch[2]
+            b1 = lz["address"] - 1 + lz["map"].index("laser_beam1")
+            full = e.build_frames()[1][b1]
+            e.act("group_master", group=g.get("n", 2), level=50)
+            half = e.build_frames()[1][b1]
+            e.act("group_master", group=g.get("n", 2), level=0)
+            dark = e.build_frames()[1][b1]
+            check("a group fader dims a laser's beams (full, half, dark)", (full, half, dark) == (255, 127, 0),
+                  str((full, half, dark)))
+            e.act("group_master", group=g.get("n", 2), level=100)
+            e.act("fx_kill")
         finally:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")

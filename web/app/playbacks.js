@@ -180,7 +180,7 @@ function renderCues() {
 let grpKey = "";
 const grpFaders = new Map();
 function renderGroupMasters() {
-  const groups = ((state.snap && state.snap.groups) || []).slice(0, 8);
+  const groups = ((state.snap && state.snap.groups) || []).slice(0, 16);
   const box = $("#grp-masters");
   const fold = $("#grp-fold-btn");
   if (fold) fold.hidden = !groups.length;

@@ -216,6 +216,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
         else:
             for r in beams:
                 resolved[r] = int((rest or {}).get(r, 0))
+        # a group fader dims the beams like a light's level (a diode's
+        # brightness); at 0 they are dark
+        share_b = float(over["scale"]) if over and over.get("scale") is not None else 100.0
+        if share_b < 100:
+            for r in beams:
+                if resolved.get(r):
+                    resolved[r] = int(resolved[r] * max(0.0, share_b) / 100)
     dimmerless = not any(r in HTP_ROLES for r in head["map"])
     # (cyan / magenta / yellow are filters, not emitters: a CMY light with
     # no dimmer can't be dimmed by its colour, and driving one to "full"
