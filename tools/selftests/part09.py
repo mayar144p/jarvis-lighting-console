@@ -9151,3 +9151,71 @@ def test_vis_toolbar() -> None:
               got.get("swapped") and got.get("edges") == 12 and got.get("hidesBehind") and got.get("hull") == 0, str(got))
         check("...drawn once however often it is asked, a selected light's lines in the accent, and back to solid",
               got.get("twice") == 1 and got.get("tint") and got.get("back") and got.get("hidden"), str(got))
+
+
+def test_vis_source() -> None:
+    """What the 3D draws (the toolbar's Output / Programmer only / Next
+    GO): the 3D's feed follows it, the DMX never does."""
+    print("3D source: output, programmer only, next GO - the DMX untouched")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1)                   # cue 1: red
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1)                   # cue 2: blue
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                       # live: cue 1, red
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#00ff00")                # the programmer: head 2 green
+            e.act("set_intensity", level=100)
+
+            def feed():
+                return {r["n"]: r for r in e.look_rows()}
+
+            def wire():
+                return bytes(e.build_frames(time.monotonic())[1][:8])
+
+            out_feed, out_wire = feed(), wire()
+            check("Output: the 3D shows what the lights do (head 1 red from the cue, head 2 green from the programmer)",
+                  out_feed[1]["hex"].lower() == "#ff0000" and out_feed[2]["hex"].lower() == "#00ff00", str(out_feed))
+            r = e.act("vis_source", source="programmer")
+            pf = feed()
+            check("Programmer only: head 1 (only in the cue) is dark, head 2 shows the programmer's green",
+                  r["ok"] and 1 not in pf and pf[2]["hex"].lower() == "#00ff00", str(pf))
+            check("...and the DMX is exactly as it was", wire() == out_wire, f"{out_wire.hex()} -> {wire().hex()}")
+            check("...the lamps that follow the desk still get the output", e._looks()[0]["hex"].lower() == "#ff0000", "")
+            r = e.act("vis_source", source="next")
+            nf = feed()
+            check("Next GO: the 3D shows cue 2 (blue) on head 1, the programmer still on top of head 2",
+                  r["ok"] and nf[1]["hex"].lower() == "#0000ff" and nf[2]["hex"].lower() == "#00ff00"
+                  and "PB1" in r["summary"] and "cue 2" in r["summary"], str(nf) + r.get("summary", ""))
+            check("...the DMX still the output", wire() == out_wire, "")
+            e.act("cue_go", playback=1)                       # now on cue 2: next GO is the top again? no loop: stays on 2
+            check("after GO the preview moves on with it", feed()[1]["hex"].lower() == "#0000ff", "")
+            e.act("playback_level", playback=1, level=0)
+            check("a fader down still previews its next cue (at full)", feed()[1]["hex"].lower() == "#0000ff", "")
+            r = e.act("vis_source", source="next", playback=999)
+            check("a playback that isn't there is refused", not r["ok"], str(r))
+            r = e.act("vis_source", source="sideways")
+            check("an unknown source is refused, in plain words", not r["ok"] and "output" in (r.get("error") or ""), str(r))
+            before = e._undo_public() if hasattr(e, "_undo_public") else None
+            e.act("vis_source", source="output")
+            check("back to Output; not an undo step; in the snapshot for every window",
+                  e.vis_source["source"] == "output" and (e._undo_public() == before if before is not None else True)
+                  and e.snapshot()["vis_source"]["source"] == "output", "")
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("the toolbar's source list: Output / Programmer only / Next GO",
+          all(k in html for k in ('id="vis-source"', '"output">Output<', '"programmer">Programmer only<', '"next">Next GO<'))
+          and 'run("vis_source"' in sp, "")

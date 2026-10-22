@@ -1345,6 +1345,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "show_file": self.show_file,
                 "venue": self.venue,
                 "venue_orient": venue_mod.orientation(self.venue),
+                "vis_source": dict(self._vis()),
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "step_fx": [dict(f) for f in self._steps()],

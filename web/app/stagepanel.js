@@ -287,6 +287,16 @@ function initVisBar() {
     keep("visCam", stage.proj);
   }));
   $("#vis-fit").addEventListener("click", () => stage.fitRoom());
+  // what the 3D shows (the engine's setting: every 3D window follows it)
+  const src = $("#vis-source");
+  src.addEventListener("change", () => run("vis_source", { source: src.value }, { toast: true }));
+  const showSource = () => {
+    const v = (state.snap && state.snap.vis_source) || { source: "output" };
+    if (src.value !== v.source) src.value = v.source;
+    src.classList.toggle("preview", v.source !== "output");      // not what the lights do: say so
+  };
+  on("snapshot", showSource);
+  showSource();
   mouse(pref("visMouse", "camera"));
   const cam = pref("visCam", "per");
   if (cam !== "per") setTimeout(() => stage.setProjection(cam), 600);   // once the room is in

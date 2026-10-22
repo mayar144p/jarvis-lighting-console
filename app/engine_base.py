@@ -130,6 +130,8 @@ UNDO_EXCLUDED = frozenset({
     # desk, undo walks back what you did to them, not what you clicked.
     "select_all", "select_group", "select_heads", "select_similar",
     "select_query", "clear_selection", "select_split",
+    # what the 3D shows (output / programmer / next GO) is a view, not the show
+    "vis_source",
 })
 # Ready? counts a DMX send error as a problem this long after it happened
 READY_ERROR_WINDOW_S = 60.0
@@ -681,6 +683,7 @@ ACTIONS = (
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
     "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy", "roam",
+    "vis_source",
 )
 
 

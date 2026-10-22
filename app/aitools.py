@@ -34,7 +34,7 @@ MORE = (
     "tempo_nudge", "tempo_sync", "tempo_tap", "timeline_clip", "timeline_set", "timeline_track",
     "unpark", "venue_add", "venue_align", "venue_array", "venue_camera", "venue_ceiling",
     "venue_info", "venue_orient", "venue_preview", "venue_rig", "venue_room", "venue_stage", "venue_update", "keep_facing",
-    "fx_kill", "colour_cal_get", "fx_status",
+    "fx_kill", "colour_cal_get", "fx_status", "vis_source",
 )
 # Prepared by the AI, done only when the operator taps "Do it".
 CONFIRM = {

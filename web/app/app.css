@@ -2187,10 +2187,10 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 .pl-rect { fill: rgba(139, 141, 255, .12); stroke: var(--accent); stroke-width: 0.03; }
 /* ---- the 3D's toolbar (a pro visualiser's): mouse mode, fit, the views,
    what is drawn, Pers / Orth and the frame rate - in the desk's colours ---- */
-.vis-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+.vis-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px;
   min-height: 38px; padding: 4px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .vis-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); }
-.vis-seg button, .vis-btn, .vis-bar .hud-btn { height: 26px; padding: 0 9px; border-radius: 5px; border: 1px solid transparent; background: transparent;
+.vis-seg button, .vis-btn, .vis-bar .hud-btn { height: 26px; padding: 0 7px; border-radius: 5px; border: 1px solid transparent; background: transparent;
   color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; backdrop-filter: none; }
 .vis-btn, .vis-bar .hud-btn { background: var(--surface-2); border-color: var(--border); }
 .vis-seg button:hover, .vis-btn:hover, .vis-bar .hud-btn:hover { color: var(--text); border-color: var(--border-2); }
@@ -2198,9 +2198,9 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 .vis-bar .hud-btn.icon { width: 28px; padding: 0; }
 .vis-bar .hud-btn.toggle.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .vis-select { height: 26px; padding: 0 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; }
-.vis-ind { min-width: 40px; height: 26px; padding: 0 8px; display: inline-grid; place-items: center; border-radius: 5px; background: #000;
+.vis-ind { min-width: 40px; height: 26px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: 5px; background: #000;
   border: 1px solid var(--border); color: var(--text); font: 600 11.5px/1 var(--mono, ui-monospace, monospace); white-space: nowrap; }
-#vis-fps { min-width: 64px; }
+#vis-fps { min-width: 60px; }
 #vis-fps.idle { color: var(--text-2); }
 .vis-grow { flex: 1; }
 .stage.wire { background: #000; }
@@ -2208,3 +2208,5 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 /* a narrow 3D (beside the panels): the short names (Camera, Fit, Per, Top...) */
 .stage-wrap { container-type: inline-size; }
 @container (max-width: 1100px) { .vis-long { display: none; } }
+/* the 3D shows something other than the output (Programmer only / Next GO) */
+.vis-select.preview { color: var(--blind); border-color: var(--blind); background: var(--blind-bg); }
