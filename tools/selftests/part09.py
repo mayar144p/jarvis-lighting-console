@@ -8476,6 +8476,20 @@ def test_newest_button_wins() -> None:
             e.act("quick_press", id=bright, down=True)
             o = e._override_vals()[1]
             check("...let go: the dim one again", o.get("level") == 30 and o.get("cap") == 30, str(o))
+            e.act("group_create", name="Others", heads=[3])
+            go = e.groups[-1]["n"]
+            mk = lambda slot, g, c: e.act("quick_set", page=5, slot=slot, button={  # noqa: E731
+                "kind": "colour", "label": c, "colour": c, "mode": "latch", "target": {"group": g}, "exclusive": "Colour Spots"})["id"]
+            amber, red, pink = mk(1, g, "#ffbf00"), mk(2, g, "#ff0000"), mk(11, go, "#ff69b4")
+            e.act("quick_press", id=amber, down=True)
+            e.act("quick_press", id=pink, down=True)
+            check("colour rows for two groups, copied from one row (one tag): one colour per group, both on",
+                  amber in e.quick_active and pink in e.quick_active, str(sorted(e.quick_active)))
+            e.act("quick_press", id=red, down=True)
+            check("...a new colour in a group's row replaces only that group's colour",
+                  red in e.quick_active and amber not in e.quick_active and pink in e.quick_active, str(sorted(e.quick_active)))
+            for x in (red, pink):
+                e.act("quick_press", id=x, down=True)
             fl = e.act("quick_set", page=3, slot=3, button={"kind": "flash", "label": "F", "mode": "hold",
                                                             "target": {"heads": [1, 2]}})["id"]
             e.act("quick_press", id=fl, down=True)

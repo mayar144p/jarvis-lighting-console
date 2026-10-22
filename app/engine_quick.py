@@ -1271,9 +1271,16 @@ class QuickMixin:
             return
         if run is None:
             if btn.get("exclusive"):
-                # a radio group: turning this one on turns the others off
+                # a radio group: turning this one on turns the others off.  A
+                # colour button only turns off the ones on its own lights: rows
+                # of colours for several groups (copied from one row, so one
+                # tag) are one colour per group, not one colour on the stage
+                colour = self._colour_only(btn)
+                mine = set(self._quick_heads(btn)) if colour else None
                 for other in [b for b in self.quick if b.get("exclusive") == btn["exclusive"]
                               and b["id"] != key and b["id"] in self.quick_active]:
+                    if colour and self._colour_only(other) and not mine & set(self._quick_heads(other)):
+                        continue
                     self._quick_off(other["id"], force=True)
             if self._colour_only(btn):
                 # two colour buttons for the SAME lights (pink and blue for one
