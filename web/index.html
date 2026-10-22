@@ -425,7 +425,11 @@
           <button class="btn small ghost" id="qb-layout" hidden title="This page's grid: buttons across, rows, row height">▦ Layout</button>
           <button class="btn small" id="qb-edit" title="Set buttons up">Edit</button>
         </div>
-        <div class="qb-grid" id="qb-grid"></div>
+        <div class="qb-body">
+          <div class="qb-grid" id="qb-grid"></div>
+          <!-- full screen: the group faders and the GM beside the buttons -->
+          <div class="qb-faders" id="qb-faders" aria-label="Group faders and grand master"></div>
+        </div>
       </div>
       <div class="tl" id="tl" hidden>
         <div class="tl-bar">

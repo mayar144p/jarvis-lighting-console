@@ -1466,6 +1466,15 @@ input.qfader-in::-moz-range-thumb { width: 20px; height: 26px; border-radius: 6p
 /* the buttons page on the whole screen */
 .qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
 .qb.qb-full .qb-grid { flex: 1; }
+/* the group faders and the GM beside the buttons, in full screen only */
+.qb-body { display: contents; }
+.qb-faders { display: none; }
+.qb.qb-full .qb-body { flex: 1; display: flex; gap: 10px; min-height: 0; }
+.qb.qb-full .qb-faders { display: flex; gap: 6px; padding: 4px 2px 0; border-left: 1px solid var(--border); }
+.qb-faders .master { width: 64px; }
+.qb-faders .master .vfader { width: 44px; }
+.qb-faders .master.gm { margin-left: 6px; }
+.qb-faders .m-label { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 .pages-list { display: flex; flex-direction: column; gap: 4px; }
 .page-row { display: grid; grid-template-columns: 26px minmax(120px, 1fr) 80px repeat(4, auto); gap: 6px; align-items: center; }
 .page-row.on .page-n { color: var(--accent); font-weight: 700; }
