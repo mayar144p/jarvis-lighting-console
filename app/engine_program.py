@@ -746,9 +746,10 @@ class ProgrammerMixin:
             # the master changes the SPEED from here on, never jumps the shape
             last = row.get("_last", row["t0"])
             master = 1.0 if row.get("free") else float(self.speed_master) * float(self.__dict__.get("_sound_speed", 1.0))
-            for lights, f in (() if row.get("free") else speeds):
-                if lights.intersection(heads):
-                    master *= f
+            # a speed fader on its lights (the last moved, where two share them)
+            mine = [s for s in (() if row.get("free") else speeds) if s[0].intersection(heads)]
+            if mine:
+                master *= max(mine, key=lambda s: s[2])[1]
             step = max(0.0, now - last) * master * float(row.get("rate", 1.0))
             row["_last"] = max(last, now)
             row["_v"] = row.get("_v", 0.0) + step

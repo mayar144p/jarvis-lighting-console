@@ -60,6 +60,8 @@ const SWATCH = ["#ffffff", "#ff0000", "#ff5a00", "#ffb000", "#ffe600", "#00ff40"
 const TINTS = ["#38bdf8", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#f8fafc", "#64748b"];
 const SPLITS = [["", "All of them"], ["odd", "Odd"], ["even", "Even"], ["left", "Left half"], ["right", "Right half"]];
 const FX_KINDS = new Set(["sfx", "fog", "laser", "arm", "fxkill"]);
+// a button that can be the show's base look (Going off: its lights' colour buttons too)
+const BASE_KINDS = new Set(["custom", "capture", "dim", "fx", "move", "colour", "flash", "strobe"]);
 const NO_TARGET = new Set(["go", "release", "preset", "blackout", "arm", "fxkill", "fader", "tempo", "cuelist", "estop", "label", "page", "folder"]);
 // page tiles: a heading, a jump to a page, a folder (a page with a way back)
 const PAGE_TILES = new Set(["label", "page", "folder"]);
@@ -352,8 +354,9 @@ function render(force = false) {
       });
     };
     if (!b) {
-      const el = h("button.qbtn.empty", {
-        title: editing ? "Set up this button" : "Empty - press Edit to set it up",
+      // (playing: an empty cell is just space - no outline, nothing to read)
+      const el = h("button.qbtn.empty" + (editing ? "" : ".blank"), {
+        title: editing ? "Set up this button" : null,
         onclick: () => { if (editing) editButton(slot, null); },
       }, editing ? "+" : "");
       drop(el);
@@ -689,7 +692,7 @@ function fromButton(b) {
     quant: b && b.quant !== undefined ? b.quant : "",
     target: b ? { ...(b.target || { all: true }) } : { all: true },
     colour: b ? b.colour || null : null, level: b && b.level !== undefined ? b.level : 100,
-    dim: b && b.dim !== undefined ? b.dim : 30, hz: b ? b.hz || 10 : 10, followFader: !!(b && b.follow_fader),
+    dim: b && b.dim !== undefined ? b.dim : 30, hz: b ? b.hz || 10 : 10, followFader: !!(b && b.follow_fader), base: !!(b && b.base),
     fx: b && b.fx ? b.fx : "rainbow", params: b && b.params ? { ...b.params } : {},
     mix: { level: b && b.level !== undefined, dim: b && b.dim !== undefined, colour: !!(b && b.colour),
       strobe: !!(b && b.hz), kill: !!(b && b.kill) },
@@ -740,6 +743,7 @@ function toButton(s) {
     if (s.exclusive.trim()) b.exclusive = s.exclusive.trim();
   }
   if (d === "label" && s.sits === "side") b.sits = "side";
+  if (s.base && BASE_KINDS.has(d)) b.base = true;
   if (d === "flash") { b.level = s.level; if (s.colour) b.colour = s.colour; }
   if (d === "dim") b.dim = s.dim;
   if (d === "colour") b.colour = s.colour || "#ffffff";
@@ -1039,6 +1043,11 @@ function editButton(slot, btn) {
     }
     if (d === "cuelist") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), s.playback, (v) => { s.playback = v; draw(); })));
     if (d === "colour") kids.push(row("Colour", swatches(SWATCH, s.colour || "#ffffff", (c) => { s.colour = c; draw(); })));
+    if (BASE_KINDS.has(d)) {
+      kids.push(row("Going off", chips([[false, "Only itself"], [true, "Its lights' colour buttons too",
+        "A base look (the show's default): turning it off also turns off the colour buttons on its lights"]], s.base,
+      (v) => { s.base = v; draw(); })));
+    }
     if (d === "strobe") {
       kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"], [30, "Fastest"]], s.hz,
         (v) => { s.hz = v; draw(); }), slider(s.hz, 1, 30, 0.5, (v) => { s.hz = v; }, " Hz")));
