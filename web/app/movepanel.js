@@ -169,7 +169,12 @@ const NEEDS = { circle: "both", figure_eight: "both", pan_sweep: "pan", fan_pan:
 const canRun = (name, ax = axes()) => { const n = NEEDS[name]; return !n || (n === "both" ? ax.both : ax[n]); };
 const lasers = () => selectionHeads().filter((x) => (x.map || []).some((r) => r === "laser_on" || r === "laser_y" || r.startsWith("laser_beam")));
 const EYE_SAFE_M = 3;                      // beams stay at least this high over a crowd
-const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib));
+// the programmer's own movements - the only ones the Move tab changes: a
+// button's (or a cue's, the timeline's) is that button's, and a knob turned
+// here must never replace or retune it
+const running = () => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib) && (f.from || "programmer") === "programmer");
+const othersOn = (heads) => ((state.snap && state.snap.fx) || []).filter((f) => MOVE_KINDS.has(f.lib)
+  && (f.from || "programmer") !== "programmer" && f.heads.some((n) => heads.has(n)));
 const params = () => ({
   speed: +(knobs.mult / knobs.secs).toFixed(4), size: knobs.size, arc: knobs.arc,
   direction: knobs.direction, spread: knobs.spread, lock: knobs.lock,
@@ -416,6 +421,7 @@ function movementBlock() {
   // light is that light's, and showed up here whichever light was picked)
   const mine = new Set(movers().map((x) => x.head_no));
   const act = running().filter((f) => f.heads.some((n) => mine.has(n)));
+  const theirs = othersOn(mine);
   // tap or type the seconds for one turn; what runs changes as it runs
   const secs = knob({ label: "Speed", unit: "s / turn", value: knobs.secs, min: 0.5, max: 200, presets: TURN_PRESETS, invert: true,
     minusTitle: "Faster (fewer seconds)", plusTitle: "Slower (more seconds)",
@@ -462,6 +468,8 @@ function movementBlock() {
           (v) => knobs.lock === v, (v) => { knobs.lock = v; })))),
     moveSpeed(),
     speedMaster(),
+    theirs.length ? h("p.small.muted.mv-theirs", theirs.map((f) => `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} on ${f.heads.length} light(s) is played by a ${f.from}`
+      + ` - change it in that ${f.from}${f.from === "button" ? " (Buttons -> Edit)" : ""}, not here`).join(" · ")) : null,
     act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
       h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
       spaceSelect(f), beatSelect(f),
@@ -562,6 +570,11 @@ function moveText(m) {
 async function saveMove(existing = null) {
   const name = existing ? existing.name : await promptBox("Save as my move", "Name", "", { ok: "Save", placeholder: "e.g. Slow half-turn CCW" });
   if (!name) return;
+  // buttons that play this move change with it: never without saying so
+  const users = existing ? (((state.snap && state.snap.quick) || {}).buttons || []).filter((b) => b.kind === "move" && b.move === existing.id) : [];
+  if (users.length && !await confirmBox(`Update “${name}”?`,
+    `${users.length} button(s) play this move (${users.slice(0, 4).map((b) => b.label).join(", ")}${users.length > 4 ? "…" : ""}) - they will play the new one too.`,
+    { ok: "Update it and its buttons" })) return;
   const heads = movers().map((x) => x.head_no);
   const mine = running().find((f) => f.heads.some((n) => heads.includes(n)));
   const lib = mine ? mine.lib : lastLib;
@@ -689,7 +702,7 @@ function render(force = false) {
   const key = JSON.stringify([sel.map((x) => [x.head_no, x.limits || null, x.range_marks || null]),
     ls.map((x) => [x.head_no, x.y, x.limits || null, x.range_marks || null]),
     ((state.snap && state.snap.move_spots) || []).map((s) => s.key),
-    running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
+    running().map((f) => [f.id, f.lib, f.move, f.params && f.params.speed, f.params && f.params.size, f.params && f.params.beats]), othersOn(new Set(sel.map((x) => x.head_no))).map((f) => [f.id, f.from]), ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam").map((f) => f.id),
     moves(), shapes(), knobs, fine, own.key, own.attrs.length, own.rev,
     state.snap && [state.snap.floor_safe, state.snap.floor_lock, state.snap.floor_movers],
     state.snap && state.snap.venue && [state.snap.venue.seq, state.snap.venue.room, state.snap.venue.zones,

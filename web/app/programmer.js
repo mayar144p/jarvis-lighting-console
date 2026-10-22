@@ -1222,10 +1222,13 @@ function renderRunning(force = false) {
   box.replaceChildren(...list.map((f) => h("div.fx-run",
     h("b", f.label || `${f.kind || "wave"} ${f.role || ""}`),
     h("small", `${(f.heads || []).length} heads` + (f.from && f.from !== "programmer" ? ` · from a ${f.from}` : "")),
-    f.lib ? spaceSelect(f) : null,
-    beatSelect(f),
+    // a button's, cue's or the timeline's effect: Stop only - its knobs are
+    // changed in it (turned here, they changed a playing button by accident)
+    (f.from || "programmer") === "programmer" && f.lib ? spaceSelect(f) : null,
+    (f.from || "programmer") === "programmer" ? beatSelect(f) : null,
     h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
-    fxKnobs(f))),
+    (f.from || "programmer") === "programmer" ? fxKnobs(f)
+      : h("p.muted.small", `Its speed, size and timing are the ${f.from}'s - change them there.`))),
   list.some((f) => (f.from || "programmer") === "programmer")
     ? h("button.btn.small.ghost", { title: "Stop the effects you started; cues' and buttons' effects keep playing", onclick: () => run("stop_fx", { programmer: true }) }, "Stop mine") : null,
   h("button.btn.small.ghost", { title: "Stop every effect, cues' and buttons' too", onclick: () => run("stop_fx", {}) }, "Stop all"));
