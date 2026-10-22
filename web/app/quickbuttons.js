@@ -146,7 +146,8 @@ export function setPage(p) {
 /** A button's tile colour, as the grid draws it (a controller's pad shows it too). */
 export const tileColour = (b) => b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
 let lastKey = "";
-const held = new Set();
+// button id -> the finger (pointer) holding it; null: a key, MIDI pad or controller
+const held = new Map();
 
 const quick = () => (state.snap && state.snap.quick) || { buttons: [], active: [], names: {}, pages: 8, slots: 24 };
 const activeIds = () => new Set((state.lite && state.lite.quick_active) || quick().active || []);
@@ -163,18 +164,23 @@ const autoGroups = () => (state.snap && state.snap.auto_groups) || [];
 // one, so a quick tap handled release-first can't leave a button on.
 const CLIENT = Math.random().toString(36).slice(2, 10);
 let pressSeq = 0;
-function press(btn, down) {
-  if (down) held.add(btn.id); else held.delete(btn.id);
+function press(btn, down, pointer = null) {
+  if (down) held.set(btn.id, pointer); else held.delete(btn.id);
   run("quick_press", { id: btn.id, down, seq: ++pressSeq, client: CLIENT }, { silentError: false }).catch(() => {});
 }
-// a release anywhere lets go of every held button, even if the grid was
-// re-drawn under the finger
-window.addEventListener("pointerup", () => {
-  for (const id of [...held]) {
+// a finger lifted anywhere lets go of the button IT held, even if the grid
+// was re-drawn under it - not the others: a BLACKOUT held with one finger
+// stays on when another finger taps a Flash (two fingers on a touch screen;
+// it used to let go of every held button, and the whole rig came back on)
+const liftFinger = (e) => {
+  for (const [id, finger] of [...held]) {
+    if (finger === null || finger !== e.pointerId) continue;
     const b = quick().buttons.find((x) => x.id === id);
     if (b && b.mode === "hold") press(b, false); else held.delete(id);
   }
-}, true);
+};
+window.addEventListener("pointerup", liftFinger, true);
+window.addEventListener("pointercancel", liftFinger, true);
 
 // Edit: a button whose lights aren't its row's - a Spot colour slipped into
 // the row headed "COBRA 100'S".  The row's heading names a group; a button
@@ -455,7 +461,7 @@ function render(force = false) {
         if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
         el.setPointerCapture(e.pointerId);
         el.classList.add("down");
-        press(b, true);
+        press(b, true, e.pointerId);
       });
       const up = () => {
         el.classList.remove("down");
@@ -1390,7 +1396,7 @@ export function initQuickButtons() {
   on("snapshot", () => renderSideFaders());
   // a held button must never stay stuck on if the window loses focus
   window.addEventListener("blur", () => {
-    for (const id of [...held]) {
+    for (const [id] of [...held]) {
       const b = quick().buttons.find((x) => x.id === id);
       if (b && b.mode === "hold") press(b, false);
     }
