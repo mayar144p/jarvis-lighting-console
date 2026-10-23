@@ -536,6 +536,21 @@ or Live); the first time in each mode the desk offers it once.  A greyed
 to fix (Add lights, Show the clashes, Record a cue, Save, Output
 settings, Turn on Stay on the floor...) and *Check again*.
 
+### Touch screens
+
+The desk behaves like a control panel, not a web page: a swipe, a pinch or a
+stray palm doesn't scroll, zoom or go "back", and nothing gets text-selected.
+Every button, fader, pad and knob follows its own finger - hold BLACKOUT with
+one finger and tap Flash with another; a second finger landing on a fader
+already being moved is ignored. A finger held still on a button is a held
+button, never a menu (the mouse's right-click still opens its menu).
+
+Windows' own gestures (a swipe in from an edge for Task View, notifications or
+the taskbar; three or four fingers to switch apps or show the desktop) are
+stopped from the desktop app: **Desk → Lock touch swipes on this computer…**.
+It asks for an administrator's OK once and starts after you sign out and back
+in; **Unlock** puts them back.
+
 ### Keyboard
 
 | key | does | key | does |

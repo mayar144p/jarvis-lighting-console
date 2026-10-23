@@ -151,22 +151,24 @@ function paintLive() {
   const hits = (q.buttons || []).filter((b) => HITS.has(b.kind)).slice(0, 12);
   const pressBtn = (b) => {
     const el = h("button.live-hit" + (active.has(b.id) ? ".on" : ""), { type: "button", title: `${b.label} (${b.mode === "hold" ? "held while pressed" : "press"})` }, b.label);
+    let finger = null;                           // the finger on it: one per button
     el.addEventListener("pointerdown", (e) => {
+      if (finger !== null) return;
+      finger = e.pointerId;
       el.setPointerCapture(e.pointerId);
       holding++;
       el.classList.add("on");
       run("quick_press", { id: b.id, down: true });
     });
-    let done = false;
-    el.addEventListener("pointerdown", () => { done = false; });
-    const up = () => {
-      if (done) return;
-      done = true;
+    const up = (e) => {
+      if (finger === null || e.pointerId !== finger) return;
+      finger = null;
       holding = Math.max(0, holding - 1);
       run("quick_press", { id: b.id, down: false });
     };
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
+    el.addEventListener("lostpointercapture", up);
     return el;
   };
   const part = h("div.live-part"), next = h("div.live-next muted"), bar = h("i"), beat = h("span.live-beat");

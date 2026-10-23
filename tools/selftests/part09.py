@@ -9750,3 +9750,35 @@ def test_mvr_curves_hangs() -> None:
                 again.shutdown()
     pp = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
     check("the printed patch sheet shows how each light hangs", "L.hang_label" in pp and "Hangs on · how" in pp, "")
+
+
+def test_touch_surface() -> None:
+    """A touch screen is the desk's control surface: no swipe "back", no
+    pinch or double-tap zoom, no page bounce; one finger per button, fader
+    and knob; a finger held on a button opens no menu; the desktop app can
+    turn off Windows' edge swipes and three/four-finger gestures.  (Real
+    fingers: tools/touchcheck.mjs, run in CI's screen check.)"""
+    print("Touch: a control surface, not a web page")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the page: no overscroll, pan only (no zoom), no tap flash",
+          "html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }" in css, "")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the desktop app: swipe-back and pinch off, no page history to go back to",
+          '"overscroll-history-navigation", "0"' in mj and '"disable-pinch"' in mj
+          and "OverscrollHistoryNavigation" in mj and "setVisualZoomLevelLimits(1, 1)" in mj
+          and "navigationHistory.clear()" in mj, "")
+    check("Lock touch swipes also turns off three- and four-finger gestures (per user)",
+          "TouchGestureSetting" in mj and "setFingers(!lock)" in mj and "AllowEdgeSwipe" in mj, "")
+    ui = (ROOT / "web" / "app" / "ui.js").read_text(encoding="utf-8")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("one finger per fader, button, pad, Flash and knob",
+          "if (dragging !== null) return;" in ui and "if (finger !== null) return;" in qb
+          and "if (down !== null) return;" in qb
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
+    check("a finger held on a live button opens no menu (the mouse's right-click still does)",
+          "if (!byTouch(e)) speedMenu(el, b)" in qb and "export const byTouch" in ui, "")
+    tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check("the real-finger check runs in CI", "Input.dispatchTouchEvent" in tc and "node tools/touchcheck.mjs" in ci, "")

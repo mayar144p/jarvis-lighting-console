@@ -8,6 +8,13 @@
 //   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
 "use strict";
 const { app, BrowserWindow, Menu, dialog, ipcMain, powerSaveBlocker, screen, session, shell } = require("electron");
+
+// A touch screen is the desk's control surface, not a web page: a sideways
+// swipe must not go "back" a page, a pinch must not zoom it (set before the
+// app is ready; the page's CSS and guard() below back this up)
+app.commandLine.appendSwitch("overscroll-history-navigation", "0");
+app.commandLine.appendSwitch("disable-pinch");
+app.commandLine.appendSwitch("disable-features", "OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation");
 const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -385,6 +392,11 @@ function guard(wc) {
     if (k === "f5" || (mod && (k === "r" || k === "w"))) e.preventDefault();
   });
   wc.on("will-navigate", (e, url) => { if (!url.startsWith(base)) { e.preventDefault(); shell.openExternal(url); } });
+  // no zoom by pinch, and no page to go "back" to: a stray swipe stays in the show
+  wc.on("did-finish-load", () => {
+    wc.setVisualZoomLevelLimits(1, 1).catch(() => {});
+    try { wc.navigationHistory.clear(); } catch { /* an older Electron: the switches above */ }
+  });
   wc.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(base)) return { action: "allow" };
     if (/^https?:/i.test(url)) shell.openExternal(url);
@@ -407,6 +419,18 @@ function powershell(script, opts = {}) {
     { windowsHide: true, stdio: "ignore", ...opts });
 }
 const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
+// Windows 11's three- and four-finger touch gestures (switch apps, show the
+// desktop): Settings > Bluetooth & devices > Touch, kept per user here (no
+// administrator needed; starts after signing back in)
+const FINGERS_KEY = "HKCU\\Control Panel\\Desktop";
+function fingersOff() {
+  const r = spawnSync("reg", ["query", FINGERS_KEY, "/v", "TouchGestureSetting"], { windowsHide: true, encoding: "utf8" });
+  return r.status === 0 && /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
+}
+function setFingers(on) {
+  spawnSync("reg", ["add", FINGERS_KEY, "/v", "TouchGestureSetting", "/t", "REG_DWORD", "/d", on ? "1" : "0", "/f"], { windowsHide: true });
+  return fingersOff() === !on;
+}
 function machineSwipesOff() {
   const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
   return r.status === 0 && /AllowEdgeSwipe\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
@@ -415,19 +439,20 @@ async function machineSwipes(lock) {
   const win = BrowserWindow.getFocusedWindow();
   const yes = await ask(win, lock ? {
     title: "Lock touch swipes on this computer",
-    message: "Turn off the touch swipes in from the screen's edges on this computer?",
-    detail: "No more Task View, notifications or taskbar from a swipe - for every app, until you unlock it here. "
-      + "Windows asks for an administrator's OK once, and it starts after you sign out and back in (or restart).\n\n"
-      + "Also turn off Settings > Bluetooth & devices > Touch > Three- and four-finger touch gestures: "
-      + "those switch apps too, and only Windows' own setting can stop them.",
+    message: "Turn off Windows' touch gestures on this computer?",
+    detail: "No more Task View, notifications or taskbar from a swipe in from an edge, and no app switching or "
+      + "desktop from three or four fingers - for every app, until you unlock it here. "
+      + "Windows asks for an administrator's OK once (for the edge swipes), and it starts after you sign out "
+      + "and back in (or restart).",
     buttons: ["Cancel", "Lock swipes"], primary: 1, cancel: 0,
   } : {
     title: "Unlock touch swipes on this computer",
-    message: "Turn the touch swipes in from the screen's edges back on?",
+    message: "Turn Windows' touch gestures back on (edge swipes, three and four fingers)?",
     detail: "Windows asks for an administrator's OK, and it starts after you sign out and back in.",
     buttons: ["Cancel", "Unlock swipes"], primary: 1, cancel: 0,
   });
   if (yes !== 1) return;
+  const fingers = setFingers(!lock);              // per user: no administrator needed
   const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
     : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
   const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
@@ -438,9 +463,11 @@ async function machineSwipes(lock) {
   const done = machineSwipesOff() === lock;
   await ask(win, {
     title: "Touch swipes",
-    message: done ? (lock ? "Touch swipes are locked on this computer." : "Touch swipes are back on.")
-      : "Nothing changed (the administrator's OK wasn't given).",
-    detail: done ? "Sign out and back in (or restart) for it to start." : "",
+    message: done ? (lock ? "Touch gestures are locked on this computer." : "Touch gestures are back on.")
+      : fingers ? (lock ? "Three- and four-finger gestures are off; the edge swipes weren't changed (the administrator's OK wasn't given)."
+        : "Three- and four-finger gestures are back on; the edge swipes weren't changed (the administrator's OK wasn't given).")
+        : "Nothing changed (the administrator's OK wasn't given).",
+    detail: done || fingers ? "Sign out and back in (or restart) for it to start." : "",
     buttons: ["OK"], cancel: 0,
   });
   menu();

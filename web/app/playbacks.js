@@ -64,21 +64,24 @@ function build() {
 // Flash: held, the playback runs at full; let go, it goes back to where it
 // was (and stops again if it wasn't running)
 function wireFlash(btn, n) {
-  let was = null;
+  let was = null, finger = null;                 // one finger per Flash: a second can't undo the first
   const down = (e) => {
     e.preventDefault();
+    if (finger !== null) return;
     const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
     if (!(pb.stack || []).length) return;
+    finger = e.pointerId;
     was = { active: !!pb.active, level: pb.level ?? 100 };
     btn.setPointerCapture?.(e.pointerId);
     btn.classList.add("on");
     if (!was.active) run("playback_activate", { playback: n }, { silentError: true });
     run("playback_level", { playback: n, level: 100 }, { silentError: true });
   };
-  const up = () => {
-    if (!was) return;
+  const up = (e) => {
+    if (!was || (e && e.pointerId !== finger)) return;
     const w = was;
     was = null;
+    finger = null;
     btn.classList.remove("on");
     run("playback_level", { playback: n, level: w.level }, { silentError: true });
     if (!w.active) run("playback_release", { playback: n }, { silentError: true });

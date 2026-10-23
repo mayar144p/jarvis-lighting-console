@@ -81,6 +81,11 @@
 
 * { box-sizing: border-box; }
 html, body { min-width: calc(1280px / var(--ui-zoom, 1)); height: 100%; margin: 0; }
+/* a touch screen is the desk's control surface, not a web page: no bounce or
+   swipe "back" at the edges, no pinch or double-tap zoom, no grey flash on a
+   tap - lists and panels still scroll with a finger (pan) */
+html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+img, svg { -webkit-user-drag: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 [hidden], .hidden { display: none !important; }

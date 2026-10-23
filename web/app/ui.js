@@ -183,7 +183,7 @@ export function menu(anchor, items) {
 export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
   el.replaceChildren(h("div.fill"), h("div.cap"));
   const fill = el.firstChild, cap = el.lastChild;
-  let value = min, dragging = false;
+  let value = min, dragging = null;                // the finger (pointer) moving it
   const draw = (v) => {
     const t = (v - min) / (max - min);
     const pct = Math.max(0, Math.min(1, t));
@@ -196,27 +196,29 @@ export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
     return Math.round(min + Math.max(0, Math.min(1, t)) * (max - min));
   };
   el.addEventListener("pointerdown", (e) => {
-    dragging = true;
+    if (dragging !== null) return;                 // one finger per fader: a second one can't jump it
+    dragging = e.pointerId;
     el.setPointerCapture(e.pointerId);
     value = fromY(e.clientY);
     draw(value);
     if (onInput) onInput(value);
   });
   el.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
+    if (dragging !== e.pointerId) return;
     const v = fromY(e.clientY);
     if (v === value) return;
     value = v;
     draw(value);
     if (onInput) onInput(value);
   });
-  const end = () => {
-    if (!dragging) return;
-    dragging = false;
+  const end = (e) => {
+    if (dragging === null || dragging !== e.pointerId) return;
+    dragging = null;
     if (onChange) onChange(value);
   };
   el.addEventListener("pointerup", end);
   el.addEventListener("pointercancel", end);
+  el.addEventListener("lostpointercapture", end);
   el.addEventListener("wheel", (e) => {
     e.preventDefault();
     value = Math.max(min, Math.min(max, value + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 10 : 2)));
@@ -248,12 +250,12 @@ export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
     set(v, { mixed = false, idle = false } = {}) {
       el.classList.toggle("mixed", mixed);
       el.classList.toggle("idle", idle);
-      if (dragging) return;
+      if (dragging !== null) return;
       value = v;
       el.setAttribute("aria-valuenow", v);
       draw(v);
     },
-    get dragging() { return dragging; },
+    get dragging() { return dragging !== null; },
   };
 }
 
@@ -287,3 +289,12 @@ export function typingInField(e) {
 }
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Touch: Windows turns a finger held still into a right-click.  On a
+// lighting button held for a flash or a strobe that must not open a menu
+// mid-show; byTouch(e) tells a finger from the mouse.
+let lastTouch = -1e9;
+if (typeof addEventListener === "function") {
+  addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") lastTouch = performance.now(); }, true);
+}
+export const byTouch = (e) => (e && e.pointerType === "touch") || performance.now() - lastTouch < 1500;

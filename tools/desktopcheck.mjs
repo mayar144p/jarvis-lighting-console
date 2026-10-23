@@ -107,6 +107,11 @@ if (desk) {
   await desk.keyboard.press("F5");
   await sleep(1500);
   check("Ctrl+R and F5 don't reload a window", await desk.evaluate(() => window.__still === 1));
+  // a touch screen: no swipe "back" (no history, the switches) and no pinch zoom
+  const t = await app.evaluate(({ app: a, BrowserWindow }) => ({
+    pinch: a.commandLine.hasSwitch("disable-pinch"), swipe: a.commandLine.getSwitchValue("overscroll-history-navigation"),
+    back: BrowserWindow.getAllWindows().some((w) => w.webContents.navigationHistory.canGoBack()) }));
+  check("touch: no swipe back, no pinch zoom, no page to go back to", t.pinch && t.swipe === "0" && !t.back, JSON.stringify(t));
 }
 
 // closing: the engine stops cleanly (not killed)
