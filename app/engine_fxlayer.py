@@ -1063,8 +1063,8 @@ class FxLayerMixin:
             dts.append(got[3] - m["tilt"])
         if not dps:
             raise ValueError("those marks can't be reached from where this light is placed - check its position")
-        op = sum(dps) / len(dps)
-        ot = sum(dts) / len(dts)
+        op = round(sum(dps) / len(dps), 2) or 0.0          # (never "-0.0")
+        ot = round(sum(dts) / len(dts), 2) or 0.0
         err = max(math.hypot(a - op, b - ot) for a, b in zip(dps, dts))
         h["align"] = {"pan": round(op, 2), "tilt": round(ot, 2)}
         h.pop("align_marks", None)

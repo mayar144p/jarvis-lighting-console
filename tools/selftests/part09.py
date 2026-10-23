@@ -8926,7 +8926,7 @@ def test_line_up() -> None:
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "Keep this mark" in pj
+    check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "It's on the mark" in pj and "Point it there" in pj and "Next light" in pj
           and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
 
 
