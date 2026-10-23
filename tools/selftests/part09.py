@@ -9791,3 +9791,71 @@ def test_touch_surface() -> None:
     tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     check("the real-finger check runs in CI", "Input.dispatchTouchEvent" in tc and "node tools/touchcheck.mjs" in ci, "")
+
+
+def test_old_show_files() -> None:
+    """A show made before this round of changes (a .jarvis file and the
+    autosave, saved by the desk as it was in October 2026, kept in
+    tools/selftests/oldshows) opens on this desk exactly as it was - the same
+    lights, groups, palettes, cues, buttons, pages and room - and puts out
+    the SAME DMX, byte for byte: at rest, playing two cue lists, an old
+    Flash button and an old palette, and booting on the old autosave."""
+    print("Old show files open and play exactly as before")
+    from app import engine as eng
+    from app import showpack
+
+    data = ROOT / "tools" / "selftests" / "oldshows"
+    want = json.loads((data / "oldshow-2026-10-expected.json").read_text(encoding="utf-8"))
+    T = 1000.0
+
+    def frames(e):
+        return {str(u): list(b) for u, b in e.build_frames(now=T).items()}
+
+    def same(name, got, exp):
+        diffs = [(u, i) for u in exp for i in range(512) if exp[u][i] != (got.get(u) or [0] * 512)[i]]
+        check(f"old show: {name} - the same DMX", not diffs and set(got) == set(exp), str(diffs[:6]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "lib.db")
+        e = eng.Engine(db_path=tmp / "lib.db", dry_run=True, show_dir=tmp / "shows")
+        try:
+            r = showpack.restore(e, (data / "oldshow-2026-10.jarvis").read_bytes())
+            check("the old .jarvis opens", r.get("show") == "oldshow", str(r))
+            st = want["state"]
+            check("its lights, groups, palettes and cues", [list(x) for x in [(h["head_no"], h.get("model"), h.get("universe"), h.get("address"), h.get("orient")) for h in e.patch]] == st["lights"]
+                  and [g["name"] for g in e.groups] == st["groups"]
+                  and {k: [p["name"] for p in v] for k, v in e.palettes.items()} == st["palettes"]
+                  and [[c["name"] for c in pb["stack"]] for pb in e.playbacks[:10]] == st["cues"], "")
+            check("its buttons, pages, layouts, moves, room and timeline",
+                  [list(x) for x in sorted((b["page"], b["slot"], b["kind"], b.get("label")) for b in e.quick)] == st["buttons"]
+                  and dict(e.quick_names) == st["page_names"]
+                  and dict(e.__dict__.get("quick_layout") or {}) == st["layout"]
+                  and [m["name"] for m in e.moves] == st["moves"]
+                  and len((e.venue or {}).get("rigging") or []) == st["rig"]
+                  and [t["kind"] for t in e.timeline["tracks"]] == st["tracks"], "")
+            check("its buttons are the Default profile; 40 playbacks", e._quick_public()["profiles"] == ["Default"]
+                  and len(e.playbacks) == 40, "")
+            same("at rest", frames(e), want["f0"])
+            e.act("cue_go", playback=1)
+            same("cue list 1", frames(e), want["f_pb1"])
+            e.act("cue_go", playback=3)
+            same("cue list 3 on top", frames(e), want["f_pb3"])
+            e.act("playback_release", playback=1)
+            e.act("playback_release", playback=3)
+            b = next(b for b in e.quick if b.get("label") == "Old flash")
+            e.act("quick_press", id=b["id"], down=True)
+            same("an old Flash button", frames(e), want["f_flash"])
+            e.act("quick_press", id=b["id"], down=False)
+            e.act("select_heads", heads=[h["head_no"] for h in e.patch if "Intimidator" in (h.get("model") or "")])
+            e.act("include_palette", kind="position", palette="Spots out")
+            same("an old palette", frames(e), want["f_pal"])
+        finally:
+            e.shutdown()
+        fixtures.seed_generics(tmp / "lib2.db")
+        e2 = eng.Engine(db_path=tmp / "lib2.db", dry_run=True, show_dir=tmp / "shows2")
+        try:
+            payload = json.loads((data / "oldshow-2026-10-autosave.json").read_text(encoding="utf-8"))
+            e2._restore_payload(e2._clean_payload(payload))
+            same("the new desk booting on the old autosave", frames(e2), want["f_autosave"])
+        finally:
+            e2.shutdown()
