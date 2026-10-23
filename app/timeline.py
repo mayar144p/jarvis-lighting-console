@@ -71,6 +71,9 @@ def clean_clip(kind: str, raw: dict, doc: dict) -> dict | None:
         if raw.get("step"):
             # a step effect of the show (a two-colour chase...), by id
             clip["step"] = str(raw["step"])[:24]
+        elif raw.get("move"):
+            # one of the show's saved moves ("My moves"), with its own settings
+            clip["move"] = str(raw["move"])[:24]
         elif raw.get("fx"):
             clip["fx"] = str(raw["fx"])[:30]
         else:

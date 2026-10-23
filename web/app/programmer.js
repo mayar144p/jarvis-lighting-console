@@ -7,6 +7,7 @@ import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js"
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 import { renderWheels, initWheels } from "./wheels.js";
+import { needs3d, stagePanel } from "./view3d.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -93,7 +94,7 @@ function renderHeader() {
     box.textContent = `${heads.length} × ${types.length === 1 ? types[0] : types.length + " types"}`;
     box.classList.add("has");
   }
-  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx"].includes(tab));
+  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx", "desk"].includes(tab));
   applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
   // the same kinds as the "In the programmer" bar (GROUP_OF): a shutter is
@@ -453,9 +454,9 @@ function wireColourMatch() {
 function wirePad() {
   $("#aim-spot").addEventListener("click", () => {
     if (!hasSel()) { toast("Select the lights to aim first"); return; }
-    import("./stagepanel.js").then((m) => {
-      const st = m.getStage();
-      if (!st) return;
+    stagePanel().then((m) => {
+      const st = m && m.getStage();
+      if (!st) { needs3d("Aiming at a spot"); return; }
       toast("Click a spot in the 3D view (Esc cancels)", "", 4000);
       st.pickPoint((p) => run("aim_at", { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, { toast: true }));
     });
@@ -865,7 +866,13 @@ function renderProgCells() {
   const box = $("#prog-cells");
   const heads = selectionHeads();
   const sig = heads.map((x) => x.head_no).join(",");
-  if (sig !== cellsSel) { cellsSel = sig; state.cells = []; }       // a new selection starts on All
+  if (sig !== cellsSel) {                                            // a new selection starts on All
+    cellsSel = sig;
+    // ...unless the heads were picked in the 3D (Select Elements)
+    const want = state.pendingCells;
+    state.cells = want && sig === String(want.head) ? [...want.cells] : [];
+    state.pendingCells = null;
+  }
   const n = Math.max(0, ...heads.map(headCount));
   // each head's colour now (the first light's), so you can see what you set
   const look = heads.length ? (state.looks || {})[heads[0].head_no] : null;
@@ -1418,6 +1425,10 @@ function wireTools() {
     const k = b.dataset.orient;
     run("set_orient", k === "clear" ? { heads: sel(), clear: true } : { heads: sel(), [k]: true }, { toast: true });
   }));
+  // FLIP / MIRROR on the Position tab
+  $$("[data-pt]").forEach((b) => b.addEventListener("click", () => run(b.dataset.pt === "flip" ? "flip" : "mirror_pan", {}, { toast: true })));
+  $$("[data-step]").forEach((b) => b.addEventListener("click", () => run("select_step", { step: b.dataset.step }, { toast: true })));
+  $("#lineup-btn").addEventListener("click", () => import("./lineup.js").then((m) => m.openLineUp()));
   $("#sel-similar").addEventListener("click", () => {
     const first = sel()[0];
     if (first === undefined) { toast("Select one fixture of the type you want"); return; }
@@ -1438,6 +1449,7 @@ function showTab(name) {
   if (name === "fx") loadFx();
   if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
+  if (name === "desk") import("./deskview.js").then((m) => { m.initDeskView(); m.renderDeskView(); });
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
   if (name === "laser" || name === "sfx") {
@@ -1572,6 +1584,17 @@ export function initProgrammer() {
     if (tab === "position") renderPad();
   });
   on("looks", () => { renderProgCells(); if (tab === "position") renderPad(); });
+  // heads of a multi-head light picked in the 3D (Select Elements), in this
+  // window or the 3D's own window
+  const cellsPicked = (m) => {
+    if (!m || !Array.isArray(m.cells)) return;
+    const sel = selectionHeads().map((x) => x.head_no);
+    if (sel.length === 1 && sel[0] === m.head) { state.cells = [...m.cells]; cellsSel = String(m.head); cellsKey = ""; }
+    else state.pendingCells = { head: m.head, cells: [...m.cells] };
+    renderProgCells();
+  };
+  on("cells", cellsPicked);
+  try { new BroadcastChannel("jarvis.cells").onmessage = (ev) => cellsPicked(ev.data); } catch (e) { /* an old browser */ }
   on("selection", () => loadPadInfo());
   on("snapshot", () => loadPadInfo());
   void patch; void select;

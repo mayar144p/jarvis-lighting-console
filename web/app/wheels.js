@@ -41,16 +41,25 @@ function wheel(attr, label) {
     "aria-valuetext": "relative" }, h("i"));
   let angle = 0;
   const spin = (n) => { angle += n * 12; knob.style.setProperty("--a", `${angle}deg`); turn(attr, n); };
+  let finger = null;                             // one finger turns it
   knob.addEventListener("pointerdown", (e) => {
+    if (finger !== null) return;
+    finger = e.pointerId;
     knob.setPointerCapture(e.pointerId);
     let last = e.clientY;
     const move = (ev) => {
+      if (ev.pointerId !== finger) return;
       const n = Math.trunc((last - ev.clientY) / 4);          // 4 px a notch, up = more
       if (n) { last -= n * 4; const was = fine; if (ev.shiftKey) fine = true; spin(n); fine = was; }
     };
-    const up = () => { knob.removeEventListener("pointermove", move); knob.removeEventListener("pointerup", up); };
+    const up = (ev) => {
+      if (ev.pointerId !== finger) return;
+      finger = null;
+      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.removeEventListener(t, up);
+      knob.removeEventListener("pointermove", move);
+    };
     knob.addEventListener("pointermove", move);
-    knob.addEventListener("pointerup", up);
+    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.addEventListener(t, up);
   });
   knob.addEventListener("wheel", (e) => { e.preventDefault(); const was = fine; if (e.shiftKey) fine = true; spin(e.deltaY < 0 ? 1 : -1); fine = was; }, { passive: false });
   knob.addEventListener("keydown", (e) => {

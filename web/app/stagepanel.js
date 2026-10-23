@@ -4,7 +4,7 @@ import { setScreenMediaLoader } from "/js/stage/venue.js";
 import { modelBytes, post, token } from "./api.js";
 import { modelDefs } from "./real3d.js";
 import { initVenuePanel } from "./venuepanel.js";
-import { state, on, patch } from "./store.js";
+import { state, on, emit, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, menu, promptBox, toast } from "./ui.js";
 import { atPointer, rowMenu } from "./fixtures.js";
@@ -21,7 +21,7 @@ function fixturesFor(p) {
     head_no: h.head_no, name: h.name || "", manufacturer: h.manufacturer || "",
     model: h.model || "", mode: h.mode || "", kind: h.kind,
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
-    stance: h.stance || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null, gobos2: h.gobos2 || null,
+    stance: h.stance || null, hang: h.hang || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null, gobos2: h.gobos2 || null,
     yaw: +h.yaw || 0,                      // which way its base faces (turns with its truss)
   }));
 }
@@ -54,7 +54,7 @@ function syncRig() {
   }
   const p = patch();
   const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z,
-    h.body && h.body.type, h.stance, h.rot, h.yaw]), state.snap.venue]);
+    h.body && h.body.type, h.stance, h.hang, h.rot, h.yaw]), state.snap.venue]);
   if (sig !== rigSig) {
     rigSig = sig;
     stage.setRig({ fixtures: fixturesFor(p), venue: state.snap.venue || {} });
@@ -111,7 +111,9 @@ export function initStage() {
     },
     onPick: (head, mods) => {
       const cur = new Set((state.snap && state.snap.selected) || []);
-      if (mods.toggle) {
+      if (mods.add) {                                    // Select Fixtures: Shift adds
+        select([head], { add: true });
+      } else if (mods.toggle) {
         if (cur.has(head)) { cur.delete(head); select([...cur]); } else select([head], { add: true });
       } else if (mods.shift && cur.size) {
         const nums = patch().map((h) => h.head_no);
@@ -122,6 +124,8 @@ export function initStage() {
         select([head]);
       }
     },
+    onElement: (head, cell, mods) => pickElement(head, cell, mods),
+    onProjection: (kind) => showProjection(kind),
     loadUnderlay,
     loadGobo,
   });
@@ -137,14 +141,7 @@ export function initStage() {
   on("lite", (l) => { if (l.selected) stage.setSelected(l.selected); });
   on("looks", (looks) => stage.setLooks(looks, 90));
 
-  $$("#views button").forEach((b) => b.addEventListener("click", () => {
-    stage.view(b.dataset.view);
-    $$("#views button").forEach((x) => x.classList.toggle("on", x === b));
-  }));
-  $("#frame-btn").addEventListener("click", () => {
-    const sel = (state.snap && state.snap.selected) || [];
-    stage.frame(sel.length ? sel : null);
-  });
+  initVisBar();
   const haze = $("#haze");
   try { haze.value = localStorage.getItem("jarvis.haze") ?? haze.value; } catch (e) { /* ignore */ }
   stage.setOptions({ haze: +haze.value });
@@ -267,6 +264,86 @@ export async function realBodies() {
   got.length ? "ok" : "", 9000);
 }
 
+// ------------------------------------------------------------ the toolbar
+// What the mouse does, Fit to whole room, the views, Pers / Orth and the
+// frame rate, as on a pro desk's visualiser.
+function initVisBar() {
+  const bar = $("#vis-bar");
+  const wrap = $("#stage-wrap");
+  // the 3D sits under the toolbar, however many rows it wraps to
+  const fit = () => wrap.style.setProperty("--vis-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+  new ResizeObserver(fit).observe(bar);
+  fit();
+  const keep = (k, v) => { try { localStorage.setItem("jarvis." + k, v); } catch (e) { /* private */ } };
+  const pref = (k, d) => { try { return localStorage.getItem("jarvis." + k) || d; } catch (e) { return d; } };
+  const mouse = (mode) => {
+    stage.setMouseMode(mode);
+    $$("#vis-mouse button").forEach((b) => b.classList.toggle("on", b.dataset.mouse === stage.mouseMode));
+    keep("visMouse", stage.mouseMode);
+  };
+  $$("#vis-mouse button").forEach((b) => b.addEventListener("click", () => mouse(b.dataset.mouse)));
+  $$("#vis-cams button").forEach((b) => b.addEventListener("click", () => {
+    // Arrange works in the perspective view: a flat view leaves it first
+    if (b.dataset.cam !== "per" && document.body.classList.contains("arranging")) $("#arrange-btn").click();
+    stage.setProjection(b.dataset.cam);
+    keep("visCam", stage.proj);
+  }));
+  $("#vis-fit").addEventListener("click", () => stage.fitRoom());
+  // what the 3D shows (the engine's setting: every 3D window follows it)
+  const src = $("#vis-source");
+  // (Next GO: the playback in focus on the desk, which the desk window tells the engine)
+  src.addEventListener("change", () => run("vis_source", { source: src.value }, { toast: true }));
+  const showSource = () => {
+    const v = (state.snap && state.snap.vis_source) || { source: "output" };
+    if (src.value !== v.source) src.value = v.source;
+    src.classList.toggle("preview", v.source !== "output");      // not what the lights do: say so
+  };
+  on("snapshot", showSource);
+  showSource();
+  mouse(pref("visMouse", "camera"));
+  const cam = pref("visCam", "per");
+  if (cam !== "per") setTimeout(() => stage.setProjection(cam), 600);   // once the room is in
+  showProjection(stage.proj);
+  // pictures a second, twice a second (dimmed while nothing moves)
+  const fps = $("#vis-fps");
+  setInterval(() => {
+    if (document.hidden) return;
+    const idle = performance.now() - (stage._lastDraw || 0) > 1200;
+    const text = `FPS: ${idle ? 0 : stage.fps}`;
+    if (fps.textContent !== text) fps.textContent = text;
+    fps.classList.toggle("idle", idle);
+    fps.title = idle ? "Nothing is moving, so the 3D isn't drawing: it draws again the moment anything changes"
+      : "How many pictures a second the 3D is drawing";
+  }, 500);
+}
+
+function showProjection(kind) {
+  $$("#vis-cams button").forEach((b) => b.classList.toggle("on", b.dataset.cam === kind));
+  const ind = $("#vis-proj");
+  if (ind) ind.textContent = kind === "per" ? "Pers" : "Orth";
+}
+
+/** Select Elements: one head of a multi-head light.  The light is
+ *  selected and the programmer's Heads row picks that head (in this window
+ *  and in the desk's other windows). */
+function pickElement(head, cell, mods) {
+  const sel = (state.snap && state.snap.selected) || [];
+  const same = sel.length === 1 && sel[0] === head;
+  let cells = [cell];
+  if (mods.add && same && state.cells && state.cells.length) {
+    const cur = new Set(state.cells);
+    if (cur.has(cell)) cur.delete(cell); else cur.add(cell);
+    cells = [...cur].sort((a, b) => a - b);
+  }
+  state.pendingCells = { head, cells };
+  if (!same) select([head]);
+  state.cells = cells;
+  stage.setCells(head, cells);
+  emit("cells", { head, cells });
+  try { new BroadcastChannel("jarvis.cells").postMessage({ head, cells }); } catch (e) { /* an old browser */ }
+  toast(`#${head}: head${cells.length > 1 ? "s" : ""} ${cells.join(", ")} picked - colour and settings go to ${cells.length > 1 ? "them" : "it"} only`, "", 3500);
+}
+
 function viewsMenu(btn) {
   const v = (state.snap && state.snap.venue) || {};
   const sel = (state.snap && state.snap.selected) || [];
@@ -274,6 +351,7 @@ function viewsMenu(btn) {
   menu(btn, [
     ...[["front", "Front", "1"], ["left", "House left", "2"], ["right", "House right", "3"], ["back", "Back", "4"],
       ["top", "Plan", "5"], ["overview", "Whole room (3D)", "6"]].map(([v, l, k]) => ({ label: l, hint: `key ${k}`, run: () => stage.view(v) })),
+    { label: "Frame the selection", hint: sel.length ? "key F" : "the whole rig (key F)", run: () => stage.frame(sel.length ? sel : null) },
     "-",
     { label: "From the crowd", hint: "Eye level on the dance floor", run: () => stage.viewCrowd() },
     { label: "From the DJ booth", hint: "Looking the way the DJ faces (key 7)", run: () => stage.viewStage() },

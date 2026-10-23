@@ -8,6 +8,7 @@ import { $, $$, h, menu, toast, promptBox, confirmBox } from "./ui.js";
 import { BUILTIN, clean, gridFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
 import { renderHub } from "./modehub.js";
 import { state, on } from "./store.js";
+import { HAS_3D } from "./view3d.js";
 
 const KEY = "jarvis.workspaces";
 
@@ -40,7 +41,8 @@ function capture(into) {
   Object.assign(into, clean({
     ...into,
     fix: !b.classList.contains("ws-nofix"), prog: !b.classList.contains("ws-noprog"), swap: b.classList.contains("ws-swap"),
-    stage: !b.classList.contains("ws-nostage"), cues: b.classList.contains("ws-cues"),
+    // (with the 3D view off everywhere, a workspace keeps its own choice)
+    stage: HAS_3D ? !b.classList.contains("ws-nostage") : into.stage !== false, cues: b.classList.contains("ws-cues"),
     fixAt: into.fixAt, progAt: into.progAt, dockAt: into.dockAt,
     fixW: parseInt(ws().style.getPropertyValue("--fixtures-w"), 10) || 0,
     progW: parseInt(ws().style.getPropertyValue("--prog-w"), 10) || 0,
@@ -63,13 +65,13 @@ function apply(w) {
     b.classList.toggle("ws-nofix", !w.fix);
     b.classList.toggle("ws-noprog", !w.prog);
     b.classList.toggle("ws-swap", !!w.swap);
-    b.classList.toggle("ws-nostage", w.stage === false);
+    b.classList.toggle("ws-nostage", w.stage === false || !HAS_3D);
     b.classList.toggle("ws-cues", !!w.cues);
     // the job: Set up and Live put their hub where the programmer is
     b.dataset.mode = w.mode;
     saved.lastByMode = { ...(saved.lastByMode || {}), [w.mode]: w.id };
     // where each panel sits: the grid from the workspace (wslayouts.js)
-    const g = gridFor(w);
+    const g = gridFor(HAS_3D ? w : { ...w, stage: false });
     el.style.setProperty("--ws-cols", g.cols);
     el.style.setProperty("--ws-rows", g.rows);
     el.style.setProperty("--ws-areas", g.areas);

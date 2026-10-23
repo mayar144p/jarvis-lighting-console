@@ -4800,8 +4800,8 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("five ready ones (fewer): Set up, Live, then programming, theatre, no 3D",
-          got["ids"] == ["setup", "live", "programming", "theatre", "nostage"], str(got["ids"]))
+    check("six ready ones: Set up, Live, then programming, theatre, the desk (palettes), no 3D",
+          got["ids"] == ["setup", "live", "programming", "theatre", "desk", "nostage"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
@@ -7895,12 +7895,12 @@ def test_b5_room() -> None:
     af = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
           "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
     check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
           and "x.yaw" in mv, "")
-    check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")
+    check("the 3D: a DJ view from the booth (key 7)", '"From the DJ booth"' in sp and 'name === "dj"' in st and "this.djView" in st, "")
 
 
 def test_b6_layouts() -> None:
@@ -8784,3 +8784,1078 @@ def test_show_pack() -> None:
     check("the Show menu: Save everything to a file (asks where) / Open everything from a file",
           "Save everything to a file" in dj and "Open everything from a file" in dj and "jarvisDesk.saveAs" in dj
           and "/api/console/unpack" in dj and '"desk:saveAs"' in mj and "showSaveDialog" in mj, "")
+
+
+def test_button_profiles() -> None:
+    """Button profiles: a whole set of pages per kind of show ("Default",
+    "Halloween"), one on the desk at a time, saved with the show."""
+    print("Button profiles (Default, Halloween...)")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "shows")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "Normal", "target": {"all": True}})
+            e.act("quick_page", page=1, name="Main")
+            check("a show starts with the Default profile only",
+                  e._quick_public()["profiles"] == ["Default"] and e._quick_public()["profile"] == "Default", "")
+            e.act("quick_profile", new="Halloween")
+            check("a new profile is empty and in use", e.quick == [] and e._profiles()["active"] == "Halloween", "")
+            e.act("quick_set", page=1, slot=2, button={"kind": "colour", "label": "Pumpkin", "colour": "#ff6600",
+                                                       "target": {"all": True}})
+            e.act("quick_press", id=e.quick[0]["id"], down=True)
+            e.act("quick_profile_use", name="default")
+            check("switching lets go of the old profile's buttons and brings back the other's pages",
+                  not e.quick_active and [b["label"] for b in e.quick] == ["Normal"]
+                  and e.quick_names == {"1": "Main"}, str(e.quick))
+            e.act("save_show", name="gigs")
+            e.act("show_new")
+            check("a new show has only Default", e._profiles()["order"] == ["Default"], "")
+            e.act("load_show", name="gigs")
+            e.act("quick_profile_use", name="Halloween")
+            check("saved with the show: Halloween's buttons come back",
+                  [b["label"] for b in e.quick] == ["Pumpkin"], str(e.quick))
+            e.act("quick_profile", new="Copy", copy=True)
+            check("a copy starts with the buttons in use", [b["label"] for b in e.quick] == ["Pumpkin"], "")
+            e.act("quick_profile", rename="Copy", to="Xmas")
+            e.act("quick_profile", delete="Xmas")
+            check("deleting the profile in use goes back to Default",
+                  e._profiles()["active"] == "Default" and e._profiles()["order"] == ["Default", "Halloween"], "")
+            e.act("undo")
+            check("undo brings a deleted profile back", "Xmas" in e._profiles()["order"], str(e._profiles()["order"]))
+            for bad in ({"delete": "Default"}, {"rename": "Default", "to": "X"}, {"new": "halloween"}):
+                r = e.act("quick_profile", **bad)
+                check(f"refused: {bad}", not r.get("ok", True), str(r))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the buttons bar has the profile picker", "quick_profile_use" in qb and 'id="qb-profile"'
+          in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_inverted_aim_matches() -> None:
+    """Aim at a spot on an inverted light: the output flips it ONCE (the
+    aim used to flip it too, so the real light got the plain value and went
+    the other way), and the 3D draws it as programmed - the same spot."""
+    print("Inverted lights: the real light and the 3D agree")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover", "3ch", ["Pan = -270..270", "Tilt = -117..117", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover", mode="3ch", qty=1, universe=1, address=1)
+            h = e.patch[0]["head_no"]
+            e.act("set_place", head=h, x=0, y=6, z=2)
+
+            def wire(role):
+                return [c["value"] for c in e.channel_report([h])["heads"][0]["channels"] if c["role"] == role][0]
+
+            def look():
+                return [r for r in e._looks() if r["n"] == h][0]
+            e.act("select_heads", heads=[h])
+            e.act("set_intensity", level=100)
+            e.act("aim_at", x=3, y=0, z=6)
+            plain = (wire("pan"), wire("tilt"), look()["pan"], look()["tilt"])
+            e.act("set_orient", heads=[h], invert_pan=True, invert_tilt=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("an inverted light is sent the flipped value",
+                  wire("pan") == 255 - plain[0] and wire("tilt") == 255 - plain[1], f"{plain} {wire('pan')} {wire('tilt')}")
+            check("and the 3D still draws it at the same spot",
+                  abs(look()["pan"] - plain[2]) < 0.002 and abs(look()["tilt"] - plain[3]) < 0.002, str(look()))
+            e.act("set_orient", heads=[h], invert_pan=False, invert_tilt=False, swap=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("a swapped light: pan goes out on the tilt channel, the 3D the same spot",
+                  wire("tilt") == plain[0] and abs(look()["pan"] - plain[2]) < 0.002, f"{wire('tilt')} {look()}")
+        finally:
+            e.shutdown()
+
+
+def test_line_up() -> None:
+    """Line up with the real light: a light whose pan/tilt zero is off (+7
+    / -3 degrees) pointed at three floor marks by hand - the desk learns the
+    error, then aims it onto any spot and the 3D draws it there."""
+    print("Line up a light with the real one")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=1, universe=1, address=1)
+            h = e.patch[0]
+            n = h["head_no"]
+            e.act("set_place", head=n, x=-1, y=6, z=2)
+            e.act("select_heads", heads=[n])
+            r = e.act("line_up", solve=True)
+            check("no marks: it asks for one", not r.get("ok", True), str(r))
+            for x, z in ((0, 6), (3, 8), (-3, 5)):
+                e.patch[0]["align"] = {"pan": 7, "tilt": -3}       # the real light, on the mark
+                e.act("aim_at", x=x, y=0, z=z)
+                e.patch[0].pop("align")
+                e.act("line_up", x=x, z=z)
+            check("three marks kept", len(e.patch[0].get("align_marks") or []) == 3, str(e.patch[0].get("align_marks")))
+            r = e.act("line_up", solve=True)
+            check("it learns the light's real zero", r.get("align") == {"pan": 7.0, "tilt": -3.0}
+                  and r.get("spread", 9) < 0.1, str(r))
+            e.act("aim_at", x=2, y=0, z=7)
+            got = dict(e.programmer[n])
+            e.patch[0]["align"] = {"pan": 7, "tilt": -3}
+            e.act("aim_at", x=2, y=0, z=7)
+            check("a new spot: the DMX the real light needs", got == dict(e.programmer[n]), f"{got} {e.programmer[n]}")
+            look = [r for r in e._looks() if r["n"] == n][0]
+            check("the 3D draws it from the real zero", look.get("deg", {}).get("pan") == [-263.0, 277.0]
+                  and look["deg"]["tilt"] == [-120.0, 114.0], str(look.get("deg")))
+            e.act("save_show", name="lined")
+            e.act("show_new")
+            e.act("load_show", name="lined")
+            check("saved with the show", e.patch[0].get("align") == {"pan": 7.0, "tilt": -3.0}, str(e.patch[0].get("align")))
+            e.act("line_up", head=n, clear=True)
+            check("Forget the line-up", "align" not in e.patch[0], "")
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "It's on the mark" in pj and "Point it there" in pj and "Next light" in pj
+          and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_programmer_pro_tools() -> None:
+    """The programmer, as on a pro desk: palettes keep each light's own
+    values and the cues made from them follow when they are recorded over;
+    FLIP / MIRROR; one light at a time; a cue's delay and fan; saved moves
+    on the timeline; four pages of ten playbacks."""
+    print("Programmer: per-light palettes, flip, fan, moves on the timeline")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=4, universe=1, address=1)
+            hs = [h["head_no"] for h in e.patch]
+            for i, n in enumerate(hs):
+                e.act("set_place", head=n, x=-3 + 2 * i, y=6, z=2)
+                e.programmer.setdefault(n, {}).update({"pan": 20000 + i * 5000, "tilt": 30000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", name="Fan out")
+            check("a palette keeps each light's own values", r.get("per_light") is True, str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=hs)
+            e.act("include_palette", kind="position", n=1)
+            check("each light gets its own back", [e.programmer[n]["pan"] for n in hs] == [20000, 25000, 30000, 35000], "")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1)
+            for i, n in enumerate(hs):
+                e.programmer.setdefault(n, {}).update({"pan": 40000 - i * 5000, "tilt": 31000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", palette=1)
+            vals = e.playbacks[0]["stack"][0]["values"]
+            check("the cue made from it follows when it is recorded over", r.get("cues") == 1
+                  and [vals[n]["pan"] for n in hs] == [40000, 35000, 30000, 25000]
+                  and vals[hs[0]].get("dimmer") == 100, str(vals))
+            e.act("undo")
+            check("undo puts the cue back too", e.playbacks[0]["stack"][0]["values"][hs[0]]["pan"] == 20000, "")
+            e.act("select_heads", heads=[hs[0]])
+            e.act("aim_at", x=2, y=0, z=7)
+            before = dict(e.programmer[hs[0]])
+            e.act("flip")
+            check("FLIP reaches it from the other end", dict(e.programmer[hs[0]]) != before, "")
+            e.act("flip")
+            check("and twice is back where it was", dict(e.programmer[hs[0]]) == before, "")
+            e.act("mirror_pan")
+            check("MIRROR reverses the pan only", e.programmer[hs[0]]["pan"] == 65535 - before["pan"]
+                  and e.programmer[hs[0]]["tilt"] == before["tilt"], "")
+            e.act("select_heads", heads=hs)
+            steps = [e.act("select_step", step=s)["selected"] for s in ("next", "next", "prev")]
+            e.act("select_step", step="all")
+            check("Next / Prev light, then All", steps == [[hs[0]], [hs[1]], [hs[0]]] and e.selected == hs, str(steps))
+            # a cue's delay and fan
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=2)
+            e.act("edit_cue", playback=2, cue=1, fade=1, delay=1, fan=3, fan_dir="left")
+            pb = e.playbacks[1]
+            e._goto(pb, 0, 100.0)
+
+            def lv(t):
+                v = e._pb_values(pb, 100.0 + t)
+                return [v.get(n, {}).get("dimmer", 0) for n in hs]
+            check("the delay: nothing before 1 s", lv(0.5) == [0, 0, 0, 0], str(lv(0.5)))
+            check("the fan: left to right, one after another", lv(2.5) == [100, 50, 0, 0], str(lv(2.5)))
+            check("all there at the end", lv(5.5) == [100, 100, 100, 100], str(lv(5.5)))
+            # a saved move on the timeline
+            e.act("select_heads", heads=hs)
+            e.act("run_fx", name="circle")
+            e.act("move_save", name="Big circle")
+            mid = e.moves[0]["id"]
+            e.act("stop_fx")
+            e.act("timeline_track", kind="fx")
+            tid = e.timeline["tracks"][0]["id"]
+            c = e.act("timeline_clip", track=tid, t=0, move=mid, dur=4, target={"all": True})
+            check("a saved move as a timeline clip", (c.get("clip") or {}).get("move") == mid, str(c))
+            e.act("timeline_play")
+            time.sleep(0.4)
+            check("the timeline plays it", any(f.get("move") == mid for f in e.fx), str(e.fx))
+            e.act("timeline_stop")
+            # four pages of ten playbacks
+            check("40 playbacks", len(e.playbacks) == 40, str(len(e.playbacks)))
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=35)
+            e.act("save_show", name="pro")
+            e.act("show_new")
+            e.act("load_show", name="pro")
+            check("a cue on playback 35 is saved", len(e.playbacks[34]["stack"]) == 1, "")
+        finally:
+            e.shutdown()
+    cd = (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    tj = (ROOT / "web" / "app" / "timeline.js").read_text(encoding="utf-8")
+    check("on screen: delay / fan per cue, playback pages, My moves on the timeline",
+          "delayFan" in cd and "renderPages" in pj and "My moves" in tj, "")
+
+
+def test_desk_view() -> None:
+    """The desk view (Programmer -> Palettes, or the Desk workspace): the
+    usual palettes made for the rig (each light its own), palettes renamed
+    and deleted, and the windows / command strip on screen."""
+    print("Desk view: palette windows, the usual palettes, the command strip")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="moving head spot", qty=4)
+            e.act("add_heads", query="LED PAR", qty=4)
+            e.act("select_heads", heads=[1])
+            e.programmer[1] = {"pan": 5}
+            r = e.act("palette_defaults", kind="colour")
+            check("the usual colours, for this rig", r.get("made", [])[:3] == ["White", "Red", "Amber"]
+                  and len(e.palettes["colour"]) == 10, str(r))
+            check("the programmer and the selection are as they were", e.programmer == {1: {"pan": 5}} and e.selected == [1], "")
+            red = next(p for p in e.palettes["colour"] if p["name"] == "Red")
+            check("a colour palette knows its colour (for its tile)", red.get("hex", "").lower() in ("#ff0000",), str(red.get("hex")))
+            r = e.act("palette_defaults", kind="position")
+            check("the usual positions", {"Centre", "Down", "Out"} <= set(r.get("made") or []), str(r))
+            r = e.act("palette_defaults", kind="colour")
+            check("made once: a second time adds nothing", not r.get("ok", True), str(r))
+            e.act("palette_edit", kind="colour", palette=red["n"], name="Blood")
+            check("a palette renamed", any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+            e.act("palette_edit", kind="colour", palette="Blood", delete=True)
+            check("and deleted", not any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+        finally:
+            e.shutdown()
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    ws = (ROOT / "web" / "app" / "wslayouts.js").read_text(encoding="utf-8")
+    check("the windows: Group, Position, Colour, Beam; the strip: select, flip, record, windows, keypad",
+          all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
+                                '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
+    check("the Desk workspace opens on it", 'id: "desk"' in ws and 'tab: "desk"' in ws, "")
+    pl = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
+    check("the plot: Plan / Front / Side, head numbers / names / DMX, click and box select, Design mode moves lights",
+          all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
+                                '"dmx", "DMX addresses"', '"set_place"', "Design mode", "pl-rect", "trussPath"))
+          and "openPlot" in dv, "")
+
+
+def _node_three(js: str) -> dict:
+    """Run a module script under node with `three` (and its addons) mapped
+    to the vendored copy; the last line it prints, as JSON ({} when node is
+    missing or it failed - the caller's check reports it)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three')return{{url:'{vend}three.module.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=60)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-400:]}
+
+
+def test_vis_toolbar() -> None:
+    """The 3D's toolbar, as on a pro visualiser: Move Camera / Select
+    Fixtures / Select Elements, Fit to whole room, Per / Top / Front / Side
+    / Free views (the flat ones drawn as white lines on black), Pers / Orth
+    and the frame rate; the old buttons still there (>> and the right)."""
+    print("3D toolbar: mouse modes, the views, line drawings, Pers/Orth, FPS")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    st = stage_js()
+    pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the toolbar: Move Camera, Select Fixtures, Select Elements, Fit to whole room",
+          all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+              for k in ('data-mouse="camera"', ">Move Camera<", 'data-mouse="fixtures"', ">Select Fixtures<",
+                        'data-mouse="elements"', ">Select Elements<", 'id="vis-fit"', ">Fit to whole room<")), "")
+    check("...Per / Top / Front / Side / Free View, Pers / Orth, FPS",
+          all(f'data-cam="{k}"' in html for k in ("per", "top", "front", "side", "free"))
+          and all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+                  for k in (">Per View<", ">Top View<", ">Front View<", ">Side View<", ">Free View<",
+                                      'id="vis-proj"', 'id="vis-fps"', "FPS: 0")), "")
+    check("...and everything that was on the 3D before: crowd, zones, lights only, arrange, full screen, >> for the rest",
+          all(f'id="{k}"' in html for k in ("people-btn", "zones-btn", "lightsonly-btn", "arrange-btn", "fullscreen-btn", "views-more"))
+          and "&gt;&gt;" in html and '"Frame the selection"' in sp and '"From the DJ booth"' in sp, "")
+    check("the stage: flat cameras framing the room, line drawings, the mouse modes, a head of a light under the pointer",
+          all(k in st for k in ("OrthographicCamera", "setProjection(kind)", "fitRoom(", "_setWire(", "wireUp(",
+                                "setMouseMode(", "cellAt(", "this.fps", "onElement", "isOrthographicCamera")), "")
+    check("the toolbar is wired: views, mouse, fit, Pers/Orth, FPS; a head picked in 3D reaches the programmer",
+          all(k in sp for k in ("stage.setProjection(", "stage.setMouseMode(", "stage.fitRoom()", '"Pers" : "Orth"', "FPS: ",
+                                'BroadcastChannel("jarvis.cells")'))
+          and 'BroadcastChannel("jarvis.cells")' in pg and "state.pendingCells" in pg, "")
+    # the line drawing itself, run for real: a box becomes its 12 edges and back
+    wire = (ROOT / "web" / "js" / "stage" / "wire.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const W=await import({json.dumps(wire)});"
+        "const g=new T.Group();const mat=new T.MeshStandardMaterial();"
+        "const box=new T.Mesh(new T.BoxGeometry(1,2,3),mat);g.add(box);"
+        "const hull=new T.Mesh(new T.BoxGeometry(1,1,1),new T.MeshBasicMaterial({visible:false}));g.add(hull);"
+        "W.wireUp(g,true);const lines=box.children.find(c=>c.isLineSegments);"
+        "const on={swapped:box.material!==mat,edges:lines?lines.geometry.attributes.position.count/2:0,"
+        "hidesBehind:box.material.colorWrite===false&&box.material.depthWrite!==false,hull:hull.children.length};"
+        "W.wireUp(g,true);const twice=box.children.filter(c=>c.isLineSegments).length;"
+        "W.wireTint(g,W.WIRE_SEL);const tint=lines.material===W.WIRE_SEL;"
+        "W.wireUp(g,false);"
+        "console.log(JSON.stringify({...on,twice,tint,back:box.material===mat,hidden:!lines.visible}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the line drawing is not run)")
+    else:
+        check("a line drawing: a box's surface hides what is behind it and its 12 edges are drawn",
+              got.get("swapped") and got.get("edges") == 12 and got.get("hidesBehind") and got.get("hull") == 0, str(got))
+        check("...drawn once however often it is asked, a selected light's lines in the accent, and back to solid",
+              got.get("twice") == 1 and got.get("tint") and got.get("back") and got.get("hidden"), str(got))
+
+
+def test_vis_source() -> None:
+    """What the 3D draws (the toolbar's Output / Programmer only / Next
+    GO): the 3D's feed follows it, the DMX never does."""
+    print("3D source: output, programmer only, next GO - the DMX untouched")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1)                   # cue 1: red
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1)                   # cue 2: blue
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                       # live: cue 1, red
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#00ff00")                # the programmer: head 2 green
+            e.act("set_intensity", level=100)
+
+            def feed():
+                return {r["n"]: r for r in e.look_rows()}
+
+            def wire():
+                return bytes(e.build_frames(time.monotonic())[1][:8])
+
+            out_feed, out_wire = feed(), wire()
+            check("Output: the 3D shows what the lights do (head 1 red from the cue, head 2 green from the programmer)",
+                  out_feed[1]["hex"].lower() == "#ff0000" and out_feed[2]["hex"].lower() == "#00ff00", str(out_feed))
+            r = e.act("vis_source", source="programmer")
+            pf = feed()
+            check("Programmer only: head 1 (only in the cue) is dark, head 2 shows the programmer's green",
+                  r["ok"] and 1 not in pf and pf[2]["hex"].lower() == "#00ff00", str(pf))
+            check("...and the DMX is exactly as it was", wire() == out_wire, f"{out_wire.hex()} -> {wire().hex()}")
+            check("...the lamps that follow the desk still get the output", e._looks()[0]["hex"].lower() == "#ff0000", "")
+            r = e.act("vis_source", source="next")
+            nf = feed()
+            check("Next GO: the 3D shows cue 2 (blue) on head 1, the programmer still on top of head 2",
+                  r["ok"] and nf[1]["hex"].lower() == "#0000ff" and nf[2]["hex"].lower() == "#00ff00"
+                  and "PB1" in r["summary"] and "cue 2" in r["summary"], str(nf) + r.get("summary", ""))
+            check("...the DMX still the output", wire() == out_wire, "")
+            e.act("cue_go", playback=1)                       # now on cue 2: next GO is the top again? no loop: stays on 2
+            check("after GO the preview moves on with it", feed()[1]["hex"].lower() == "#0000ff", "")
+            e.act("playback_level", playback=1, level=0)
+            check("a fader down still previews its next cue (at full)", feed()[1]["hex"].lower() == "#0000ff", "")
+            r = e.act("vis_source", source="next", playback=999)
+            check("a playback that isn't there is refused", not r["ok"], str(r))
+            r = e.act("vis_source", source="sideways")
+            check("an unknown source is refused, in plain words", not r["ok"] and "output" in (r.get("error") or ""), str(r))
+            before = e._undo_public() if hasattr(e, "_undo_public") else None
+            e.act("vis_source", source="output")
+            check("back to Output; not an undo step; in the snapshot for every window",
+                  e.vis_source["source"] == "output" and (e._undo_public() == before if before is not None else True)
+                  and e.snapshot()["vis_source"]["source"] == "output", "")
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("the toolbar's source list: Output / Programmer only / Next GO",
+          all(k in html for k in ('id="vis-source"', '"output">Output<', '"programmer">Programmer only<', '"next">Next GO<'))
+          and 'run("vis_source"' in sp, "")
+
+
+def _node_stage(js: str) -> dict:
+    """Run a script that imports the 3D's own modules (three.js mapped to
+    the vendored WebGPU build, as the page's import map does)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three'||s==='three/webgpu')return{{url:'{vend}three.webgpu.js',shortCircuit:true}};"
+            f"if(s==='three/tsl')return{{url:'{vend}three.tsl.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=90)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-600:]}
+
+
+def test_curved_rigging() -> None:
+    """Curved truss: an arc, a spiral and an S curve (and a smooth circle)
+    from the rigging library - lights spread evenly along the curve, on it,
+    facing along it; the 3D draws the same curve the desk places them on."""
+    print("Curved rigging: arc, spiral, S curve; lights along the curve")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=1, y=5, z=3, radius=5, start=20, end=160)
+    mids = [venue_mod.curve_point(r, k / 4) for r in arc for k in range(5)]
+    check("an arc: every point of every piece on the circle (to 1 cm), the pieces joined",
+          max(abs(math.hypot(p[0] - 1, p[2] - 3) - 5) for p in mids) < 0.01
+          and all(math.dist(arc[i]["b"], arc[i + 1]["a"]) < 1e-6 for i in range(len(arc) - 1)), "")
+    sc = riglib.build("scurve", x=0, y=5, z=6, radius=3, start=0, end=90, rot=30)
+    kink = max(abs(math.degrees((venue_mod.curve_heading(sc[i], 1) - venue_mod.curve_heading(sc[i + 1], 0) + math.pi)
+                                % (2 * math.pi) - math.pi)) for i in range(len(sc) - 1))
+    turns = sum(r["bend"] for r in sc[:len(sc) // 2]), sum(r["bend"] for r in sc[len(sc) // 2:])
+    check("an S curve: one bend each way, smooth all along (no kink)",
+          kink < 0.5 and turns[0] > 80 and turns[1] < -80, f"{kink:.2f} {turns}")
+    sp = riglib.build("spiral", x=-6, y=3, z=5, radius=2, radius_end=1.2, turns=2.5, rise=1.4)
+    check("a spiral: winds 2.5 times round, rising 3.5 m, narrowing to 1.2 m",
+          abs(sum(r["bend"] for r in sp) - 900) < 3 and abs(sp[-1]["b"][1] - sp[0]["a"][1] - 3.5) < 0.01
+          and abs(math.hypot(sp[-1]["b"][0] + 6, sp[-1]["b"][2] - 5) - 1.2) < 0.01, "")
+    v = venue_mod.normalise({"version": 2, "rigging": [{"kind": "truss", "a": [0, 4, 0], "b": [2, 4, 0], "bend": 500},
+                                         {"kind": "truss", "a": [0, 4, 2], "b": [2, 4, 2]}]})
+    check("a piece keeps its bend (kept in range); a straight one has none",
+          v["rigging"][0]["bend"] == 179 and "bend" not in v["rigging"][1], str(v["rigging"]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            s = e.act("rig_add", preset="spiral", radius=2, radius_end=1.2, turns=2.5, rise=1.4, x=-6, z=5, trim=3)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=4, trim=5)
+            c = e.act("rig_add", preset="scurve", radius=3, start=0, end=90, x=0, z=12, trim=5.5)
+            check("spiral, arc and S curve added, each one shape",
+                  s.get("ok") and a.get("ok") and c.get("ok") and s["group"] and a["group"] and c["group"], str((s.get("error"), a.get("error"))))
+            e.act("add_heads", query="Moving Head", qty=12)
+            r = e.act("attach_heads", heads=list(range(1, 11)), rig=s["ids"][3])
+            on = sorted((h for h in e.patch if h["head_no"] <= 10), key=lambda h: h["y"])
+            rigs = {x["id"]: x for x in e.venue["rigging"]}
+            where = []
+            for h in on:
+                m = h["mount"]
+                p = venue_mod.curve_point(rigs[m["rig"]], m["t"])
+                where.append(p)
+            gaps = [venue_mod.length(x) for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            per = sum(gaps) / 10
+            # how far along the curve each one is
+            members = [x for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            along = []
+            for h in on:
+                k = next(i for i, x in enumerate(members) if x["id"] == h["mount"]["rig"])
+                along.append(sum(venue_mod.length(x) for x in members[:k]) + venue_mod.length(members[k]) * h["mount"]["t"])
+            steps = [along[i + 1] - along[i] for i in range(9)]
+            check("ten lights spread evenly along the spiral (as far apart as each other)",
+                  r.get("ok") and max(abs(x - per) for x in steps) < 0.05, f"{per:.2f} {[round(x, 2) for x in steps]}")
+            check("...each hung under the truss, on the curve",
+                  all(h["stance"] == "hang" and abs(h["x"] - p[0]) < 1e-3 and abs(h["z"] - p[2]) < 1e-3 and h["y"] < p[1]
+                      for h, p in zip(on, where)), "")
+            yaw_err = 0.0
+            for h in on:
+                m = h["mount"]
+                want = math.degrees(-venue_mod.curve_heading(rigs[m["rig"]], m["t"]))
+                d = ((e._head_yaw(h) - want + 90) % 180) - 90               # facing along it, either way round
+                yaw_err = max(yaw_err, abs(d))
+            check("...each facing along the curve where it hangs (as the 3D turns it)", yaw_err < 0.5, f"{yaw_err:.2f}")
+            e.act("attach_heads", heads=[11, 12], rig=a["ids"][0])
+            check("two lights on the arc sit on its circle",
+                  all(abs(math.hypot(h["x"], h["z"] - 4) - 5) < 0.02 for h in e.patch if h["head_no"] in (11, 12)), "")
+            t = e.act("rig_trim", id=s["ids"][0], trim=2.5)
+            low = min(min(x["a"][1], x["b"][1]) - x["size"] / 2 for x in e.venue["rigging"] if x.get("group") == s["group"])
+            high = max(x["b"][1] for x in e.venue["rigging"] if x.get("group") == s["group"])
+            check("trimming a spiral moves it whole (its rise kept), its lights with it",
+                  t.get("ok") and abs(low - 2.5) < 1e-3 and abs(high - low - 3.5 - 0.145) < 0.01, f"{low} {high}")
+            rep = e.act("rig_report")["report"]
+            parts = [p["length"] for p in rep["parts"] if isinstance(p["length"], str)]
+            check("the rigging report lists curved sections by their radius",
+                  any(p.startswith("curved, radius 5.0") for p in parts) and any(p.startswith("curved, radius 3.0") for p in parts), str(parts))
+            pts = json.dumps([[x["a"], x["b"], x.get("bend", 0)] for x in e.venue["rigging"] if x.get("group") == a["group"]])
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});"
+        f"const rs={pts}.map(([a,b,bend])=>({{id:'x',kind:'truss',size:0.29,a,b,bend}}));"
+        "const out=rs.map(r=>[0,0.25,0.5,0.75,1].map(t=>V.curvePoint(r,t).toArray()));"
+        "const built=V.buildVenue({room:{width:24,depth:24,height:10,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "rigging:rs.map((r,i)=>({...r,id:'r'+i,group:'g'})),objects:[],zones:[],cameras:[],crowd:{show:false}},[],{people:false});"
+        "const T=await import('three');const box=new T.Box3().setFromObject(built.items.get('r3'));"
+        "console.log(JSON.stringify({out,box:[box.min.toArray(),box.max.toArray()]}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D's curve is not checked)")
+        return
+    want = [[venue_mod.curve_point({"a": a_, "b": b_, "bend": bd}, t) for t in (0, 0.25, 0.5, 0.75, 1)]
+            for a_, b_, bd in json.loads(pts)]
+    worst = max((math.dist(p, q) for row, wrow in zip(got.get("out") or [], want) for p, q in zip(row, wrow)), default=9)
+    check("the 3D's curve is the desk's (the same points to the mm)", bool(got.get("out")) and worst < 1e-3, str(got)[:300])
+    b = got.get("box") or [[0, 0, 0], [0, 0, 0]]
+    mid = venue_mod.curve_point({"a": json.loads(pts)[3][0], "b": json.loads(pts)[3][1], "bend": json.loads(pts)[3][2]}, 0.5)
+    check("...and its truss is drawn round that curve (the lattice round the middle of the piece)",
+          all(b[0][i] - 0.3 <= mid[i] <= b[1][i] + 0.3 for i in range(3)), str(b))
+    rd = (ROOT / "web" / "app" / "rigdialog.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arc / Spiral / S curve in the rigging library, and under + Truss",
+          all(k in rd for k in ('["arc", "Arc"', '["spiral", "Spiral"', '["scurve", "S curve"'))
+          and all(k in vp for k in ('rigDialog("arc")', 'rigDialog("spiral")', 'rigDialog("scurve")', 'rigDialog("circle")')), "")
+
+
+def test_room_look() -> None:
+    """The room as a pro visualiser draws it: a grey pleated drape (venue
+    object "drape": width, height, fold), a grey stage deck, LED panels in a
+    grid (object "panels": tile size and gap, each showing its part of the
+    picture)."""
+    print("Room look: pleated drapes, grey deck, LED panels")
+    from app import venue as venue_mod
+
+    v = venue_mod.normalise({"version": 2, "room": {"width": 20, "depth": 20, "height": 8},
+                             "stage": {"width": 10, "depth": 6},
+                             "objects": [{"kind": "drape", "x": 0, "z": 0.3, "w": 12, "h": 6, "d": 0.25, "fold": 9},
+                                         {"kind": "panels", "x": 0, "z": 1, "y": 1, "w": 6, "h": 3, "tile": 0.5, "gap": 0.25,
+                                          "content": "javascript:x"},
+                                         {"kind": "drape", "x": 0, "z": 0, "w": 4, "h": 3}]})
+    dr, pn, dr2 = v["objects"]
+    check("a drape keeps its size and folds (kept in range), a default fold when none is given",
+          dr["kind"] == "drape" and dr["w"] == 12 and dr["h"] == 6 and dr["fold"] == 2.0 and dr2["fold"] == 0.4, str(v["objects"]))
+    check("LED panels keep their tile and gap; what they show is the lights unless it is a clip or picture",
+          pn["tile"] == 0.5 and pn["gap"] == 0.25 and pn["content"] == "rig", str(pn))
+    check("a new stage deck is grey", v["stage"]["colour"] == venue_mod.DECK_GREY, str(v["stage"]))
+    t = venue_mod.template("concert")
+    drapes = [o for o in t["objects"] if o["kind"] == "drape"]
+    check("the concert template: a grey pleated drape across the back of a grey stage",
+          len(drapes) == 1 and drapes[0]["w"] >= t["stage"]["width"] and drapes[0]["colour"] == venue_mod.DRAPE_GREY
+          and drapes[0]["z"] < 1 and t["stage"]["colour"] == venue_mod.DECK_GREY, str(drapes))
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        # (a screen draws on a canvas: a stand-in for one, outside a browser)
+        "globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>null,addEventListener(){}})};"
+        f"const V=await import({json.dumps(venue_js)});"
+        "const g=V.drapeGeo(4,3,0.5,0.3);const p=g.attributes.position;"
+        "let zmin=9,zmax=-9,cross=0,prev=null;"
+        "for(let i=0;i<p.count;i++){if(Math.abs(p.getY(i)-3)>1e-6)continue;const z=p.getZ(i);zmin=Math.min(zmin,z);zmax=Math.max(zmax,z);"
+        "if(prev!==null&&Math.sign(z)!==Math.sign(prev)&&Math.abs(z)>1e-9)cross++;if(Math.abs(z)>1e-9)prev=z;}"
+        "const P=V.panelGeo(6,3,0.1,0.5,0.25);const uv=P.faces.attributes.uv;let umin=9,umax=-9;"
+        "for(let i=0;i<uv.count;i++){umin=Math.min(umin,uv.getX(i),uv.getY(i));umax=Math.max(umax,uv.getX(i),uv.getY(i));}"
+        "const built=V.buildVenue({version:2,room:{width:20,depth:20,height:8,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "stage:{x:0,z:0,width:10,depth:6,height:1,colour:'#55575d'},rigging:[],zones:[],cameras:[],crowd:{show:false},"
+        "objects:[{id:'o1',kind:'drape',x:0,z:0.3,y:0,w:12,h:6,d:0.25,fold:0.4,rot:0},"
+        "{id:'o2',kind:'panels',x:0,z:1,y:1,w:6,h:3,d:0.1,tile:0.5,gap:0.25,rot:0,content:'rig'}]},[],{people:false});"
+        "console.log(JSON.stringify({zmin,zmax,cross,cols:P.cols,rows:P.rows,umin,umax,"
+        "screens:built.screens.length,drape:!!built.items.get('o1').children.find(m=>m.userData.drape)}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the drawings are not checked)")
+        return
+    check("the drape is pleated: folds front and back by its depth, one every half metre (8 on 4 m)",
+          abs(got.get("zmax", 0) - 0.15) < 0.01 and abs(got.get("zmin", 0) + 0.15) < 0.01 and 14 <= got.get("cross", 0) <= 16, str(got))
+    check("LED panels: a grid of 8 x 4 on 6 x 3 m (0.5 m tiles, 0.25 m apart), the picture spread over all of them",
+          got.get("cols") == 8 and got.get("rows") == 4 and got.get("umin", -1) >= -1e-6 and got.get("umax", 9) <= 1 + 1e-6, str(got))
+    check("...and they show the rig's colours like a screen; the drape is drawn in the room",
+          got.get("screens") == 1 and got.get("drape") is True, str(got))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange's + More adds a drape and LED panels", '["drape", "Drape (pleated curtain)"]' in vp and '["panels", "LED panels (a grid)"]' in vp, "")
+
+
+def test_hang_types() -> None:
+    """Hang types as on a pro desk (hung, standing, bottom / top front and
+    rear, boom left / right): the desk's aim and the 3D's model agree for
+    every one - each beam, drawn by the 3D's own model, lands on the spot -
+    and a light on a boom points sideways at rest."""
+    print("Hang types: the aim and the 3D agree, a boom light points sideways")
+    from app import engine as eng
+    from app import fixture_kind
+    from app import venue as venue_mod
+
+    for name, m in venue_mod.HANG_BASE.items():
+        det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+               + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        if det != 1:
+            check(f"hang {name} is a turn (not a mirror)", False, str(m))
+    check("every hang is a real turn of the light", all(name in venue_mod.HANG_BASE for name in venue_mod.HANGS), "")
+    check("a boom light's head points sideways (left / right as the audience sees it), on its back towards the audience",
+          venue_mod.hang_turn("boom_left", (0, 1, 0)) == (-1, 0, 0) and venue_mod.hang_turn("boom_right", (0, 1, 0)) == (1, 0, 0)
+          and venue_mod.hang_turn("bottom_front", (0, 1, 0)) == (0, 0, 1) and venue_mod.hang_turn("top_rear", (0, 1, 0)) == (0, 0, -1), "")
+    look_js = (ROOT / "web" / "js" / "stage" / "look.js").read_text(encoding="utf-8")
+    for name, m in venue_mod.HANG_BASE.items():
+        row = f"{name}: [[{m[0][0]}, {m[0][1]}, {m[0][2]}], [{m[1][0]}, {m[1][1]}, {m[1][2]}], [{m[2][0]}, {m[2][1]}, {m[2][2]}]]"
+        if row not in look_js:
+            check(f"the 3D's table has {name} as the desk's", False, row)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Hangtest", "3ch", ["Pan = -270..270", "Tilt = -135..135", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=16, depth=16, height=8, layout=False)
+            e.act("add_heads", query="Hangtest", mode="3ch", qty=1, universe=1, address=1)
+            n = e.patch[0]["head_no"]
+            r = e.act("set_place", head=n, x=-4, y=2.5, z=3, hang="boom left")
+            h = e._head(n)
+            check("set_place takes a hang type (in words too); the snapshot carries it",
+                  r.get("ok") and h.get("hang") == "boom_left" and r.get("hang") == "boom_left"
+                  and next(p for p in e.snapshot()["patch"] if p["head_no"] == n).get("hang") == "boom_left", str(r))
+            check("a hang that isn't one is refused", not e.act("set_place", head=n, hang="sideways-ish").get("ok"), "")
+            e.act("select_heads", heads=[n])
+            e.act("set_intensity", level=100)
+            body = fixture_kind.describe(h)
+            cases = []
+            targets = [(0.0, 0.0, 6.0), (2.0, 1.0, 9.0), (-4.0, 0.0, 7.0)]
+            for hang in venue_mod.HANGS:
+                for yaw in (0.0, 35.0):
+                    e.act("set_place", head=n, x=-4, y=2.5, z=3, hang=hang)
+                    h["yaw"] = yaw                              # free-standing: it keeps a facing
+                    for tgt in targets:
+                        got = e._aim_solve(h, *tgt, closest=True)
+                        if got is None or len(got) > 4:
+                            continue                            # out of its reach
+                        cases.append({"hang": hang, "yaw": yaw, "pan": got[2], "tilt": got[3], "t": list(tgt)})
+            e.act("set_place", head=n, hang="standing")
+            check("standing again clears the hang", "hang" not in h and h.get("stance") == "stand", str(h.get("hang")))
+            e.act("set_place", head=n, hang="boom_right")
+            e.act("set_place", head=n, stance="hang")
+            check("choosing hang / stand clears it too", "hang" not in h and h["stance"] == "hang", "")
+            time.sleep(1.3)                                 # (moves in a burst are one undo step)
+            e.act("set_place", head=n, hang="top_front")
+            on_back = e._head(n).get("hang")
+            e.act("undo")
+            check("undo puts the hang back as it was", on_back == "top_front" and e._head(n).get("hang") is None
+                  and e._head(n).get("stance") == "hang", str(e._head(n).get("hang")))
+        finally:
+            e.shutdown()
+    check("every hang reaches the spots (enough cases to test)", len({c["hang"] for c in cases}) == len(venue_mod.HANGS), str(len(cases)))
+    # the 3D's own model, turned by the 3D's own table: where does its beam go?
+    models = (ROOT / "web" / "js" / "stage" / "models.js").as_uri()
+    look = (ROOT / "web" / "js" / "stage" / "look.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const{{buildFixture}}=await import({json.dumps(models)});"
+        f"const L=await import({json.dumps(look)});"
+        f"const body={json.dumps(body)};const cases={json.dumps(cases)};"
+        "const out=cases.map(c=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "holder.position.set(-4,2.5,3);holder.rotation.set(0,c.yaw*Math.PI/180,0);"
+        "L.hangQuat(c.hang,sk.native==='hung',sk.root.quaternion);"
+        "sk.pan.rotation.y=c.pan*Math.PI/180;sk.tilt.rotation.x=c.tilt*Math.PI/180;holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];const o=em.node.getWorldPosition(new T.Vector3());"
+        "const d=em.dir.clone().transformDirection(em.node.matrixWorld).normalize();"
+        "const v=new T.Vector3(...c.t).sub(o);const along=v.dot(d);const off=Math.sqrt(Math.max(0,v.lengthSq()-along*along));"
+        "return [c.hang,+off.toFixed(3),along>0]});"
+        "const rest=(()=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "L.hangQuat('boom_left',sk.native==='hung',sk.root.quaternion);holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];return em.dir.clone().transformDirection(em.node.matrixWorld).normalize().toArray().map(x=>+x.toFixed(3))})();"
+        "console.log(JSON.stringify({out,rest}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D model is not checked)")
+        return
+    out = got.get("out") or []
+    worst = {}
+    for hang, off, ahead in out:
+        worst[hang] = max(worst.get(hang, 0), off if ahead else 99)
+    check("for every hang, the 3D's beam lands within 10 cm of where the desk aimed it",
+          len(out) == len(cases) and all(v < 0.1 for v in worst.values()), str(worst) + str(got.get("_error", ""))[:300])
+    rest = got.get("rest") or [0, 0, 0]
+    check("a light on a boom (left) points sideways at rest, in the 3D too", rest[0] < -0.99, str(rest))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: a light's Hang (Hung, Standing, Bottom / Top front and rear, Boom left / right)",
+          all(f'["{k}", ' in vp for k in venue_mod.HANGS) and 'hang: hangSel.value' in vp, "")
+
+
+def test_free_view_lines() -> None:
+    """Free View is a flat line drawing too (as on a pro visualiser), and
+    it still turns with the mouse; only Per View is shaded."""
+    print("Free View: a line drawing you can turn")
+    st = stage_js()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("every flat view is drawn as lines; Per View alone is shaded",
+          'this._setWire(kind !== "per")' in st and 'kind === "top" || kind === "front" || kind === "side"' not in st, "")
+    check("Free View still turns (the others only slide and zoom)",
+          'this.controls.enableRotate = kind === "per" || kind === "free"' in st, "")
+    check("its button says it is a line drawing you can turn",
+          'data-cam="free"' in html and "turned any way you like (drag to turn it): a line drawing" in html, "")
+
+
+def test_next_go_focus() -> None:
+    """Next GO previews the playback the operator is working with: the
+    desk window tells the engine its focused playback, and the 3D (in any
+    window) shows that playback's next cue - the DMX untouched."""
+    print("Next GO follows the playback in focus")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            for pb, hexes in ((1, ("#ff0000", "#00ff00")), (2, ("#0000ff", "#ffffff"))):
+                for hx in hexes:
+                    e.act("set_colour", hex=hx)
+                    e.act("record_cue", playback=pb)
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                      # live: PB1 cue 1 (red); GO was last pressed on PB1
+            wire = bytes(e.build_frames(time.monotonic())[1][:8])
+
+            def shown():
+                return {r["n"]: r for r in e.look_rows()}[1]["hex"].lower()
+            e.act("vis_source", source="next")
+            check("no focus told: the playback GO was last pressed on (PB1's next: green)", shown() == "#00ff00", shown())
+            r = e.act("vis_source", focus=2)
+            check("the desk says PB2 is in focus: the 3D shows PB2's next GO (its cue 1, blue)",
+                  r["ok"] and shown() == "#0000ff" and e.vis_source["source"] == "next", shown())
+            e.act("vis_source", source="output")
+            e.act("vis_source", source="next")
+            check("the focus is kept when the source is changed in the 3D window", shown() == "#0000ff", shown())
+            e.act("vis_source", source="next", playback=1)
+            check("a playback asked for by number still wins", shown() == "#00ff00", shown())
+            check("the DMX never moved", bytes(e.build_frames(time.monotonic())[1][:8]) == wire, "")
+            check("a focus on a playback that isn't there is refused", not e.act("vis_source", focus=999).get("ok"), "")
+            check("telling the focus is not an undo step", "vis_source" not in str(e._undo_public()), str(e._undo_public())[:200])
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    check("the desk window tells the engine whenever the focused playback changes (GO and Back too)",
+          'act("vis_source", { focus: n })' in pj and "tellFocus(n);" in pj
+          and 'onclick: () => { setFocus(n); run("cue_go"' in pj, "")
+
+
+def test_curve_snap_and_shape() -> None:
+    """A light snaps onto a curved truss where the curve really is (not the
+    straight line between a piece's ends), in the desk and in Arrange; and
+    turning / resizing one piece of a curve changes the whole shape (or is
+    refused in plain words) - the curve never breaks."""
+    print("Curved truss: snap to the curve, the shape changes as one")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=0, y=5, z=4, radius=5, start=200, end=340, segments=4)
+    r = arc[1]
+    want = 0.37
+    on = venue_mod.curve_point(r, want)
+    out = [on[0] * 1.06, on[1], 4 + (on[2] - 4) * 1.06]           # 30 cm outside the curve
+    t, q = venue_mod.curve_nearest(r, out)
+    chord_t, chord_q = venue_mod.curve_nearest({**r, "bend": 0}, out)
+    check("the nearest point is on the curve, not on the straight line between the ends (over 10 cm off)",
+          abs(t - want) < 0.01 and abs(math.dist(q, out) - 0.3) < 0.01 and math.dist(chord_q, q) > 0.1,
+          f"{t:.3f} {math.dist(q, out):.3f} {math.dist(chord_q, q):.3f}")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=8, trim=5, segments=4)
+            pieces = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            p1 = pieces[1]
+            mid = venue_mod.curve_point(p1, 0.5)
+            e.act("add_heads", query="Moving Head", qty=1)
+            n = e.patch[-1]["head_no"]
+            e.act("set_place", head=n, x=mid[0], y=mid[1] - 0.4, z=mid[2], snap=True)
+            h = e._head(n)
+            check("a light dropped under the middle of a curved piece snaps onto it, on the curve",
+                  (h.get("mount") or {}).get("rig") == p1["id"] and abs(h["mount"]["t"] - 0.5) < 0.02
+                  and math.hypot(h["x"] - mid[0], h["z"] - mid[2]) < 0.02, str((h.get("mount"), h["x"], h["z"])))
+            before = {x["id"]: dict(x) for x in pieces}
+            r = e.act("venue_rig", id=p1["id"], turn=90)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            joined = all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1))
+            check("turning one piece of a curve turns the whole shape: still joined, the same bends",
+                  r.get("ok") and joined and all(x["bend"] == before[x["id"]]["bend"] for x in after)
+                  and "whole shape" in r.get("summary", ""), str(r.get("error") or r.get("summary")))
+            h = e._head(n)
+            p1now = venue_mod.rig(e.venue, p1["id"])
+            check("...its light goes round with it, still on the curve",
+                  math.dist([h["x"], h["z"]], [venue_mod.curve_point(p1now, h["mount"]["t"])[i] for i in (0, 2)]) < 0.01, "")
+            old_len = venue_mod.length(p1now)
+            r = e.act("venue_rig", id=p1["id"], length=old_len * 1.5)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("resizing one piece of a curve resizes the whole shape (half as big again), still joined",
+                  r.get("ok") and abs(venue_mod.length(after[1]) - old_len * 1.5) < 0.02
+                  and all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1)), str(r.get("error")))
+            r = e.act("venue_rig", id=p1["id"], orient="vertical")
+            check("standing a curved piece up is refused, in plain words",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            cur = venue_mod.rig(e.venue, p1["id"])
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]]})
+            check("moving one end of a curved piece on its own is refused (the curve would break)",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]],
+                                                           "b": [cur["b"][0] + 1, cur["b"][1], cur["b"][2]]})
+            moved = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("...moving it whole still moves the whole shape", r["ok"] and all(math.dist(moved[i]["b"], moved[i + 1]["a"]) < 0.01
+                                                                                    for i in range(len(moved) - 1)), str(r.get("error")))
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});const T=await import('three');"
+        f"const r={json.dumps(r_ := {**arc[1], 'id': 'x'})};"
+        f"const n=V.curveNearest(r,new T.Vector3(...{json.dumps(out)}));"
+        "console.log(JSON.stringify({t:n.t,p:n.point.toArray()}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: Arrange's snap is not checked)")
+    else:
+        check("Arrange's snap finds the same point as the desk", abs(got.get("t", 9) - t) < 1e-3, str(got))
+    del r_
+    ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: snaps on the curve, no end handles on a curve's piece, the inspector says the shape changes as one",
+          "curveNearest(r, p)" in ed and "if (!it.bend)" in ed and "A piece of a curve: Turn, Length and Trim change the whole shape" in vp, "")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("a flat view chosen while arranging leaves Arrange first (its handles work in perspective)",
+          'document.body.classList.contains("arranging")) $("#arrange-btn").click()' in sp, "")
+
+
+def test_mvr_curves_hangs() -> None:
+    """MVR out and back in keeps curved truss (other programs get short
+    straight trusses along the curve, grouped; the desk reads the curve
+    back exactly) and each light's hang type and facing (in its matrix, so
+    other programs draw it the right way up); the paperwork and the
+    rigging report say how each light hangs."""
+    print("MVR: curved truss and hang types out and back; hang in the paperwork")
+    import io
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from app import venue as venue_mod
+    from tools.selftests.common import SPEC_GDTF
+
+    bad = [(hg, y) for hg in venue_mod.HANGS for y in (0.0, 30.0, -75.0)
+           if mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))) != mvr._pose(hg, y)
+           and max(abs(a - b) for ra, rb in zip(mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))), mvr._pose(hg, y))
+                   for a, b in zip(ra, rb)) > 1e-6]
+    check("every hang and facing reads back from its MVR matrix as the same turn", not bad, str(bad))
+    check("a hung light is GDTF's own way up (no turn); a standing one turned over",
+          mvr.light_rows("hung", 0) == [[1, 0, 0], [0, 1, 0], [0, 0, 1]] and mvr.light_rows("standing", 0)[2][2] == -1,
+          str(mvr.light_rows("hung", 0)))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("description.xml", SPEC_GDTF)
+    gdtf = buf.getvalue()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        again = None
+        try:
+            e.act("venue_shape", shape="rectangle", width=20, depth=20, height=9, layout=False)
+            mvr.import_into(e, _mvr_file(gdtf), tmp / "gdtf")
+            heads = {h["name"]: h["head_no"] for h in e.patch}
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=6, trim=6)
+            e.act("attach_heads", heads=[heads[f"Beam {i}"] for i in range(1, 5)], rig=a["ids"][0])
+            e.act("set_place", head=heads["Beam 1"], hang="bottom_front", rig=e._head(heads["Beam 1"])["mount"]["rig"],
+                  t=e._head(heads["Beam 1"])["mount"]["t"])
+            e.act("set_place", head=heads["Floor L"], x=-6, y=2.5, z=9, hang="boom_left")
+            e.act("keep_facing", heads={heads["Floor L"]: 30.0})
+            want = {n: (venue_mod.hang_of(e._head(h)), round(e._head_yaw(e._head(h)), 1)) for n, h in heads.items()}
+            pw = {r["name"]: r for r in e.act("paperwork")["lights"]}
+            check("the paperwork says how each light hangs",
+                  pw["Beam 1"]["hang_label"] == "Bottom front" and pw["Floor L"]["hang_label"] == "Boom left"
+                  and pw["Beam 2"]["hang_label"] == "Hung", str({k: v.get("hang_label") for k, v in pw.items()}))
+            rep = e.act("rig_report")["report"]
+            arc = next(x for x in rep["rigs"] if x["name"].startswith("Arc"))
+            check("...and the rigging report, for each light on a piece", any(lt["hang"] == "Bottom front" for lt in arc["lights"]), str(arc["lights"]))
+            out = mvr.export_from(e, [tmp / "gdtf"], "c")
+            xml = zipfile.ZipFile(io.BytesIO(out)).read("GeneralSceneDescription.xml").decode()
+            pieces = len([x for x in e.venue["rigging"] if x.get("group") == a["group"]])
+            check("out: the curve as short straight trusses in a group (other programs see its shape), and the curve itself in UserData",
+                  "<GroupObject" in xml and xml.count("<Truss") > pieces * 2 and 'provider="Jarvis"' in xml and '"bend"' in xml, "")
+            back = mvr.read(out)
+            byb = {lt["name"]: lt for lt in back["lights"]}
+            check("read back: the curve whole (its pieces and bends), its little straight bits skipped",
+                  len(back["curves"]) == pieces and all(c.get("bend") for c in back["curves"])
+                  and not any("(0." in t["name"] for t in back["trusses"]), f"{len(back['curves'])} {[t['name'] for t in back['trusses']][:4]}")
+            check("...and each light's hang and facing from its matrix",
+                  byb["Beam 1"]["hang"] == "bottom_front" and byb["Floor L"]["hang"] == "boom_left"
+                  and abs(byb["Floor L"]["yaw"] - 30) < 0.5 and byb["Beam 2"]["hang"] == "hung", str({k: (v["hang"], v["yaw"]) for k, v in byb.items()}))
+            again = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+            r = mvr.import_into(again, out, tmp / "gdtf2", replace=True)
+            curved = [x for x in again.venue["rigging"] if x.get("bend")]
+            h2 = {h["name"]: h for h in again.patch}
+            got = {n: (venue_mod.hang_of(h), round(again._head_yaw(h), 1)) for n, h in h2.items()}
+            check("into a new desk: the curved truss as it was (same pieces, bends, one shape)",
+                  r["ok"] and len(curved) == pieces and len({x["group"] for x in curved}) == 1, str(r.get("summary")))
+            check("...the lights on it hang on the curve again",
+                  all((h2[f"Beam {i}"].get("mount") or {}).get("rig") in {x["id"] for x in curved} for i in range(1, 5)),
+                  str([h2[f"Beam {i}"].get("mount") for i in range(1, 5)]))
+            check("...every light's hang type and facing as it was",
+                  all(got[n][0] == want[n][0] and abs(((got[n][1] - want[n][1] + 180) % 360) - 180) < 1.0 for n in want if n in got),
+                  f"{want} {got}")
+        finally:
+            e.shutdown()
+            if again:
+                again.shutdown()
+    pp = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
+    check("the printed patch sheet shows how each light hangs", "L.hang_label" in pp and "Hangs on · how" in pp, "")
+
+
+def test_touch_surface() -> None:
+    """A touch screen is the desk's control surface: no swipe "back", no
+    pinch or double-tap zoom, no page bounce; one finger per button, fader
+    and knob; a finger held on a button opens no menu; the desktop app can
+    turn off Windows' edge swipes and three/four-finger gestures.  (Real
+    fingers: tools/touchcheck.mjs, run in CI's screen check.)"""
+    print("Touch: a control surface, not a web page")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the page: no overscroll, pan only (no zoom), no tap flash",
+          "html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }" in css, "")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the desktop app: swipe-back and pinch off, no page history to go back to",
+          '"overscroll-history-navigation", "0"' in mj and '"disable-pinch"' in mj
+          and "OverscrollHistoryNavigation" in mj and "setVisualZoomLevelLimits(1, 1)" in mj
+          and "navigationHistory.clear()" in mj, "")
+    check("Lock touch swipes also turns off three- and four-finger gestures (per user)",
+          "TouchGestureSetting" in mj and "setFingers(!lock)" in mj and "AllowEdgeSwipe" in mj, "")
+    check("full screen locks every touch gesture: the window's edge switch set from the app itself, "
+          "three/four fingers off while full screen and put back after (and at the next start after a crash)",
+          'require("koffi")' in mj and "SHGetPropertyStoreForWindow" in mj and "edgeSwitch(win, true)" in mj
+          and "lockGestures(any)" in mj and '"enter-html-full-screen"' in mj and "lockGestures(false)" in mj
+          and '"_fingersWere" in saved' in mj and "Lock every touch gesture while full screen" in mj
+          and '"Left_Edgy_Enabled"' in mj and '"Right_Edgy_Enabled"' in mj and "putTouchBack()" in mj, "")
+    dc = (ROOT / "tools" / "desktopcheck.mjs").read_text(encoding="utf-8")
+    check("the Windows desktop check reads back what Windows took",
+          "no edge swipes while full screen" in dc and "three- and four-finger gestures off" in dc, "")
+    ui = (ROOT / "web" / "app" / "ui.js").read_text(encoding="utf-8")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("one finger per fader, button, pad, Flash and knob",
+          "if (dragging !== null) return;" in ui and "if (finger !== null) return;" in qb
+          and "if (down !== null) return;" in qb
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
+    check("a finger held on a live button opens no menu (the mouse's right-click still does)",
+          "if (!byTouch(e)) speedMenu(el, b)" in qb and "export const byTouch" in ui, "")
+    tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check("the real-finger check runs in CI", "Input.dispatchTouchEvent" in tc and "node tools/touchcheck.mjs" in ci, "")
+
+
+def test_old_show_files() -> None:
+    """A show made before this round of changes (a .jarvis file and the
+    autosave, saved by the desk as it was in October 2026, kept in
+    tools/selftests/oldshows) opens on this desk exactly as it was - the same
+    lights, groups, palettes, cues, buttons, pages and room - and puts out
+    the SAME DMX, byte for byte: at rest, playing two cue lists, an old
+    Flash button and an old palette, and booting on the old autosave."""
+    print("Old show files open and play exactly as before")
+    from app import engine as eng
+    from app import showpack
+
+    data = ROOT / "tools" / "selftests" / "oldshows"
+    want = json.loads((data / "oldshow-2026-10-expected.json").read_text(encoding="utf-8"))
+    T = 1000.0
+
+    def frames(e):
+        return {str(u): list(b) for u, b in e.build_frames(now=T).items()}
+
+    def same(name, got, exp):
+        diffs = [(u, i) for u in exp for i in range(512) if exp[u][i] != (got.get(u) or [0] * 512)[i]]
+        check(f"old show: {name} - the same DMX", not diffs and set(got) == set(exp), str(diffs[:6]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "lib.db")
+        e = eng.Engine(db_path=tmp / "lib.db", dry_run=True, show_dir=tmp / "shows")
+        try:
+            r = showpack.restore(e, (data / "oldshow-2026-10.jarvis").read_bytes())
+            check("the old .jarvis opens", r.get("show") == "oldshow", str(r))
+            st = want["state"]
+            check("its lights, groups, palettes and cues", [list(x) for x in [(h["head_no"], h.get("model"), h.get("universe"), h.get("address"), h.get("orient")) for h in e.patch]] == st["lights"]
+                  and [g["name"] for g in e.groups] == st["groups"]
+                  and {k: [p["name"] for p in v] for k, v in e.palettes.items()} == st["palettes"]
+                  and [[c["name"] for c in pb["stack"]] for pb in e.playbacks[:10]] == st["cues"], "")
+            check("its buttons, pages, layouts, moves, room and timeline",
+                  [list(x) for x in sorted((b["page"], b["slot"], b["kind"], b.get("label")) for b in e.quick)] == st["buttons"]
+                  and dict(e.quick_names) == st["page_names"]
+                  and dict(e.__dict__.get("quick_layout") or {}) == st["layout"]
+                  and [m["name"] for m in e.moves] == st["moves"]
+                  and len((e.venue or {}).get("rigging") or []) == st["rig"]
+                  and [t["kind"] for t in e.timeline["tracks"]] == st["tracks"], "")
+            check("its buttons are the Default profile; 40 playbacks", e._quick_public()["profiles"] == ["Default"]
+                  and len(e.playbacks) == 40, "")
+            same("at rest", frames(e), want["f0"])
+            e.act("cue_go", playback=1)
+            same("cue list 1", frames(e), want["f_pb1"])
+            e.act("cue_go", playback=3)
+            same("cue list 3 on top", frames(e), want["f_pb3"])
+            e.act("playback_release", playback=1)
+            e.act("playback_release", playback=3)
+            b = next(b for b in e.quick if b.get("label") == "Old flash")
+            e.act("quick_press", id=b["id"], down=True)
+            same("an old Flash button", frames(e), want["f_flash"])
+            e.act("quick_press", id=b["id"], down=False)
+            e.act("select_heads", heads=[h["head_no"] for h in e.patch if "Intimidator" in (h.get("model") or "")])
+            e.act("include_palette", kind="position", palette="Spots out")
+            same("an old palette", frames(e), want["f_pal"])
+        finally:
+            e.shutdown()
+        fixtures.seed_generics(tmp / "lib2.db")
+        e2 = eng.Engine(db_path=tmp / "lib2.db", dry_run=True, show_dir=tmp / "shows2")
+        try:
+            payload = json.loads((data / "oldshow-2026-10-autosave.json").read_text(encoding="utf-8"))
+            e2._restore_payload(e2._clean_payload(payload))
+            same("the new desk booting on the old autosave", frames(e2), want["f_autosave"])
+        finally:
+            e2.shutdown()

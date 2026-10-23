@@ -65,5 +65,8 @@
         "NSMicrophoneUsageDescription": "Jarvis listens to the music (a microphone or line input) to follow the beat and the drops. Nothing is recorded or sent anywhere."
       }
     }
+  },
+  "dependencies": {
+    "koffi": "3.3.2"
   }
 }

@@ -1,7 +1,9 @@
-// The executor wing: ten playbacks, always in their place, each with its
-// fader and GO / Flash / Back / Stop; the group masters and the grand master.
+// The executor wing: playbacks ten to a page (pages 1-4, as on a pro desk),
+// always in their place, each with its fader and GO / Flash / Back / Stop;
+// the group masters and the grand master.
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
+import { act } from "./api.js";
 import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
@@ -9,6 +11,9 @@ import { setTimelineVisible } from "./timeline.js";
 const cards = new Map();
 let gm = null;
 let focusPb = 1;
+const PER_PAGE = 10;
+let pbPage = 1;
+try { pbPage = Math.max(1, parseInt(localStorage.getItem("jarvis.pbpage") || "1", 10) || 1); } catch (e) { /* private window */ }
 
 export const focusedPlayback = () => focusPb;
 
@@ -36,9 +41,9 @@ function build() {
         h("button.btn.ghost.small.icon", { title: "Playback options", onclick: (e) => pbMenu(e.currentTarget, n) }, "⋯")),
       h("div.pb-mid", cue, prog),
       h("div.pb-btns",
-        h("button.go", { title: "GO: next cue", onclick: () => { focusPb = n; run("cue_go", { playback: n }); } }, "GO"),
+        h("button.go", { title: "GO: next cue", onclick: () => { setFocus(n); run("cue_go", { playback: n }); } }, "GO"),
         flash,
-        h("button", { title: "Back one cue", onclick: () => { focusPb = n; run("cue_back", { playback: n }); } }, "◀"),
+        h("button", { title: "Back one cue", onclick: () => { setFocus(n); run("cue_back", { playback: n }); } }, "◀"),
         h("button", { title: "Stop: release this playback", onclick: () => run("playback_release", { playback: n }) }, "■")),
       rec);
     wireFlash(flash, n);
@@ -50,26 +55,33 @@ function build() {
     strip.append(card);
   }
   setFocus(focusPb);
+  if (!build.told) {                                  // the engine learns it once it is there
+    build.told = true;
+    on("snapshot", () => tellFocus(focusPb));
+  }
 }
 
 // Flash: held, the playback runs at full; let go, it goes back to where it
 // was (and stops again if it wasn't running)
 function wireFlash(btn, n) {
-  let was = null;
+  let was = null, finger = null;                 // one finger per Flash: a second can't undo the first
   const down = (e) => {
     e.preventDefault();
+    if (finger !== null) return;
     const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
     if (!(pb.stack || []).length) return;
+    finger = e.pointerId;
     was = { active: !!pb.active, level: pb.level ?? 100 };
     btn.setPointerCapture?.(e.pointerId);
     btn.classList.add("on");
     if (!was.active) run("playback_activate", { playback: n }, { silentError: true });
     run("playback_level", { playback: n, level: 100 }, { silentError: true });
   };
-  const up = () => {
-    if (!was) return;
+  const up = (e) => {
+    if (!was || (e && e.pointerId !== finger)) return;
     const w = was;
     was = null;
+    finger = null;
     btn.classList.remove("on");
     run("playback_level", { playback: n, level: w.level }, { silentError: true });
     if (!w.active) run("playback_release", { playback: n }, { silentError: true });
@@ -83,6 +95,18 @@ function wireFlash(btn, n) {
 function setFocus(n) {
   focusPb = n;
   for (const [k, c] of cards) c.card.classList.toggle("focus", k === n);
+  tellFocus(n);
+}
+
+// the 3D's Next GO previews the playback you are working with: the desk is
+// told whenever the focus moves (the 3D may be in a window of its own)
+function tellFocus(n) {
+  // (only the window with the playbacks on it: the 3D's own window has none)
+  if (document.documentElement.dataset.window === "stage") return;
+  const vis = (state.snap && state.snap.vis_source) || {};
+  if (!state.snap || vis.focus === n) return;
+  vis.focus = n;
+  act("vis_source", { focus: n }).catch(() => { /* the next change tells it again */ });
 }
 
 function pbMenu(btn, n) {
@@ -107,9 +131,31 @@ function pbMenu(btn, n) {
   ]);
 }
 
+// the page buttons beside the faders: 1-10, 11-20...; a dot where a
+// playback is running
+function renderPages(pbs) {
+  const pages = Math.max(1, Math.ceil(pbs.length / PER_PAGE));
+  if (pbPage > pages) pbPage = 1;
+  const box = $("#pb-pages");
+  if (!box) return;
+  box.hidden = pages < 2 || $("#pb-strip").hidden;
+  box.replaceChildren(...Array.from({ length: pages }, (_, i) => {
+    const p = i + 1;
+    const on = pbs.slice(i * PER_PAGE, p * PER_PAGE);
+    const live = on.some((pb) => pb.active);
+    const used = on.some((pb) => (pb.stack || []).length);
+    return h("button" + (p === pbPage ? ".on" : "") + (live ? ".live" : "") + (used ? "" : ".unused"), {
+      title: `Playbacks ${i * PER_PAGE + 1}-${p * PER_PAGE}` + (live ? " (one is running)" : ""),
+      onclick: () => { pbPage = p; try { localStorage.setItem("jarvis.pbpage", String(p)); } catch (e) { /* ignore */ } render(); },
+    }, `P${p}`);
+  }));
+  for (const [n, c] of cards) c.card.hidden = Math.ceil(n / PER_PAGE) !== pbPage;
+}
+
 function render() {
   build();
   const pbs = (state.snap && state.snap.playbacks) || [];
+  renderPages(pbs);
   // every executor stays in its place (muscle memory); an empty one is a
   // quiet "Record here"
   for (const pb of pbs) {
@@ -258,6 +304,7 @@ function wireModes() {
   const set = (mode) => {
     modes.forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
     $("#pb-strip").hidden = mode !== "faders";
+    $("#pb-pages").hidden = mode !== "faders" || ((state.snap && state.snap.playbacks) || []).length <= PER_PAGE;
     $("#qb").hidden = mode !== "buttons";
     $("#tl").hidden = mode !== "timeline";
     setTimelineVisible(mode === "timeline");

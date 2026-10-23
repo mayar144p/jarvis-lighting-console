@@ -6,6 +6,7 @@
 //   cd desktop && npm install && cd .. && node tools/desktopcheck.mjs
 //   (Linux with no screen: xvfb-run -a node tools/desktopcheck.mjs)
 //   DESKTOP_EXE=path/to/Jarvis.exe node tools/desktopcheck.mjs   (a built app)
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
@@ -107,6 +108,29 @@ if (desk) {
   await desk.keyboard.press("F5");
   await sleep(1500);
   check("Ctrl+R and F5 don't reload a window", await desk.evaluate(() => window.__still === 1));
+  // a touch screen: no swipe "back" (no history, the switches) and no pinch zoom
+  const t = await app.evaluate(({ app: a, BrowserWindow }) => ({
+    pinch: a.commandLine.hasSwitch("disable-pinch"), swipe: a.commandLine.getSwitchValue("overscroll-history-navigation"),
+    back: BrowserWindow.getAllWindows().some((w) => w.webContents.navigationHistory.canGoBack()) }));
+  check("touch: no swipe back, no pinch zoom, no page to go back to", t.pinch && t.swipe === "0" && !t.back, JSON.stringify(t));
+  if (process.platform === "win32") {
+    // full screen locks every Windows touch gesture, and puts them back after
+    // (Windows' own read-backs, in touchlock.log - a finger can't be tested here)
+    const reg = () => (spawnSync("reg", ["query", "HKCU\\Control Panel\\Desktop", "/v", "TouchGestureSetting"], { encoding: "utf8" }).stdout || "");
+    const before = reg();
+    const logOf = () => { try { return readFileSync(join(UD, "touchlock.log"), "utf8"); } catch { return ""; } };
+    check("Windows keeps each window's \"no edge swipes while full screen\" (set from the app itself)",
+      /edge swipes while full screen locked/.test(logOf()) && !/NOT locked/.test(logOf()), logOf().slice(-400));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
+    await sleep(2500);
+    check("full screen: three- and four-finger gestures off", /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(reg()), reg() + logOf().slice(-300));
+    const wisp = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Wisp\\Touch"], { encoding: "utf8" }).stdout || "";
+    check("full screen: Windows 11's left and right edge swipes off",
+      /Left_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp) && /Right_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp), wisp);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(false));
+    await sleep(2500);
+    check("out of full screen: the setting is back as it was", reg() === before, `${before} -> ${reg()}`);
+  }
 }
 
 // closing: the engine stops cleanly (not killed)

@@ -340,6 +340,36 @@ the trusses at their real angle, and each light turned with its truss
 (selected lights in yellow). Drag on it and every selected light points at
 that spot. The pan/tilt dials still move each light's own pan and tilt.
 
+### Lining up a venue (the real lights match the desk)
+
+The desk aims a light from where it thinks the light hangs and which way it
+faces. In a real venue those are never exact, so line the rig up once per
+venue; it's saved with the show.
+
+1. **Build the room roughly.** Settings → Venue → a template (club,
+   concert...), then the room size. In **Arrange**, put the trusses at their
+   real height and position (measure from the middle of the back wall:
+   x across, z towards the audience, metres) and draw the dance floor zone.
+2. **Hang each light where it really is.** Drag it onto its truss, or type
+   its position; set its **Hang** (hung, standing, on a boom...). A light hung
+   the other way round to the rest: **Invert pan / Invert tilt** in
+   Programmer → Setup.
+3. **Mark the floor.** Two or three spots far apart: the middle of the dance
+   floor, its left and right, the DJ booth - the desk lists the room's own
+   spots - or tape a cross somewhere and keep it as a room mark.
+4. **Line up.** Select the movers, Programmer → Setup → **Line up with the
+   real light…**. For each light: pick a mark, **Point it there** (it gets
+   close), nudge the real light until it's on the mark, **It's on the mark**.
+   After two or three marks, **Next light ▶** works it out and moves on; a
+   tick shows each light done.
+5. **Check.** Aim the whole rig at a spot (Position → room map, or a
+   palette like Fan out) and look at the floor. If the box said the marks
+   disagree by more than a few degrees, that light's height or position in
+   the room is off: fix it in Arrange and line it up again.
+
+The **Plot** (Windows → Plot) shows the rig flat with every light's number -
+handy to walk the room and tick lights off.
+
 ### Follow me speed
 
 Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on
@@ -505,6 +535,27 @@ or Live); the first time in each mode the desk offers it once.  A greyed
 *Record cue* says why underneath.  **Ready?** puts a button on each thing
 to fix (Add lights, Show the clashes, Record a cue, Save, Output
 settings, Turn on Stay on the floor...) and *Check again*.
+
+### Touch screens
+
+The desk behaves like a control panel, not a web page: a swipe, a pinch or a
+stray palm doesn't scroll, zoom or go "back", and nothing gets text-selected.
+Every button, fader, pad and knob follows its own finger - hold BLACKOUT with
+one finger and tap Flash with another; a second finger landing on a fader
+already being moved is ignored. A finger held still on a button is a held
+button, never a menu (the mouse's right-click still opens its menu).
+
+Windows' own gestures (a swipe in from an edge for Task View, notifications or
+the taskbar; three or four fingers to switch apps or show the desktop) are
+locked by the desktop app **while a desk window is full screen** (Windows 10 and 11:
+the window's own edge lock, and Windows 11's own switches for the left and
+right edges and three/four fingers) - the
+buttons page's ⛶ Full screen, or a Show mode screen - and come back as they
+were when it leaves full screen (**Desk → Lock every touch gesture while full
+screen**, on by default). For a desk that never leaves the show, also use
+**Desk → Lock touch swipes on this computer…**: the same locks for the whole
+computer all the time (an administrator's OK once; it starts after you sign
+out and back in; **Unlock** puts them back).
 
 ### Keyboard
 

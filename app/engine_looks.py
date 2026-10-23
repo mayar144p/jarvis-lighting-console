@@ -95,8 +95,112 @@ class LooksMixin:
         the agent - not only from the route that happens to call it."""
         return self.remap_heads(heads)
 
-    def _looks(self, now: float | None = None) -> list[dict]:
+    # What the 3D draws (the toolbar's source): the output, the programmer
+    # on its own, or what the next GO of a playback will look like.  Only
+    # the 3D's feed follows it - the DMX, the lamps that follow the desk
+    # and everything else always get the output.
+    VIS_SOURCES = ("output", "programmer", "next")
+
+    def _vis(self) -> dict:
+        return self.__dict__.get("vis_source") or {"source": "output", "playback": None}
+
+    def _a_vis_source(self, source=None, playback=None, focus=None, **_):
+        """What the 3D view shows: `output` (what the lights are doing),
+        `programmer` (only what is in the programmer: the playbacks and
+        buttons left out) or `next` (what the next GO of `playback` will
+        look like; no playback: the one the operator is working with - the
+        desk's focused playback, told here as `focus` - else the one GO was
+        last pressed on).  `focus` alone only says which playback is in
+        focus (the desk window does, whenever it changes).  The DMX never
+        changes."""
+        cur = self._vis()
+        if focus not in (None, ""):
+            f = self._playback(focus)["n"]
+            if source in (None, "") and playback in (None, ""):
+                self.vis_source = {**cur, "focus": f}
+                if cur.get("source") == "next":
+                    self._look_cache = None
+                return {"vis_source": dict(self.vis_source), "summary": f"PB{f} in focus"}
+            cur = {**cur, "focus": f}
+        src = str(source or "output").strip().lower().replace(" ", "").replace("_", "")
+        src = {"programmeronly": "programmer", "prog": "programmer", "nextgo": "next", "preview": "next",
+               "live": "output", "stage": "output"}.get(src, src)
+        if src not in self.VIS_SOURCES:
+            raise ValueError("the 3D shows the output, the programmer only, or the next GO")
+        n = None
+        if playback not in (None, ""):
+            n = self._playback(playback)["n"]           # raises for a playback that isn't there
+        self.vis_source = {"source": src, "playback": n, "focus": cur.get("focus")}
+        self._look_cache = None
+        if src == "output":
+            said = "the 3D shows the output"
+        elif src == "programmer":
+            said = "the 3D shows the programmer only (playbacks and buttons left out) - the lights are unchanged"
+        else:
+            pb = self._next_go_pb()
+            said = (f"the 3D shows PB{pb['n']}'s next GO" + (f" (cue {self._next_go_index(pb)[1]['n']})"
+                    if pb["stack"] else " (it has no cues)") + " - the lights are unchanged")
+        return {"vis_source": dict(self.vis_source), "summary": said}
+
+    def _next_go_pb(self) -> dict:
+        """The playback the 3D previews: the one asked for, else the one in
+        focus on the desk, else the one GO was last pressed on, else 1."""
+        vis = self._vis()
+        for n in (vis.get("playback"), vis.get("focus")):
+            if n:
+                try:
+                    return self._playback(n)
+                except ValueError:
+                    continue
+        used = [pb for pb in self.playbacks if pb.get("order")]
+        return max(used, key=lambda pb: pb["order"]) if used else self.playbacks[0]
+
+    @staticmethod
+    def _next_go_index(pb: dict) -> tuple[int, dict]:
+        """Where GO on `pb` goes (as cue_go does): the top of a released
+        stack, the next cue, round to the top of a looping one."""
+        stack = pb["stack"]
+        if not pb["active"] or pb["index"] < 0:
+            i = 0
+        elif pb["index"] >= len(stack) - 1:
+            i = 0 if (pb.get("follow") or {}).get("loop") else len(stack) - 1
+        else:
+            i = pb["index"] + 1
+        return i, stack[i]
+
+    def _next_go_vals(self, now: float) -> list[tuple[int, dict]]:
+        """The playbacks as they will be after GO: the previewed one on
+        its next cue (faded in, at its fader - full if the fader is down,
+        or the preview would show nothing), the others as they are now."""
+        pb = self._next_go_pb()
+        active = [p for p in self.playbacks if p["active"] and p["stack"] and p["index"] >= 0 and p is not pb]
+        active.sort(key=lambda p: p.get("order", 0), reverse=True)
+        out = [(self._pb_level_now(p, now), self._pb_values(p, now)) for p in active]
+        if not pb["stack"]:
+            return out
+        i, _cue = self._next_go_index(pb)
+        vals = self._scaled_cue({"values": self._tracked(pb, i)}, None)
+        level = int(pb.get("level", 100) or 0) or 100
+        return [(level, vals)] + out
+
+    def _fx_programmer_only(self, now: float) -> dict:
+        """The effects the programmer runs (not a cue's, not a button's)."""
+        owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+        saved = self.fx
+        self.fx = [f for f in saved if not f.get("cue_pb") and f.get("id") not in owned]
+        try:
+            return self._fx_values(now)
+        finally:
+            alive = {id(f) for f in self.fx}            # an effect that ran out is gone
+            mine = {id(f) for f in saved if not f.get("cue_pb") and f.get("id") not in owned}
+            self.fx = [f for f in saved if id(f) not in mine or id(f) in alive]
+
+    def _looks(self, now: float | None = None, source: dict | None = None) -> list[dict]:
         """[{n, hex, a, on, pan?, tilt?}] per head - the display look.
+
+        `source` (the 3D's feed only): {"source": "programmer"} leaves the
+        playbacks and buttons out, {"source": "next"} shows a playback's
+        next GO; the output (None) is what everything else is shown.
 
         Built straight from _resolve_head, so it is exactly what
         build_frames will put on the wire (same HTP/LTP merge, same
@@ -111,15 +215,19 @@ class LooksMixin:
         driven", and the visualiser keeps its geometric default.
         """
         patch = self._frame_patch()            # the floor lock, as on the wire
-        kept = self._kept_values(patch) if now is None else None
+        mode = (source or {}).get("source") or "output"
+        kept = self._kept_values(patch) if now is None and mode == "output" else None
         if kept is not None:
             values_of, overrides = kept
         else:
             now = time.monotonic() if now is None else now
             prog = self._programmer_now(now)
-            pb_vals = self._active_playbacks(now)
-            fx_vals = self._fx_values(now)
-            overrides = self._override_vals()
+            if mode == "programmer":
+                pb_vals, fx_vals, overrides = [], self._fx_programmer_only(now), {}
+            else:
+                pb_vals = self._next_go_vals(now) if mode == "next" else self._active_playbacks(now)
+                fx_vals = self._fx_values(now)
+                overrides = self._override_vals()
         out = []
         for head in patch:
             over = overrides.get(head["head_no"])
@@ -152,8 +260,7 @@ class LooksMixin:
                    "a": round(max(0, min(100, pct)) / 100.0, 3),
                    "hex": self._hex_for(head, values),
                    "on": pct > 0}
-            pan = self._aim01(head, values, "pan")
-            tilt = self._aim01(head, values, "tilt")
+            pan, tilt = self._unorient(head, self._aim01(head, values, "pan"), self._aim01(head, values, "tilt"))
             if pan is not None:
                 row["pan"] = pan
             if tilt is not None:
@@ -168,14 +275,18 @@ class LooksMixin:
                     cv = {r: values.get(f"{r}@{k}", values.get(r, 0)) for r in ("red", "green", "blue", "white")}
                     cell = {"hex": self._hex_for(head, cv) if any(r in values or f"{r}@{k}" in values
                                                                   for r in ("red", "green", "blue", "white")) else row["hex"]}
+                    aim = {}
                     for base in ("tilt", "pan"):
                         t = values.get(f"{base}@{k}", values.get(base))
                         if t is not None and base in head["map"] and (base == "tilt" or reps.get(base, 0) > 1):
                             # the same scaling, limits and inversion as the head's
                             # own aim (a value can be 16-bit / logical, not 0-255)
-                            ct = self._aim01(head, {**values, base: t}, base)
-                            if ct is not None:
-                                cell[base] = ct
+                            aim[base] = self._aim01(head, {**values, base: t}, base)
+                    cp, ct = self._unorient(head, aim.get("pan"), aim.get("tilt"))
+                    if ct is not None:
+                        cell["tilt"] = ct
+                    if cp is not None and "pan" in aim:
+                        cell["pan"] = cp
                     cells.append(cell)
                 row["cells"] = cells
             # THE FIXTURE'S OWN TRAVEL, so the beam is drawn where the head
@@ -189,6 +300,14 @@ class LooksMixin:
             # Only sent when the profile actually declares a range, so a
             # generic with no GDTF keeps the historical behaviour and
             # gains no bytes.
+            off = head.get("align")
+            if off and (off.get("pan") or off.get("tilt")):
+                # lined up with the real light: its travel shifted to where
+                # its zero really is, so the 3D points where the real one does
+                pl, ph, tl, th = self._aim_span(head)
+                span = dict(span or {})
+                span["pan"] = [pl + float(off.get("pan") or 0), ph + float(off.get("pan") or 0)]
+                span["tilt"] = [tl + float(off.get("tilt") or 0), th + float(off.get("tilt") or 0)]
             if span:
                 row["deg"] = span
             # Beam shaping for the visualiser, 0..1 per driven channel, so
@@ -361,6 +480,21 @@ class LooksMixin:
         v = values.get(base, 0)
         return round(max(0, min(255, int(v))) / 255.0, 4)
 
+    @staticmethod
+    def _unorient(head: dict, pan, tilt):
+        """The 3D draws a light as PROGRAMMED (its model is the desk's idea
+        of the light): an inverted or swapped light's wire value, flipped on
+        the way out (merge.py: swap, then invert), flipped back - so the 3D
+        shows where the real, differently-hung light really points."""
+        flags = head.get("orient") or {}
+        if flags.get("invert_pan") and pan is not None:
+            pan = round(1 - pan, 4)
+        if flags.get("invert_tilt") and tilt is not None:
+            tilt = round(1 - tilt, 4)
+        if flags.get("swap"):
+            pan, tilt = tilt, pan
+        return pan, tilt
+
     def look_feed(self, since: int | None = None) -> dict:
         """Per-tick look feed for the visualiser (see §13 fades).
 
@@ -375,7 +509,7 @@ class LooksMixin:
         full snapshot, which is always correct, never a gap.
         """
         with self.lock:
-            looks = self._looks()
+            looks = self._looks(source=self._vis())
             self._look_seq += 1
             seq = self._look_seq
             lit = [row for row in looks if row["a"] > 0]
@@ -388,7 +522,7 @@ class LooksMixin:
         """The lit heads' looks, and dark heads whose aim is driven (a head
         moves in the dark too), for the live stream (no sequence bump)."""
         with self.lock:
-            return [row for row in self._looks()
+            return [row for row in self._looks(source=self._vis())
                     if row["a"] > 0 or "pan" in row or "tilt" in row or "fx" in row
                     or "prog" in row or "spin" in row]
 

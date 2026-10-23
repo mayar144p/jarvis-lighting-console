@@ -42,7 +42,7 @@ async function scene(mode) {
   const install = (src, key) => win.evaluate(async ([src, key]) => (await (await fetch("/api/fixtures/library/install", { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify({ src, key }) })).json()).fixture.id, [src, key]);
   await win.evaluate((m) => { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "high");
-    localStorage.setItem("jarvis.people", "0"); if (m === "webgl") localStorage.setItem("jarvis.renderer", "webgl"); else localStorage.removeItem("jarvis.renderer"); }, mode);
+    localStorage.setItem("jarvis.people", "0"); localStorage.setItem("jarvis.3d", "on"); if (m === "webgl") localStorage.setItem("jarvis.renderer", "webgl"); else localStorage.removeItem("jarvis.renderer"); }, mode);
   await act("venue_template", { name: "club" });
   const spots = (await act("add_heads", { fixture_id: await install("qlc", "Robe/Robe-Pointe.qxf"), qty: 2 })).heads;
   await act("set_place", { head: spots[0], x: -1.5, y: 6, z: 7 });

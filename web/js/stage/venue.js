@@ -20,7 +20,7 @@ function casts(root) {
 const DEG = Math.PI / 180;
 
 const FLOOR_COLOURS = {
-  concrete: 0x3b3d42, wood: 0x4a3a2c, grass: 0x2c3a24, black: 0x17181b,
+  concrete: 0x45474c, wood: 0x4a3a2c, grass: 0x2c3a24, black: 0x17181b,
   carpet: 0x2d2a33, tiles: 0x4a4c52,
 };
 // how much each floor mirrors the lights on it (a black dance floor, tiles)
@@ -183,6 +183,115 @@ function trussGeo(a, b, size, triangle = false) {
 }
 
 // ---------------------------------------------------------------------------
+// curved rigging: an arc, a circle, a spiral, an S
+// ---------------------------------------------------------------------------
+/** The point `t` (0..1) along a rig piece.  A curved one (`bend` degrees)
+ *  is an arc in plan through both ends, its height going evenly from end
+ *  to end - the same sum as the desk's (app/venue.py curve_point), so a
+ *  light sits on the truss the 3D draws. */
+export function curvePoint(r, t, out = new THREE.Vector3()) {
+  const [ax, ay, az] = r.a, [bx, by, bz] = r.b;
+  t = Math.max(0, Math.min(1, t));
+  const y = ay + (by - ay) * t;
+  const dx = bx - ax, dz = bz - az;
+  const chord = Math.hypot(dx, dz);
+  const th = (+r.bend || 0) * DEG;
+  if (Math.abs(th) < 1e-6 || chord < 1e-9) return out.set(ax + dx * t, y, az + dz * t);
+  const rad = chord / (2 * Math.sin(th / 2));
+  const phi0 = Math.atan2(dz, dx) - th / 2;
+  return out.set(ax + rad * (Math.sin(phi0 + th * t) - Math.sin(phi0)), y,
+    az + rad * (Math.cos(phi0) - Math.cos(phi0 + th * t)));
+}
+
+/** The point of a piece nearest `p` (along its curve when it is curved):
+ *  {t, point} - the same search as the desk's (app/venue.py curve_nearest). */
+export function curveNearest(r, p) {
+  if (!r.bend) {
+    const a = new THREE.Vector3(...r.a), ab = new THREE.Vector3(...r.b).sub(a);
+    const len2 = ab.lengthSq();
+    const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / len2));
+    return { t, point: a.addScaledVector(ab, t) };
+  }
+  const n = 48, q = new THREE.Vector3();
+  let best = 0, bd = Infinity;
+  for (let k = 0; k <= n; k++) {
+    const d = curvePoint(r, k / n, q).distanceTo(p);
+    if (d < bd) { bd = d; best = k; }
+  }
+  let lo = Math.max(0, (best - 1) / n), hi = Math.min(1, (best + 1) / n);
+  for (let i = 0; i < 30; i++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (curvePoint(r, m1, q).distanceTo(p) <= curvePoint(r, m2, q).distanceTo(p)) hi = m2; else lo = m1;
+  }
+  const t = (lo + hi) / 2;
+  return { t, point: curvePoint(r, t) };
+}
+
+/** How long a piece is along its curve. */
+export function curveLength(r) {
+  const th = Math.abs((+r.bend || 0) * DEG);
+  const chord = Math.hypot(r.b[0] - r.a[0], r.b[2] - r.a[2]);
+  const flat = th < 1e-6 ? chord : chord * (th / 2) / Math.sin(th / 2);
+  return Math.hypot(flat, r.b[1] - r.a[1]);
+}
+
+/** Points along a curved piece, about `step` m apart (ends included). */
+export function curveSamples(r, step) {
+  const n = Math.max(1, Math.ceil(curveLength(r) / Math.max(0.05, step)));
+  return Array.from({ length: n + 1 }, (_, i) => curvePoint(r, i / n));
+}
+
+/** Box (or triangle) truss lattice along a path of points: the chords
+ *  follow the curve, a zig-zag lacing between each pair of points. */
+function latticeAlong(pts, size, triangle = false) {
+  const h = size / 2;
+  const corners = triangle ? [[-h, -h * 0.58], [h, -h * 0.58], [0, h * 1.15]]
+    : [[-h, -h], [h, -h], [h, h], [-h, h]];
+  // each point's frame: along the path, up, and across
+  const at = pts.map((p, i) => {
+    const t = new THREE.Vector3().subVectors(pts[Math.min(pts.length - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
+    const side = new THREE.Vector3().crossVectors(t, _up);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const up = new THREE.Vector3().crossVectors(side, t).normalize();
+    return corners.map(([cx, cz]) => p.clone().addScaledVector(side, cx).addScaledVector(up, cz));
+  });
+  const out = [];
+  for (let i = 0; i + 1 < at.length; i++) {
+    for (let k = 0; k < corners.length; k++) {
+      out.push(rod(at[i][k], at[i + 1][k], 0.024, 6));
+      const k1 = (k + 1) % corners.length;
+      const flip = (i + k) % 2;
+      out.push(rod(flip ? at[i][k] : at[i + 1][k], flip ? at[i + 1][k1] : at[i][k1], 0.009, 4));
+    }
+  }
+  return out.filter(Boolean);
+}
+
+/** Which curved pieces carry a chain hoist: along the top of each curved
+ *  shape (a spiral hangs from its top turn), one about every 3 m. */
+function hoistedCurves(rigging) {
+  const groups = new Map();
+  for (const r of rigging || []) {
+    if (!r.bend) continue;
+    const k = r.group || r.id;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const out = new Set();
+  for (const list of groups.values()) {
+    const top = Math.max(...list.map((r) => Math.max(r.a[1], r.b[1])));
+    let since = Infinity;
+    for (const r of list) {
+      if (Math.max(r.a[1], r.b[1]) < top - 0.35) continue;
+      if (since >= 3) { out.add(r.id); since = 0; }
+      since += curveLength(r);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // materials (shared per build)
 // ---------------------------------------------------------------------------
 function mats(v) {
@@ -208,13 +317,33 @@ function mats(v) {
 // ---------------------------------------------------------------------------
 const PICK_HULL = new THREE.MeshBasicMaterial({ visible: false });
 
-function buildRig(r, M, room) {
+function buildRig(r, M, room, hoisted) {
   const a = new THREE.Vector3(...r.a), b = new THREE.Vector3(...r.b);
   const g = new THREE.Group();
   g.userData = { venueId: r.id, venueKind: r.kind };
   const vertical = Math.abs(b.y - a.y) > Math.max(Math.abs(b.x - a.x), Math.abs(b.z - a.z));
   const parts = [];
   const dark = [];
+  const bent = !!r.bend && ["truss", "pipe", "ladder"].includes(r.kind);
+  if (bent) {
+    // a curved piece: one smooth lattice (or bar) along the curve
+    const pts = curveSamples(r, r.kind === "pipe" ? 0.25 : Math.max(0.2, r.size));
+    if (r.kind === "pipe") for (let i = 0; i + 1 < pts.length; i++) parts.push(rod(pts[i], pts[i + 1], Math.max(0.024, r.size / 2), 12));
+    else parts.push(...latticeAlong(pts, r.kind === "ladder" ? r.size : r.size, false));
+    if (hoisted && hoisted.has(r.id) && room.h - a.y > 0.6) {
+      dark.push(rod(new THREE.Vector3(a.x, a.y + 0.5, a.z), new THREE.Vector3(a.x, room.h, a.z), 0.008, 4));
+      dark.push(boxGeo(0.2, 0.28, 0.18, a.x, a.y + 0.36, a.z));
+    }
+    const m1 = merged(parts, M.steel), m2 = merged(dark, M.chain);
+    if (m1) g.add(m1);
+    if (m2) g.add(m2);
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const hull = rod(pts[i], pts[i + 1], Math.max(0.15, (r.size || 0.3) * 0.6), 8);
+      if (hull) g.add(new THREE.Mesh(hull, PICK_HULL));
+    }
+    g.traverse((o) => { if (o.isMesh) o.userData = { venueId: r.id, venueKind: r.kind }; });
+    return g;
+  }
   if (r.kind === "truss" || r.kind === "tower") {
     parts.push(...trussGeo(a, b, r.size));
     if (vertical) {
@@ -331,6 +460,46 @@ function screenMaterial(content, aspect) {
   return mat;
 }
 
+/** A curtain `w` x `h` with vertical folds `fold` m apart, `depth` deep. */
+export function drapeGeo(w, h, fold, depth) {
+  const n = Math.max(8, Math.min(1200, Math.ceil(w / fold * 10)));
+  const geo = new THREE.PlaneGeometry(w, h, n, 1);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    // a soft sine, a little sharper towards the back of each fold
+    const s = Math.sin((x + w / 2) / fold * Math.PI * 2);
+    p.setZ(i, (depth / 2) * Math.sign(s) * Math.pow(Math.abs(s), 0.8));
+  }
+  geo.translate(0, h / 2, 0);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** LED panels in a grid over `w` x `h`: the backs (boxes) and the faces
+ *  (each mapped to its own part of the picture), merged. */
+export function panelGeo(w, h, d, tile, gap) {
+  const cols = Math.max(1, Math.floor((w + gap) / (tile + gap)));
+  const rows = Math.max(1, Math.floor((h + gap) / (tile + gap)));
+  const gw = cols * tile + (cols - 1) * gap, gh = rows * tile + (rows - 1) * gap;
+  const backs = [], faces = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cx = -gw / 2 + tile / 2 + c * (tile + gap), cy = (h - gh) / 2 + tile / 2 + r * (tile + gap);
+      backs.push(baked(new THREE.BoxGeometry(tile, tile, d), new THREE.Vector3(cx, cy, 0)));
+      const f = new THREE.PlaneGeometry(tile * 0.94, tile * 0.94);
+      const uv = f.attributes.uv;
+      for (let i = 0; i < uv.count; i++) {
+        // where this corner of the panel is on the whole grid, 0..1
+        uv.setXY(i, (cx + (uv.getX(i) - 0.5) * tile * 0.94 + gw / 2) / gw, (cy - (h - gh) / 2 + (uv.getY(i) - 0.5) * tile * 0.94) / gh);
+      }
+      f.translate(cx, cy, d / 2 + 0.003);
+      faces.push(f);
+    }
+  }
+  return { backs: mergeGeometries(backs, false), faces: mergeGeometries(faces, false), cols, rows };
+}
+
 function buildObject(o, M) {
   const g = new THREE.Group();
   g.position.set(o.x, o.y || 0, o.z);
@@ -378,6 +547,26 @@ function buildObject(o, M) {
     case "balcony": {
       add(new THREE.BoxGeometry(w, 0.25, d).translate(0, -0.125, 0), custom || M.object);
       add(new THREE.BoxGeometry(w, 1.0, 0.06).translate(0, 0.5, d / 2), M.black);
+      break;
+    }
+    case "drape": {
+      // a pleated curtain: folds `fold` m apart, `d` deep, hung from a bar
+      g.add(Object.assign(new THREE.Mesh(drapeGeo(w, h, o.fold || 0.4, Math.max(0.04, d)),
+        surfaceMaterial(o.colour ? new THREE.Color(o.colour).getHex() : 0x6e7076, { side: THREE.DoubleSide })), { userData: { drape: true } }));
+      const bar = rod(new THREE.Vector3(-w / 2 - 0.1, h + 0.03, 0), new THREE.Vector3(w / 2 + 0.1, h + 0.03, 0), 0.024, 10);
+      if (bar) add(bar, M.steel);
+      break;
+    }
+    case "panels": {
+      // LED panels in a grid, apart from each other: each shows its part of
+      // the picture (the rig's colours, a clip, an image)
+      const { backs, faces, cols, rows } = panelGeo(w, h, Math.max(0.05, d), o.tile || 0.5, o.gap ?? 0.15);
+      if (backs) add(backs, M.black);
+      const content = o.content || "rig";
+      if (faces) {
+        const face = add(faces, content === "off" ? (custom || M.screen) : screenMaterial(content, w / h));
+        if (content !== "off") face.userData.screen = { content, aspect: w / h, cols, rows };
+      }
       break;
     }
     case "mark": {
@@ -629,6 +818,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     surfaceMaterial(outdoor ? 0x1d2618 : 0x0b0c0f));
   apron.rotation.x = -Math.PI / 2;
   apron.position.set(R.cx, -0.01, R.z0 + R.d / 2);
+  apron.userData.wireBare = true;                 // no outline in the line drawings
   group.add(apron);
 
   // walls: one per edge of the outline, each knowing which way is out
@@ -720,8 +910,9 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   // rigging and objects, one sub-group each so the editor can pick them
   const items = new Map();
+  const hoisted = hoistedCurves(v.rigging);
   for (const r of v.rigging || []) {
-    const g = buildRig(r, M, R);
+    const g = buildRig(r, M, R, hoisted);
     items.set(r.id, g);
     group.add(g);
   }

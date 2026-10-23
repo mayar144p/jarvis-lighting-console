@@ -35,7 +35,7 @@ from app.sacn import SacnSender
 # 32768, we stop far earlier).  Explicit universe pinning (set_address)
 # is not capped - only the auto-placer stops here so it can never spin.
 MAX_UNIVERSES = 4096
-PLAYBACK_COUNT = 10
+PLAYBACK_COUNT = 40
 HISTORY_LIMIT = 50
 SAFE_NAME = re.compile(r"^[A-Za-z0-9 _-]{1,40}$")
 
@@ -92,7 +92,7 @@ UNDO_COALESCE_S = 1.2
 UNDO_EXCLUDED = frozenset({
     "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
     # quick buttons are played, not edited: a flash is not an undo step
-    "quick_press", "quick_release_all", "quick_rate", "group_flash",
+    "quick_press", "quick_release_all", "quick_rate", "group_flash", "quick_profile_use",
     "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "song_follow", "standby", "standby_take", "standby_stop", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
@@ -130,6 +130,8 @@ UNDO_EXCLUDED = frozenset({
     # desk, undo walks back what you did to them, not what you clicked.
     "select_all", "select_group", "select_heads", "select_similar",
     "select_query", "clear_selection", "select_split",
+    # what the 3D shows (output / programmer / next GO) is a view, not the show
+    "vis_source",
 })
 # Ready? counts a DMX send error as a problem this long after it happened
 READY_ERROR_WINDOW_S = 60.0
@@ -572,7 +574,8 @@ def _copy_playbacks(playbacks) -> list[dict]:
         copy = dict(pb)
         copy["stack"] = [
             {**cue, "values": {int(h): dict(row)
-                               for h, row in (cue.get("values") or {}).items()}}
+                               for h, row in (cue.get("values") or {}).items()},
+             **({"refs": {h: dict(r) for h, r in cue["refs"].items()}} if cue.get("refs") else {})}
             for cue in (pb.get("stack") or [])
         ]
         out.append(copy)
@@ -637,15 +640,15 @@ ACTIONS = (
     "insert_cue", "delete_cue", "move_cue", "rename_cue", "edit_cue",
     "cue_info", "set_attr_range", "remap_heads",
     "follow_set", "group_create", "group_edit", "group_delete", "import_scan",
-    "import_show", "include_palette", "locate", "load_show", "master",
+    "import_show", "include_palette", "palette_defaults", "palette_edit", "locate", "load_show", "master",
     "patch_clear", "patch_from_csv", "patch_list",
     "playback_activate", "playback_level", "playback_release",
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar", "select_split",
-    "select_query", "set_address", "rename_head", "fan",
+    "select_query", "select_step", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
-    "set_limits", "clear_limits", "set_orient", "get_limits",
+    "set_limits", "clear_limits", "set_orient", "line_up", "get_limits", "flip", "mirror_pan", "select_step",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",
@@ -654,7 +657,7 @@ ACTIONS = (
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "venue_orient", "attach_heads", "place_many",
     "quick_set", "quick_colour_row", "quick_group_controls", "quick_edit", "quick_update", "quick_press", "quick_release_all", "quick_defaults",
-    "quick_page", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
+    "quick_page", "quick_profile", "quick_profile_use", "quick_move", "quick_rate", "group_flash", "quick_from_laser", "quick_style", "quick_layout", "show_new", "show_template", "show_templates", "tempo_phrase",
     "venue_save", "venue_open", "venue_delete",
     "patch_move_free", "change_type", "venue_rig", "ready_check", "show_versions", "restore_version", "rdm_compare",
     "show_export", "show_files", "show_rename", "show_copy", "show_delete", "notice_seen",
@@ -680,6 +683,7 @@ ACTIONS = (
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
     "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy", "roam",
+    "vis_source",
 )
 
 

@@ -305,6 +305,8 @@ class TimelineMixin:
                 try:
                     if c.get("step"):
                         r = self._a_step_fx_run(id=c["step"], heads=heads or None, beats=c.get("beats"))
+                    elif c.get("move"):
+                        r = self._a_move_play(id=c["move"], heads=heads) if heads else {}
                     else:
                         r = self._a_run_fx(name=c["fx"], heads=heads,
                                            params={"beats": c["beats"]} if c.get("beats") else None) if heads else {}
@@ -422,6 +424,33 @@ class TimelineMixin:
         side = stance if stance in ("hang", "stand") else None
         members = [x for x in venue_mod.normalise(self.venue)["rigging"]
                    if r.get("group") and x.get("group") == r["group"]]
+        if len(members) > 1 and len(rows) > 1 and any(x.get("bend") for x in members):
+            # a curved shape (circle, arc, spiral, S): the lights evenly
+            # along the whole curve, end to end (round a closed one)
+            n = len(rows)
+            lens = [venue_mod.length(x) for x in members]
+            total = sum(lens)
+            if total / n < gap * 0.8:
+                raise ValueError(f"{r['name'] or r['id']} has no room for {n} at {gap:g} m spacing")
+            spots = []
+            for i in range(n):
+                at = (i + 0.5) * total / n
+                for mem, ln in zip(members, lens):
+                    if at <= ln + 1e-9 or mem is members[-1]:
+                        spots.append((mem["id"], round(max(0.0, min(1.0, at / ln if ln else 0.5)), 4)))
+                        break
+                    at -= ln
+            rows = sorted(rows, key=lambda h: h["head_no"])
+            for h, (rid, t) in zip(rows, spots):
+                h["mount"] = {"rig": rid, "t": t}
+                if side:
+                    h["stance"] = side
+                else:
+                    h.pop("stance", None)
+            self._reflow_mounts()
+            self.patch_rev += 1
+            return {"heads": [h["head_no"] for h in rows], "rig": r["id"],
+                    "summary": f"{len(rows)} light(s) along {r['name'] or r['id']}"}
         if len(members) > 1 and len(rows) > 1:
             # a shape (circle, frame...): the lights spread round all of it,
             # starting at the piece named

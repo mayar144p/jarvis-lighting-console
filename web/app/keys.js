@@ -9,7 +9,7 @@ import { copilotOpen, closeCopilot } from "./copilot.js";
 import { focusedPlayback } from "./playbacks.js";
 import { openHelp, openCueDialog, saveShow } from "./dialogs.js";
 import { makeGroup } from "./fixtures.js";
-import { toggleFull, getStage } from "./stagepanel.js";
+import { stagePanel } from "./view3d.js";
 
 // The cue the focused playback is on: the one O, I and D act on.
 function currentCue() {
@@ -46,7 +46,7 @@ export function initKeys() {
       if (cmdOpen()) { closeCmd(); return; }
       if (closeTopModal()) return;
       if (copilotOpen()) { closeCopilot(); return; }
-      if (document.body.classList.contains("stage-full")) { toggleFull(false); return; }
+      if (document.body.classList.contains("stage-full")) { stagePanel().then((m) => m && m.toggleFull(false)); return; }
       return;
     }
     if (ctrl && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); return; }
@@ -76,8 +76,8 @@ export function initKeys() {
     if (low === "d") return deleteCue();
     if (low === "g") return makeGroup();
     if (low === "f") {
-      const st = getStage();
-      if (st) st.frame(selected().length ? selected() : null);
+      const sel = selected();
+      stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.frame(sel.length ? sel : null); });
       return;
     }
     if (k === "ArrowUp" || k === "ArrowDown") {

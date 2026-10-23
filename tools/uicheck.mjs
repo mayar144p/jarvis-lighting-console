@@ -375,7 +375,7 @@ for (const width of WIDTHS) {
   await p.addInitScript((fast) => {
     try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
   }, fast);
-  await p.goto(BASE);
+  await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
   // an empty show opens in Set up; the steps below check the programmer

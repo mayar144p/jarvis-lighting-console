@@ -333,6 +333,75 @@ class MoveMixin:
             return dom // 2 if role in ("pan", "tilt") else 0
         return int(_logical16(v)) if dom > 255 else int(v)
 
+    def _a_flip(self, **_):
+        """FLIP: the selected lights reach the SAME spot from the other end
+        of their travel (pan half a turn round, tilt the other way) - for a
+        light that would otherwise swing through the audience to get to
+        its next position."""
+        done, stuck = [], []
+        for h in self._require_selection():
+            if "pan" not in h["map"] or "tilt" not in h["map"]:
+                continue
+            pmin, pmax, tmin, tmax = self._aim_span(h)
+            dp, dt = attr_domain(h, "pan"), attr_domain(h, "tilt")
+            p = pmin + self._move_now(h, "pan") / dp * (pmax - pmin)
+            t = tmin + self._move_now(h, "tilt") / dt * (tmax - tmin)
+            mid = (tmin + tmax) / 2.0
+            t2 = 2 * mid - t
+            p2 = next((q for q in (p + 180.0, p - 180.0) if pmin - 0.01 <= q <= pmax + 0.01), None)
+            if p2 is None or not tmin - 0.01 <= t2 <= tmax + 0.01:
+                stuck.append(h["head_no"])
+                continue
+            self._set_programmer(h["head_no"], "pan", int(round((p2 - pmin) / ((pmax - pmin) or 1) * dp)))
+            self._set_programmer(h["head_no"], "tilt", int(round((t2 - tmin) / ((tmax - tmin) or 1) * dt)))
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError("none of the selected lights can reach that spot the other way round" if stuck
+                             else "none of the selected lights can pan and tilt")
+        return {"heads": done, "stuck": stuck, "summary": f"flipped {len(done)} light(s)"
+                + (f"; {len(stuck)} can't turn far enough" if stuck else "")}
+
+    def _a_mirror_pan(self, **_):
+        """MIRROR: the selected lights' pan reversed about the middle of
+        its travel (tilt kept) - left becomes right."""
+        done = []
+        for h in self._require_selection():
+            if "pan" not in h["map"]:
+                continue
+            dp = attr_domain(h, "pan")
+            self._set_programmer(h["head_no"], "pan", dp - self._move_now(h, "pan"))
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError("none of the selected lights can pan")
+        return {"heads": done, "summary": f"mirrored the pan of {len(done)} light(s)"}
+
+    def _a_select_step(self, step="next", **_):
+        """Next / Prev / All: work on one light of the selection at a time
+        (what you set goes to that light only); All brings them all back."""
+        step = str(step or "next").lower()
+        keep = self.__dict__.get("step_set") or []
+        cur = list(self.selected)
+        if step == "all":
+            if keep:
+                self.selected = [n for n in keep if any(h["head_no"] == n for h in self.patch)]
+            self.__dict__["step_set"] = []
+            return {"selected": list(self.selected), "summary": f"all {len(self.selected)} light(s)"}
+        if step not in ("next", "prev"):
+            raise ValueError("step is next, prev or all")
+        if not keep or not (len(cur) == 1 and cur[0] in keep):
+            keep = cur or [h["head_no"] for h in self.patch]
+            if not keep:
+                raise ValueError("no lights to step through")
+            self.__dict__["step_set"] = list(keep)
+            i = -1 if step == "next" else 0
+        else:
+            i = keep.index(cur[0])
+        i = (i + (1 if step == "next" else -1)) % len(keep)
+        self.selected = [keep[i]]
+        name = next((h.get("name") for h in self.patch if h["head_no"] == keep[i]), None)
+        return {"selected": [keep[i]], "of": len(keep),
+                "summary": f"{name or f'light {keep[i]}'} ({i + 1} of {len(keep)})"}
+
     def _a_nudge(self, axis="pan", step=0.01, attribute=None, **_):
         """Move the selection's pan or tilt - or any attribute (`attribute`:
         dimmer, zoom, focus, red...) - by a fraction of its travel (+/-):

@@ -9,6 +9,38 @@ export const X_AXIS = new THREE.Vector3(1, 0, 0);
 export const DEFAULT_PAN = [-270, 270];
 export const DEFAULT_TILT = [-135, 135];
 
+// How a light is mounted (hung, standing, on its back, on a boom): the turn
+// from a light standing on the floor, rows of a 3 x 3 matrix - the same
+// table the desk aims with (app/venue.py HANG_BASE).
+export const HANG_BASE = {
+  standing: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  hung: [[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+  bottom_front: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
+  top_front: [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+  top_rear: [[1, 0, 0], [0, 0, 1], [0, -1, 0]],
+  bottom_rear: [[-1, 0, 0], [0, 0, -1], [0, -1, 0]],
+  boom_left: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+  boom_right: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]],
+};
+
+/** How a light is mounted: its hang (on its back, on a boom...), else hung
+ *  or standing from its stance (as app/venue.py hang_of). */
+export function hangOf(f) {
+  if (f.hang && HANG_BASE[f.hang] && f.hang !== "hung" && f.hang !== "standing") return f.hang;
+  const hung = f.stance ? f.stance === "hang" : (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
+  return hung ? "hung" : "standing";
+}
+
+/** The model's turn for a hang (a model drawn hung is turned over first). */
+export function hangQuat(name, nativeHung = false, out = new THREE.Quaternion()) {
+  const m = HANG_BASE[name] || HANG_BASE.standing;
+  const m4 = new THREE.Matrix4().set(m[0][0], m[0][1], m[0][2], 0, m[1][0], m[1][1], m[1][2], 0,
+    m[2][0], m[2][1], m[2][2], 0, 0, 0, 0, 1);
+  out.setFromRotationMatrix(m4);
+  if (nativeHung) out.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
+  return out;
+}
+
 export function smooth(t) { return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
 export function lerp(a, b, t) { return a + (b - a) * t; }
 

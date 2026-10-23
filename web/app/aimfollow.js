@@ -6,6 +6,7 @@
 import { run } from "./actions.js";
 import { state, selectionHeads, on } from "./store.js";
 import { h, toast } from "./ui.js";
+import { stagePanel } from "./view3d.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 let following = false;
@@ -59,8 +60,8 @@ function sendAim(p, final) {
 }
 
 async function stage() {
-  const m = await import("./stagepanel.js");
-  return m.getStage();
+  const m = await stagePanel();
+  return m && m.getStage();
 }
 
 export async function setFollow(on) {

@@ -230,11 +230,11 @@ function patchSheet() {
       hx("td", { class: "n" }, hx("b", L.n)), hx("td", `${L.universe}.${String(L.address).padStart(3, "0")}`),
       hx("td", { class: "n" }, `${L.address}–${L.address + Math.max(1, L.channels) - 1}`), hx("td", L.name),
       hx("td", `${L.manufacturer} ${L.model}`), hx("td", L.mode), hx("td", L.label || L.type),
-      hx("td", L.rig || "—"), hx("td", { class: "n" }, `${L.x}, ${L.y}, ${L.z}`),
+      hx("td", [L.rig, L.hang_label].filter(Boolean).join(" · ") || "—"), hx("td", { class: "n" }, `${L.x}, ${L.y}, ${L.z}`),
       hx("td", { class: "n" }, `${L.kg}${L.kg_known ? "" : "*"}${L.watts ? ` · ${Math.round(L.watts)} W` : ""}`)));
   }
   return hx("section", { class: "sheet", id: "sheet-patch" }, hx("h2", "Patch sheet"),
-    rows.length ? hx("table", hx("thead", hx("tr", ...["#", "Addr", "Chans", "Name", "Maker / model", "Mode", "Kind", "Hangs on", "x, y, z m", "kg · W"].map((t, i) => hx("th", { class: [0, 2, 8, 9].includes(i) ? "n" : "" }, t)))),
+    rows.length ? hx("table", hx("thead", hx("tr", ...["#", "Addr", "Chans", "Name", "Maker / model", "Mode", "Kind", "Hangs on · how", "x, y, z m", "kg · W"].map((t, i) => hx("th", { class: [0, 2, 8, 9].includes(i) ? "n" : "" }, t)))),
       hx("tbody", ...body)) : hx("p", { class: "empty" }, "No lights patched."),
     hx("p", { class: "meta" }, "* typical weight for the kind of light (its file doesn't say)."));
 }

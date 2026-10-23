@@ -4,7 +4,7 @@ import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./st
 import { $ } from "./ui.js";
 import { initTopbar } from "./topbar.js";
 import { initFixtures } from "./fixtures.js";
-import { initStage } from "./stagepanel.js";
+import { HAS_3D, stagePanel } from "./view3d.js";
 import { initProgrammer } from "./programmer.js";
 import { initPlaybacks } from "./playbacks.js";
 import { initQuickButtons } from "./quickbuttons.js";
@@ -49,9 +49,11 @@ async function boot() {
   }
   initTopbar();
   initFixtures();
-  if (WINDOW !== "desk" && WINDOW !== "playbacks") {   // one 3D per computer is plenty
+  // the 3D view is off for now (view3d.js): the panels take the screen
+  if (!HAS_3D) document.body.classList.add("no3d");
+  else if (WINDOW !== "desk" && WINDOW !== "playbacks") {   // one 3D per computer is plenty
     // a computer whose graphics can't do 3D (no WebGL) still runs the desk
-    try { initStage(); } catch (e) {
+    try { (await stagePanel()).initStage(); } catch (e) {
       console.error(e);
       const box = $("#stage-wrap");
       if (box) box.append(Object.assign(document.createElement("p"), { className: "stage-no3d muted",

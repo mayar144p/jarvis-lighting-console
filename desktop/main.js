@@ -8,6 +8,13 @@
 //   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
 "use strict";
 const { app, BrowserWindow, Menu, dialog, ipcMain, powerSaveBlocker, screen, session, shell } = require("electron");
+
+// A touch screen is the desk's control surface, not a web page: a sideways
+// swipe must not go "back" a page, a pinch must not zoom it (set before the
+// app is ready; the page's CSS and guard() below back this up)
+app.commandLine.appendSwitch("overscroll-history-navigation", "0");
+app.commandLine.appendSwitch("disable-pinch");
+app.commandLine.appendSwitch("disable-features", "OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation");
 const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -150,6 +157,8 @@ function firewallAllow(port) {
 // repo to update from, so it skips this.
 async function selfUpdate() {
   if (PACKED || !fs.existsSync(path.join(ROOT, ".git"))) return;
+  // AUTO_UPDATE=false (as the engine reads it): no check, no "Checking" window
+  if (/^(false|0|no|off)$/i.test(String(process.env.AUTO_UPDATE || "").trim())) return;
   const found = findPython();
   if (!found) return;
   const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
@@ -292,6 +301,7 @@ function openPart(part) {
     if (!open.size) app.quit();
   });
   guard(win.webContents);
+  watchFullScreen(win);
   win.webContents.on("did-start-loading", () => pageUp.delete(win.webContents));   // asks wait for the new page
   return win;
 }
@@ -385,6 +395,11 @@ function guard(wc) {
     if (k === "f5" || (mod && (k === "r" || k === "w"))) e.preventDefault();
   });
   wc.on("will-navigate", (e, url) => { if (!url.startsWith(base)) { e.preventDefault(); shell.openExternal(url); } });
+  // no zoom by pinch, and no page to go "back" to: a stray swipe stays in the show
+  wc.on("did-finish-load", () => {
+    wc.setVisualZoomLevelLimits(1, 1).catch(() => {});
+    try { wc.navigationHistory.clear(); } catch { /* an older Electron: the switches above */ }
+  });
   wc.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(base)) return { action: "allow" };
     if (/^https?:/i.test(url)) shell.openExternal(url);
@@ -407,6 +422,176 @@ function powershell(script, opts = {}) {
     { windowsHide: true, stdio: "ignore", ...opts });
 }
 const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
+// Windows 11's three- and four-finger touch gestures (switch apps, show the
+// desktop): Settings > Bluetooth & devices > Touch, kept per user here (no
+// administrator needed; starts after signing back in)
+const FINGERS_KEY = "HKCU\\Control Panel\\Desktop";
+// ---- full screen = every Windows touch gesture locked ---------------------
+// While a desk window is full screen (the buttons page, a Show mode screen)
+// Windows' touch gestures are locked, and back as they were when it leaves:
+//  - edge swipes: the window's own "no edge gestures while full screen"
+//    switch (System.EdgeGesture.DisableTouchWhenFullscreen).  Windows only
+//    keeps it set from the window's own process, so it is set here, through
+//    koffi (calls into Windows from the app itself) - a helper process's
+//    setting was dropped;
+//  - Windows 11's own per-user switches (Settings > Bluetooth & devices >
+//    Touch): swipes in from the left and right edges, and the three- and
+//    four-finger gestures (switch apps, show the desktop) - off while full
+//    screen and put back exactly as they were after (at the next start if
+//    the app stopped while full screen).  No administrator needed.
+// What Windows took is written to touchlock.log in the app's data folder.
+// The whole-computer lock (Desk menu, admin once) stays the sure way.
+const gestureLock = () => saved._gestureLock !== false;   // (Desk menu: on by default)
+let ffi;                                       // undefined: not loaded yet; null: none here
+function winApi() {
+  if (ffi !== undefined) return ffi;
+  ffi = null;
+  if (process.platform !== "win32") return ffi;
+  try {
+    const koffi = require("koffi");
+    koffi.struct("JGUID", { d1: "uint32", d2: "uint16", d3: "uint16", d4: koffi.array("uint8", 8) });
+    koffi.struct("JPKEY", { fmtid: "JGUID", pid: "uint32" });
+    koffi.struct("JPROPVAR", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", val: "int64", pad: "int64" });
+    // (what a window's store hands back: Windows keeps these values as text)
+    koffi.struct("JPROPVARP", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", p: "void *", pad: "int64" });
+    const ole32 = koffi.load("ole32.dll");
+    const shell32 = koffi.load("shell32.dll"), user32 = koffi.load("user32.dll");
+    ffi = {
+      koffi,
+      free: ole32.func("void __stdcall CoTaskMemFree(void *p)"),
+      getStore: shell32.func("long __stdcall SHGetPropertyStoreForWindow(void *hwnd, JGUID *riid, _Out_ void **ppv)"),
+      settingChange: user32.func("intptr_t __stdcall SendMessageTimeoutW(intptr_t hwnd, uint32 msg, uintptr_t wp, const char16_t *lp, uint32 flags, uint32 ms, _Out_ uintptr_t *res)"),
+      GetValue: koffi.proto("long __stdcall JGetValue(void *self, JPKEY *key, _Out_ JPROPVARP *pv)"),
+      SetValue: koffi.proto("long __stdcall JSetValue(void *self, JPKEY *key, JPROPVAR *pv)"),
+      Commit: koffi.proto("long __stdcall JCommit(void *self)"),
+      Release: koffi.proto("uint32 __stdcall JRelease(void *self)"),
+    };
+  } catch (e) { touchLog(`no Windows calls here: ${e.message}`); }
+  return ffi;
+}
+const guid = (s) => {
+  const h = s.replace(/-/g, "");
+  return { d1: parseInt(h.slice(0, 8), 16), d2: parseInt(h.slice(8, 12), 16), d3: parseInt(h.slice(12, 16), 16),
+    d4: Array.from({ length: 8 }, (_, i) => parseInt(h.slice(16 + i * 2, 18 + i * 2), 16)) };
+};
+function touchLog(line) {
+  try { fs.appendFileSync(path.join(app.getPath("userData"), "touchlock.log"), `${new Date().toISOString()} ${line}\n`); } catch { /* not fatal */ }
+}
+// the window's switch; returns what Windows reads back (1 on, 0 off, <0 refused)
+function edgeSwitch(win, on) {
+  const api = winApi();
+  if (!api || !win || win.isDestroyed()) return -9;
+  try {
+    const { koffi } = api;
+    const b = win.getNativeWindowHandle();
+    const hwnd = b.length >= 8 ? b.readBigUInt64LE(0) : BigInt(b.readUInt32LE(0));
+    const out = [null];
+    const hex = (n) => "0x" + (Number(n) >>> 0).toString(16);
+    const hr = api.getStore(hwnd, guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), out);
+    if (hr !== 0 || !out[0]) { touchLog(`edge switch: no property store (${hex(hr)}, ${typeof out[0]})`); return -2; }
+    const store = out[0];
+    const fns = koffi.decode(koffi.decode(store, "void *"), koffi.array("void *", 8));
+    const key = { fmtid: guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"), pid: 2 };
+    const set = koffi.call(fns[6], api.SetValue, store, key, { vt: 11, r1: 0, r2: 0, r3: 0, val: on ? -1 : 0, pad: 0 });
+    const commit = koffi.call(fns[7], api.Commit, store);
+    const got = {};
+    const get = koffi.call(fns[5], api.GetValue, store, key, got);
+    koffi.call(fns[2], api.Release, store);
+    // read back: a boolean, or (as Windows keeps a window's values) its text
+    let back = null;
+    if (got.vt === 11) back = Number(BigInt.asIntN(16, BigInt(koffi.address ? koffi.address(got.p) : 0))) !== 0;
+    if (got.vt === 31 && got.p) {
+      try { back = koffi.decode(got.p, "char16_t", -1); } catch { back = "?"; }
+      try { api.free(got.p); } catch { /* a few bytes */ }
+    }
+    touchLog(`edge switch: hwnd ${hwnd} set ${hex(set)} commit ${hex(commit)} get ${hex(get)} vt ${got.vt} reads ${JSON.stringify(back)}`);
+    if (set !== 0 || commit !== 0) return -1;
+    if (typeof back === "string") return /^(-1|1|true)$/i.test(back.trim()) ? 1 : (/^(0|false)$/i.test(back.trim()) ? 0 : 1);
+    return back === null ? 1 : (back ? 1 : 0);   // set and committed: Windows took it
+  } catch (e) { touchLog(`edge switch failed: ${e.message}`); return -3; }
+}
+// tell Windows (and the shell) a setting changed, so it is read again now
+function settingChanged() {
+  const api = winApi();
+  if (!api) return;
+  for (const what of ["TouchGestureSetting", "Control Panel\\Desktop", "Software\\Microsoft\\Wisp\\Touch"]) {
+    try { api.settingChange(0xffff, 0x001a, 0, what, 0x0002, 1000, [0]); } catch { /* not fatal */ }
+  }
+}
+// the per-user touch switches full screen turns off: [key, value]
+const WISP_KEY = "HKCU\\Software\\Microsoft\\Wisp\\Touch";
+const TOUCH_SWITCHES = { fingers: [FINGERS_KEY, "TouchGestureSetting"],
+  left: [WISP_KEY, "Left_Edgy_Enabled"], right: [WISP_KEY, "Right_Edgy_Enabled"] };
+function readSwitch(name) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  const r = spawnSync("reg", ["query", key, "/v", value], { windowsHide: true, encoding: "utf8" });
+  const m = r.status === 0 && new RegExp(`${value}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, "i").exec(r.stdout || "");
+  return m ? parseInt(m[1], 16) : null;      // null: never set (Windows' default: on)
+}
+function writeSwitch(name, v) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  if (v === null) spawnSync("reg", ["delete", key, "/v", value, "/f"], { windowsHide: true });
+  else spawnSync("reg", ["add", key, "/v", value, "/t", "REG_DWORD", "/d", String(v), "/f"], { windowsHide: true });
+}
+let gesturesLocked = false;
+function lockGestures(on) {
+  if (process.platform !== "win32" || on === gesturesLocked) return;
+  gesturesLocked = on;
+  if (on) {
+    if (!("_fingersWere" in saved)) {
+      saved._fingersWere = readSwitch("fingers");
+      saved._touchWere = Object.fromEntries(["left", "right"].map((n) => [n, readSwitch(n)]));
+      saveState();
+    }
+    for (const n of Object.keys(TOUCH_SWITCHES)) writeSwitch(n, 0);
+    settingChanged();
+  } else if ("_fingersWere" in saved) {
+    putTouchBack();
+  }
+  touchLog(`full screen ${on ? "on" : "off"}: three/four fingers ${readSwitch("fingers") === 0 ? "off" : "on"}, `
+    + `left edge ${readSwitch("left") === 0 ? "off" : "on"}, right edge ${readSwitch("right") === 0 ? "off" : "on"}`);
+}
+// the operator's own touch switches, as they were before full screen
+function putTouchBack() {
+  writeSwitch("fingers", saved._fingersWere);
+  for (const [n, v] of Object.entries(saved._touchWere || {})) writeSwitch(n, v);
+  delete saved._fingersWere;
+  delete saved._touchWere;
+  saveState();
+  settingChanged();
+}
+// a desk window went in or out of full screen: lock while any one is
+function fullScreenChanged() {
+  const any = gestureLock() && [...open.values()].some((w) => !w.isDestroyed() && w.isFullScreen());
+  lockGestures(any);
+}
+function watchFullScreen(win) {
+  if (process.platform !== "win32") return;
+  win.once("ready-to-show", () => {
+    if (gestureLock()) touchLog(`window ${win.getTitle()}: edge swipes while full screen ${edgeSwitch(win, true) === 1 ? "locked" : "NOT locked"}`);
+  });
+  for (const ev of ["enter-full-screen", "leave-full-screen", "enter-html-full-screen", "leave-html-full-screen", "closed"]) {
+    win.on(ev, () => setTimeout(fullScreenChanged, 50));
+  }
+}
+function setGestureLock(on) {
+  saved._gestureLock = on;
+  saveState();
+  for (const w of open.values()) edgeSwitch(w, on);
+  fullScreenChanged();
+  menu();
+}
+
+function fingersOff() {
+  const r = spawnSync("reg", ["query", FINGERS_KEY, "/v", "TouchGestureSetting"], { windowsHide: true, encoding: "utf8" });
+  return r.status === 0 && /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
+}
+function setFingers(on) {
+  // (the computer-wide lock is what full screen puts back afterwards, too)
+  if ("_fingersWere" in saved) { saved._fingersWere = on ? 1 : 0; saveState(); }
+  spawnSync("reg", ["add", FINGERS_KEY, "/v", "TouchGestureSetting", "/t", "REG_DWORD", "/d", on ? "1" : "0", "/f"], { windowsHide: true });
+  return fingersOff() === !on;
+}
 function machineSwipesOff() {
   const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
   return r.status === 0 && /AllowEdgeSwipe\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
@@ -415,19 +600,26 @@ async function machineSwipes(lock) {
   const win = BrowserWindow.getFocusedWindow();
   const yes = await ask(win, lock ? {
     title: "Lock touch swipes on this computer",
-    message: "Turn off the touch swipes in from the screen's edges on this computer?",
-    detail: "No more Task View, notifications or taskbar from a swipe - for every app, until you unlock it here. "
-      + "Windows asks for an administrator's OK once, and it starts after you sign out and back in (or restart).\n\n"
-      + "Also turn off Settings > Bluetooth & devices > Touch > Three- and four-finger touch gestures: "
-      + "those switch apps too, and only Windows' own setting can stop them.",
+    message: "Turn off Windows' touch gestures on this computer?",
+    detail: "No more Task View, notifications or taskbar from a swipe in from an edge, and no app switching or "
+      + "desktop from three or four fingers - for every app, until you unlock it here. "
+      + "Windows asks for an administrator's OK once (for the edge swipes), and it starts after you sign out "
+      + "and back in (or restart).",
     buttons: ["Cancel", "Lock swipes"], primary: 1, cancel: 0,
   } : {
     title: "Unlock touch swipes on this computer",
-    message: "Turn the touch swipes in from the screen's edges back on?",
+    message: "Turn Windows' touch gestures back on (edge swipes, three and four fingers)?",
     detail: "Windows asks for an administrator's OK, and it starts after you sign out and back in.",
     buttons: ["Cancel", "Unlock swipes"], primary: 1, cancel: 0,
   });
   if (yes !== 1) return;
+  const fingers = setFingers(!lock);              // per user: no administrator needed
+  // Windows 11's own per-user left / right edge switches too
+  for (const n of ["left", "right"]) {
+    writeSwitch(n, lock ? 0 : null);
+    if (saved._touchWere) saved._touchWere[n] = lock ? 0 : null;
+  }
+  settingChanged();
   const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
     : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
   const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
@@ -438,9 +630,11 @@ async function machineSwipes(lock) {
   const done = machineSwipesOff() === lock;
   await ask(win, {
     title: "Touch swipes",
-    message: done ? (lock ? "Touch swipes are locked on this computer." : "Touch swipes are back on.")
-      : "Nothing changed (the administrator's OK wasn't given).",
-    detail: done ? "Sign out and back in (or restart) for it to start." : "",
+    message: done ? (lock ? "Touch gestures are locked on this computer." : "Touch gestures are back on.")
+      : fingers ? (lock ? "Three- and four-finger gestures are off; the edge swipes weren't changed (the administrator's OK wasn't given)."
+        : "Three- and four-finger gestures are back on; the edge swipes weren't changed (the administrator's OK wasn't given).")
+        : "Nothing changed (the administrator's OK wasn't given).",
+    detail: done || fingers ? "Sign out and back in (or restart) for it to start." : "",
     buttons: ["OK"], cancel: 0,
   });
   menu();
@@ -474,6 +668,8 @@ function menu() {
       { label: "Other computers, phones and tablets…", click: phonesDialog },
       ...(process.platform === "win32" ? [
         { type: "separator" },
+        { label: "Lock every touch gesture while full screen", type: "checkbox", checked: gestureLock(),
+          click: (item) => setGestureLock(item.checked) },
         machineSwipesOff()
           ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
           : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
@@ -581,6 +777,8 @@ app.on("second-instance", () => { const w = [...open.values()][0]; if (w) { if (
 app.whenReady().then(async () => {
   if (!FIRST) return;
   loadState();
+  // stopped while full screen last time: the operator's own touch setting back
+  if (process.platform === "win32" && "_fingersWere" in saved) putTouchBack();
   await selfUpdate();
   try {
     await startEngine();
@@ -614,6 +812,7 @@ app.whenReady().then(async () => {
 // remember which windows were open, for next time
 app.on("before-quit", () => {
   quitting = true;
+  lockGestures(false);                          // the operator's own touch setting back
   for (const part of Object.keys(PARTS)) saved[part] = { ...(saved[part] || {}), open: reopen.has(part) };
   saveState();
 });

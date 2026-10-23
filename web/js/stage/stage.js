@@ -16,6 +16,7 @@ import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
 import { SfxSystem } from "./sfx.js";
 import { Shadows } from "./shadows.js";
+import { wireUp, wireTint, WIRE, WIRE_ROOM, WIRE_SEL } from "./wire.js";
 import {
   LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, streakMap, GoboAtlas,
   setDetail,
@@ -23,6 +24,7 @@ import {
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, flash, turnOf, motorStep,
+  hangOf, hangQuat,
 } from "./look.js";
 
 export { GPU_DEVICE };
@@ -101,6 +103,16 @@ export class Stage {
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 400);
     this.camera.position.set(0, 4, 18);
+    // the flat views (Top / Front / Side / Free) look through this one
+    this.persp = this.camera;
+    this.ortho = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 1500);
+    this.orthoHalf = 5;                         // half the height it shows, metres
+    this.proj = "per";                           // per | top | front | side | free
+    this.mouseMode = "camera";                   // camera | fixtures | elements
+    this.wire = false;
+    this.fps = 0;
+    this._fpsN = 0;
+    this._fpsT = performance.now();
     this.controls = new OrbitControls(this.camera, renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.09;
@@ -162,8 +174,9 @@ export class Stage {
     const h = Math.max(1, this.el.clientHeight);
     this.renderer.setPixelRatio(this.q.ratio);
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.persp.aspect = w / h;
+    this.persp.updateProjectionMatrix();
+    this._orthoFrustum();
     this.dirty = true;
   }
 
@@ -183,6 +196,7 @@ export class Stage {
       loadUnderlay: this.opts.loadUnderlay, onChange: () => { this.dirty = true; } });
     this.built = built;
     this.venueGroup.add(built.group);
+    this._wireDirty = true;
     this.room = { ...built.room };
     this.stageFront = built.stageFront;
     // a new room size: the view goes back to the front of THIS room (the
@@ -246,6 +260,7 @@ export class Stage {
     for (const inst of this.fixtures.values()) this._aimStatic(inst);
     this._applyGdtf();
     if (this.editor) this.editor.refresh();
+    this._wireDirty = true;
     this.dirty = true;
   }
 
@@ -318,15 +333,18 @@ export class Stage {
   /** Hang or stand the model, the right way up, where the patch says. */
   _place(inst) {
     const f = inst.data;
-    const hung = f.stance ? f.stance === "hang" : (f.kind || (f.y >= 2 ? "truss" : "floor")) === "truss";
-    inst.hung = hung;
+    // how it is mounted: hung, standing, on its back, on a boom (the desk
+    // aims with the same table, so the 3D beam is where the real one goes)
+    const hang = hangOf(f);
+    inst.hang = hang;
+    inst.hung = hang === "hung";
     inst.holder.position.set(+f.x || 0, +f.y || 0, +f.z || 0);
-    // which way its base faces (a turned truss turns its lights) - the same
-    // angle the desk aims with, so the 3D beam is where the real one goes
+    // which way its base faces (a turned truss turns its lights)
     inst.holder.rotation.set(0, (+f.yaw || 0) * DEG, 0);
-    const flip = inst.sk.native === "hung" ? !hung : hung;
-    inst.sk.root.rotation.set(0, 0, flip ? Math.PI : 0);
-    inst.pick.position.y = (hung ? -1 : 1) * inst.sk.height / 2;
+    hangQuat(hang, inst.sk.native === "hung", inst.sk.root.quaternion);
+    // the click volume follows the body, whichever way it points
+    hangQuat(hang, false, inst.pick.quaternion);
+    inst.pick.position.set(0, inst.sk.height / 2, 0).applyQuaternion(inst.pick.quaternion);
     inst.staticAim = null;
   }
 
@@ -344,6 +362,12 @@ export class Stage {
     const { h } = this.room;
     const front = this.stageFront;
     const p = new THREE.Vector3(+f.x || 0, +f.y || 0, +f.z || 0);
+    if (inst.hang && inst.hang !== "hung" && inst.hang !== "standing") {
+      // on its back or on a boom: it shines straight out, the way its head points
+      this._setStaticDir(inst, new THREE.Vector3(0, 1, 0).applyQuaternion(hangQuat(inst.hang))
+        .applyAxisAngle(UP, (+f.yaw || 0) * DEG));
+      return;
+    }
     let target;
     if (body.type === "tube") {
       target = new THREE.Vector3(p.x * 1.2, p.y, p.z + 6);
@@ -429,6 +453,7 @@ export class Stage {
             inst.holder.add(sk.root);
             this._place(inst);
             this._buildBeams(inst);
+            this._wireDirty = true;
             this.dirty = true;
           })
           .catch(() => { inst.gdtfPending = false; });
@@ -491,6 +516,7 @@ export class Stage {
     this.hemi.intensity = 0.12 + k * 1.5;
     this.key.intensity = 0.15 + k * 1.1;
     this.scene.background.setRGB(0.014, 0.014, 0.016).lerp(new THREE.Color(0.055, 0.055, 0.06), k);
+    if (this.wire) this.scene.background.setRGB(0, 0, 0);          // a line drawing: on black
     this.dirty = true;
   }
 
@@ -501,6 +527,7 @@ export class Stage {
 
   setCamera(s) {
     if (!s || !s.pos || !s.target) return;
+    this._perspective();
     this.povHead = null;
     this.camera.position.fromArray(s.pos);
     this.controls.target.fromArray(s.target);
@@ -509,6 +536,7 @@ export class Stage {
   }
 
   view(name, instant = false) {
+    this._perspective();
     if (name === "dj") return this.viewStage();
     const R = this.room;
     const front = this.stageFront;
@@ -529,6 +557,7 @@ export class Stage {
 
   /** Eye level on the dance floor (or the middle of the audience). */
   viewCrowd() {
+    this._perspective();
     const v = (this.built && this.built.venue) || {};
     const zone = (v.zones || []).find((z) => z.kind === "dancefloor")
       || (v.zones || []).find((z) => z.kind === "standing" || z.kind === "seating");
@@ -543,6 +572,7 @@ export class Stage {
   /** From the DJ booth (where the operator set it, else the DJ mark or the
    *  stage centre), looking the way the DJ faces, at the middle of the room. */
   viewStage() {
+    this._perspective();
     const o = this.djView;
     if (o && o.booth && o.centre) {
       const [x, y, z] = o.booth, a = (o.front || 0) * DEG;
@@ -563,6 +593,7 @@ export class Stage {
   lookThrough(head) {
     const inst = this.fixtures.get(Number(head));
     if (!inst) return false;
+    this._perspective();
     this.rigGroup.updateMatrixWorld(true);
     const b = inst.beams[0];
     const origin = new THREE.Vector3(), dir = new THREE.Vector3(0, -1, 0);
@@ -605,14 +636,218 @@ export class Stage {
     box.expandByScalar(1.2);
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    if (this.camera.isOrthographicCamera) {
+      this._orthoTo(sphere.center, dir, sphere.radius * 2.1, sphere.radius * 2.1);
+      return;
+    }
     const dist = sphere.radius / Math.sin((this.camera.fov * DEG) / 2) * 1.1;
     this._flyTo(sphere.center.clone().add(dir.multiplyScalar(Math.max(dist, 3))), sphere.center, false);
   }
 
   zoom(factor) {
+    if (this.camera.isOrthographicCamera) {
+      this.camera.zoom = Math.max(0.05, Math.min(60, this.camera.zoom * factor));
+      this.camera.updateProjectionMatrix();
+      this.dirty = true;
+      return;
+    }
     const dir = this.camera.position.clone().sub(this.controls.target);
     dir.multiplyScalar(1 / Math.max(0.2, factor));
     this._flyTo(this.controls.target.clone().add(dir), this.controls.target.clone(), false);
+  }
+
+  // ------------------------------------------------- the visualiser's views
+  /** Per (perspective, shaded and lit), or a flat view drawn as lines,
+   *  white on black: Top / Front / Side (framing the room) or Free (turned
+   *  any way you like).  Returns the projection now in use. */
+  setProjection(kind) {
+    kind = ["per", "top", "front", "side", "free"].includes(kind) ? kind : "per";
+    if (kind !== "per" && this.walking) this.walk(false);
+    const was = this.proj;
+    this.proj = kind;
+    this.fly = null;
+    this.povHead = null;
+    if (kind === "per") {
+      this._useCamera(this.persp);
+      if (was !== "per" && this._persKeep) {
+        this.persp.position.copy(this._persKeep.pos);
+        this.controls.target.copy(this._persKeep.target);
+      }
+      this._persKeep = null;
+    } else {
+      if (was === "per") this._persKeep = { pos: this.persp.position.clone(), target: this.controls.target.clone() };
+      this._useCamera(this.ortho);
+    }
+    this.controls.enableRotate = kind === "per" || kind === "free";
+    this.controls.maxPolarAngle = kind === "per" ? Math.PI * 0.495 : Math.PI;
+    if (kind !== "per") this.fitRoom(true);
+    this._setWire(kind !== "per");                 // every flat view is a line drawing
+    this._applyMouse();
+    this.controls.update();
+    this.camMoved = true;
+    this.dirty = true;
+    if (this.opts.onProjection) this.opts.onProjection(kind);
+    return kind;
+  }
+
+  /** Back to the perspective view (the named views, walking, a light's
+   *  beam are all seen in perspective). */
+  _perspective() {
+    if (this.proj !== "per") {
+      this._persKeep = null;
+      this.setProjection("per");
+    }
+  }
+
+  _useCamera(cam) {
+    if (this.camera === cam) return;
+    this.camera = cam;
+    this.controls.object = cam;
+    if (this.post) {
+      this._makePipeline(!!this._smooth);
+      this._bloomOn = null;
+    }
+    this.resize();
+  }
+
+  _orthoFrustum() {
+    const w = Math.max(1, this.el.clientWidth), h = Math.max(1, this.el.clientHeight);
+    const a = w / h, hh = this.orthoHalf || 5;
+    Object.assign(this.ortho, { left: -hh * a, right: hh * a, top: hh, bottom: -hh });
+    this.ortho.updateProjectionMatrix();
+  }
+
+  /** Point the flat camera at `centre` from `dir`, showing `w` x `h` m. */
+  _orthoTo(centre, dir, w, h) {
+    const W = Math.max(1, this.el.clientWidth), H = Math.max(1, this.el.clientHeight);
+    this.orthoHalf = Math.max(0.5, Math.max(h / 2, (w / 2) * (H / W)));
+    this.ortho.zoom = 1;
+    this.ortho.position.copy(centre).addScaledVector(dir.clone().normalize(), 400);
+    this.ortho.up.set(0, 1, 0);
+    this.controls.target.copy(centre);
+    this._orthoFrustum();
+    this.controls.update();
+    this.camMoved = true;
+    this.dirty = true;
+  }
+
+  /** Everything there is to see: the room, its rigging and the lights. */
+  roomBox() {
+    const R = this.room;
+    const box = new THREE.Box3(new THREE.Vector3(R.x0, 0, R.z0), new THREE.Vector3(R.x1, R.h, R.z1));
+    for (const inst of this.fixtures.values()) box.expandByPoint(inst.holder.position);
+    return box;
+  }
+
+  /** "Fit to whole room": the whole room in the view, from where it looks now. */
+  fitRoom(instant = false) {
+    const box = this.roomBox();
+    const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    const m = 1.08;
+    if (this.camera.isOrthographicCamera) {
+      const k = this.proj;
+      if (k === "top") this._orthoTo(new THREE.Vector3(c.x, 0, c.z), new THREE.Vector3(0, 1, 0.0005), size.x * m, size.z * m);
+      else if (k === "front") this._orthoTo(c, new THREE.Vector3(0, 0, 1), size.x * m, size.y * m);
+      else if (k === "side") this._orthoTo(c, new THREE.Vector3(1, 0, 0), size.z * m, size.y * m);
+      else {
+        // free: from where it looks now (the first time: from the front,
+        // up and to one side)
+        const dir = this._freeSet && !instant
+          ? this.ortho.position.clone().sub(this.controls.target) : new THREE.Vector3(0.75, 0.6, 1);
+        this._freeSet = true;
+        const r = size.length() / 2;
+        this._orthoTo(c, dir, r * 2 * m, r * 1.6 * m);
+      }
+      return;
+    }
+    // back off along the way it looks until every corner of the room is in
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    const right = new THREE.Vector3().crossVectors(UP, dir);
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+    right.normalize();
+    const up = new THREE.Vector3().crossVectors(dir, right);
+    const tanV = Math.tan((this.camera.fov * DEG) / 2) * 0.94, tanH = tanV * (this.camera.aspect || 1);
+    let dist = 1;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const o = new THREE.Vector3(x, y, z).sub(c);
+      const depth = o.dot(dir);
+      dist = Math.max(dist, depth + Math.abs(o.dot(right)) / tanH, depth + Math.abs(o.dot(up)) / tanV);
+    }
+    this._flyTo(c.clone().addScaledVector(dir, dist), c, instant);
+  }
+
+  /** What a left-drag does: turn the view (Move Camera), or draw a box
+   *  round lights (Select Fixtures / Select Elements). */
+  setMouseMode(mode) {
+    this.mouseMode = ["camera", "fixtures", "elements"].includes(mode) ? mode : "camera";
+    this._applyMouse();
+    return this.mouseMode;
+  }
+
+  _applyMouse() {
+    const turn = this.controls.enableRotate ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    const sel = this.mouseMode !== "camera";
+    this.controls.mouseButtons = {
+      LEFT: sel ? null : turn,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: sel ? turn : THREE.MOUSE.PAN,
+    };
+    if (this.renderer) this.renderer.domElement.classList.toggle("box-select", sel);
+  }
+
+  _setWire(on) {
+    this.wire = !!on;
+    this._wireDirty = true;
+    this.el.classList.toggle("wire", this.wire);
+    this.beamGroup.visible = !this.wire;
+    if (!this.wire) {
+      wireUp(this.venueGroup, false);
+      wireUp(this.rigGroup, false);
+      if (this._wireBeams) this._wireBeams.visible = false;
+      this._applyHouse();
+    } else {
+      this.scene.background.setRGB(0, 0, 0);
+    }
+    this.dirty = true;
+  }
+
+  /** The line drawing for parts built since (a new light, a new truss). */
+  _wireUpkeep() {
+    if (!this._wireDirty) return;
+    this._wireDirty = false;
+    if (!this.wire) return;
+    wireUp(this.venueGroup, true, WIRE_ROOM);
+    // rigging and objects in white, the room itself in grey
+    if (this.built && this.built.items) for (const g of this.built.items.values()) wireTint(g, WIRE);
+    for (const inst of this.fixtures.values()) {
+      if (inst.ring) inst.ring.userData.wireSkip = true;
+      inst.wireSel = this.selected.has(inst.head);
+      wireUp(inst.holder, true, inst.wireSel ? WIRE_SEL : WIRE);
+    }
+  }
+
+  /** Lit beams in a line drawing: one thin line each, in its colour. */
+  _wireBeamLines(segs) {
+    if (!this._wireBeams) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6 * 512), 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(6 * 512), 3));
+      this._wireBeams = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false }));
+      this._wireBeams.frustumCulled = false;
+      this.scene.add(this._wireBeams);
+    }
+    const geo = this._wireBeams.geometry;
+    const pos = geo.attributes.position.array, col = geo.attributes.color.array;
+    const n = Math.min(512, segs.length);
+    for (let i = 0; i < n; i++) {
+      const [o, d, len, r, g, b] = segs[i];
+      pos.set([o.x, o.y, o.z, o.x + d.x * len, o.y + d.y * len, o.z + d.z * len], i * 6);
+      col.set([r, g, b, r * 0.3, g * 0.3, b * 0.3], i * 6);
+    }
+    geo.setDrawRange(0, n * 2);
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.color.needsUpdate = true;
+    this._wireBeams.visible = n > 0;
   }
 
   // --------------------------------------------------------- pick and drag
@@ -643,14 +878,94 @@ export class Stage {
     return out;
   }
 
+  /** The head (1, 2...) of a multi-head light nearest a point on screen,
+   *  or 0 for a light with one head. */
+  cellAt(inst, cx, cy) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.rigGroup.updateMatrixWorld(true);
+    const v = this._v1;
+    const dist = () => {
+      v.project(this.camera);
+      return Math.hypot(r.left + (v.x + 1) / 2 * r.width - cx, r.top + (1 - v.y) / 2 * r.height - cy);
+    };
+    let best = 0, bestD = Infinity;
+    // a bar's pixels (each cell drawn as a few of them)
+    const n = (inst.data.body && inst.data.body.cells) || (inst.cur && inst.cur.cells ? inst.cur.cells.length : 0);
+    const px = inst.sk.pixels;
+    if (px && n > 1) {
+      for (let i = 0; i < px.count; i++) {
+        px.getMatrixAt(i, this._m4);
+        v.set(0, 0, 0).applyMatrix4(this._m4).applyMatrix4(px.matrixWorld);
+        const d = dist();
+        if (d < bestD) { bestD = d; best = Math.floor(i * n / px.count) + 1; }
+      }
+      return best;
+    }
+    // a multi-head light's heads (each its own beam)
+    const cells = inst.beams.filter((b) => b.em.cell !== undefined);
+    if (cells.length < 2) return 0;
+    for (const b of cells) {
+      b.em.node.getWorldPosition(v);
+      const d = dist();
+      if (d < bestD) { bestD = d; best = b.em.cell + 1; }
+    }
+    return best;
+  }
+
+  /** Mark the heads picked with Select Elements (an accent ring on each). */
+  setCells(head, cells) {
+    this.cellPick = head && cells && cells.length ? { head: Number(head), cells: cells.map(Number) } : null;
+    this.dirty = true;
+  }
+
+  /** Where head `k` (1, 2...) of a light is, in the room. */
+  _cellPoint(inst, k, out) {
+    const n = (inst.data.body && inst.data.body.cells) || (inst.cur && inst.cur.cells ? inst.cur.cells.length : 0);
+    const px = inst.sk.pixels;
+    if (px && n > 1) {
+      out.set(0, 0, 0);
+      let c = 0;
+      for (let i = 0; i < px.count; i++) {
+        if (Math.floor(i * n / px.count) + 1 !== k) continue;
+        px.getMatrixAt(i, this._m4);
+        out.add(this._v2.set(0, 0, 0).applyMatrix4(this._m4).applyMatrix4(px.matrixWorld));
+        c++;
+      }
+      return c ? out.multiplyScalar(1 / c) : null;
+    }
+    const b = inst.beams.find((x) => x.em.cell === k - 1);
+    return b ? b.em.node.getWorldPosition(out) : null;
+  }
+
+  _drawCellMarks() {
+    const pick = this.cellPick;
+    const inst = pick && this.selected.has(pick.head) ? this.fixtures.get(pick.head) : null;
+    const want = inst ? pick.cells : [];
+    if (!this._cellMarks) this._cellMarks = [];
+    while (this._cellMarks.length < want.length) {
+      const m = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.075, 24), new THREE.MeshBasicMaterial({
+        color: 0x8b8dff, toneMapped: false, depthTest: false, transparent: true, side: THREE.DoubleSide }));
+      m.renderOrder = 998;
+      this.scene.add(m);
+      this._cellMarks.push(m);
+    }
+    this._cellMarks.forEach((m, i) => {
+      const p = i < want.length ? this._cellPoint(inst, want[i], m.position) : null;
+      m.visible = !!p;
+      if (p) m.lookAt(this.camera.position);
+    });
+  }
+
   _wirePointer() {
     const dom = this.renderer.domElement;
     let down = null;
     // Shift-drag draws a box: every light inside it is selected (the
     // orbit waits).  Captured first, so the orbit never starts.
     let box = null;
+    // (Select Fixtures / Select Elements: a plain drag draws the box)
     dom.addEventListener("pointerdown", (ev) => {
-      if (ev.button !== 0 || !ev.shiftKey || this.editing || this.pickOnce || !this.opts.onBox) return;
+      if (ev.button !== 0 || this.editing || this.pickOnce || !this.opts.onBox || this.walking || this._follow) return;
+      if (!ev.shiftKey && this.mouseMode === "camera") return;
       const wrap = dom.parentElement;
       const el = document.createElement("div");
       el.className = "stage-box";
@@ -674,7 +989,9 @@ export class Stage {
       b.el.remove();
       this.controls.enabled = true;
       if (!b.moved || !ev) return false;
-      this.opts.onBox(this.headsInRect(b.x, b.y, ev.clientX, ev.clientY), { add: ev.ctrlKey || ev.metaKey });
+      const sel = this.mouseMode !== "camera";
+      this.opts.onBox(this.headsInRect(b.x, b.y, ev.clientX, ev.clientY),
+        { add: ev.ctrlKey || ev.metaKey || (sel && ev.shiftKey) });
       return true;
     };
     window.addEventListener("pointerup", (ev) => { if (endBox(ev)) down = null; }, true);
@@ -709,8 +1026,15 @@ export class Stage {
       }
       if (this.editing && this.editor) { this.editor.click(ev); return; }
       const inst = this._hit(ev);
-      if (inst && this.opts.onPick) {
-        this.opts.onPick(inst.head, { shift: ev.shiftKey, toggle: ev.ctrlKey || ev.metaKey });
+      if (!inst) return;
+      // Select Elements: the head (cell) of a multi-head light under the pointer
+      const cell = this.mouseMode === "elements" ? this.cellAt(inst, ev.clientX, ev.clientY) : 0;
+      if (cell && this.opts.onElement) {
+        this.opts.onElement(inst.head, cell, { add: ev.shiftKey || ev.ctrlKey || ev.metaKey });
+      } else if (this.opts.onPick) {
+        this.opts.onPick(inst.head, this.mouseMode === "camera"
+          ? { shift: ev.shiftKey, toggle: ev.ctrlKey || ev.metaKey }
+          : { add: ev.shiftKey, toggle: ev.ctrlKey || ev.metaKey });
       }
     };
     dom.addEventListener("pointerup", up);
@@ -834,6 +1158,7 @@ export class Stage {
   setEditing(on, editor) {
     if (editor) this.editor = editor;
     this.editing = !!on;
+    if (this.editing) this.setProjection("per");
     if (this.editor) this.editor.setEnabled(this.editing);
     this._underlayVisibility();
     this.dirty = true;
@@ -925,15 +1250,18 @@ export class Stage {
       if (this._drive(inst, time, lights)) lit++;
     }
     this.anyLit = lit > 0;
+    this._wireUpkeep();
     this.rigGroup.updateMatrixWorld(true);
+    this._wireSegs = this.wire ? [] : null;
     for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
+    if (this.wire) this._wireBeamLines(this._wireSegs);
     const dtS = this._sfxLast ? Math.min(0.1, (now - this._sfxLast) / 1000) : 0;
     this._sfxLast = now;
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
     // shadows for the brightest beams, unless the view is kept light
-    if (this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
+    if (!this.wire && this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
       this.shadows.update(LIGHTS.uCount.value, this.options.quality === "high" ? 8 : 4);
     } else this.shadows.off();
     this._drawScreens(now);
@@ -941,8 +1269,17 @@ export class Stage {
     this.dirty = false;
     this._adapt(now);
     this.lastRender = now;
-    this._present(!!this.options.bloom && this.q.ratio > 0.55);
+    this._drawCellMarks();
+    this._present(!this.wire && !!this.options.bloom && this.q.ratio > 0.55);
     this._drawLabels();
+    // the frame rate shown on the toolbar: pictures drawn in the last second
+    this._fpsN++;
+    if (now - this._fpsT >= 1000) {
+      this.fps = Math.round(this._fpsN * 1000 / (now - this._fpsT));
+      this._fpsN = 0;
+      this._fpsT = now;
+    }
+    this._lastDraw = now;
     if (this.opts.onFrame) this.opts.onFrame(now);
   }
 
@@ -1005,6 +1342,7 @@ export class Stage {
    *  walls. */
   walk(on = true, onEnd = null) {
     const dom = this.renderer.domElement;
+    if (on) this._perspective();
     if (!on) {
       if (!this.walking) return;
       const w = this.walking;
@@ -1307,6 +1645,12 @@ export class Stage {
       em.node.getWorldPosition(b.origin);
       b.dir.copy(em.dir).transformDirection(em.node.matrixWorld).normalize();
       const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40, this.segments);
+      if (this._wireSegs) {
+        // a line drawing: the beam is one thin line in its colour
+        const cc0 = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
+        const k = Math.min(1, 0.35 + a);
+        this._wireSegs.push([b.origin.clone(), b.dir.clone(), len, (cc0 ? cc0.r : L.r) * k, (cc0 ? cc0.g : L.g) * k, (cc0 ? cc0.b : L.b) * k]);
+      }
       const half = (angle / 2) * DEG;
       const r0 = Math.max(0.01, em.radius);
       const r1 = r0 + Math.tan(half) * len;
@@ -1510,7 +1854,12 @@ export class Stage {
         inst.ring.rotation.x = -Math.PI / 2;
         inst.holder.add(inst.ring);
       }
+      if (this.wire && inst.wireSel !== this.selected.has(inst.head)) {
+        inst.wireSel = this.selected.has(inst.head);
+        wireTint(inst.holder, inst.wireSel ? WIRE_SEL : WIRE);
+      }
       if (inst.ring) {
+        inst.ring.userData.wireSkip = true;
         inst.ring.visible = on;
         inst.ring.material.color.setHex(peeked ? 0xf5a524 : 0x38bdf8);
         inst.ring.position.y = inst.hung ? 0.02 : 0.01;

@@ -144,20 +144,29 @@
     <!-- ---------------------------------------------------------- stage -->
     <section class="stage-wrap" id="stage-wrap" aria-label="3D stage">
       <div class="stage" id="stage"></div>
-      <div class="stage-hud top-left">
-        <div class="seg" id="views">
-          <button data-view="front" title="Front (1)">Front</button>
-          <button data-view="left" title="House left (2)">Left</button>
-          <button data-view="right" title="House right (3)">Right</button>
-          <button data-view="back" title="Back (4)">Back</button>
-          <button data-view="top" title="Plan (5)">Plan</button>
-          <button data-view="overview" title="Whole room from above (6)">3D</button>
-          <button data-view="dj" title="From the DJ booth, looking the way the DJ faces (7) - set the booth and the front in Move -> Aim">DJ</button>
+      <!-- the 3D's toolbar: what the mouse does, the view, what is drawn -->
+      <div class="vis-bar" id="vis-bar" role="toolbar" aria-label="3D view">
+        <div class="vis-seg" id="vis-mouse" role="group" aria-label="What the mouse does">
+          <button data-mouse="camera" class="on" title="Drag to turn the view round the room, right-drag to slide it, scroll to zoom"><span class="vis-long">Move </span>Camera</button>
+          <button data-mouse="fixtures" title="Click a light to select it (Shift adds it to the selection), or drag a box round lights to select them all. Right-drag turns the view"><span class="vis-long">Select </span>Fixtures</button>
+          <button data-mouse="elements" title="Click one head of a light with several (a bar, a multi-head light): colour and settings then go to that head only"><span class="vis-long">Select </span>Elements</button>
         </div>
-        <button class="hud-btn" id="views-more" title="Views: front, sides, plan, 3D (keys 1-6), from the crowd, the DJ, through a light; saved views">View ▾</button>
-        <button class="hud-btn" id="frame-btn" title="Frame the selection (F)">Frame</button>
-      </div>
-      <div class="stage-hud top-right">
+        <button class="vis-btn" id="vis-fit" title="Fit the whole room in the view">Fit<span class="vis-long"> to whole room</span></button>
+        <div class="vis-seg" id="vis-cams" role="group" aria-label="View">
+          <button data-cam="per" class="on" title="Perspective: the room shaded and lit, as the audience sees it (keys 1-7 for the named views)">Per<span class="vis-long"> View</span></button>
+          <button data-cam="top" title="Straight down from above: a line drawing, white on black">Top<span class="vis-long"> View</span></button>
+          <button data-cam="front" title="From the front: a line drawing, white on black">Front<span class="vis-long"> View</span></button>
+          <button data-cam="side" title="From the side: a line drawing, white on black">Side<span class="vis-long"> View</span></button>
+          <button data-cam="free" title="Flat, with no perspective, turned any way you like (drag to turn it): a line drawing, white on black">Free<span class="vis-long"> View</span></button>
+        </div>
+        <select class="vis-select" id="vis-source" aria-label="What the 3D shows" title="What the 3D shows. Output: what the lights are doing. Programmer only: just what is in the programmer (the playbacks and buttons left out). Next GO: what the next GO of the playback you last pressed GO on will look like. The lights themselves never change">
+          <option value="output">Output</option>
+          <option value="programmer">Programmer only</option>
+          <option value="next">Next GO</option>
+        </select>
+        <span class="vis-ind" id="vis-proj" title="Pers: a perspective view. Orth: a flat view, everything at its true size">Pers</span>
+        <span class="vis-ind" id="vis-fps" title="How many pictures a second the 3D is drawing">FPS: 0</span>
+        <span class="vis-grow"></span>
         <button class="hud-btn toggle on" id="people-btn" title="The crowd and performers (click for options)">Crowd ▾</button>
         <button class="hud-btn toggle" id="zones-btn" title="Show the room's zones (dance floor, bar...)">Zones</button>
         <button class="hud-btn toggle" id="lightsonly-btn" title="Lights only: hide the room, truss, stage, objects and crowd">Lights only</button>
@@ -166,6 +175,7 @@
         <button class="hud-btn icon" id="fullscreen-btn" title="Stage full screen (Esc to leave)">
           <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
         </button>
+        <button class="hud-btn" id="views-more" title="More: the named views (front, sides, plan, 3D, from the DJ booth, keys 1-7), frame the selection (F), saved views, a photo, a video">&gt;&gt;</button>
       </div>
       <div class="venue-tools" id="venue-tools" hidden>
         <div class="seg vertical">
@@ -174,7 +184,7 @@
         </div>
         <button class="hud-btn" id="vt-venues" title="My venues: save this venue, open a saved one">Venues ▾</button>
         <button class="hud-btn" id="vt-room" title="Make the room: a shape and its sizes, described in words, a template, a floor plan, or drawn">Room…</button>
-        <button class="hud-btn" id="vt-truss" title="Add a horizontal truss to hang lights on">+ Truss</button>
+        <button class="hud-btn" id="vt-truss" title="Add a truss to hang lights on: straight, or curved (a circle, an arc, a spiral, an S)">+ Truss ▾</button>
         <button class="hud-btn" id="vt-pole" title="Add a vertical pole to hang lights on">+ Pole</button>
         <button class="hud-btn" id="vt-pipe" title="Add a horizontal pipe / bar">+ Pipe</button>
         <button class="hud-btn" id="vt-rigging" title="The rigging library (circle, frame, corner, goal post… at real sizes and trim) and the rigging report (loads, pick-up points, parts)">Rigging…</button>
@@ -210,6 +220,7 @@
       <div class="prog-in" id="prog-in" hidden></div>
       <div class="prog-cells" id="prog-cells" hidden></div>
       <nav class="tabs prog-tabs" id="prog-tabs" role="tablist" aria-label="Programmer">
+        <button role="tab" data-tab="desk" aria-selected="false" title="Palettes: Group, Position, Colour and Beam windows, and the command strip"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg><span>Palettes</span></button>
         <button role="tab" data-tab="intensity" aria-selected="true" title="Intensity"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12"/><rect x="5" y="6.5" width="6" height="3.5" rx="1"/></svg><span>Dimmer</span></button>
         <button role="tab" data-tab="colour" aria-selected="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2s4.5 4.6 4.5 7.6a4.5 4.5 0 01-9 0C3.5 6.6 8 2 8 2z"/></svg><span>Colour</span></button>
         <button role="tab" data-tab="position" aria-selected="false" title="Position: pan, tilt, aim and movement"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg><span>Position</span></button>
@@ -225,6 +236,7 @@
       <div class="prog-wheels" id="prog-wheels" hidden></div>
       <div class="prog-body" id="prog-body">
 
+        <div class="tab-pane" data-pane="desk" hidden><div id="desk-view"></div></div>
         <div class="tab-pane" data-pane="intensity">
           <div class="open-warn" id="open-warn" hidden></div>
           <div class="big-fader-row">
@@ -281,6 +293,8 @@
               <label class="field inline"><span>Tilt °</span><input type="number" id="aim-tilt" step="1"></label>
               <button class="btn small" id="aim-btn">Aim</button>
               <button class="btn small ghost" id="aim-home" title="Pan and tilt to the middle of their travel">Home</button>
+              <button class="btn small ghost" data-pt="flip" title="FLIP: the same spot, reached from the other end of the travel (pan half a turn, tilt the other way)">Flip</button>
+              <button class="btn small ghost" data-pt="mirror_pan" title="MIRROR: pan reversed about the middle - left becomes right">Mirror</button>
             </div>
             <div class="row-btns aim-tools">
               <button class="btn small" id="aim-spot" title="Then click once anywhere in the 3D view: every selected mover points there">Aim at one click…</button>
@@ -372,12 +386,20 @@
             <button class="btn" data-orient="swap">Swap pan/tilt</button>
             <button class="btn ghost" data-orient="clear">Normal</button>
           </div>
+          <div class="row-btns">
+            <button class="btn" id="lineup-btn" title="Point the real light at marks on the floor: the desk learns where it really points, so aims and the 3D match it">Line up with the real light…</button>
+          </div>
           <p class="muted small" id="lim-note"></p>
           <h3>Select</h3>
           <div class="row-btns">
             <button class="btn" id="sel-similar">Same type as first</button>
             <button class="btn" data-query="pan">Movers</button>
             <button class="btn" data-query="gobo">With gobos</button>
+          </div>
+          <div class="row-btns">
+            <button class="btn" data-step="prev" title="One light of the selection at a time: the one before">◀ Prev light</button>
+            <button class="btn" data-step="next" title="One light of the selection at a time: what you set goes to it only">Next light ▶</button>
+            <button class="btn ghost" data-step="all" title="All the lights of the selection again">All</button>
           </div>
         </div>
       </div>
@@ -407,10 +429,12 @@
         <button data-mode="timeline" title="The show timeline: cues, hits, effects and levels against the music" aria-label="Timeline">
           <svg viewBox="0 0 16 16"><path d="M1 4h7M4 8h9M2 12h6M11 2v12"/></svg><span>Timeline</span></button>
       </nav>
+      <div class="pb-pages" id="pb-pages" aria-label="Playback pages"></div>
       <div class="pb-strip" id="pb-strip"></div>
       <aside class="pb-cues" id="pb-cues" aria-label="Cue list"></aside>
       <div class="qb" id="qb" hidden>
         <div class="qb-bar">
+          <button class="btn small qb-profile" id="qb-profile" title="Button profiles: a whole set of pages for a kind of show (Default, Halloween...)">Default ▾</button>
           <div class="seg" id="qb-pages"><button data-page="1" class="on">1</button><button data-page="2">2</button><button data-page="3">3</button><button data-page="4">4</button></div>
           <button class="btn small" id="qb-suggest" hidden title="Fill this page with buttons that suit your rig">Suggest buttons for this rig</button>
           <span class="grow"></span>

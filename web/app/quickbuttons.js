@@ -11,7 +11,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -283,6 +283,37 @@ function renderPages() {
     }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
+  const prof = $("#qb-profile");
+  if (prof) prof.textContent = `${q.profile || "Default"} ▾`;
+}
+
+// Button profiles: a whole set of pages per kind of show ("Default",
+// "Halloween"); one is on the desk at a time
+function profileMenu(anchor) {
+  const q = quick();
+  const cur = q.profile || "Default";
+  const go = async (action, params) => {
+    const r = await run(action, params, { toast: true });
+    if (r.ok) { folderBack.length = 0; page = 1; render(true); emit("qbpage", page); }
+  };
+  const named = async (title, start = "") => {
+    const n = await promptBox(title, "Name", start, { ok: "Save", placeholder: "e.g. Halloween" });
+    return n && n.trim() ? n.trim() : null;
+  };
+  menu(anchor, [
+    ...(q.profiles || ["Default"]).map((n) => ({ label: (n === cur ? "✓ " : "  ") + n,
+      hint: n === cur ? "in use" : "", run: () => n !== cur && go("quick_profile_use", { name: n }) })),
+    "-",
+    { label: "New profile (empty)…", run: async () => { const n = await named("New button profile"); if (n) go("quick_profile", { new: n }); } },
+    { label: "New profile from these buttons…", hint: "a copy to change", run: async () => {
+      const n = await named("New button profile (a copy)", `${cur} copy`); if (n) go("quick_profile", { new: n, copy: true }); } },
+    cur !== "Default" && { label: `Rename ${cur}…`, run: async () => {
+      const n = await named(`Rename ${cur}`, cur); if (n && n !== cur) run("quick_profile", { rename: cur, to: n }, { toast: true }); } },
+    cur !== "Default" && { label: `Delete ${cur}…`, danger: true, run: async () => {
+      if (await confirmBox(`Delete ${cur}?`, `Its buttons and pages go with it (Ctrl+Z brings them back). The desk goes back to the Default buttons.`, { ok: "Delete", danger: true }))
+        go("quick_profile", { delete: cur });
+    } },
+  ]);
 }
 
 async function renamePage(p) {
@@ -446,11 +477,14 @@ function render(force = false) {
           const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.length - 1 : i) + (e.deltaY < 0 ? 1 : -1)))][0];
           if (next !== cur) run("quick_rate", { id: b.id, rate: next });
         }, { passive: false });
-        el.addEventListener("contextmenu", (e) => { e.preventDefault(); speedMenu(el, b); });
+        // (a finger held on it is Windows' right-click: it's a held strobe, not a menu - the badge is the speed by touch)
+        el.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!byTouch(e)) speedMenu(el, b); });
       }
+      let finger = null;                        // the finger holding it: a second one on the same button is ignored
       el.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;             // right-click is the speed menu
         e.preventDefault();
+        if (finger !== null) return;
         if (b.kind === "page" || b.kind === "folder") {
           // the screen turns the page (a folder remembers the way back)
           if (b.kind === "folder") folderBack.push(page); else folderBack.length = 0;
@@ -460,10 +494,13 @@ function render(force = false) {
         }
         if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
         el.setPointerCapture(e.pointerId);
+        finger = e.pointerId;
         el.classList.add("down");
         press(b, true, e.pointerId);
       });
-      const up = () => {
+      const up = (e) => {
+        if (finger === null || e.pointerId !== finger) return;
+        finger = null;
         el.classList.remove("down");
         if (b.mode === "hold" && held.has(b.id)) press(b, false);
         else held.delete(b.id);
@@ -553,7 +590,7 @@ function controlTile(b) {
     const dot = h("i.qxy-dot");
     const pad = h("div.qxy", dot);
     const send = throttle((pan, tilt) => run("quick_xy", { id: b.id, pan, tilt }, { silentError: true }), 70);
-    let down = false;
+    let down = null;                             // the finger on the pad
     const at = (e) => {
       const r = pad.getBoundingClientRect();
       const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
@@ -561,9 +598,9 @@ function controlTile(b) {
       dot.style.top = y * 100 + "%";
       send(Math.round(x * 255), Math.round((1 - y) * 255));
     };
-    pad.addEventListener("pointerdown", (e) => { down = true; pad.setPointerCapture(e.pointerId); at(e); });
-    pad.addEventListener("pointermove", (e) => { if (down) at(e); });
-    pad.addEventListener("pointerup", () => { down = false; });
+    pad.addEventListener("pointerdown", (e) => { if (down !== null) return; down = e.pointerId; pad.setPointerCapture(e.pointerId); at(e); });
+    pad.addEventListener("pointermove", (e) => { if (down === e.pointerId) at(e); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) pad.addEventListener(ev, (e) => { if (down === e.pointerId) down = null; });
     el.append(head, pad);
   } else if (b.kind === "tempo") {
     el.append(head, h("output.qval.qbpm", "–"), h("small.qsub", "tap on the beat"));
@@ -1360,6 +1397,7 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
   $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });

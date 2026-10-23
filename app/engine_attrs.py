@@ -908,7 +908,7 @@ class AttrMixin:
 
     def _a_set_place(self, head=None, heads=None, x=None, y=None, z=None,
                      kind=None, rig=None, t=None, stance=None, snap=False,
-                     rot=None, **_):
+                     rot=None, hang=None, **_):
         """Put a head somewhere: free-standing at x/y/z, or on a rig.
 
         `rig` + `t` mounts it (t = 0..1 along the rig; when t is missing
@@ -916,7 +916,12 @@ class AttrMixin:
         `snap` mounts to the nearest rig within reach of the new position.
         `stance` is "hang" (under the bar) or "stand" (upright).  `rot` is
         [yaw, pitch] in degrees for a light with no pan/tilt, or null to
-        let the visualiser aim it.  Positions are clamped to the room (plus
+        let the visualiser aim it.  `hang` is how it is mounted, as on a pro
+        desk: hung, standing, bottom_front / top_front (on its back, its head
+        towards the audience), bottom_rear / top_rear (towards the back),
+        boom_left / boom_right (on its side, its head to that side as the
+        audience sees it) - the aim and the 3D both turn it so.
+        Positions are clamped to the room (plus
         a margin), because a drag far from the camera turns a small mouse
         move into a large jump and a light must never be lost off-screen.
         """
@@ -932,12 +937,23 @@ class AttrMixin:
         max_y = b["h"] + 4.0
         if stance not in (None, "hang", "stand"):
             raise ValueError("stance is hang or stand")
+        if hang is not None:
+            hang = str(hang).strip().lower().replace(" ", "_").replace("-", "_")
+            hang = {"normal": "hung", "hang": "hung", "stand": "standing"}.get(hang, hang)
+            if hang not in venue_mod.HANGS:
+                raise ValueError("hang is one of " + ", ".join(venue_mod.HANGS))
+            if hang in ("hung", "standing"):
+                stance = "hang" if hang == "hung" else "stand"
         clamped = False
         moved = []
         for n in targets:
             h = self._head(n)                   # raises if unpatched
             before = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
-                      h.get("stance"), json.dumps(h.get("rot")))
+                      h.get("stance"), json.dumps(h.get("rot")), h.get("hang"))
+            if hang is not None and hang not in ("hung", "standing"):
+                h["hang"] = hang                 # on its back, on a boom...
+            elif hang is not None or stance is not None:
+                h.pop("hang", None)              # simply hung or standing
             px = float(x) if x is not None else h["x"]
             py = float(y) if y is not None else h["y"]
             pz = float(z) if z is not None else h["z"]
@@ -1002,7 +1018,7 @@ class AttrMixin:
                 h["kind"] = ("truss" if side == "hang" else "floor") if side \
                     else ("truss" if h["y"] >= 2.0 else "floor")
             after = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
-                     h.get("stance"), json.dumps(h.get("rot")))
+                     h.get("stance"), json.dumps(h.get("rot")), h.get("hang"))
             if after != before:
                 moved.append(h["head_no"])
         first = self._head(moved[0] if moved else targets[0])
@@ -1017,7 +1033,7 @@ class AttrMixin:
                 "moved_heads": moved, "clamped": clamped,
                 "x": first["x"], "y": first["y"], "z": first["z"],
                 "kind": first["kind"], "mount": first.get("mount"),
-                "stance": first.get("stance"),
+                "stance": first.get("stance"), "hang": venue_mod.hang_of(first),
                 "bounds": {"half_width_m": half_w, "min_depth_m": min_z,
                            "max_depth_m": max_z, "max_height_m": max_y},
                 "summary": f"moved {len(moved)} head(s) to "

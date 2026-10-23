@@ -7,6 +7,7 @@
 import { $, h, confirmBox } from "./ui.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
+import { needs3d } from "./view3d.js";
 
 let mode = "program";
 let liveTimer = 0;
@@ -53,7 +54,7 @@ function paintSetup() {
   const hue = s.hue || {};
   const sb = s.standby || {};
   const body = h("div.hub-body",
-    h("p.muted.small", "Everything before the show, in order. The fixture list on the left and the 3D view follow along."),
+    h("p.muted.small", "Everything before the show, in order. The fixture list on the left follows along."),
     h("h3", "1 · The lights"),
     step("Add the lights", n ? `${n} light${n > 1 ? "s" : ""} patched` : "no lights yet", n > 0,
       btn("Add lights…", lazy("./dialogs.js", "openAddDialog"), !n),
@@ -66,7 +67,7 @@ function paintSetup() {
       })),
     h("h3", "2 · The room"),
     step("Room and rigging", v.name || v.template ? `${v.name || v.template}` : "a plain room", null,
-      btn("Arrange the room", lazy("./venuepanel.js", "setArranging", true)),
+      btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
       btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")),
       btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
       btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue"))),
@@ -150,22 +151,24 @@ function paintLive() {
   const hits = (q.buttons || []).filter((b) => HITS.has(b.kind)).slice(0, 12);
   const pressBtn = (b) => {
     const el = h("button.live-hit" + (active.has(b.id) ? ".on" : ""), { type: "button", title: `${b.label} (${b.mode === "hold" ? "held while pressed" : "press"})` }, b.label);
+    let finger = null;                           // the finger on it: one per button
     el.addEventListener("pointerdown", (e) => {
+      if (finger !== null) return;
+      finger = e.pointerId;
       el.setPointerCapture(e.pointerId);
       holding++;
       el.classList.add("on");
       run("quick_press", { id: b.id, down: true });
     });
-    let done = false;
-    el.addEventListener("pointerdown", () => { done = false; });
-    const up = () => {
-      if (done) return;
-      done = true;
+    const up = (e) => {
+      if (finger === null || e.pointerId !== finger) return;
+      finger = null;
       holding = Math.max(0, holding - 1);
       run("quick_press", { id: b.id, down: false });
     };
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
+    el.addEventListener("lostpointercapture", up);
     return el;
   };
   const part = h("div.live-part"), next = h("div.live-next muted"), bar = h("i"), beat = h("span.live-beat");

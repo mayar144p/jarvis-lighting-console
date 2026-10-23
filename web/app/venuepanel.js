@@ -27,6 +27,18 @@ const OBJECT_ADD = [
   ["dj_booth", "DJ booth"], ["bar", "Bar"], ["speaker", "Speaker"], ["sub", "Sub"],
   ["pillar", "Pillar"], ["screen", "LED screen"], ["riser", "Riser"], ["table", "Table"],
   ["balcony", "Balcony"], ["wall", "Wall"], ["mark", "Performer mark"],
+  ["drape", "Drape (pleated curtain)"], ["panels", "LED panels (a grid)"],
+];
+// a pro desk's hang types: [value, name, what it means]
+const HANG_TYPES = [
+  ["hung", "Hung", "Upside down under a bar (normal for a light on a truss)."],
+  ["standing", "Standing", "On the floor or on top of a truss, its base down."],
+  ["bottom_front", "Bottom front", "On its back on an upright, its head towards the audience, the display at the bottom."],
+  ["top_front", "Top front", "On its back on an upright, its head towards the audience, the display at the top."],
+  ["bottom_rear", "Bottom rear", "On its back, its head towards the back of the stage, the display at the bottom."],
+  ["top_rear", "Top rear", "On its back, its head towards the back of the stage, the display at the top."],
+  ["boom_left", "Boom left", "On its side on a boom, its head to the left as the audience sees it: at rest it points sideways."],
+  ["boom_right", "Boom right", "On its side on a boom, its head to the right as the audience sees it: at rest it points sideways."],
 ];
 export const ZONE_KINDS = [
   ["dancefloor", "Dance floor"], ["standing", "Standing"], ["seating", "Seating"], ["bar", "Bar"],
@@ -67,6 +79,8 @@ function defaults(kind) {
     case "balcony": return { x, z, w: 6, d: 2, h: 0.25, y: 3 };
     case "wall": return { x, z, w: 4, d: 0.15, h: Math.min(3, H) };
     case "mark": return { x, z: Math.max(0.5, (stage.stageFront || 2) - 1.5), w: 0.5, d: 0.5, h: 0.02, y: 0 };
+    case "drape": return { x, z: z - 2, w: 8, d: 0.25, h: Math.min(6, H - 0.5), fold: 0.45, colour: "#6e7076" };
+    case "panels": return { x, z: z - 2, w: 6, d: 0.1, h: 3, y: 1, tile: 0.5, gap: 0.5 };
     default: return { x, z };
   }
 }
@@ -336,6 +350,12 @@ function renderInspector(sel) {
       ...["hang", "stand"].map((k) => h("button" + ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === k ? ".on" : ""), {
         onclick: () => run("set_place", { head: s.head, stance: k, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }),
       }, k === "hang" ? "Hang" : "Stand")));
+    // how it is mounted, as on a pro desk (the aim and the 3D turn it so)
+    const cur = hd.hang || ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === "hang" ? "hung" : "standing");
+    const hangSel = h("select.select", { title: "How the light is mounted: which way its base faces" },
+      ...HANG_TYPES.map(([k, l]) => h("option", { value: k, selected: k === cur }, l)));
+    hangSel.addEventListener("change", () => run("set_place", { head: s.head, hang: hangSel.value, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }));
+    const hangHint = h("p.muted.small", (HANG_TYPES.find((x) => x[0] === cur) || [])[2] || "");
     body.push(h("div.vi-title", `#${hd.head_no} ${hd.name || hd.model}`),
       h("div.vi-sub", (hd.body && hd.body.label) || hd.model),
       h("div.vi-row", field("X", num(hd.x, (v) => run("set_place", { head: s.head, x: v }))),
@@ -343,7 +363,8 @@ function renderInspector(sel) {
         field("Z", num(hd.z, (v) => run("set_place", { head: s.head, z: v })))),
       field("On", rigSel),
       field("Along", along),
-      field("Mount", stance));
+      field("Mount", stance),
+      field("Hang", hangSel), hangHint);
     if (!moving) {
       const rot = hd.rot || null;
       body.push(h("div.vi-row",
@@ -362,16 +383,22 @@ function renderInspector(sel) {
     const found = (venue().rigging || []).find((r) => r.id === s.id);
     if (!found) { box.hidden = true; return; }
     const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
-    const len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    let len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    if (found.bend) {                          // along the curve (as the desk measures it)
+      const th = Math.abs(found.bend) * Math.PI / 180, chord = Math.hypot(found.b[0] - found.a[0], found.b[2] - found.a[2]);
+      len = Math.hypot(chord * (th / 2) / Math.sin(th / 2), found.b[1] - found.a[1]);
+    }
     const riders = (state.snap.patch || []).filter((x) => (x.mount || {}).rig === s.id).length;
     const name = h("input", { type: "text", value: found.name || "", placeholder: found.kind });
     name.addEventListener("change", () => upd({ name: name.value }));
     const midY = (found.a[1] + found.b[1]) / 2;
     const sel = (state.snap && state.snap.selected) || [];
+    const bent = !!found.bend;                // a piece of a curve: the whole shape turns and grows
     body.push(h("div.vi-title", found.name || found.kind), h("div.vi-sub", `${found.kind} · ${len.toFixed(2)} m · ${riders} light${riders === 1 ? "" : "s"}`),
       field("Name", name),
-      h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
-      h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
+      bent ? h("p.muted.small", "A piece of a curve: Turn, Length and Trim change the whole shape, so the curve stays a curve.") : null,
+      bent ? null : h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
+      bent ? null : h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
       field("Height", num(r2(midY), (v) => {
         const d = v - midY;
         upd({ a: [found.a[0], r2(found.a[1] + d), found.a[2]], b: [found.b[0], r2(found.b[1] + d), found.b[2]] });
@@ -389,7 +416,7 @@ function renderInspector(sel) {
       h("div.row-btns",
         h("button.btn.small", { title: "Turn it a quarter turn about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 90 }, { toast: true }) }, "Turn 90°"),
         h("button.btn.small", { title: "Turn it 45° about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 45 }, { toast: true }) }, "Turn 45°"),
-        Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
+        bent ? null : Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
           ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
           : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
         h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
@@ -399,7 +426,9 @@ function renderInspector(sel) {
         } }, "Trim…"),
         h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
-      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
+      h("p.muted.small", found.bend
+        ? "Drag the arrows to move the whole curve, or press E and drag the ring to turn it. Shift+click other rigging to line them up."
+        : "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
@@ -547,6 +576,20 @@ function openAdd(btn) {
   ]);
 }
 
+// + Truss: a straight one here and now, or a curve from the rigging library
+const rigDialog = (shape) => import("./rigdialog.js").then((m) => m.openRigDialog("add", shape));
+function openTruss(btn) {
+  menu(btn, [
+    { label: "Straight truss", hint: "A 6 m box truss, flown", run: () => addItem("truss", "Truss") },
+    "-",
+    { label: "Circle…", hint: "a ring of truss", run: () => rigDialog("circle") },
+    { label: "Arc…", hint: "part of a circle: radius, from and to", run: () => rigDialog("arc") },
+    { label: "Spiral…", hint: "winds up and round: turns and rise", run: () => rigDialog("spiral") },
+    { label: "S curve…", hint: "two bends, one each way", run: () => rigDialog("scurve") },
+    { label: "Corner, frame, goal post…", hint: "the rigging library", run: () => rigDialog("frame") },
+  ]);
+}
+
 function openZones(btn) {
   menu(btn, ZONE_KINDS.map(([k, l]) => ({ label: l, run: () => drawZone(k, l) })));
 }
@@ -675,7 +718,7 @@ export function initVenuePanel(theStage) {
   $("#vt-move").addEventListener("click", () => { editor.setMode("translate"); modeButtons(); });
   $("#vt-rotate").addEventListener("click", () => { editor.setMode("rotate"); modeButtons(); });
   $("#vt-add").addEventListener("click", (e) => openAdd(e.currentTarget));
-  $("#vt-truss").addEventListener("click", () => addItem("truss", "Truss"));
+  $("#vt-truss").addEventListener("click", (e) => openTruss(e.currentTarget));
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
   $("#vt-rigging").addEventListener("click", () => import("./rigdialog.js").then((m) => m.openRigDialog()));
