@@ -9575,3 +9575,93 @@ def test_next_go_focus() -> None:
     check("the desk window tells the engine whenever the focused playback changes (GO and Back too)",
           'act("vis_source", { focus: n })' in pj and "tellFocus(n);" in pj
           and 'onclick: () => { setFocus(n); run("cue_go"' in pj, "")
+
+
+def test_curve_snap_and_shape() -> None:
+    """A light snaps onto a curved truss where the curve really is (not the
+    straight line between a piece's ends), in the desk and in Arrange; and
+    turning / resizing one piece of a curve changes the whole shape (or is
+    refused in plain words) - the curve never breaks."""
+    print("Curved truss: snap to the curve, the shape changes as one")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=0, y=5, z=4, radius=5, start=200, end=340, segments=4)
+    r = arc[1]
+    want = 0.37
+    on = venue_mod.curve_point(r, want)
+    out = [on[0] * 1.06, on[1], 4 + (on[2] - 4) * 1.06]           # 30 cm outside the curve
+    t, q = venue_mod.curve_nearest(r, out)
+    chord_t, chord_q = venue_mod.curve_nearest({**r, "bend": 0}, out)
+    check("the nearest point is on the curve, not on the straight line between the ends (over 10 cm off)",
+          abs(t - want) < 0.01 and abs(math.dist(q, out) - 0.3) < 0.01 and math.dist(chord_q, q) > 0.1,
+          f"{t:.3f} {math.dist(q, out):.3f} {math.dist(chord_q, q):.3f}")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=8, trim=5, segments=4)
+            pieces = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            p1 = pieces[1]
+            mid = venue_mod.curve_point(p1, 0.5)
+            e.act("add_heads", query="Moving Head", qty=1)
+            n = e.patch[-1]["head_no"]
+            e.act("set_place", head=n, x=mid[0], y=mid[1] - 0.4, z=mid[2], snap=True)
+            h = e._head(n)
+            check("a light dropped under the middle of a curved piece snaps onto it, on the curve",
+                  (h.get("mount") or {}).get("rig") == p1["id"] and abs(h["mount"]["t"] - 0.5) < 0.02
+                  and math.hypot(h["x"] - mid[0], h["z"] - mid[2]) < 0.02, str((h.get("mount"), h["x"], h["z"])))
+            before = {x["id"]: dict(x) for x in pieces}
+            r = e.act("venue_rig", id=p1["id"], turn=90)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            joined = all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1))
+            check("turning one piece of a curve turns the whole shape: still joined, the same bends",
+                  r.get("ok") and joined and all(x["bend"] == before[x["id"]]["bend"] for x in after)
+                  and "whole shape" in r.get("summary", ""), str(r.get("error") or r.get("summary")))
+            h = e._head(n)
+            p1now = venue_mod.rig(e.venue, p1["id"])
+            check("...its light goes round with it, still on the curve",
+                  math.dist([h["x"], h["z"]], [venue_mod.curve_point(p1now, h["mount"]["t"])[i] for i in (0, 2)]) < 0.01, "")
+            old_len = venue_mod.length(p1now)
+            r = e.act("venue_rig", id=p1["id"], length=old_len * 1.5)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("resizing one piece of a curve resizes the whole shape (half as big again), still joined",
+                  r.get("ok") and abs(venue_mod.length(after[1]) - old_len * 1.5) < 0.02
+                  and all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1)), str(r.get("error")))
+            r = e.act("venue_rig", id=p1["id"], orient="vertical")
+            check("standing a curved piece up is refused, in plain words",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            cur = venue_mod.rig(e.venue, p1["id"])
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]]})
+            check("moving one end of a curved piece on its own is refused (the curve would break)",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]],
+                                                           "b": [cur["b"][0] + 1, cur["b"][1], cur["b"][2]]})
+            moved = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("...moving it whole still moves the whole shape", r["ok"] and all(math.dist(moved[i]["b"], moved[i + 1]["a"]) < 0.01
+                                                                                    for i in range(len(moved) - 1)), str(r.get("error")))
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});const T=await import('three');"
+        f"const r={json.dumps(r_ := {**arc[1], 'id': 'x'})};"
+        f"const n=V.curveNearest(r,new T.Vector3(...{json.dumps(out)}));"
+        "console.log(JSON.stringify({t:n.t,p:n.point.toArray()}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: Arrange's snap is not checked)")
+    else:
+        check("Arrange's snap finds the same point as the desk", abs(got.get("t", 9) - t) < 1e-3, str(got))
+    del r_
+    ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: snaps on the curve, no end handles on a curve's piece, the inspector says the shape changes as one",
+          "curveNearest(r, p)" in ed and "if (!it.bend)" in ed and "A piece of a curve: Turn, Length and Trim change the whole shape" in vp, "")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("a flat view chosen while arranging leaves Arrange first (its handles work in perspective)",
+          'document.body.classList.contains("arranging")) $("#arrange-btn").click()' in sp, "")

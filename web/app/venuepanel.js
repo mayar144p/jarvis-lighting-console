@@ -383,16 +383,22 @@ function renderInspector(sel) {
     const found = (venue().rigging || []).find((r) => r.id === s.id);
     if (!found) { box.hidden = true; return; }
     const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
-    const len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    let len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    if (found.bend) {                          // along the curve (as the desk measures it)
+      const th = Math.abs(found.bend) * Math.PI / 180, chord = Math.hypot(found.b[0] - found.a[0], found.b[2] - found.a[2]);
+      len = Math.hypot(chord * (th / 2) / Math.sin(th / 2), found.b[1] - found.a[1]);
+    }
     const riders = (state.snap.patch || []).filter((x) => (x.mount || {}).rig === s.id).length;
     const name = h("input", { type: "text", value: found.name || "", placeholder: found.kind });
     name.addEventListener("change", () => upd({ name: name.value }));
     const midY = (found.a[1] + found.b[1]) / 2;
     const sel = (state.snap && state.snap.selected) || [];
+    const bent = !!found.bend;                // a piece of a curve: the whole shape turns and grows
     body.push(h("div.vi-title", found.name || found.kind), h("div.vi-sub", `${found.kind} · ${len.toFixed(2)} m · ${riders} light${riders === 1 ? "" : "s"}`),
       field("Name", name),
-      h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
-      h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
+      bent ? h("p.muted.small", "A piece of a curve: Turn, Length and Trim change the whole shape, so the curve stays a curve.") : null,
+      bent ? null : h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
+      bent ? null : h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
       field("Height", num(r2(midY), (v) => {
         const d = v - midY;
         upd({ a: [found.a[0], r2(found.a[1] + d), found.a[2]], b: [found.b[0], r2(found.b[1] + d), found.b[2]] });
@@ -410,7 +416,7 @@ function renderInspector(sel) {
       h("div.row-btns",
         h("button.btn.small", { title: "Turn it a quarter turn about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 90 }, { toast: true }) }, "Turn 90°"),
         h("button.btn.small", { title: "Turn it 45° about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 45 }, { toast: true }) }, "Turn 45°"),
-        Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
+        bent ? null : Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
           ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
           : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
         h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
@@ -420,7 +426,9 @@ function renderInspector(sel) {
         } }, "Trim…"),
         h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
-      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
+      h("p.muted.small", found.bend
+        ? "Drag the arrows to move the whole curve, or press E and drag the ring to turn it. Shift+click other rigging to line them up."
+        : "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),

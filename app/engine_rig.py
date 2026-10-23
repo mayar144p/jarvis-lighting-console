@@ -883,6 +883,18 @@ class RigMixin:
         # a circle / frame as a whole): [{id, a, b}], one undo step
         pieces = raw.pop("pieces", None)
         cur = venue_mod.rig(self.venue, str(id))
+        if cur and cur.get("bend") and not pieces and ("a" in raw or "b" in raw):
+            # a piece of a curve: moved whole (both ends the same), never
+            # stretched or bent on its own
+            a, b = raw.get("a", cur["a"]), raw.get("b", cur["b"])
+            try:
+                da = [float(a[k]) - cur["a"][k] for k in range(3)]
+                db = [float(b[k]) - cur["b"][k] for k in range(3)]
+            except (TypeError, ValueError, IndexError):
+                raise ValueError("a and b are [x, y, z]") from None
+            if any(abs(da[k] - db[k]) > 0.015 for k in range(3)):
+                raise ValueError("this piece is part of a curve: move it, or turn, resize or trim the whole "
+                                 "shape (Length, Turn, Trim) - its ends can't be moved one at a time")
         v, item = venue_mod.update_item(self.venue, str(id), raw)
         if pieces and cur and cur.get("group"):
             if not isinstance(pieces, list) or len(pieces) > 200:
@@ -1068,6 +1080,24 @@ class RigMixin:
             raise ValueError("orient is vertical or horizontal")
         if length is not None and not 0.2 <= float(length) <= 60:
             raise ValueError("a rig is 0.2 to 60 m long")
+        if r.get("bend"):
+            # a piece of a curve: the whole shape turns / grows / goes up
+            # with it (on its own the curve would break)
+            if orient:
+                raise ValueError("a curved piece can't be stood up or laid flat - it is part of a curve; "
+                                 "turn, resize or trim the whole shape instead")
+            v = self.venue
+            moves = venue_mod.shape_transform(venue_mod.normalise(v), r, turn=float(turn) if turn else None,
+                                              new_length=float(length) if length else None, ceiling=_truthy(ceiling))
+            for rid, ch in moves:
+                v, _i = venue_mod.update_item(v, rid, ch)
+            self._set_venue_doc(v)
+            item = venue_mod.rig(self.venue, str(id))
+            what = ", ".join(x for x in (f"turned {float(turn):g}°" if turn else "",
+                                         f"resized ({float(length):g} m a piece)" if length else "",
+                                         "hung from the ceiling" if _truthy(ceiling) else "") if x)
+            return self._venue_result(f"{r.get('name') or 'the curve'}: {what or 'unchanged'} - the whole shape "
+                                      f"({len(moves)} pieces)", item=item)
         changes = venue_mod.rig_transform(self.venue, r, turn=float(turn) if turn else None,
                                           length=float(length) if length else None,
                                           orient=orient or None, ceiling=_truthy(ceiling))

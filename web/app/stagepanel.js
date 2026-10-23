@@ -283,6 +283,8 @@ function initVisBar() {
   };
   $$("#vis-mouse button").forEach((b) => b.addEventListener("click", () => mouse(b.dataset.mouse)));
   $$("#vis-cams button").forEach((b) => b.addEventListener("click", () => {
+    // Arrange works in the perspective view: a flat view leaves it first
+    if (b.dataset.cam !== "per" && document.body.classList.contains("arranging")) $("#arrange-btn").click();
     stage.setProjection(b.dataset.cam);
     keep("visCam", stage.proj);
   }));

@@ -8,18 +8,14 @@
 // redraws the room from the engine's truth.
 import * as THREE from "three";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
-import { ceilingAt } from "./venue.js";
+import { ceilingAt, curveNearest } from "./venue.js";
 
 const SNAP_REACH = 0.6;
 
 function nearestOnRig(rigs, p) {
   let best = null;
   for (const r of rigs) {
-    const a = new THREE.Vector3(...r.a), b = new THREE.Vector3(...r.b);
-    const ab = b.clone().sub(a);
-    const len2 = ab.lengthSq();
-    const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / len2));
-    const q = a.clone().addScaledVector(ab, t);
+    const { t, point: q } = curveNearest(r, p);             // on the curve of a curved truss
     const d = q.distanceTo(p);
     if (d <= SNAP_REACH + (r.size || 0.3) / 2 && (!best || d < best.d)) best = { rig: r, t, d, point: q };
   }
@@ -268,8 +264,10 @@ export class VenueEditor {
         sel.type = "rig";
         const a = new THREE.Vector3(...it.a), b = new THREE.Vector3(...it.b);
         p.position.copy(a).add(b).multiplyScalar(0.5);
-        this._handle("a", a);
-        this._handle("b", b);
+        if (!it.bend) {                              // a curve's piece isn't stretched on its own
+          this._handle("a", a);
+          this._handle("b", b);
+        }
         if (!opts.silent) this._frameRig(a, b);
       } else if (found.key === "objects") {
         sel.type = "object";

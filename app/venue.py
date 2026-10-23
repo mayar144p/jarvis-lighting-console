@@ -529,6 +529,28 @@ def curve_point(r: dict, t: float) -> list[float]:
             a[2] + rad * (math.cos(phi0) - math.cos(phi0 + th * t))]
 
 
+def curve_nearest(r: dict, p) -> tuple[float, list[float]]:
+    """The point of a piece nearest `p` (along its curve when it is curved):
+    (t, point).  The 3D's editor finds it the same way."""
+    a, b = r["a"], r["b"]
+    if not bend_of(r):
+        ab = [b[i] - a[i] for i in range(3)]
+        den = sum(c * c for c in ab)
+        t = 0.0 if den < 1e-9 else max(0.0, min(1.0, sum((p[i] - a[i]) * ab[i] for i in range(3)) / den))
+        return t, [a[i] + ab[i] * t for i in range(3)]
+    n = 48
+    best = min(range(n + 1), key=lambda k: math.dist(curve_point(r, k / n), p))
+    lo, hi = max(0.0, (best - 1) / n), min(1.0, (best + 1) / n)
+    for _ in range(30):                          # narrow it down (the distance has one dip here)
+        m1, m2 = lo + (hi - lo) / 3, hi - (hi - lo) / 3
+        if math.dist(curve_point(r, m1), p) <= math.dist(curve_point(r, m2), p):
+            hi = m2
+        else:
+            lo = m1
+    t = (lo + hi) / 2
+    return t, curve_point(r, t)
+
+
 def curve_heading(r: dict, t: float) -> float:
     """Which way a piece runs at `t`, radians of atan2(dz, dx)."""
     dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
@@ -612,12 +634,7 @@ def nearest_rig(v: dict, x: float, y: float, z: float,
     best = None
     p = (x, y, z)
     for r in (v or {}).get("rigging") or []:
-        a, b = r["a"], r["b"]
-        ab = [b[i] - a[i] for i in range(3)]
-        denom = sum(c * c for c in ab)
-        t = 0.0 if denom < 1e-9 else max(0.0, min(1.0, sum(
-            (p[i] - a[i]) * ab[i] for i in range(3)) / denom))
-        q = [a[i] + ab[i] * t for i in range(3)]
+        t, q = curve_nearest(r, p)                  # on its curve, when it is curved
         dist = math.dist(p, q)
         if dist <= reach + r["size"] / 2 and (best is None or dist < best[2]):
             best = (r, t, dist)
@@ -793,6 +810,47 @@ def _fit_rig(r: dict, inside, pull, box, top) -> int:
         p[1] = round(min(p[1], top), 3)
     r["a"], r["b"] = a, bb
     return 1
+
+
+def shape_transform(v: dict, r: dict, turn: float | None = None, new_length: float | None = None,
+                    ceiling: bool = False) -> list[tuple[str, dict]]:
+    """A curved shape changed as a whole (one of its pieces can't be turned
+    or resized on its own without breaking the curve): turned about its
+    middle, scaled so that piece is `new_length` long, or hung just under the
+    ceiling.  [(id, {a, b})] for every piece."""
+    members = [m for m in (v.get("rigging") or []) if r.get("group") and m.get("group") == r["group"]] or [r]
+    pts = [m[k] for m in members for k in ("a", "b")]
+    cx = sum(q[0] for q in pts) / len(pts)
+    cz = sum(q[2] for q in pts) / len(pts)
+    now = length(r)
+    k = float(new_length) / now if new_length and now > 1e-6 else 1.0
+    c, sn = (math.cos(math.radians(turn)), math.sin(math.radians(turn))) if turn else (1.0, 0.0)
+    dy = 0.0
+    if ceiling:
+        top = max(max(m["a"][1], m["b"][1]) for m in members)
+        h = ceiling_over(v, pts) if dims(v)[2] else 6.0
+        dy = h - float(r.get("size") or 0.3) / 2 - 0.05 - top
+
+    def move(q):
+        x, z = (q[0] - cx) * k, (q[2] - cz) * k
+        return [round(cx + x * c - z * sn, 3), round(max(0.0, q[1] + dy), 3), round(cz + x * sn + z * c, 3)]
+    out = [(m["id"], {"a": move(m["a"]), "b": move(m["b"])}) for m in members]
+    # the whole shape slid inside the room as one (a piece pushed in on its
+    # own would break the curve)
+    fns = _room_fns(v)
+    if fns:
+        lo_x, hi_x, lo_z, hi_z = fns[2]
+        xs = [p[0] for _i, ch in out for p in (ch["a"], ch["b"])]
+        zs = [p[2] for _i, ch in out for p in (ch["a"], ch["b"])]
+        if max(xs) - min(xs) > hi_x - lo_x or max(zs) - min(zs) > hi_z - lo_z:
+            raise ValueError("the shape would be bigger than the room")
+        sx = (lo_x - min(xs)) if min(xs) < lo_x else (hi_x - max(xs)) if max(xs) > hi_x else 0.0
+        sz = (lo_z - min(zs)) if min(zs) < lo_z else (hi_z - max(zs)) if max(zs) > hi_z else 0.0
+        if sx or sz:
+            for _i, ch in out:
+                for p in (ch["a"], ch["b"]):
+                    p[0], p[2] = round(p[0] + sx, 3), round(p[2] + sz, 3)
+    return out
 
 
 def rig_transform(v: dict, r: dict, turn: float | None = None, length: float | None = None,

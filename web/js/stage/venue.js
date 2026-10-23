@@ -203,6 +203,30 @@ export function curvePoint(r, t, out = new THREE.Vector3()) {
     az + rad * (Math.cos(phi0) - Math.cos(phi0 + th * t)));
 }
 
+/** The point of a piece nearest `p` (along its curve when it is curved):
+ *  {t, point} - the same search as the desk's (app/venue.py curve_nearest). */
+export function curveNearest(r, p) {
+  if (!r.bend) {
+    const a = new THREE.Vector3(...r.a), ab = new THREE.Vector3(...r.b).sub(a);
+    const len2 = ab.lengthSq();
+    const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / len2));
+    return { t, point: a.addScaledVector(ab, t) };
+  }
+  const n = 48, q = new THREE.Vector3();
+  let best = 0, bd = Infinity;
+  for (let k = 0; k <= n; k++) {
+    const d = curvePoint(r, k / n, q).distanceTo(p);
+    if (d < bd) { bd = d; best = k; }
+  }
+  let lo = Math.max(0, (best - 1) / n), hi = Math.min(1, (best + 1) / n);
+  for (let i = 0; i < 30; i++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (curvePoint(r, m1, q).distanceTo(p) <= curvePoint(r, m2, q).distanceTo(p)) hi = m2; else lo = m1;
+  }
+  const t = (lo + hi) / 2;
+  return { t, point: curvePoint(r, t) };
+}
+
 /** How long a piece is along its curve. */
 export function curveLength(r) {
   const th = Math.abs((+r.bend || 0) * DEG);
