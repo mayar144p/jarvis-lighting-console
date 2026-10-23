@@ -657,9 +657,9 @@ export class Stage {
   }
 
   // ------------------------------------------------- the visualiser's views
-  /** Per (perspective, shaded and lit), or a flat view: Top / Front / Side
-   *  (line drawings, white on black, framing the room) or Free (flat,
-   *  turned any way).  Returns the projection now in use. */
+  /** Per (perspective, shaded and lit), or a flat view drawn as lines,
+   *  white on black: Top / Front / Side (framing the room) or Free (turned
+   *  any way you like).  Returns the projection now in use. */
   setProjection(kind) {
     kind = ["per", "top", "front", "side", "free"].includes(kind) ? kind : "per";
     if (kind !== "per" && this.walking) this.walk(false);
@@ -681,7 +681,7 @@ export class Stage {
     this.controls.enableRotate = kind === "per" || kind === "free";
     this.controls.maxPolarAngle = kind === "per" ? Math.PI * 0.495 : Math.PI;
     if (kind !== "per") this.fitRoom(true);
-    this._setWire(kind === "top" || kind === "front" || kind === "side");
+    this._setWire(kind !== "per");                 // every flat view is a line drawing
     this._applyMouse();
     this.controls.update();
     this.camMoved = true;

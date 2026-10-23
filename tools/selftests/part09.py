@@ -9514,3 +9514,17 @@ def test_hang_types() -> None:
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     check("Arrange: a light's Hang (Hung, Standing, Bottom / Top front and rear, Boom left / right)",
           all(f'["{k}", ' in vp for k in venue_mod.HANGS) and 'hang: hangSel.value' in vp, "")
+
+
+def test_free_view_lines() -> None:
+    """Free View is a flat line drawing too (as on a pro visualiser), and
+    it still turns with the mouse; only Per View is shaded."""
+    print("Free View: a line drawing you can turn")
+    st = stage_js()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("every flat view is drawn as lines; Per View alone is shaded",
+          'this._setWire(kind !== "per")' in st and 'kind === "top" || kind === "front" || kind === "side"' not in st, "")
+    check("Free View still turns (the others only slide and zoom)",
+          'this.controls.enableRotate = kind === "per" || kind === "free"' in st, "")
+    check("its button says it is a line drawing you can turn",
+          'data-cam="free"' in html and "turned any way you like (drag to turn it): a line drawing" in html, "")
