@@ -2210,3 +2210,6 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 @container (max-width: 1100px) { .vis-long { display: none; } }
 /* the 3D shows something other than the output (Programmer only / Next GO) */
 .vis-select.preview { color: var(--blind); border-color: var(--blind); background: var(--blind-bg); }
+.lineup-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.lineup-chips .chip.on { border-color: var(--accent); background: var(--accent-bg); }
+.lineup-row .select { max-width: 280px; }
