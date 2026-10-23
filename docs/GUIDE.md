@@ -340,6 +340,36 @@ the trusses at their real angle, and each light turned with its truss
 (selected lights in yellow). Drag on it and every selected light points at
 that spot. The pan/tilt dials still move each light's own pan and tilt.
 
+### Lining up a venue (the real lights match the desk)
+
+The desk aims a light from where it thinks the light hangs and which way it
+faces. In a real venue those are never exact, so line the rig up once per
+venue; it's saved with the show.
+
+1. **Build the room roughly.** Settings → Venue → a template (club,
+   concert...), then the room size. In **Arrange**, put the trusses at their
+   real height and position (measure from the middle of the back wall:
+   x across, z towards the audience, metres) and draw the dance floor zone.
+2. **Hang each light where it really is.** Drag it onto its truss, or type
+   its position; set its **Hang** (hung, standing, on a boom...). A light hung
+   the other way round to the rest: **Invert pan / Invert tilt** in
+   Programmer → Setup.
+3. **Mark the floor.** Two or three spots far apart: the middle of the dance
+   floor, its left and right, the DJ booth - the desk lists the room's own
+   spots - or tape a cross somewhere and keep it as a room mark.
+4. **Line up.** Select the movers, Programmer → Setup → **Line up with the
+   real light…**. For each light: pick a mark, **Point it there** (it gets
+   close), nudge the real light until it's on the mark, **It's on the mark**.
+   After two or three marks, **Next light ▶** works it out and moves on; a
+   tick shows each light done.
+5. **Check.** Aim the whole rig at a spot (Position → room map, or a
+   palette like Fan out) and look at the floor. If the box said the marks
+   disagree by more than a few degrees, that light's height or position in
+   the room is off: fix it in Arrange and line it up again.
+
+The **Plot** (Windows → Plot) shows the rig flat with every light's number -
+handy to walk the room and tick lights off.
+
 ### Follow me speed
 
 Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on
