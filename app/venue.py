@@ -480,6 +480,10 @@ HANG_BASE = {
 }
 
 
+HANG_LABEL = {"hung": "Hung", "standing": "Standing", "bottom_front": "Bottom front", "top_front": "Top front",
+              "bottom_rear": "Bottom rear", "top_rear": "Top rear", "boom_left": "Boom left", "boom_right": "Boom right"}
+
+
 def hang_of(h: dict) -> str:
     """How a light is mounted: one of HANGS (its stance when it is simply
     hung or standing)."""

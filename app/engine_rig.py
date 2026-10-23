@@ -1047,6 +1047,7 @@ class RigMixin:
                 "channels": len(h.get("map") or []),
                 "x": round(float(h.get("x") or 0), 2), "y": round(float(h.get("y") or 0), 2),
                 "z": round(float(h.get("z") or 0), 2), "stance": h.get("stance") or "",
+                "hang": venue_mod.hang_of(h), "hang_label": venue_mod.HANG_LABEL[venue_mod.hang_of(h)],
                 "rig": (rigs.get(rid) or {}).get("name") or ("floor" if float(h.get("y") or 0) < 1.5 else ""),
                 "kg": ph.get("kg") if ph.get("kg") is not None else riglib.KIND_KG[riglib.light_kind(h)],
                 "kg_known": ph.get("kg") is not None, "watts": ph.get("watts")})

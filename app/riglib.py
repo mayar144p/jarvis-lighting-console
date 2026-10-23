@@ -254,7 +254,7 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
                 light_kg += kg
                 light_w += ph.get("watts") or 0
                 lights.append({"head": h["head_no"], "name": h.get("name", ""), "kg": round(kg, 1),
-                               "guessed": "kg" not in ph})
+                               "guessed": "kg" not in ph, "hang": venue_mod.HANG_LABEL[venue_mod.hang_of(h)]})
         total = self_kg + light_kg
         ground = first["kind"] in ("tower", "stand", "base") or all(_vertical(r) for r in items) \
             or any(min(r["a"][1], r["b"][1]) < 0.3 for r in items)

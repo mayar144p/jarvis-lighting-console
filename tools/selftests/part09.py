@@ -9665,3 +9665,88 @@ def test_curve_snap_and_shape() -> None:
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("a flat view chosen while arranging leaves Arrange first (its handles work in perspective)",
           'document.body.classList.contains("arranging")) $("#arrange-btn").click()' in sp, "")
+
+
+def test_mvr_curves_hangs() -> None:
+    """MVR out and back in keeps curved truss (other programs get short
+    straight trusses along the curve, grouped; the desk reads the curve
+    back exactly) and each light's hang type and facing (in its matrix, so
+    other programs draw it the right way up); the paperwork and the
+    rigging report say how each light hangs."""
+    print("MVR: curved truss and hang types out and back; hang in the paperwork")
+    import io
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from app import venue as venue_mod
+    from tools.selftests.common import SPEC_GDTF
+
+    bad = [(hg, y) for hg in venue_mod.HANGS for y in (0.0, 30.0, -75.0)
+           if mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))) != mvr._pose(hg, y)
+           and max(abs(a - b) for ra, rb in zip(mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))), mvr._pose(hg, y))
+                   for a, b in zip(ra, rb)) > 1e-6]
+    check("every hang and facing reads back from its MVR matrix as the same turn", not bad, str(bad))
+    check("a hung light is GDTF's own way up (no turn); a standing one turned over",
+          mvr.light_rows("hung", 0) == [[1, 0, 0], [0, 1, 0], [0, 0, 1]] and mvr.light_rows("standing", 0)[2][2] == -1,
+          str(mvr.light_rows("hung", 0)))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("description.xml", SPEC_GDTF)
+    gdtf = buf.getvalue()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        again = None
+        try:
+            e.act("venue_shape", shape="rectangle", width=20, depth=20, height=9, layout=False)
+            mvr.import_into(e, _mvr_file(gdtf), tmp / "gdtf")
+            heads = {h["name"]: h["head_no"] for h in e.patch}
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=6, trim=6)
+            e.act("attach_heads", heads=[heads[f"Beam {i}"] for i in range(1, 5)], rig=a["ids"][0])
+            e.act("set_place", head=heads["Beam 1"], hang="bottom_front", rig=e._head(heads["Beam 1"])["mount"]["rig"],
+                  t=e._head(heads["Beam 1"])["mount"]["t"])
+            e.act("set_place", head=heads["Floor L"], x=-6, y=2.5, z=9, hang="boom_left")
+            e.act("keep_facing", heads={heads["Floor L"]: 30.0})
+            want = {n: (venue_mod.hang_of(e._head(h)), round(e._head_yaw(e._head(h)), 1)) for n, h in heads.items()}
+            pw = {r["name"]: r for r in e.act("paperwork")["lights"]}
+            check("the paperwork says how each light hangs",
+                  pw["Beam 1"]["hang_label"] == "Bottom front" and pw["Floor L"]["hang_label"] == "Boom left"
+                  and pw["Beam 2"]["hang_label"] == "Hung", str({k: v.get("hang_label") for k, v in pw.items()}))
+            rep = e.act("rig_report")["report"]
+            arc = next(x for x in rep["rigs"] if x["name"].startswith("Arc"))
+            check("...and the rigging report, for each light on a piece", any(lt["hang"] == "Bottom front" for lt in arc["lights"]), str(arc["lights"]))
+            out = mvr.export_from(e, [tmp / "gdtf"], "c")
+            xml = zipfile.ZipFile(io.BytesIO(out)).read("GeneralSceneDescription.xml").decode()
+            pieces = len([x for x in e.venue["rigging"] if x.get("group") == a["group"]])
+            check("out: the curve as short straight trusses in a group (other programs see its shape), and the curve itself in UserData",
+                  "<GroupObject" in xml and xml.count("<Truss") > pieces * 2 and 'provider="Jarvis"' in xml and '"bend"' in xml, "")
+            back = mvr.read(out)
+            byb = {lt["name"]: lt for lt in back["lights"]}
+            check("read back: the curve whole (its pieces and bends), its little straight bits skipped",
+                  len(back["curves"]) == pieces and all(c.get("bend") for c in back["curves"])
+                  and not any("(0." in t["name"] for t in back["trusses"]), f"{len(back['curves'])} {[t['name'] for t in back['trusses']][:4]}")
+            check("...and each light's hang and facing from its matrix",
+                  byb["Beam 1"]["hang"] == "bottom_front" and byb["Floor L"]["hang"] == "boom_left"
+                  and abs(byb["Floor L"]["yaw"] - 30) < 0.5 and byb["Beam 2"]["hang"] == "hung", str({k: (v["hang"], v["yaw"]) for k, v in byb.items()}))
+            again = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+            r = mvr.import_into(again, out, tmp / "gdtf2", replace=True)
+            curved = [x for x in again.venue["rigging"] if x.get("bend")]
+            h2 = {h["name"]: h for h in again.patch}
+            got = {n: (venue_mod.hang_of(h), round(again._head_yaw(h), 1)) for n, h in h2.items()}
+            check("into a new desk: the curved truss as it was (same pieces, bends, one shape)",
+                  r["ok"] and len(curved) == pieces and len({x["group"] for x in curved}) == 1, str(r.get("summary")))
+            check("...the lights on it hang on the curve again",
+                  all((h2[f"Beam {i}"].get("mount") or {}).get("rig") in {x["id"] for x in curved} for i in range(1, 5)),
+                  str([h2[f"Beam {i}"].get("mount") for i in range(1, 5)]))
+            check("...every light's hang type and facing as it was",
+                  all(got[n][0] == want[n][0] and abs(((got[n][1] - want[n][1] + 180) % 360) - 180) < 1.0 for n in want if n in got),
+                  f"{want} {got}")
+        finally:
+            e.shutdown()
+            if again:
+                again.shutdown()
+    pp = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
+    check("the printed patch sheet shows how each light hangs", "L.hang_label" in pp and "Hangs on · how" in pp, "")

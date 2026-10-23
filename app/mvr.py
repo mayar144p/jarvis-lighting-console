@@ -14,6 +14,13 @@ whole import is one undo step.
 Out: the patch and the rigging as an MVR, with the GDTF files the desk has
 for those lights.
 
+Each light's matrix says which way up it is (its hang type: hung, standing,
+on its back, on a boom) and which way it faces, so other programs draw it
+the right way up; reading one back gives the same hang and facing.  A
+curved truss goes out as short straight trusses along its curve (grouped,
+so other programs see the shape), and the curve itself in the file's
+UserData for the desk to read back exactly.
+
 Coordinates.  MVR: millimetres, Z up, the audience towards -Y.  Here:
 metres, y up, x across, z from the back wall (the stage) towards the
 audience.  So x -> x, z -> height, and -y -> z, shifted into the room.
@@ -112,6 +119,7 @@ def read(data: bytes | Path) -> dict:
         if b"<!DOCTYPE" in xml[:2000] or b"<!ENTITY" in xml[:20000]:
             raise ValueError("the plot uses XML features the desk doesn't read")
         root = ET.fromstring(xml)
+        ours = _our_data(root)
         gdtf = {}
         for n, real in names.items():
             if n.lower().endswith(".gdtf") and zf.getinfo(real).file_size <= MAX_GDTF:
@@ -139,7 +147,9 @@ def read(data: bytes | Path) -> dict:
                     if first is not None:
                         addr = parse_address(first.text or "")
                 rot, off = here
+                hang, yaw = pose_from_rows(rot)
                 lights.append({
+                    "hang": hang, "yaw": yaw,
                     "name": name, "uuid": c.get("uuid") or "", "layer": layer,
                     "gdtf": _text(c, "GDTFSpec"), "mode": _text(c, "GDTFMode"),
                     "fid": _text(c, "FixtureID"), "address": addr,
@@ -148,6 +158,8 @@ def read(data: bytes | Path) -> dict:
                     "stance": "stand" if rot[2][2] < -0.5 else "hang",
                 })
             elif t == "Truss":
+                if c.get("uuid", "").upper() in ours["skip"]:
+                    continue                          # a bit of one of our curves: read back whole
                 trusses.append({"name": name, "pos": [v / 1000 for v in here[1]], "u": here[0][0],
                                 "gdtf": _text(c, "GDTFSpec"), "layer": layer})
             elif t in ("SceneObject", "VideoScreen") and object_kind(name, t):
@@ -170,7 +182,80 @@ def read(data: bytes | Path) -> dict:
     for item in trusses + objects:
         item["size"] = model_size(gdtf.get(item["gdtf"].rsplit("/", 1)[-1]) or gdtf.get(item["gdtf"] + ".gdtf")) \
             if item["gdtf"] else None
-    return {"version": ver, "lights": lights, "trusses": trusses, "objects": objects, "others": others, "gdtf": gdtf}
+    return {"version": ver, "lights": lights, "trusses": trusses, "objects": objects, "others": others, "gdtf": gdtf,
+            "curves": ours["curves"]}
+
+
+# -- which way up a light is -----------------------------------------------------
+# A GDTF light's own axes, in the desk's frame of a light standing on the
+# floor (x across, y from its base to its head, z its front): GDTF draws a
+# light hanging, so its X is the desk's -x, its Y the desk's -z and its Z
+# (up, out of its base) the desk's -y.
+_GDTF_AXES = ((-1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0))
+
+
+def _pose(hang: str, yaw: float):
+    """The light's turn in the room (desk frame): its truss turn after its hang."""
+    from . import venue as venue_mod
+    b = venue_mod.HANG_BASE.get(hang) or venue_mod.HANG_BASE["standing"]
+    c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    ry = ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
+    return [[sum(ry[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def light_rows(hang: str, yaw: float) -> list[list[float]]:
+    """A light's MVR rotation rows (u, v, w) for its hang and facing."""
+    w_ = _pose(hang, yaw)
+    out = []
+    for g in _GDTF_AXES:
+        d = [sum(w_[i][k] * g[k] for k in range(3)) for i in range(3)]     # in the room, desk frame
+        out.append([d[0], -d[2], d[1]])                                     # -> MVR: x, -z, y
+    return out
+
+
+def pose_from_rows(rot) -> tuple[str, float]:
+    """(hang type, facing in degrees) from an MVR light's rotation rows."""
+    from . import venue as venue_mod
+    cols = []
+    for k in range(3):                     # where each of the light's own axes points (desk frame)
+        u = rot[k]
+        cols.append([u[0], u[2], -u[1]])
+    # the light's own x, y, z in the room: from its GDTF X, Z, Y (negated)
+    lx, ly, lz = [-v for v in cols[0]], [-v for v in cols[2]], [-v for v in cols[1]]
+    w_ = [[lx[i], ly[i], lz[i]] for i in range(3)]
+    best = ("hung", 0.0, -9.0)
+    for name in venue_mod.HANGS:
+        b = venue_mod.HANG_BASE[name]
+        r = [[sum(w_[i][k] * b[j][k] for k in range(3)) for j in range(3)] for i in range(3)]   # W . B^T
+        score = r[1][1] - abs(r[0][1]) - abs(r[2][1])
+        yaw = math.degrees(math.atan2(r[0][2], r[0][0]))
+        if score > best[2] + 1e-6 or (abs(score - best[2]) <= 1e-6 and abs(yaw) < abs(best[1])):
+            best = (name, yaw, score)
+    return best[0], round(best[1], 2)
+
+
+# -- our own curves, in the file's UserData ------------------------------------------
+PROVIDER = "Jarvis"
+
+
+def _our_data(root) -> dict:
+    """The curved trusses the desk wrote into the file: {curves, skip}."""
+    import json
+    out = {"curves": [], "skip": set()}
+    for ud in root:
+        if _tag(ud) != "UserData":
+            continue
+        for d in ud:
+            if _tag(d) == "Data" and d.get("provider") == PROVIDER:
+                try:
+                    got = json.loads(d.text or "{}")
+                except ValueError:
+                    continue
+                for c in got.get("curves") or []:
+                    if isinstance(c, dict) and isinstance(c.get("a"), list) and isinstance(c.get("b"), list):
+                        out["curves"].append(c)
+                out["skip"] |= {str(u).upper() for u in got.get("trusses") or []}
+    return out
 
 
 # -- trusses and scene objects -------------------------------------------------------
@@ -258,10 +343,13 @@ def safe_name(name: str) -> str | None:
 # -- placing in our room -----------------------------------------------------------
 def to_room(plot: dict, room: dict) -> dict:
     """Where everything goes in our coordinates, and the room it needs."""
+    # our own curves are in a desk's metres: back to the plot's (as MVR has them)
+    curves = [{**c, "pa": [c["a"][0], -c["a"][2], c["a"][1]], "pb": [c["b"][0], -c["b"][2], c["b"][1]]}
+              for c in plot.get("curves") or []]
     pts = [lt["pos"] for lt in plot["lights"]] + [t["pos"] for t in plot["trusses"]] \
-        + [o["pos"] for o in plot.get("objects") or []]
+        + [o["pos"] for o in plot.get("objects") or []] + [c[k] for c in curves for k in ("pa", "pb")]
     if not pts:
-        return {"lights": [], "trusses": [], "objects": [], "room": None}
+        return {"lights": [], "trusses": [], "objects": [], "curves": [], "room": None}
     xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
     xmid, ymax = (min(xs) + max(xs)) / 2, max(ys)
     width = max(float(room.get("width") or 0), (max(xs) - min(xs)) + 4.0, 8.0)
@@ -275,7 +363,12 @@ def to_room(plot: dict, room: dict) -> dict:
     out = [{**lt, **here(lt["pos"])} for lt in plot["lights"]]
     trusses = [{**t, **here(t["pos"]), "rot": round(_yaw(t.get("u") or [1, 0, 0]), 2)} for t in plot.get("trusses") or []]
     objects = [{**o, **here(o["pos"]), "rot": round(_yaw(o.get("u") or [1, 0, 0]), 2)} for o in plot.get("objects") or []]
-    return {"lights": out, "trusses": trusses, "objects": objects,
+    def at(p):
+        q = here(p)
+        return [q["x"], q["y"], q["z"]]
+    placed_curves = [{**{k: v for k, v in c.items() if k not in ("pa", "pb")}, "a": at(c["pa"]), "b": at(c["pb"])}
+                     for c in curves]
+    return {"lights": out, "trusses": trusses, "objects": objects, "curves": placed_curves,
             "room": {"width": round(width, 2), "depth": round(depth, 2), "height": round(height, 2)}}
 
 
@@ -296,11 +389,13 @@ def rows(lights: list[dict]) -> list[list[dict]]:
 
 
 # -- writing -------------------------------------------------------------------------
-def _matrix(x: float, y: float, z: float, standing: bool = False, yaw: float = 0.0) -> str:
+def _matrix(x: float, y: float, z: float, standing: bool = False, yaw: float = 0.0, rows=None) -> str:
     c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
     u, v, w = [c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]
     if standing:                     # turned over: upright on the floor
         v, w = [s, -c, 0.0], [0.0, 0.0, -1.0]
+    if rows:
+        u, v, w = ([0.0 if abs(a) < 1e-9 else a for a in r] for r in rows)
     f = lambda vec: "{" + ",".join(f"{a:.6f}" for a in vec) + "}"    # noqa: E731
     return f(u) + f(v) + f(w) + "{" + f"{x * 1000:.3f},{-z * 1000:.3f},{y * 1000:.3f}" + "}"
 
@@ -313,13 +408,36 @@ def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], s
           objects: list[dict] | None = None) -> bytes:
     """An MVR of the patch and the rigging.  `gdtf_files`: (manufacturer,
     model) -> the .gdtf the desk has for it (put inside the file)."""
+    import json
+
+    from . import venue as venue_mod
     root = ET.Element("GeneralSceneDescription", verMajor="1", verMinor="6", provider="Jarvis", providerVersion="1")
+    userdata = ET.SubElement(root, "UserData")
     scene = ET.SubElement(root, "Scene")
     layers = ET.SubElement(scene, "Layers")
     layer = ET.SubElement(layers, "Layer", name="Lights", uuid=_uuid(show + ":layer"))
     kids = ET.SubElement(layer, "ChildList")
+    curves, bits, shapes = [], [], {}
     for r in rigging:
         if r.get("kind") not in ("truss", "pipe", "bar"):
+            continue
+        if r.get("bend"):
+            # a curved piece: short straight trusses along its curve, in a
+            # group per shape; the curve itself for the desk (UserData)
+            g = r.get("group") or r["id"]
+            if g not in shapes:
+                grp = ET.SubElement(kids, "GroupObject", name=str(r.get("name") or "Curved truss"),
+                                    uuid=_uuid(f"{show}:shape:{g}"))
+                shapes[g] = ET.SubElement(grp, "ChildList")
+            n = max(2, math.ceil(venue_mod.length(r) / 0.5))
+            for k in range(n):
+                p, q = venue_mod.curve_point(r, k / n), venue_mod.curve_point(r, (k + 1) / n)
+                u = _uuid(f"{show}:rig:{r['id']}:{k}")
+                t = ET.SubElement(shapes[g], "Truss", name=f"{r.get('name') or 'Curved truss'} ({math.dist(p, q):.2f} m)", uuid=u)
+                ET.SubElement(t, "Matrix").text = _matrix(*((p[i] + q[i]) / 2 for i in range(3)),
+                                                          yaw=math.degrees(math.atan2(-(q[2] - p[2]), q[0] - p[0])))
+                bits.append(u)
+            curves.append({k: r[k] for k in ("id", "kind", "name", "model", "size", "a", "b", "bend", "group") if k in r})
             continue
         a, b = r["a"], r["b"]
         mx, my, mz = ((a[i] + b[i]) / 2 for i in range(3))
@@ -349,14 +467,19 @@ def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], s
             packed[spec] = str(src)
         f = ET.SubElement(kids, "Fixture", name=str(h.get("name") or h.get("model") or f"Light {h['head_no']}"),
                           uuid=_uuid(f"{show}:head:{h['head_no']}"))
+        # which way up it is and which way it faces (its hang type)
         ET.SubElement(f, "Matrix").text = _matrix(float(h.get("x") or 0), float(h.get("y") or 0), float(h.get("z") or 0),
-                                                  standing=h.get("stance") == "stand")
+                                                  rows=light_rows(venue_mod.hang_of(h), float(h.get("yaw") or 0)))
         ET.SubElement(f, "GDTFSpec").text = spec
         ET.SubElement(f, "GDTFMode").text = str(h.get("mode") or "")
         ET.SubElement(f, "FixtureID").text = str(h["head_no"])
         ET.SubElement(f, "UnitNumber").text = str(h["head_no"])
         addrs = ET.SubElement(f, "Addresses")
         ET.SubElement(addrs, "Address", **{"break": "0"}).text = f"{int(h.get('universe') or 1)}.{int(h.get('address') or 1)}"
+    if curves:
+        ET.SubElement(userdata, "Data", provider=PROVIDER, ver="1").text = json.dumps({"curves": curves, "trusses": bits})
+    else:
+        root.remove(userdata)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(SCENE, b'<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' + ET.tostring(root, encoding="utf-8"))
@@ -453,6 +576,26 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
         trusses += 1
         for lt, along in near:
             on_rig[lt["uuid"] or id(lt)] = (r["id"], max(0.0, min(1.0, along / length + 0.5)))
+    # 2a'. the desk's own curved trusses (written by the desk), read back
+    #      whole; a hung light near one goes on its curve
+    curve_ids: dict[str, str] = {}
+    for c in placed.get("curves") or []:
+        g = str(c.get("group") or c.get("id") or "")
+        if g and g not in curve_ids:
+            curve_ids[g] = "mvr" + g
+        item = {k: c[k] for k in ("kind", "name", "model", "size", "a", "b", "bend") if k in c}
+        item["group"] = curve_ids.get(g, "mvr")
+        r = eng.act("venue_add", item=item)
+        if r.get("ok"):
+            trusses += 1
+    if placed.get("curves"):
+        curved = [x for x in venue_mod.normalise(eng.venue)["rigging"] if x.get("bend")]
+        for lt in placed_lights:
+            if (lt["uuid"] or id(lt)) in on_rig or lt["stance"] == "stand" and lt["y"] < 1.5:
+                continue
+            near = venue_mod.nearest_rig({"rigging": curved}, lt["x"], lt["y"] + 0.2, lt["z"], reach=0.6)
+            if near:
+                on_rig[lt["uuid"] or id(lt)] = (near[0]["id"], near[1])
     # 2b. the hung lights left in a row, on a truss of their own (as before)
     for i, row in enumerate(rows([lt for lt in placed_lights if (lt["uuid"] or id(lt)) not in on_rig])):
         x0, x1 = row[0]["x"] - 0.5, row[-1]["x"] + 0.5
@@ -506,10 +649,14 @@ def import_into(eng, data: bytes, gdtf_dir: Path, replace: bool = False) -> dict
         n = r["heads"][0]
         heads.append(n)
         rig = on_rig.get(lt["uuid"] or id(lt))
+        hang = lt.get("hang") if lt.get("hang") not in (None, "hung", "standing") else None
         if rig:
-            eng.act("set_place", head=n, rig=rig[0], t=rig[1])
+            eng.act("set_place", head=n, rig=rig[0], t=rig[1], **({"hang": hang} if hang else {}))
         else:
-            eng.act("set_place", head=n, x=lt["x"], y=lt["y"], z=lt["z"], stance=lt["stance"])
+            eng.act("set_place", head=n, x=lt["x"], y=lt["y"], z=lt["z"], stance=lt["stance"],
+                    **({"hang": hang} if hang else {}))
+            if abs(float(lt.get("yaw") or 0)) > 0.5:
+                eng.act("keep_facing", heads={n: float(lt["yaw"])})     # the way it faces in the plot
     # one undo step for the whole plot
     from .assistant import _collapse
     _collapse(eng, top, before, "Import MVR" if heads else None)
@@ -577,7 +724,7 @@ def gdtf_for_patch(eng, gdtf_dirs: list[Path]) -> dict:
 def export_from(eng, gdtf_dirs: list[Path], show: str = "") -> bytes:
     from . import venue as venue_mod
     with eng.lock:
-        patch = [dict(h) for h in eng.patch]
+        patch = [dict(h, yaw=eng._head_yaw(h)) for h in eng.patch]
         v = venue_mod.normalise(eng.venue)
         rigging, objects = list(v.get("rigging") or []), list(v.get("objects") or [])
     return write(patch, rigging, gdtf_for_patch(eng, gdtf_dirs), show or eng.show_file or "show", objects)

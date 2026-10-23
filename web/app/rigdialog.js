@@ -96,7 +96,7 @@ export async function openRigDialog(tab = "add", shape = "straight") {
       h("td", h("b", x.name), x.pieces > 1 ? h("small.muted", ` ${x.pieces} pieces`) : null,
         x.warnings.length ? h("div.small.warn-text", "⚠ " + x.warnings.join(" · ")) : null),
       h("td.mono", x.length.toFixed(1)), h("td.mono", x.trim == null ? "–" : x.trim.toFixed(2)),
-      h("td.mono", x.self_kg), h("td.mono", { title: x.lights.map((l) => `#${l.head} ${l.kg} kg${l.guessed ? " (typical)" : ""}`).join("\n") }, `${x.lights.length} · ${x.light_kg}`),
+      h("td.mono", x.self_kg), h("td.mono", { title: x.lights.map((l) => `#${l.head} ${l.kg} kg${l.guessed ? " (typical)" : ""}${l.hang ? " · " + l.hang : ""}`).join("\n") }, `${x.lights.length} · ${x.light_kg}`),
       h("td.mono", h("b", x.total_kg)),
       h("td.mono", x.ground ? "ground" : `${x.points} × ${x.per_point_kg}`)));
     const dl = h("button.btn.small", {
