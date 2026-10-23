@@ -157,6 +157,8 @@ function firewallAllow(port) {
 // repo to update from, so it skips this.
 async function selfUpdate() {
   if (PACKED || !fs.existsSync(path.join(ROOT, ".git"))) return;
+  // AUTO_UPDATE=false (as the engine reads it): no check, no "Checking" window
+  if (/^(false|0|no|off)$/i.test(String(process.env.AUTO_UPDATE || "").trim())) return;
   const found = findPython();
   if (!found) return;
   const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
