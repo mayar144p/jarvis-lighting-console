@@ -450,12 +450,16 @@ function winApi() {
     koffi.struct("JGUID", { d1: "uint32", d2: "uint16", d3: "uint16", d4: koffi.array("uint8", 8) });
     koffi.struct("JPKEY", { fmtid: "JGUID", pid: "uint32" });
     koffi.struct("JPROPVAR", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", val: "int64", pad: "int64" });
+    // (what a window's store hands back: Windows keeps these values as text)
+    koffi.struct("JPROPVARP", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", p: "void *", pad: "int64" });
+    const ole32 = koffi.load("ole32.dll");
     const shell32 = koffi.load("shell32.dll"), user32 = koffi.load("user32.dll");
     ffi = {
       koffi,
+      free: ole32.func("void __stdcall CoTaskMemFree(void *p)"),
       getStore: shell32.func("long __stdcall SHGetPropertyStoreForWindow(void *hwnd, JGUID *riid, _Out_ void **ppv)"),
       settingChange: user32.func("intptr_t __stdcall SendMessageTimeoutW(intptr_t hwnd, uint32 msg, uintptr_t wp, const char16_t *lp, uint32 flags, uint32 ms, _Out_ uintptr_t *res)"),
-      GetValue: koffi.proto("long __stdcall JGetValue(void *self, JPKEY *key, _Out_ JPROPVAR *pv)"),
+      GetValue: koffi.proto("long __stdcall JGetValue(void *self, JPKEY *key, _Out_ JPROPVARP *pv)"),
       SetValue: koffi.proto("long __stdcall JSetValue(void *self, JPKEY *key, JPROPVAR *pv)"),
       Commit: koffi.proto("long __stdcall JCommit(void *self)"),
       Release: koffi.proto("uint32 __stdcall JRelease(void *self)"),
@@ -491,8 +495,17 @@ function edgeSwitch(win, on) {
     const got = {};
     const get = koffi.call(fns[5], api.GetValue, store, key, got);
     koffi.call(fns[2], api.Release, store);
-    touchLog(`edge switch: hwnd ${hwnd} set ${hex(set)} commit ${hex(commit)} get ${hex(get)} vt ${got.vt} val ${got.val}`);
-    return got.vt === 11 ? ((Number(BigInt.asIntN(16, BigInt(got.val))) !== 0) ? 1 : 0) : -1;
+    // read back: a boolean, or (as Windows keeps a window's values) its text
+    let back = null;
+    if (got.vt === 11) back = Number(BigInt.asIntN(16, BigInt(koffi.address ? koffi.address(got.p) : 0))) !== 0;
+    if (got.vt === 31 && got.p) {
+      try { back = koffi.decode(got.p, "char16_t", -1); } catch { back = "?"; }
+      try { api.free(got.p); } catch { /* a few bytes */ }
+    }
+    touchLog(`edge switch: hwnd ${hwnd} set ${hex(set)} commit ${hex(commit)} get ${hex(get)} vt ${got.vt} reads ${JSON.stringify(back)}`);
+    if (set !== 0 || commit !== 0) return -1;
+    if (typeof back === "string") return /^(-1|1|true)$/i.test(back.trim()) ? 1 : (/^(0|false)$/i.test(back.trim()) ? 0 : 1);
+    return back === null ? 1 : (back ? 1 : 0);   // set and committed: Windows took it
   } catch (e) { touchLog(`edge switch failed: ${e.message}`); return -3; }
 }
 // tell Windows (and the shell) a setting changed, so it is read again now
