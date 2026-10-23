@@ -9773,7 +9773,8 @@ def test_touch_surface() -> None:
           "three/four fingers off while full screen and put back after (and at the next start after a crash)",
           'require("koffi")' in mj and "SHGetPropertyStoreForWindow" in mj and "edgeSwitch(win, true)" in mj
           and "lockGestures(any)" in mj and '"enter-html-full-screen"' in mj and "lockGestures(false)" in mj
-          and '"_fingersWere" in saved' in mj and "Lock every touch gesture while full screen" in mj, "")
+          and '"_fingersWere" in saved' in mj and "Lock every touch gesture while full screen" in mj
+          and '"Left_Edgy_Enabled"' in mj and '"Right_Edgy_Enabled"' in mj and "putTouchBack()" in mj, "")
     dc = (ROOT / "tools" / "desktopcheck.mjs").read_text(encoding="utf-8")
     check("the Windows desktop check reads back what Windows took",
           "no edge swipes while full screen" in dc and "three- and four-finger gestures off" in dc, "")

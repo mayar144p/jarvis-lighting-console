@@ -432,9 +432,11 @@ const FINGERS_KEY = "HKCU\\Control Panel\\Desktop";
 //    keeps it set from the window's own process, so it is set here, through
 //    koffi (calls into Windows from the app itself) - a helper process's
 //    setting was dropped;
-//  - three- and four-finger gestures (switch apps, show the desktop): the
-//    operator's own touch setting, off while full screen and put back after
-//    (put back at the next start if the app stopped while full screen).
+//  - Windows 11's own per-user switches (Settings > Bluetooth & devices >
+//    Touch): swipes in from the left and right edges, and the three- and
+//    four-finger gestures (switch apps, show the desktop) - off while full
+//    screen and put back exactly as they were after (at the next start if
+//    the app stopped while full screen).  No administrator needed.
 // What Windows took is written to touchlock.log in the app's data folder.
 // The whole-computer lock (Desk menu, admin once) stays the sure way.
 const gestureLock = () => saved._gestureLock !== false;   // (Desk menu: on by default)
@@ -495,33 +497,51 @@ function edgeSwitch(win, on) {
 function settingChanged() {
   const api = winApi();
   if (!api) return;
-  for (const what of ["TouchGestureSetting", "Control Panel\\Desktop"]) {
+  for (const what of ["TouchGestureSetting", "Control Panel\\Desktop", "Software\\Microsoft\\Wisp\\Touch"]) {
     try { api.settingChange(0xffff, 0x001a, 0, what, 0x0002, 1000, [0]); } catch { /* not fatal */ }
   }
 }
-function readFingers() {
-  const r = spawnSync("reg", ["query", FINGERS_KEY, "/v", "TouchGestureSetting"], { windowsHide: true, encoding: "utf8" });
-  const m = r.status === 0 && /TouchGestureSetting\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(r.stdout || "");
+// the per-user touch switches full screen turns off: [key, value]
+const WISP_KEY = "HKCU\\Software\\Microsoft\\Wisp\\Touch";
+const TOUCH_SWITCHES = { fingers: [FINGERS_KEY, "TouchGestureSetting"],
+  left: [WISP_KEY, "Left_Edgy_Enabled"], right: [WISP_KEY, "Right_Edgy_Enabled"] };
+function readSwitch(name) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  const r = spawnSync("reg", ["query", key, "/v", value], { windowsHide: true, encoding: "utf8" });
+  const m = r.status === 0 && new RegExp(`${value}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, "i").exec(r.stdout || "");
   return m ? parseInt(m[1], 16) : null;      // null: never set (Windows' default: on)
 }
-function writeFingers(v) {
-  if (v === null) spawnSync("reg", ["delete", FINGERS_KEY, "/v", "TouchGestureSetting", "/f"], { windowsHide: true });
-  else spawnSync("reg", ["add", FINGERS_KEY, "/v", "TouchGestureSetting", "/t", "REG_DWORD", "/d", String(v), "/f"], { windowsHide: true });
-  settingChanged();
+function writeSwitch(name, v) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  if (v === null) spawnSync("reg", ["delete", key, "/v", value, "/f"], { windowsHide: true });
+  else spawnSync("reg", ["add", key, "/v", value, "/t", "REG_DWORD", "/d", String(v), "/f"], { windowsHide: true });
 }
 let gesturesLocked = false;
 function lockGestures(on) {
   if (process.platform !== "win32" || on === gesturesLocked) return;
   gesturesLocked = on;
   if (on) {
-    if (!("_fingersWere" in saved)) { saved._fingersWere = readFingers(); saveState(); }
-    writeFingers(0);
+    if (!("_fingersWere" in saved)) {
+      saved._fingersWere = readSwitch("fingers");
+      saved._touchWere = Object.fromEntries(["left", "right"].map((n) => [n, readSwitch(n)]));
+      saveState();
+    }
+    for (const n of Object.keys(TOUCH_SWITCHES)) writeSwitch(n, 0);
+    settingChanged();
   } else if ("_fingersWere" in saved) {
-    writeFingers(saved._fingersWere);
-    delete saved._fingersWere;
-    saveState();
+    putTouchBack();
   }
-  touchLog(`full screen ${on ? "on" : "off"}: three/four fingers ${readFingers() === 0 ? "off" : "on"}`);
+  touchLog(`full screen ${on ? "on" : "off"}: three/four fingers ${readSwitch("fingers") === 0 ? "off" : "on"}, `
+    + `left edge ${readSwitch("left") === 0 ? "off" : "on"}, right edge ${readSwitch("right") === 0 ? "off" : "on"}`);
+}
+// the operator's own touch switches, as they were before full screen
+function putTouchBack() {
+  writeSwitch("fingers", saved._fingersWere);
+  for (const [n, v] of Object.entries(saved._touchWere || {})) writeSwitch(n, v);
+  delete saved._fingersWere;
+  delete saved._touchWere;
+  saveState();
+  settingChanged();
 }
 // a desk window went in or out of full screen: lock while any one is
 function fullScreenChanged() {
@@ -577,6 +597,12 @@ async function machineSwipes(lock) {
   });
   if (yes !== 1) return;
   const fingers = setFingers(!lock);              // per user: no administrator needed
+  // Windows 11's own per-user left / right edge switches too
+  for (const n of ["left", "right"]) {
+    writeSwitch(n, lock ? 0 : null);
+    if (saved._touchWere) saved._touchWere[n] = lock ? 0 : null;
+  }
+  settingChanged();
   const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
     : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
   const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
@@ -735,7 +761,7 @@ app.whenReady().then(async () => {
   if (!FIRST) return;
   loadState();
   // stopped while full screen last time: the operator's own touch setting back
-  if (process.platform === "win32" && "_fingersWere" in saved) { writeFingers(saved._fingersWere); delete saved._fingersWere; saveState(); }
+  if (process.platform === "win32" && "_fingersWere" in saved) putTouchBack();
   await selfUpdate();
   try {
     await startEngine();

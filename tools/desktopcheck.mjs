@@ -124,6 +124,9 @@ if (desk) {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
     await sleep(2500);
     check("full screen: three- and four-finger gestures off", /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(reg()), reg() + logOf().slice(-300));
+    const wisp = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Wisp\\Touch"], { encoding: "utf8" }).stdout || "";
+    check("full screen: Windows 11's left and right edge swipes off",
+      /Left_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp) && /Right_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp), wisp);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(false));
     await sleep(2500);
     check("out of full screen: the setting is back as it was", reg() === before, `${before} -> ${reg()}`);

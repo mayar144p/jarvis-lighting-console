@@ -547,7 +547,9 @@ button, never a menu (the mouse's right-click still opens its menu).
 
 Windows' own gestures (a swipe in from an edge for Task View, notifications or
 the taskbar; three or four fingers to switch apps or show the desktop) are
-locked by the desktop app **while a desk window is full screen** - the
+locked by the desktop app **while a desk window is full screen** (Windows 10 and 11:
+the window's own edge lock, and Windows 11's own switches for the left and
+right edges and three/four fingers) - the
 buttons page's ⛶ Full screen, or a Show mode screen - and come back as they
 were when it leaves full screen (**Desk → Lock every touch gesture while full
 screen**, on by default). For a desk that never leaves the show, also use
