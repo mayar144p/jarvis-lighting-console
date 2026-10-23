@@ -480,16 +480,18 @@ function edgeSwitch(win, on) {
     const b = win.getNativeWindowHandle();
     const hwnd = b.length >= 8 ? b.readBigUInt64LE(0) : BigInt(b.readUInt32LE(0));
     const out = [null];
+    const hex = (n) => "0x" + (Number(n) >>> 0).toString(16);
     const hr = api.getStore(hwnd, guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), out);
-    if (hr !== 0 || !out[0]) return -2;
+    if (hr !== 0 || !out[0]) { touchLog(`edge switch: no property store (${hex(hr)}, ${typeof out[0]})`); return -2; }
     const store = out[0];
     const fns = koffi.decode(koffi.decode(store, "void *"), koffi.array("void *", 8));
     const key = { fmtid: guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"), pid: 2 };
-    koffi.call(fns[6], api.SetValue, store, key, { vt: 11, r1: 0, r2: 0, r3: 0, val: on ? -1 : 0, pad: 0 });
-    koffi.call(fns[7], api.Commit, store);
+    const set = koffi.call(fns[6], api.SetValue, store, key, { vt: 11, r1: 0, r2: 0, r3: 0, val: on ? -1 : 0, pad: 0 });
+    const commit = koffi.call(fns[7], api.Commit, store);
     const got = {};
-    koffi.call(fns[5], api.GetValue, store, key, got);
+    const get = koffi.call(fns[5], api.GetValue, store, key, got);
     koffi.call(fns[2], api.Release, store);
+    touchLog(`edge switch: hwnd ${hwnd} set ${hex(set)} commit ${hex(commit)} get ${hex(get)} vt ${got.vt} val ${got.val}`);
     return got.vt === 11 ? ((Number(BigInt.asIntN(16, BigInt(got.val))) !== 0) ? 1 : 0) : -1;
   } catch (e) { touchLog(`edge switch failed: ${e.message}`); return -3; }
 }
