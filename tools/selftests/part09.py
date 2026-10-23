@@ -9769,6 +9769,14 @@ def test_touch_surface() -> None:
           and "navigationHistory.clear()" in mj, "")
     check("Lock touch swipes also turns off three- and four-finger gestures (per user)",
           "TouchGestureSetting" in mj and "setFingers(!lock)" in mj and "AllowEdgeSwipe" in mj, "")
+    check("full screen locks every touch gesture: the window's edge switch set from the app itself, "
+          "three/four fingers off while full screen and put back after (and at the next start after a crash)",
+          'require("koffi")' in mj and "SHGetPropertyStoreForWindow" in mj and "edgeSwitch(win, true)" in mj
+          and "lockGestures(any)" in mj and '"enter-html-full-screen"' in mj and "lockGestures(false)" in mj
+          and '"_fingersWere" in saved' in mj and "Lock every touch gesture while full screen" in mj, "")
+    dc = (ROOT / "tools" / "desktopcheck.mjs").read_text(encoding="utf-8")
+    check("the Windows desktop check reads back what Windows took",
+          "no edge swipes while full screen" in dc and "three- and four-finger gestures off" in dc, "")
     ui = (ROOT / "web" / "app" / "ui.js").read_text(encoding="utf-8")
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("one finger per fader, button, pad, Flash and knob",

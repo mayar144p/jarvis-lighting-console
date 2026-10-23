@@ -547,9 +547,13 @@ button, never a menu (the mouse's right-click still opens its menu).
 
 Windows' own gestures (a swipe in from an edge for Task View, notifications or
 the taskbar; three or four fingers to switch apps or show the desktop) are
-stopped from the desktop app: **Desk → Lock touch swipes on this computer…**.
-It asks for an administrator's OK once and starts after you sign out and back
-in; **Unlock** puts them back.
+locked by the desktop app **while a desk window is full screen** - the
+buttons page's ⛶ Full screen, or a Show mode screen - and come back as they
+were when it leaves full screen (**Desk → Lock every touch gesture while full
+screen**, on by default). For a desk that never leaves the show, also use
+**Desk → Lock touch swipes on this computer…**: the same locks for the whole
+computer all the time (an administrator's OK once; it starts after you sign
+out and back in; **Unlock** puts them back).
 
 ### Keyboard
 
