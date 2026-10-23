@@ -9528,3 +9528,50 @@ def test_free_view_lines() -> None:
           'this.controls.enableRotate = kind === "per" || kind === "free"' in st, "")
     check("its button says it is a line drawing you can turn",
           'data-cam="free"' in html and "turned any way you like (drag to turn it): a line drawing" in html, "")
+
+
+def test_next_go_focus() -> None:
+    """Next GO previews the playback the operator is working with: the
+    desk window tells the engine its focused playback, and the 3D (in any
+    window) shows that playback's next cue - the DMX untouched."""
+    print("Next GO follows the playback in focus")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            for pb, hexes in ((1, ("#ff0000", "#00ff00")), (2, ("#0000ff", "#ffffff"))):
+                for hx in hexes:
+                    e.act("set_colour", hex=hx)
+                    e.act("record_cue", playback=pb)
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                      # live: PB1 cue 1 (red); GO was last pressed on PB1
+            wire = bytes(e.build_frames(time.monotonic())[1][:8])
+
+            def shown():
+                return {r["n"]: r for r in e.look_rows()}[1]["hex"].lower()
+            e.act("vis_source", source="next")
+            check("no focus told: the playback GO was last pressed on (PB1's next: green)", shown() == "#00ff00", shown())
+            r = e.act("vis_source", focus=2)
+            check("the desk says PB2 is in focus: the 3D shows PB2's next GO (its cue 1, blue)",
+                  r["ok"] and shown() == "#0000ff" and e.vis_source["source"] == "next", shown())
+            e.act("vis_source", source="output")
+            e.act("vis_source", source="next")
+            check("the focus is kept when the source is changed in the 3D window", shown() == "#0000ff", shown())
+            e.act("vis_source", source="next", playback=1)
+            check("a playback asked for by number still wins", shown() == "#00ff00", shown())
+            check("the DMX never moved", bytes(e.build_frames(time.monotonic())[1][:8]) == wire, "")
+            check("a focus on a playback that isn't there is refused", not e.act("vis_source", focus=999).get("ok"), "")
+            check("telling the focus is not an undo step", "vis_source" not in str(e._undo_public()), str(e._undo_public())[:200])
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    check("the desk window tells the engine whenever the focused playback changes (GO and Back too)",
+          'act("vis_source", { focus: n })' in pj and "tellFocus(n);" in pj
+          and 'onclick: () => { setFocus(n); run("cue_go"' in pj, "")

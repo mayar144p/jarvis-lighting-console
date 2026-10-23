@@ -289,6 +289,7 @@ function initVisBar() {
   $("#vis-fit").addEventListener("click", () => stage.fitRoom());
   // what the 3D shows (the engine's setting: every 3D window follows it)
   const src = $("#vis-source");
+  // (Next GO: the playback in focus on the desk, which the desk window tells the engine)
   src.addEventListener("change", () => run("vis_source", { source: src.value }, { toast: true }));
   const showSource = () => {
     const v = (state.snap && state.snap.vis_source) || { source: "output" };

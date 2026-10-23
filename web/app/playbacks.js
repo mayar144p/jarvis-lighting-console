@@ -3,6 +3,7 @@
 // the group masters and the grand master.
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
+import { act } from "./api.js";
 import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
@@ -40,9 +41,9 @@ function build() {
         h("button.btn.ghost.small.icon", { title: "Playback options", onclick: (e) => pbMenu(e.currentTarget, n) }, "⋯")),
       h("div.pb-mid", cue, prog),
       h("div.pb-btns",
-        h("button.go", { title: "GO: next cue", onclick: () => { focusPb = n; run("cue_go", { playback: n }); } }, "GO"),
+        h("button.go", { title: "GO: next cue", onclick: () => { setFocus(n); run("cue_go", { playback: n }); } }, "GO"),
         flash,
-        h("button", { title: "Back one cue", onclick: () => { focusPb = n; run("cue_back", { playback: n }); } }, "◀"),
+        h("button", { title: "Back one cue", onclick: () => { setFocus(n); run("cue_back", { playback: n }); } }, "◀"),
         h("button", { title: "Stop: release this playback", onclick: () => run("playback_release", { playback: n }) }, "■")),
       rec);
     wireFlash(flash, n);
@@ -54,6 +55,10 @@ function build() {
     strip.append(card);
   }
   setFocus(focusPb);
+  if (!build.told) {                                  // the engine learns it once it is there
+    build.told = true;
+    on("snapshot", () => tellFocus(focusPb));
+  }
 }
 
 // Flash: held, the playback runs at full; let go, it goes back to where it
@@ -87,6 +92,18 @@ function wireFlash(btn, n) {
 function setFocus(n) {
   focusPb = n;
   for (const [k, c] of cards) c.card.classList.toggle("focus", k === n);
+  tellFocus(n);
+}
+
+// the 3D's Next GO previews the playback you are working with: the desk is
+// told whenever the focus moves (the 3D may be in a window of its own)
+function tellFocus(n) {
+  // (only the window with the playbacks on it: the 3D's own window has none)
+  if (document.documentElement.dataset.window === "stage") return;
+  const vis = (state.snap && state.snap.vis_source) || {};
+  if (!state.snap || vis.focus === n) return;
+  vis.focus = n;
+  act("vis_source", { focus: n }).catch(() => { /* the next change tells it again */ });
 }
 
 function pbMenu(btn, n) {

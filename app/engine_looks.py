@@ -104,12 +104,24 @@ class LooksMixin:
     def _vis(self) -> dict:
         return self.__dict__.get("vis_source") or {"source": "output", "playback": None}
 
-    def _a_vis_source(self, source=None, playback=None, **_):
+    def _a_vis_source(self, source=None, playback=None, focus=None, **_):
         """What the 3D view shows: `output` (what the lights are doing),
         `programmer` (only what is in the programmer: the playbacks and
         buttons left out) or `next` (what the next GO of `playback` will
-        look like; no playback: the one GO was last pressed on).  The DMX
-        never changes."""
+        look like; no playback: the one the operator is working with - the
+        desk's focused playback, told here as `focus` - else the one GO was
+        last pressed on).  `focus` alone only says which playback is in
+        focus (the desk window does, whenever it changes).  The DMX never
+        changes."""
+        cur = self._vis()
+        if focus not in (None, ""):
+            f = self._playback(focus)["n"]
+            if source in (None, "") and playback in (None, ""):
+                self.vis_source = {**cur, "focus": f}
+                if cur.get("source") == "next":
+                    self._look_cache = None
+                return {"vis_source": dict(self.vis_source), "summary": f"PB{f} in focus"}
+            cur = {**cur, "focus": f}
         src = str(source or "output").strip().lower().replace(" ", "").replace("_", "")
         src = {"programmeronly": "programmer", "prog": "programmer", "nextgo": "next", "preview": "next",
                "live": "output", "stage": "output"}.get(src, src)
@@ -118,7 +130,7 @@ class LooksMixin:
         n = None
         if playback not in (None, ""):
             n = self._playback(playback)["n"]           # raises for a playback that isn't there
-        self.vis_source = {"source": src, "playback": n}
+        self.vis_source = {"source": src, "playback": n, "focus": cur.get("focus")}
         self._look_cache = None
         if src == "output":
             said = "the 3D shows the output"
@@ -131,11 +143,15 @@ class LooksMixin:
         return {"vis_source": dict(self.vis_source), "summary": said}
 
     def _next_go_pb(self) -> dict:
-        """The playback the 3D previews: the one asked for, else the one GO
-        was last pressed on, else playback 1."""
-        n = self._vis().get("playback")
-        if n:
-            return self._playback(n)
+        """The playback the 3D previews: the one asked for, else the one in
+        focus on the desk, else the one GO was last pressed on, else 1."""
+        vis = self._vis()
+        for n in (vis.get("playback"), vis.get("focus")):
+            if n:
+                try:
+                    return self._playback(n)
+                except ValueError:
+                    continue
         used = [pb for pb in self.playbacks if pb.get("order")]
         return max(used, key=lambda pb: pb["order"]) if used else self.playbacks[0]
 
