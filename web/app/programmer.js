@@ -6,6 +6,7 @@ import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu }
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
+import { icon } from "./icons.js";
 import { renderWheels, initWheels } from "./wheels.js";
 import { goboIcon, goboRef } from "./goboicon.js";
 import { needs3d, stagePanel } from "./view3d.js";
@@ -1463,6 +1464,12 @@ function showTab(name) {
 }
 
 function wireActs() {
+  // the foot's keys get their icons (icons.js), as on a pro desk
+  $("#prog-clear").prepend(icon("clear"));
+  $("#prog-make").prepend(icon("button"));
+  const rec = $("#prog-record");
+  rec.textContent = rec.textContent.replace(/^●\s*/, "");
+  rec.prepend(icon("rec"));
   $("#prog-clear").addEventListener("click", () => run("clear_programmer"));
   $("#prog-record").addEventListener("click", () => openCueDialog());
   $("#prog-make").addEventListener("click", makeHoldButton);

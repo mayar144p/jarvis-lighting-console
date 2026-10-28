@@ -7130,14 +7130,12 @@ def test_look_and_reach() -> None:
     th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
-    check("Look: density, size, reduced motion and your own accent colour, kept per computer",
-          all(k in th for k in ("DENSITIES", "SIZES", "motion", "resetTheme", "HEX.test"))
+    check("Look: density, reduced motion and your own accent colour, kept per computer",
+          all(k in th for k in ("DENSITIES", "motion", "resetTheme", "HEX.test"))
           and ':root[data-density="compact"]' in css and ':root[data-motion="reduced"]' in css
-          and "maxScale()" in st and "Look back to how it came" in st, "")
-    check("a bigger size never zooms past what the window holds (the desk needs 1280 px of room)",
-          "Math.min(want, maxScale())" in th and "/ 1280" in th, "")
-    check("full-screen sizes are divided by the zoom (nothing spills off the screen)",
-          "calc(100dvh / var(--ui-zoom, 1))" in css and "calc(1280px / var(--ui-zoom, 1))" in css, "")
+          and "Look back to how it came" in st, "")
+    check("no % size or zoom: big screens get their own layout",
+          "SIZES" not in th and "zoom" not in th and "ui-zoom" not in css and 'h("span", "Size")' not in st, "")
     check("buttons and chips follow the density", "height: var(--btn-h)" in css and "min-height: var(--chip-h)" in css, "")
     web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js")
                   if "vendor" not in p.parts and "streamdeck" not in p.parts)
@@ -9922,19 +9920,53 @@ def test_club_furniture() -> None:
 
 
 def test_screen_sizes() -> None:
-    """The desk sizes itself to the screen (Settings -> Size: Auto, the
-    standard): 100 % from 1280 to 1920 px, up to 200 % on a 1440p or 4K
-    monitor, down to 80 % in a small window; the 3D draws sharp when
-    zoomed; the screen check runs at whole screen sizes."""
-    print("Screen sizes: Auto size, a sharp 3D when zoomed")
-    th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
-    check("Auto sizes to the screen: up with a 1440p / 4K monitor, down in a small window",
-          "export function autoScale" in th and "Math.min(w / 1920, h / 1080)" in th and "Math.min(2, up)" in th
-          and "Math.max(0.8, Math.min(1, w / 1280, h / 720))" in th and 'want === "auto" ? autoScale()' in th, "")
-    check("Auto is the standard; a size picked under Size stays", 'export const SIZES = ["auto",' in th
-          and "t.sizePicked === true" in th and "sizePicked: true" in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
-    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    check("the 3D draws more pixels when the screen is zoomed (sharp on 4K)",
-          "this.renderer.setPixelRatio(Math.min(3, this.q.ratio * zoom))" in sj, "")
+    """Big screens are laid out for, not zoomed: a laptop (a 1080p one, or a
+    4K one with Windows scaling) is the standard layout; a 1440p-class and a
+    4K-class monitor at 100 % get wider panels, a taller dock and a bigger
+    3D, with the text and controls stepped up so they read from the same
+    distance.  Every text size and control height follows the step."""
+    print("Screen sizes: big screens laid out for, not zoomed")
+    import re
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("1440p-class and 4K-class breakpoints", "@media (min-width: 2200px) and (min-height: 1250px)" in css
+          and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts: 1.15" in css and "--ts: 1.45" in css, "")
+    check("...each with wider panels and a taller dock", css.count("--fixtures-w: clamp(") >= 3 and css.count("--pb-h: clamp(") >= 6, "")
+    left = re.findall(r"font-size: \d+(?:\.\d+)?px|font: [^;{}]*?(?<![\w.(])\d+(?:\.\d+)?px(?! \* var)", css)
+    check("every text size follows the screen (no fixed px text left)", not left, str(left[:5]))
+    check("control heights follow it too", "--btn-h: calc(32px * var(--ctl))" in css and "--row-h: calc(30px * var(--ctl))" in css
+          and "--topbar-h: calc(46px * var(--ctl))" in css, "")
     uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
     check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
+
+
+def test_desktop_frame() -> None:
+    """The desktop app's windows have no system title bar: the desk's own
+    top bar moves the window, with minimise / maximise / close and the Desk
+    menu in it (the 3D window's toolbar too); the 3D window comes to the
+    front when opened (and can be kept on top); a setting changed in one
+    window reaches the others."""
+    print("Desktop: the desk's own title bar, the 3D window in front")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    pj = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
+    wc = (ROOT / "web" / "app" / "wincontrols.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("no system title bar (a Mac keeps its window dots)", '{ frame: false }' in mj and 'titleBarStyle: "hidden"' in mj, "")
+    check("the bar's buttons and Desk menu reach the app", 'ipcMain.on("win:do"' in mj and 'ipcMain.handle("win:menu"' in mj
+          and 'ipcMain.on("win:run"' in mj and 'act: (what) => ipcRenderer.send("win:do"' in pj, "")
+    check("minimise / maximise / close on the top bar, the logo opens the Desk menu",
+          'btn("min", "Minimise"' in wc and 'btn("close", "Close"' in wc and "openDeskMenu(brand)" in wc, "")
+    check("the bar moves the window, its buttons stay clickable", ".frameless .topbar, .frameless[data-window=\"stage\"] .vis-bar { -webkit-app-region: drag; }" in css
+          and ".frameless .topbar > *, .frameless .vis-bar > * { -webkit-app-region: no-drag; }" in css, "")
+    check("the 3D window comes to the front, and can be kept on top", "win.moveTop();" in mj and "win.focus();" in mj
+          and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
+    mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    check("a setting changed in one window reaches the others (3D quality, look, Gig mode)",
+          'window.addEventListener("storage"' in mn and 'e.key === "jarvis.quality"' in mn and 'e.key === "jarvis.theme"' in mn, "")
+
+    ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    check("the keys have icons, as on a pro desk: Record, Update, Fade in, Delay, Fan, Flip, Mirror...",
+          all(f"  {k}: '" in ic for k in ("rec", "update", "fadein", "fadeout", "delay", "fan", "flip", "mirror", "locate", "go", "stop"))
+          and '"Record…": "rec"' in dv and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+          and 'icon("fadein"), "Fade (s)"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+          and 'icon("stop")' in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8"), "")

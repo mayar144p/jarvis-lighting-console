@@ -3,7 +3,7 @@
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, resetTheme, maxScale, autoScale, ACCENTS, DENSITIES, SIZES } from "./theme.js";
+import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -252,7 +252,11 @@ export async function openSettings() {
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
       themeRow(),
       h("h3", "3D view"),
-      h("label.check", view3d, h("span", "Show the 3D view (off for now while it is rebuilt; the desk reloads)")),
+      window.jarvisDesk && window.jarvisDesk.win ? h("div.row-btns",
+        h("button.btn.primary", { onclick: () => window.jarvisDesk.win.pick("stage") }, "Open the 3D window"),
+        h("button.btn", { onclick: () => window.jarvisDesk.win.pick("ontop") }, "Keep it on top / not"),
+        h("span.muted.small", "its own window: put it on a second screen, or full screen")) : null,
+      h("label.check", view3d, h("span", "Also show the 3D in this window (the desk reloads)")),
       h("label.field", h("span", "Quality"), quality)]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
@@ -553,9 +557,6 @@ function themeRow() {
       h("div.look-rows",
         h("div.look-row", h("span", "Density"), seg(Object.entries(DENSITIES), t.density, (k) => setTheme({ density: k })),
           h("span.muted.small", "more on screen, or more room around it")),
-        h("div.look-row", h("span", "Size"), seg(SIZES.map((z) => [z, z === "auto" ? `Auto (${Math.round(autoScale() * 100)}%)` : `${Math.round(z * 100)}%`]), t.scale,
-          (k) => setTheme({ scale: k, sizePicked: true }), (z) => z === "auto" || z <= maxScale() + 1e-6),
-          h("span.muted.small", "text and controls; Auto fits them to this screen (a 4K monitor bigger, a small window smaller)")),
         h("div.look-row", h("span", "Accent"), sw),
         h("div.look-row", h("span", "Panel brightness"), bright)),
       h("div.look-checks",

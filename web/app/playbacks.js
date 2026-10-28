@@ -5,6 +5,7 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { act } from "./api.js";
 import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
+import { icon } from "./icons.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
 
@@ -43,8 +44,8 @@ function build() {
       h("div.pb-btns",
         h("button.go", { title: "GO: next cue", onclick: () => { setFocus(n); run("cue_go", { playback: n }); } }, "GO"),
         flash,
-        h("button", { title: "Back one cue", onclick: () => { setFocus(n); run("cue_back", { playback: n }); } }, "◀"),
-        h("button", { title: "Stop: release this playback", onclick: () => run("playback_release", { playback: n }) }, "■")),
+        h("button", { title: "Back one cue", "aria-label": "Back one cue", onclick: () => { setFocus(n); run("cue_back", { playback: n }); } }, icon("back")),
+        h("button", { title: "Stop: release this playback", "aria-label": "Stop", onclick: () => run("playback_release", { playback: n }) }, icon("stop"))),
       rec);
     wireFlash(flash, n);
     name.addEventListener("click", () => openCueList(n));

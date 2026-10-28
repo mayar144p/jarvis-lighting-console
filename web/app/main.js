@@ -22,9 +22,10 @@ import { initErrorBadge } from "./errorbadge.js";
 import { initKeys } from "./keys.js";
 import { initWelcome } from "./welcome.js";
 import { initConnections } from "./connections.js";
-import { initTheme } from "./theme.js";
+import { initTheme, applyTheme } from "./theme.js";
 import { initHelp } from "./help.js";
 import { initDeskBridge } from "./deskbridge.js";
+import { initWinControls } from "./wincontrols.js";
 
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
@@ -32,6 +33,17 @@ function wireGig() {
   try { gig = localStorage.getItem("jarvis.gig"); } catch (e) { /* ignore */ }
   if (gig === "1") document.body.classList.add("gig");
 }
+
+// Show mode: the 3D, the programmer and the playbacks are separate windows.
+// A setting changed in one (Settings is in the programmer's) reaches the
+// others at once - the 3D's quality, the look, Gig mode.
+window.addEventListener("storage", (e) => {
+  if (e.key === "jarvis.theme") applyTheme();
+  else if (e.key === "jarvis.gig") document.body.classList.toggle("gig", e.newValue === "1");
+  else if (e.key === "jarvis.quality" && HAS_3D) {
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: e.newValue || "high" }); }).catch(() => {});
+  }
+});
 
 // The desktop app opens parts of the desk in their own windows (one per
 // monitor): ?window=stage (the 3D, full), desk (fixtures + programmer),
@@ -48,6 +60,7 @@ async function boot() {
     state.status = null;
   }
   initTopbar();
+  initWinControls();                        // the desktop app: no system title bar, the desk's own
   initFixtures();
   // the 3D view is off for now (view3d.js): the panels take the screen
   if (!HAS_3D) document.body.classList.add("no3d");

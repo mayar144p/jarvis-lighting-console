@@ -78,6 +78,32 @@ let saved = false;
 for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "jarvis-save-check.txt")); if (!saved) await sleep(250); }
 check("a save goes straight into Downloads (no Save As box)", saved, DL);
 
+// no system title bar: the desk's own bar has minimise / maximise / close and
+// the Desk menu (its logo)
+const frame = await win.evaluate(() => ({ frameless: document.documentElement.classList.contains("frameless"),
+  btns: [...document.querySelectorAll(".topbar .win-ctl .win-btn")].map((b) => b.getAttribute("aria-label")),
+  drag: getComputedStyle(document.querySelector(".topbar")).getPropertyValue("-webkit-app-region") }));
+check("no system title bar: minimise, maximise and close are on the desk's own top bar",
+  frame.frameless && (process.platform === "darwin" || frame.btns.join(",") === "Minimise,Maximise,Close") && frame.drag === "drag", JSON.stringify(frame));
+if (process.platform !== "darwin") {
+  // (a test screen may have no window manager to maximise with: what reaches
+  // the app is checked, and on a real desktop the window too)
+  await app.evaluate(({ ipcMain }) => { globalThis.__winDo = []; ipcMain.on("win:do", (_e, w) => globalThis.__winDo.push(w)); });
+  await win.click(".topbar .win-btn.max");
+  await sleep(1200);
+  const asked = await app.evaluate(() => globalThis.__winDo.join(","));
+  const real = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized());
+  check("the bar's Maximise asks the app to maximise the window", asked === "max", asked);
+  if (real) await win.click(".topbar .win-btn.max");
+  await sleep(600);
+}
+await win.click(".topbar .brand");
+await sleep(600);
+const deskMenu = await win.evaluate(() => document.body.innerText);
+check("the logo opens the Desk menu (Show mode, the 3D window, keep it on top, close)",
+  /Show mode/.test(deskMenu) && /3D view \(its own window\)/.test(deskMenu) && /Keep the 3D view on top/.test(deskMenu) && /Close Jarvis/.test(deskMenu), deskMenu.slice(0, 300));
+await win.keyboard.press("Escape");
+
 // Show mode from the menu: the 3D, the programmer and the playbacks each in a window
 await app.evaluate(({ Menu }) => Menu.getApplicationMenu().items.find((m) => m.label === "Desk").submenu.items[0].click());
 await sleep(6000);
@@ -96,6 +122,10 @@ for (const w of wins) {
     desk: { stage: false, prog: true, fixtures: true, pb: false },
     playbacks: { stage: false, prog: false, fixtures: false, pb: true } }[part];
   if (want) check(`the ${part} window shows only its part`, Object.entries(want).every(([k, v]) => seen[k] === v), JSON.stringify(seen));
+  if (part === "stage" && process.platform !== "darwin") {
+    check("the 3D window has its own minimise / maximise / close and Desk menu",
+      await w.evaluate(() => document.querySelectorAll("#vis-bar .win-ctl .win-btn").length === 4));
+  }
   if (part === "desk" || part === "playbacks") check(`the ${part} window draws no 3D (one per computer)`, !seen.canvas);
   if (process.env.SHOTS) await w.screenshot({ path: join(process.env.SHOTS, `desktop-${part}.png`) });
 }

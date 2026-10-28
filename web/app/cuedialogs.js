@@ -4,6 +4,7 @@
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { h, modal, promptBox, menu } from "./ui.js";
+import { icon } from "./icons.js";
 
 // ================================================================ cues
 export function openCueDialog(playback) {
@@ -43,7 +44,7 @@ export function openCueDialog(playback) {
       h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where),
       h("div.field", h("span", " "), modeBox),
       h("label.field", h("span", "Name"), name),
-      h("label.field", h("span", "Fade (s)"), fade), h("label.field", h("span", "Hold before auto-follow (s)"), hold)),
+      h("label.field", h("span", icon("fadein"), "Fade (s)"), fade), h("label.field", h("span", icon("delay"), "Hold before auto-follow (s)"), hold)),
     foot: [h("span.muted.small.grow", "Records what the programmer holds, then clears it. Over a cue, its name and times are kept unless you type new ones."),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
@@ -142,7 +143,7 @@ function delayFan(n, c, refresh) {
       ...FAN_DIRS.map(([k, l]) => ({ label: (k === (c.fan_dir || "left") ? "✓ " : "  ") + l,
         run: () => run("edit_cue", { playback: n, cue: c.n, fan_dir: k }).then(refresh) })),
     ]),
-  }, on ? `${c.delay_s ? `wait ${c.delay_s}s ` : ""}${c.fan_s ? `fan ${c.fan_s}s` : ""}`.trim() : "delay / fan");
+  }, icon(c.fan_s && !c.delay_s ? "fan" : "delay"), on ? `${c.delay_s ? `wait ${c.delay_s}s ` : ""}${c.fan_s ? `fan ${c.fan_s}s` : ""}`.trim() : "delay / fan");
 }
 
 const CUE_ACTS = [
@@ -251,7 +252,7 @@ export function openCueList(n) {
       h("div.row-btns",
         h("button.btn.small" + (pb.tracking ? ".on" : ".ghost"), { title: "Tracking: a cue holds only what it changes, the rest carries on from the cues before. Off: each cue is the whole look.", onclick: () => run("playback_mode", { playback: n, tracking: !pb.tracking }, { toast: true }).then(refresh) }, pb.tracking ? "Tracking" : "Cue only"),
         h("button.btn.small" + (pb.mib ? ".on" : ".ghost"), { title: "Move in black: lights that are dark now and on in the next cue move there while dark", onclick: () => run("playback_mode", { playback: n, mib: !pb.mib }, { toast: true }).then(refresh) }, "Move in black")),
-      h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", "Fade s"), h("th", "Hold s"),
+      h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", icon("fadein"), " Fade s"), h("th", icon("delay"), " Hold s"),
         h("th", { title: "Stack inherits the playback's auto-follow; Wait holds for GO; Auto runs the next cue by itself" }, "Then"), h("th", ""))),
         h("tbody", ...(rows.length ? rows : [h("tr", h("td", { colspan: 6, class: "muted" }, "No cues yet - set a look and record one."))]))),
       h("p.muted.small", "Then: ", h("b", "Stack"), ` follows the playback's auto-follow${delay ? ` (${delay}s)` : ""}, `,

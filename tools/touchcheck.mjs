@@ -41,7 +41,7 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, h
 const p = await ctx.newPage();
 const errs = [];
 p.on("pageerror", (e) => errs.push(e.message));
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); } catch {} });
+await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); } catch {} });
 await p.goto(BASE);
 await sleep(3500);
 await p.evaluate(() => import("/app/workspaces.js").then((m) => m.useWorkspace("live", { quiet: true })));

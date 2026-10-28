@@ -7,6 +7,7 @@ import { state, on, selected, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox } from "./ui.js";
 import { goboIcon } from "./goboicon.js";
+import { icon } from "./icons.js";
 
 const KINDS = [["position", "Position", "P"], ["colour", "Colour", "C"], ["beam", "Beam", "B"]];
 const DEFAULTS_LABEL = { colour: "Make the usual colours", position: "Make the usual positions", beam: "Make Narrow / Mid / Wide" };
@@ -169,7 +170,17 @@ function win(title, tiles) {
 }
 
 // ---- the command strip --------------------------------------------------
-function key(label, title, fn, cls = "") { return h("button.dv-key" + cls, { title, onclick: fn }, label); }
+// a key: its icon over its name, as on a pro desk's keys
+const KEY_ICON = { "◀ Prev": "prev", "Next ▶": "next", All: "all", Odd: "odd", Even: "even", Highlight: "highlight", None: "none",
+  Flip: "flip", Mirror: "mirror", Locate: "locate", "Line up…": "lineup", Clear: "clear", Undo: "undo", "Record…": "rec",
+  Update: "update", Plot: "plot", Cues: "cues", Patch: "patch", Outputs: "outputs", Macros: "macros", Setup: "setup",
+  Help: "help", "⌫": "rubout", ENTER: "enter" };
+function key(label, title, fn, cls = "") {
+  const name = KEY_ICON[label];
+  const text = label.replace(/^◀ |\s▶$/g, "");
+  return h("button.dv-key" + cls, { title, onclick: fn, "aria-label": label === "⌫" ? "Rub out" : text },
+    name ? icon(name) : null, label === "⌫" ? null : h("span", text));
+}
 
 async function focusedPb() { return (await import("./playbacks.js")).focusedPlayback(); }
 

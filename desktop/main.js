@@ -272,13 +272,27 @@ function openPart(part) {
   const place = mem && onScreen(mem.bounds) ? mem : defaultPlace(part);
   const win = new BrowserWindow({
     ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
-    icon: path.join(__dirname, "res", "icon.png"),
+    icon: path.join(__dirname, "res", "icon.png"), minWidth: 1024, minHeight: 600,
+    // no system title bar: the desk's own top bar is the bar (drag it to move
+    // the window; minimise, maximise and close at its right end).  A Mac
+    // keeps its three window dots, over the top bar's left corner.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hidden", trafficLightPosition: { x: 12, y: 15 } } : { frame: false }),
     webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") },
   });
   open.set(part, win);
   reopen.add(part);
   win.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
-  win.once("ready-to-show", () => { if (place.full) win.setFullScreen(true); win.show(); });
+  win.once("ready-to-show", () => {
+    if (place.full) win.setFullScreen(true);
+    // a window opened from the desk comes to the front, not behind it
+    if (part === "stage" && saved._stageOnTop) win.setAlwaysOnTop(true, "floating");
+    win.show();
+    win.moveTop();
+    win.focus();
+  });
+  const tellState = () => { if (!win.isDestroyed()) win.webContents.send("win:state", { max: win.isMaximized(), full: win.isFullScreen(), top: win.isAlwaysOnTop() }); };
+  for (const ev of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "always-on-top-changed"]) win.on(ev, tellState);
+  win.webContents.on("did-finish-load", tellState);
   const remember = () => {
     if (win.isDestroyed()) return;
     saved[part] = { bounds: win.isFullScreen() || win.isMaximized() ? win.getNormalBounds() : win.getBounds(), full: win.isFullScreen() };
@@ -653,30 +667,62 @@ function oneWindow() {
   }
 }
 
+// The Desk menu: the windows, Show mode, the touch locks, closing.  The
+// same items are in the desk's own top bar (its logo opens them: the
+// windows have no system title bar or menu bar) and in the app menu, which
+// keeps their keyboard shortcuts.
+function stageOnTop(on) {
+  saved._stageOnTop = !!on;
+  saveState();
+  const w = open.get("stage");
+  if (w && !w.isDestroyed()) w.setAlwaysOnTop(!!on, "floating");
+}
+function deskItems() {
+  return [
+    { id: "show", label: "Show mode (a window per monitor)", accelerator: "CmdOrCtrl+Shift+S", click: showMode },
+    { id: "one", label: "Everything in one window", accelerator: "CmdOrCtrl+Shift+A", click: oneWindow },
+    { type: "separator" },
+    { id: "stage", label: "3D view (its own window)", click: () => openPart("stage") },
+    { id: "ontop", label: "Keep the 3D view on top", type: "checkbox", checked: !!saved._stageOnTop,
+      click: (item) => stageOnTop(item ? item.checked : !saved._stageOnTop) },
+    { id: "desk", label: "Programmer and fixtures", click: () => openPart("desk") },
+    { id: "playbacks", label: "Playbacks and buttons", click: () => openPart("playbacks") },
+    { type: "separator" },
+    { id: "phones", label: "Other computers, phones and tablets…", click: phonesDialog },
+    ...(process.platform === "win32" ? [
+      { type: "separator" },
+      { id: "gestures", label: "Lock every touch gesture while full screen", type: "checkbox", checked: gestureLock(),
+        click: (item) => setGestureLock(item ? item.checked : !gestureLock()) },
+      machineSwipesOff()
+        ? { id: "swipes", label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
+        : { id: "swipes", label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
+    ] : []),
+    { type: "separator" },
+    { id: "quit", label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
+  ];
+}
+// the page's own window controls and Desk menu (preload.js)
+ipcMain.on("win:do", (e, what) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || win.isDestroyed()) return;
+  if (what === "min") win.minimize();
+  else if (what === "max") { if (win.isFullScreen()) win.setFullScreen(false); else if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+  else if (what === "full") win.setFullScreen(!win.isFullScreen());
+  else if (what === "close") win.close();
+});
+ipcMain.handle("win:menu", () => deskItems().map((x) => (x.type === "separator" ? "-"
+  : { id: x.id, label: x.label, checked: x.type === "checkbox" ? !!x.checked : undefined,
+    keys: x.accelerator ? x.accelerator.replace("CmdOrCtrl", process.platform === "darwin" ? "Cmd" : "Ctrl") : "" })));
+ipcMain.on("win:run", (_e, id) => {
+  const item = deskItems().find((x) => x.id === id);
+  if (item && item.click) Promise.resolve(item.click(null)).then(() => menu()).catch(() => {});
+});
+
 function menu() {
   const mac = process.platform === "darwin";
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(mac ? [{ role: "appMenu" }] : []),
-    { label: "Desk", submenu: [
-      { label: "Show mode (a window per monitor)", accelerator: "CmdOrCtrl+Shift+S", click: showMode },
-      { label: "Everything in one window", accelerator: "CmdOrCtrl+Shift+A", click: oneWindow },
-      { type: "separator" },
-      { label: "3D view", click: () => openPart("stage") },
-      { label: "Programmer and fixtures", click: () => openPart("desk") },
-      { label: "Playbacks and buttons", click: () => openPart("playbacks") },
-      { type: "separator" },
-      { label: "Other computers, phones and tablets…", click: phonesDialog },
-      ...(process.platform === "win32" ? [
-        { type: "separator" },
-        { label: "Lock every touch gesture while full screen", type: "checkbox", checked: gestureLock(),
-          click: (item) => setGestureLock(item.checked) },
-        machineSwipesOff()
-          ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
-          : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
-      ] : []),
-      { type: "separator" },
-      { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
-    ] },
+    { label: "Desk", submenu: deskItems().map(({ id, ...x }) => x) },
     { label: "View", submenu: [
       { role: "togglefullscreen", accelerator: "F11" },
       { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },

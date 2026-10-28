@@ -89,7 +89,7 @@ const open = async (who) => {
   const p = await ctx.newPage();
   p.on("pageerror", (e) => errors[who].push(String(e.message || e)));
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource|net::ERR|stream/.test(m.text())) errors[who].push("console: " + m.text().slice(0, 200)); });
-  await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); } catch { /* fine */ } });
+  await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ } });
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await sleep(1800);
   return p;

@@ -373,7 +373,8 @@ for (const [width, tall] of SIZES) {
   // page too busy for clicks on CI's machines (the nightly: 03/04/14/15
   // timed out there, never on a faster machine): draw it Fast, as with the
   // big rig - the screen check is about the panels, not the 3D's detail
-  const fast = BIG || (!GPU && width >= 1900);
+  // (and with Max the standard 3D quality now, at every size)
+  const fast = BIG || !GPU;
   await p.addInitScript((fast) => {
     try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
   }, fast);
