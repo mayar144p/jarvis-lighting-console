@@ -379,7 +379,7 @@ async function steps() {
   const movers = Object.entries(V).filter(([, v]) => v.moving).map(([h]) => +h);
   if (movers.length || !BRANDS) {
   await click('.sel-actions [data-act="clear_selection"]', "None");
-  await clickText("#group-chips .chip", "Moving");
+  await p.evaluate((hs) => import("/app/actions.js").then((m) => m.select(hs)), movers);
   await click('#prog-tabs [data-tab="position"]', "Move tab");
   const pan0 = Object.fromEntries(movers.map((h) => [h, F[h] && F[h].pan]));
   await clickText(".mv-spot", "Dance floor");

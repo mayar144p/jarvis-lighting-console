@@ -238,86 +238,6 @@ function paintLamps() {
   });
 }
 
-// Hold a group chip to flash that group (tap still selects it).
-function holdToFlash(el, params) {
-  let timer = 0, flashing = false;
-  el.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || e.target.classList.contains("x")) return;
-    timer = setTimeout(() => {
-      flashing = true;
-      el.classList.add("flashing");
-      run("group_flash", { ...params, down: true }, { silentError: true });
-    }, 350);
-  });
-  // swallows the click that follows a hold; armed only while that click
-  // can still come, so a later real tap is never eaten
-  const swallow = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
-  const up = (e) => {
-    clearTimeout(timer);
-    if (!flashing) return;
-    el.classList.remove("flashing");
-    run("group_flash", { down: false }, { silentError: true });
-    // released over the chip: a click follows, and it is not a tap.
-    // Slid off or cancelled: no click comes, so nothing to swallow.
-    if (e.type === "pointerup") {
-      el.addEventListener("click", swallow, { capture: true, once: true });
-      setTimeout(() => el.removeEventListener("click", swallow, { capture: true }), 0);
-    }
-    flashing = false;
-  };
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointercancel", up);
-  el.addEventListener("pointerleave", up);
-  return el;
-}
-
-function renderGroups() {
-  const box = $("#group-chips");
-  const groups = (state.snap && state.snap.groups) || [];
-  const autos = patch().length >= 4 ? ((state.snap && state.snap.auto_groups) || []) : [];
-  const sel = new Set(selected());
-  const same = (heads) => heads.length && heads.length === sel.size && heads.every((x) => sel.has(x));
-  const key = JSON.stringify([groups, autos, [...sel]]);
-  if (box.dataset.key === key) return;
-  box.dataset.key = key;
-  box.replaceChildren(
-    ...autos.map((g) => holdToFlash(h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection · hold to flash`,
-      onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
-    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`)), { auto: g.key })),
-    ...groups.map((g) => holdToFlash(h("button.chip" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · hold to flash · drop lights here to add them`, dataset: { group: g.n },
-      onclick: (e) => {
-        if (e.target.classList.contains("x")) return;
-        select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
-      },
-      oncontextmenu: (e) => { e.preventDefault(); groupMenu(atPointer(e), g); },
-    }, g.name, h("small", ` ${g.heads.length}`), h("span.x", {
-      title: "Change this group: add or take out lights, rename, delete",
-      "aria-label": `Change the group ${g.name}`,
-      onclick: (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); },
-    }, "⋯")), { group: g.n })),
-    // shown only while lights are dragged: drop them here for a new group
-    h("button.chip.new-group-drop", { title: "Drop lights here to make a new group of them", dataset: { newgroup: "1" } }, "＋ New group"),
-    ...(autoCopies().length ? [h("button.chip.tidy", {
-      title: "Earlier auto shows made copies of groups (“Auto · …”). Shows select their lights directly now; your own groups stay.",
-      onclick: async () => {
-        const n = autoCopies().length;
-        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
-          run("group_delete", { auto: true }, { toast: true });
-        }
-      },
-    }, `Tidy ${autoCopies().length} auto copies`)] : []));
-  moreBelow();
-}
-
-// More group tiles than fit: the bottom edge fades (a row cut in half
-// read as broken), until you scroll to the end.
-function moreBelow() {
-  const box = $("#group-chips");
-  box.classList.toggle("more-below", box.scrollHeight - box.scrollTop - box.clientHeight > 4);
-}
-
 const autoCopies = () => userGroups().filter((g) => /^auto\s*·/i.test(g.name || ""));
 
 // One group's menu (its chip's ⋯, a right-click on the chip or its folder):
@@ -616,6 +536,13 @@ function toolsMenu(btn) {
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Scan the network for nodes", run: () => scanRig() },
     { label: "Ask the lights (RDM)…", hint: "model, mode and address from each light", run: () => openRdm() },
+    ...(autoCopies().length ? [{ label: `Tidy ${autoCopies().length} auto group copies`,
+      hint: "old “Auto ·” copies the show builder made", run: async () => {
+        const n = autoCopies().length;
+        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
+          run("group_delete", { auto: true }, { toast: true });
+        }
+      } }] : []),
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
     } },
@@ -699,12 +626,9 @@ function dragEnd() {
   document.body.classList.remove("dragging-heads");
   for (const el of document.querySelectorAll(".drop-on")) el.classList.remove("drop-on");
 }
-// where a drop would go: {to: group n} | {out: true} | {make: true} | null
+// where a drop would go: {to: group n} | {out: true} | null
 function dropTarget(el) {
   if (!dragging || !el || !el.closest) return null;
-  if (el.closest("[data-newgroup]")) return { el: el.closest("[data-newgroup]"), make: true };
-  const chip = el.closest("#group-chips .chip[data-group]");
-  if (chip) return { el: chip, to: +chip.dataset.group };
   const folder = el.closest("tr.folder");
   if (folder) return { el: folder, to: +folder.dataset.group };
   const row = el.closest("tr[data-head]");
@@ -731,11 +655,6 @@ async function drop(e) {
   e.preventDefault();
   const groupsNow = userGroups();
   const name = (n) => (groupsNow.find((g) => g.n === n) || {}).name || `group ${n}`;
-  if (t.make) {
-    const label = await promptBox("New group", `Name for these ${d.heads.length} light(s)`, "", { ok: "Create group", placeholder: "e.g. Back truss spots" });
-    if (label) run("group_create", { name: label, heads: d.heads }, { toast: true });
-    return;
-  }
   if (t.out) {
     run("group_edit", { group: d.from, remove: d.heads }, { toast: true });
     return;
@@ -749,7 +668,7 @@ async function drop(e) {
   }
 }
 function wireDrag() {
-  for (const box of [$("#fx-rows"), $("#group-chips"), $(".fx-table-wrap")]) {
+  for (const box of [$("#fx-rows"), $(".fx-table-wrap")]) {
     if (!box) continue;
     box.addEventListener("dragover", dragOver);
     box.addEventListener("drop", drop);
@@ -766,21 +685,6 @@ async function makeGroup() {
 }
 
 export function initFixtures() {
-  // the group tiles fold away for more fixture rows (on a small screen);
-  // remembered on this computer
-  const fold = $("#grp-fold");
-  const setFold = (folded) => {
-    $("#group-chips").classList.toggle("folded", folded);
-    fold.setAttribute("aria-expanded", String(!folded));
-    fold.textContent = (folded ? "▸" : "▾") + " Groups";
-    try { localStorage.setItem("jarvis.groupsFolded", folded ? "1" : ""); } catch { /* private window */ }
-  };
-  let folded = false;
-  try { folded = localStorage.getItem("jarvis.groupsFolded") === "1"; } catch { /* private window */ }
-  setFold(folded);
-  fold.addEventListener("click", () => setFold(!$("#group-chips").classList.contains("folded")));
-  $("#group-chips").addEventListener("scroll", moreBelow, { passive: true });
-  new ResizeObserver(moreBelow).observe($("#group-chips"));
   $("#fx-rows").addEventListener("click", rowClick);
   wireDrag();
   $("#fx-rows").addEventListener("contextmenu", (e) => {
@@ -822,9 +726,9 @@ export function initFixtures() {
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }
-  on("snapshot", () => { modelDefs(); render(); renderGroups(); renderClashes(); });
+  on("snapshot", () => { modelDefs(); render(); renderClashes(); });
   on("models3d", render);
-  on("selection", () => { render(); renderGroups(); });
+  on("selection", () => { render(); });
   on("lite", render);
   on("looks", paintLamps);
   void get;

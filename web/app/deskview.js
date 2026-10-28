@@ -6,6 +6,7 @@
 import { state, on, selected, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox } from "./ui.js";
+import { goboIcon } from "./goboicon.js";
 
 const KINDS = [["position", "Position", "P"], ["colour", "Colour", "C"], ["beam", "Beam", "B"]];
 const DEFAULTS_LABEL = { colour: "Make the usual colours", position: "Make the usual positions", beam: "Make Narrow / Mid / Wide" };
@@ -45,14 +46,46 @@ function tile(cls, label, title, onclick, extra = {}) {
   return h("button.dv-tile" + cls, { title, onclick, ...extra }, ...label);
 }
 
+// Hold a group tile to flash that group (a tap still selects it).  The
+// release is caught on the window: the tile may be redrawn while held.
+function holdToFlash(el, params) {
+  let timer = 0;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    timer = setTimeout(() => {
+      el.classList.add("flashing");
+      run("group_flash", { ...params, down: true }, { silentError: true });
+      const swallow = (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); };
+      const up = (ev) => {
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", up, true);
+        el.classList.remove("flashing");
+        run("group_flash", { down: false }, { silentError: true });
+        // the click that follows a hold is not a tap
+        if (ev.type === "pointerup") {
+          window.addEventListener("click", swallow, { capture: true, once: true });
+          setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+        }
+      };
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", up, true);
+    }, 350);
+  });
+  const stop = () => clearTimeout(timer);
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointerleave", stop);
+  el.addEventListener("pointercancel", stop);
+  return el;
+}
+
 function groupWindow() {
   const groups = snap().groups || [];
   const sel = selected();
   const same = (g) => g.heads.length === sel.length && g.heads.every((n) => sel.includes(n));
-  const tiles = groups.map((g) => tile(same(g) ? ".on" : "", [h("small", `G${g.n}`), h("b", g.name), h("span.dv-count", String(g.heads.length))],
-    `Select ${g.name} (${g.heads.length} light${g.heads.length === 1 ? "" : "s"})`,
+  const tiles = groups.map((g) => holdToFlash(tile(same(g) ? ".on" : "", [h("small", `G${g.n}`), h("b", g.name), h("span.dv-count", String(g.heads.length))],
+    `Select ${g.name} (${g.heads.length} light${g.heads.length === 1 ? "" : "s"}) · hold to flash`,
     () => run("select_group", { n: g.n }),
-    { oncontextmenu: (e) => { e.preventDefault(); groupMenu(e.currentTarget, g); } }));
+    { oncontextmenu: (e) => { e.preventDefault(); groupMenu(e.currentTarget, g); } }), { group: g.n }));
   tiles.unshift(tile(sel.length && sel.length === patch().length ? ".on" : "", [h("small", "All"), h("b", "Every light"), h("span.dv-count", String(patch().length))],
     "Select every light", () => run("select_all")));
   tiles.push(tile(".dv-add", [h("b", "+ Group")], "Make a group of the selected lights", async () => {
@@ -72,7 +105,25 @@ function groupMenu(anchor, g) {
   ]);
 }
 
+// a beam palette with a gobo in it shows that gobo: its picture on the
+// first light it was recorded on that has gobo pictures
+function goboOf(p) {
+  const rows = Object.entries(p.per || {}).map(([n, v]) => [+n, v]);
+  if (!rows.length) rows.push(...patch().map((x) => [x.head_no, p.values || {}]));
+  for (const [n, v] of rows) {
+    if (!v || !("gobo" in v)) continue;
+    const hd = patch().find((x) => x.head_no === n);
+    const g = hd && (hd.gobos || []).find((r) => v.gobo >= r[0] && v.gobo <= r[1]);
+    if (g) return g[2];
+  }
+  return null;
+}
+
 function swatch(kind, p) {
+  if (kind === "beam") {
+    const ref = goboOf(p);
+    return ref === null ? null : goboIcon(ref);
+  }
   if (kind !== "colour") return null;
   const v = p.values || {};
   const hex = p.hex || (("red" in v || "green" in v || "blue" in v)

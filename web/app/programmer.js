@@ -7,6 +7,7 @@ import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js"
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 import { renderWheels, initWheels } from "./wheels.js";
+import { goboIcon, goboRef } from "./goboicon.js";
 import { needs3d, stagePanel } from "./view3d.js";
 
 const SWATCHES = [
@@ -357,9 +358,10 @@ function attrEntry(role) {
 function slotButtons(role, entry) {
   const send = (value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
   if (entry && entry.slots && entry.slots.length) {
-    return entry.slots.map((s) => h("button.chip.slot", {
+    const gobo = role.startsWith("gobo");
+    return entry.slots.map((s) => h("button.chip.slot" + (gobo ? ".gobo" : ""), {
       title: `${s.name} - DMX ${s.from}-${s.to}`, onclick: send(s.value),
-    }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name));
+    }, gobo ? goboIcon(goboRef(role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name));
   }
   return Array.from({ length: 8 }, (_, i) => h("button.chip", {
     title: `DMX ${i * 16 + 8} - this fixture's file lists no slots, so these are guesses`,
@@ -843,10 +845,11 @@ function attrRow(a, heads = null) {
   }
   if (!a.slots || !a.slots.length || a.mixed) return row;
   // a wheel / gobo: its named slots as one-tap chips under the bar
-  const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {
+  const gobo = /^gobo2?$/.test(a.role);
+  const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (gobo ? ".gobo" : "") + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {
     title: `${s.name} - DMX ${s.from}-${s.to}`,
     onclick: () => { apply(s.value); setTimeout(loadAttributes, 150); },
-  }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name)));
+  }, gobo ? goboIcon(goboRef(a.role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name)));
   return h("div.attr-wrap", row, chips);
 }
 

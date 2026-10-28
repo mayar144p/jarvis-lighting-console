@@ -5690,7 +5690,14 @@ def test_sweep3_fixes() -> None:
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
-    check("the groups fold away for more fixture rows, remembered", 'id="grp-fold"' in html and "jarvis.groupsFolded" in fx)
+    check("no Groups strip above the fixture list (groups are its folders)", 'id="group-chips"' not in html and "#group-chips" not in fx)
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    gi = (ROOT / "web" / "app" / "goboicon.js").read_text(encoding="utf-8")
+    pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("each gobo button shows its gobo (its picture, as the light throws it)", "/api/console/gobo?ref=" in gi
+          and "export function goboIcon" in gi and "goboIcon(goboRef(role, s))" in pg and "goboIcon(goboRef(a.role, s))" in pg
+          and "goboIcon(ref)" in dv, "")
+    check("a group tile in the desk view flashes while held", "function holdToFlash" in dv and '"group_flash"' in dv, "")
 
 
 def test_sweep3_adds() -> None:
@@ -7622,10 +7629,10 @@ def test_b2_groups() -> None:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
-    check("drag lights onto a group (folder or chip), out of its folder, between groups, or onto New group",
+    check("drag lights onto a group folder, out of its folder, or between groups",
           "function dragStart" in fx and "function dropTarget" in fx and '"group_edit", { group: t.to, add: d.heads }' in fx
-          and '"group_edit", { group: d.from, remove: d.heads }' in fx and "new-group-drop" in fx, "")
-    check("the screen: a group's menu (its chip, a right-click), Add to group on a light, Tidy auto copies",
+          and '"group_edit", { group: d.from, remove: d.heads }' in fx, "")
+    check("the screen: a group's menu (its folder, a right-click), Add to group on a light, Tidy auto copies",
           "export function groupMenu" in fx and '"group_edit"' in fx and "function groupItems" in fx
           and "auto: true" in fx and "auto: true" in cj, "")
 
@@ -9816,7 +9823,10 @@ def test_old_show_files() -> None:
 
     data = ROOT / "tools" / "selftests" / "oldshows"
     want = json.loads((data / "oldshow-2026-10-expected.json").read_text(encoding="utf-8"))
-    T = 1000.0
+    import time as _time
+    # an hour after now (the desk clock): every fade has finished, however
+    # long this computer has been on
+    T = _time.monotonic() + 3600.0
 
     def frames(e):
         return {str(u): list(b) for u, b in e.build_frames(now=T).items()}

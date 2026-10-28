@@ -196,9 +196,7 @@ def test_group_flash_laser_button() -> None:
         finally:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
-    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("the Laser tab records a cue and makes a button", "quick_from_laser" in fx and "openCueDialog" in fx, "")
-    check("group chips flash while held", "holdToFlash" in fj and "group_flash" in fj, "")
 
 
 def test_cue_fx_parts() -> None:
@@ -434,9 +432,6 @@ def test_review_fixes() -> None:
             check("...and an old one no longer is", not bad(), "")
         finally:
             e.shutdown()
-    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
-    check("a hold that slides off the chip doesn't swallow the next tap",
-          'e.type === "pointerup"' in fj and "removeEventListener(\"click\", swallow" in fj, "")
 
 
 def test_steady_dmx() -> None:
