@@ -2218,3 +2218,4 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 .lineup-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
 .lineup-chips .chip.on { border-color: var(--accent); background: var(--accent-bg); }
 .lineup-row .select { max-width: 280px; }
+.lineup-row .btn.on { background: var(--accent-bg); border-color: var(--accent); color: var(--text); }

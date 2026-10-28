@@ -12,8 +12,8 @@ import { state, patch, selected, on } from "./store.js";
 const movers = (nums) => nums.map((n) => patch().find((x) => x.head_no === n))
   .filter((x) => x && (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
 
-export function openLineUp() {
-  let lights = movers(selected());
+export function openLineUp(heads = null) {
+  let lights = movers(heads || selected());
   if (!lights.length) lights = movers(patch().map((x) => x.head_no));
   if (!lights.length) { toast("No moving lights to line up"); return; }
   const order = lights.map((x) => x.head_no);
@@ -44,12 +44,19 @@ export function openLineUp() {
   };
 
   const lightName = h("b");
+  // which way up it is: a light hung the other way round from the rest
+  // turns the wrong way - flip it here (Invert pan / tilt, Swap)
+  const FLIPS = [["invert_pan", "Invert pan", "Pan goes the other way"], ["invert_tilt", "Invert tilt", "Tilt goes the other way"],
+    ["swap", "Swap pan/tilt", "Pan and tilt are swapped on this light"]];
+  const flipBtns = FLIPS.map(([k, label, title]) => h("button.btn.small", { title, dataset: { k },
+    onclick: () => run("set_orient", { heads: [head()], [k]: !((now().orient || {})[k]) }, { toast: true }) }, label));
   const status = h("p.lineup-now");
   const marks = h("p.muted.small");
   const chips = h("div.lineup-chips");
   const paint = () => {
     const l = now();
     lightName.textContent = `${l.name || `light ${head()}`}  (${i + 1} of ${order.length})`;
+    for (const b of flipBtns) b.classList.toggle("on", !!(l.orient || {})[b.dataset.k]);
     const a = l.align;
     status.textContent = a ? `Lined up: pan ${a.pan >= 0 ? "+" : ""}${a.pan}°, tilt ${a.tilt >= 0 ? "+" : ""}${a.tilt}°` : "Not lined up yet.";
     const n = (l.align_marks || []).length;
@@ -71,11 +78,13 @@ export function openLineUp() {
     ...[[-0.02, "◀◀"], [-0.002, "◀"], [0.002, "▶"], [0.02, "▶▶"]].map(([s, t]) =>
       h("button.btn.small", { title: Math.abs(s) > 0.01 ? "coarse" : "fine", onclick: () => nudge(axis, s) }, t)));
   const body = h("div.lineup",
-    h("p.small", "For each light: pick a mark, Point it there (it gets close), nudge the REAL light until it's on the mark, then It's on the mark. Two or three marks spread over the floor, then Work it out - or Next light, which works it out for you."),
+    h("p.small", "If the real light moves the wrong way when you nudge it, flip it under Which way first. Then for each light: pick a mark, Point it there (it gets close), nudge the REAL light until it's on the mark, then It's on the mark. Two or three marks spread over the floor, then Work it out - or Next light, which works it out for you."),
     chips,
     h("div.lineup-row", h("span.k", "Light"), lightName,
       h("button.btn.small", { onclick: () => run("set_intensity", { level: 100 }) }, "Light it"),
       h("button.btn.small.ghost", { title: "Only this light on (find it in the rig)", onclick: () => run("highlight", { state: true, solo: true }) }, "Solo")),
+    h("div.lineup-row", h("span.k", "Which way"), ...flipBtns,
+      h("span.muted.small", "if it moves the wrong way")),
     h("div.lineup-row", h("span.k", "Mark"), markSel, typed,
       h("button.btn.small", { title: "Aim it at the mark from where the desk thinks it is - then nudge the last bit", onclick: () => {
         const w = where(); if (!w) return;

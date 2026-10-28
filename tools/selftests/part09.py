@@ -8928,6 +8928,16 @@ def test_line_up() -> None:
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
     check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "It's on the mark" in pj and "Point it there" in pj and "Next light" in pj
           and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+    app_dir = ROOT / "web" / "app"
+    check("Which way up (Invert pan / tilt, Swap) is in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
+          and "Invert tilt" in pj and "Swap pan/tilt" in pj, "")
+    fx = (app_dir / "fixtures.js").read_text(encoding="utf-8")
+    check("each moving light's own menu: Line up and Invert", "Line up with the real light" in fx
+          and '"set_orient", { heads: sameSelection(head), invert_pan' in fx and "Invert tilt" in fx, "")
+    check("Line up is on the Set up screen, the command bar and the desk view",
+          "lineup.js" in (app_dir / "modehub.js").read_text(encoding="utf-8")
+          and "lineup.js" in (app_dir / "cmdbar.js").read_text(encoding="utf-8")
+          and "lineup.js" in (app_dir / "deskview.js").read_text(encoding="utf-8"), "")
 
 
 def test_programmer_pro_tools() -> None:

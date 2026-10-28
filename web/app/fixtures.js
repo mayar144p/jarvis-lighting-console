@@ -479,7 +479,10 @@ export function rowMenu(btn, head) {
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
     { label: "Change fixture type…", run: () => openChangeType(sameSelection(head)) },
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
-      ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
+      ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) },
+        { label: "Line up with the real light…", hint: hd.align ? "lined up" : "point it at floor marks", run: () => import("./lineup.js").then((m) => m.openLineUp(sameSelection(head))) },
+        { label: ((hd.orient || {}).invert_pan ? "✓ " : "") + "Invert pan", hint: "it pans the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_pan: !(hd.orient || {}).invert_pan }, { toast: true }) },
+        { label: ((hd.orient || {}).invert_tilt ? "✓ " : "") + "Invert tilt", hint: "it tilts the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_tilt: !(hd.orient || {}).invert_tilt }, { toast: true }) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Make a colour row of buttons…", hint: "one button per colour, one at a time", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(sameSelection(head))) },
     ...groupItems(head),

@@ -71,6 +71,12 @@ function paintSetup() {
       btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")),
       btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
       btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue"))),
+    step("Lights match the real ones", (() => {
+      const mv = (state.snap && state.snap.patch || []).filter((x) => (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
+      const done = mv.filter((x) => x.align).length;
+      return mv.length ? `${done} of ${mv.length} moving light${mv.length > 1 ? "s" : ""} lined up` : "no moving lights";
+    })(), null,
+      btn("Line up with the real lights…", lazy("./lineup.js", "openLineUp"))),
     h("h3", "3 · Connections"),
     step("Output to the lights", s.live ? `LIVE to ${where}` : `blind - set to send to ${where}`, null,
       btn("Output settings…", lazy("./settings.js", "openSettingsAt", "output")),
