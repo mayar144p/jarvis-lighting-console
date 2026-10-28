@@ -2152,6 +2152,8 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: 12
 .pl-room { fill: none; stroke: #3b3d46; stroke-width: 0.04; }
 .pl-stage { fill: rgba(139, 141, 255, .07); stroke: #4a4c58; stroke-width: 0.03; }
 .pl-zone { fill: rgba(255, 255, 255, .03); stroke: #33353d; stroke-width: 0.02; stroke-dasharray: 0.15 0.1; }
+.pl-obj { fill: rgba(255, 255, 255, .06); stroke: #6b6f7c; stroke-width: 0.03; }
+.pl-obj.rope { fill: none; stroke: #b4313f; stroke-dasharray: 0.12 0.08; }
 .pl-axis { stroke: #2a2c33; stroke-width: 0.02; stroke-dasharray: 0.12 0.12; }
 .pl-truss { fill: none; stroke: #c9cbd3; stroke-width: 0.025; }
 .pl-head rect, .pl-head circle { fill: #15161a; stroke: #e6e7ec; stroke-width: 0.03; }

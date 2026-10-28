@@ -129,7 +129,8 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "add_to_room",
         "description": "Add to the room in words: a truss / pipe / pole / tower / stand, an object (dj_booth, "
-                       "bar, speaker, screen, riser, mark...) or a zone (dancefloor, standing, stage, bar, vip...), "
+                       "bar, bar_curve (half-round bar), speaker, screen, riser, mark, high_table, half_table, couch, "
+                       "vip_booth, armchair, stool, rope (VIP rope), plant...) or a zone (dancefloor, standing, stage, bar, vip...), "
                        "at where=\"front\" | \"back\" | \"left\" | \"right\" | \"middle\" | \"front left\"...; "
                        "sizes in metres (a truss runs across the room unless across=false).",
         "parameters": {"type": "object", "properties": {

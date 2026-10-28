@@ -360,8 +360,8 @@ def add_to_room(eng, kind: str, name: str = "", where: str = "middle", length=No
             item = {"kind": k, "a": [x - half, y, z], "b": [x + half, y, z]} if across else \
                 {"kind": k, "a": [x, y, z - half], "b": [x, y, z + half]}
     elif k in venue_mod.OBJECT_KINDS:
-        item = {"kind": k, "x": x, "z": z, "w": float(width or (0.4 if k == "mark" else 2.0)),
-                "d": float(depth or (0.4 if k == "mark" else 1.0)), "h": float(height or (0.02 if k == "mark" else 1.0))}
+        w0, d0, h0 = venue_mod.OBJECT_SIZE.get(k, (2.0, 1.0, 1.0))
+        item = {"kind": k, "x": x, "z": z, "w": float(width or w0), "d": float(depth or d0), "h": float(height or h0)}
     elif k in venue_mod.ZONE_KINDS or k == "zone":
         hw, hd = float(width or 4.0) / 2, float(depth or 4.0) / 2
         item = {"kind": k if k != "zone" else "standing",

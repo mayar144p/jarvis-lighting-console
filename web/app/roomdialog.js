@@ -59,9 +59,10 @@ export function planSvg(p, { w = 420, hgt = 300 } = {}) {
   }
   for (const o of p.objects || []) {
     if (o.kind === "mark") continue;
-    const col = { bar: "#f59e0b", dj_booth: "#a78bfa", speaker: "#475569", pillar: "#cbd5e1", riser: "#3f3f58", balcony: "#64748b", screen: "#38bdf8", door: "#22c55e" }[o.kind] || "#64748b";
+    const col = { bar: "#f59e0b", dj_booth: "#a78bfa", speaker: "#475569", pillar: "#cbd5e1", riser: "#3f3f58", balcony: "#64748b", screen: "#38bdf8", door: "#22c55e",
+      bar_curve: "#f59e0b", couch: "#a855f7", vip_booth: "#a855f7", armchair: "#a855f7", rope: "#e11d48", plant: "#22c55e" }[o.kind] || "#64748b";
     const cx = +X(o.x), cz = +Z(o.z);
-    s += `<rect x="${(cx - o.w * k / 2).toFixed(1)}" y="${(cz - o.d * k / 2).toFixed(1)}" width="${Math.max(2, o.w * k).toFixed(1)}" height="${Math.max(2, o.d * k).toFixed(1)}" fill="${col}" fill-opacity="${o.kind === "riser" || o.kind === "balcony" ? 0.35 : 0.85}" transform="rotate(${-(o.rot || 0)} ${cx} ${cz})"><title>${esc(o.name || o.kind)}</title></rect>`;
+    s += `<rect x="${(cx - o.w * k / 2).toFixed(1)}" y="${(cz - o.d * k / 2).toFixed(1)}" width="${Math.max(2, o.w * k).toFixed(1)}" height="${Math.max(2, o.d * k).toFixed(1)}" fill="${col}" fill-opacity="${o.kind === "riser" || o.kind === "balcony" ? 0.35 : 0.85}" transform="rotate(${o.rot || 0} ${cx} ${cz})"><title>${esc(o.name || o.kind)}</title></rect>`;
   }
   for (const r of p.rigging || []) {
     s += `<line x1="${X(r.a[0])}" y1="${Z(r.a[2])}" x2="${X(r.b[0])}" y2="${Z(r.b[2])}" stroke="#e2e8f0" stroke-width="${r.kind === "truss" ? 4 : 2}" stroke-linecap="round" opacity=".8"><title>${esc(r.name)}</title></line>`;

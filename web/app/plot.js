@@ -26,6 +26,8 @@ const isMover = (hd) => (hd.map || []).includes("pan") && (hd.map || []).include
 
 // a point of the room on the drawing: plan = x across, z toward the
 // audience (down the page); front = x across, height up; side = z across
+const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
+
 function flat(x, y, z) {
   if (view === "plan") return [x, z];
   if (view === "front") return [x, -y];
@@ -114,6 +116,32 @@ function draw(svg, px = 1000) {
     for (const z of v.zones || []) {
       if (!(z.points || []).length) continue;
       g.append(s("polygon", { points: z.points.map(([x, zz]) => `${x},${zz}`).join(" "), class: "pl-zone" }));
+    }
+  }
+  // the room's objects: their outline from above, their box from the front / side
+  for (const o of v.objects || []) {
+    if (o.kind === "mark") continue;
+    const title = s("title", {}, o.name || o.kind.replace(/_/g, " "));
+    if (view === "plan") {
+      // the 3D turns an object by -rot about up: on this plan (z down) that is +rot
+      const t = `translate(${o.x},${o.z}) rotate(${o.rot || 0})`;
+      if (CURVED.has(o.kind)) {
+        // its half-round (or more) outline, the curve on its +z side
+        const R = o.w / 2, a = ((o.arc || 180) * Math.PI) / 360, r0 = o.kind === "half_table" ? 0 : Math.max(0.05, R - o.d);
+        const P = (r, f) => `${(r * Math.sin(f)).toFixed(3)},${(r * Math.cos(f)).toFixed(3)}`;
+        const big = a > Math.PI / 2 ? 1 : 0;
+        const d = `M${P(R, -a)} A${R},${R} 0 ${big} 0 ${P(R, a)} ` + (r0 ? `L${P(r0, a)} A${r0},${r0} 0 ${big} 1 ${P(r0, -a)} Z` : "L0,0 Z");
+        g.append(s("path", { d, transform: t, class: "pl-obj" }, title));
+      } else if (o.kind === "high_table" || o.kind === "stool" || o.kind === "plant" || o.kind === "table" || o.kind === "pillar") {
+        g.append(s("circle", { cx: o.x, cy: o.z, r: o.w / 2, class: "pl-obj" }, title));
+      } else {
+        g.append(s("rect", { x: -o.w / 2, y: -o.d / 2, width: o.w, height: o.d, transform: t, class: "pl-obj" + (o.kind === "rope" ? " rope" : "") }, title));
+      }
+    } else {
+      const turned = Math.abs((o.rot || 0) % 180) > 45;
+      const across = view === "front" ? (turned ? o.d : o.w) : (turned ? o.w : o.d);
+      const at = view === "front" ? o.x : o.z, y0 = o.kind === "balcony" ? (o.y || 0) - 0.25 : o.y || 0;
+      g.append(s("rect", { x: at - across / 2, y: -(y0 + o.h), width: Math.max(0.03, across), height: Math.max(0.02, o.h), class: "pl-obj" }, title));
     }
   }
   // the centre lines (as on a plot)

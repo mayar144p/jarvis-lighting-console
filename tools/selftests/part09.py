@@ -4,6 +4,7 @@ from __future__ import annotations
 from tools.selftests import fakes
 
 import json
+import math
 import socket
 import tempfile
 import time
@@ -9879,3 +9880,41 @@ def test_old_show_files() -> None:
             same("the new desk booting on the old autosave", frames(e2), want["f_autosave"])
         finally:
             e2.shutdown()
+
+
+def test_club_furniture() -> None:
+    """The room builder's club furniture: a half-round bar, high and
+    half-round tables, VIP couches, curved VIP booths, armchairs, bar
+    stools, a VIP rope and plants - in the 3D, on the plot, in Add, by the
+    AI and from an MVR file - and a "Club with VIP lounge" room using them."""
+    print("Club furniture: half-round bar, VIP booths, couches, high tables")
+    from app import aitools, mvr
+    from app import venue as V
+
+    new = ("bar_curve", "high_table", "half_table", "couch", "vip_booth", "armchair", "stool", "rope", "plant")
+    check("the new pieces are room objects", all(k in V.OBJECT_KINDS for k in new), "")
+    v = V.template("lounge")
+    kinds = {o["kind"] for o in v["objects"]}
+    check("the VIP lounge room has a half-round bar, booths, couches, stools, high tables, ropes, plants",
+          {"bar_curve", "vip_booth", "couch", "stool", "high_table", "rope", "plant", "half_table"} <= kinds, str(kinds))
+    check("...and a VIP zone each side", sum(z["kind"] == "vip" for z in v["zones"]) == 2, "")
+    booth = next(o for o in v["objects"] if o["kind"] == "vip_booth")
+    v2, got = V.update_item(v, booth["id"], {"arc": 999, "d": 50, "colour": "#aa2233"})
+    check("a curve is 60-300 degrees, its seat no deeper than half across, any colour",
+          got["arc"] == 300 and got["d"] == round(got["w"] / 2, 3) and got["colour"] == "#aa2233", str(got))
+    stools = [o for o in v["objects"] if o["kind"] == "stool"]
+    bar = next(o for o in v["objects"] if o["kind"] == "bar_curve")
+    check("the stools stand outside the bar's curve, on the dance floor side",
+          all(math.hypot(s["x"] - bar["x"], s["z"] - bar["z"]) > bar["w"] / 2 and s["z"] < bar["z"] for s in stools), "")
+    check("an MVR file's furniture comes in as it", [mvr.object_kind(n) for n in
+          ("VIP Booth 2", "Bar table", "Round bar", "Bar stool", "Sofa", "Palm tree", "Stanchion", "Bar", "Table 3")]
+          == ["vip_booth", "high_table", "bar_curve", "stool", "couch", "plant", "rope", "bar", "table"], "")
+    check("added in words, each piece is its own size", V.OBJECT_SIZE["stool"][2] == 0.75
+          and "OBJECT_SIZE" in (ROOT / "app" / "aitools.py").read_text(encoding="utf-8") and aitools is not None, "")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("the 3D draws each one", all(f'case "{k}"' in vj for k in new) and "export function sectorGeo" in vj, "")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Add has them, with a curve and a colour to change",
+          all(f'["{k}",' in vp for k in new) and 'field("Curve°"' in vp and 'field("Colour"' in vp, "")
+    pj = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
+    check("the plot draws the room's objects, half-rounds as half-rounds", "pl-obj" in pj and "CURVED.has(o.kind)" in pj, "")

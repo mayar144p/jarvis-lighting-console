@@ -22,7 +22,19 @@ VERSION = 2
 RIG_KINDS = ("truss", "pipe", "tower", "ladder", "stand", "base")
 OBJECT_KINDS = ("dj_booth", "bar", "speaker", "sub", "pillar", "screen",
                 "riser", "balcony", "wall", "table", "door", "mark",
-                "drape", "panels")
+                "drape", "panels",
+                # club furniture: a half-round bar, tables, VIP seating
+                "bar_curve", "high_table", "half_table", "couch", "vip_booth",
+                "armchair", "stool", "rope", "plant")
+# half-round pieces: `w` across their straight side, `d` how far the
+# counter / seat reaches in from the curve; at rot 0 the curve is on the
+# far side (+z), the open side towards the stage (a booth's seats face it)
+CURVED = ("bar_curve", "vip_booth", "half_table")
+# a sensible size (w, d, h m) for a piece added without one
+OBJECT_SIZE = {"mark": (0.4, 0.4, 0.02), "bar_curve": (6.0, 0.8, 1.1), "high_table": (0.7, 0.7, 1.1),
+               "half_table": (1.2, 0.6, 0.75), "couch": (2.2, 0.9, 0.8), "vip_booth": (2.6, 0.6, 0.95),
+               "armchair": (0.9, 0.85, 0.8), "stool": (0.4, 0.4, 0.75), "rope": (5.0, 0.3, 1.0),
+               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1)}
 DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
 DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
@@ -243,6 +255,10 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     if item["kind"] == "drape":
         # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
         item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)
+    if item["kind"] in CURVED:
+        # how much of a circle: 180 a half-round, up to 300 nearly closed
+        item["arc"] = round(_num(raw.get("arc"), 180, 60, 300), 1)
+        item["d"] = round(min(item["d"], item["w"] / 2), 3)
     if item["kind"] == "panels":
         # LED panels in a grid over w x h: each `tile` m square, `gap` m apart
         item["tile"] = round(_num(raw.get("tile"), 0.5, 0.2, 3.0), 3)
@@ -1009,6 +1025,52 @@ def _small_club(v, W, D, H):
     return rigs, objs, zones
 
 
+def _lounge(v, W, D, H):
+    """A club with a VIP lounge: the DJ at the back, the dance floor ringed
+    by high tables, a half-round bar in the middle of the room, VIP booths
+    and couches along the walls behind a rope."""
+    v["room"].update({"width": W, "depth": D, "height": H, "back": -1.0,
+                      "ceiling": "flat", "floor": "wood"})
+    sw, sd = min(6.0, W * 0.4), 3.0
+    v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 0.6,
+                  "colour": "#1f2026"}
+    top = H - 0.5
+    rigs = [_truss(v, "DJ truss", -sw / 2, sw / 2, top - 0.3, 0.6),
+            _truss(v, "Floor truss front", -W * 0.36, W * 0.36, top, sd + 1.5),
+            _truss(v, "Floor truss back", -W * 0.36, W * 0.36, top, sd + D * 0.3),
+            *(_clean_rig({"kind": "pipe", "name": f"VIP pipe {s}", "a": [x, top + 0.2, sd + 2.0],
+                          "b": [x, top + 0.2, sd + 10.0]}, v) for s, x in (("L", -W / 2 + 1.2), ("R", W / 2 - 1.2)))]
+    floor_z0, floor_z1 = sd + 0.8, sd + D * 0.38
+    objs = [_obj(v, "dj_booth", "DJ booth", 0, sd * 0.5, 2.6, 0.9, 1.05, y=0.6),
+            _obj(v, "speaker", "Speaker L", -sw / 2 - 0.7, sd - 0.4, 0.8, 0.7, 1.8),
+            _obj(v, "speaker", "Speaker R", sw / 2 + 0.7, sd - 0.4, 0.8, 0.7, 1.8),
+            _obj(v, "mark", "DJ", 0, sd * 0.25, 0.5, 0.5, 0.02, y=0.6),
+            # its curve towards the dance floor
+            _obj(v, "bar_curve", "Round bar", 0, D * 0.68, 6.0, 0.8, 1.1, rot=180)]
+    # high tables at the back corners of the dance floor, clear of the bar
+    for i, (x, z) in enumerate(((-4.4, floor_z1 - 1.2), (-4.4, floor_z1 + 1.0), (4.4, floor_z1 - 1.2), (4.4, floor_z1 + 1.0))):
+        objs.append(_obj(v, "high_table", f"High table {i + 1}", x, z, 0.7, 0.7, 1.1))
+    # VIP booths and couches down both walls, behind a rope
+    for side, sx in (("L", -1), ("R", 1)):
+        wall_x = sx * (W / 2 - 1.3)
+        for i, z in enumerate((sd + 3.0, sd + 6.0)):
+            objs.append(_obj(v, "vip_booth", f"VIP booth {side}{i + 1}", wall_x, z, 2.6, 0.6, 0.95, rot=-90 * sx))
+        objs.append(_obj(v, "couch", f"VIP couch {side}", sx * (W / 2 - 0.55), sd + 9.0, 2.2, 0.9, 0.8, rot=-90 * sx))
+        objs.append(_obj(v, "half_table", f"Half table {side}", sx * (W / 2 - 1.5), sd + 9.0, 1.2, 0.6, 0.45, rot=90 * sx))
+        objs.append(_obj(v, "rope", f"VIP rope {side}", sx * (W / 2 - 3.2), sd + 6.0, 8.0, 0.3, 1.0, rot=90))
+        objs.append(_obj(v, "plant", f"Plant {side}", sx * (W / 2 - 0.5), sd + 1.2, 0.6, 0.6, 1.6))
+    # stools round the bar's curve, on the room's side
+    for i, a in enumerate((-60, -30, 0, 30, 60)):
+        objs.append(_obj(v, "stool", f"Bar stool {i + 1}", 3.45 * math.sin(math.radians(a)),
+                         D * 0.68 - 3.45 * math.cos(math.radians(a)), 0.4, 0.4, 0.75))
+    zones = [_zone(v, "dj", "DJ", -sw / 2, 0, sw / 2, sd),
+             _zone(v, "dancefloor", "Dance floor", -W * 0.32, floor_z0, W * 0.32, floor_z1, 0.75),
+             _zone(v, "vip", "VIP left", -W / 2 + 0.2, sd + 1.5, -W / 2 + 3.0, sd + 10.5, 0.3),
+             _zone(v, "vip", "VIP right", W / 2 - 3.0, sd + 1.5, W / 2 - 0.2, sd + 10.5, 0.3),
+             _zone(v, "bar", "Bar", -4.5, D * 0.6, 4.5, D * 0.86, 0.4)]
+    return rigs, objs, zones
+
+
 def _warehouse(v, W, D, H):
     v["room"].update({"width": W, "depth": D, "height": H, "back": -2.0,
                       "ceiling": "open", "floor": "concrete"})
@@ -1120,6 +1182,7 @@ def _outdoor(v, W, D, H):
 TEMPLATES = {
     "club": ("Club", (16.0, 22.0, 5.5), _club),
     "small_club": ("Small club / bar", (10.0, 14.0, 3.6), _small_club),
+    "lounge": ("Club with VIP lounge", (18.0, 24.0, 5.0), _lounge),
     "warehouse": ("Warehouse rave", (30.0, 40.0, 9.0), _warehouse),
     "concert": ("Concert stage", (24.0, 32.0, 11.0), _concert),
     "theatre": ("Theatre", (16.0, 26.0, 9.0), _theatre),

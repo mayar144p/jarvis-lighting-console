@@ -35,6 +35,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+from . import venue as venue_mod
+
 SCENE = "GeneralSceneDescription.xml"
 MAX_BYTES = 500 * 1024 * 1024          # a plot with its 3D models
 MAX_XML = 50 * 1024 * 1024
@@ -266,7 +268,15 @@ _OBJ_WORDS = [
     ("sub", r"\bsubs?\b|subwoofer"),
     ("speaker", r"speaker|\bpa\b|\bpa[ _-]|line ?array|\bmonitor|wedge|loudspeaker"),
     ("dj_booth", r"\bdj\b|dj ?booth|dj ?table|turntable|cdj"),
+    ("stool", r"bar ?stool|\bstool"),
+    ("high_table", r"high ?table|poseur|cocktail ?table|bar ?table"),
+    ("bar_curve", r"(round|curved|circular|half[ -]?round) ?bar\b"),
     ("bar", r"\bbar\b|bar ?counter"),
+    ("vip_booth", r"\bbooth\b|banquette"),
+    ("couch", r"couch|sofa|settee|lounge ?seat"),
+    ("armchair", r"arm ?chair|lounge ?chair"),
+    ("rope", r"stanchion|vip ?rope|rope ?line|barrier ?rope"),
+    ("plant", r"\bplant|\btree\b|\bpalm\b|planter"),
     ("riser", r"riser|\bstage\b|\bdeck|platform|podium|rostrum"),
     ("pillar", r"pillar|column|\bpost\b"),
     ("table", r"\btable"),
@@ -274,7 +284,8 @@ _OBJ_WORDS = [
 # their size when the file doesn't say (w x d x h m)
 _OBJ_SIZE = {"screen": (4.0, 0.2, 2.5), "sub": (0.8, 0.8, 0.6), "speaker": (0.6, 0.5, 1.0),
              "dj_booth": (2.0, 0.9, 1.1), "bar": (4.0, 0.8, 1.1), "riser": (3.0, 2.0, 0.4),
-             "pillar": (0.4, 0.4, 3.0), "table": (1.6, 0.8, 0.75)}
+             "pillar": (0.4, 0.4, 3.0), "table": (1.6, 0.8, 0.75),
+             **{k: v for k, v in venue_mod.OBJECT_SIZE.items() if k not in ("table", "bar", "mark")}}
 
 
 def object_kind(name: str, tag: str = "SceneObject") -> str | None:

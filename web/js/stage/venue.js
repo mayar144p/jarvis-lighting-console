@@ -306,6 +306,10 @@ function mats(v) {
     object: surfaceMaterial(0x2e3036),
     wood: surfaceMaterial(0x5a4430),
     screen: surfaceMaterial(0x0b0c10, { sheen: 1 }),
+    fabric: surfaceMaterial(0x4a2a55, { sheen: 0.15 }),         // VIP velvet
+    leaf: surfaceMaterial(0x2f5a34),
+    rope: surfaceMaterial(0x8e1b2b, { sheen: 0.2 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.3, metalness: 0.9, envMapIntensity: 0.5 }),
     steel, black,
     chain: new THREE.MeshStandardMaterial({ color: 0x1a1b1e, roughness: 0.6, metalness: 0.6, envMapIntensity: 0.15 }),
     edge: new THREE.LineBasicMaterial({ color: 0x5b6475, transparent: true, opacity: 0.55, toneMapped: false }),
@@ -500,6 +504,34 @@ export function panelGeo(w, h, d, tile, gap) {
   return { backs: mergeGeometries(backs, false), faces: mergeGeometries(faces, false), cols, rows };
 }
 
+const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
+
+/** A ring sector standing on the floor: radii r0..r1, `arc` degrees
+ *  centred on +z, `h` high from `y0` - a half-round bar, a booth's seat. */
+export function sectorGeo(r0, r1, arc, h, y0 = 0) {
+  const a = arc * DEG, n = Math.max(8, Math.round(arc / 6));
+  // drawn flat (x, -z), then stood up: the shape's y is the room's -z
+  const P = (r, f) => [r * Math.sin(f), -r * Math.cos(f)];
+  const s = new THREE.Shape();
+  s.moveTo(...P(r1, -a / 2));
+  for (let i = 1; i <= n; i++) s.lineTo(...P(r1, -a / 2 + a * i / n));
+  if (r0 > 0.001) for (let i = n; i >= 0; i--) s.lineTo(...P(r0, -a / 2 + a * i / n));
+  else s.lineTo(0, 0);
+  return new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: false, curveSegments: 1 })
+    .rotateX(-Math.PI / 2).translate(0, y0, 0);
+}
+
+// a couch / armchair: seat, cushions, back on the +z side, two arms
+function seatGeo(w, d, h) {
+  const arm = Math.min(0.2, w * 0.15), back = Math.min(0.22, d * 0.3);
+  return mergeGeometries([
+    new THREE.BoxGeometry(w, 0.3, d).translate(0, 0.15, 0),
+    new THREE.BoxGeometry(w - 2 * arm - 0.02, 0.12, d - back - 0.02).translate(0, 0.36, -back / 2),
+    new THREE.BoxGeometry(w, h - 0.3, back).translate(0, 0.3 + (h - 0.3) / 2, d / 2 - back / 2),
+    ...[-1, 1].map((sx) => new THREE.BoxGeometry(arm, 0.32, d).translate(sx * (w / 2 - arm / 2), 0.46, 0)),
+  ].map((g) => g.toNonIndexed()), false);
+}
+
 function buildObject(o, M) {
   const g = new THREE.Group();
   g.position.set(o.x, o.y || 0, o.z);
@@ -542,6 +574,84 @@ function buildObject(o, M) {
     case "table": {
       add(new THREE.CylinderGeometry(w / 2, w / 2, 0.04, 28).translate(0, h, 0), custom || M.object);
       add(new THREE.CylinderGeometry(0.05, 0.05, h, 8).translate(0, h / 2, 0), M.black);
+      break;
+    }
+    case "bar_curve": {
+      // a half-round bar: the counter on the curve, the bar staff inside
+      const R = w / 2, arc = o.arc || 180;
+      add(sectorGeo(Math.max(0.05, R - d), R, arc, h - 0.05), custom || M.wood);
+      add(sectorGeo(Math.max(0.05, R - d - 0.06), R + 0.08, arc, 0.05, h - 0.05), M.black);
+      add(sectorGeo(R + 0.18, R + 0.21, arc, 0.03, 0.22), M.steel);          // foot rail
+      break;
+    }
+    case "vip_booth": {
+      // a curved booth: the seat round the inside, a high back on the curve,
+      // its table in the middle
+      const R = w / 2, arc = o.arc || 180, back = 0.16;
+      add(sectorGeo(Math.max(0.05, R - d), R - back, arc, 0.44), custom || M.fabric);
+      add(sectorGeo(R - back, R, arc, h), custom || M.fabric);
+      const tr = Math.max(0.25, Math.min(0.55, (R - d) * 0.55)), tz = (R - d) * 0.35;
+      add(new THREE.CylinderGeometry(tr, tr, 0.04, 28).translate(0, 0.72, tz), M.black);
+      add(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 8).translate(0, 0.35, tz), M.steel);
+      break;
+    }
+    case "half_table": {
+      const R = w / 2, arc = o.arc || 180;
+      add(sectorGeo(0, R, arc, 0.04, h - 0.04), custom || M.wood);
+      add(new THREE.CylinderGeometry(0.04, 0.04, h - 0.04, 8).translate(0, (h - 0.04) / 2, R * 0.4), M.black);
+      add(new THREE.CylinderGeometry(0.18, 0.2, 0.02, 16).translate(0, 0.01, R * 0.4), M.black);
+      break;
+    }
+    case "high_table": {
+      // a poseur table: a round top on one leg
+      add(new THREE.CylinderGeometry(w / 2, w / 2, 0.035, 28).translate(0, h, 0), custom || M.object);
+      add(new THREE.CylinderGeometry(0.035, 0.035, h, 8).translate(0, h / 2, 0), M.steel);
+      add(new THREE.CylinderGeometry(w * 0.32, w * 0.34, 0.025, 20).translate(0, 0.012, 0), M.steel);
+      break;
+    }
+    case "couch": case "armchair": {
+      add(seatGeo(w, d, h), custom || M.fabric);
+      break;
+    }
+    case "stool": {
+      const r = w / 2;
+      add(new THREE.CylinderGeometry(r * 0.9, r * 0.85, 0.07, 20).translate(0, h - 0.035, 0), custom || M.black);
+      add(new THREE.CylinderGeometry(0.025, 0.025, h - 0.07, 8).translate(0, (h - 0.07) / 2, 0), M.steel);
+      add(new THREE.CylinderGeometry(r * 0.75, r * 0.8, 0.02, 18).translate(0, 0.01, 0), M.steel);
+      add(new THREE.TorusGeometry(r * 0.6, 0.012, 6, 20).rotateX(Math.PI / 2).translate(0, Math.min(0.3, h * 0.4), 0), M.steel);
+      break;
+    }
+    case "rope": {
+      // a VIP rope: brass posts every 2.5 m at most, a red rope hanging between
+      const n = Math.max(1, Math.ceil(w / 2.5)), xs = Array.from({ length: n + 1 }, (_, i) => -w / 2 + (w * i) / n);
+      const posts = [], ropes = [];
+      for (const x of xs) {
+        posts.push(new THREE.CylinderGeometry(0.025, 0.025, h, 8).translate(x, h / 2, 0).toNonIndexed(),
+          new THREE.CylinderGeometry(0.16, 0.17, 0.03, 16).translate(x, 0.015, 0).toNonIndexed(),
+          new THREE.SphereGeometry(0.045, 10, 8).translate(x, h + 0.03, 0).toNonIndexed());
+      }
+      for (let i = 0; i < n; i++) {
+        const a = xs[i], b = xs[i + 1];
+        const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a, h - 0.06, 0),
+          new THREE.Vector3((a + b) / 2, h - 0.06 - Math.min(0.45, (b - a) * 0.22), 0), new THREE.Vector3(b, h - 0.06, 0));
+        ropes.push(new THREE.TubeGeometry(curve, 16, 0.018, 6, false).toNonIndexed());
+      }
+      add(mergeGeometries(posts, false), M.brass);
+      add(mergeGeometries(ropes, false), custom || M.rope);
+      break;
+    }
+    case "plant": {
+      // a plant in a pot: the pot a third of it, leaves above
+      const pot = Math.min(0.55, h * 0.3), r = w / 2;
+      add(new THREE.CylinderGeometry(r * 0.7, r * 0.55, pot, 18).translate(0, pot / 2, 0), M.black);
+      const leaves = [];
+      const rand = rng(Math.round((o.x * 31 + o.z * 17) * 100));
+      for (let i = 0; i < 9; i++) {
+        const t = i / 8, s = r * (0.75 - t * 0.35);
+        const ang = rand() * Math.PI * 2, out = r * 0.35 * rand();
+        leaves.push(new THREE.IcosahedronGeometry(s, 0).translate(Math.cos(ang) * out, pot + s * 0.6 + t * (h - pot - s * 1.2), Math.sin(ang) * out).toNonIndexed());
+      }
+      add(mergeGeometries(leaves, false), custom || M.leaf);
       break;
     }
     case "balcony": {
@@ -592,7 +702,13 @@ function blockers(v) {
     out.push(new THREE.Box3(new THREE.Vector3(s.x - s.width / 2, 0, s.z), new THREE.Vector3(s.x + s.width / 2, s.height, s.z + s.depth)));
   }
   for (const o of v.objects || []) {
-    if (o.kind === "mark") continue;
+    if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool") continue;
+    if (CURVED.has(o.kind)) {
+      // round the circle's centre: its whole half-circle, however turned
+      const R = o.w / 2;
+      out.push(new THREE.Box3(new THREE.Vector3(o.x - R, o.y || 0, o.z - R), new THREE.Vector3(o.x + R, (o.y || 0) + o.h, o.z + R)));
+      continue;
+    }
     const y0 = o.kind === "balcony" ? o.y - 0.25 : o.y || 0;
     const y1 = o.kind === "balcony" ? o.y : (o.y || 0) + o.h;
     const r = Math.hypot(o.w, o.d) / 2;

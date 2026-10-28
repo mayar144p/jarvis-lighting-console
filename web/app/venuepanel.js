@@ -28,7 +28,12 @@ const OBJECT_ADD = [
   ["pillar", "Pillar"], ["screen", "LED screen"], ["riser", "Riser"], ["table", "Table"],
   ["balcony", "Balcony"], ["wall", "Wall"], ["mark", "Performer mark"],
   ["drape", "Drape (pleated curtain)"], ["panels", "LED panels (a grid)"],
+  "-",                                              // club furniture
+  ["bar_curve", "Half-round bar"], ["high_table", "High table (poseur)"], ["half_table", "Half-round table"],
+  ["couch", "VIP couch"], ["vip_booth", "VIP booth (curved, with its table)"], ["armchair", "Armchair"],
+  ["stool", "Bar stool"], ["rope", "VIP rope and posts"], ["plant", "Plant"],
 ];
+const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
 // a pro desk's hang types: [value, name, what it means]
 const HANG_TYPES = [
   ["hung", "Hung", "Upside down under a bar (normal for a light on a truss)."],
@@ -81,6 +86,15 @@ function defaults(kind) {
     case "mark": return { x, z: Math.max(0.5, (stage.stageFront || 2) - 1.5), w: 0.5, d: 0.5, h: 0.02, y: 0 };
     case "drape": return { x, z: z - 2, w: 8, d: 0.25, h: Math.min(6, H - 0.5), fold: 0.45, colour: "#6e7076" };
     case "panels": return { x, z: z - 2, w: 6, d: 0.1, h: 3, y: 1, tile: 0.5, gap: 0.5 };
+    case "bar_curve": return { x, z: z + 3, w: 6, d: 0.8, h: 1.1, arc: 180 };
+    case "high_table": return { x, z, w: 0.7, d: 0.7, h: 1.1 };
+    case "half_table": return { x, z, w: 1.2, d: 0.6, h: 0.75, arc: 180 };
+    case "couch": return { x, z, w: 2.2, d: 0.9, h: 0.8 };
+    case "vip_booth": return { x, z, w: 2.6, d: 0.6, h: 0.95, arc: 180 };
+    case "armchair": return { x, z, w: 0.9, d: 0.85, h: 0.8 };
+    case "stool": return { x, z, w: 0.4, d: 0.4, h: 0.75 };
+    case "rope": return { x, z, w: 5, d: 0.3, h: 1.0 };
+    case "plant": return { x, z, w: 0.6, d: 0.6, h: 1.6 };
     default: return { x, z };
   }
 }
@@ -444,6 +458,13 @@ function renderInspector(sel) {
       h("div.vi-row", field("X", num(o.x, (v) => upd({ x: v }))), field("Z", num(o.z, (v) => upd({ z: v }))), field("Up", num(o.y, (v) => upd({ y: v }), { min: 0 }))),
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
+      CURVED.has(o.kind) ? field("Curve°", num(o.arc || 180, (v) => upd({ arc: v }), { min: 60, max: 300, step: 15 })) : null,
+      o.kind === "screen" || o.kind === "panels" || o.kind === "mark" ? null : field("Colour", (() => {
+        const c = h("input", { type: "color", value: o.colour || "#4a2a55", title: "Its colour (a couch's fabric, a bar's wood)" });
+        c.addEventListener("change", () => upd({ colour: c.value }));
+        return c;
+      })()),
+      CURVED.has(o.kind) ? h("p.muted.small", "W is across its straight side; D how deep the counter or seat is.") : null,
       o.kind === "screen" ? screenContent(o, upd) : null,
       h("p.muted.small", "Shift+click other objects or rigging to line them up."),
       h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
@@ -564,7 +585,7 @@ function openAdd(btn) {
   menu(btn, [
     ...RIG_ADD.map(([k, l, hint]) => ({ label: l, hint, run: () => addItem(k, l) })),
     "-",
-    ...OBJECT_ADD.map(([k, l]) => ({ label: l, run: () => addItem(k, l) })),
+    ...OBJECT_ADD.map((x) => (x === "-" ? x : { label: x[1], run: () => addItem(x[0], x[1]) })),
     "-",
     { label: "Draw a door…", hint: "two clicks along a wall", run: () => drawDraft("door") },
     { label: "Draw pillars…", hint: "click where each one stands", run: () => drawDraft("pillar") },
