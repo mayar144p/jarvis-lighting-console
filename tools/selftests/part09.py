@@ -9919,3 +9919,22 @@ def test_club_furniture() -> None:
           all(f'["{k}",' in vp for k in new) and 'field("Curve°"' in vp and 'field("Colour"' in vp, "")
     pj = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
     check("the plot draws the room's objects, half-rounds as half-rounds", "pl-obj" in pj and "CURVED.has(o.kind)" in pj, "")
+
+
+def test_screen_sizes() -> None:
+    """The desk sizes itself to the screen (Settings -> Size: Auto, the
+    standard): 100 % from 1280 to 1920 px, up to 200 % on a 1440p or 4K
+    monitor, down to 80 % in a small window; the 3D draws sharp when
+    zoomed; the screen check runs at whole screen sizes."""
+    print("Screen sizes: Auto size, a sharp 3D when zoomed")
+    th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
+    check("Auto sizes to the screen: up with a 1440p / 4K monitor, down in a small window",
+          "export function autoScale" in th and "Math.min(w / 1920, h / 1080)" in th and "Math.min(2, up)" in th
+          and "Math.max(0.8, Math.min(1, w / 1280, h / 720))" in th and 'want === "auto" ? autoScale()' in th, "")
+    check("Auto is the standard; a size picked under Size stays", 'export const SIZES = ["auto",' in th
+          and "t.sizePicked === true" in th and "sizePicked: true" in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+    sj = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("the 3D draws more pixels when the screen is zoomed (sharp on 4K)",
+          "this.renderer.setPixelRatio(Math.min(3, this.q.ratio * zoom))" in sj, "")
+    uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
+    check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")

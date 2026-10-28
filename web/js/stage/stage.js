@@ -172,7 +172,10 @@ export class Stage {
     if (!this.renderer) return;
     const w = Math.max(1, this.el.clientWidth);
     const h = Math.max(1, this.el.clientHeight);
-    this.renderer.setPixelRatio(this.q.ratio);
+    // the screen zoomed up (a 4K monitor: Settings -> Size, or Auto): the
+    // canvas measures un-zoomed, so it draws that many more pixels to stay sharp
+    const zoom = Math.max(0.5, parseFloat(document.documentElement.style.zoom) || 1);
+    this.renderer.setPixelRatio(Math.min(3, this.q.ratio * zoom));
     this.renderer.setSize(w, h, false);
     this.persp.aspect = w / h;
     this.persp.updateProjectionMatrix();

@@ -804,9 +804,13 @@ one Ctrl+Z, and that brings back the show that was open.
 - **Density:** *Compact* fits more on screen, *Roomy* gives every button
   and row more room; *Standard* sits between. (**Gig mode** above makes
   everything big for touch screens.)
-- **Size:** text and controls at 90-140%. A bigger size needs a wider
-  screen - the desk is laid out for 1280 px, so a 1440 px screen goes to
-  110% and a 1920 px one to 140%; sizes that don't fit are greyed.
+- **Size: Auto** (the standard) fits the desk to the screen. A 1080p
+  laptop, or a 4K laptop with Windows scaling at 250%, shows it at 100%. A
+  1440p monitor goes to about 133% and a 4K monitor at 100% scaling to 200%,
+  so text and buttons stay the same size to the eye, and the 3D stays sharp.
+  A small window (under 1280 x 720) shrinks it, down to 80%.
+- **Or pick a size:** 90-140%. A bigger size needs a wider screen (the
+  desk is laid out for 1280 px); sizes that don't fit are greyed.
 - **Accent:** eight colours or your own.
 - **Panel brightness**, and **Show dark:** the panels in dim red for a dark
   venue. Eyes stay used to the dark, and the 3D view keeps its true colours.

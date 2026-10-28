@@ -3,7 +3,7 @@
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, resetTheme, maxScale, ACCENTS, DENSITIES, SIZES } from "./theme.js";
+import { themeNow, setTheme, resetTheme, maxScale, autoScale, ACCENTS, DENSITIES, SIZES } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -553,8 +553,9 @@ function themeRow() {
       h("div.look-rows",
         h("div.look-row", h("span", "Density"), seg(Object.entries(DENSITIES), t.density, (k) => setTheme({ density: k })),
           h("span.muted.small", "more on screen, or more room around it")),
-        h("div.look-row", h("span", "Size"), seg(SIZES.map((z) => [z, `${Math.round(z * 100)}%`]), t.scale, (k) => setTheme({ scale: k }), (z) => z <= maxScale() + 1e-6),
-          h("span.muted.small", "text and controls (a bigger size needs a wider screen)")),
+        h("div.look-row", h("span", "Size"), seg(SIZES.map((z) => [z, z === "auto" ? `Auto (${Math.round(autoScale() * 100)}%)` : `${Math.round(z * 100)}%`]), t.scale,
+          (k) => setTheme({ scale: k, sizePicked: true }), (z) => z === "auto" || z <= maxScale() + 1e-6),
+          h("span.muted.small", "text and controls; Auto fits them to this screen (a 4K monitor bigger, a small window smaller)")),
         h("div.look-row", h("span", "Accent"), sw),
         h("div.look-row", h("span", "Panel brightness"), bright)),
       h("div.look-checks",

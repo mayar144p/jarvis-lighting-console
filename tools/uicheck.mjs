@@ -12,7 +12,7 @@
 // and saves a screenshot per step, to look through by eye.
 // At 1440 it also presses every (safe) button of every tab and dialog.
 //
-//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click] [--only regex] [--big]
+//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920 | 1366x768,2560x1440,3840x2160] [--no-click] [--only regex] [--big]
 //
 // It starts its own server on a scratch fixture database and show folder,
 // so your shows and patch are never touched.  Needs Playwright.
@@ -27,7 +27,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const outDir = args.find((a, i) => !a.startsWith("--") && !(i && args[i - 1].startsWith("--"))) || join(ROOT, "uicheck-out");
-const WIDTHS = opt("--widths", "1280,1440,1920").split(",").map(Number);
+// a width (its usual height), or a whole screen: 2560x1440
+const SIZES = opt("--widths", "1280,1440,1920").split(",").map((s) => s.split("x").map(Number));
+const WIDTHS = SIZES.map(([w]) => w);
 const CLICK = !args.includes("--no-click");
 // --only <regex>: run just the steps whose name matches (plus the start)
 const ONLY = opt("--only", "") ? new RegExp(opt("--only", "")) : null;
@@ -362,8 +364,8 @@ const GPU = process.env.CHECKS_GPU === "1";
 const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 let rigBuilt = false;
-for (const width of WIDTHS) {
-  const height = width >= 1900 ? 1080 : width >= 1440 ? 900 : 800;
+for (const [width, tall] of SIZES) {
+  const height = tall || (width >= 1900 ? 1080 : width >= 1440 ? 900 : 800);
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
