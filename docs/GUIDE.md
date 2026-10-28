@@ -144,8 +144,10 @@ physically is and who made it:
 * The fixture picker shows the same 3D model before you patch anything.
 * **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
   draw calls, and the crowd is lit per vertex. The view only redraws when
-  something changes. **Settings → 3D view → Quality: Auto** lowers the
-  resolution when frames run long and wins it back when there is headroom.
+  something changes. The 3D starts at **Max** quality (sharpest, eight beams
+  cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
+  Medium** lowers the resolution when frames run long and wins it back when
+  there is headroom; **Low** drops the shadows.
 
 Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
 whole room), <kbd>F</kbd> to frame the selection.

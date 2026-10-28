@@ -3496,8 +3496,9 @@ def test_3d_detail() -> None:
           'tex.createView({ swizzle: "rgba" })' in sj and "forceWebGL: true" in sj and "export const GPU_DEVICE = await probeWebGPU()" in sj, "")
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
-    check("quality is named High / Medium / Low",
-          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj, "")
+    check("quality is named Max / Medium / Low, Max the standard",
+          "Max: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
+          and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"

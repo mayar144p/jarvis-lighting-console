@@ -40,7 +40,7 @@ export class Stage {
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
-      quality: "auto", zones: false, dance: true, shadows: true };
+      quality: "high", zones: false, dance: true, shadows: true };
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";

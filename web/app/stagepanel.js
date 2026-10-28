@@ -153,7 +153,7 @@ export function initStage() {
   const keep = (key, value) => { try { localStorage.setItem("jarvis." + key, value); } catch (e) { /* ignore */ } };
   const house = $("#house");
   house.value = pref("house", house.value);
-  stage.setOptions({ house: +house.value, quality: pref("quality", "auto") });
+  stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
   house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
   const toggle = (id, key, dflt) => {
     const btn = $(id);
