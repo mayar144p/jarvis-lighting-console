@@ -375,6 +375,30 @@ venue; it's saved with the show.
 The **Plot** (Windows → Plot) shows the rig flat with every light's number -
 handy to walk the room and tick lights off.
 
+### The room the lights know: teach it by pointing
+
+Once a light is lined up, the desk knows exactly where its beam lands on the
+floor - so the light itself can show the desk the room. **Set up → Teach the
+room by pointing…** (or the command bar, or Arrange → Add):
+
+- **Mark out a zone.** Pick the kind (Dance floor, Bar, VIP...), aim the light
+  at each corner with the arrows and press **Add this corner**; three corners
+  or more, in order round the edge, then **Make the zone**. A rectangle, a
+  square or any shape. Corners outside the room drawn mean the room is bigger
+  than the desk thinks: **Make the room fit**.
+- **Not here (keep out).** Aim at what a beam must never hit - a wall, a
+  mirror, the bar staff, the DJ's eyes - and press **Not here**. Pointed again
+  nearby, the area grows. Aimed past a wall, the whole wall is kept out.
+  Every light keeps off it, whatever it plays: cues, palettes, effects,
+  roams, the programmer. A beam that would cross it stops at its edge.
+- **Keep lights in a zone.** Pick lights and zones: those beams stay inside
+  (the floor spots on the dance floor, the bar wash on the bar), whatever
+  they play.
+
+Keep-out zones show red in the 3D and on the plot; the programmer keeps what
+you set (only what goes to the lights is held). **Position → Roam** makes
+lights wander inside the zones you picked.
+
 ### Follow me speed
 
 Move tab -> Aim: **Follow speed** sets how the beams follow the pointer on

@@ -38,7 +38,10 @@ OBJECT_SIZE = {"mark": (0.4, 0.4, 0.02), "bar_curve": (6.0, 0.8, 1.1), "high_tab
 DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
 DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
-              "vip", "backstage", "stage")
+              "vip", "backstage", "stage",
+              # no beams there, ever (a wall, the bar staff, the DJ's eyes):
+              # app/engine_zones.py holds every light off it
+              "keepout")
 CEILINGS = ("flat", "open", "none")
 CROWD_STYLES = ("simple", "varied")
 
@@ -276,6 +279,14 @@ def _clean_zone(raw: dict, v: dict) -> dict | None:
     item.update({"points": pts,
                  "y": round(_num(raw.get("y"), 0, 0, 60), 3),
                  "density": round(_num(raw.get("density"), -1, -1, 1), 3)})
+    if item["kind"] == "keepout":
+        # a keep-out has no crowd; made by pointing (it grows when pointed
+        # again nearby) or a whole wall
+        item["density"] = 0.0
+        if raw.get("pointed"):
+            item["pointed"] = True
+        if raw.get("wall") in ("left", "right", "back", "front"):
+            item["wall"] = raw["wall"]
     return item
 
 

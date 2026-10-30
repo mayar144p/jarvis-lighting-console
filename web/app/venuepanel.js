@@ -48,6 +48,7 @@ const HANG_TYPES = [
 export const ZONE_KINDS = [
   ["dancefloor", "Dance floor"], ["standing", "Standing"], ["seating", "Seating"], ["bar", "Bar"],
   ["vip", "VIP"], ["dj", "DJ / stage area"], ["foh", "FOH / tech"], ["backstage", "Backstage"],
+  ["keepout", "Keep out (no beams)"],
 ];
 
 // the engine's venue as soon as a snapshot brings it (the 3D rebuilds a
@@ -587,6 +588,7 @@ function openAdd(btn) {
     "-",
     ...OBJECT_ADD.map((x) => (x === "-" ? x : { label: x[1], run: () => addItem(x[0], x[1]) })),
     "-",
+    { label: "Mark out by pointing a light…", hint: "a zone's corners, or Not here", run: () => import("./roomteach.js").then((m) => m.openRoomTeach()) },
     { label: "Draw a door…", hint: "two clicks along a wall", run: () => drawDraft("door") },
     { label: "Draw pillars…", hint: "click where each one stands", run: () => drawDraft("pillar") },
     { label: "Draw a balcony…", hint: "two corners", run: () => drawDraft("balcony") },

@@ -10024,3 +10024,84 @@ def test_council_fixes() -> None:
     check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
           'localStorage.getItem("jarvis.qualityV") !== "2"' in mn and 'localStorage.setItem("jarvis.quality", "high");' in mn
           and 'localStorage.setItem("jarvis.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+
+
+
+def test_room_by_pointing() -> None:
+    """The room the lights know, taught by pointing: where a beam lands is
+    the exact reverse of aiming (every hang, with Line up); pointed corners
+    make a zone; Not here keeps every light off a spot or a whole wall,
+    whatever it plays; a light told to stay in a zone stays in it; the room
+    grows to take in corners pointed outside it; all saved with the show."""
+    print("Room zones taught by pointing; keep-out and stay-in hold every beam")
+    from app import engine as eng
+    from app.engine_roam import _inside
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head", qty=2)
+            h = e.patch[0]
+            worst = 0.0
+            for hang in ("hung", "standing", "bottom_front", "boom_left"):
+                h["hang"] = hang
+                for al in (None, {"pan": 4.0, "tilt": -2.0}):
+                    if al:
+                        h["align"] = al
+                    else:
+                        h.pop("align", None)
+                    for x, z in ((0, 8), (3, 12), (-4, 6), (2, 15)):
+                        s = e._aim_solve(h, x, 0, z, closest=True)
+                        hit = e._beam_hit(h, s[2], s[3])
+                        worst = max(worst, math.hypot(hit[0] - x, hit[1] - z))
+            check("where a beam lands is the exact reverse of aiming (every hang, lined up or not)", worst < 1e-6, str(worst))
+            h["hang"] = "hung"
+            h.pop("align", None)
+            e.patch_rev += 1
+
+            def lands(n):
+                e.build_frames()
+                vals = e._tick_vals[2][n]
+                hd = e._head(n)
+                return e._beam_hit(hd, *e._head_deg(hd, vals))
+            e.act("aim_at", x=0, y=0, z=10, heads=[1, 2], glide=0)
+            box = [[-1.5, 8.5], [1.5, 8.5], [1.5, 11.5], [-1.5, 11.5]]
+            e.act("venue_add", item={"kind": "keepout", "name": "DJ", "points": box})
+            hit = lands(1)
+            check("a keep-out holds the beam just off its edge (cues, aims, effects: at the merge)", not _inside(box, *hit), str(hit))
+            check("...the programmer keeps what was asked", e.programmer[1].get("pan") is not None, "")
+            e.act("aim_at", x=-30, y=0, z=10, heads=[2], glide=0)
+            sp = e.act("beam_spot", head=2)
+            check("a beam aimed past a wall is outside the room", sp.get("ok") and not sp["in_room"], str(sp))
+            r = e.act("keep_out_here", head=2)
+            check("Not here on a wall keeps the whole wall", r.get("ok") and "Left wall" in r["summary"], str(r))
+            b = __import__("app.venue", fromlist=["bounds"]).bounds(e.venue)
+            check("...the beam stays in the room", lands(2)[0] > b["x0"] - 0.1, str(lands(2)))
+            e.act("aim_at", x=4, y=0, z=8, heads=[2], glide=0)
+            e.act("keep_out_here", head=2)
+            e.act("aim_at", x=5.5, y=0, z=8, heads=[2], glide=0)
+            r2 = e.act("keep_out_here", head=2)
+            check("Not here pointed again nearby grows that area", "grown" in r2.get("summary", ""), str(r2))
+            r = e.act("stay_in", heads=[2], zones=["dancefloor"])
+            fl = next(z for z in e.venue["zones"] if z["kind"] == "dancefloor")
+            e.act("aim_at", x=7, y=0, z=21, heads=[2], glide=0)
+            check("a light told to stay on the dance floor stays on it", r.get("ok") and _inside(fl["points"], *lands(2)), str(lands(2)))
+            r = e.act("room_fit", points=[[0, 60]])
+            check("corners pointed outside the room grow it", r.get("ok") and e.venue["room"]["depth"] >= 60, str(e.venue["room"]))
+            e.act("save_show", name="taught")
+            e.act("show_new")
+            e.act("load_show", name="taught")
+            check("zones, keep-outs and stay-in are saved with the show",
+                  e.patch[1].get("stay") and sum(z["kind"] == "keepout" for z in e.venue["zones"]) >= 3, "")
+        finally:
+            e.shutdown()
+    rt = (ROOT / "web" / "app" / "roomteach.js").read_text(encoding="utf-8")
+    check("the Teach the room box: point, add corners, Not here, stay in", '"beam_spot"' in rt and '"keep_out_here"' in rt
+          and '"stay_in"' in rt and '"room_fit"' in rt and "Add this corner" in rt, "")
+    check("...on the Set up screen and the command bar", "roomteach.js" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "roomteach.js" in (ROOT / "web" / "app" / "cmdbar.js").read_text(encoding="utf-8"), "")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("keep-out zones always show in the 3D, a wall as a band along it", 'buildZones(v, (z) => z.kind === "keepout")' in vj
+          and "zoneOutline" in vj, "")

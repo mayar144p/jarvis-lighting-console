@@ -90,7 +90,7 @@ UNDO_LIMIT = 60
 UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
-    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates",
+    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates", "beam_spot",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash", "quick_profile_use",
     "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "song_follow", "standby", "standby_take", "standby_stop", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
@@ -649,6 +649,7 @@ ACTIONS = (
     "select_query", "select_step", "set_address", "rename_head", "fan",
     "align", "distribute", "mirror", "export_patch",
     "set_limits", "clear_limits", "set_orient", "line_up", "get_limits", "flip", "mirror_pan", "select_step",
+    "beam_spot", "keep_out_here", "stay_in", "room_fit",
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",

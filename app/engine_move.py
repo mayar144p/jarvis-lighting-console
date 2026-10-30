@@ -287,15 +287,19 @@ class MoveMixin:
         """The patch as the frame builder sees it: with floor_lock on, each
         mover carries its floor range as its limits, so cues and aims can't
         leave the dance floor either."""
-        if not self.floor_lock:
+        conf = self._confiners()
+        if not self.floor_lock and not conf:
             return self.patch
-        fl = self._floor_limits()
-        key = (self.patch_rev, id(fl))
+        fl = self._floor_limits() if self.floor_lock else {}
+        key = (self.patch_rev, id(fl), id(conf))
         cache = getattr(self, "_frame_patch_cache", None)
         if cache and cache[0] == key:
             return cache[1]
         out = []
         for h in self.patch:
+            if h["head_no"] in conf:
+                # keep-out / stay-in zones: the frame merge holds its beam
+                h = dict(h, confine=conf[h["head_no"]])
             if h["head_no"] not in fl:
                 out.append(h)
                 continue

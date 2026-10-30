@@ -70,6 +70,7 @@ from app.engine_steps import StepsMixin
 from app.engine_desk import DeskMixin
 from app.engine_cuemodes import CueModesMixin
 from app.engine_roam import RoamMixin
+from app.engine_zones import ZoneMixin
 from app.engine_osc import OscMixin
 from app.engine_hue import HueMixin
 from app.engine_songs import SongsMixin
@@ -80,7 +81,7 @@ from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ZoneMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -277,7 +278,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks", "stay")} for h in self.patch},
             # the programmer's own effects (not a button's, not a cue's):
             # recording a cue takes them off, so undo must put them back
             "prog_fx": [dict(f, params=dict(f.get("params") or {}), heads=list(f.get("heads") or []))
@@ -337,7 +338,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks"):
+            for key in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks", "stay"):
                 if key in got:
                     head[key] = got[key]
                 else:

@@ -77,6 +77,13 @@ function paintSetup() {
       return mv.length ? `${done} of ${mv.length} moving light${mv.length > 1 ? "s" : ""} lined up` : "no moving lights";
     })(), null,
       btn("Line up with the real lights…", lazy("./lineup.js", "openLineUp"))),
+    step("The room the lights know", (() => {
+      const zs = (state.snap && state.snap.venue && state.snap.venue.zones) || [];
+      const keep = zs.filter((z) => z.kind === "keepout").length, areas = zs.length - keep;
+      return `${areas} zone${areas === 1 ? "" : "s"} (dance floor, bar...)${keep ? ` · ${keep} kept out` : ""} - point a light to mark them`;
+    })(), null,
+      btn("Teach the room by pointing…", lazy("./roomteach.js", "openRoomTeach")),
+      btn("Not here (keep out)…", lazy("./roomteach.js", "openRoomTeach", "keepout"))),
     h("h3", "3 · Connections"),
     step("Output to the lights", s.live ? `LIVE to ${where}` : `blind - set to send to ${where}`, null,
       btn("Output settings…", lazy("./settings.js", "openSettingsAt", "output")),

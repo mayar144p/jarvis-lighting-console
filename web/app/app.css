@@ -2207,6 +2207,7 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: ca
 .pl-room { fill: none; stroke: #3b3d46; stroke-width: 0.04; }
 .pl-stage { fill: rgba(139, 141, 255, .07); stroke: #4a4c58; stroke-width: 0.03; }
 .pl-zone { fill: rgba(255, 255, 255, .03); stroke: #33353d; stroke-width: 0.02; stroke-dasharray: 0.15 0.1; }
+.pl-zone.keepout { fill: rgba(255, 45, 45, .18); stroke: #ff5a5a; stroke-dasharray: none; }
 .pl-obj { fill: rgba(255, 255, 255, .06); stroke: #6b6f7c; stroke-width: 0.03; }
 .pl-obj.rope { fill: none; stroke: #b4313f; stroke-dasharray: 0.12 0.08; }
 .pl-axis { stroke: #2a2c33; stroke-width: 0.02; stroke-dasharray: 0.12 0.12; }
@@ -2312,3 +2313,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { box-shadow: 
 .lineup-link > summary { cursor: pointer; color: var(--text-2); font-size: calc(12.5px * var(--ts)); }
 .lineup-link[open] > summary { color: var(--text); }
 .lineup-hint.warn { color: var(--warn); }
+
+/* Teach the room by pointing */
+.teach-tabs { margin: 10px 0; }
+.teach-tabs button.on { background: var(--accent-bg); color: var(--accent); }
+.teach-cols { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 20px; align-items: start; }
+.teach-left { display: flex; flex-direction: column; gap: 8px; }
+.teach-plan { width: 100%; height: calc(220px * var(--ctl)); background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.tp-room { fill: rgba(255, 255, 255, .03); stroke: #6b6f7c; stroke-width: .06; }
+.tp-zone { fill: rgba(139, 141, 255, .10); stroke: rgba(139, 141, 255, .6); stroke-width: .05; }
+.tp-zone.keepout { fill: rgba(255, 45, 45, .22); stroke: #ff5a5a; }
+.tp-new { fill: rgba(61, 214, 140, .15); stroke: var(--ok); stroke-width: .07; stroke-dasharray: .25 .15; }
+.tp-corner { fill: var(--ok); }
+.tp-n { fill: var(--ok); font-weight: 700; }
+.tp-beam { fill: #fff; stroke: var(--accent); stroke-width: .1; }
+.teach-pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.teach-list { display: flex; flex-direction: column; gap: 2px; }
+.ok-text { color: var(--ok); } .warn-text { color: var(--warn); }
+.danger-go { background: color-mix(in srgb, var(--live) 30%, var(--surface-2)) !important; border-color: var(--live) !important; color: #fff; }

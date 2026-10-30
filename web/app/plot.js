@@ -5,6 +5,7 @@
 import { state, on, selected, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { h, modal, toast } from "./ui.js";
+import { zoneOutline } from "./zoneshape.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const s = (tag, attrs = {}, ...kids) => {
@@ -115,7 +116,9 @@ function draw(svg, px = 1000) {
   if (view === "plan") {
     for (const z of v.zones || []) {
       if (!(z.points || []).length) continue;
-      g.append(s("polygon", { points: z.points.map(([x, zz]) => `${x},${zz}`).join(" "), class: "pl-zone" }));
+      const pts = zoneOutline(z, v.room);
+      g.append(s("polygon", { points: pts.map(([x, zz]) => `${x},${zz}`).join(" "), class: "pl-zone" + (z.kind === "keepout" ? " keepout" : "") },
+        s("title", {}, z.name || z.kind)));
     }
   }
   // the room's objects: their outline from above, their box from the front / side

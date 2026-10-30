@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surfaceMaterial, crowdMaterial } from "./materials.js";
 import { CASTER_LAYER } from "./shadows.js";
+import { zoneOutline } from "../../app/zoneshape.js";
 
 // things that stand in a beam's way cast a shadow (shadows.js)
 function casts(root) {
@@ -884,22 +885,25 @@ function buildPerformers(v) {
 export const ZONE_COLOURS = {
   dancefloor: 0xa855f7, standing: 0x3b82f6, seating: 0x22c55e, bar: 0xf59e0b,
   dj: 0xef4444, foh: 0x14b8a6, vip: 0xeab308, backstage: 0x64748b, stage: 0xf97316,
+  keepout: 0xff2d2d,
 };
 
-function buildZones(v) {
+function buildZones(v, only = null) {
   const group = new THREE.Group();
   for (const z of v.zones || []) {
-    const shape = new THREE.Shape(z.points.map(([x, zz]) => new THREE.Vector2(x, -zz)));
+    if (only && !only(z)) continue;
+    const outline = zoneOutline(z, v.room);
+    const shape = new THREE.Shape(outline.map(([x, zz]) => new THREE.Vector2(x, -zz)));
     const geo = new THREE.ShapeGeometry(shape);
     geo.rotateX(-Math.PI / 2);
     const col = ZONE_COLOURS[z.kind] ?? 0x94a3b8;
     const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: col, transparent: true, opacity: 0.13, depthWrite: false, toneMapped: false,
+      color: col, transparent: true, opacity: z.kind === "keepout" ? 0.28 : 0.13, depthWrite: false, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -3,
     }));
     fill.position.y = (z.y || 0) + 0.012;
     fill.userData = { venueId: z.id, venueKind: z.kind, zone: true };
-    const pts = z.points.map(([x, zz]) => new THREE.Vector3(x, (z.y || 0) + 0.015, zz));
+    const pts = outline.map(([x, zz]) => new THREE.Vector3(x, (z.y || 0) + 0.015, zz));
     pts.push(pts[0].clone());
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.8, toneMapped: false }));
@@ -1039,9 +1043,11 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     group.add(g);
   }
 
-  const zones = buildZones(v);
+  const zones = buildZones(v, (z) => z.kind !== "keepout");
   zones.visible = !!opts.zones;
   group.add(zones);
+  // keep-out zones always show: where no beam goes (a wall, the DJ's eyes)
+  group.add(buildZones(v, (z) => z.kind === "keepout"));
 
   const people = new THREE.Group();
   const crowd = casts(buildCrowd(v, stageFront));
