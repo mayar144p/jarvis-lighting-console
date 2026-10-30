@@ -55,7 +55,7 @@ const rows = [];
 const ONLY = (process.env.FPS_ONLY || "").toLowerCase();       // e.g. FPS_ONLY=low
 for (const [label, q] of [["High", "high"], ["Medium", "auto"], ["Low", "fast"]].filter(([l]) => !ONLY || l.toLowerCase() === ONLY)) {
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
-  await p.addInitScript((quality) => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", quality); } catch { /* fine */ } }, q);
+  await p.addInitScript((quality) => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", quality); localStorage.setItem("jarvis.qualityV", "2"); } catch { /* fine */ } }, q);
   await p.goto(BASE + "?window=stage");                // the 3D on its own, as in Show mode
   for (let i = 0; i < 60; i++) { if (await p.evaluate(() => window.jarvisStage && window.jarvisStage.fixtures.size > 100)) break; await sleep(500); }
   await sleep(4000);                                    // models and gobos loaded

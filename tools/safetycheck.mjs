@@ -40,7 +40,7 @@ const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: p
 const p = await (await browser.newContext({ viewport: { width: 1366, height: 768 } })).newPage();
 const errs = [];
 p.on("pageerror", (e) => errs.push(e.message));
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); } catch {} });
+await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); } catch {} });
 await p.goto(BASE);
 await sleep(3000);
 const ws = (w) => p.evaluate((w) => import("/app/workspaces.js").then((m) => m.useWorkspace(w, { quiet: true })), w);
@@ -122,7 +122,7 @@ await act("set_output", { state: 0 });
 // a touch screen: the options buttons that show on hover are there
 const touch = await browser.newContext({ viewport: { width: 1366, height: 768 }, hasTouch: true, isMobile: false });
 const tp = await touch.newPage();
-await tp.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.gig", "0"); } catch {} });
+await tp.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.gig", "0"); } catch {} });
 await tp.emulateMedia({ });
 await tp.goto(BASE);
 await sleep(3000);

@@ -59,6 +59,15 @@ const WINDOW = new URLSearchParams(location.search).get("window") || "";
 if (WINDOW) document.documentElement.dataset.window = WINDOW;
 
 initTheme();                              // before anything draws: no bright flash in a dark venue
+// The 3D starts at High (Max) quality.  A quality saved before that was the
+// standard (Medium, the old default) goes back to High once; a choice made
+// in Settings after this is kept.
+try {
+  if (localStorage.getItem("jarvis.qualityV") !== "2") {
+    localStorage.setItem("jarvis.quality", "high");
+    localStorage.setItem("jarvis.qualityV", "2");
+  }
+} catch (e) { /* private window: High anyway */ }
 initDeskBridge();                         // the desktop app's questions show in the desk's own boxes
 async function boot() {
   try {

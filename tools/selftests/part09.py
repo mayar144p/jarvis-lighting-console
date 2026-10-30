@@ -3497,7 +3497,7 @@ def test_3d_detail() -> None:
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
     check("quality is named Max / Medium / Low, Max the standard",
-          "Max: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
+          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
           and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -10017,3 +10017,8 @@ def test_council_fixes() -> None:
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     check("the show-safety check runs in CI", "node tools/safetycheck.mjs" in ci
           and (ROOT / "tools" / "safetycheck.mjs").exists(), "")
+
+    mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
+          'localStorage.getItem("jarvis.qualityV") !== "2"' in mn and 'localStorage.setItem("jarvis.quality", "high");' in mn
+          and 'localStorage.setItem("jarvis.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")

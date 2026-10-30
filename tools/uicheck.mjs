@@ -376,7 +376,7 @@ for (const [width, tall] of SIZES) {
   // (and with Max the standard 3D quality now, at every size)
   const fast = BIG || !GPU;
   await p.addInitScript((fast) => {
-    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
+    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); } catch { /* fine */ }
   }, fast);
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
