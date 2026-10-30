@@ -53,6 +53,7 @@ const ACTIONS = [
   { t: "Address them all", k: "auto address patch readdress clashes", run: () => run("auto_patch", {}, { toast: true }) },
   { t: "Arrange the room", k: "arrange room move lights place 3d", run: () => lazy("./venuepanel.js", "setArranging", true) },
   { t: "Make the room…", k: "room shape make room size walls draw floor plan", run: () => lazy("./roomdialog.js", "openRoomDialog") },
+  { t: "Clear the venue to start again…", k: "reset venue clear room redesign start again empty", run: () => lazy("./venuepanel.js", "resetVenue") },
   { t: "Rigging…", k: "rigging truss bars pipes hang", run: () => lazy("./rigdialog.js", "openRigDialog") },
   { t: "Find nodes", k: "find nodes scan network art-net sacn search", run: () => lazy("./fixtures.js", "scanRig") },
   { t: "Ask the lights (RDM)…", k: "rdm ask lights discover address mode", run: () => lazy("./fixtures.js", "openRdm") },

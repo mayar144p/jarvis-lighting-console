@@ -361,7 +361,8 @@ class ShowMixin:
                 continue
         if isinstance(payload.get("quick_names"), dict):
             self.quick_names = {str(k): str(v)[:16] for k, v in payload["quick_names"].items()}
-        self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+        self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
+                                                 self.quick, getattr(self, "quick_names", {}) or {})
         self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
         venue = payload.get("venue")
         if isinstance(venue, dict):
@@ -938,7 +939,8 @@ class ShowMixin:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
-            self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+            self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
+                                                     self.quick, self.quick_names)
             self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
             try:
                 qq = float(payload.get("quick_quant") or 0.0)

@@ -981,13 +981,19 @@ function editPages() {
           onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, "▲"),
         h("button.btn.small.ghost", { title: "Move down (swap with the page below)", disabled: p >= (q.pages || 32),
           onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, "▼"),
-        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !n && !(q.names || {})[p],
+        // any page that is there can go; an empty one without asking
+        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !used.has(p),
           onclick: async () => {
-            if (!(await confirmBox("Empty page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+            if (n && !(await confirmBox("Delete page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
             await run("quick_page", { page: p, delete: true }); draw(); render(true);
           } }, "Delete")));
     }
-    body.replaceChildren(...rows,
+    const empty = [...used].filter((p) => p > 1 && !q.buttons.some((b) => b.page === p)).length;
+    body.replaceChildren(
+      empty ? h("div.pages-tidy", h("span.muted.small", `${empty} page${empty === 1 ? " has" : "s have"} no buttons.`),
+        h("button.btn.small", { onclick: async () => { await run("quick_page", { tidy: true }, { toast: true }); if (!quick().buttons.some((b) => b.page === page)) page = 1; draw(); render(true); } },
+          `Remove the empty page${empty === 1 ? "" : "s"}`)) : null,
+      ...rows,
       last < (q.pages || 32) ? h("button.btn.small", { onclick: async () => {
         const name = await promptBox("New page", "Name", "", { ok: "Add", placeholder: "e.g. Show" });
         if (name === null || name === undefined) return;

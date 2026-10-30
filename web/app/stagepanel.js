@@ -297,6 +297,10 @@ function initVisBar() {
     const v = (state.snap && state.snap.vis_source) || { source: "output" };
     if (src.value !== v.source) src.value = v.source;
     src.classList.toggle("preview", v.source !== "output");      // not what the lights do: say so
+    // which playback Next GO shows: the one in focus on the dock (or a fixed one)
+    const pbN = v.playback || v.focus;
+    const opt = src.querySelector('option[value="next"]');
+    if (opt) opt.textContent = pbN ? `Next GO (PB${pbN})` : "Next GO";
   };
   on("snapshot", showSource);
   showSource();

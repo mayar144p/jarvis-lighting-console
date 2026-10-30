@@ -143,6 +143,22 @@ const css = await p.evaluate(() => { const s = getComputedStyle(document.body); 
 check("the page: no overscroll, pan only, no text selection", css[0] === "none" && /pan-x/.test(css[1]) && css[2] === "none", css.join(" "));
 check("no page errors", !errs.length, errs.join(" | "));
 
+// Gig mode: every control a finger plays at a show is at least 40 px each
+// way, so touch sizes can't quietly shrink again (the faders, GO, Flash,
+// the buttons, BLACKOUT, RELEASE ALL, the page tabs, the mode keys)
+await p.evaluate(() => { document.body.classList.add("gig"); });
+const MIN = 40;
+const sizes = async (sel) => p.evaluate((s) => [...document.querySelectorAll(s)]
+  .filter((el) => el.offsetParent !== null && getComputedStyle(el).visibility !== "hidden")
+  .map((el) => { const r = el.getBoundingClientRect(); return [s, Math.round(r.width), Math.round(r.height)]; }), sel);
+const small = [];
+const look = async (sels) => { for (const s of sels) for (const [sel, w, ht] of await sizes(s)) if (w < MIN || ht < MIN) small.push(`${sel} ${w}x${ht}`); };
+await look([".qbtn", "#bo-btn", "#pb-relall", "#mode-seg button", ".pb-mode button"]);
+await p.evaluate(() => document.querySelector('#pb-mode button[data-mode="faders"]').click());
+await sleep(600);
+await look([".pb-btns .go", ".pb-btns .flash", ".pb-btns button", ".pb .vfader", ".pb-pages button"]);
+check(`Gig mode: every control played at a show is at least ${MIN} px each way`, !small.length, [...new Set(small)].slice(0, 12).join(", "));
+
 await browser.close();
 console.log(fails ? `\n${fails} failed` : "\nall ok");
 done(fails ? 1 : 0);

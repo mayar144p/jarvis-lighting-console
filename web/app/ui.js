@@ -148,10 +148,14 @@ export function menu(anchor, items) {
   for (const it of items) {
     if (it === "-") { box.append(h("hr")); continue; }
     if (!it) continue;
-    box.append(h("button" + (it.danger ? ".danger" : ""), {
+    // a short hint (a key, a count) sits at the right; a description goes
+    // under the item, where the eye already is
+    const long = it.hint && String(it.hint).length > 14;
+    box.append(h("button" + (it.danger ? ".danger" : "") + (long ? ".has-desc" : ""), {
       role: "menuitem", disabled: it.disabled,
       onclick: () => { close(); it.run(); },
-    }, it.label, it.hint ? h("small", it.hint) : null));
+    }, long ? h("span.mi", h("span.mi-label", it.label), h("small.mi-desc", it.hint)) : it.label,
+    !long && it.hint ? h("small", it.hint) : null));
   }
   document.body.append(box);
   const r = anchor.getBoundingClientRect();

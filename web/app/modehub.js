@@ -70,7 +70,8 @@ function paintSetup() {
       btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
       btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")),
       btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
-      btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue"))),
+      btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue")),
+      btn("Clear it to start again…", lazy("./venuepanel.js", "resetVenue"))),
     step("Lights match the real ones", (() => {
       const mv = (state.snap && state.snap.patch || []).filter((x) => (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
       const done = mv.filter((x) => x.align).length;
@@ -186,12 +187,28 @@ function paintLive() {
   };
   const part = h("div.live-part"), next = h("div.live-next muted"), bar = h("i"), beat = h("span.live-beat");
   liveEls = { part, next, bar, beat };
+  // Now, Tempo and Autopilot in one compact band at the top: what is
+  // playing, the beat, and whether the desk is running looks by itself
   const body = h("div.hub-body.live",
-    h("div.live-card",
-      h("div.live-k", sg.following ? "Following the master deck" : song ? "Song" : "Now"),
-      h("div.live-song", song ? song.name : (sg.deck ? `Track ${sg.deck} (no song)` : "No song playing")),
-      part, h("div.live-progress", bar), next,
-      h("div.live-row",
+    h("div.live-band",
+      h("div.lb-now",
+        h("div.lb-head", h("span.live-k", sg.following ? "Following the master deck" : song ? "Song" : "Now"),
+          h("span.live-song", song ? song.name : (sg.deck ? `Track ${sg.deck} (no song)` : "No song playing"))),
+        h("div.lb-part", part, next), h("div.live-progress", bar)),
+      h("div.lb-cells",
+        h("div.lb-cell", { title: tempoLine(s) },
+          h("span.live-k", "Tempo"),
+          h("div.live-bpm", h("b", String(Math.round((t.bpm || 0) * 10) / 10)), h("small", " BPM"), beat),
+          h("div.live-row", h("button.btn.small", { onclick: () => run("tempo_tap", {}) }, "Tap"),
+            h("button.btn.small", { title: "The phrase (8 bars) starts on this beat", onclick: () => run("tempo_phrase", {}, { toast: true }) }, "Phrase"))),
+        h("div.lb-cell",
+          h("span.live-k", "Autopilot"),
+          h("div.lb-ap" + (ap.on ? ".on" : ""), ap.on ? `every ${ap.bars} bars` + (ap.bars_left != null ? ` · next in ${ap.bars_left}` : "") : sg.fallback ? "between songs" : "off"),
+          h("div.live-row",
+            h("button.btn.small" + (ap.on ? "" : ".primary"), { onclick: () => run("autopilot", { state: !ap.on }, { toast: true }) }, ap.on ? "Stop" : "Start"),
+            h("button.btn.small", { disabled: !ap.on, title: "The next look now", onclick: () => run("autopilot_next", {}, { toast: true }) }, "Next"),
+            h("button.btn.small.ghost", { title: "Autopilot settings", "aria-label": "Autopilot settings", onclick: () => import("./autopilot.js").then((m) => m.openAutopilot()) }, "⋯")))),
+      h("div.live-row.lb-songs",
         h("button.btn.small", { onclick: () => import("./songs.js").then((m) => m.openSongs()) }, "Songs…"),
         h("label.check", h("input", { type: "checkbox", checked: !!sg.follow, onchange: (e) => run("song_follow", { state: e.target.checked }, { toast: true }) }),
           h("span", "Follow the DJ decks")))),
@@ -204,21 +221,7 @@ function paintLive() {
     // the same buttons are already in the dock when it shows Buttons (app.css)
     hits.length ? h("p.muted.small.live-hits-below", "In the Buttons panel below.")
       : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: press Edit on the Buttons panel to make them."),
-    h("div.live-pair",
-      h("div.live-card",
-      h("div.live-k", "Tempo"),
-      h("div.live-bpm", h("b", String(Math.round((t.bpm || 0) * 10) / 10)), " BPM ", beat),
-      h("div.muted.small", tempoLine(s)),
-      h("div.live-row", h("button.btn.small", { onclick: () => run("tempo_tap", {}) }, "Tap"),
-        h("button.btn.small", { onclick: () => run("tempo_phrase", {}, { toast: true }) }, "Phrase starts now"))),
-      h("div.live-card",
-      h("div.live-k", "Autopilot"),
-      h("div", ap.on ? `On - a new look every ${ap.bars} bars` + (ap.bars_left != null ? ` (next in ${ap.bars_left})` : "") : sg.fallback ? "Covering between songs" : "Off"),
-      h("div.live-row",
-        h("button.btn.small" + (ap.on ? "" : ".primary"), { onclick: () => run("autopilot", { state: !ap.on }, { toast: true }) }, ap.on ? "Stop" : "Start"),
-        h("button.btn.small", { disabled: !ap.on, onclick: () => run("autopilot_next", {}, { toast: true }) }, "Next look"),
-        h("button.btn.small", { onclick: () => import("./autopilot.js").then((m) => m.openAutopilot()) }, "Settings…"))),
-));
+  );
   $("#mode-hub-body").replaceChildren(body);
   $("#mode-hub-title").textContent = "Live";
   paintLiveNow();

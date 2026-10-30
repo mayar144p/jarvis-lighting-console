@@ -8,7 +8,7 @@ import { doorFrom, balconyFrom, pillarAt } from "./drafting.js";
 import { post, token } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, h, menu, toast, promptBox, confirmBox, typingInField, anyModal, modal } from "./ui.js";
+import { $, h, menu, toast, promptBox, confirmBox, choiceBox, typingInField, anyModal, modal } from "./ui.js";
 
 let stage = null;
 let editor = null;
@@ -637,6 +637,7 @@ function openVenues(btn) {
   const list = venues();
   menu(btn, [
     { label: "Save this venue…", hint: "room, rigging, zones and the lights", run: saveVenue },
+    { label: "Clear the venue to start again…", hint: "the stage, trusses, objects and zones go; the lights stay", danger: true, run: resetVenue },
     ...(list.length ? ["-"] : []),
     ...list.map((v) => ({
       label: `Open ${v.name}`,
@@ -649,6 +650,19 @@ function openVenues(btn) {
       }
     } }))] : []),
   ]);
+}
+
+// Clear the venue to design it again (an old show's room, say): the
+// walls can stay or go; the lights stay where they hang.  One Ctrl+Z.
+export async function resetVenue() {
+  const v = venue();
+  const n = (v.rigging || []).length + (v.objects || []).length + (v.zones || []).length + (v.stage ? 1 : 0);
+  const i = await choiceBox("Clear the venue", {
+    message: `Take everything out of the room to design it again: ${n} thing${n === 1 ? "" : "s"} - the stage, trusses, poles, furniture and zones.`,
+    detail: "Your lights stay where they are (unhooked from the trusses that go), and the show, cues and buttons are not touched. Ctrl+Z brings it all back.",
+    buttons: ["Cancel", "Clear the room too", "Clear, keep the walls"], primary: 2, cancel: 0, danger: 1,
+  });
+  if (i === 1 || i === 2) run("venue_reset", { keep_room: i === 2 }, { toast: true });
 }
 
 async function saveVenue() {

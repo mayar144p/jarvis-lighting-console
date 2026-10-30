@@ -37,6 +37,13 @@ const P = {
   copy: '<rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>',
   enter: '<path d="M13.5 3v5.5H3"/><path d="M6 5.5l-3 3 3 3"/>',
   rubout: '<path d="M5 3.5h9v9H5L1.5 8z"/><path d="M7.5 6l4 4M11.5 6l-4 4"/>',
+  caret: '<path d="M4 6.5l4 4 4-4"/>',
+  caretr: '<path d="M6.5 4l4 4-4 4"/>',
+  full: '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/>',
+  pages: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
+  music: '<path d="M6 12V3.5l7-1.5v8.5"/><circle cx="4.3" cy="12" r="1.8" class="fill"/><circle cx="11.3" cy="10.5" r="1.8" class="fill"/>',
+  camera: '<path d="M2 5.5h3l1.2-2h3.6l1.2 2h3v7.5H2z"/><circle cx="8" cy="9" r="2.3"/>',
+  play: '<path d="M4.5 2.5l9 5.5-9 5.5z" class="fill"/>',
 };
 
 export function icon(name, cls = "") {
@@ -49,3 +56,40 @@ export function icon(name, cls = "") {
 }
 
 export const ICON_NAMES = Object.keys(P);
+
+// The old text symbols (▾ ▸ ◀ ▶ ⛶ ☰ ♪ 📷) on buttons, chips, labels and
+// menus become these line icons wherever they appear - also in text set
+// later.  (Never inside a field, a select or the 3D's own drawing.)
+const GLYPH = { "▾": "caret", "▸": "caretr", "◀": "prev", "▶": "play", "⛶": "full", "☰": "pages", "♪": "music", "📷": "camera" };
+const GLYPH_RE = /▾|▸|◀|▶|⛶|☰|♪|📷/;
+const GLYPH_SPLIT = /(▾|▸|◀|▶|⛶|☰|♪|📷)/;
+function swapText(node) {
+  const p = node.parentElement;
+  if (!p || p.closest("select, option, textarea, input, svg, canvas, script, style, [contenteditable], .no-glyph")) return;
+  const parts = node.data.split(GLYPH_SPLIT);
+  if (parts.length < 2) return;
+  const frag = document.createDocumentFragment();
+  parts.forEach((s, k) => {
+    if (!s) return;
+    if (k % 2) frag.append(icon(s === "▶" && /next/i.test(parts[k - 1] || "") ? "next" : GLYPH[s], "glyph"));
+    else frag.append(s.replace(/^ (?=$)/, ""));
+  });
+  node.replaceWith(frag);
+}
+function sweep(root) {
+  if (root.nodeType === 3) { if (GLYPH_RE.test(root.data)) swapText(root); return; }
+  if (root.nodeType !== 1 || !GLYPH_RE.test(root.textContent || "")) return;
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) if (GLYPH_RE.test(n.data)) hits.push(n);
+  hits.forEach(swapText);
+}
+export function upgradeGlyphs(root = document.body) {
+  sweep(root);
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (m.type === "characterData") sweep(m.target);
+      else for (const n of m.addedNodes) sweep(n);
+    }
+  }).observe(root, { childList: true, subtree: true, characterData: true });
+}

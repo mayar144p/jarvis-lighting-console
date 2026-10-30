@@ -602,6 +602,14 @@ class QuickMixin:
     def _quick_layouts(self) -> dict:
         return dict(self.__dict__.get("quick_layout") or {})
 
+    @staticmethod
+    def _quick_phantoms(layout: dict, quick: list, names: dict) -> dict:
+        """A page grid with no page under it (no button, no name, past the
+        first four) is dropped: "Every page" used to write a grid on all 32,
+        and an old show then listed 32 empty pages that couldn't go."""
+        used = {str(b.get("page")) for b in quick} | {k for k, v in (names or {}).items() if v}
+        return {k: v for k, v in layout.items() if k in used or int(k) <= 4}
+
     def _quick_layout_load(self, raw) -> dict:
         """A show file's page grids, checked (a bad entry is dropped)."""
         out: dict = {}
@@ -637,7 +645,10 @@ class QuickMixin:
         # never more buttons than a page holds, never fewer rows than one
         cur["rows"] = int(_clamp(cur["rows"], 1, self.QUICK_SLOTS // cur["cols"]))
         lay = self._quick_layouts()
-        for p in (range(1, self.QUICK_PAGES + 1) if _truthy(all_pages) else [page]):
+        # "every page": the first four and every page that is there (buttons
+        # or a name), and this one - never 32 empty pages
+        there = {1, 2, 3, 4} | {b["page"] for b in self.quick} | {int(k) for k, v in (getattr(self, "quick_names", {}) or {}).items() if v}
+        for p in (sorted(there | {page}) if _truthy(all_pages) else [page]):
             if cur == self.LAYOUT_DEFAULT:
                 lay.pop(str(p), None)
             else:
@@ -648,11 +659,20 @@ class QuickMixin:
         return {"page": page, "layout": cur, "hidden": hidden,
                 "summary": f"page {page}: {cur['cols']} across, {cur['rows']} rows{note}"}
 
-    def _a_quick_page(self, page=1, name="", delete=False, swap=None, **_):
+    def _a_quick_page(self, page=1, name="", delete=False, swap=None, tidy=False, **_):
         """Name a page of buttons ("Main", "Movers", "Drops"); `delete`
         empties it (its buttons, name and grid); `swap` trades places with
         another page - every go-to-page button, timeline clip and sound
-        trigger follows its buttons to their new place."""
+        trigger follows its buttons to their new place.  `tidy`: every page
+        with no buttons goes (its name and grid), in one step."""
+        if _truthy(tidy):
+            have = {str(b["page"]) for b in self.quick}
+            names = dict(getattr(self, "quick_names", {}) or {})
+            lay = self._quick_layouts()
+            gone = sorted({int(k) for k in (set(names) | set(lay)) if k not in have and int(k) > 1})
+            self.quick_names = {k: v for k, v in names.items() if k in have or k == "1"}
+            self.quick_layout = {k: v for k, v in lay.items() if k in have or k == "1"}
+            return {"removed": gone, "summary": f"{len(gone)} empty page{'' if len(gone) == 1 else 's'} removed" if gone else "No empty pages"}
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         if _truthy(delete):
             gone = [b for b in self.quick if b["page"] == page]
@@ -717,7 +737,8 @@ class QuickMixin:
             names = s.get("quick_names")
             sets[name] = {"quick": quick,
                           "quick_names": {str(k): str(v)[:16] for k, v in names.items()} if isinstance(names, dict) else {},
-                          "quick_layout": self._quick_layout_load(s.get("quick_layout"))}
+                          "quick_layout": self._quick_phantoms(self._quick_layout_load(s.get("quick_layout")), quick,
+                                                               names if isinstance(names, dict) else {})}
         for name in order:                 # a profile with nothing saved yet: empty
             if name != active and name not in sets:
                 sets[name] = {"quick": [], "quick_names": {}, "quick_layout": {}}

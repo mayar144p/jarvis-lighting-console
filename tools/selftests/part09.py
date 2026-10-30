@@ -4247,7 +4247,8 @@ def test_button_looks() -> None:
             r = e.act("quick_layout", page=3, cols=8, rows=3, height="fit")
             check("back to the usual grid stores nothing", "3" not in e._quick_public()["layout"], str(e._quick_public()["layout"]))
             r = e.act("quick_layout", page=1, cols=6, all_pages=True)
-            check("one grid for every page", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 9)))
+            check("one grid for every page there (the first four and any with buttons)", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 5))
+                  and "8" not in e._quick_public()["layout"])
             check("slot 48 is a real slot (12 x 4)", e.act("quick_set", page=4, slot=48, button={"kind": "flash"}).get("ok"))
             e.act("undo")
             check("undo takes a button back", not any(x["id"] == "q4-48" for x in e.quick))
@@ -10289,3 +10290,83 @@ def test_clarity() -> None:
     check("the status bar only shows what you did, not what the desk looked up", "const LOOKUPS" in ac and "!lookup(action, params)" in ac, "")
     check("a folded type row (8 movers as one) has its own menu", "function foldMenu(anchor, heads)" in fx
           and "if (tr.dataset.fold) foldMenu(" in fx, "")
+
+
+def test_visual_polish() -> None:
+    """One type scale; the old symbols drawn as icons; one look for
+    selected / on; the Live band; menu descriptions under the item; Next GO
+    names its playback; touchcheck holds Gig mode's sizes."""
+    print("Visual polish: type scale, icons for symbols, one selected look, the Live band")
+    import re as _re
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    sizes = set(_re.findall(r"calc\(([0-9.]+)px \* var\(--ts\)\)", css)) - {"0.11"}
+    check("one type scale: six steps on :root, every text size is one of them (bar three big readouts)",
+          "--fs-xs: calc(11px * var(--ts));" in css and "--fs-2xl: calc(24px * var(--ts));" in css
+          and sizes <= {"11", "12", "13", "15", "18", "24", "30", "36", "44"}, str(sorted(sizes)))
+    ic = (web / "icons.js").read_text(encoding="utf-8")
+    check("the old symbols (▾ ♪ ⛶ ☰ 📷 ◀ ▶) are drawn as the desk's icons, wherever they appear",
+          "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
+          and "upgradeGlyphs();" in (web / "main.js").read_text(encoding="utf-8"), "")
+    check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
+          "--sel-bg:" in css and css.count("background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg);") >= 15, "")
+    mh = (web / "modehub.js").read_text(encoding="utf-8")
+    check("Live: Now, Tempo and Autopilot in one compact band", 'h("div.live-band"' in mh and "div.live-pair" not in mh and ".lb-cells {" in css, "")
+    ui = (web / "ui.js").read_text(encoding="utf-8")
+    check("a menu item's description sits under it; a key or a count stays at the right",
+          'h("small.mi-desc", it.hint)' in ui and "String(it.hint).length > 14" in ui, "")
+    check("Next GO names the playback it shows", "`Next GO (PB${pbN})`" in (web / "stagepanel.js").read_text(encoding="utf-8"), "")
+    tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
+    check("touchcheck: in Gig mode every control played at a show is 40 px or more", "const MIN = 40;" in tc and "#pb-relall" in tc, "")
+
+
+def test_pages_and_venue_reset() -> None:
+    """An old show whose "Every page" grid made 32 empty pages: they are
+    dropped on load, can be deleted one by one or all at once, and Every
+    page no longer makes them.  The venue clears to be designed again: the
+    walls kept or not, the lights where they hang, one undo."""
+    print("Empty button pages go; the venue clears to start again")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("quick_set", page=5, slot=1, button={"kind": "flash", "label": "Hit"})
+            e.act("quick_layout", page=1, cols=6, all_pages=True)
+            check("Every page sets the grid of the pages that are there, not all 32",
+                  set(e.quick_layout) == {"1", "2", "3", "4", "5"}, str(sorted(e.quick_layout)))
+            e.quick_layout = {str(p): {"cols": 6, "rows": 3, "height": "m"} for p in range(1, 33)}
+            e.act("save_show", name="old")
+            e.act("load_show", name="old")
+            check("an old show's grids on empty pages are dropped when it opens",
+                  set(e.quick_layout) == {"1", "2", "3", "4", "5"}, str(sorted(e.quick_layout, key=int)))
+            e.quick_layout = {str(p): {"cols": 6, "rows": 3, "height": "m"} for p in range(1, 33)}
+            e.quick_names = {"7": "Spare"}
+            r = e.act("quick_page", tidy=True)
+            check("Remove the empty pages: every page with no buttons goes, in one step",
+                  r.get("ok") and set(e.quick_layout) == {"1", "5"} and e.quick_names == {} and 7 in r["removed"], str(r))
+            e.act("undo")
+            check("...and Ctrl+Z brings them back", len(e.quick_layout) == 32, str(len(e.quick_layout)))
+            e.act("venue_template", name="club")
+            before = (len(e.venue["rigging"]), [dict(h.get("pos") or {}) for h in e.patch])
+            r = e.act("venue_reset", keep_room=True)
+            check("Clear the venue: no stage, rigging, objects or zones; the walls kept",
+                  r.get("ok") and not e.venue["rigging"] and not e.venue["objects"] and not e.venue["zones"]
+                  and not e.venue.get("stage") and e.venue["room"]["width"] == 16, str(r.get("summary")))
+            check("...the lights stay where they are", [dict(h.get("pos") or {}) for h in e.patch] == before[1], "")
+            e.act("undo")
+            check("...one Ctrl+Z brings the venue back", len(e.venue["rigging"]) == before[0], "")
+            e.act("venue_reset", keep_room=False)
+            check("...or the room too: it sizes itself round the lights again", e.venue.get("auto") is True, "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Pages: any page there can be deleted (an empty one without asking); Remove the empty pages",
+          "disabled: !used.has(p)" in qb and 'run("quick_page", { tidy: true }' in qb, "")
+    check("Clear the venue in the Venues menu, Settings, Set up and the command bar",
+          "export async function resetVenue" in vp and "Clear the venue to start again…" in vp
+          and "resetVenue" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "resetVenue" in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")

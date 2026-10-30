@@ -157,7 +157,7 @@
           <button data-cam="side" title="From the side: a line drawing, white on black">Side<span class="vis-long"> View</span></button>
           <button data-cam="free" title="Flat, with no perspective, turned any way you like (drag to turn it): a line drawing, white on black">Free<span class="vis-long"> View</span></button>
         </div>
-        <select class="vis-select" id="vis-source" aria-label="What the 3D shows" title="What the 3D shows. Output: what the lights are doing. Programmer only: just what is in the programmer (the playbacks and buttons left out). Next GO: what the next GO of the playback you last pressed GO on will look like. The lights themselves never change">
+        <select class="vis-select" id="vis-source" aria-label="What the 3D shows" title="What the 3D shows. Output: what the lights are doing. Programmer only: just what is in the programmer (the playbacks and buttons left out). Next GO: what the next GO of the playback you are working with (the one last touched on the dock) will look like. The lights themselves never change">
           <option value="output">Output</option>
           <option value="programmer">Programmer only</option>
           <option value="next">Next GO</option>
@@ -440,7 +440,7 @@
           <label class="qb-quant" title="Every button fires on the next beat or bar of the tempo (a button can say otherwise in Edit); pressed just after the beat, it fires straight away">On the beat
             <select class="select" id="qb-quant"><option value="0">Off</option><option value="0.5">½ beat</option><option value="1">Beat</option><option value="2">2 beats</option><option value="4">Bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">Phrase (8 bars)</option></select></label>
           <button class="btn small ghost" id="qb-lock" title="Lock the layout on this device: the buttons play, nothing can be moved or edited">Lock</button>
-          <button class="btn small qb-release" id="qb-release" title="Let go of every latched button">Release all</button>
+          <button class="btn small qb-release" id="qb-release" title="Let go of every latched button">Release buttons</button>
           <button class="btn small qb-bo" id="qb-bo" title="Blackout (X) - in full screen the dock's blackout is hidden">BLACKOUT</button>
           <button class="btn small qb-fx" id="qb-arm" title="Arm the lasers and special effects (fire, CO2, confetti) - the top bar's ARM FX, hidden in full screen">ARM FX</button>
           <button class="btn small qb-fx qb-kill" id="qb-kill" title="Stop every effect at once and disarm">KILL FX</button>
@@ -497,7 +497,7 @@
           <span class="m-label">GM <output id="gm-num">100</output></span>
         </div>
         <div class="bo-col">
-          <button class="pb-relall" id="pb-relall" disabled title="Release every running playback, on every page">RELEASE ALL<b id="pb-relall-n"></b></button>
+          <button class="pb-relall" id="pb-relall" disabled title="Release every running playback, on every page"><span>RELEASE<br>PLAYBACKS</span><b id="pb-relall-n"></b></button>
           <button class="blackout" id="bo-btn" title="Blackout (X)">BLACK<br>OUT</button>
         </div>
       </div>

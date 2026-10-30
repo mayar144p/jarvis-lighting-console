@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -339,7 +340,7 @@ class RigMixin:
         "set_address", "patch_from_csv", "import_scan",
         "remap_heads", "patch_list", "rename_head",
         "set_limits", "clear_limits", "set_orient", "line_up", "keep_out_here", "stay_in", "room_fit",
-        "set_place", "place_many", "attach_heads", "set_venue", "venue_template",
+        "set_place", "place_many", "attach_heads", "set_venue", "venue_template", "venue_reset",
         "venue_shape", "venue_build", "venue_describe", "venue_array",
         "venue_room", "venue_stage", "venue_add", "venue_update", "keep_facing", "venue_rig", "venue_orient",
         "venue_remove", "venue_underlay",
@@ -558,6 +559,26 @@ class RigMixin:
         w, d, hh = venue_mod.dims(v)
         return self._venue_result(f"{v['name']}: {w:g} x {d:g} x {hh:g} m",
                                   templates=venue_mod.template_list())
+
+    def _a_venue_reset(self, keep_room=True, **_):
+        """Clear the venue to design it again: the stage, trusses, poles,
+        objects and zones all go; the walls stay (keep_room) or the room
+        goes back to sizing itself round the lights.  The lights stay where
+        they are, unhooked from the rigging that went.  One Ctrl+Z."""
+        cur = venue_mod.normalise(self.venue)
+        v = venue_mod.empty()
+        if _truthy(keep_room) and venue_mod.dims(cur)[0]:
+            v["room"] = copy.deepcopy(cur["room"])
+            v["auto"] = False
+            v["name"] = cur.get("name") or ""
+        v["crowd"] = copy.deepcopy(cur.get("crowd") or v["crowd"])
+        for h in self.patch:
+            h.pop("mount", None)
+        gone = len(cur.get("rigging") or []) + len(cur.get("objects") or []) + len(cur.get("zones") or []) + (1 if cur.get("stage") else 0)
+        self._set_venue_doc(venue_mod.normalise(v))
+        return self._venue_result(
+            f"Venue cleared ({gone} thing{'' if gone == 1 else 's'} removed"
+            + (", the walls kept" if _truthy(keep_room) else ", the room sizes itself again") + ") - Ctrl+Z brings it back")
 
     # -- other ways to make a room than drawing it ------------------------
     def _a_venue_shape(self, shape="rectangle", width=None, depth=None, height=None,

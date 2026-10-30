@@ -678,7 +678,7 @@ ACTIONS = (
     "set_lock", "unlock", "set_dry_run",
     "set_attribute", "set_colour", "set_intensity", "set_output",
     "set_dmx_target", "virtual_node", "set_place", "set_position", "set_venue", "status", "stop_fx",
-    "venue_template", "venue_room", "venue_stage", "venue_add",
+    "venue_template", "venue_reset", "venue_room", "venue_stage", "venue_add",
     "venue_shape", "venue_build", "venue_describe", "venue_array", "venue_align", "venue_ceiling", "venue_preview", "quick_from_programmer",
     "venue_update", "venue_remove", "venue_underlay", "venue_crowd",
     "venue_camera", "venue_info", "venue_orient", "attach_heads", "place_many",

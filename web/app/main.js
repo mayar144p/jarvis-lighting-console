@@ -26,6 +26,7 @@ import { initTheme, applyTheme } from "./theme.js";
 import { initHelp } from "./help.js";
 import { initDeskBridge } from "./deskbridge.js";
 import { initWinControls } from "./wincontrols.js";
+import { upgradeGlyphs } from "./icons.js";
 
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
@@ -77,6 +78,7 @@ async function boot() {
   }
   initTopbar();
   initWinControls();                        // the desktop app: no system title bar, the desk's own
+  upgradeGlyphs();                          // ▾ ♪ ⛶ ... drawn as the desk's icons
   initFixtures();
   // the 3D view is off for now (view3d.js): the panels take the screen
   if (!HAS_3D) document.body.classList.add("no3d");

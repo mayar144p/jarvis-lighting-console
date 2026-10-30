@@ -543,7 +543,7 @@ export function initPlaybacks() {
     const dx = (e.clientX - drag.x) * (document.body.classList.contains("masters-left") ? 1 : -1);
     if (Math.abs(dx) > 4) { drag.moved = true; clearTimeout(holdT); }
     if (!drag.moved) return;
-    const w = Math.max(0, Math.min(window.innerWidth * 0.6, drag.w + dx));
+    const w = Math.max(0, Math.min(Math.min(window.innerWidth * 0.4, 640), drag.w + dx));
     if (w < 40) { setFold(true); return; }
     setFold(false);
     setWidth(w);

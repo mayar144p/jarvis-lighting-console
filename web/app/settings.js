@@ -251,6 +251,8 @@ export async function openSettings() {
         : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
       h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
         h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
+      h("div.row-btns", h("button.btn", { onclick: () => import("./venuepanel.js").then((m) => m.resetVenue()) }, "Clear the venue…"),
+        h("span.muted.small", "everything out of the room to design it again; the lights stay")),
       h("h3", "Start from a template"),
       h("div.form-grid",
         h("label.field", h("span", "Template"), tpl),
