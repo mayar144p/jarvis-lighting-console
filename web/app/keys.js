@@ -59,6 +59,14 @@ export function initKeys() {
     }
     if (ctrl && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); return; }
     if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); saveShow((state.snap && state.snap.show_file) || ""); return; }
+    // F1 / F2 / F3: Set up, Program, Live (as the mode buttons say)
+    const fk = { F1: "setup", F2: "program", F3: "live" }[e.key];
+    if (fk && !ctrl && !e.altKey && !anyModal()) {
+      e.preventDefault();
+      if (cmdOpen()) closeCmd();
+      import("./workspaces.js").then((m) => m.useMode(fk));
+      return;
+    }
     if (typingInField(e) || anyModal() || cmdOpen()) return;
     if (ctrl && e.key.toLowerCase() === "z") { e.preventDefault(); run(e.shiftKey ? "redo" : "undo"); return; }
     if (ctrl && e.key.toLowerCase() === "y") { e.preventDefault(); run("redo"); return; }
@@ -77,6 +85,10 @@ export function initKeys() {
       return run("highlight", { state: !cur.on, solo: e.shiftKey });
     }
     if (low === "b") return run("cue_back", { playback: focusedPlayback() });
+    // [ and ]: the previous / next light (one at a time through the
+    // selection, or through the whole rig from one light); { or }: all again
+    if (k === "[" || k === "]") { e.preventDefault(); return run("select_step", { step: k === "]" ? "next" : "prev" }, { toast: true }); }
+    if (k === "{" || k === "}") { e.preventDefault(); return run("select_step", { step: "all" }, { toast: true }); }
     // X blacks out at once; only Shift+X (or the BLACKOUT button) brings
     // the lights back - one stray key can't undo a blackout mid-show
     if (low === "x") {

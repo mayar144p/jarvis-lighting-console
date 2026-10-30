@@ -769,13 +769,13 @@ async function openEverything() {
 // Help: three tabs - getting started, the keys (grouped), the command line
 const KEY_GROUPS = [
   ["Playing the show", [["Space", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"], ["Shift+X", "lights back after a blackout"],
-    ["T", "tap the tempo"], ["Shift+T", "this is beat 1"]]],
-  ["Programming", [["R", "record a cue"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
+    ["T", "tap the tempo"], ["Shift+T", "this is beat 1"], ["Your keys", "a playback's own GO key (⋯ → Keys and MIDI)"]]],
+  ["Programming", [["R", "record a cue"], ["Shift+click Record here", "record at once, no questions"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
     ["I / D", "insert a cue after / delete the current one"], ["C", "clear the programmer"], ["L", "locate (open white, centred)"], ["↑ ↓", "intensity ±5 (Shift: ±1)"]]],
   ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
-    ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
+    ["[ / ]", "previous / next light, one at a time"], ["{ or }", "all of them again"], ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
   ["The desk", [["/ or Ctrl+K", "the command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-    ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"]]],
+    ["F1 / F2 / F3", "Set up / Program / Live"], ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"]]],
 ];
 const KEYS = KEY_GROUPS.flatMap(([, rows]) => rows);
 const SYNTAX = [

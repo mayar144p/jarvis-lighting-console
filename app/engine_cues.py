@@ -675,6 +675,45 @@ class CueMixin:
         return {"playback": pb["n"], "active": False,
                 "summary": f"PB{pb['n']} released"}
 
+    def _a_playback_bind(self, playback=None, key=None, go=None, flash=None, fader=None, swop=False, **_):
+        """Give a playback its own key and MIDI controls (empty: none).
+        A note or CC another playback had moves here - one control, one job."""
+        from app.engine_base import clean_bind
+        pb = self._playback(playback if playback is not None else 1)
+        bind = clean_bind({"key": key, "go": go, "flash": flash, "fader": fader, "swop": swop})
+        for other in self.playbacks:
+            if other is pb:
+                continue
+            ob = other.get("bind") or {}
+            for k in ("key", "go", "flash", "fader"):
+                if k in bind and ob.get(k) == bind[k]:
+                    ob.pop(k, None)
+        pb["bind"] = bind
+        said = []
+        if "key" in bind:
+            said.append("key %s = GO" % bind["key"].upper())
+        if "go" in bind:
+            said.append("note %d = GO" % bind["go"])
+        if "flash" in bind:
+            said.append("note %d = Flash" % bind["flash"])
+        if "fader" in bind:
+            said.append("CC %d = fader" % bind["fader"])
+        if bind.get("swop"):
+            said.append("Flash is Swop")
+        return {"playback": pb["n"], "bind": bind,
+                "summary": "PB%d: %s" % (pb["n"], ", ".join(said) if said else "no key or MIDI")}
+
+    def _a_playback_release_all(self, **_):
+        """Let go of every running playback, on every page."""
+        gone = []
+        for pb in self.playbacks:
+            if pb.get("active"):
+                self._a_playback_release(playback=pb["n"])
+                gone.append(pb["n"])
+        return {"released": gone,
+                "summary": ("Released %d playback%s" % (len(gone), "" if len(gone) == 1 else "s"))
+                if gone else "No playback was running"}
+
     def _a_playback_activate(self, playback=None, **_):
         pb = self._playback(playback if playback is not None else 1)
         if not pb["stack"]:

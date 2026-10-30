@@ -399,11 +399,13 @@ class MoveMixin:
         if step not in ("next", "prev"):
             raise ValueError("step is next, prev or all")
         if not keep or not (len(cur) == 1 and cur[0] in keep):
-            keep = cur or [h["head_no"] for h in self.patch]
+            # several selected: step through them; one (or none): through
+            # the whole rig, from that one
+            keep = cur if len(cur) > 1 else [h["head_no"] for h in self.patch]
             if not keep:
                 raise ValueError("no lights to step through")
             self.__dict__["step_set"] = list(keep)
-            i = -1 if step == "next" else 0
+            i = keep.index(cur[0]) if len(cur) == 1 and cur[0] in keep else (-1 if step == "next" else 0)
         else:
             i = keep.index(cur[0])
         i = (i + (1 if step == "next" else -1)) % len(keep)

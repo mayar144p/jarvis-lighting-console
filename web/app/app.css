@@ -339,7 +339,11 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .fx-table td.c-name { position: relative; padding-right: 4px; }
 .fx-table tr { cursor: pointer; user-select: none; }
 .fx-table tbody tr:hover { background: #18181c; }
-.fx-table tbody tr.sel { background: var(--accent-bg); }
+/* a selected light: a solid bar down its left edge as well as the tint -
+   seen at a glance on a dim screen, not only by its colour */
+.fx-table tbody tr.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.fx-table tbody tr.sel td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+.fx-table tbody tr.sel td { color: var(--text); }
 .fx-table tbody tr.sel .c-no { color: var(--accent); font-weight: 700; }
 .fx-table .f-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .fx-table .f-name b { font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; overflow-wrap: break-word; }
@@ -707,6 +711,14 @@ body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 .pb-top .btn.icon { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); flex: none; position: absolute; right: 4px; top: 4px; opacity: 0; background: var(--surface-3); }
 .pb:hover .pb-top .btn.icon, .pb-top .btn.icon:focus-visible { opacity: 1; }
 .pb-top .n { font: 700 calc(11px * var(--ts)) var(--mono); color: var(--muted); flex: none; }
+/* the fader's level, written on the fader's foot */
+.pb .pb-lvl { position: absolute; left: 6px; bottom: 10px; width: calc(36px * var(--ctl)); text-align: center; pointer-events: none; z-index: 1;
+  font: 700 calc(11px * var(--ts)) var(--mono); color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
+.pb-mid .pb-keys { display: inline-block; font: 600 calc(10px * var(--ts)) var(--mono); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-mid .pb-keys[hidden] { display: none; }
+.bind-box { display: grid; gap: 10px; min-width: min(420px, 80vw); }
+.bind-row { display: grid; grid-template-columns: calc(90px * var(--ctl)) auto 1fr; align-items: center; gap: 10px; }
 .pb-top .name { font-weight: 700; font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
 .pb-top .name:hover { color: var(--accent); }
 .pb-mid { min-height: 0; overflow: hidden; }
@@ -744,6 +756,13 @@ body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
   background: #1c0d0e; color: #ff8a8a; font-weight: 800; letter-spacing: .08em; font-size: calc(13px * var(--ts)); line-height: 1.3;
 }
 .blackout:hover { background: #2c1012; }
+.bo-col { display: flex; flex-direction: column; gap: 6px; }
+.bo-col .blackout { flex: 1; }
+.pb-relall { width: calc(88px * var(--ctl)); min-height: calc(40px * var(--ctl)); border-radius: var(--radius-sm); border: 1px solid var(--border-2, var(--border)); background: var(--surface-2); color: var(--text-2); font: 700 calc(11px * var(--ts)) var(--font, inherit); letter-spacing: .05em; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.pb-relall:not(:disabled) { color: var(--text); border-color: var(--live); }
+.pb-relall:disabled { opacity: .45; }
+.pb-relall b { min-width: 1.4em; padding: 1px 4px; border-radius: 9px; background: var(--live); color: #fff; font: 700 calc(11px * var(--ts)) var(--mono); }
+.pb-relall b:empty { display: none; }
 .blackout.on { background: var(--live); color: #fff; animation: pulse 1s ease-in-out infinite; }
 
 /* ------------------------------------------------------------- statusbar */
@@ -1894,7 +1913,7 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
    when they matter.  (A filter reaches everything inside, so it goes on the
    parts around them.) */
 .topbar > :not(.output):not(.fxctl):not(.op-pill):not(.blind-pill), .panel, .statusbar, .drawer, .cmdbar, .modal, .menu, .toasts > *,
-.playbacks > :not(.masters):not(.pb-strip):not(.qb), .masters > :not(.blackout), .pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go),
+.playbacks > :not(.masters):not(.pb-strip):not(.qb), .masters > :not(.blackout):not(.bo-col), .pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go),
 .qb > :not(.pb-mini), .pbm > :not(.pbm-btns) { filter: var(--panel-filter, none); }
 :root[data-theme="showdark"] body { background: #000; }
 
@@ -2197,7 +2216,7 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: ca
 .pb-pages button { min-width: calc(38px * var(--ctl)); padding: 6px 4px; border-radius: 6px; font-weight: 600; font-size: calc(12px * var(--ts)); color: var(--text-2); background: var(--surface-2); border: 1px solid transparent; position: relative; }
 .pb-pages button.on { color: var(--text); border-color: var(--accent); background: var(--accent-bg); }
 .pb-pages button.unused:not(.on) { opacity: .55; }
-.pb-pages button.live::after { content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.pb-pages button .pg-run { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--live); color: #fff; font: 700 calc(10px * var(--ts)) var(--mono); line-height: 16px; }
 .pb[hidden] { display: none; }
 /* ---- the desk view (Programmer -> Palettes): a pro desk's palette windows,
    in the desk's own colours ---- */

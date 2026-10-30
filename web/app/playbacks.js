@@ -4,7 +4,8 @@
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { act } from "./api.js";
-import { $, h, vfader, throttle, menu, promptBox, confirmBox } from "./ui.js";
+import { $, h, vfader, throttle, menu, promptBox, confirmBox, modal, toast } from "./ui.js";
+import { onNote, onCC } from "./webmidi.js";
 import { icon } from "./icons.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
@@ -17,6 +18,15 @@ let pbPage = 1;
 try { pbPage = Math.max(1, parseInt(localStorage.getItem("jarvis.pbpage") || "1", 10) || 1); } catch (e) { /* private window */ }
 
 export const focusedPlayback = () => focusPb;
+
+// Shift+click a Record: the next cue at the end, straight away (the
+// programmer stays, so the next cue builds on it); a plain click asks
+function quickRecord(e, n) {
+  if (!e.shiftKey) return openCueDialog(n);
+  let keep = true;
+  try { keep = localStorage.getItem("jarvis.clearAfterRecord") !== "1"; } catch (err) { /* fine */ }
+  return run("record_cue", { playback: n, keep }, { toast: true });
+}
 
 function cueLabel(c) { return c ? (c.name || `Cue ${c.n}`) : ""; }
 
@@ -31,16 +41,19 @@ function build() {
     // fader, and GO / Flash / Back / Stop - always in the same place
     const fader = h("div.vfader", { "aria-label": `Playback ${n} level` });
     const name = h("span.name", { title: "Cue list" });
+    const lvl = h("output.pb-lvl", { title: "Fader level" });
+    const keys = h("kbd.pb-keys", { hidden: true, title: "This playback's key and MIDI (⋯ -> Keys and MIDI)" });
     const cue = h("div.pb-cue");
     const prog = h("div.pb-prog", h("i"));
     const flash = h("button.flash", { title: "Flash: full while held" }, "Flash");
-    const rec = h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue",
-      onclick: () => openCueDialog(n) }, h("b", String(n)), h("span", "Record here"));
+    const rec = h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue (Shift+click: straight away, no questions)",
+      onclick: (e) => quickRecord(e, n) }, h("b", String(n)), h("span", "Record here"));
     const card = h("div.pb", { dataset: { pb: n } },
       fader,
+      lvl,
       h("div.pb-top", h("span.n", String(n)), name,
         h("button.btn.ghost.small.icon", { title: "Playback options", onclick: (e) => pbMenu(e.currentTarget, n) }, "⋯")),
-      h("div.pb-mid", cue, prog),
+      h("div.pb-mid", cue, keys, prog),
       h("div.pb-btns",
         h("button.go", { title: "GO: next cue", onclick: () => { setFocus(n); run("cue_go", { playback: n }); } }, "GO"),
         flash,
@@ -52,7 +65,7 @@ function build() {
     card.addEventListener("pointerdown", () => setFocus(n));
     const send = throttle((level) => run("playback_level", { playback: n, level }, { silentError: true }), 60);
     const fd = vfader(fader, { min: 0, max: 100, onInput: send });
-    cards.set(n, { card, fd, name, cue, prog });
+    cards.set(n, { card, fd, name, cue, prog, lvl, keys, flash });
     strip.append(card);
   }
   setFocus(focusPb);
@@ -63,7 +76,30 @@ function build() {
 }
 
 // Flash: held, the playback runs at full; let go, it goes back to where it
-// was (and stops again if it wasn't running)
+// was (and stops again if it wasn't running).  A playback set to Swop also
+// takes the other running playbacks out while it is held.
+const allPbs = () => (state.snap && state.snap.playbacks) || [];
+function flashDown(n) {
+  const pb = allPbs().find((p) => p.n === n) || {};
+  if (!(pb.stack || []).length) return null;
+  const was = { active: !!pb.active, level: pb.level ?? 100, others: [] };
+  if (pb.bind && pb.bind.swop) {
+    for (const o of allPbs()) {
+      if (o.n !== n && o.active && (o.level ?? 100) > 0) {
+        was.others.push([o.n, o.level ?? 100]);
+        run("playback_level", { playback: o.n, level: 0 }, { silentError: true });
+      }
+    }
+  }
+  if (!was.active) run("playback_activate", { playback: n }, { silentError: true });
+  run("playback_level", { playback: n, level: 100 }, { silentError: true });
+  return was;
+}
+function flashUp(n, w) {
+  run("playback_level", { playback: n, level: w.level }, { silentError: true });
+  if (!w.active) run("playback_release", { playback: n }, { silentError: true });
+  for (const [o, level] of w.others) run("playback_level", { playback: o, level }, { silentError: true });
+}
 function wireFlash(btn, which) {
   let n = 0;                                     // (which: a number, or the mini row's slot)
   let was = null, finger = null;                 // one finger per Flash: a second can't undo the first
@@ -71,14 +107,11 @@ function wireFlash(btn, which) {
     e.preventDefault();
     if (finger !== null) return;
     n = typeof which === "function" ? which() : which;
-    const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
-    if (!(pb.stack || []).length) return;
+    was = flashDown(n);
+    if (!was) return;
     finger = e.pointerId;
-    was = { active: !!pb.active, level: pb.level ?? 100 };
     btn.setPointerCapture?.(e.pointerId);
     btn.classList.add("on");
-    if (!was.active) run("playback_activate", { playback: n }, { silentError: true });
-    run("playback_level", { playback: n, level: 100 }, { silentError: true });
   };
   const up = (e) => {
     if (!was || (e && e.pointerId !== finger)) return;
@@ -86,8 +119,7 @@ function wireFlash(btn, which) {
     was = null;
     finger = null;
     btn.classList.remove("on");
-    run("playback_level", { playback: n, level: w.level }, { silentError: true });
-    if (!w.active) run("playback_release", { playback: n }, { silentError: true });
+    flashUp(n, w);
   };
   btn.addEventListener("pointerdown", down);
   btn.addEventListener("pointerup", up);
@@ -115,9 +147,14 @@ function tellFocus(n) {
 function pbMenu(btn, n) {
   const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
   const f = pb.follow || {};
+  const b = pb.bind || {};
   menu(btn, [
     { label: "Record cue from programmer…", run: () => openCueDialog(n) },
     { label: "Edit cue list…", run: () => openCueList(n) },
+    "-",
+    { label: "Keys and MIDI…", hint: bindText(b) || "a key or a pad for GO, Flash, the fader", run: () => openBind(n) },
+    { label: b.swop ? "Flash button: back to Flash" : "Flash button works as Swop", hint: b.swop ? "" : "this one alone while held",
+      run: () => run("playback_bind", { playback: n, ...b, swop: !b.swop }, { toast: true }) },
     "-",
     { label: f.on ? "Stop auto-follow" : "Auto-follow (run the list by itself)", run: () => run("follow_set", { playback: n, on: !f.on }, { toast: true }) },
     { label: f.loop ? "Stop looping" : "Loop the cue list", run: () => run("follow_set", { playback: n, loop: !f.loop }, { toast: true }) },
@@ -134,8 +171,48 @@ function pbMenu(btn, n) {
   ]);
 }
 
-// the page buttons beside the faders: 1-10, 11-20...; a dot where a
-// playback is running
+const bindText = (b) => [b.key ? `${b.key.toUpperCase()}` : "", b.go != null ? `♪${b.go}` : "",
+  b.flash != null ? `F♪${b.flash}` : "", b.fader != null ? `CC${b.fader}` : ""].filter(Boolean).join(" ");
+
+// A playback's own controls: a keyboard key for GO, a MIDI pad for GO and
+// one for Flash, a MIDI fader (CC) for its level.  Learn listens for the
+// next pad or fader moved.
+async function openBind(n) {
+  const { learnMidi, RESERVED } = await import("./quickbuttons.js");
+  const pb = allPbs().find((p) => p.n === n) || {};
+  const s = { key: "", go: "", flash: "", fader: "", swop: false, ...(pb.bind || {}) };
+  const note = h("p.muted.small", "Learn listens for 10 seconds: hit the pad or move the fader.");
+  const keyIn = h("input.qe-num.qe-key", { type: "text", maxlength: 1, value: s.key, placeholder: "none",
+    oninput: (e) => {
+      const k = e.target.value.toLowerCase();
+      s.key = /^[a-z0-9]$/.test(k) && !RESERVED.has(k) ? k : "";
+      e.target.value = s.key;
+      note.textContent = k && !s.key ? `“${k}” is one of the desk's own keys - pick another` : "Press the key: GO on this playback.";
+    } });
+  const num = (field, kind) => {
+    const inp = h("input.qe-num.qe-key", { type: "number", min: 0, max: 127, value: s[field] ?? "", placeholder: "—",
+      oninput: (e) => { const v = e.target.value; s[field] = v === "" ? "" : Math.max(0, Math.min(127, Math.round(+v))); } });
+    const learn = h("button.chip", { onclick: () => learnMidi(learn, inp, note, (v) => { s[field] = v; }, kind) }, "Learn");
+    return h("div.chip-row", inp, learn);
+  };
+  const row = (label, el, help) => h("div.bind-row", h("label", label), el, h("small.muted", help));
+  const close = modal({
+    title: `PB${n} ${pb.name || ""}: keys and MIDI`,
+    body: h("div.bind-box",
+      row("GO key", keyIn, "a key on the keyboard"),
+      row("GO pad", num("go", "note"), "a MIDI note"),
+      row("Flash pad", num("flash", "note"), s.swop ? "held: this one alone (Swop)" : "held: full"),
+      row("Fader", num("fader", "cc"), "a MIDI fader or knob (CC)"),
+      note),
+    foot: [
+      h("button.btn", { onclick: () => { run("playback_bind", { playback: n, swop: s.swop }, { toast: true }); close(); } }, "Clear all"),
+      h("button.btn.primary", { onclick: () => { run("playback_bind", { playback: n, ...s }, { toast: true }); close(); } }, "Save"),
+    ],
+  });
+}
+
+// the page buttons beside the faders: 1-10, 11-20...; on each, how many
+// of its playbacks are running (a page you can't see still plays)
 function renderPages(pbs) {
   const pages = Math.max(1, Math.ceil(pbs.length / PER_PAGE));
   if (pbPage > pages) pbPage = 1;
@@ -145,13 +222,20 @@ function renderPages(pbs) {
   box.replaceChildren(...Array.from({ length: pages }, (_, i) => {
     const p = i + 1;
     const on = pbs.slice(i * PER_PAGE, p * PER_PAGE);
-    const live = on.some((pb) => pb.active);
+    const live = on.filter((pb) => pb.active).length;
     const used = on.some((pb) => (pb.stack || []).length);
     return h("button" + (p === pbPage ? ".on" : "") + (live ? ".live" : "") + (used ? "" : ".unused"), {
-      title: `Playbacks ${i * PER_PAGE + 1}-${p * PER_PAGE}` + (live ? " (one is running)" : ""),
+      title: `Playbacks ${i * PER_PAGE + 1}-${p * PER_PAGE}` + (live ? ` (${live} running)` : ""),
       onclick: () => { pbPage = p; try { localStorage.setItem("jarvis.pbpage", String(p)); } catch (e) { /* ignore */ } render(); },
-    }, `P${p}`);
+    }, `P${p}`, live ? h("span.pg-run", String(live)) : null);
   }));
+  const running = pbs.filter((pb) => pb.active).length;
+  const rel = $("#pb-relall");
+  if (rel) {
+    rel.disabled = !running;
+    $("#pb-relall-n").textContent = running ? String(running) : "";
+    rel.title = running ? `Release the ${running} running playback${running === 1 ? "" : "s"}, on every page` : "No playback is running";
+  }
   for (const [n, c] of cards) c.card.hidden = Math.ceil(n / PER_PAGE) !== pbPage;
 }
 
@@ -186,6 +270,13 @@ function render() {
       bar.style.width = "0";
     }
     c.fd.set(pb.level ?? 100);
+    c.lvl.textContent = `${Math.round(pb.level ?? 100)}%`;
+    const bt = bindText(pb.bind || {});
+    c.keys.hidden = !bt;
+    c.keys.textContent = bt;
+    const swop = !!(pb.bind && pb.bind.swop);
+    c.flash.textContent = swop ? "Swop" : "Flash";
+    c.flash.title = swop ? "Swop: this playback alone, at full, while held" : "Flash: full while held";
   }
   renderGroupMasters();
   renderCues();
@@ -361,6 +452,42 @@ function wireModes() {
   set(modes.some((b) => b.dataset.mode === saved) ? saved : "faders");
 }
 
+// A playback's key (GO) and, from a controller on this device, its pads
+// and fader.  (The desk's own MIDI input plays them in the engine.)
+function wireBindings() {
+  if (document.documentElement.dataset.window === "stage") return;
+  const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || typing(e.target) || document.querySelector(".modal-scrim")) return;
+    const k = (e.key || "").toLowerCase();
+    if (k.length !== 1) return;
+    const pb = allPbs().find((p) => p.bind && p.bind.key === k);
+    if (!pb) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setFocus(pb.n);
+    run("cue_go", { playback: pb.n });
+  }, true);
+  const flashing = new Map();
+  onNote((ev) => {
+    for (const pb of allPbs()) {
+      const b = pb.bind || {};
+      if (b.go === ev.number && ev.on) run("cue_go", { playback: pb.n });
+      if (b.flash === ev.number) {
+        if (ev.on && !flashing.has(pb.n)) { const w = flashDown(pb.n); if (w) flashing.set(pb.n, w); }
+        if (!ev.on && flashing.has(pb.n)) { flashUp(pb.n, flashing.get(pb.n)); flashing.delete(pb.n); }
+      }
+    }
+  });
+  const senders = new Map();                     // one per playback: two faders moved together both land
+  onCC((ev) => {
+    const pb = allPbs().find((p) => p.bind && p.bind.fader === ev.number);
+    if (!pb) return;
+    if (!senders.has(pb.n)) senders.set(pb.n, throttle((level) => run("playback_level", { playback: pb.n, level }, { silentError: true }), 60));
+    senders.get(pb.n)(Math.round((ev.value * 100) / 127));
+  });
+}
+
 export function initPlaybacks() {
   wireModes();
   gm = vfader($("#gm-fader"), {
@@ -373,6 +500,7 @@ export function initPlaybacks() {
     }, 60),
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
+  $("#pb-relall").addEventListener("click", () => run("playback_release_all", {}, { toast: true }));
   // the group faders fold away on a small screen (remembered on this computer)
   // the master faders' edge (a thin grip, no button taking up room): drag it
   // to make the group faders wider or narrower - nearly shut folds them;
@@ -426,6 +554,7 @@ export function initPlaybacks() {
   fold.addEventListener("dblclick", () => setFold(!grp.classList.contains("folded")));
   fold.addEventListener("contextmenu", (e) => { e.preventDefault(); sideMenu(fold); });
   fold.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFold(!grp.classList.contains("folded")); } });
+  wireBindings();
   // on a phone the faders are one tab away: Blackout stays in the bottom bar
   on("snapshot", render);
   on("lite", render);

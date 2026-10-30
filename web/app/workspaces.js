@@ -4,7 +4,7 @@
 // and the programmer's tab.  Four ready ones and your own; each one keeps
 // the screen as you left it.  Switch from the top bar or with Alt+1..9.
 // Kept per computer (each operator's own), not in the show.
-import { $, $$, h, menu, toast, promptBox, confirmBox } from "./ui.js";
+import { $, $$, h, menu, toast, promptBox, confirmBox, choiceBox } from "./ui.js";
 import { BUILTIN, clean, gridFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
 import { renderHub } from "./modehub.js";
 import { state, on } from "./store.js";
@@ -139,12 +139,35 @@ function refloat() {
 export function useWorkspace(which, { quiet = false } = {}) {
   const w = typeof which === "number" ? saved.list[which - 1] : saved.list.find((x) => x.id === which);
   if (!w) return false;
+  const was = activeWorkspace();
   remember();                                     // the one we leave keeps how it was
   saved.active = w.id;
   store();
   apply(w);
   if (!quiet) toast(`Workspace: ${w.name}`);
+  if (w.mode === "live" && (!was || was.mode !== "live")) offerLock();
   return true;
+}
+
+// Into Live with the show still open for editing: offer the lock, once a
+// session (a stray drag on a busy night can't move a cue or a light).
+// "Don't ask again" is kept on this computer.
+let lockAsked = false;
+async function offerLock() {
+  const s = state.snap || {};
+  if (lockAsked || (s.lock || "design") !== "design" || document.documentElement.dataset.window === "stage") return;
+  try { if (localStorage.getItem("jarvis.noLockAsk") === "1") return; } catch (e) { /* private window */ }
+  lockAsked = true;
+  const i = await choiceBox("Lock the show for tonight?", {
+    message: "Live: the show can still be edited. Lock it so a stray tap can't change a cue, a palette or the patch?",
+    detail: "Operate: play and busk with the programmer. Playing only: GO, faders, buttons and blackout. The lock button at the top unlocks it.",
+    buttons: ["Not now", "Don't ask again", "Playing only", "Operate"], primary: 3, cancel: 0,
+  });
+  if (i === 1) { try { localStorage.setItem("jarvis.noLockAsk", "1"); } catch (e) { /* private window */ } }
+  if (i === 2 || i === 3) {
+    const { run } = await import("./actions.js");
+    run("set_lock", { state: i === 3 ? "operate" : "locked" }, { toast: true });
+  }
 }
 
 function toggle(field) {

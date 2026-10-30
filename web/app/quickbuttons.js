@@ -10,7 +10,7 @@
 import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
-import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
+import { onNote, onCC, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
 import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
@@ -139,7 +139,7 @@ const rateText = (r) => (RATES.find(([v]) => v === r) || [0, `${r}×`])[1];
 // kinds whose brightness can fade in / out
 const FADES = new Set(["flash", "dim", "custom", "capture", "kill"]);
 // the console's own keys a button may not take
-const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f", "/", "?", " "]);
+export const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f", "/", "?", " "]);
 
 let page = 1;
 let editing = false;
@@ -1360,7 +1360,8 @@ async function midiStatus() {
   const d = await post("/api/console/midi", {});
   return (d.result && d.result.midi) || d.midi || {};
 }
-async function learnMidi(btn, input, note, set) {
+export async function learnMidi(btn, input, note, set, kind = "note") {
+  const last = kind === "cc" ? "last_cc" : "last_note";
   const st = await midiStatus().catch(() => ({}));
   const desk = st.enabled && st.open;
   if (!desk && !webMidiOn() && webMidiSupported()) await setWebMidi(true);   // a controller on this device
@@ -1370,24 +1371,24 @@ async function learnMidi(btn, input, note, set) {
     note.classList.add("warn");
     return;
   }
-  const since = (st.last_note && st.last_note.at) || 0;
+  const since = (st[last] && st[last].at) || 0;
   let heard = null;
-  const off = onNote((ev) => { if (ev.on) heard = ev; });
-  btn.textContent = "Hit a pad…";
+  const off = kind === "cc" ? onCC((ev) => { heard = ev; }) : onNote((ev) => { if (ev.on) heard = ev; });
+  btn.textContent = kind === "cc" ? "Move a fader…" : "Hit a pad…";
   btn.classList.add("on");
   const end = Date.now() + 10000;
   while (Date.now() < end && btn.isConnected && !heard) {
     await new Promise((r) => setTimeout(r, 250));
     if (desk && !heard) {
       const cur = await midiStatus().catch(() => ({}));
-      if (cur.last_note && cur.last_note.at > since) heard = cur.last_note;
+      if (cur[last] && cur[last].at > since) heard = cur[last];
     }
   }
   off();
   if (heard) {
     set(heard.number);
     input.value = heard.number;
-    note.textContent = `Note ${heard.number} (channel ${heard.channel})`;
+    note.textContent = `${kind === "cc" ? "CC" : "Note"} ${heard.number} (channel ${heard.channel})`;
     note.classList.remove("warn");
   } else if (!desk && !webMidiInputs().length) {
     note.textContent = "No MIDI controller found on this device.";

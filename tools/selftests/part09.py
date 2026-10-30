@@ -10190,3 +10190,73 @@ def test_room_by_pointing() -> None:
     check("which end is which: the 3D writes DJ / STAGE END, BACK OF THE ROOM, LEFT, RIGHT on the floor while arranging; the plans and Make the room say it",
           "function sideLabels(R, stageFront)" in st and '"BACK OF THE ROOM"' in st and "this.sideLabels.visible = this.editing" in st
           and "Which way round: " in rd and "export function roomSides" in (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8"), "")
+
+
+def test_show_safety_speed() -> None:
+    """Running playbacks counted on their page tabs, one Release all; the
+    patch deletes say how many; Live offers the lock; a playback has its
+    own key, GO and Flash pads and a fader CC (Flash can be Swop); a level
+    number on each fader; Shift+Record records at once; [ ] step through
+    the lights; F1-F3 are the modes."""
+    print("Show safety and speed: Release all, playback keys and MIDI, Swop, [ ], F1-F3")
+    from app import engine as eng
+    from app import midi
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=3)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            for n in (1, 2, 12):
+                e.act("record_cue", playback=n, keep=True)
+            e.act("cue_go", playback=1)
+            e.act("cue_go", playback=12)
+            r = e.act("playback_release_all")
+            check("Release all lets go of every running playback, on every page",
+                  r.get("ok") and sorted(r.get("released")) == [1, 12] and not any(p["active"] for p in e.playbacks), str(r))
+            check("...and still works when the desk is locked", (e.act("set_lock", state="locked"), e.act("playback_release_all").get("ok"), e.act("set_lock", state="design"))[1], "")
+            r = e.act("playback_bind", playback=2, key="q", go=40, flash=41, fader=7, swop=True)
+            check("a playback keeps its key, GO pad, Flash pad and fader CC", r.get("ok") and e.playbacks[1]["bind"] == {"key": "q", "go": 40, "flash": 41, "fader": 7, "swop": True}, str(r))
+            e.act("playback_bind", playback=1, go=40)
+            check("...one note, one job: given to another playback, it moves there",
+                  e.playbacks[0]["bind"] == {"go": 40} and "go" not in e.playbacks[1]["bind"], str(e.playbacks[1]["bind"]))
+            check("...shown on the playback and saved with the show",
+                  e.snapshot()["playbacks"][1]["bind"]["fader"] == 7 and e._pb_saved(e.playbacks[1])["bind"]["key"] == "q", "")
+            m = midi.MidiManager(e, devices=[])
+            m.handle({"kind": "note", "channel": 1, "number": 40, "value": 100, "on": True})
+            check("the desk's MIDI: the GO pad GOes its playback", e.playbacks[0]["active"], "")
+            m.handle({"kind": "cc", "channel": 1, "number": 7, "value": 127 // 2})
+            check("...the fader CC sets its level", e.playbacks[1]["level"] == 49, str(e.playbacks[1]["level"]))
+            e.act("playback_level", playback=2, level=60)
+            m.handle({"kind": "note", "channel": 1, "number": 41, "value": 100, "on": True})
+            held = (e.playbacks[1]["active"], e.playbacks[1]["level"], e.playbacks[0]["level"])
+            m.handle({"kind": "note", "channel": 1, "number": 41, "value": 0, "on": False})
+            check("...Flash set to Swop: full and the others out while held, all back after",
+                  held == (True, 100, 0) and not e.playbacks[1]["active"] and e.playbacks[1]["level"] == 60
+                  and e.playbacks[0]["level"] == 100, str(held))
+            e.act("select_heads", heads=[2])
+            r = e.act("select_step", step="next")
+            check("] from one light goes to the next light in the rig", e.selected == [3], str(r))
+            e.act("select_step", step="next")
+            check("...and round to the first", e.selected == [1], str(e.selected))
+        finally:
+            e.shutdown()
+    web = ROOT / "web" / "app"
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    keys = (web / "keys.js").read_text(encoding="utf-8")
+    fx = (web / "fixtures.js").read_text(encoding="utf-8")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the page tabs count their running playbacks; RELEASE ALL beside BLACKOUT",
+          'h("span.pg-run", String(live))' in pb and 'id="pb-relall"' in html and 'run("playback_release_all"' in pb, "")
+    check("each fader shows its level; the Flash button says Swop when it is one; Shift+Record records at once",
+          "c.lvl.textContent = `${Math.round(pb.level ?? 100)}%`" in pb and 'swop ? "Swop" : "Flash"' in pb and "function quickRecord(e, n)" in pb, "")
+    check("keys and MIDI from a controller on this device play the playbacks", "function wireBindings()" in pb and "onCC((ev)" in pb
+          and "export function onCC" in (web / "webmidi.js").read_text(encoding="utf-8"), "")
+    check("F1-F3 switch the modes; [ and ] step through the lights",
+          '{ F1: "setup", F2: "program", F3: "live" }' in keys and 'k === "[" || k === "]"' in keys, "")
+    check("the patch deletes say how many lights, in red, last on the menu",
+          "Remove ${lights(sel.length)} from the patch" in fx and "Remove all ${lights(n)}" in fx, "")
+    check("going Live offers the lock once a session (Don't ask again kept)", "async function offerLock()" in ws and '"jarvis.noLockAsk"' in ws, "")

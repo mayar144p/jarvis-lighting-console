@@ -528,6 +528,7 @@ export async function openRdm() {
 }
 
 const parked = () => (state.snap && state.snap.parked) || [];
+const lights = (n) => `${n} light${n === 1 ? "" : "s"}`;
 
 function toolsMenu(btn) {
   const sel = selected();
@@ -558,17 +559,20 @@ function toolsMenu(btn) {
     { label: "Clear the selection's values", hint: "the rest of the programmer stays", disabled: !sel.length, run: () => run("clear_heads", { heads: sel }, { toast: true }) },
     "-",
     // arranging the selected lights in the room (one Ctrl+Z each)
-    { label: "Line up in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
-    { label: "Line up at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
-    { label: "Space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
-    { label: "Space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
-    { label: "Flip the selection left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
+    { label: "Arrange: in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Arrange: all at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
+    { label: "Arrange: space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
+    { label: "Arrange: space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Arrange: flip left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
     "-",
-    { label: "Remove selected fixtures", danger: true, disabled: !sel.length, run: async () => {
-      if (await confirmBox("Remove fixtures", `Remove ${sel.length} fixture(s) from the patch? Ctrl+Z brings them back.`, { ok: "Remove", danger: true })) run("remove_heads", { heads: sel });
+    // the two that take lights out of the show: last, in red, the count said
+    // on the menu and again on the button that does it
+    { label: sel.length ? `Remove ${lights(sel.length)} from the patch` : "Remove the selection from the patch", danger: true, disabled: !sel.length, run: async () => {
+      if (await confirmBox("Remove from the patch", `Remove ${lights(sel.length)} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${lights(sel.length)}`, danger: true })) run("remove_heads", { heads: sel }, { toast: true });
     } },
-    { label: "Clear the whole patch", danger: true, run: async () => {
-      if (await confirmBox("Clear patch", "Remove every fixture from the patch?\nCtrl+Z brings them back.", { ok: "Clear patch", danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared"));
+    { label: `Clear the whole patch${patch().length ? ` (${lights(patch().length)})` : ""}`, danger: true, disabled: !patch().length, run: async () => {
+      const n = patch().length;
+      if (await confirmBox("Clear the whole patch", `Remove all ${lights(n)} from the patch? Every cue and palette loses them. Ctrl+Z brings them back.`, { ok: `Remove all ${lights(n)}`, danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared - Ctrl+Z brings it back"));
     } },
   ]);
 }

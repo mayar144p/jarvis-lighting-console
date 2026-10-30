@@ -97,7 +97,7 @@ UNDO_EXCLUDED = frozenset({
     # the timeline's transport is playing the show, not editing it
     "timeline_play", "timeline_pause", "timeline_stop", "timeline_seek",
     "blackout", "master", "playback_level", "playback_activate",
-    "playback_release", "set_output", "follow_set", "locate",
+    "playback_release", "playback_release_all", "set_output", "follow_set", "locate",
     # calibrating a fixture model's speed is library setup, and the test
     # moves restore themselves
     "motion_set", "motion_test", "motion_test_end", "motion_get",
@@ -615,9 +615,34 @@ def _normalize_playbacks(saved) -> list[dict]:
                      # operator would think the console had lost it.
                      "xfade_s": (max(0.0, float(pb["xfade_s"]))
                                  if pb.get("xfade_s") is not None else None),
-                     "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib"))})
+                     "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib")),
+                     "bind": clean_bind(pb.get("bind"))})
         ShowMixin._apply_follow(base, pb)
     return playbacks
+
+
+def clean_bind(raw) -> dict:
+    """A playback's own controls: a keyboard key for GO, a MIDI note for GO
+    and one for Flash, a MIDI CC for its fader.  Anything odd is dropped."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    key = str(raw.get("key") or "").lower()[:1]
+    if key and (key.isalnum()):
+        out["key"] = key
+    if raw.get("swop"):
+        out["swop"] = True
+    for k in ("go", "flash", "fader"):
+        v = raw.get(k)
+        if v in (None, ""):
+            continue
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= v <= 127:
+            out[k] = v
+    return out
 
 
 def _new_playback(n: int) -> dict:
@@ -626,7 +651,7 @@ def _new_playback(n: int) -> dict:
     # cue's hold time" (see _arm_follow).
     return {"n": n, "name": "", "stack": [], "index": -1, "active": False,
             "level": 100, "order": 0, "fade": None,
-            "tracking": False, "mib": False,
+            "tracking": False, "mib": False, "bind": {},
             "follow": {"on": False, "delay": 0.0, "paused": False,
                        "loop": False, "at": None}}
 
@@ -642,7 +667,7 @@ ACTIONS = (
     "follow_set", "group_create", "group_edit", "group_delete", "import_scan",
     "import_show", "include_palette", "palette_defaults", "palette_edit", "locate", "load_show", "master",
     "patch_clear", "patch_from_csv", "patch_list",
-    "playback_activate", "playback_level", "playback_release",
+    "playback_activate", "playback_level", "playback_release", "playback_release_all", "playback_bind",
     "record_cue", "record_palette", "remove_heads", "run_command",
     "run_fx", "save_show", "fx_available",
     "select_all", "select_group", "select_heads", "select_similar", "select_split",

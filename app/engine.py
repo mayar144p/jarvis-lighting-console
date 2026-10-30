@@ -1277,6 +1277,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                             if pb.get("xfade") else None),
                 "index": pb["index"],
                 "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib")),
+                "bind": pb.get("bind") or None,
                 "stack": [{"n": c["n"], "name": c["name"],
                            "block": bool(c.get("block")),
                            "actions": c.get("actions") or None,

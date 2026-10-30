@@ -434,6 +434,11 @@ class MidiManager:
                                         "at": time.time()}
             # a note given to a button plays it, ahead of the map file;
             # letting go only matters to a hold button
+            pbr = self._playback_note(event)
+            if pbr is not None:
+                self.status["events"] += 1
+                self.status["mapped"] += 1
+                return pbr
             buttons = [b for b in list(getattr(self.engine, "quick", []) or [])
                        if b.get("midi") == event["number"]]
             if buttons:
@@ -444,6 +449,20 @@ class MidiManager:
                         results.append(self.engine.act("quick_press", id=b["id"], down=bool(event.get("on"))))
                     except Exception as exc:    # noqa: BLE001 - never die
                         results.append({"ok": False, "action": "quick_press", "error": str(exc)})
+                self.status["events"] += 1
+                self.status["mapped"] += 1
+                return results
+        if event.get("kind") == "cc":
+            self.status["last_cc"] = {"number": event["number"], "channel": event.get("channel"),
+                                      "at": time.time()}
+            pb = next((p for p in list(getattr(self.engine, "playbacks", []) or [])
+                       if (p.get("bind") or {}).get("fader") == event["number"]), None)
+            if pb is not None:
+                try:
+                    results.append(self.engine.act("playback_level", playback=pb["n"],
+                                                   level=event.get("value", 0) * 100 // 127))
+                except Exception as exc:        # noqa: BLE001 - never die
+                    results.append({"ok": False, "action": "playback_level", "error": str(exc)})
                 self.status["events"] += 1
                 self.status["mapped"] += 1
                 return results
@@ -458,6 +477,44 @@ class MidiManager:
         if steps:
             self.status["mapped"] += 1
         return results
+
+    def _playback_note(self, event: dict):
+        """A note given to a playback: GO on press; Flash full while held,
+        back to where it was on release.  None: not a playback's note."""
+        num = event["number"]
+        for pb in list(getattr(self.engine, "playbacks", []) or []):
+            bind = pb.get("bind") or {}
+            try:
+                if bind.get("go") == num:
+                    return [self.engine.act("cue_go", playback=pb["n"])] if event.get("on") else []
+                if bind.get("flash") == num:
+                    flashes = self.__dict__.setdefault("_flashes", {})
+                    if event.get("on"):
+                        if not pb.get("stack"):
+                            return []
+                        flashes[pb["n"]] = (bool(pb.get("active")), pb.get("level", 100), {})
+                        out = []
+                        if bind.get("swop"):              # Swop: the others out while held
+                            for o in self.engine.playbacks:
+                                if o is not pb and o.get("active") and o.get("level", 100) > 0:
+                                    flashes[pb["n"]][2][o["n"]] = o.get("level", 100)
+                                    out.append(self.engine.act("playback_level", playback=o["n"], level=0))
+                        if not pb.get("active"):
+                            out.append(self.engine.act("playback_activate", playback=pb["n"]))
+                        out.append(self.engine.act("playback_level", playback=pb["n"], level=100))
+                        return out
+                    was = flashes.pop(pb["n"], None)
+                    if was is None:
+                        return []
+                    out = [self.engine.act("playback_level", playback=pb["n"], level=was[1])]
+                    for n, lvl in was[2].items():
+                        out.append(self.engine.act("playback_level", playback=n, level=lvl))
+                    if not was[0]:
+                        out.append(self.engine.act("playback_release", playback=pb["n"]))
+                    return out
+            except Exception as exc:            # noqa: BLE001 - never die
+                return [{"ok": False, "action": "playback", "error": str(exc)}]
+        return None
 
     def _loop(self) -> None:
         while not self._stop.is_set():
