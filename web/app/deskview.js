@@ -114,8 +114,11 @@ function goboOf(p) {
   for (const [n, v] of rows) {
     if (!v || !("gobo" in v)) continue;
     const hd = patch().find((x) => x.head_no === n);
-    const g = hd && (hd.gobos || []).find((r) => v.gobo >= r[0] && v.gobo <= r[1]);
-    if (g) return g[2];
+    if (!hd || !(hd.gobos || []).length) continue;
+    const g = hd.gobos.find((r) => v.gobo >= r[0] && v.gobo <= r[1]);
+    // the light's gobo list names only the gobos with a picture: a value
+    // on none of them is the open slot (or a spin range) - a clear disc
+    return g ? g[2] : "";
   }
   return null;
 }

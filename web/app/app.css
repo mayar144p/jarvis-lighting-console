@@ -2356,3 +2356,25 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { box-shadow: 
 .teach-list { display: flex; flex-direction: column; gap: 2px; }
 .ok-text { color: var(--ok); } .warn-text { color: var(--warn); }
 .danger-go { background: color-mix(in srgb, var(--live) 30%, var(--surface-2)) !important; border-color: var(--live) !important; color: #fff; }
+
+/* ---- faders on the buttons page and beside it: made for a finger --------
+   A wide track that fills to the level (the --v quickbuttons.js keeps), a
+   broad flat cap with a grip line - not a thin rail with a small knob. */
+input.qfader-in { --fill: var(--tint, var(--accent)); -webkit-appearance: none; appearance: none; background: transparent; touch-action: none; }
+input.qfader-in::-webkit-slider-runnable-track { height: calc(18px * var(--ctl)); border-radius: 9px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%), rgba(255, 255, 255, .09) var(--v, 100%));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+input.qfader-in::-webkit-slider-thumb { -webkit-appearance: none; width: calc(16px * var(--ctl)); height: calc(36px * var(--ctl)); margin-top: calc(-9px * var(--ctl));
+  border-radius: 5px; border: 0; background: linear-gradient(90deg, #f1f2f5 0 44%, #50525c 44% 56%, #f1f2f5 56%); box-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
+input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
+/* standing up (the side faders, a big fader button) */
+.qb-faders[data-dir="v"] input.qfader-in, .qctl.qfader.qbig input.qfader-in { width: calc(52px * var(--ctl)); }
+.qb-faders[data-dir="v"] input.qfader-in::-webkit-slider-runnable-track, .qctl.qfader.qbig input.qfader-in::-webkit-slider-runnable-track {
+  width: calc(26px * var(--ctl)); height: 100%; border-radius: 8px;
+  background: linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%), rgba(255, 255, 255, .09) var(--v, 100%)); }
+.qb-faders[data-dir="v"] input.qfader-in::-webkit-slider-thumb, .qctl.qfader.qbig input.qfader-in::-webkit-slider-thumb {
+  width: calc(46px * var(--ctl)); height: calc(18px * var(--ctl)); margin-top: 0; margin-left: calc(-10px * var(--ctl));
+  background: linear-gradient(180deg, #f1f2f5 0 42%, #50525c 42% 58%, #f1f2f5 58%); }
+.qb-faders[data-dir="v"] .qb-side { width: calc(80px * var(--ctl)); }
+.qb-side-top output, .qb-faders[data-dir="v"] .qb-side-top output { font: 700 calc(15px * var(--ts)) var(--mono); color: var(--text); }
+.qb-side.gm input.qfader-in { --fill: var(--accent); }

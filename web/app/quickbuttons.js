@@ -112,6 +112,15 @@ const ICONS = {
   party: "M3 21l5-14 9 9zM14 3l1 2M19 5l-2 2M21 10l-2-.5M11 4.5c1 1 1 2.5 0 3.5M16.5 9c1-1 2.5-1 3.5 0",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
+// a slider's level as a fill up its track (the --v the CSS draws), set
+// whenever its value is set from the desk; a finger's moves set it here
+export function faderFill(inp) {
+  const lo = +inp.min || 0, hi = +inp.max || 100;
+  inp.style.setProperty("--v", `${((+inp.value - lo) / ((hi - lo) || 1)) * 100}%`);
+  return inp;
+}
+document.addEventListener("input", (e) => { if (e.target.classList && e.target.classList.contains("qfader-in")) faderFill(e.target); }, true);
+
 function icon(name) {
   const svg = document.createElementNS(SVGNS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -566,9 +575,9 @@ function controlTile(b) {
     const c = b.control || { what: "master" };
     const v = faderValue(c, b);
     const out = h("output.qval", faderText(c, v));
-    const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
+    const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label }));
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
-    const to = (x) => { inp.value = x; out.textContent = faderText(c, x); inp.dataset.busy = "1"; send(x);
+    const to = (x) => { inp.value = x; faderFill(inp); out.textContent = faderText(c, x); inp.dataset.busy = "1"; send(x);
       setTimeout(() => { delete inp.dataset.busy; }, 400); };
     inp.addEventListener("input", () => { out.textContent = faderText(c, +inp.value); inp.dataset.busy = "1"; send(+inp.value); });
     inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
@@ -625,6 +634,7 @@ function updateControls() {
       if (inp.dataset.busy) continue;
       const v = faderValue(b.control || { what: "master" }, b);
       inp.value = v;
+      faderFill(inp);
       el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
     } else if (b.kind === "tempo") {
       const t = snapOrLite("tempo") || {};
@@ -690,12 +700,12 @@ function renderSideFaders() {
     // a wide slider each: the whole name shows, and the buttons keep the width
     const one = (id, name, title, send) => {
       const num = h("output.mono");
-      const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title });
+      const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title }));
       const go = throttle((v) => send(v), 60);
       inp.addEventListener("input", () => { num.textContent = inp.value; inp.dataset.busy = "1"; go(+inp.value); });
       inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
       inp.addEventListener("dblclick", () => { inp.value = 100; inp.dispatchEvent(new Event("input")); inp.dispatchEvent(new Event("change")); });
-      const f = { set: (v) => { if (!inp.dataset.busy) inp.value = v; } };
+      const f = { set: (v) => { if (!inp.dataset.busy) { inp.value = v; faderFill(inp); } } };
       sideFaders.set(id, { f, num });
       return h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
         h("span.qb-side-top", h("b", name), num), inp);
