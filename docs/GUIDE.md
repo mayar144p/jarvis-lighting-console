@@ -359,11 +359,14 @@ venue; it's saved with the show.
 3. **Mark the floor.** Two or three spots far apart: the middle of the dance
    floor, its left and right, the DJ booth - the desk lists the room's own
    spots - or tape a cross somewhere and keep it as a room mark.
-4. **Line up.** Select the movers, Programmer → Rig → **Line up with the
-   real light…**. For each light: pick a mark, **Point it there** (it gets
-   close), nudge the real light until it's on the mark, **It's on the mark**.
-   After two or three marks, **Next light ▶** works it out and moves on; a
-   tick shows each light done.
+4. **Line up.** Set up → **Line up with the real lights…** (or a light's own
+   menu). One step at a time: the light comes on alone and the desk points it
+   at a mark by itself (the two marks furthest apart). Nudge the REAL light
+   onto it with the arrows (**Fine** for the last bit) and press **It's on
+   the mark ✓**; then the second mark. The desk works it out, says
+   **Lined up**, and **Next light ▶** goes on; a tick shows each light done.
+   If the arrows move it the wrong way, that link has Invert / Swap; another
+   spot is under **Use a different spot**.
 5. **Check.** Aim the whole rig at a spot (Position → room map, or a
    palette like Fan out) and look at the floor. If the box said the marks
    disagree by more than a few degrees, that light's height or position in

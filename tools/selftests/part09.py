@@ -8933,11 +8933,13 @@ def test_line_up() -> None:
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("the Line up dialog: arrows, marks, Work it out", '"line_up"' in pj and "It's on the mark" in pj and "Point it there" in pj and "Next light" in pj
-          and "Work it out" in pj and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+    check("Line up, one step at a time: the light alone, aimed at the two marks furthest apart, one arrow pad, one button, worked out by itself",
+          '"line_up"' in pj and "function farPair" in pj and '"highlight", { state: true, solo: true }' in pj and '"aim_at"' in pj
+          and "`It's on ${m.label} ✓`" in pj and "solve: true" in pj and "Next light ▶" in pj and "lineup-pad" in pj
+          and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
     app_dir = ROOT / "web" / "app"
-    check("Which way up (Invert pan / tilt, Swap) is in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
-          and "Invert tilt" in pj and "Swap pan/tilt" in pj, "")
+    check("Which way up (Invert pan / tilt, Swap) is a link in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
+          and "Invert tilt" in pj and "Swap pan/tilt" in pj and "The arrows move it the wrong way?" in pj, "")
     fx = (app_dir / "fixtures.js").read_text(encoding="utf-8")
     check("each moving light's own menu: Line up and Invert", "Line up with the real light" in fx
           and '"set_orient", { heads: sameSelection(head), invert_pan' in fx and "Invert tilt" in fx, "")
