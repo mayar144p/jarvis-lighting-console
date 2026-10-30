@@ -7,7 +7,7 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 | Region | What it does |
 |---|---|
 | **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
-| **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** its chip's ⋯ (or a right-click on the chip or its folder) adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder or chip to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
+| **Fixtures** (left) | the patch as a table; filter, add lights, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** a right-click on its folder adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
 | **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
 | **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits). The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves; direction / arc / lock under *More*), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **FX** - *Effects*, *Running* (with how many run) and *Step & paint* |
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
@@ -945,7 +945,7 @@ files the desk has for those lights, for other programs.
 
 ## Fixture library
 
-**Add fixtures** searches everything at once in the **All** tab, and
+**Add lights** searches everything at once in the **All** tab, and
 also has separate tabs:
 
 * **Installed:** everything already in your library.
@@ -1091,7 +1091,7 @@ beams programmed, firing lights them all.
 - **3D view:** laser fans, confetti bursts, CO₂ plumes, flames, sparks and
   fog, exactly while the real machine is firing.
 
-**Adding a fixture that isn't in any library.** In **Add fixtures**, click
+**Adding a fixture that isn't in any library.** In **Add lights**, click
 **From its manual…**, then paste the DMX chart or drop the manual's PDF.
 With an AI key the copilot reads it; without one the offline reader
 handles the usual chart layouts, including multi-language manuals. You

@@ -6417,7 +6417,7 @@ def test_show_backup() -> None:
     check("the AI never touches backups", {"backup", "backup_now", "backup_shows", "backup_restore"} <= set(aitools.NEVER))
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     dj = dialogs_js()
-    check("Settings -> Backup, and Show -> Restore from backup…", '"backup", "Backup"' in st and "Restore from backup…" in dj)
+    check("Settings -> Show backups, and Show -> Restore from backup…", '"backup", "Show backups"' in st and "Restore from backup…" in dj)
 
 
 def _ws_frame(text: str) -> bytes:
@@ -10260,3 +10260,32 @@ def test_show_safety_speed() -> None:
     check("the patch deletes say how many lights, in red, last on the menu",
           "Remove ${lights(sel.length)} from the patch" in fx and "Remove all ${lights(n)}" in fx, "")
     check("going Live offers the lock once a session (Don't ask again kept)", "async function offerLock()" in ws and '"jarvis.noLockAsk"' in ws, "")
+
+
+def test_clarity() -> None:
+    """One name for each thing; the command bar finds every Set up step and
+    Settings page (and opens that page); Settings grouped, its backups named
+    apart; the status bar only says what you did; a folded row has a menu."""
+    print("Clarity: one name each, the command bar finds everything, Settings grouped")
+    web = ROOT / "web" / "app"
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    fx = (web / "fixtures.js").read_text(encoding="utf-8")
+    cb = (web / "cmdbar.js").read_text(encoding="utf-8")
+    st = (web / "settings.js").read_text(encoding="utf-8")
+    ac = (web / "actions.js").read_text(encoding="utf-8")
+    every = "".join(p.read_text(encoding="utf-8") for p in web.glob("*.js")) + html
+    check("one name each: Add lights, Find nodes, Copilot, Program",
+          "Add fixtures" not in every and "Scan the network" not in every and "Ask AI" not in every
+          and 'name: "Programming"' not in every, "")
+    check("the 3D arranging tools are Arrange: ..., not Line up (that is matching the real lights)",
+          "Arrange: in a row across the stage" in fx and "Line up in a row" not in fx, "")
+    check("the command bar finds every Settings page and opens it there, and the Set up steps",
+          "SETTINGS_PAGES.map(([key, name, words])" in cb and "openSettingsAt(key)" in cb
+          and all(t in cb for t in ("Make the room…", "Rigging…", "Find nodes", "Songs…", "Autopilot…", "MIDI monitor…", "DMX map…")), "")
+    check("...a query of several words finds by every word", "typed.every((w) => vocab.some((v) => v.startsWith(w)))" in cb, "")
+    check("Settings grouped; Show backups and Spare desk named apart",
+          "const SETTINGS_GROUPS" in st and '["backup", "Show backups"' in st and '["standby", "Spare desk"' in st
+          and '"Backup desk"' not in st, "")
+    check("the status bar only shows what you did, not what the desk looked up", "const LOOKUPS" in ac and "!lookup(action, params)" in ac, "")
+    check("a folded type row (8 movers as one) has its own menu", "function foldMenu(anchor, heads)" in fx
+          and "if (tr.dataset.fold) foldMenu(" in fx, "")

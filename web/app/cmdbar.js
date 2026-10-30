@@ -14,6 +14,9 @@ import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openRea
 import { askCopilot } from "./copilot.js";
 import { HAS_3D, stagePanel } from "./view3d.js";
 import { openMacros, macroCandidates } from "./macros.js";
+import { SETTINGS_PAGES, openSettingsAt } from "./settings.js";
+
+const lazy = (mod, fn, ...args) => import(mod).then((m) => m[fn](...args));
 
 // (a bare "go" / "back" is syntax; "go live", "back to blind" are actions)
 const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|(?:go|back)\s*$|record\b|store\b|master\b|blackout\b|clear\b|palette\b|preset\b|align\b|distribute\b|mirror\b|home\b|select\b|fan\b|help\b|\?)/i;
@@ -21,7 +24,7 @@ const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|(?:go|back)\s*$|reco
 const ACTIONS = [
   { t: "Go live… (send to the lights)", k: "go live output send lights on dmx start", run: () => import("./topbar.js").then((m) => m.goLive()) },
   { t: "Back to blind (stop sending)", k: "blind stop output sending back offline", run: () => run("set_output", { state: 0 }, { toast: true }) },
-  { t: "Add fixtures…", k: "add patch fixture library", run: () => openAddDialog() },
+  { t: "Add lights…", k: "add fixtures patch fixture library", run: () => openAddDialog() },
   { t: "Save show", k: "save store file", run: () => saveShow((state.snap && state.snap.show_file) || "") },
   { t: "Record cue…", k: "record cue store", run: () => openCueDialog() },
   { t: "Select all", k: "select all everything", run: () => run("select_all") },
@@ -40,7 +43,30 @@ const ACTIONS = [
   { t: "Keep lights in a zone", k: "stay in zone confine dance floor only bar only", run: () => import("./roomteach.js").then((m) => m.openRoomTeach("stay")) },
   { t: "Plot", k: "plot plan front side rig drawing head numbers design", run: () => import("./plot.js").then((m) => m.openPlot()) },
   { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
-  { t: "Settings", k: "settings venue stage size midi network", run: () => openSettings() },
+  { t: "Settings", k: "settings preferences options", run: () => openSettings() },
+  // every Settings page, opened at that page
+  ...SETTINGS_PAGES.map(([key, name, words]) => ({ t: `Settings: ${name}`, k: `settings ${name.toLowerCase()} ${words}`, run: () => openSettingsAt(key) })),
+  // every Set up step
+  { t: "Import a plot (MVR)…", k: "import mvr plot vectorworks capture", run: () => lazy("./dialogs.js", "importMvr") },
+  { t: "Import a patch (CSV)…", k: "import csv patch spreadsheet", run: () => lazy("./dialogs.js", "openCsvImport") },
+  { t: "DMX map…", k: "dmx map addresses clash channels universe", run: () => lazy("./fixtures.js", "openDmxMap") },
+  { t: "Address them all", k: "auto address patch readdress clashes", run: () => run("auto_patch", {}, { toast: true }) },
+  { t: "Arrange the room", k: "arrange room move lights place 3d", run: () => lazy("./venuepanel.js", "setArranging", true) },
+  { t: "Make the room…", k: "room shape make room size walls draw floor plan", run: () => lazy("./roomdialog.js", "openRoomDialog") },
+  { t: "Rigging…", k: "rigging truss bars pipes hang", run: () => lazy("./rigdialog.js", "openRigDialog") },
+  { t: "Find nodes", k: "find nodes scan network art-net sacn search", run: () => lazy("./fixtures.js", "scanRig") },
+  { t: "Ask the lights (RDM)…", k: "rdm ask lights discover address mode", run: () => lazy("./fixtures.js", "openRdm") },
+  { t: "Songs…", k: "songs tracks rekordbox set list music", run: () => lazy("./songs.js", "openSongs") },
+  { t: "Autopilot…", k: "autopilot auto run show by itself ai operator", run: () => lazy("./autopilot.js", "openAutopilot") },
+  { t: "MIDI monitor…", k: "midi monitor controller see notes", run: () => lazy("./monitors.js", "openMidiMonitor") },
+  { t: "Invert pan / tilt (Line up)…", k: "invert pan tilt flip upside down swap", run: () => lazy("./lineup.js", "openLineUp") },
+  { t: "Venue check-in…", k: "check in venue arrive lights found", run: () => lazy("./checkin.js", "openCheckin") },
+  { t: "Test a light…", k: "test light check channels lamp", run: () => {
+    const sel = new Set((state.snap && state.snap.selected) || []);
+    const hd = patch().find((x) => sel.has(x.head_no)) || patch()[0];
+    return hd ? lazy("./lightdialogs.js", "openLightTest", hd) : toast("Add a light first");
+  } },
+  { t: "Show backups", k: "backup save copy usb cloud", run: () => openSettingsAt("backup") },
   { t: "Help", k: "help keys shortcuts", run: () => openHelp() },
 ];
 
@@ -78,11 +104,18 @@ function candidates(text) {
   if (!q) {
     return ACTIONS.slice(0, 8).map((a) => ({ kind: "action", title: a.t, run: a.run }));
   }
+  // every word typed starts a word of the action's name or its keywords
+  // ("midi mon", "keep out"); the name itself first
+  const typed = q.split(/\s+/);
+  const scored = [];
   for (const a of ACTIONS) {
-    if (a.t.toLowerCase().includes(q) || a.k.split(" ").some((w) => w.startsWith(q))) {
-      out.push({ kind: "action", title: a.t, run: a.run });
-    }
+    const title = a.t.toLowerCase();
+    const vocab = `${title} ${a.k}`.split(/[\s:()/…,-]+/).filter(Boolean);
+    if (title.includes(q)) scored.push([0, a]);
+    else if (typed.every((w) => vocab.some((v) => v.startsWith(w)))) scored.push([1, a]);
   }
+  scored.sort((x, y) => x[0] - y[0]);
+  for (const [, a] of scored) out.push({ kind: "action", title: a.t, run: a.run });
   out.push(...macroCandidates(q));
   for (const g of (state.snap && state.snap.groups) || []) {
     if (g.name.toLowerCase().includes(q)) out.push({ kind: "group", title: `Select ${g.name}`, desc: `${g.heads.length} fixtures`, run: () => select(g.heads) });

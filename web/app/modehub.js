@@ -95,7 +95,7 @@ function paintSetup() {
     step("Smart lamps and a spare desk",
       [hue.paired ? `Hue: ${hue.links} lamp(s)` : "", sb.following ? `backup of ${sb.host}` : ""].filter(Boolean).join(" · ") || "optional", null,
       btn("Philips Hue…", lazy("./settings.js", "openSettingsAt", "hue")),
-      btn("Backup desk…", lazy("./settings.js", "openSettingsAt", "standby"))),
+      btn("Spare desk…", lazy("./settings.js", "openSettingsAt", "standby"))),
     h("h3", "4 · Checks"),
     step("At the venue", "the lights found here against the show", null,
       btn("Venue check-in…", lazy("./checkin.js", "openCheckin"), n > 0)),

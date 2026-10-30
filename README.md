@@ -57,7 +57,7 @@ undo, the patch lock and dry run mean the same thing whichever you used.
    Any OpenAI-compatible endpoint with tool calling works: OpenAI, OpenRouter,
    Groq, or a local Ollama / LM Studio. Without a key the copilot uses its
    offline compiler.
-3. Add fixtures (see [the user guide](docs/GUIDE.md#the-desk)), build a look, record cues.
+3. Add lights (see [the user guide](docs/GUIDE.md#the-desk)), build a look, record cues.
 4. When the rig is connected, set `CONSOLE_DRY_RUN=false` and press **GO
    LIVE**. Until then every frame is built and counted but nothing leaves the
    machine.
@@ -217,7 +217,7 @@ Open the repo's **Issues** tab → **New issue** and pick a form:
 - **Problem with a light** - a fixture does the wrong thing on the rig, in
   3D or in the programmer (say which light, which mode, what happened).
 - **Something else is wrong** - screens, playbacks, output, saving...
-- **Request a fixture** - a light no library has yet (Add fixtures →
+- **Request a fixture** - a light no library has yet (Add lights →
   **Request it…** fills it in).
 
 Drag in a screenshot, the light's DMX (its row → ⋯ → Show DMX channels)

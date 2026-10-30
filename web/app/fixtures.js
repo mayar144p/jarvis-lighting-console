@@ -417,6 +417,37 @@ export function rowMenu(btn, head) {
   ]);
 }
 
+// A folded row (8 movers shown as one): the same tools, for all of them
+function foldMenu(anchor, heads) {
+  const first = patch().find((x) => x.head_no === heads[0]);
+  if (!first) return;
+  const moving = (first.map || []).some((r) => r === "pan" || r === "tilt");
+  const o = first.orient || {};
+  const n = lights(heads.length);
+  const groups = userGroups();
+  menu(anchor, [
+    { label: `Select these ${n}`, run: () => select(heads) },
+    { label: "Test them…", run: () => openLightTest(first) },
+    { label: "Show their DMX channels", run: () => openChannels(heads) },
+    { label: "Change their fixture type…", run: () => openChangeType(heads) },
+    ...(moving ? [
+      { label: "Line up with the real lights…", run: () => import("./lineup.js").then((m) => m.openLineUp(heads)) },
+      { label: (o.invert_pan ? "✓ " : "") + "Invert pan, all of them", run: () => run("set_orient", { heads, invert_pan: !o.invert_pan }, { toast: true }) },
+      { label: (o.invert_tilt ? "✓ " : "") + "Invert tilt, all of them", run: () => run("set_orient", { heads, invert_tilt: !o.invert_tilt }, { toast: true }) }] : []),
+    { label: "Make a group of them…", run: async () => {
+      const name = await promptBox("New group", "Name", `${first.body && first.body.label ? first.body.label : first.model} ×${heads.length}`, { ok: "Make group" });
+      if (name && name.trim()) run("group_create", { name: name.trim(), heads }, { toast: true });
+    } },
+    ...groups.slice(0, 8).map((g) => ({ label: `Add them to “${g.name}”`, run: () => run("group_edit", { group: g.n, add: heads }, { toast: true }) })),
+    { label: "Make a colour row of buttons…", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(heads)) },
+    { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame(heads) },
+    "-",
+    { label: `Remove ${n} from the patch`, danger: true, run: async () => {
+      if (await confirmBox("Remove from the patch", `Remove ${n} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${n}`, danger: true })) run("remove_heads", { heads }, { toast: true });
+    } },
+  ]);
+}
+
 // ---------------------------------------------------------- DMX map
 // Who owns which channels, universe by universe; clashes in red, each with
 // a one-tap "move to the next free address".
@@ -533,9 +564,9 @@ const lights = (n) => `${n} light${n === 1 ? "" : "s"}`;
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
-    { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
+    { label: "Add lights…", run: () => openAddDialog() },
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
-    { label: "Scan the network for nodes", run: () => scanRig() },
+    { label: "Find nodes", hint: "the DMX nodes on the network", run: () => scanRig() },
     { label: "Ask the lights (RDM)…", hint: "model, mode and address from each light", run: () => openRdm() },
     ...(autoCopies().length ? [{ label: `Tidy ${autoCopies().length} auto group copies`,
       hint: "old “Auto ·” copies the show builder made", run: async () => {
@@ -698,9 +729,10 @@ export function initFixtures() {
       if (g) { e.preventDefault(); groupMenu(atPointer(e), g); }
       return;
     }
-    if (!tr || tr.dataset.fold) return;
+    if (!tr) return;
     e.preventDefault();
-    rowMenu(atPointer(e), +tr.dataset.head);
+    if (tr.dataset.fold) foldMenu(atPointer(e), tr.dataset.fold.split(",").map(Number));
+    else rowMenu(atPointer(e), +tr.dataset.head);
   });
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");

@@ -19,7 +19,7 @@ export const MODE_NAMES = { setup: "Set up", program: "Program", live: "Live" };
 export const BUILTIN = [
   { id: "setup", name: "Set up", mode: "setup", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 400, bottom: "faders", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
   { id: "live", name: "Live", mode: "live", fix: false, prog: true, stage: true, swap: false, fixW: 0, progW: 460, bottom: "buttons", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "programming", name: "Programming", mode: "program", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
+  { id: "programming", name: "Program", mode: "program", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
   { id: "theatre", name: "Theatre (cues)", mode: "program", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", cues: true, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
   // a pro desk's screen: the palette windows and the command strip, the
   // playbacks under them

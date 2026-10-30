@@ -188,6 +188,25 @@ function outputSection(con) {
   return box;
 }
 
+// Settings' pages, grouped, with the words the command bar finds them by
+export const SETTINGS_PAGES = [
+  ["output", "Output", "output dmx node art-net sacn usb universe ip network send"],
+  ["venue", "Venue", "venue room size template width depth ceiling describe"],
+  ["screen", "Screen & 3D", "screen gig mode theme dark show dark 3d quality window number keys"],
+  ["midi", "MIDI & OSC", "midi osc controller stream deck monitor learn launchpad apc"],
+  ["hue", "Philips Hue", "hue lamps smart bridge"],
+  ["standby", "Spare desk", "spare desk standby second computer take over failover backup desk"],
+  ["library", "Fixture library", "fixture library import gdtf qxf ofl inbox types"],
+  ["backup", "Show backups", "backup show copy usb onedrive dropbox cloud folder"],
+  ["ai", "AI", "ai copilot key model memory"],
+];
+const SETTINGS_GROUPS = [
+  ["The show", ["output", "venue"]],
+  ["This computer", ["screen"]],
+  ["Plugged in", ["midi", "hue", "standby"]],
+  ["Files and AI", ["library", "backup", "ai"]],
+];
+
 /** Settings, opened on one of its pages ("ai", "output"...). */
 export function openSettingsAt(tab) {
   try { localStorage.setItem("jarvis.settingsTab", tab); } catch (e) { /* fine */ }
@@ -275,7 +294,7 @@ export async function openSettings() {
       oscOutRow(),
       h("h3", "Stream Deck"),
       streamDeckRow()]],
-    ["library", "Fixtures", [
+    ["library", "Fixture library", [
       h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
       h("div.row-btns", h("button.btn", {
         onclick: async () => {
@@ -284,9 +303,9 @@ export async function openSettings() {
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
-    ["backup", "Backup", [backupPanel()]],
+    ["backup", "Show backups", [backupPanel()]],
     ["hue", "Philips Hue", [huePanel()]],
-    ["standby", "Backup desk", [standbyPanel()]],
+    ["standby", "Spare desk", [standbyPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
@@ -300,7 +319,14 @@ export async function openSettings() {
     pane.replaceChildren(h("h2.set-title", sec[1]), ...sec[2]);
     try { localStorage.setItem("jarvis.settingsTab", key); } catch (e) { /* fine */ }
   };
-  for (const [k, label] of sections) nav.append(h("button", { role: "tab", dataset: { k }, onclick: () => show(k) }, label));
+  // grouped: the show, this computer, what plugs in, files and the AI
+  for (const [title, keys] of SETTINGS_GROUPS) {
+    nav.append(h("div.set-group", title));
+    for (const k of keys) {
+      const sec = sections.find(([x]) => x === k);
+      if (sec) nav.append(h("button", { role: "tab", dataset: { k }, onclick: () => show(k) }, sec[1]));
+    }
+  }
   show(last);
   const body = h("div.settings", nav, pane);
   modal({ title: "Settings", body, wide: true });

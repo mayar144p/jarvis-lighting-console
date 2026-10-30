@@ -47,7 +47,7 @@ export function openAddDialog(query = "") {
     h("div.lib", tabs, h("div.lib-search", search), shareNote, list), right);
 
   const close = modal({
-    title: "Add fixtures", wide: true, body,
+    title: "Add lights", wide: true, body,
     foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
       h("button.btn", { title: "Ask for a light no library has yet: it opens a filled-in request on the desk's GitHub page", onclick: () => requestFixture(search.value) }, "Request it…"),
       h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
@@ -770,7 +770,7 @@ async function openEverything() {
 const KEY_GROUPS = [
   ["Playing the show", [["Space", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"], ["Shift+X", "lights back after a blackout"],
     ["T", "tap the tempo"], ["Shift+T", "this is beat 1"], ["Your keys", "a playback's own GO key (⋯ → Keys and MIDI)"]]],
-  ["Programming", [["R", "record a cue"], ["Shift+click Record here", "record at once, no questions"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
+  ["Program", [["R", "record a cue"], ["Shift+click Record here", "record at once, no questions"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
     ["I / D", "insert a cue after / delete the current one"], ["C", "clear the programmer"], ["L", "locate (open white, centred)"], ["↑ ↓", "intensity ±5 (Shift: ±1)"]]],
   ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
     ["[ / ]", "previous / next light, one at a time"], ["{ or }", "all of them again"], ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],

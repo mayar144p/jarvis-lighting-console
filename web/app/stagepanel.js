@@ -251,7 +251,7 @@ export async function realBodies() {
   const d = await post("/api/gdtf/bodies", {}).catch((e) => ({ error: e.message }));
   if (d.error) {
     toast(d.code === "no_session" || d.code === "unauthorized"
-      ? "Sign in to GDTF Share first: Add fixtures → GDTF Share (a free gdtf-share.com account)"
+      ? "Sign in to GDTF Share first: Add lights → GDTF Share (a free gdtf-share.com account)"
       : d.error, "bad", 7000);
     return;
   }
