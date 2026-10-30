@@ -13,6 +13,7 @@ import { run, select } from "./actions.js";
 import { state, patch, selected, on } from "./store.js";
 import { ZONE_KINDS } from "./venuepanel.js";
 import { zoneOutline } from "./zoneshape.js";
+import { roomSides } from "./lineup.js";
 
 const movers = () => patch().filter((x) => (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
 const venue = () => (state.snap && state.snap.venue) || {};
@@ -69,12 +70,16 @@ export function openRoomTeach(tab = "zone") {
     const v = venue(), room = v.room || {};
     const W = +room.width || 16, D = +room.depth || 20, x0 = (+room.cx || 0) - W / 2, z0 = +room.back || 0;
     const pts = [[x0, z0], [x0 + W, z0 + D], ...corners.map((c) => [c.x, c.z]), ...(spot ? [[spot.x, spot.z]] : [])];
-    const minX = Math.min(...pts.map((p) => p[0])) - 1, maxX = Math.max(...pts.map((p) => p[0])) + 1;
-    const minZ = Math.min(...pts.map((p) => p[1])) - 1, maxZ = Math.max(...pts.map((p) => p[1])) + 1;
+    const M = Math.max(1.2, Math.max(W, D) * 0.07);   // room round the edges for their names
+    const minX = Math.min(...pts.map((p) => p[0])) - M, maxX = Math.max(...pts.map((p) => p[0])) + M;
+    const minZ = Math.min(...pts.map((p) => p[1])) - M, maxZ = Math.max(...pts.map((p) => p[1])) + M;
     plan.setAttribute("viewBox", `${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`);
     const u = Math.max(maxX - minX, maxZ - minZ) / 60;
     const g = s("g");
     g.append(s("rect", { x: x0, y: z0, width: W, height: D, class: "tp-room" }));
+    const sides = s("g", { class: "tp-sides" });
+    sides.innerHTML = roomSides(x0, z0, W, D, M);
+    g.append(sides);
     for (const z of v.zones || []) {
       g.append(s("polygon", { points: zoneOutline(z, room).map(([a, b]) => `${a},${b}`).join(" "), class: "tp-zone" + (z.kind === "keepout" ? " keepout" : "") }, s("title", {}, z.name || z.kind)));
     }

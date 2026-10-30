@@ -11,6 +11,16 @@ import { h, modal, toast } from "./ui.js";
 import { run, select } from "./actions.js";
 import { state, patch, selected, on } from "./store.js";
 
+// a room plan's four sides, named the desk's way: the DJ / stage end at the
+// top, the back of the room at the bottom, left and right as you look at the
+// DJ from the dance floor (the audience's view - the 3D's Front view)
+export function roomSides(x0, z0, W, D, M) {
+  const f = Math.max(0.45, Math.max(W, D) * 0.03);
+  const t = (x, y, s, rot = 0) => `<text x="${x}" y="${y}" class="side-txt" font-size="${f}"${rot ? ` transform="rotate(${rot} ${x} ${y})"` : ""}>${s}</text>`;
+  return t(x0 + W / 2, z0 - M * 0.35, "DJ / stage end") + t(x0 + W / 2, z0 + D + M * 0.7, "back of the room")
+    + t(x0 - M * 0.4, z0 + D / 2, "left", -90) + t(x0 + W + M * 0.4, z0 + D / 2, "right", 90);
+}
+
 const movers = (nums) => nums.map((n) => patch().find((x) => x.head_no === n))
   .filter((x) => x && (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
 
@@ -101,7 +111,8 @@ export function openLineUp(heads = null) {
     const W = +room.width || 16, D = +room.depth || 20, x0 = (+room.cx || 0) - W / 2, z0 = +room.back || 0;
     const NS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("viewBox", `${x0 - 0.5} ${z0 - 0.5} ${W + 1} ${D + 1}`);
+    const M = Math.max(1.2, Math.max(W, D) * 0.07);   // room round the edges for their names
+    svg.setAttribute("viewBox", `${x0 - M} ${z0 - M} ${W + 2 * M} ${D + 2 * M}`);
     svg.setAttribute("class", "lu-plan");
     svg.innerHTML = `<rect x="${x0}" y="${z0}" width="${W}" height="${D}" class="lu-room"/>`
       + (v.zones || []).map((zn) => `<polygon points="${zn.points.map((q) => q.join(",")).join(" ")}" class="lu-zone"><title>${zn.name || zn.kind}</title></polygon>`).join("")
@@ -110,7 +121,7 @@ export function openLineUp(heads = null) {
         const cx = zn.points.reduce((a, q) => a + q[0], 0) / zn.points.length, cz = zn.points.reduce((a, q) => a + q[1], 0) / zn.points.length;
         return `<text x="${cx}" y="${cz}" class="lu-txt">${String(zn.name || zn.kind).replace(/[<&>"]/g, "")}</text>`;
       }).join("")
-      + `<text x="${x0 + W / 2}" y="${z0 + 0.9}" class="lu-txt">stage end</text>`;
+      + roomSides(x0, z0, W, D, M);
     svg.addEventListener("click", (e) => {
       const pt = svg.createSVGPoint();
       pt.x = e.clientX; pt.y = e.clientY;
@@ -120,10 +131,10 @@ export function openLineUp(heads = null) {
     const x = h("input.num", { type: "number", step: 0.1, placeholder: "e.g. 2" });
     const z = h("input.num", { type: "number", step: 0.1, placeholder: "e.g. 6" });
     const planBox = h("div.lu-planbox",
-      h("p.small", "Tap the plan where the spot is - the room seen from above, the stage end at the top."),
+      h("p.small", "Tap the plan where the spot is: the room seen from above, the DJ / stage end at the top, left and right as you look at the DJ from the dance floor."),
       svg,
       h("details.lineup-link", h("summary", "or type it in metres"),
-        h("div.lineup-row", h("label.small", "Across ", x, " m (0 = the middle, minus = left, plus = right, seen from the stage)")),
+        h("div.lineup-row", h("label.small", "Across ", x, " m (0 = the middle, minus = left, plus = right - as you look at the DJ from the dance floor)")),
         h("div.lineup-row", h("label.small", "From the back wall ", z, " m")),
         h("button.btn.small", { onclick: () => { if (x.value === "" || z.value === "") { toast("Type both: across and from the back wall"); return; } use(+x.value, +z.value); } }, "Use it")));
     planBox.hidden = roomSpots().length > 0;

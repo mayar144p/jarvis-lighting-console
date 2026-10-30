@@ -68,7 +68,9 @@ export function planSvg(p, { w = 420, hgt = 300 } = {}) {
     s += `<line x1="${X(r.a[0])}" y1="${Z(r.a[2])}" x2="${X(r.b[0])}" y2="${Z(r.b[2])}" stroke="#e2e8f0" stroke-width="${r.kind === "truss" ? 4 : 2}" stroke-linecap="round" opacity=".8"><title>${esc(r.name)}</title></line>`;
   }
   // sizes along two walls, and which end is which
-  s += `<text x="${w / 2}" y="${(+Z(z0) - 8).toFixed(1)}" text-anchor="middle" class="rp-dim">${(x1 - x0).toFixed(1)} m · stage end</text>`;
+  s += `<text x="${w / 2}" y="${(+Z(z0) - 8).toFixed(1)}" text-anchor="middle" class="rp-dim">DJ / stage end · ${(x1 - x0).toFixed(1)} m</text>`;
+  s += `<text x="${w / 2}" y="${(+Z(z1) + 16).toFixed(1)}" text-anchor="middle" class="rp-dim">back of the room</text>`;
+  s += `<text x="${(+X(x0) - 8).toFixed(1)}" y="${hgt / 2}" class="rp-dim" transform="rotate(-90 ${(+X(x0) - 8).toFixed(1)} ${hgt / 2})" text-anchor="middle">left (looking at the DJ)</text>`;
   s += `<text x="${(+X(x1) + 8).toFixed(1)}" y="${hgt / 2}" class="rp-dim" transform="rotate(90 ${(+X(x1) + 8).toFixed(1)} ${hgt / 2})" text-anchor="middle">${(z1 - z0).toFixed(1)} m</text>`;
   s += "</svg>";
   return s;
@@ -243,7 +245,12 @@ export function openRoomDialog(start = "shape") {
     pane.replaceChildren(PANES.find((p) => p[0] === key)[2]());
   };
   tabs.append(...PANES.map(([k, label]) => h("button", { type: "button", dataset: { k }, onclick: () => show(k) }, label)));
-  close = modal({ title: "Make the room", body: h("div.room-dlg", tabs, pane), wide: true });
+  // which end is which, said once at the top: everything below follows it
+  const way = h("p.room-way", h("b", "Which way round: "),
+    "stand at the DJ booth (or the stage) and look out at the room. That wall is the top of every plan here - the DJ / stage end; "
+    + "the far wall is the back of the room; left and right are as you look at the DJ from the dance floor. "
+    + "The 3D writes them on the floor while you Arrange.");
+  close = modal({ title: "Make the room", body: h("div.room-dlg", way, tabs, pane), wide: true });
   show(start);
   return close;
 }

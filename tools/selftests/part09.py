@@ -10184,3 +10184,9 @@ def test_room_by_pointing() -> None:
     lu = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
     check("Line up: another spot is tapped on a plan of the room (the metres typed only if wanted, explained)",
           "Tap the plan where the spot is" in lu and "0 = the middle, minus = left, plus = right" in lu, "")
+
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    rd = (ROOT / "web" / "app" / "roomdialog.js").read_text(encoding="utf-8")
+    check("which end is which: the 3D writes DJ / STAGE END, BACK OF THE ROOM, LEFT, RIGHT on the floor while arranging; the plans and Make the room say it",
+          "function sideLabels(R, stageFront)" in st and '"BACK OF THE ROOM"' in st and "this.sideLabels.visible = this.editing" in st
+          and "Which way round: " in rd and "export function roomSides" in (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8"), "")

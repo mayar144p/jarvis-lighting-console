@@ -14,6 +14,42 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway } from "./venue.js";
+
+/** The room's four sides written on the floor (Arrange, Zones): the DJ /
+ *  stage end, the back of the room, left and right as you look at the DJ
+ *  from the dance floor - so building a venue, it is plain which end is
+ *  which.  (The desk's room always has the DJ end at the back wall, z0.) */
+function sideLabels(R, stageFront) {
+  const g = new THREE.Group();
+  const label = (text, w, x, z, turn) => {
+    const c = document.createElement("canvas");
+    c.width = 1024; c.height = 128;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(139, 141, 255, 0.85)";
+    ctx.font = "bold 72px system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, 512, 66);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 8), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.z = turn;
+    m.position.set(x, 0.03, z);
+    m.renderOrder = 3;
+    g.add(m);
+  };
+  const W = Math.max(2, R.x1 - R.x0), D = Math.max(2, R.z1 - R.z0);
+  const s = Math.min(W, D) * 0.55;
+  const cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2;
+  // the DJ end's name just in front of the stage (not under its deck)
+  const djz = Math.min(R.z1 - D * 0.3, Math.max(R.z0, stageFront || R.z0) + s / 16 + 0.35);
+  label("▲ DJ / STAGE END", s, cx, djz, 0);
+  label("BACK OF THE ROOM", s, cx, R.z1 - s / 16 - 0.25, 0);
+  label("LEFT", s * 0.9, R.x0 + s * 0.9 / 16 + 0.3, cz, Math.PI / 2);
+  label("RIGHT", s * 0.9, R.x1 - s * 0.9 / 16 - 0.3, cz, -Math.PI / 2);
+  g.visible = false;
+  return g;
+}
 import { SfxSystem } from "./sfx.js";
 import { Shadows } from "./shadows.js";
 import { wireUp, wireTint, WIRE, WIRE_ROOM, WIRE_SEL } from "./wire.js";
@@ -199,6 +235,10 @@ export class Stage {
     this._wireDirty = true;
     this.room = { ...built.room };
     this.stageFront = built.stageFront;
+    // which end is which, written on the floor while building the room
+    this.sideLabels = sideLabels(this.room, built.stageFront);
+    this.sideLabels.visible = !!this.editing || !!this.options.zones;
+    this.venueGroup.add(this.sideLabels);
     // a new room size: the view goes back to the front of THIS room (the
     // camera was placed once, for the default room - 24 m back from a 3 m
     // room)
@@ -494,6 +534,7 @@ export class Stage {
     Object.assign(this.options, o || {});
     if (this.people) this.people.visible = !!this.options.people;
     if (this.built && this.built.zones) this.built.zones.visible = !!this.options.zones;
+    if (this.sideLabels) this.sideLabels.visible = !!this.editing || !!this.options.zones;
     // Lights only: the room, rigging, stage, objects and crowd hidden - the lights and their beams stay
     this.venueGroup.visible = !this.options.lightsOnly;
     if (before.house !== this.options.house) this._applyHouse();
@@ -1158,6 +1199,7 @@ export class Stage {
   setEditing(on, editor) {
     if (editor) this.editor = editor;
     this.editing = !!on;
+    if (this.sideLabels) this.sideLabels.visible = this.editing || !!this.options.zones;
     if (this.editing) this.setProjection("per");
     if (this.editor) this.editor.setEnabled(this.editing);
     this._underlayVisibility();

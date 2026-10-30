@@ -2480,3 +2480,7 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
   content: "Locked: playing only - GO, faders, buttons and blackout work. Top bar → Design to change things.";
   position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(80%, 360px); z-index: 5; text-align: center;
   padding: 12px 14px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--live); color: var(--text); font-weight: 600; font-size: calc(13px * var(--ts)); }
+.side-txt { fill: var(--text-2); text-anchor: middle; font-weight: 700; letter-spacing: .04em; }
+.tp-sides text { fill: var(--text-2); }
+.room-way { margin: 0 0 10px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--text-2); font-size: calc(12.5px * var(--ts)); }
+.room-way b { color: var(--text); }
