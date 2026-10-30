@@ -14,11 +14,10 @@ let target = null;                      // {x, z}: the last spot aimed at
 let pending = null, timer = 0, last = 0;
 let fan = 0;                            // multi-head lights: metres between their heads' spots
 const RATE_MS = 70;
-// how fast the beams follow the pointer: 0 = straight there, else the
-// seconds they take to cover most of the way (they glide after it)
-const GLIDES = [[0, "Instant"], [0.25, "Fast"], [0.8, "Medium"], [2, "Slow"]];
-let glide = (() => { try { return +(localStorage.getItem("jarvis.followGlide") || 0); } catch (e) { return 0; } })();
-if (!GLIDES.some(([v]) => v === glide)) glide = 0;
+// the beams go straight where they're aimed (a choice of glide speeds
+// earned no place on screen; the engine still takes a glide for a cue or a
+// script that wants one)
+const glide = 0;
 let aimNow = null;                      // {x, z}: where the desk has the beams while they glide
 // the map turned: "audience" (the stage at the top), "dj" (the way the DJ
 // faces at the top, the DJ's left on the left) or a turn in degrees;
@@ -275,21 +274,12 @@ export function aimBlock(...after) {
     h("button.chip", { title: "The spot to the DJ's right", onclick: () => step(0, 1) }, "right ▶"),
     h("button.chip", { title: "The middle of the room", onclick: () => { const o = orient(); target = null; aimTo({ x: o.centre[0], y: 0, z: o.centre[1] }, true); } }, "● middle")));
   queueMicrotask(drawTarget);
-  const speed = h("div.mv-row", h("span.k", "Aim speed"),
-    h("span.chip-row", ...GLIDES.map(([v, l]) => h("button.chip" + (glide === v ? ".on" : ""), {
-      title: v ? `The beams glide (about ${v} s to get most of the way) - after the pointer, and to the spots below` : "The beams go straight there, as fast as the lights can move",
-      onclick: (e) => {
-        glide = v;
-        try { localStorage.setItem("jarvis.followGlide", String(v)); } catch (err) { /* private window */ }
-        for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget);
-      },
-    }, l))));
   const heads = multiHead() ? h("div.mv-row", h("span.k", "Heads"),
     h("span.chip-row", ...[[0, "Together"], [0.8, "Fan out"], [2, "Wide fan"]].map(([v, l]) => h("button.chip" + (fan === v ? ".on" : ""), {
       title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar)",
       onclick: (e) => { fan = v; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); },
     }, l))), h("span.muted.small", "or pick heads (Heads: 1 2 3 4) to move them alone")) : null;
-  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, turn, set, pad, speed, heads, ...after.filter(Boolean));
+  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, turn, set, pad, heads, ...after.filter(Boolean));
 }
 
 function turnMap(v) {

@@ -1541,7 +1541,7 @@ function wireActs() {
 // remembered on this computer.
 const SUBS = {
   position: [["point", "Point", "Aim at spots, the room map, the pan / tilt pad"], ["move", "Move", "Movements: circles, A → B in degrees, waves, the light's own moves"],
-    ["limits", "Limits", "Stay on the floor, each light's own range, laser safety"]],
+    ["limits", "Zones & limits", "Where the beams may go (keep-out, stay in a zone), movements fit the floor, each light's own range, laser safety"]],
   beam: [["quick", "Quick", "Strobe, gobo, prism, zoom, iris, frost and focus in one press"], ["all", "All channels", "Every beam channel the light has, as a slider"]],
   fx: [["effects", "Effects", "The effect library and its knobs"], ["running", "Running", "What is running now, and where it comes from"],
     ["paint", "Step & paint", "Step effects from your looks; gradients, pictures and video across the lights"]],

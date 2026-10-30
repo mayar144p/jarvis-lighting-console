@@ -1613,8 +1613,8 @@ def test_on_the_beat() -> None:
         finally:
             e.shutdown()
         aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
-        check("follow-me has a speed: instant / fast / medium / slow, sent to the desk",
-              "Follow speed" in aj and "pending.glide = glide" in aj and '"Slow"' in aj)
+        check("follow-me sends its glide to the desk (straight there: no speed row on screen)",
+              "pending.glide = glide" in aj and "const glide = 0;" in aj)
 
         # Ableton Link: the pure part
         node = b"peer0001"
@@ -2718,7 +2718,9 @@ def test_aim_speed_everywhere() -> None:
         finally:
             e.shutdown()
     mj = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
-    check("the spot and formation buttons send the Aim speed", mj.count("glide: followGlide()") == 4, "")
+    aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+    check("no Aim speed row: aims go straight there (the engine still glides when asked)",
+          '"Aim speed"' not in aj and "const glide = 0;" in aj and mj.count("glide: followGlide()") == 4, "")
 
 
 def test_colour_fixes() -> None:
@@ -10113,3 +10115,22 @@ def test_room_by_pointing() -> None:
     check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
           ".programmer { container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
           and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")
+
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head", qty=2)
+            floor_rng = dict(e._floor_limits()[2])
+            e.act("stay_in", heads=[2], zones=["bar"])
+            bar_rng = e._floor_limits()[2]
+            check("a light kept in a zone has its movements sized to that zone, not the dance floor",
+                  bar_rng != floor_rng and 1 in e._floor_limits(), str((floor_rng, bar_rng)))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("Zones & limits: where the beams may go first, the old Cues & aims too only while a show has it on",
+          "function zonesBlock" in mv and 'tag(zonesBlock(), "limits")' in mv and "snap.floor_lock ? toggle(" in mv, "")

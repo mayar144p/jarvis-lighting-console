@@ -282,26 +282,48 @@ function roamBlock() {
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }
 
-// Stay on the dance floor: every mover's own pan/tilt range for the floor,
-// worked out from where it hangs.  Movement always fits inside it (on by
-// default); the second switch holds cues and aims to it too.
+// Where the beams may go: the room's keep-out zones and the lights told to
+// stay in a zone (app/engine_zones.py) - every cue, palette, effect and roam
+// is held by them.  Taught by pointing a light (roomteach.js).
+function zonesBlock() {
+  const snap = state.snap || {};
+  const zs = (snap.venue && snap.venue.zones) || [];
+  const keep = zs.filter((z) => z.kind === "keepout");
+  const staying = (snap.patch || []).filter((x) => (x.stay || []).length);
+  const name = (id) => (zs.find((z) => z.id === id) || {}).name || "a zone";
+  const teach = (tab, label, title) => h("button.btn.small", { title, onclick: () => import("./roomteach.js").then((m) => m.openRoomTeach(tab)) }, label);
+  return section("Where the beams may go",
+    h("p.muted.small", (keep.length ? `Kept out: ${keep.map((z) => z.name || "keep-out").join(", ")}.` : "Nothing kept out yet.") + " "
+      + (staying.length ? `${staying.length} light(s) stay in ${[...new Set(staying.flatMap((x) => x.stay.map(name)))].join(" / ")}.` : "No light is held in a zone.")
+      + " Everything they play is held: cues, palettes, effects, roams."),
+    h("div.row-btns",
+      teach("keepout", "Not here (keep out)…", "Point a light at a wall, the bar staff, the DJ: no beam goes there"),
+      teach("stay", "Keep lights in a zone…", "These lights' beams stay inside the zones you pick"),
+      teach("zone", "Mark out a zone…", "Point a light at the corners of the dance floor, the bar...")));
+}
+
+// Movements fit the dance floor: every mover's own pan/tilt range for the
+// floor, worked out from where it hangs - a circle or a sweep is shrunk to
+// fit, keeping its shape (a zone only stops a beam at its edge).  "Cues &
+// aims too" is the old way of holding everything on the floor (Keep lights
+// in a zone does it exactly): shown only while a show has it on.
 function floorBlock() {
   const snap = state.snap || {};
   const n = snap.floor_movers || 0;
   if (!n) {
-    return section("Stay on the dance floor",
-      h("p.muted.small", "Draw a dance floor zone in the Venue tab (and place your lights roughly where they hang) - then every moving light keeps its beam on the floor."));
+    return section("Movements fit the dance floor",
+      h("p.muted.small", "Mark out a dance floor (above, or draw it in Arrange) - then circles and sweeps are sized to stay on it."));
   }
   const toggle = (label, key, on, title) => h("button.chip" + (on ? ".on" : ""), {
     title, onclick: () => run("floor_safe", { [key]: !on }, { toast: true }),
   }, (on ? "✓ " : "") + label);
   let checking = false;
-  return section("Stay on the dance floor",
+  return section("Movements fit the dance floor",
     h("div.chip-row",
-      toggle("Movement stays on the floor", "movement", snap.floor_safe !== false,
-        "Circles, sweeps and the rest fit inside the dance floor for every light"),
-      toggle("Cues & aims too", "everything", !!snap.floor_lock,
-        "Nothing may point off the dance floor - also cues, spots and the programmer")),
+      toggle("Circles and sweeps fit on the floor", "movement", snap.floor_safe !== false,
+        "Circles, sweeps and the rest are sized to stay on the dance floor for every light, keeping their shape"),
+      snap.floor_lock ? toggle("Cues & aims too (old)", "everything", true,
+        "This show holds everything on the floor the old way - Keep lights in a zone (above) does it exactly; tap to turn this off") : null),
     h("div.mv-row",
       h("span.muted.small", `${n} moving light(s) know where the floor is.`),
       h("button.btn.small", {
@@ -476,7 +498,7 @@ function movementBlock() {
       h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
       fxKnobs(f))),
     h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
-    h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
+    h("p.muted.small", "Movements run around where the lights point now. They fit the dance floor - or the zone a light is kept in - and no beam crosses a keep-out zone (Zones & limits). Point them first, then pick a movement."));
 }
 
 // a number of degrees, typed (no fixed stops); Enter or leaving the box applies it
@@ -636,7 +658,7 @@ function rangeBlock(sel) {
     return r ? "limited" : "full travel";
   };
   return section("This light's range",
-    h("p.muted.small", `Tilt: ${show("tilt")} · Pan: ${show("pan")}. Point it at one edge and set it, then the other. Everything stays between them - cues, movements, spots, buttons.`),
+    h("p.muted.small", `Tilt: ${show("tilt")} · Pan: ${show("pan")}. Point it at one edge and set it, then the other. Everything stays between them - cues, movements, spots, buttons. For what floor zones can't see: the ceiling, a balcony, the truss next to it.`),
     rangeButtons());
 }
 
@@ -737,7 +759,7 @@ function render(force = false) {
   if (nudge) nudge.replaceChildren(nudgeBlock());
   // each block on its sub-tab (Move / Limits; Point is the aim map and the pad)
   const tag = (el, k) => { if (el) el.dataset.in = k; return el; };
-  box.replaceChildren(...[tag(movementBlock(), "move"), tag(ownBlock(), "move"), tag(floorBlock(), "limits"),
+  box.replaceChildren(...[tag(movementBlock(), "move"), tag(ownBlock(), "move"), tag(zonesBlock(), "limits"), tag(floorBlock(), "limits"),
     tag(rangeBlock(sel), "limits"), tag(laserBlock(ls), "limits")].filter(Boolean));
   loadOwn();
 }

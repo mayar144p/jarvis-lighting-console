@@ -232,12 +232,24 @@ function strip() {
       key("ENTER", "Run the line", enter, ".enter"))));
 }
 
+// The keys are built once (a key swapped out under a finger lost the tap -
+// the keys "lagged"); the windows are redrawn only when what they show
+// changes (groups, palettes, the selection, its values), not on every update.
+let stripEl = null, gridEl = null, shownKey = "";
 export function renderDeskView() {
   const box = $("#desk-view");
   if (!box || box.closest("[hidden]")) return;
-  box.replaceChildren(h("div.dv",
-    h("div.dv-grid", groupWindow(), paletteWindow(...KINDS[0]), paletteWindow(...KINDS[1]), paletteWindow(...KINDS[2])),
-    strip()));
+  const s = snap();
+  const key = JSON.stringify([s.groups, s.palettes, selected(), progVals(), patch().length]);
+  if (!stripEl || !box.contains(stripEl)) {
+    stripEl = strip();
+    gridEl = h("div.dv-grid");
+    box.replaceChildren(h("div.dv", gridEl, stripEl));
+    shownKey = "";
+  }
+  if (key === shownKey) return;
+  shownKey = key;
+  gridEl.replaceChildren(groupWindow(), paletteWindow(...KINDS[0]), paletteWindow(...KINDS[1]), paletteWindow(...KINDS[2]));
 }
 
 export function initDeskView() {

@@ -203,25 +203,31 @@ class MoveMixin:
         out: dict = {}
         zones = (self.venue or {}).get("zones") or []
         floor = next((z for z in zones if z.get("kind") == "dancefloor" and z.get("points")), None)
-        if floor:
-            cx, cz = venue_mod.zone_centroid(floor)
-            pts = [(cx + (x - cx) * 0.95, cz + (z - cz) * 0.95) for x, z in floor["points"]]
+        by_id = {z["id"]: z for z in zones if z.get("points")}
+        # a light kept in a zone (Keep lights in a zone) has its movements
+        # sized to THAT zone - the bar, the VIP area - not the dance floor
+        for h in self.patch:
+            if "pan" not in h["map"] or "tilt" not in h["map"] or h.get("x") is None:
+                continue
+            own = next((by_id[i] for i in h.get("stay") or [] if i in by_id), None) or floor
+            if not own:
+                continue
+            cx, cz = venue_mod.zone_centroid(own)
+            y0 = float(own.get("y") or 0.0)
+            pts = [(cx + (x - cx) * 0.95, cz + (z - cz) * 0.95) for x, z in own["points"]]
             ring = pts + [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(pts, pts[1:] + pts[:1])]
-            for h in self.patch:
-                if "pan" not in h["map"] or "tilt" not in h["map"] or h.get("x") is None:
-                    continue
-                mid = self._aim_solve(h, cx, 0.0, cz)
-                if mid is None:
-                    continue
-                fps, fts = [mid[0]], [mid[1]]
-                for x, z in ring:
-                    s = self._aim_solve(h, x, 0.0, z, near=(mid[2], mid[3]))
-                    if s is not None:
-                        fps.append(s[0])
-                        fts.append(s[1])
-                m = 0.01
-                out[h["head_no"]] = {"pan": (max(0.0, min(fps) - m), min(1.0, max(fps) + m)),
-                                     "tilt": (max(0.0, min(fts) - m), min(1.0, max(fts) + m))}
+            mid = self._aim_solve(h, cx, y0, cz)
+            if mid is None:
+                continue
+            fps, fts = [mid[0]], [mid[1]]
+            for x, z in ring:
+                s = self._aim_solve(h, x, y0, z, near=(mid[2], mid[3]))
+                if s is not None:
+                    fps.append(s[0])
+                    fts.append(s[1])
+            m = 0.01
+            out[h["head_no"]] = {"pan": (max(0.0, min(fps) - m), min(1.0, max(fps) + m)),
+                                 "tilt": (max(0.0, min(fts) - m), min(1.0, max(fts) + m))}
         self._floor_cache = (key, out)
         return out
 
