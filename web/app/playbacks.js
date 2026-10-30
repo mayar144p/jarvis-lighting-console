@@ -64,11 +64,13 @@ function build() {
 
 // Flash: held, the playback runs at full; let go, it goes back to where it
 // was (and stops again if it wasn't running)
-function wireFlash(btn, n) {
+function wireFlash(btn, which) {
+  let n = 0;                                     // (which: a number, or the mini row's slot)
   let was = null, finger = null;                 // one finger per Flash: a second can't undo the first
   const down = (e) => {
     e.preventDefault();
     if (finger !== null) return;
+    n = typeof which === "function" ? which() : which;
     const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n) || {};
     if (!(pb.stack || []).length) return;
     finger = e.pointerId;
@@ -187,6 +189,7 @@ function render() {
   }
   renderGroupMasters();
   renderCues();
+  renderMini(pbs);
   const s = state.snap || {};
   // the live feed's GM (the full snapshot isn't sent again for a GM move:
   // read from it, the GM jumped back to its old place - often 100 - the
@@ -195,6 +198,44 @@ function render() {
   gm.set(m);
   $("#gm-num").textContent = m;
   $("#bo-btn").classList.toggle("on", !!s.blackout);
+}
+
+// Live, with the dock on Buttons: the playbacks of this page as a row of
+// small executors above the buttons (name, what's on, level, GO, Flash) -
+// busking, GO stays on screen.  Only the ones that hold cues.
+const minis = [];
+function renderMini(pbs) {
+  const row = $("#pb-mini");
+  if (!row) return;
+  if (!minis.length) {
+    for (let i = 0; i < PER_PAGE; i++) {
+      const slot = { n: 0 };
+      const name = h("b"), cue = h("small"), lvl = h("i.pbm-lvl");
+      const flash = h("button.pbm-flash", { title: "Flash: full while held" }, "Flash");
+      const go = h("button.pbm-go", { title: "GO: next cue", onclick: () => { setFocus(slot.n); run("cue_go", { playback: slot.n }); } }, icon("go"), "GO");
+      const el = h("div.pbm", h("div.pbm-top", h("span.pbm-n"), name), cue, h("div.pbm-bar", lvl), h("div.pbm-btns", go, flash));
+      wireFlash(flash, () => slot.n);
+      minis.push(Object.assign(slot, { el, name, cue, lvl }));
+      row.append(el);
+    }
+  }
+  const page = pbs.slice((pbPage - 1) * PER_PAGE, pbPage * PER_PAGE);
+  let shown = 0;
+  minis.forEach((m, i) => {
+    const pb = page[i];
+    const stack = (pb && pb.stack) || [];
+    m.el.hidden = !stack.length;
+    if (!stack.length) return;
+    shown++;
+    m.n = pb.n;
+    const cur = pb.index >= 0 ? stack[pb.index] : null;
+    m.el.querySelector(".pbm-n").textContent = String(pb.n);
+    m.name.textContent = pb.name || (stack.length === 1 ? cueLabel(stack[0]) : `${stack.length} cues`);
+    m.cue.textContent = cur ? `${pb.index + 1}/${stack.length} ${cueLabel(cur)}` : "ready";
+    m.lvl.style.width = `${pb.level ?? 100}%`;
+    m.el.classList.toggle("active", !!pb.active);
+  });
+  row.hidden = !shown;
 }
 
 // The cue list of the playback in focus, beside the faders (the Theatre

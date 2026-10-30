@@ -767,10 +767,10 @@ async function openEverything() {
 
 // ================================================================== help
 const KEYS = [
-  ["Space / Enter", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"],
+  ["Space", "GO on the focused playback"], ["B", "back one cue"], ["X / Shift+X", "blackout / lights back"],
   ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-  ["A / Shift+A", "select all / none"], ["1 … 9", "select fixture 1–9 (Shift adds)"], ["G", "group the selection"],
-  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O", "overwrite the current cue"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
+  ["A / Shift+A", "select all / none"], ["0 … 9", "start a command: 1 THRU 4 @ 70, 3 GO (Enter runs it)"], ["G", "group the selection"],
+  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O / Shift+O", "update the current cue (merge) / replace it"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
   ["T / Shift+T", "tap the tempo / this is beat 1"], ["H / Shift+H", "highlight / solo the selection"], ["F", "frame the selection on stage"], ["Alt+1..9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"],
 ];
 const SYNTAX = [

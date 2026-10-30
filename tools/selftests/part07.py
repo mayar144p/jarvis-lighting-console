@@ -1215,8 +1215,9 @@ def test_big_rig_groups() -> None:
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    check("gig mode: 44 px controls, a switch in Settings (not on by itself)",
-          "body.gig .btn" in css and "min-height: calc(44px * var(--ctl))" in css and "(pointer: coarse)" not in mj
+    check("gig mode: 44 px controls, a switch in Settings; on by itself only on a touch-only screen with no choice saved",
+          "body.gig .btn" in css and "min-height: calc(44px * var(--ctl))" in css
+          and 'gig === null && matchMedia("(pointer: coarse) and (hover: none)").matches' in mj
           and "jarvis.gig" in dialogs_js(), "")
     del html
 

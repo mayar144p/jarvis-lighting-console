@@ -7,6 +7,7 @@ import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js"
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
 import { icon } from "./icons.js";
+import { focusedPlayback } from "./playbacks.js";
 import { renderWheels, initWheels } from "./wheels.js";
 import { goboIcon, goboRef } from "./goboicon.js";
 import { needs3d, stagePanel } from "./view3d.js";
@@ -805,16 +806,34 @@ function attrRow(a, heads = null) {
     apply(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * full);
   };
   let dragging = false;
-  bar.addEventListener("pointerdown", (e) => {
-    e.preventDefault();                     // no text selection, and keep focus for the arrow keys
-    bar.focus({ preventScroll: true });
+  // a finger: the bar only takes over once it moves sideways (8 px) - a
+  // finger scrolling the list up or down passes through and changes nothing
+  // (these values go straight to the lights); a tap still sets the value
+  let touch = null;
+  const start = (e) => {
     dragging = true;
     attrHeld = true;
     bar.setPointerCapture(e.pointerId);
     row.classList.add("drag");
     fromPointer(e);
+  };
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") { touch = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+    e.preventDefault();                     // no text selection, and keep focus for the arrow keys
+    bar.focus({ preventScroll: true });
+    start(e);
   });
-  bar.addEventListener("pointermove", (e) => { if (dragging) fromPointer(e); });
+  bar.addEventListener("pointermove", (e) => {
+    if (dragging) { fromPointer(e); return; }
+    if (!touch || e.pointerId !== touch.id) return;
+    const dx = Math.abs(e.clientX - touch.x), dy = Math.abs(e.clientY - touch.y);
+    if (dy > 8 && dy > dx) { touch = null; return; }       // a scroll
+    if (dx > 8) { touch = null; start(e); }
+  });
+  bar.addEventListener("pointerup", (e) => {
+    if (touch && e.pointerId === touch.id && !dragging) { touch = null; fromPointer(e); setTimeout(loadAttributes, 250); }
+  });
+  bar.addEventListener("pointercancel", () => { touch = null; });
   const end = () => {
     if (!dragging) return;
     dragging = false;
@@ -1013,12 +1032,28 @@ function renderProgIn() {
   $("#prog-clear").disabled = !any;
   $("#prog-record").disabled = !any;
   $("#prog-make").disabled = !any || !hasSel();
+  // Update: the cue that is on in the focused playback, by name
+  const upd = $("#prog-update");
+  const on = cueOn();
+  upd.disabled = !any || !on;
+  const label = on ? `Update PB${on.pb} · ${on.name}` : "Update";
+  const lab = upd.querySelector("span");
+  if (lab && lab.textContent !== label) lab.textContent = label;
+  upd.title = on ? `Merge the programmer into ${on.name} on PB${on.pb} - what you didn't touch stays (O)` : "Update: press GO on a playback first - it merges into the cue that is on (O)";
   // a greyed-out button says why (a disabled button shows no tooltip everywhere)
   const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
     : !hasSel() ? "Select the lights to make a button of them." : "";
   $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
   const w = $("#prog-why");
   if (w && w.textContent !== why) w.textContent = why;
+}
+
+// the cue that is on in the focused playback (what Update merges into)
+function cueOn() {
+  const n = focusedPlayback();
+  const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n);
+  const c = pb && pb.index >= 0 ? (pb.stack || [])[pb.index] : null;
+  return c ? { pb: n, cue: c.n, name: c.name || `Cue ${c.n}` } : null;
 }
 
 // a button holding some of the selected lights: say so, with a Turn off
@@ -1467,6 +1502,12 @@ function wireActs() {
   // the foot's keys get their icons (icons.js), as on a pro desk
   $("#prog-clear").prepend(icon("clear"));
   $("#prog-make").prepend(icon("button"));
+  const upd = $("#prog-update");
+  upd.replaceChildren(icon("update"), h("span", "Update"));
+  upd.addEventListener("click", () => {
+    const on = cueOn();
+    if (on) run("record_cue", { playback: on.pb, cue: on.cue, mode: "merge" }, { toast: true });
+  });
   const rec = $("#prog-record");
   rec.textContent = rec.textContent.replace(/^●\s*/, "");
   rec.prepend(icon("rec"));

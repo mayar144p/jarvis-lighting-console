@@ -38,6 +38,10 @@ export function openCueDialog(playback) {
   pbSel.addEventListener("change", drawWhere);
   where.addEventListener("change", drawMode);
   drawWhere();
+  // Records what the programmer holds (over a cue, its name and times stay
+  // unless new ones are typed); clearing after is the operator's choice
+  const clearBox = h("input", { type: "checkbox" });
+  try { clearBox.checked = localStorage.getItem("jarvis.clearAfterRecord") === "1"; } catch (e) { /* fine */ }
   const close = modal({
     title: "Record cue",
     body: h("div.form-grid",
@@ -45,7 +49,7 @@ export function openCueDialog(playback) {
       h("div.field", h("span", " "), modeBox),
       h("label.field", h("span", "Name"), name),
       h("label.field", h("span", icon("fadein"), "Fade (s)"), fade), h("label.field", h("span", icon("delay"), "Hold before auto-follow (s)"), hold)),
-    foot: [h("span.muted.small.grow", "Records what the programmer holds, then clears it. Over a cue, its name and times are kept unless you type new ones."),
+    foot: [h("label.check.grow", clearBox, h("span", "Clear the programmer after (off: build the next cue from this one)")),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
         onclick: async () => {
@@ -53,6 +57,8 @@ export function openCueDialog(playback) {
           if (where.value !== "") { params.cue = +where.value; params.mode = mode; }
           if (fade.value !== "") params.fade = +fade.value || 0;
           if (hold.value !== "") params.hold = +hold.value;
+          params.keep = !clearBox.checked;
+          try { localStorage.setItem("jarvis.clearAfterRecord", clearBox.checked ? "1" : "0"); } catch (e) { /* fine */ }
           const r = await run("record_cue", params, { toast: true });
           if (r.ok) close();
         },

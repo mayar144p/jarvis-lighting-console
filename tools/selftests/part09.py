@@ -7930,8 +7930,8 @@ def test_b6_layouts() -> None:
     check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
           "clamp(140px, 27vh, 196px)" in css and 'id="grp-fold-btn"' in html and ".grp-masters.folded" in css
           and ".fx-table-wrap { min-height: 150px; }" in css and ".fixtures, .programmer, .modehub { min-width: 220px; }" in css, "")
-    mh = (web / "modehub.js").read_text(encoding="utf-8")
-    check("Live on 1280 x 720: blackout, hits, tempo and autopilot first", "live-bo" in mh and ".hub-body.live .live-bo { display: flex; order: -3; }" in css, "")
+    check("Live on 1280 x 720: one BLACKOUT (the dock's), hits, tempo and autopilot first", ".live-bo { display: none; }" in css
+          and ".hub-body.live .live-bo { display: flex" not in css, "")
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
           and '"cue_go"' in pb, "")
@@ -9970,3 +9970,50 @@ def test_desktop_frame() -> None:
           and '"Record…": "rec"' in dv and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
           and 'icon("fadein"), "Fade (s)"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
           and 'icon("stop")' in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8"), "")
+
+
+
+def test_council_fixes() -> None:
+    """What the UI/UX review council agreed must change: no stray GO (Enter,
+    typed numbers, "go live"), O merges, X only blacks out, Hold to stop,
+    Update in the programmer, recording can keep the programmer, Live
+    keeps GO on screen, finger-sized faders, touch-friendly options and
+    sliders, every programmer tab named, and the show-safety check in CI."""
+    print("UI/UX council: no stray GO, Update, Live playbacks, touch sizes")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=1)
+            r = e.act("run_command", text="go live", dry=True)
+            check("\"go live\" typed is refused, not a GO with a word dropped", not r.get("ok") and "Go live" in str(r.get("error")), str(r)[:200])
+            check("...a bare go still fires", e.act("run_command", text="go", dry=True).get("ok"), "")
+            e.act("set_intensity", level=70)
+            e.act("record_cue", playback=1, keep=True)
+            check("recording can keep the programmer (build the next cue from it)", bool(e.programmer), "")
+        finally:
+            e.shutdown()
+    kj = (ROOT / "web" / "app" / "keys.js").read_text(encoding="utf-8")
+    check("Enter never fires GO; a number starts a command; O merges; X only blacks out",
+          'if (k === "Enter") { e.preventDefault(); openCmdbar(); return; }' in kj and "openCmdbar(k)" in kj
+          and 'mode: replace ? "replace" : "merge"' in kj and "Shift+X or the BLACKOUT button" in kj, "")
+    tb = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    check("stopping the output takes a hold, not a tap", '"Hold to stop"' in tb and "}, 600);" in tb, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("Update next to Record cue; Live shows the playbacks with GO", 'id="prog-update"' in html and 'id="pb-mini"' in html
+          and "function renderMini" in pb, "")
+    check("finger-sized faders and options; sliders let a scrolling finger pass",
+          ".pb .vfader { width: calc(36px * var(--ctl));" in css and "@media (hover: none) { .pb-top .btn.icon, .row-menu { opacity: 1; } }" in css
+          and "touch-action: pan-y;" in css, "")
+    check("every programmer tab is named (Rig, not an icon)", "<span>Rig</span>" in html
+          and "#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }" not in css, "")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check("the show-safety check runs in CI", "node tools/safetycheck.mjs" in ci
+          and (ROOT / "tools" / "safetycheck.mjs").exists(), "")

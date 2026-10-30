@@ -99,7 +99,7 @@ class CueMixin:
 
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
                       cue=None, follow=None, mode="replace", effects=True,
-                      cue_only=False, **_):
+                      cue_only=False, keep=False, **_):
         """Record the programmer as a cue.  Over an existing cue, `mode`:
         "replace" (the cue becomes exactly the programmer), "merge" (the
         programmer's values are added into the cue, the rest of it kept) or
@@ -176,7 +176,8 @@ class CueMixin:
                 c["n"] = i
             kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
             self._blind_recorded(pb, cue_n)
-            self.programmer.clear()
+            if not _truthy(keep):
+                self.programmer.clear()
             return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
                     "summary": f"inserted cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}
         # follow_s is stored ONLY when the caller gave one, so a new cue
@@ -209,7 +210,10 @@ class CueMixin:
             pb["stack"].append(entry)
         kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
         self._blind_recorded(pb, cue_n)
-        self.programmer.clear()
+        # `keep`: the programmer stays (build the next cue from this one, as
+        # on a pro desk); the Record dialog remembers the operator's choice
+        if not _truthy(keep):
+            self.programmer.clear()
         verb = "merged into" if old is not None and mode == "merge" else "updated" if old is not None else "recorded"
         return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
                 "summary": f"{verb} cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}

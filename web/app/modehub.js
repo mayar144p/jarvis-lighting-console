@@ -196,7 +196,7 @@ function paintLive() {
     hits.length ? h("div.live-hits", ...hits.map(pressBtn)) : null,
     // the same buttons are already in the dock when it shows Buttons (app.css)
     hits.length ? h("p.muted.small.live-hits-below", "In the Buttons panel below.")
-      : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: make them on the Buttons page (Program mode)."),
+      : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: press Edit on the Buttons panel to make them."),
     h("div.live-pair",
       h("div.live-card",
       h("div.live-k", "Tempo"),

@@ -15,9 +15,12 @@ import { askCopilot } from "./copilot.js";
 import { HAS_3D, stagePanel } from "./view3d.js";
 import { openMacros, macroCandidates } from "./macros.js";
 
-const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|go\b|back\b|record\b|store\b|master\b|blackout\b|clear\b|palette\b|preset\b|align\b|distribute\b|mirror\b|home\b|select\b|fan\b|help\b|\?)/i;
+// (a bare "go" / "back" is syntax; "go live", "back to blind" are actions)
+const SYNTAX_START = /^\s*(\d|all\b|none\b|\*|group\b|cue\b|(?:go|back)\s*$|record\b|store\b|master\b|blackout\b|clear\b|palette\b|preset\b|align\b|distribute\b|mirror\b|home\b|select\b|fan\b|help\b|\?)/i;
 
 const ACTIONS = [
+  { t: "Go live… (send to the lights)", k: "go live output send lights on dmx start", run: () => import("./topbar.js").then((m) => m.goLive()) },
+  { t: "Back to blind (stop sending)", k: "blind stop output sending back offline", run: () => run("set_output", { state: 0 }, { toast: true }) },
   { t: "Add fixtures…", k: "add patch fixture library", run: () => openAddDialog() },
   { t: "Save show", k: "save store file", run: () => saveShow((state.snap && state.snap.show_file) || "") },
   { t: "Record cue…", k: "record cue store", run: () => openCueDialog() },
@@ -164,7 +167,10 @@ export function openCmdbar(prefill = "") {
   const input = $("#cmd-input");
   input.value = prefill;
   refresh();
-  setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 10);
+  // focused at once: a number typed fast ("12") keeps every digit
+  const focus = () => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); };
+  focus();
+  setTimeout(focus, 10);
 }
 
 export function close() {

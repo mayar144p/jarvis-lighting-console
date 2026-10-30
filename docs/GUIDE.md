@@ -355,11 +355,11 @@ venue; it's saved with the show.
 2. **Hang each light where it really is.** Drag it onto its truss, or type
    its position; set its **Hang** (hung, standing, on a boom...). A light hung
    the other way round to the rest: **Invert pan / Invert tilt** in
-   Programmer → Setup.
+   Programmer → Rig.
 3. **Mark the floor.** Two or three spots far apart: the middle of the dance
    floor, its left and right, the DJ booth - the desk lists the room's own
    spots - or tape a cross somewhere and keep it as a room mark.
-4. **Line up.** Select the movers, Programmer → Setup → **Line up with the
+4. **Line up.** Select the movers, Programmer → Rig → **Line up with the
    real light…**. For each light: pick a mark, **Point it there** (it gets
    close), nudge the real light until it's on the mark, **It's on the mark**.
    After two or three marks, **Next light ▶** works it out and moves on; a
@@ -563,12 +563,12 @@ out and back in; **Unlock** puts them back).
 
 | key | does | key | does |
 |---|---|---|---|
-| <kbd>Space</kbd> / <kbd>Enter</kbd> | GO on the focused playback | <kbd>B</kbd> | cue back |
-| <kbd>X</kbd> | toggle BLACKOUT | <kbd>C</kbd> | clear the programmer |
+| <kbd>Space</kbd> | GO on the focused playback (Enter never fires GO) | <kbd>B</kbd> | cue back |
+| <kbd>X</kbd> / <kbd>Shift</kbd>+<kbd>X</kbd> | BLACKOUT / lights back | <kbd>C</kbd> | clear the programmer |
 | <kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>A</kbd> | select all / none | <kbd>L</kbd> | locate |
-| <kbd>1</kbd>–<kbd>9</kbd> | select head (<kbd>Shift</kbd> adds) | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
+| <kbd>0</kbd>–<kbd>9</kbd> | start a command (`1 thru 4 @ 70`, `3 go`); Enter runs it | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
 | <kbd>R</kbd> | record a cue | <kbd>G</kbd> | group the selection |
-| <kbd>O</kbd> | overwrite the current cue | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
+| <kbd>O</kbd> / <kbd>Shift</kbd>+<kbd>O</kbd> | update the current cue (merge) / replace it | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
 | <kbd>F</kbd> | frame the selection | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | command bar |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | undo / redo | <kbd>Ctrl</kbd>+<kbd>S</kbd> | save show |
 | <kbd>?</kbd> | help | <kbd>Esc</kbd> | close the top panel |

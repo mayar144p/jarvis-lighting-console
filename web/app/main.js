@@ -1,7 +1,7 @@
 // Jarvis: boot the desk.
 import { get, openStream } from "./api.js";
 import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./store.js";
-import { $ } from "./ui.js";
+import { $, toast } from "./ui.js";
 import { initTopbar } from "./topbar.js";
 import { initFixtures } from "./fixtures.js";
 import { HAS_3D, stagePanel } from "./view3d.js";
@@ -32,6 +32,13 @@ function wireGig() {
   let gig = null;
   try { gig = localStorage.getItem("jarvis.gig"); } catch (e) { /* ignore */ }
   if (gig === "1") document.body.classList.add("gig");
+  // a touch-only screen (no mouse) gets the big controls by itself, once,
+  // saying so - the choice is kept either way (Settings -> Screen & 3D)
+  else if (gig === null && matchMedia("(pointer: coarse) and (hover: none)").matches) {
+    document.body.classList.add("gig");
+    try { localStorage.setItem("jarvis.gig", "1"); } catch (e) { /* ignore */ }
+    setTimeout(() => toast("Touch screen: Gig mode is on - big buttons and faders. Settings → Screen & 3D to change."), 2500);
+  }
 }
 
 // Show mode: the 3D, the programmer and the playbacks are separate windows.

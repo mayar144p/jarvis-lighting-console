@@ -1,4 +1,4 @@
-// Line up lights with the real ones (Programmer -> Setup -> Line up...):
+// Line up lights with the real ones (Programmer -> Rig -> Line up...):
 // point each REAL light at two or three marks on the floor (taped crosses,
 // the middle of the dance floor, the DJ), and the desk learns where that
 // light's pan and tilt zero really are - every aim, spot, move and the 3D

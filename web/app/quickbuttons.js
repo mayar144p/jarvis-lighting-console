@@ -519,7 +519,7 @@ function render(force = false) {
       h("span.muted.small", "Flash, strobe, colour bumps, effects and faders - one tap each, live."),
       h("div.row-btns",
         h("button.btn.primary", { onclick: () => $("#qb-suggest").click() }, "Suggest buttons for this rig"),
-        h("button.btn", { onclick: () => { editing = true; render(true); } }, "Set up buttons"))));
+        h("button.btn", { onclick: () => { editing = true; render(true); } }, "Edit buttons"))));
   } else box.replaceChildren(...cells);
   renderPages();
   $("#qb-edit").classList.toggle("on", editing);

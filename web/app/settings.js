@@ -250,6 +250,12 @@ export async function openSettings() {
       describeRoomRow()]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
+      (() => {
+        const box = h("input", { type: "checkbox" });
+        try { box.checked = localStorage.getItem("jarvis.digitsSelect") === "1"; } catch (e) { /* fine */ }
+        box.addEventListener("change", () => { try { localStorage.setItem("jarvis.digitsSelect", box.checked ? "1" : "0"); } catch (e) { /* fine */ } });
+        return h("label.check", box, h("span", "Number keys pick lights 1-9 directly (the old way; normally they start a command: 1 THRU 4 @ 70)"));
+      })(),
       themeRow(),
       h("h3", "3D view"),
       window.jarvisDesk && window.jarvisDesk.win ? h("div.row-btns",

@@ -544,7 +544,7 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
   background: var(--bg-2);
   border: 1px solid var(--border-2);
   cursor: ew-resize;
-  touch-action: none;
+  touch-action: pan-y;          /* a finger scrolling the list passes through */
   outline: none;
   transition: border-color .12s;
 }
@@ -609,7 +609,26 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
 .pb-mode button.on { background: var(--accent-bg); color: var(--text); }
 .pb-mode button.on svg { color: var(--accent); }
 .qb { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 6px 8px; gap: 6px; }
-.qb-bar { display: flex; gap: 6px; align-items: center; }
+.qb-bar { display: flex; gap: 10px; align-items: center; }
+/* Release all lets go of every latched button: outlined in red, apart from Lock */
+.qb-bar .qb-release { margin-left: 8px; border-color: color-mix(in srgb, var(--live) 45%, transparent); color: #ff9b9b; background: transparent; }
+/* Live: the page's playbacks as small executors above the buttons */
+.pb-mini { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+body:not([data-mode="live"]) .pb-mini { display: none; }
+.pbm { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pbm[hidden] { display: none; }
+.pbm.active { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pbm-top { display: flex; gap: 5px; align-items: baseline; min-width: 0; }
+.pbm-n { font: 700 calc(11px * var(--ts)) var(--mono); color: var(--muted); }
+.pbm-top b { font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pbm small { font-size: calc(12px * var(--ts)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pbm-bar { height: 4px; background: var(--border-2); border-radius: 2px; overflow: hidden; }
+.pbm-lvl { display: block; height: 100%; background: var(--accent); }
+.pbm-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.pbm-btns button { height: calc(34px * var(--ctl)); border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-3); font-weight: 700; font-size: calc(12px * var(--ts)); display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.pbm-go { background: color-mix(in srgb, var(--ok) 18%, var(--surface-2)) !important; border-color: color-mix(in srgb, var(--ok) 55%, transparent) !important; color: #86efac; }
+.pbm-flash.on { background: var(--text); color: var(--bg); }
+body.gig .pbm-btns button { height: calc(44px * var(--ctl)); }
 .qb-grid { flex: 1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 6px; min-height: 0; }
 .qbtn b { font-weight: 700; line-height: 1.15; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .qbtn:hover { border-color: var(--tint); }
@@ -674,10 +693,13 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 /* executors: ten slots, always in their place */
 .pb {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  display: grid; grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: calc(36px * var(--ctl)) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 4px 6px; padding: 6px; min-width: 0; position: relative;
 }
-.pb .vfader { width: calc(20px * var(--ctl)); grid-row: 1 / 4; height: auto; }
+/* the playback fader: a finger's width (it was 20 px) - 44 px in Gig mode */
+.pb .vfader { width: calc(36px * var(--ctl)); grid-row: 1 / 4; height: auto; }
+body.gig .pb { grid-template-columns: calc(44px * var(--ctl)) minmax(0, 1fr); }
+body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 .pb-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
 /* the options button shows on hover / focus, so the name has the room */
 .pb-top .btn.icon { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); flex: none; position: absolute; right: 4px; top: 4px; opacity: 0; background: var(--surface-3); }
@@ -686,13 +708,13 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 .pb-top .name { font-weight: 700; font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
 .pb-top .name:hover { color: var(--accent); }
 .pb-mid { min-height: 0; overflow: hidden; }
-.pb-cue { font-size: calc(11px * var(--ts)); color: var(--muted); line-height: 1.35; overflow: hidden; }
+.pb-cue { font-size: calc(12px * var(--ts)); color: var(--muted); line-height: 1.35; overflow: hidden; }
 .pb-cue b { display: block; color: var(--text-2); font-weight: 600; font-family: var(--mono); font-size: calc(10.5px * var(--ts)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-cue .next { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-prog { height: 3px; background: var(--border-2); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .pb-prog i { display: block; height: 100%; width: 0; background: var(--ok); }
 .pb-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
-.pb-btns button { height: calc(26px * var(--ctl)); border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-3); font-weight: 700; font-size: calc(11px * var(--ts)); padding: 0; min-width: 0; }
+.pb-btns button { height: calc(32px * var(--ctl)); border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-3); font-weight: 700; font-size: calc(11px * var(--ts)); padding: 0; min-width: 0; }
 .pb-btns button:hover { border-color: #45454f; }
 .pb-btns .go, .pb-btns .flash { grid-column: 1 / -1; }
 .pb-btns .go { height: calc(30px * var(--ctl)); font-size: calc(12px * var(--ts)); letter-spacing: .04em; background: color-mix(in srgb, var(--ok) 18%, var(--surface-2)); border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: #86efac; }
@@ -1082,7 +1104,7 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 #prog-tabs button { flex: 1 1 0; min-width: 0; height: calc(50px * var(--ctl)); padding: 6px 2px 5px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 4px; font-size: calc(11.5px * var(--ts)); font-weight: 500; position: relative; }
 #prog-tabs button svg { width: calc(17px * var(--ctl)); height: calc(17px * var(--ctl)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-#prog-tabs button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#prog-tabs button span { white-space: nowrap; }
 #prog-tabs button[aria-selected=true] { color: var(--text); font-weight: 600; }
 #prog-tabs button[aria-selected=true] svg { color: var(--accent); }
 #prog-tabs .dotmark { position: absolute; top: 7px; right: calc(50% - 15px); margin: 0; }
@@ -1104,8 +1126,10 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 #prog-tabs button[aria-selected=true] svg { color: var(--fam); }
 #prog-tabs .dotmark { background: var(--fam); }
 /* Looks and Setup are icons (their tooltip names them): the families get the room */
-#prog-tabs :is([data-tab=looks], [data-tab=tools]) { flex: 0 0 38px; }
-#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }
+/* every tab says what it is (an icon alone hid Looks and Rig - where Invert
+   is); a narrow programmer wraps the tabs onto a second row, never "Palet…" */
+#prog-tabs { flex-wrap: wrap; }
+#prog-tabs button { flex: 1 0 auto; min-width: calc(56px * var(--ctl)); }
 #prog-tabs button { font-size: calc(11px * var(--ts)); }
 #prog-tabs button[aria-selected=true] { font-weight: 500; }   /* (bold clipped "Position") */
 /* the Dimmer tab: a compact level block, not half the panel */
@@ -1754,8 +1778,9 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .prog-in-chip[data-g=position] { --fam: var(--f-pos); }
 .prog-in-chip[data-g=beam] { --fam: var(--f-beam); }
 .prog-in-chip[data-g=fx] { --fam: var(--f-fx); }
-.prog-acts { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg-2); }
-.prog-acts .btn { padding: 0 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.prog-acts { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg-2); }
+.prog-acts .btn { padding: 0 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prog-acts #prog-why { grid-column: 1 / -1; }
 .prog-acts .btn.rec { background: color-mix(in srgb, var(--live) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--live) 50%, transparent);
   color: #fecaca; font-weight: 700; }
 .prog-acts .btn.rec:hover:not(:disabled) { background: color-mix(in srgb, var(--live) 26%, var(--surface-2)); }
@@ -1839,7 +1864,13 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 @media (prefers-reduced-motion: reduce) { .tour-ring { transition: none; } }
 
 /* Theme (Settings -> Screen & 3D): the panels, never the 3D view */
-.topbar, .panel, .playbacks, .statusbar, .drawer, .cmdbar, .modal, .menu, .toasts > * { filter: var(--panel-filter, none); }
+/* Show dark dims the panels to red - but the state controls keep their own
+   colours (live red, blind amber, GO green, BLACKOUT, KILL FX): at a show is
+   when they matter.  (A filter reaches everything inside, so it goes on the
+   parts around them.) */
+.topbar > :not(.output):not(.fxctl):not(.op-pill):not(.blind-pill), .panel, .statusbar, .drawer, .cmdbar, .modal, .menu, .toasts > *,
+.playbacks > :not(.masters):not(.pb-strip):not(.qb), .masters > :not(.blackout), .pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go),
+.qb > :not(.pb-mini), .pbm > :not(.pbm-btns) { filter: var(--panel-filter, none); }
 :root[data-theme="showdark"] body { background: #000; }
 
 /* on-screen encoder wheels (Programmer, under the tabs) */
@@ -2093,13 +2124,15 @@ body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
   body[data-bottom="timeline"] .workspace { --pb-h: clamp(210px, 36vh, 360px); }
   /* Live on 1280 x 720: hits, tempo, autopilot and blackout first */
   .hub-body.live { display: flex; flex-direction: column; }
-  .hub-body.live .live-bo { display: flex; order: -3; }
+  /* (no second BLACKOUT here: the dock's red one is always on screen) */
   .hub-body.live .live-k.hits-k { order: -2; }
   .hub-body.live .live-hits, .hub-body.live .live-nohits { order: -2; }
   .hub-body.live .live-pair { order: -1; }
 }
 .live-bo { gap: 8px; align-items: center; }
-.live-bo .btn { flex: 1; min-height: calc(40px * var(--ctl)); font-weight: 700; }
+/* the same red BLACKOUT as the dock's (it shows only on a short screen) */
+.live-bo .btn { flex: 1; min-height: calc(40px * var(--ctl)); font-weight: 800; letter-spacing: .08em; color: #ff8a8a;
+  background: color-mix(in srgb, var(--live) 14%, var(--surface-2)); border-color: color-mix(in srgb, var(--live) 55%, transparent); }
 .live-bo .btn.on { background: var(--live); border-color: var(--live); color: #fff; }
 
 /* sub-tabs inside the busy programmer tabs (programmer.js SUBS) */
@@ -2250,3 +2283,16 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: ca
 .dv-key .ic { width: calc(16px * var(--ts)); height: calc(16px * var(--ts)); }
 .btn > .ic, .tb-btn > .ic { margin-right: 6px; }
 .time-field > span .ic, .field > span .ic { margin-right: 5px; color: var(--text-2); }
+
+/* Live: "Hold to stop" fills while held (0.6 s) */
+#out-arm.holding { background: linear-gradient(90deg, var(--live-bg) 50%, transparent 50%) right / 200% 100% no-repeat; animation: hold-fill .6s linear forwards; }
+@keyframes hold-fill { to { background-position: left; } }
+
+/* touch screens (no hover) and Gig mode: the options buttons that show on
+   hover are always there - a finger can't hover */
+@media (hover: none) { .pb-top .btn.icon, .row-menu { opacity: 1; } }
+body.gig .pb-top .btn.icon { opacity: 1; }
+/* a press shows: brighter while held, on every key a finger hits */
+.pb-btns button:active, .tb-btn:active, .blackout:active, .chip:active, .qbtn:active, .dv-key:active, .win-btn:active { filter: brightness(1.35); }
+/* a text field shows the same focus ring as a button */
+input:focus-visible, textarea:focus-visible, select:focus-visible { box-shadow: 0 0 0 2px var(--accent); }

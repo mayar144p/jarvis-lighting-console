@@ -226,8 +226,8 @@
         <button role="tab" data-tab="fx" aria-selected="false" title="Effects"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8.5c2-5 4-5 6.5 0s4.5 5 6.5 0"/></svg><span>FX</span></button>
         <button role="tab" data-tab="laser" aria-selected="false" title="Lasers" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13L14 3M2 13l12-3.5M2 13l9.5 1"/></svg><span>Laser</span></button>
         <button role="tab" data-tab="sfx" aria-selected="false" title="Special effects: confetti, CO2, fog, flame…" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 12h7.6a2.6 2.6 0 00.3-5.2A3.6 3.6 0 005.3 6 3 3 0 004.2 12z"/></svg><span>SFX</span></button>
-        <button role="tab" data-tab="looks" aria-selected="false" aria-label="Looks" title="Looks: saved looks and palettes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.2.6-3 3 .7 4.2L8 11.5l-3.8 2 .7-4.2-3-3 4.2-.6z"/></svg><span>Looks</span></button>
-        <button role="tab" data-tab="tools" aria-selected="false" aria-label="Setup" title="Setup: arrange, fan, limits, orientation"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7"/><circle cx="10.75" cy="4.5" r="1.75"/><circle cx="5.25" cy="11.5" r="1.75"/></svg><span>Setup</span></button>
+        <button role="tab" data-tab="looks" aria-selected="false" title="Looks: saved looks and palettes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.2.6-3 3 .7 4.2L8 11.5l-3.8 2 .7-4.2-3-3 4.2-.6z"/></svg><span>Looks</span></button>
+        <button role="tab" data-tab="tools" aria-selected="false" title="Rig: arrange, fan, limits, which way up (invert), line up with the real lights"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7"/><circle cx="10.75" cy="4.5" r="1.75"/><circle cx="5.25" cy="11.5" r="1.75"/></svg><span>Rig</span></button>
       </nav>
       <div class="prog-held" id="prog-held" hidden></div>
       <div class="prog-held prog-editing" id="prog-editing" hidden></div>
@@ -405,6 +405,7 @@
       <div class="prog-acts" id="prog-acts">
         <button class="btn" id="prog-clear" title="Clear the programmer (C)">Clear</button>
         <button class="btn" id="prog-make" title="A button (on / off) of what the selected lights do now - position, colour, beam and the movement running. It turns on and holds those lights: change them again by turning it off.">Make a button…</button>
+        <button class="btn" id="prog-update" title="Update: merge the programmer into the cue that is on (O)">Update</button>
         <button class="btn rec" id="prog-record" title="Record what is in the programmer as a cue (R)">● Record cue…</button>
         <span class="muted small prog-why" id="prog-why" aria-live="polite"></span>
       </div>
@@ -438,8 +439,8 @@
           <span class="grow"></span>
           <label class="qb-quant" title="Every button fires on the next beat or bar of the tempo (a button can say otherwise in Edit); pressed just after the beat, it fires straight away">On the beat
             <select class="select" id="qb-quant"><option value="0">Off</option><option value="0.5">½ beat</option><option value="1">Beat</option><option value="2">2 beats</option><option value="4">Bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">Phrase (8 bars)</option></select></label>
-          <button class="btn small ghost" id="qb-release" title="Let go of every latched button">Release all</button>
           <button class="btn small ghost" id="qb-lock" title="Lock the layout on this device: the buttons play, nothing can be moved or edited">Lock</button>
+          <button class="btn small qb-release" id="qb-release" title="Let go of every latched button">Release all</button>
           <button class="btn small qb-bo" id="qb-bo" title="Blackout (X) - in full screen the dock's blackout is hidden">BLACKOUT</button>
           <button class="btn small qb-fx" id="qb-arm" title="Arm the lasers and special effects (fire, CO2, confetti) - the top bar's ARM FX, hidden in full screen">ARM FX</button>
           <button class="btn small qb-fx qb-kill" id="qb-kill" title="Stop every effect at once and disarm">KILL FX</button>
@@ -449,6 +450,8 @@
           <button class="btn small ghost" id="qb-layout" hidden title="This page's grid: buttons across, rows, row height">▦ Layout</button>
           <button class="btn small" id="qb-edit" title="Set buttons up">Edit</button>
         </div>
+        <!-- Live: this page's playbacks above the buttons (playbacks.js) -->
+        <div class="pb-mini" id="pb-mini" hidden></div>
         <div class="qb-body">
           <div class="qb-grid" id="qb-grid"></div>
           <!-- full screen: the group faders and the GM beside the buttons -->

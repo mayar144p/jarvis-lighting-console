@@ -18,11 +18,19 @@ function currentCue() {
   return { pb: focusedPlayback(), cue: c ? c.n : null };
 }
 
-async function overwriteCue() {
+// O = Update, as on a pro desk: the programmer merged INTO the cue that is
+// on (what you didn't touch stays).  Shift+O replaces the whole cue with
+// the programmer - after asking: it wipes everything else in it.
+async function updateCue(replace = false) {
   const { pb, cue } = currentCue();
-  if (cue == null) return toast("No cue to overwrite - press GO or R first");
-  run("record_cue", { playback: pb, cue }, { toast: true });
+  if (cue == null) return toast("No cue to update - press GO or R first");
+  if (replace && !await confirmBox("Replace the cue", `Cue ${cue} on PB${pb} becomes exactly what is in the programmer - everything else in it goes. Ctrl+Z brings it back.`, { ok: "Replace", danger: true })) return;
+  run("record_cue", { playback: pb, cue, mode: replace ? "replace" : "merge" }, { toast: true });
 }
+
+// digits start a command line (12 THRU 16 @ 70, 3 GO), as on a pro desk -
+// or, set in Settings -> Screen & 3D, pick heads 1-9 directly (the old way)
+const digitsSelect = () => { try { return localStorage.getItem("jarvis.digitsSelect") === "1"; } catch (e) { return false; } };
 
 async function deleteCue() {
   const { pb, cue } = currentCue();
@@ -57,7 +65,10 @@ export function initKeys() {
     if (ctrl || e.altKey) return;
     const k = e.key;
     if (k === "/") { e.preventDefault(); openCmdbar(); return; }
-    if (k === " " || k === "Enter") { e.preventDefault(); run("cue_go", { playback: focusedPlayback() }); return; }
+    // GO is Space (and the GO keys) - never Enter: typed numbers then Enter
+    // used to fire the next cue
+    if (k === " ") { e.preventDefault(); run("cue_go", { playback: focusedPlayback() }); return; }
+    if (k === "Enter") { e.preventDefault(); openCmdbar(); return; }
     if (k === "?") { openHelp(); return; }
     const low = k.toLowerCase();
     if (low === "t") return e.shiftKey ? downbeat() : tap();
@@ -66,12 +77,18 @@ export function initKeys() {
       return run("highlight", { state: !cur.on, solo: e.shiftKey });
     }
     if (low === "b") return run("cue_back", { playback: focusedPlayback() });
-    if (low === "x") return run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 });
+    // X blacks out at once; only Shift+X (or the BLACKOUT button) brings
+    // the lights back - one stray key can't undo a blackout mid-show
+    if (low === "x") {
+      if (e.shiftKey) return run("blackout", { state: 0 });
+      if (state.snap && state.snap.blackout) return toast("Blackout is on - Shift+X or the BLACKOUT button brings the lights back");
+      return run("blackout", { state: 1 });
+    }
     if (low === "a") return e.shiftKey ? select([]) : run("select_all");
     if (low === "l") return run("locate");
     if (low === "c") return run("clear_programmer");
     if (low === "r") return openCueDialog(focusedPlayback());
-    if (low === "o") return overwriteCue();
+    if (low === "o") return updateCue(e.shiftKey);
     if (low === "i") { const { pb, cue } = currentCue(); return run("insert_cue", { playback: pb, at: cue == null ? 1 : cue + 1 }); }
     if (low === "d") return deleteCue();
     if (low === "g") return makeGroup();
@@ -86,9 +103,14 @@ export function initKeys() {
       nudgeIntensity((k === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 1 : 5));
       return;
     }
-    if (/^[1-9]$/.test(k)) {
-      const n = Number(k);
-      if (patch().some((x) => x.head_no === n)) select([n], { add: e.shiftKey });
+    if (/^[0-9]$/.test(k)) {
+      if (digitsSelect() && k !== "0") {
+        const n = Number(k);
+        if (patch().some((x) => x.head_no === n)) select([n], { add: e.shiftKey });
+        return;
+      }
+      e.preventDefault();
+      openCmdbar(k);
     }
   });
 }
