@@ -10305,7 +10305,7 @@ def test_visual_polish() -> None:
           "--fs-xs: calc(11px * var(--ts));" in css and "--fs-2xl: calc(24px * var(--ts));" in css
           and sizes <= {"11", "12", "13", "15", "18", "24", "30", "36", "44"}, str(sorted(sizes)))
     ic = (web / "icons.js").read_text(encoding="utf-8")
-    check("the old symbols (▾ ♪ ⛶ ☰ 📷 ◀ ▶) are drawn as the desk's icons, wherever they appear",
+    check("the old text symbols (carets, notes, full screen, pages, camera, arrows) are drawn as the desk's icons, wherever they appear",
           "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
           and "upgradeGlyphs();" in (web / "main.js").read_text(encoding="utf-8"), "")
     check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
