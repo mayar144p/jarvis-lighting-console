@@ -766,34 +766,53 @@ async function openEverything() {
 }
 
 // ================================================================== help
-const KEYS = [
-  ["Space", "GO on the focused playback"], ["B", "back one cue"], ["X / Shift+X", "blackout / lights back"],
-  ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-  ["A / Shift+A", "select all / none"], ["0 … 9", "start a command: 1 THRU 4 @ 70, 3 GO (Enter runs it)"], ["G", "group the selection"],
-  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O / Shift+O", "update the current cue (merge) / replace it"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
-  ["T / Shift+T", "tap the tempo / this is beat 1"], ["H / Shift+H", "highlight / solo the selection"], ["F", "frame the selection on stage"], ["Alt+1..9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"],
+// Help: three tabs - getting started, the keys (grouped), the command line
+const KEY_GROUPS = [
+  ["Playing the show", [["Space", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"], ["Shift+X", "lights back after a blackout"],
+    ["T", "tap the tempo"], ["Shift+T", "this is beat 1"]]],
+  ["Programming", [["R", "record a cue"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
+    ["I / D", "insert a cue after / delete the current one"], ["C", "clear the programmer"], ["L", "locate (open white, centred)"], ["↑ ↓", "intensity ±5 (Shift: ±1)"]]],
+  ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
+    ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
+  ["The desk", [["/ or Ctrl+K", "the command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
+    ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"]]],
 ];
+const KEYS = KEY_GROUPS.flatMap(([, rows]) => rows);
 const SYNTAX = [
-  ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["all warm white", "every fixture warm white"],
-  ["1-4 pan 90", "pan 90° (through each fixture's own range)"], ["group 2 zoom 200", "a group, raw value"],
-  ["cue 3 go", "go to cue 3"], ["record", "record a cue"], ["master 60", "grand master"], ["blackout on", "blackout"],
+  ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["1 thru 8 @ 50", "select 1 to 8 at 50 %"],
+  ["all warm white", "every light warm white"], ["1-4 pan 90", "pan 90° (each light's own range)"], ["group 2 zoom 200", "a group, a raw value"],
+  ["cue 3 go", "go to cue 3"], ["3 go", "the same"], ["record", "record a cue"], ["master 60", "grand master at 60 %"], ["blackout on", "blackout"],
 ];
+let helpTab = "start";
 
 export function openHelp() {
-  const dl = (rows) => h("dl", ...rows.flatMap(([k, v]) => [h("dt", h("kbd", k)), h("dd", v)]));
+  const rows = (list) => h("div.help-rows", ...list.map(([k, v]) => h("div.help-row", h("kbd", k), h("span", v))));
+  const steps = [
+    ["Set up", "Add your lights (Set up → Add lights), make the room (a template, sizes, or point a light at its corners), put each light where it hangs, then Line up with the real lights so the beams land where the 3D shows."],
+    ["Mark the room", "Teach the room by pointing: the dance floor, the bar, and Not here on walls and the DJ - no beam goes there."],
+    ["Program", "Select lights, set level, colour, position, beam; save palettes; Record cue… onto a playback (or Make a button…)."],
+    ["Live", "GO on the playbacks, the buttons page for hits, tap the tempo. Lock the desk (top bar) so nothing gets changed by mistake."],
+    ["Go live", "Everything so far is BLIND - nothing reaches the lights. When the rig is connected: Go live. Hold to stop."],
+  ];
+  const panes = {
+    start: () => h("ol.help-steps", ...steps.map(([t, d]) => h("li", h("b", t), h("span", d)))),
+    keys: () => h("div.help-groups", ...KEY_GROUPS.map(([title, list]) => h("section.help-card", h("h4", title), rows(list)))),
+    cmd: () => h("div", h("p.small", "Type in the command bar (/ or any number key): console syntax runs straight away."),
+      h("section.help-card", rows(SYNTAX)),
+      h("p.muted.small", "Anything that is not console syntax - “slow blue wash on the movers” - goes to the copilot, which shows you the plan before it touches the rig.")),
+  };
+  const tabs = h("div.seg.help-tabs");
+  const pane = h("div.help-pane");
+  const show = (k) => {
+    helpTab = k;
+    for (const b of tabs.children) b.classList.toggle("on", b.dataset.k === k);
+    pane.replaceChildren(panes[k]());
+  };
+  for (const [k, l] of [["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]]) tabs.append(h("button", { dataset: { k }, onclick: () => show(k) }, l));
+  show(helpTab);
   modal({
     title: "Help", wide: true,
-    body: h("div.help-grid",
-      h("div", h("h3", "Keys"), dl(KEYS)),
-      h("div", h("h3", "Command bar syntax"), dl(SYNTAX),
-        h("p.muted.small", "Anything that is not console syntax - “slow blue wash on the movers” - goes to the copilot, which shows you the plan before it touches the rig.")),
-      h("div", h("h3", "Workflow"),
-        h("ol", { style: { paddingLeft: "18px", color: "var(--text-2)", lineHeight: 1.6, margin: 0 } },
-          h("li", "Add fixtures - they appear on the stage straight away."),
-          h("li", "Drag them to where they hang (Shift+drag for height)."),
-          h("li", "Select, then set intensity, colour, position, beam."),
-          h("li", "Record cues onto a playback and press GO."),
-          h("li", "When the rig is connected: Go live.")))),
+    body: h("div.help", tabs, pane),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
       h("button.btn", { title: "A minute round the mode on screen (Set up, Program or Live)", onclick: () => { closeTopModal(); startTour(); } },
         `Take the tour (${{ setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program"})`),

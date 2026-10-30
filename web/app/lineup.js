@@ -89,24 +89,50 @@ export function openLineUp(heads = null) {
       h("button.btn.small" + ((now().orient || {})[k] ? ".on" : ""), {
         onclick: async () => { await run("set_orient", { heads: [head()], [k]: !((now().orient || {})[k]) }, { toast: true }); point(); paint(); },
       }, label)));
+  // another spot: one of the room's marks, or TAP where it is on a plan of
+  // the room (the desk works out the metres) - the metres can be typed too
   const otherSpot = () => {
-    const sel = h("select.select", ...roomSpots().map((s, k) => h("option", { value: k }, `${s.label} (${s.x}, ${s.z})`)),
-      h("option", { value: "typed" }, "Somewhere else: type where…"));
+    const sel = h("select.select", ...roomSpots().map((s, k) => h("option", { value: k }, s.label)),
+      h("option", { value: "plan" }, "Somewhere else: tap it on the plan…"));
     const cur = roomSpots().findIndex((s) => mark() && s.x === mark().x && s.z === mark().z);
     if (cur >= 0) sel.value = String(cur);
-    const x = h("input.num", { type: "number", step: 0.1, placeholder: "x across" });
-    const z = h("input.num", { type: "number", step: 0.1, placeholder: "z from the back" });
-    const typed = h("span", x, z, h("button.btn.small", { onclick: () => {
-      if (x.value === "" || z.value === "") { toast("Type x (across) and z (from the back wall), in metres"); return; }
-      marks[step] = { label: "your spot", x: +x.value, z: +z.value };
-      point(); paint();
-    } }, "Use it"));
-    typed.hidden = true;
-    sel.addEventListener("change", () => {
-      typed.hidden = sel.value !== "typed";
-      if (sel.value !== "typed") { marks[step] = roomSpots()[+sel.value]; point(); paint(); }
+    const use = (x, z) => { marks[step] = { label: "your spot", x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }; point(); paint(); };
+    const v = (state.snap && state.snap.venue) || {}, room = v.room || {};
+    const W = +room.width || 16, D = +room.depth || 20, x0 = (+room.cx || 0) - W / 2, z0 = +room.back || 0;
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `${x0 - 0.5} ${z0 - 0.5} ${W + 1} ${D + 1}`);
+    svg.setAttribute("class", "lu-plan");
+    svg.innerHTML = `<rect x="${x0}" y="${z0}" width="${W}" height="${D}" class="lu-room"/>`
+      + (v.zones || []).map((zn) => `<polygon points="${zn.points.map((q) => q.join(",")).join(" ")}" class="lu-zone"><title>${zn.name || zn.kind}</title></polygon>`).join("")
+      + (v.stage ? `<rect x="${v.stage.x - v.stage.width / 2}" y="${v.stage.z}" width="${v.stage.width}" height="${v.stage.depth}" class="lu-stage"/>` : "")
+      + (v.zones || []).map((zn) => {
+        const cx = zn.points.reduce((a, q) => a + q[0], 0) / zn.points.length, cz = zn.points.reduce((a, q) => a + q[1], 0) / zn.points.length;
+        return `<text x="${cx}" y="${cz}" class="lu-txt">${String(zn.name || zn.kind).replace(/[<&>"]/g, "")}</text>`;
+      }).join("")
+      + `<text x="${x0 + W / 2}" y="${z0 + 0.9}" class="lu-txt">stage end</text>`;
+    svg.addEventListener("click", (e) => {
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX; pt.y = e.clientY;
+      const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      use(p.x, p.y);
     });
-    return h("div.lineup-row", sel, typed);
+    const x = h("input.num", { type: "number", step: 0.1, placeholder: "e.g. 2" });
+    const z = h("input.num", { type: "number", step: 0.1, placeholder: "e.g. 6" });
+    const planBox = h("div.lu-planbox",
+      h("p.small", "Tap the plan where the spot is - the room seen from above, the stage end at the top."),
+      svg,
+      h("details.lineup-link", h("summary", "or type it in metres"),
+        h("div.lineup-row", h("label.small", "Across ", x, " m (0 = the middle, minus = left, plus = right, seen from the stage)")),
+        h("div.lineup-row", h("label.small", "From the back wall ", z, " m")),
+        h("button.btn.small", { onclick: () => { if (x.value === "" || z.value === "") { toast("Type both: across and from the back wall"); return; } use(+x.value, +z.value); } }, "Use it")));
+    planBox.hidden = roomSpots().length > 0;
+    if (!roomSpots().length) sel.value = "plan";
+    sel.addEventListener("change", () => {
+      planBox.hidden = sel.value !== "plan";
+      if (sel.value !== "plan") { marks[step] = roomSpots()[+sel.value]; point(); paint(); }
+    });
+    return h("div", h("div.lineup-row", sel), planBox);
   };
   const link = (label, body) => h("details.lineup-link", h("summary", label), body);
 
@@ -137,7 +163,7 @@ export function openLineUp(heads = null) {
     const m = mark();
     if (!m) {
       title.textContent = "The room has no marks yet";
-      hint.textContent = "Type where a spot on the floor is (a taped cross, the DJ), in metres - or add marks in Arrange.";
+      hint.textContent = "Tap where a spot on the floor is (a taped cross, the DJ) on the plan below - or add marks in Arrange.";
       main.replaceChildren(otherSpot());
       more.replaceChildren();
       return;

@@ -85,7 +85,8 @@ function renderLock() {
   const lk = s.lock || "design";
   const b = $("#lock-btn");
   b.dataset.state = lk;
-  $("#lock-label").textContent = (LOCKS[lk] || LOCKS.design)[0];
+  document.body.dataset.lock = lk;              // the panels show it (app.css)
+  $("#lock-label").textContent = lk === "locked" ? "LOCKED" : lk === "operate" ? "OPERATE" : (LOCKS[lk] || LOCKS.design)[0];
   b.title = (LOCKS[lk] || LOCKS.design)[1];
 }
 
@@ -102,9 +103,9 @@ function lockMenu(anchor) {
     run("set_lock", { state: target }, { toast: true });
   };
   menu(anchor, [
-    { label: "Design", hint: "edit anything", run: () => setTo("design") },
-    { label: "Operate", hint: "run the show, no edits", run: () => setTo("operate") },
-    { label: "Locked", hint: "patch frozen too", run: () => setTo("locked") },
+    { label: (cur === "design" ? "✓ " : "") + "Design", hint: "edit anything", run: () => setTo("design") },
+    { label: (cur === "operate" ? "✓ " : "") + "Operate", hint: "play and busk with the programmer - the show can't be edited", run: () => setTo("operate") },
+    { label: (cur === "locked" ? "✓ " : "") + "Locked", hint: "playing only: GO, faders, buttons, blackout", run: () => setTo("locked") },
     "-",
     { label: "Lock with a password…", run: async () => {
       const pw = await promptBox("Lock with a password", "Password (needed to unlock)", "", { ok: "Lock" });

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from app import fixlib, riglib, roomshape
 from app import venue as venue_mod
-from app.engine_base import _attr_role, _clamp, _secrets_equal, _truthy, attr_domain
+from app.engine_base import UNDO_EXCLUDED, _attr_role, _clamp, _secrets_equal, _truthy, attr_domain
 
 
 class RigMixin:
@@ -360,6 +360,11 @@ class RigMixin:
     })
 
     LOCK_STATES = ("design", "operate", "locked")
+    # LOCKED is playing only: what runs the show (GO, faders, buttons,
+    # blackout, the masters, the tempo, picking lights) and nothing that
+    # changes it - not the programmer either (OPERATE leaves that to busk with)
+    LOCKED_PLAY = frozenset({"quick_page", "tempo_tap", "tempo_set", "tempo_phrase", "tempo_nudge", "tempo_sync",
+                             "speed_master", "select_heads", "select_all", "select_group", "select_step", "select_split"})
 
     def _lock_check(self, name: str) -> None:
         """Refuse an action the current lock state forbids, saying why."""
@@ -370,6 +375,11 @@ class RigMixin:
             raise ValueError(
                 f"LOCKED: {name} changes the patch, which is refused while "
                 f"the rig is up. Set DESIGN to change the patch.")
+        if state == "locked" and name not in UNDO_EXCLUDED and name not in self.LOCKED_PLAY:
+            raise ValueError(
+                f"LOCKED: playing only - {name} would change the lights or the show. "
+                f"GO, faders, buttons and blackout still work; set OPERATE to busk "
+                f"with the programmer, DESIGN to edit.")
         if name in self.LOCK_PATCH or name in self.LOCK_LIBRARY:
             raise ValueError(
                 f"OPERATE: {name} edits the show, not the performance, and "
@@ -404,8 +414,9 @@ class RigMixin:
             "operate": ("OPERATE — the show runs, the show cannot be "
                         "edited (faders, cues and the programmer still "
                         "work)"),
-            "locked": ("LOCKED — the show runs and the patch is frozen; "
-                       "only DESIGN changes either"),
+            "locked": ("LOCKED — playing only: GO, faders, buttons and "
+                       "blackout work; nothing can be changed (OPERATE to "
+                       "busk, DESIGN to edit)"),
         }[want]
         return {"state": want, "has_password": bool(self._lock_hash),
                 "summary": said}

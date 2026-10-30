@@ -9972,7 +9972,7 @@ def test_desktop_frame() -> None:
     check("the keys have icons, as on a pro desk: Record, Update, Fade in, Delay, Fan, Flip, Mirror...",
           all(f"  {k}: '" in ic for k in ("rec", "update", "fadein", "fadeout", "delay", "fan", "flip", "mirror", "locate", "go", "stop"))
           and '"Record…": "rec"' in dv and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
-          and 'icon("fadein"), "Fade (s)"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+          and 'icon("fadein"), "Fade in"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
           and 'icon("stop")' in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8"), "")
 
 
@@ -10156,3 +10156,31 @@ def test_room_by_pointing() -> None:
     check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
           'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and '"jarvis.grpW"' in pb and '"jarvis.mastersSide"' in pb and "body.masters-left .masters" in css, "")
+
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_lock", state="locked")
+            r = e.act("set_intensity", level=90)
+            check("LOCKED is playing only: the programmer is refused too, saying what still works",
+                  not r.get("ok") and "playing only" in str(r.get("error")), str(r))
+            check("...GO, the master and blackout still work",
+                  "LOCKED" not in str(e.act("cue_go", playback=1).get("error")) and e.act("master", level=80).get("ok") and e.act("blackout", state=1).get("ok"), "")
+            e.act("set_lock", state="operate")
+            check("OPERATE still lets the programmer busk", e.act("set_intensity", level=90).get("ok"), "")
+        finally:
+            e.shutdown()
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the lock shows: LOCKED / OPERATE in colour in the top bar, the panels dimmed behind a note when locked",
+          'body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after' in css
+          and "document.body.dataset.lock = lk" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("Help in three tabs, the keys grouped", '["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]' in dj and "KEY_GROUPS" in dj, "")
+    lu = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("Line up: another spot is tapped on a plan of the room (the metres typed only if wanted, explained)",
+          "Tap the plan where the spot is" in lu and "0 = the middle, minus = left, plus = right" in lu, "")

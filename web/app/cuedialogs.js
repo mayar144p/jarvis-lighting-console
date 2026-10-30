@@ -44,12 +44,18 @@ export function openCueDialog(playback) {
   try { clearBox.checked = localStorage.getItem("jarvis.clearAfterRecord") === "1"; } catch (e) { /* fine */ }
   const close = modal({
     title: "Record cue",
-    body: h("div.form-grid",
-      h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where),
-      h("div.field", h("span", " "), modeBox),
+    // three tidy rows: where it goes, its name, its times - then what
+    // happens to the programmer
+    body: h("div.rec-cue",
+      h("div.rec-row.two", h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where)),
+      h("div.rec-mode", modeBox),
       h("label.field", h("span", "Name"), name),
-      h("label.field", h("span", icon("fadein"), "Fade (s)"), fade), h("label.field", h("span", icon("delay"), "Hold before auto-follow (s)"), hold)),
-    foot: [h("label.check.grow", clearBox, h("span", "Clear the programmer after (off: build the next cue from this one)")),
+      h("div.rec-row.two",
+        h("label.field", h("span", icon("fadein"), "Fade in"), h("div.rec-unit", fade, h("i", "s"))),
+        h("label.field", { title: "With auto-follow on, how long it holds before the next cue starts by itself" },
+          h("span", icon("delay"), "Then next cue after"), h("div.rec-unit", hold, h("i", "s")))),
+      h("label.check.rec-clear", clearBox, h("span", "Clear the programmer after recording", h("small.muted", " - off: build the next cue from this one")))),
+    foot: [h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
         onclick: async () => {

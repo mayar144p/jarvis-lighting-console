@@ -2430,3 +2430,53 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 .m-label { font-size: calc(12px * var(--ts)); }
 /* widened, the group faders spread out to use the room */
 .grp-masters > .master.grp { flex: 1 1 0; min-width: calc(52px * var(--ctl)); }
+
+/* Record cue: three tidy rows, labels on one line, units beside the numbers */
+.rec-cue { display: flex; flex-direction: column; gap: 12px; width: min(520px, 80vw); }
+.rec-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rec-cue .field > span { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.rec-cue select { width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-mode:has(> .chip-row[hidden]) { display: none; }
+.rec-unit { display: flex; align-items: center; gap: 6px; }
+.rec-unit input { flex: 1; min-width: 0; }
+.rec-unit i { font-style: normal; color: var(--muted); }
+.rec-clear { padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* Line up: tap a spot on a plan of the room */
+.lu-plan { width: 100%; max-width: 360px; height: auto; max-height: 260px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: crosshair; display: block; }
+.lu-room { fill: rgba(255, 255, 255, .03); stroke: #6b6f7c; stroke-width: .06; }
+.lu-zone { fill: rgba(139, 141, 255, .10); stroke: rgba(139, 141, 255, .5); stroke-width: .05; }
+.lu-stage { fill: rgba(255, 255, 255, .08); stroke: #6b6f7c; stroke-width: .05; }
+.lu-txt { fill: var(--muted); font-size: .7px; text-anchor: middle; }
+.lu-planbox { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dv-win header .dv-x { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: calc(15px * var(--ts)); line-height: 1; padding: 0 2px; cursor: pointer; }
+.dv-win header .dv-x:hover { color: var(--text); }
+.dv-board > .dv-win[hidden] { display: none; }
+
+/* Help: tabs; keys grouped in cards, the key on the left, its meaning beside it */
+.help { display: flex; flex-direction: column; gap: 12px; width: min(860px, 86vw); min-height: min(460px, 60vh); }
+.help-tabs button.on { background: var(--accent-bg); color: var(--accent); }
+.help-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.help-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.help-card h4 { margin: 0 0 8px; font-size: calc(12px * var(--ts)); text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); }
+.help-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: baseline; }
+.help-row { display: contents; }
+.help-row kbd { justify-self: start; white-space: nowrap; }
+.help-row span { color: var(--text-2); }
+.help-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.help-steps li b { display: block; color: var(--text); }
+.help-steps li span { color: var(--text-2); }
+
+/* the lock, seen: OPERATE / LOCKED written in the top bar in colour (the
+   word shows even when the bar is tight); LOCKED dims the programmer and
+   the fixture list behind a note, so it is plain why nothing changes */
+.tb-btn.lock:is([data-state=operate], [data-state=locked]) { width: auto; padding: 0 10px; gap: 6px; border: 1px solid currentColor; }
+.tb-btn.lock[data-state=operate] { background: var(--blind-bg); }
+.tb-btn.lock[data-state=locked] { background: var(--live-bg); }
+.tb-btn.lock:is([data-state=operate], [data-state=locked]) #lock-label { display: inline !important; font-weight: 800; letter-spacing: .06em; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel) { position: relative; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel) > * { opacity: .45; pointer-events: none; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
+  content: "Locked: playing only - GO, faders, buttons and blackout work. Top bar → Design to change things.";
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(80%, 360px); z-index: 5; text-align: center;
+  padding: 12px 14px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--live); color: var(--text); font-weight: 600; font-size: calc(13px * var(--ts)); }

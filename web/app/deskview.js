@@ -228,7 +228,6 @@ function strip() {
       key("Cues", "The cue list of the focused playback", async () => (await import("./dialogs.js")).openCueList(await focusedPb())),
       key("Patch", "Every light's DMX address", async () => (await import("./fixtures.js")).openDmxMap()),
       key("Outputs", "What goes out to the nodes", async () => (await import("./monitors.js")).openNodeMonitor()),
-      key("Macros", "Macros", async () => (await import("./macros.js")).openMacros()),
       key("Setup", "Settings", async () => (await import("./settings.js")).openSettings()),
       key("Help", "Help and keys", async () => (await import("./dialogs.js")).openHelp())),
     ["keypad", h("section.dv-win.dv-keywin.dv-padwin", h("header", h("b", "KEYPAD")), h("div.dv-sec.dv-pad", shown, h("div.dv-keys", ...pad,
@@ -260,7 +259,12 @@ let layout = (() => {
 const saveLayout = () => { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { /* private window */ } };
 let board = null, shownKey = "", zTop = 1;
 
+const NAMES = { group: "Group", position: "Position palettes", colour: "Colour palettes", beam: "Beam palettes",
+  select: "Select keys", poskeys: "Position keys", progkeys: "Programmer keys", windows: "Window keys", keypad: "Keypad" };
+const hidden = () => (layout._hidden || []);
+
 function place(el, id) {
+  el.hidden = hidden().includes(id);
   const r = layout[id] || DEFAULT_LAYOUT[id];
   el.style.gridColumn = `${r.x + 1} / span ${r.w}`;
   el.style.gridRow = `${r.y + 1} / span ${r.h}`;
@@ -298,7 +302,12 @@ function movable(el, id) {
     handle.addEventListener("pointerup", up, { once: true });
     handle.addEventListener("pointercancel", up, { once: true });
   });
-  if (head) { head.title = "Drag to move this window"; drag(head, false); }
+  if (head) {
+    head.title = "Drag to move this window";
+    head.append(h("button.dv-x", { title: "Hide this window (Show brings it back)", "aria-label": `Hide ${NAMES[id] || id}`,
+      onclick: (e) => { e.stopPropagation(); layout._hidden = [...new Set([...hidden(), id])]; saveLayout(); place(el, id); } }, "×"));
+    drag(head, false);
+  }
   drag(grip, true);
   place(el, id);
   return el;
@@ -319,8 +328,16 @@ export function renderDeskView() {
     board = h("div.dv-board");
     board.append(...strip().map(([id, el]) => movable(el, id)));
     box.replaceChildren(h("div.dv",
-      h("div.dv-bar", h("span.muted.small", "Drag a window by its title to move it, by its corner to size it."),
-        h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started" }, "Reset layout")),
+      h("div.dv-bar", h("span.muted.small", "Drag a window by its title to move it, by its corner to size it; × hides it."),
+        h("span.grow"),
+        h("button.btn.small.ghost", { title: "Bring back a hidden window", onclick: (e) => menu(e.currentTarget,
+          Object.entries(NAMES).map(([id, name]) => ({ label: (hidden().includes(id) ? "" : "✓ ") + name, run: () => {
+            layout._hidden = hidden().includes(id) ? hidden().filter((x) => x !== id) : [...hidden(), id];
+            saveLayout();
+            const el = board.querySelector(`:scope > [data-win="${id}"]`);
+            if (el) place(el, id);
+          } }))) }, "Show ▾"),
+        h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started, all shown" }, "Reset layout")),
       board));
     shownKey = "";
   }
