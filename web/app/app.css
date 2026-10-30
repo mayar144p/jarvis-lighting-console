@@ -2378,3 +2378,27 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 .qb-faders[data-dir="v"] .qb-side { width: calc(80px * var(--ctl)); }
 .qb-side-top output, .qb-faders[data-dir="v"] .qb-side-top output { font: 700 calc(15px * var(--ts)) var(--mono); color: var(--text); }
 .qb-side.gm input.qfader-in { --fill: var(--accent); }
+
+/* the desk view as a board: windows on a 24 x 12 grid filling the height
+   there is; drag a title to move, a corner to size (deskview.js) */
+.dv { display: flex; flex-direction: column; gap: 6px; height: 100%; min-height: 0; }
+.dv-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dv-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); grid-template-rows: repeat(12, minmax(calc(34px * var(--ctl)), 1fr)); gap: 6px; position: relative; overflow: auto; }
+.dv-board > .dv-win { position: relative; min-height: 0; }
+.dv-win header { cursor: grab; touch-action: none; user-select: none; }
+.dv-win.dragging { box-shadow: 0 10px 28px rgba(0, 0, 0, .55), 0 0 0 1px var(--accent); }
+.dv-win.dragging header { cursor: grabbing; }
+.dv-resize { position: absolute; right: 0; bottom: 0; width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); cursor: nwse-resize; touch-action: none; z-index: 2;
+  background: linear-gradient(135deg, transparent 55%, var(--border-2) 55% 62%, transparent 62% 72%, var(--border-2) 72% 79%, transparent 79%); }
+.dv-resize:hover { background: linear-gradient(135deg, transparent 55%, var(--accent) 55% 62%, transparent 62% 72%, var(--accent) 72% 79%, transparent 79%); }
+/* a key window: its keys reflow to its width and scroll when it is short */
+.dv-keywin .dv-sec { border: 0; border-radius: 0; background: transparent; flex: 1; min-height: 0; overflow: auto;
+  grid-template-columns: repeat(auto-fill, minmax(calc(64px * var(--ctl)), 1fr)); align-content: start; }
+.dv-keywin .dv-pad { display: flex; flex-direction: column; gap: 6px; }
+.dv-keywin .dv-keys { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* keys in a window: the icon beside its name, compact; the keypad's keys
+   share out the window's height */
+.dv-keywin .dv-key { flex-direction: row; gap: 6px; min-height: calc(34px * var(--ctl)); padding: 0 6px; }
+.dv-padwin .dv-pad { overflow: hidden; }
+.dv-padwin .dv-keys { flex: 1; grid-auto-rows: minmax(calc(30px * var(--ctl)), 1fr); }
+.dv-padwin .dv-keys .dv-key { min-height: 0; }

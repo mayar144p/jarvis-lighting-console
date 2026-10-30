@@ -10134,3 +10134,14 @@ def test_room_by_pointing() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     check("Zones & limits: where the beams may go first, the old Cues & aims too only while a show has it on",
           "function zonesBlock" in mv and 'tag(zonesBlock(), "limits")' in mv and "snap.floor_lock ? toggle(" in mv, "")
+
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the desk view's windows move (by the title) and size (by the corner), snapped and remembered, with Reset",
+          "function movable(el, id)" in dv and '"jarvis.dvLayout"' in dv and "export function resetDeskLayout" in dv
+          and ".dv-resize {" in css, "")
+    check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
+          "grid-template-rows: repeat(12, minmax(calc(34px * var(--ctl)), 1fr))" in css, "")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
+          and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")

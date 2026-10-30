@@ -197,8 +197,10 @@ function strip() {
   };
   const pad = [["7"], ["8"], ["9"], ["THRU", " thru "], ["4"], ["5"], ["6"], ["+", " + "], ["1"], ["2"], ["3"], ["-", " - "],
     ["0"], ["."], ["@", " @ "], ["FULL", " full"]].map(([l, t]) => key(l, `Type ${l}`, () => type(t || l)));
-  return h("aside.dv-strip",
-    h("div.dv-sec", h("span.k", "Select"),
+  const kw = (id, title, ...keys) => [id, h("section.dv-win.dv-keywin",
+    h("header", h("b", title.toUpperCase())), h("div.dv-sec", ...keys))];
+  return [
+    kw("select", "Select",
       key("◀ Prev", "One light at a time: the one before", () => run("select_step", { step: "prev" })),
       key("Next ▶", "One light at a time: the next", () => run("select_step", { step: "next" })),
       key("All", "All the lights of the selection again", () => run("select_step", { step: "all" })),
@@ -206,12 +208,12 @@ function strip() {
       key("Even", "Keep the even ones", () => run("select_split", { split: "even" })),
       key("Highlight", "The selection at full white, to find it", () => run("highlight", {}), ".toggle"),
       key("None", "Clear the selection", () => select([]))),
-    h("div.dv-sec", h("span.k", "Position"),
+    kw("poskeys", "Position",
       key("Flip", "Same spot, from the other end of the travel", () => run("flip", {}, { toast: true })),
       key("Mirror", "Pan reversed: left becomes right", () => run("mirror_pan", {}, { toast: true })),
       key("Locate", "Open white, centred: find the lights", () => run("locate", {}, { toast: true })),
       key("Line up…", "Line up with the real lights; invert one that turns the wrong way", async () => (await import("./lineup.js")).openLineUp())),
-    h("div.dv-sec", h("span.k", "Programmer"),
+    kw("progkeys", "Programmer",
       key("Clear", "Clear the programmer", () => run("clear_programmer"), ".warn"),
       key("Undo", "Undo the last change", () => run("undo", {}, { toast: true })),
       key("Record…", "Record the programmer as a cue", async () => (await import("./dialogs.js")).openCueDialog(await focusedPb()), ".rec"),
@@ -221,7 +223,7 @@ function strip() {
         if (!pb || pb.index < 0) { toast(`Playback ${n} has no cue on`); return; }
         run("record_cue", { playback: n, cue: pb.index + 1, mode: "merge" }, { toast: true });
       })),
-    h("div.dv-sec", h("span.k", "Windows"),
+    kw("windows", "Windows",
       key("Plot", "The rig drawn flat with every light's number: select, move", async () => (await import("./plot.js")).openPlot()),
       key("Cues", "The cue list of the focused playback", async () => (await import("./dialogs.js")).openCueList(await focusedPb())),
       key("Patch", "Every light's DMX address", async () => (await import("./fixtures.js")).openDmxMap()),
@@ -229,30 +231,107 @@ function strip() {
       key("Macros", "Macros", async () => (await import("./macros.js")).openMacros()),
       key("Setup", "Settings", async () => (await import("./settings.js")).openSettings()),
       key("Help", "Help and keys", async () => (await import("./dialogs.js")).openHelp())),
-    h("div.dv-sec.dv-pad", h("span.k", "Keypad"), shown, h("div.dv-keys", ...pad,
+    ["keypad", h("section.dv-win.dv-keywin.dv-padwin", h("header", h("b", "KEYPAD")), h("div.dv-sec.dv-pad", shown, h("div.dv-keys", ...pad,
       key("⌫", "Rub out", () => { line = line.trimEnd().split(" ").slice(0, -1).join(" "); line = line ? line + " " : ""; shown.textContent = line || " "; }),
       key("CLR", "Clear the line", () => { line = ""; shown.textContent = " "; }),
-      key("ENTER", "Run the line", enter, ".enter"))));
+      key("ENTER", "Run the line", enter, ".enter"))))],
+  ];
 }
 
+// The desk view is a board of windows, each where you put it: drag a
+// window by its title to move it, by its corner to size it - snapped to a
+// grid, remembered on this computer (Reset puts them back).  The board fills
+// the height there is: a taller dock makes the windows shorter and their
+// contents scroll - nothing spills over.
 // The keys are built once (a key swapped out under a finger lost the tap -
-// the keys "lagged"); the windows are redrawn only when what they show
-// changes (groups, palettes, the selection, its values), not on every update.
-let stripEl = null, gridEl = null, shownKey = "";
+// the keys "lagged"); the palette windows are redrawn only when what they
+// show changes (groups, palettes, the selection, its values).
+const COLS = 24, ROWS = 12;
+const LAYOUT_KEY = "jarvis.dvLayout";
+const DEFAULT_LAYOUT = {
+  group: { x: 0, y: 0, w: 7, h: 6 }, position: { x: 7, y: 0, w: 7, h: 6 },
+  colour: { x: 0, y: 6, w: 7, h: 6 }, beam: { x: 7, y: 6, w: 7, h: 6 },
+  select: { x: 14, y: 0, w: 5, h: 3 }, poskeys: { x: 14, y: 3, w: 5, h: 2 }, progkeys: { x: 14, y: 5, w: 5, h: 2 },
+  windows: { x: 14, y: 7, w: 5, h: 3 }, keypad: { x: 19, y: 0, w: 5, h: 8 },
+};
+let layout = (() => {
+  try { return { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {}) }; } catch (e) { return { ...DEFAULT_LAYOUT }; }
+})();
+const saveLayout = () => { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { /* private window */ } };
+let board = null, shownKey = "", zTop = 1;
+
+function place(el, id) {
+  const r = layout[id] || DEFAULT_LAYOUT[id];
+  el.style.gridColumn = `${r.x + 1} / span ${r.w}`;
+  el.style.gridRow = `${r.y + 1} / span ${r.h}`;
+}
+
+// a window's title moves it, its corner sizes it (a finger or the mouse)
+function movable(el, id) {
+  el.dataset.win = id;
+  const head = el.querySelector("header");
+  const grip = h("div.dv-resize", { title: "Drag to size this window" });
+  el.append(grip);
+  const drag = (handle, resize) => handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || (!resize && e.target.closest("button"))) return;
+    e.preventDefault();
+    const b = board.getBoundingClientRect();
+    const cw = b.width / COLS, ch = b.height / ROWS;
+    const start = { ...(layout[id] || DEFAULT_LAYOUT[id]) }, sx = e.clientX, sy = e.clientY;
+    el.style.zIndex = ++zTop;
+    el.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const dx = Math.round((ev.clientX - sx) / cw), dy = Math.round((ev.clientY - sy) / ch);
+      const r = { ...start };
+      if (resize) { r.w = Math.max(2, Math.min(COLS - r.x, start.w + dx)); r.h = Math.max(1, Math.min(ROWS - r.y, start.h + dy)); }
+      else { r.x = Math.max(0, Math.min(COLS - r.w, start.x + dx)); r.y = Math.max(0, Math.min(ROWS - r.h, start.y + dy)); }
+      layout[id] = r;
+      place(el, id);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      el.classList.remove("dragging");
+      saveLayout();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  if (head) { head.title = "Drag to move this window"; drag(head, false); }
+  drag(grip, true);
+  place(el, id);
+  return el;
+}
+
+export function resetDeskLayout() {
+  layout = { ...DEFAULT_LAYOUT };
+  saveLayout();
+  if (board) for (const el of board.children) if (el.dataset.win) { el.style.zIndex = ""; place(el, el.dataset.win); }
+}
+
 export function renderDeskView() {
   const box = $("#desk-view");
   if (!box || box.closest("[hidden]")) return;
   const s = snap();
   const key = JSON.stringify([s.groups, s.palettes, selected(), progVals(), patch().length]);
-  if (!stripEl || !box.contains(stripEl)) {
-    stripEl = strip();
-    gridEl = h("div.dv-grid");
-    box.replaceChildren(h("div.dv", gridEl, stripEl));
+  if (!board || !box.contains(board)) {
+    board = h("div.dv-board");
+    board.append(...strip().map(([id, el]) => movable(el, id)));
+    box.replaceChildren(h("div.dv",
+      h("div.dv-bar", h("span.muted.small", "Drag a window by its title to move it, by its corner to size it."),
+        h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started" }, "Reset layout")),
+      board));
     shownKey = "";
   }
   if (key === shownKey) return;
   shownKey = key;
-  gridEl.replaceChildren(groupWindow(), paletteWindow(...KINDS[0]), paletteWindow(...KINDS[1]), paletteWindow(...KINDS[2]));
+  const wins = { group: groupWindow(), position: paletteWindow(...KINDS[0]), colour: paletteWindow(...KINDS[1]), beam: paletteWindow(...KINDS[2]) };
+  for (const [id, el] of Object.entries(wins)) {
+    const old = board.querySelector(`:scope > [data-win="${id}"]`);
+    const made = movable(el, id);
+    if (old) { made.style.zIndex = old.style.zIndex; board.replaceChild(made, old); } else board.prepend(made);
+  }
 }
 
 export function initDeskView() {
