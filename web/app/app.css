@@ -504,7 +504,9 @@ body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbac
 /* colour picker */
 .picker { display: flex; justify-content: center; }
 .picker canvas { width: 220px; height: 220px; touch-action: none; cursor: crosshair; }
-.swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 12px 0; }
+/* swatches stay swatch-sized (they filled half a wide screen): as many to a
+   row as fit, each 40-60 px */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl)))); gap: 6px; margin: 12px 0; }
 .swatches button { aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .12); }
 .swatches button:hover { transform: scale(1.08); }
 .swatches button.on { outline: 2px solid var(--text); outline-offset: 1px; }
@@ -1139,8 +1141,12 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 .palette-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(72px * var(--ctl)), 1fr)); gap: 6px; margin: 0 0 12px; }
 .palette-strip .pal-item { height: calc(40px * var(--ctl)); justify-content: flex-start; align-items: flex-end; padding: 4px 7px; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; position: relative; font-size: calc(11.5px * var(--ts)); }
-.palette-strip[data-kind=position] .pal-item { background: color-mix(in srgb, var(--f-pos) 12%, var(--surface-2)); }
-.palette-strip[data-kind=beam] .pal-item { background: color-mix(in srgb, var(--f-beam) 12%, var(--surface-2)); }
+/* a palette tile is plain until the selection holds it: then lit (tap again: off) */
+.palette-strip[data-kind=position] .pal-item { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--f-pos) 70%, transparent); }
+.palette-strip[data-kind=beam] .pal-item { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--f-beam) 70%, transparent); }
+.pal-item.on { border-color: var(--accent); background: var(--accent-bg); color: var(--text); }
+.palette-strip[data-kind=position] .pal-item.on { background: color-mix(in srgb, var(--f-pos) 28%, var(--surface-2)); border-color: var(--f-pos); }
+.palette-strip[data-kind=beam] .pal-item.on { background: color-mix(in srgb, var(--f-beam) 28%, var(--surface-2)); border-color: var(--f-beam); }
 .palette-strip[data-kind=colour] .pal-item i { position: absolute; left: 0; right: 0; top: 0; height: calc(18px * var(--ctl)); width: auto; border-radius: 0; }
 .palette-strip .pal-item.pal-save { background: transparent; border-style: dashed; color: var(--muted); align-items: center; justify-content: center; }
 .palette-strip .pal-item.pal-save:hover { color: var(--text); border-color: var(--accent); }
@@ -1424,7 +1430,10 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .aim-follow { width: 100%; justify-content: center; font-weight: 600; margin-bottom: 8px; }
 .aim-follow.on { border-color: var(--accent); background: var(--accent-bg); color: var(--text); animation: blindpulse 1.6s ease-in-out infinite; }
 .aim-map { border: 1px solid var(--border-2); border-radius: var(--radius); background: var(--bg-2); margin-bottom: 8px; touch-action: none; cursor: crosshair; }
-.aim-map svg { display: block; width: 100%; height: auto; max-height: 260px; }
+/* the room map keeps the room's shape: as tall as it can be (up to a
+   limit), as wide as that makes it - never a thumbnail in a wide box */
+.aim-map { width: fit-content; max-width: 100%; }
+.aim-map svg { display: block; width: auto; max-width: 100%; height: calc(300px * var(--ctl)); }
 .am-room { fill: var(--bg-2); stroke: var(--border-2); stroke-width: .06; }
 .am-stage { fill: var(--surface-3); stroke: #45454f; stroke-width: .05; }
 .am-zone { fill: color-mix(in srgb, var(--accent) 6%, transparent); stroke: color-mix(in srgb, var(--accent) 35%, transparent); stroke-width: .05; }
@@ -1441,8 +1450,24 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .am-now { fill: none; stroke: #fbbf24; stroke-width: .08; stroke-dasharray: .12 .08; }
 .mv-spotbox .mv-spots { grid-template-columns: repeat(auto-fill, minmax(calc(84px * var(--ctl)), 1fr)); }
 .mv-spotbox .mv-spot { padding: 7px 4px; }
-.mv-pt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
-.mv-pt .pad { aspect-ratio: 1.15; max-height: 190px; }
+.mv-pt-row { display: grid; grid-template-columns: minmax(0, calc(440px * var(--ctl))) auto; gap: 12px; align-items: start; justify-content: start; }
+/* the pad keeps its shape (pan 540 x tilt 270: wide, not a strip) */
+.mv-pt .pad { width: 100%; aspect-ratio: 1.6; max-height: none; }
+/* a wide programmer: the room map and the pan / tilt pad side by side */
+.programmer { container-type: inline-size; }
+@container (min-width: 920px) {
+  /* the colour wheel and its swatches side by side */
+  .tab-pane[data-pane="colour"]:not(.wheel-only) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 28px; align-items: start; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > * { grid-column: 1 / -1; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > #picker { grid-column: 1; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > #swatches { grid-column: 2; align-self: center; }
+  /* sliders a hand can travel, not the whole width of a big screen */
+  .tab-pane[data-pane="colour"] .colour-extra, .tab-pane[data-pane="colour"] .kelvin-row { max-width: calc(760px * var(--ctl)); }
+  .tab-pane[data-pane="position"][data-sub="point"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; align-items: start; }
+  .tab-pane[data-pane="position"][data-sub="point"] > * { grid-column: 1 / -1; }
+  .tab-pane[data-pane="position"][data-sub="point"] > #move-aim { grid-column: 1; }
+  .tab-pane[data-pane="position"][data-sub="point"] > #mv-pt { grid-column: 2; }
+}
 .mv-nudgebox .mv-nudge { flex-direction: column; align-items: stretch; gap: 8px; }
 .mv-nudgebox .mv-pad { grid-template-columns: repeat(3, calc(38px * var(--ctl))); grid-template-rows: repeat(3, calc(34px * var(--ctl))); }
 .mv-nudgebox .mv-nudge-side { gap: 6px; }

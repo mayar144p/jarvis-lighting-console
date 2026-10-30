@@ -25,7 +25,7 @@ function selLabel() {
 }
 
 // a palette is lit when every selected light that it has values for holds them
-function paletteOn(kind, p) {
+export function paletteOn(kind, p) {
   const sel = selected();
   if (!sel.length) return false;
   const vals = progVals();

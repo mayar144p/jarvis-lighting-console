@@ -10105,3 +10105,11 @@ def test_room_by_pointing() -> None:
     vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
     check("keep-out zones always show in the 3D, a wall as a band along it", 'buildZones(v, (z) => z.kind === "keepout")' in vj
           and "zoneOutline" in vj, "")
+
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
+          "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
+    check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
+          ".programmer { container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
+          and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")

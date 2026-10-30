@@ -3,6 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
+import { paletteOn } from "./deskview.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
@@ -1315,7 +1316,9 @@ function renderRunning(force = false) {
 // ----------------------------------------------------------------- looks
 function renderLooks(force = false) {
   const pals = (state.snap && state.snap.palettes) || {};
-  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || [], ($("#look-search") || {}).value]);
+  // (the selection and its values too: a tile shows whether the selection holds it)
+  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || [], ($("#look-search") || {}).value,
+    selected(), ((state.snap && state.snap.programmer) || {}).values || {}]);
   if (!force && key === looksKey) return;  // (same: Record stays put under the pointer)
   looksKey = key;
   const kinds = ["colour", "position", "beam"];
@@ -1423,16 +1426,32 @@ async function saveLook() {
   });
 }
 
+// A palette tile: lit while the selection holds it.  Tap: put it on the
+// selection; tap a lit one: take it off again (that part of the programmer,
+// for these lights).  Right-click / long-press: update, rename, delete.
 function palButton(kind, p) {
   const v = p.values || {};
   const sw = kind === "colour" && ("red" in v || "green" in v || "blue" in v)
     ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } }) : null;
-  return h("button.pal-item", {
-    title: `Apply ${p.name} to the selection`,
+  const lit = paletteOn(kind, p);
+  const opts = (e) => {
+    e.preventDefault();
+    menu(e.currentTarget, [
+      { label: "Update from the selection", hint: "record it again", run: () => hasSel() ? run("record_palette", { kind, name: p.name }, { toast: true }) : toast("Select fixtures first") },
+      { label: "Rename…", run: async () => { const name = await promptBox("Rename palette", "Name", p.name, { ok: "Rename" }); if (name) run("palette_edit", { kind, palette: p.n, name }, { toast: true }); } },
+      "-",
+      { label: "Delete", danger: true, run: async () => { if (await confirmBox("Delete palette", `Delete “${p.name}”? Cues keep their values. Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) run("palette_edit", { kind, palette: p.n, delete: true }, { toast: true }); } },
+    ]);
+  };
+  return h("button.pal-item" + (lit ? ".on" : ""), {
+    title: lit ? `${p.name} is on the selection - tap to take it off (right-click: rename, delete)` : `Apply ${p.name} to the selection (right-click: rename, delete)`,
+    "aria-pressed": String(lit),
     onclick: () => {
       if (!hasSel()) { toast("Select fixtures first"); return; }
-      run("include_palette", { kind, palette: p.n });
+      if (lit) run("clear_attrs", { group: kind === "beam" ? "beam" : kind, heads: selected() });
+      else run("include_palette", { kind, palette: p.n });
     },
+    oncontextmenu: opts,
   }, sw, p.name);
 }
 
