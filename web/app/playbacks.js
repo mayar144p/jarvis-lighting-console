@@ -374,18 +374,58 @@ export function initPlaybacks() {
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
   // the group faders fold away on a small screen (remembered on this computer)
+  // the master faders' edge (a thin grip, no button taking up room): drag it
+  // to make the group faders wider or narrower - nearly shut folds them;
+  // double-click folds / shows; right-click or a held finger puts the
+  // masters on the left or the right of the dock.  Kept on this computer.
   const fold = $("#grp-fold-btn");
+  const grp = $("#grp-masters");
+  const keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private window */ } };
+  const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const setFold = (folded) => {
-    $("#grp-masters").classList.toggle("folded", folded);
+    grp.classList.toggle("folded", folded);
     fold.setAttribute("aria-expanded", String(!folded));
-    fold.textContent = folded ? "›" : "‹";
-    fold.title = folded ? "Show the group faders" : "Fold the group faders away (more room on a small screen)";
-    try { localStorage.setItem("jarvis.grpFold", folded ? "1" : ""); } catch (e) { /* private window */ }
+    keep("jarvis.grpFold", folded ? "1" : "");
   };
-  let folded = false;
-  try { folded = localStorage.getItem("jarvis.grpFold") === "1"; } catch (e) { /* private window */ }
-  setFold(folded);
-  fold.addEventListener("click", () => setFold(!$("#grp-masters").classList.contains("folded")));
+  const setWidth = (w) => {
+    if (w) grp.style.width = `${Math.round(w)}px`; else grp.style.removeProperty("width");
+    keep("jarvis.grpW", w ? String(Math.round(w)) : "");
+  };
+  const setSide = (left) => { document.body.classList.toggle("masters-left", left); keep("jarvis.mastersSide", left ? "left" : ""); };
+  setFold(read("jarvis.grpFold") === "1");
+  if (+read("jarvis.grpW")) grp.style.width = `${+read("jarvis.grpW")}px`;
+  setSide(read("jarvis.mastersSide") === "left");
+  let drag = null, holdT = 0;
+  const sideMenu = (anchor) => menu(anchor, [
+    { label: document.body.classList.contains("masters-left") ? "Masters on the right" : "Masters on the left", run: () => setSide(!document.body.classList.contains("masters-left")) },
+    { label: grp.classList.contains("folded") ? "Show the group faders" : "Fold the group faders", run: () => setFold(!grp.classList.contains("folded")) },
+    { label: "Group faders: normal width", run: () => setWidth(0) },
+  ]);
+  fold.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    fold.setPointerCapture(e.pointerId);
+    const open = !grp.classList.contains("folded");
+    drag = { x: e.clientX, w: open ? grp.getBoundingClientRect().width : 0, moved: false };
+    fold.classList.add("on");
+    holdT = setTimeout(() => { if (drag && !drag.moved) { drag = null; fold.classList.remove("on"); sideMenu(fold); } }, 600);
+  });
+  fold.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = (e.clientX - drag.x) * (document.body.classList.contains("masters-left") ? 1 : -1);
+    if (Math.abs(dx) > 4) { drag.moved = true; clearTimeout(holdT); }
+    if (!drag.moved) return;
+    const w = Math.max(0, Math.min(window.innerWidth * 0.6, drag.w + dx));
+    if (w < 40) { setFold(true); return; }
+    setFold(false);
+    setWidth(w);
+  });
+  const end = () => { clearTimeout(holdT); drag = null; fold.classList.remove("on"); window.dispatchEvent(new Event("resize")); };
+  fold.addEventListener("pointerup", end);
+  fold.addEventListener("pointercancel", end);
+  fold.addEventListener("dblclick", () => setFold(!grp.classList.contains("folded")));
+  fold.addEventListener("contextmenu", (e) => { e.preventDefault(); sideMenu(fold); });
+  fold.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFold(!grp.classList.contains("folded")); } });
   // on a phone the faders are one tab away: Blackout stays in the bottom bar
   on("snapshot", render);
   on("lite", render);

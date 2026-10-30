@@ -10150,3 +10150,9 @@ def test_room_by_pointing() -> None:
     check("the button editor in three tabs (what it does / look / how it plays), Timing explained, Try it",
           '["does", "What it does"], ["look", "Look"], ["play", "How it plays"]' in qb and 'row("Timing"' in qb
           and "When a press takes effect" in qb and "function tryIt(btn, save)" in qb and 'row("Fires"' not in qb, "")
+
+    pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
+          'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and '"jarvis.grpW"' in pb and '"jarvis.mastersSide"' in pb and "body.masters-left .masters" in css, "")
