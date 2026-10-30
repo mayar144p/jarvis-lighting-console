@@ -10145,3 +10145,8 @@ def test_room_by_pointing() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
           and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")
+
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the button editor in three tabs (what it does / look / how it plays), Timing explained, Try it",
+          '["does", "What it does"], ["look", "Look"], ["play", "How it plays"]' in qb and 'row("Timing"' in qb
+          and "When a press takes effect" in qb and "function tryIt(btn, save)" in qb and 'row("Fires"' not in qb, "")

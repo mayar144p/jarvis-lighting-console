@@ -2402,3 +2402,11 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 .dv-padwin .dv-pad { overflow: hidden; }
 .dv-padwin .dv-keys { flex: 1; grid-auto-rows: minmax(calc(30px * var(--ctl)), 1fr); }
 .dv-padwin .dv-keys .dv-key { min-height: 0; }
+
+/* the button editor's tabs: each tab fits on the screen, the dialog keeps its size */
+.qe-tabs { margin: 0 0 12px; position: sticky; top: 0; z-index: 2; background: var(--surface); }
+.qe-tabs button { padding: 0 16px; }
+.qe-tabs button.on { background: var(--accent-bg); color: var(--accent); }
+.qe-tab { min-height: min(520px, 60vh); }
+.qe-try { touch-action: none; }
+.qe-key { min-width: calc(64px * var(--ctl)); text-align: center; }

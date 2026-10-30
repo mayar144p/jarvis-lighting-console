@@ -1031,9 +1031,13 @@ function editLayout() {
   });
 }
 
+// The button editor in three tabs - what it does, how it looks, how it
+// plays - so nothing needs scrolling: each tab fits the screen.
+let qeTab = "does";
 function editButton(slot, btn) {
   const s = fromButton(btn);
   const body = h("div.qe");
+  const tabsBar = h("div.seg.qe-tabs", { role: "tablist" });
   const selected = (state.snap && state.snap.selected) || [];
   const tags = [...new Set(quick().buttons.map((b) => b.exclusive).filter(Boolean))];
 
@@ -1049,14 +1053,16 @@ function editButton(slot, btn) {
       if (split) s.target.split = split;
       draw();
     };
-    const kids = [
+    const look = [
+      lookSection(s, slot, btn, draw),
       btn ? row("Page", chips(pageChoices(), s.toPageOf || page, (v) => { s.toPageOf = v; draw(); }),
         h("span.qe-note", "Pick another page and Save: the button moves there (in Edit you can also drag it onto a page's tab).")) : null,
+    ];
+    const kids = [
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
       row("Description", h("input.qe-name", { type: "text", value: s.note, maxlength: 40, placeholder: "optional - shown under the name",
         oninput: (e) => { s.note = e.target.value; } })),
-      lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
     if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
@@ -1236,6 +1242,7 @@ function editButton(slot, btn) {
           ? `“${s.key}” is already on another button (both will play)` : "Press the key to play this button (hold keys hold it).";
       } });
     const keyNote = h("span.qe-note", "A letter or digit on the keyboard that plays this button.");
+    const playFrom = kids.length;                    // from here: how it plays
     kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));
     const midiIn = h("input.qe-num.qe-key", { type: "number", min: 0, max: 127, value: s.midi, placeholder: "—",
       oninput: (e) => { const v = e.target.value; s.midi = v === "" ? "" : Math.max(0, Math.min(127, Math.round(+v))); } });
@@ -1243,9 +1250,9 @@ function editButton(slot, btn) {
     const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
     kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
     if (!NO_QUANT.has(d)) {
-      kids.push(row("Fires", chips([["", "Like the page"], [0, "As pressed"], [1, "On the beat"], [4, "On the bar"], [32, "On the phrase"]],
+      kids.push(row("Timing", chips([["", "Like the page"], [0, "Straight away"], [1, "Next beat"], [4, "Next bar"], [32, "Next phrase"]],
         s.quant, (v) => { s.quant = v; draw(); }),
-      h("span.qe-note", "On the beat: a press waits for the next beat (or bar) of the tempo, so a strobe hit or a GO lands on it.")));
+      h("span.qe-note", "When a press takes effect: straight away, or held until the next beat, bar or phrase of the tempo so a strobe hit or a GO lands in time. Like the page: the buttons page's On the beat setting.")));
     }
     // behaviour
     if (!ONE_SHOT.has(d)) {
@@ -1269,8 +1276,12 @@ function editButton(slot, btn) {
           h("div.qe-note", "Buttons in the same radio group switch each other off - one colour, one movement at a time."))));
       }
     }
-    body.replaceChildren(...kids.filter(Boolean));
+    const tabs = { does: kids.slice(0, playFrom), look, play: kids.slice(playFrom) };
+    tabsBar.replaceChildren(...[["does", "What it does"], ["look", "Look"], ["play", "How it plays"]].map(([k, l]) =>
+      h("button" + (qeTab === k ? ".on" : ""), { role: "tab", "aria-selected": String(qeTab === k), onclick: () => { qeTab = k; draw(); } }, l)));
+    body.replaceChildren(tabsBar, h("div.qe-tab", ...tabs[qeTab].filter(Boolean)));
   };
+  qeTab = "does";
   draw();
 
   const save = async (toSlot = slot) => {
@@ -1305,11 +1316,35 @@ function editButton(slot, btn) {
           render(true);
           emit("openprogrammer");
         } }, "Open in the programmer") : null,
+      btn ? tryIt(btn, save) : null,
       h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", { onclick: async () => { if (await save()) close(); } }, "Save"),
     ],
   });
+}
+
+// Try it: held, the button plays on the rig with what is set in the editor
+// now (saved first), and stops when let go - see it before closing
+function tryIt(btn, save) {
+  let down = false;
+  const el = h("button.btn.qe-try", { title: "Hold to try it on the rig (it saves first)" }, "▶ Try it (hold)");
+  el.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    if (down) return;
+    down = true;
+    el.setPointerCapture(e.pointerId);
+    if (!(await save())) { down = false; return; }
+    if (down) run("quick_press", { id: btn.id, down: true }, { silentError: true });
+  });
+  const up = () => {
+    if (!down) return;
+    down = false;
+    run("quick_press", { id: btn.id, down: false }, { silentError: true });
+  };
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  return el;
 }
 
 function speedMenu(el, b) {
