@@ -10914,3 +10914,39 @@ def test_learn_from_corrections() -> None:
             else:
                 os.environ["CONSOLE_DATA_DIR"] = old
 
+
+def test_three_takes() -> None:
+    """Design a show: three takes to pick from, each its own direction."""
+    import os
+    import tempfile
+    from app import autoshow, llm
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    asked = []
+
+    def fake(msgs, name, desc, schema, temperature=0.3):
+        asked.append(msgs[-1]["content"])
+        return {"name": "Take", "palette": ["#ff0000", "#0000ff"],
+                "sections": [{"name": "Intro", "bars": 8, "energy": 0.3, "looks": [{"group": "par@stage_lip", "intensity": 50}]}]}
+    avail, real = llm.available, llm.structured
+    llm.available, llm.structured = (lambda: True), fake
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="LED PAR", qty=4)
+            r = autoshow.design(e, "techno", variants=3)
+            check("three takes, each its own direction", len(r["designs"]) == 3
+                  and [d["take"] for d in r["designs"]] == [t for t, _ in autoshow.TAKES]
+                  and all(t in q for (t, _), q in zip(autoshow.TAKES, asked)), str([d.get("take") for d in r["designs"]]))
+            js = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+            check("the copilot shows them as cards to open and build", "function showTakes(r)" in js and "variants: 3" in js, "")
+        finally:
+            llm.available, llm.structured = avail, real
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+

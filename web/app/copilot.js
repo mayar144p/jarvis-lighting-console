@@ -322,10 +322,28 @@ async function autoshow() {
   box.replaceChildren(h("p.muted", "Reading the rig and designing…"));
   let r;
   try {
-    const d = await post("/api/console/autoshow", { prompt: text, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/autoshow", { prompt: text, variants: 3 });
     r = d.result || {};
   } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
-  showPlan(r);
+  if ((r.designs || []).length > 1) showTakes(r); else showPlan(r);
+}
+
+// Three takes on the brief: each a card (its colours, its parts by energy);
+// open one to see it whole and build it
+function showTakes(r) {
+  const box = $("#auto-plan");
+  const bpm = (r.analysis && r.analysis.bpm) || 120;
+  box.replaceChildren(h("p.muted.small", "Three takes on it - open one to see it whole, then build it."),
+    h("div.auto-takes", ...r.designs.map((d, i) => {
+      let t = 0;
+      const rough = d.sections.map((s) => { const start = t; t += s.bars * 240 / bpm; return { name: s.name, start, end: t, energy: s.energy }; });
+      return h("div.auto-take",
+        h("div.auto-take-head", h("b", String.fromCharCode(65 + i)), h("span", d.take || d.name)),
+        h("div.sw", ...(d.palette || []).map((c) => h("i", { style: { background: c }, title: c }))),
+        sectionBar(rough),
+        h("span.muted.small", `${d.sections.length} parts · ${d.sections.reduce((n, s) => n + s.hits.length, 0)} hits`),
+        h("button.btn.small.primary", { onclick: () => showPlan({ ...r, design: d, designs: null }) }, "Open this one"));
+    })));
 }
 
 /** Change part of the show on the timeline, as asked: previewed like a new one. */

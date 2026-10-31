@@ -1048,7 +1048,8 @@ class Handler(BaseHTTPRequestHandler):
                         built["summary"] += f" (the buttons couldn't be made: {exc})"
                 return self._console_result(eng, built)
             # (designing a whole show is the AI's: never the desk's rules alone)
-            return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", ""))))
+            return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", "")),
+                                                             variants=int(body.get("variants") or 1)))
         if route == "/api/console/sound":
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.

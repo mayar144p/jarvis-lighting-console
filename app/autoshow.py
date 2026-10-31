@@ -484,7 +484,13 @@ def validate(raw, a: dict) -> dict:
 NEEDS_AI = "Designing a whole show needs the AI: Settings -> AI (a key, or the offline AI)"
 
 
-def design(eng, brief: str = "", offline: bool = False) -> dict:
+# three takes on one brief, each with its own direction (variants=3)
+TAKES = (("Dark and minimal", "few colours, slow and moody, lots of contrast and darkness, strobes only at the very peaks"),
+         ("Bold and colourful", "rich saturated colours, busy movement, big hits on every drop"),
+         ("Classic club", "a balance: two-colour looks, steady movement on the beat, hits on the drops"))
+
+
+def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> dict:
     """Analyse the rig and design a show for it: {design, analysis, source}."""
     a = analyse(eng)
     if not a["groups"]:
@@ -494,6 +500,21 @@ def design(eng, brief: str = "", offline: bool = False) -> dict:
     if not offline and not llm.available():
         raise ValueError(NEEDS_AI)
     note = None
+    if not offline and llm.available() and int(variants or 1) > 1:
+        designs = []
+        for title, how in TAKES[:max(2, min(3, int(variants)))]:
+            try:
+                raw = llm.structured(
+                    [{"role": "system", "content": SYSTEM + "\n\n" + describe(a)},
+                     {"role": "user", "content": f"{brief or 'A high-energy club night.'}\n\nThis take: {title} - {how}. "
+                                                 f"Name the show after the brief, then '- {title}'."}],
+                    "show_design", "The whole show for this rig, section by section.", DESIGN_SCHEMA, temperature=0.9)
+                designs.append({**validate({**raw, "brief": brief}, a), "take": title})
+            except (llm.LLMError, ValueError):
+                continue
+        if not designs:
+            raise ValueError("the AI couldn't design the show this time - try again")
+        return {"design": designs[0], "designs": designs, "analysis": _public(a), "source": "llm"}
     if not offline and llm.available():
         try:
             raw = llm.structured(
