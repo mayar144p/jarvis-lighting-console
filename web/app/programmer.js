@@ -1239,15 +1239,63 @@ function renderFx() {
 
 let fxAcross = false;
 
+// Your own colours for a colour effect (and Breathe): the colours it goes
+// through, in order - none chosen, every colour the light can make.  Kept
+// per effect between runs.
+const COLOUR_FX = new Set(["rainbow", "colour_chase", "alternate", "fan", "breathe"]);
+const FX_SWATCHES = [["#ff0000", "Red"], ["#ff6a00", "Orange"], ["#ffd000", "Yellow"], ["#00ff00", "Green"], ["#00ffff", "Cyan"],
+  ["#0040ff", "Blue"], ["#7a00ff", "Purple"], ["#ff00ff", "Magenta"], ["#ff4fa0", "Pink"], ["#ffffff", "White"]];
+const FX_COLS_KEY = "jarvis.fxColours";
+function fxColours(name) {
+  try { return (JSON.parse(localStorage.getItem(FX_COLS_KEY) || "{}")[name] || []).slice(0, 8); } catch { return []; }
+}
+function setFxColours(name, cols) {
+  try {
+    const all = JSON.parse(localStorage.getItem(FX_COLS_KEY) || "{}");
+    all[name] = cols;
+    localStorage.setItem(FX_COLS_KEY, JSON.stringify(all));
+  } catch { /* private window */ }
+}
+function colourPicker(fx, params, mine) {
+  const box = h("div.fx-cols");
+  const apply = (cols) => {
+    setFxColours(fx.name, cols);
+    params.colours = cols;
+    for (const f of mine()) run("fx_tweak", { id: f.id, params: { colours: cols } }, { silentError: true });
+    draw();
+  };
+  const draw = () => {
+    const cols = fxColours(fx.name);
+    const custom = h("input", { type: "color", value: "#ff00aa", "aria-label": "Any colour",
+      onchange: (e) => { if (cols.length < 8) apply([...cols, e.target.value]); } });
+    box.replaceChildren(
+      h("div.fx-cols-head", h("b", "Colours"),
+        h("span.muted.small", cols.length ? (fx.name === "breathe" ? "a new one each breath, in this order"
+          : fx.name === "fan" ? "from the middle out, in this order" : "in this order")
+          : fx.name === "breathe" ? "none: it breathes in the colour the lights have"
+          : "none chosen: every colour the light can make"),
+        cols.length ? h("button.btn.small.ghost", { title: "Back to every colour the light can make", onclick: () => apply([]) }, "Clear") : null),
+      h("div.fx-cols-row",
+        ...cols.map((c, i) => h("button.fx-col.on", { style: `--c:${c}`, title: "Take this colour out", "aria-label": `Take colour ${i + 1} out`,
+          onclick: () => apply(cols.filter((_, j) => j !== i)) }, h("span", String(i + 1)))),
+        cols.length < 8 ? h("span.fx-cols-add", h("span.muted.small", cols.length ? "add" : "pick"),
+          ...FX_SWATCHES.map(([c, n]) => h("button.fx-col", { style: `--c:${c}`, title: `Add ${n}`, "aria-label": `Add ${n}`, onclick: () => apply([...cols, c]) })),
+          h("label.fx-col.fx-col-any", { title: "Add any colour" }, "+", custom)) : h("span.muted.small", "8 at most")));
+  };
+  draw();
+  return box;
+}
+
 function startFx(fx) {
   fxChosen = fx.name;
   const params = {};
   for (const p of fx.params || []) params[p.key] = p.default;
+  if (COLOUR_FX.has(fx.name) && fxColours(fx.name).length) params.colours = fxColours(fx.name);
   run("run_fx", { name: fx.name, params, heads: sel(), across: fxAcross }, { toast: true }).then(() => renderFx());
   // its other knobs (speed is on the running row below): tap or type, and
   // the running effect changes as it runs - no restart, no jump
   const mine = () => ((state.snap && state.snap.fx) || []).filter((f) => f.lib === fx.name && (f.from || "programmer") === "programmer");
-  $("#fx-params").replaceChildren(...(fx.params || []).filter((p) => !["phase", "speed"].includes(p.key)).map((p) => knob({
+  $("#fx-params").replaceChildren(COLOUR_FX.has(fx.name) ? colourPicker(fx, params, mine) : "", ...(fx.params || []).filter((p) => !["phase", "speed"].includes(p.key)).map((p) => knob({
     label: p.label.replace(/^./, (c) => c.toUpperCase()), value: p.default, min: p.min, max: p.max,
     step: { add: Math.max(0.01, +((p.max - p.min) / 20).toPrecision(2)) }, halves: false,
     onSet: (v) => {

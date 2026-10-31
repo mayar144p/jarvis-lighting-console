@@ -1774,6 +1774,23 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: var(--fs-l); }
 .mv-now { font-variant-numeric: tabular-nums; }
 .aim-map .am-dj circle { fill: var(--accent-bg); stroke: var(--accent); stroke-width: .06; }
 .aim-map .am-front { stroke: var(--accent); stroke-width: .1; stroke-linecap: round; }
+.aim-map .am-front-head { fill: var(--accent); }
+/* an effect's own colours: chosen ones numbered, tap to take out; swatches to add */
+.fx-cols { grid-column: 1 / -1; display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2, transparent); }
+.fx-cols-head { display: flex; align-items: center; gap: 10px; }
+.fx-cols-head .btn { margin-left: auto; }
+.fx-cols-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx-cols-add { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-left: 6px; }
+.fx-col { position: relative; width: calc(28px * var(--ctl)); height: calc(28px * var(--ctl)); border-radius: 6px; border: 1px solid var(--line);
+  background: var(--c, transparent); cursor: pointer; padding: 0; display: inline-grid; place-items: center; color: #000; font-weight: 700; font-size: var(--fs-xs); }
+.fx-col.on { width: calc(36px * var(--ctl)); height: calc(36px * var(--ctl)); border: 2px solid var(--fg); }
+.fx-col.on span { background: rgba(255,255,255,.75); border-radius: 4px; padding: 0 4px; }
+.fx-col.on:hover::after { content: "×"; position: absolute; top: -8px; right: -8px; width: 16px; height: 16px; border-radius: 50%; background: var(--danger, #e5484d); color: #fff; font-size: var(--fs-s); line-height: 16px; text-align: center; }
+.fx-col-any { color: var(--fg); background: var(--bg); font-size: var(--fs-m); }
+.fx-col-any input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.mv-roam-sp { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 140px; }
+.mv-roam-speed { flex: 1; min-width: 80px; }
+.mv-roam-v { min-width: 6.5ch; font-size: var(--fs-s); font-variant-numeric: tabular-nums; }
 .aim-map .am-dj-t { fill: var(--accent); font-weight: 700; }
 .aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
 .aim-map .am-mid circle { fill: none; stroke: var(--muted); stroke-width: .05; }
@@ -2166,7 +2183,35 @@ body[data-mode="setup"] .modehub, body[data-mode="live"] .modehub { display: fle
 body.ws-noprog .modehub { display: none !important; }
 body[data-mode="setup"] .playbacks { display: none; }
 .modehub[data-side="float"] { position: absolute; z-index: 20; grid-area: auto; width: var(--prog-w); }
-.mode-hub-body { flex: 1; overflow-y: auto; padding: 4px 14px 16px; }
+.mode-hub-body { flex: 1; overflow-y: auto; padding: 4px 14px 16px; container: hub / inline-size; }
+/* the hub grows with its panel: on a wide panel (a 2K screen with the 3D
+   view off) its text and buttons are bigger, Set up runs in two columns and
+   Live puts Now beside Tempo and Autopilot */
+.hub-body { --hk: 1;
+  --fs-xs: calc(11px * var(--ts) * var(--hk)); --fs-s: calc(12px * var(--ts) * var(--hk)); --fs-m: calc(13px * var(--ts) * var(--hk));
+  --fs-l: calc(15px * var(--ts) * var(--hk)); --fs-xl: calc(18px * var(--ts) * var(--hk)); --fs-2xl: calc(24px * var(--ts) * var(--hk));
+  --btn-h: calc(32px * var(--ctl) * var(--hk)); --btn-h-s: calc(28px * var(--ctl) * var(--hk)); font-size: var(--fs-m); }
+.hub-body h3 { font-size: var(--fs-l); }
+.hub-body .hub-step-head b { font-size: var(--fs-l); }
+.hub-body .btn.small { padding: 0 calc(10px * var(--hk)); }
+@container hub (min-width: 700px) { .hub-body { --hk: 1.15; } }
+@container hub (min-width: 1000px) { .hub-body { --hk: 1.3; } }
+@container hub (min-width: 1400px) { .hub-body { --hk: 1.45; } }
+@container hub (min-width: 1800px) { .hub-body { --hk: 1.6; } }
+@container hub (min-width: 1000px) {
+  .hub-body.setup { columns: 2; column-gap: calc(24px * var(--hk)); }
+  .hub-body.setup > p, .hub-body.setup > .hub-next { column-span: all; }
+  .hub-body.setup .hub-step { break-inside: avoid; }
+  .hub-body.setup h3 { break-after: avoid; margin-top: 0; padding-top: 10px; }
+  .hub-body.live .live-band { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: stretch; column-gap: calc(14px * var(--hk)); }
+  .hub-body.live .lb-songs { grid-column: 1 / -1; }
+  .hub-body.live .lb-now { display: grid; align-content: center; gap: 6px; padding: 6px 4px; }
+  .hub-body.live .lb-head .live-song { font-size: var(--fs-2xl); }
+  .hub-body.live .lb-part .live-part { font-size: var(--fs-2xl); }
+  .hub-body.live .lb-cell { padding: 10px 12px; gap: 8px; }
+  .hub-body.live .lb-cell .live-bpm b { font-size: var(--fs-2xl); }
+  .hub-body.live .lb-cell .live-row { gap: 8px; }
+}
 .hub-body h3 { margin: 16px 0 6px; }
 .hub-step { border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 10px; margin-bottom: 8px; background: var(--surface); }
 .hub-step-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -2556,10 +2601,18 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
    there is; drag a title to move, a corner to size (deskview.js) */
 .dv { display: flex; flex-direction: column; gap: 6px; height: 100%; min-height: 0; }
 .dv-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dv-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); grid-template-rows: repeat(12, var(--dv-row, minmax(calc(34px * var(--ctl)), 1fr))); gap: 6px; position: relative; overflow: auto; align-content: start; }
+/* the board: windows placed by deskview.js (columns across, any height,
+   each under the ones above it); it scrolls when they need more room */
+.dv-board { flex: 1; min-height: 0; display: block; position: relative; overflow: auto; overflow-x: hidden; }
+.dv-board > .dv-win { position: absolute; transition: top .12s ease, height .08s linear; }
+.dv-board > .dv-win.dragging { transition: none; }
+.dv-sizer { width: 1px; pointer-events: none; }
+.dv-board.dv-stack { gap: 6px; }
+.dv-board.dv-stack > .dv-win { position: static; }
+.dv-board.dv-stack > .dv-sizer { display: none; }
 .dv-board > .dv-win.dragging { will-change: transform; box-shadow: 0 12px 32px rgb(0 0 0 / .5); transition: none; }
-.dv-ghost { border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; z-index: 0; }
-.dv-board > .dv-win { position: relative; min-height: 0; }
+.dv-ghost { position: absolute; border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; z-index: 0; }
+.dv-board > .dv-win { min-height: 0; }
 .dv-win header { cursor: grab; touch-action: none; user-select: none; }
 .dv-win.dragging { box-shadow: 0 10px 28px rgba(0, 0, 0, .55), 0 0 0 1px var(--accent); }
 .dv-win.dragging header { cursor: grabbing; }

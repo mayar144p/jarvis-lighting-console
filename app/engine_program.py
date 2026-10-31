@@ -302,6 +302,11 @@ class ProgrammerMixin:
                 raise ValueError("not a number: %r" % (duration,)) from None
             dur = min(d, 86400.0) if d > 0 else None
 
+        cols = params.get("colours") if isinstance(params, dict) else None
+        if cols and name in fxlib_mod.COLOUR_FX:
+            cols = fxlib_mod.clean_colours(cols)
+            if cols:
+                p["colours"] = cols          # your own colours to go through
         beats = params.get("beats") if isinstance(params, dict) else None
         if beats not in (None, "", 0, "0", False):
             p["beats"] = self._clean_beats(beats)
@@ -679,6 +684,16 @@ class ProgrammerMixin:
         for k, v in want.items():
             if k in ("beats", "space", "shape"):
                 continue                    # fx_beats / fx_space / run_shape
+            if k == "colours":
+                if lib not in fxlib_mod.COLOUR_FX:
+                    raise ValueError("this effect has no colours")
+                cols = fxlib_mod.clean_colours(v)
+                if cols:
+                    p["colours"] = cols
+                else:
+                    p.pop("colours", None)    # back to every colour the light makes
+                done.append("colours")
+                continue
             try:
                 v = float(v)
             except (TypeError, ValueError):

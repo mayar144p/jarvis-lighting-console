@@ -321,71 +321,105 @@ const NAMES = { group: "Group", position: "Position palettes", colour: "Colour p
   select: "Select keys", poskeys: "Position keys", progkeys: "Programmer keys", windows: "Window keys", keypad: "Keypad", knobs: "Knobs (dimmer, pan, tilt)" };
 const hidden = () => (layout._hidden || []);
 
+// The board: windows side by side in 24 columns (a width snaps to them),
+// each as tall as you size it, to the pixel - and each sits straight under
+// the windows above it in its columns: make one taller and the ones below
+// move down, shorter and they come up (no fixed rows to snap a height to).
+const GAP = 6;
+const MIN_H = 44;                            // px: a window's title and a row
+let rowPx = 52;                              // an old layout's row, in px (its rows -> pixels)
+const colW = () => (board.clientWidth + GAP) / COLS;
+// a layout from before (rows): heights and tops in pixels
+function px(id) {
+  const r = layout[id] || DEFAULT_LAYOUT[id];
+  // (until a window is sized or moved by hand the rows keep sharing out the
+  // panel's height, so the first layout always fits it exactly)
+  if (r.hp == null || (!layout._own && r.h != null)) return { ...r, hp: Math.round(r.h * rowPx + (r.h - 1) * GAP), yp: Math.round(r.y * (rowPx + GAP)) };
+  return r;
+}
+let sizer = null;
+// settle every window under the ones above it; `live` is the window being
+// moved ({id, x, w, yp}): the others make room, it follows the pointer
+let owed = false;                            // laid out while hidden: due when it shows
+function reflow(live = null) {
+  if (!board || board.classList.contains("dv-stack")) return null;
+  if (board.clientWidth < 50) { owed = true; return null; }       // (hidden: no width to place by)
+  owed = false;
+  const cw = colW();
+  const wins = [...board.querySelectorAll(":scope > [data-win]")].filter((el) => !hidden().includes(el.dataset.win));
+  const rows = wins.map((el) => {
+    const id = el.dataset.win, r = live && live.id === id ? { ...px(id), ...live } : px(id);
+    const sz = sizeOf(id);
+    const w = Math.max(sz.w[0], Math.min(sz.w[1], COLS, r.w)), x = Math.max(0, Math.min(COLS - w, r.x));
+    return { el, id, x, w, hp: Math.max(MIN_H, r.hp), yp: r.yp || 0 };
+  }).sort((p, q) => p.yp - q.yp || p.x - q.x);
+  const placed = [];
+  let bottom = 0, slot = null;
+  for (const r of rows) {
+    let top = 0;
+    for (const p of placed) if (p.x < r.x + r.w && r.x < p.x + p.w) top = Math.max(top, p.top + p.hp + GAP);
+    r.top = top;
+    placed.push(r);
+    bottom = Math.max(bottom, top + r.hp);
+    if (live && live.id === r.id) { slot = r; if (live.moving) continue; }
+    Object.assign(r.el.style, { left: `${r.x * cw}px`, top: `${top}px`, width: `${r.w * cw - GAP}px`, height: `${r.hp}px` });
+    if (!live || live.id !== r.id) layout[r.id] = { ...(layout[r.id] || DEFAULT_LAYOUT[r.id]), x: r.x, w: r.w, hp: r.hp, yp: top };
+  }
+  if (!sizer || !sizer.isConnected) { sizer = h("div.dv-sizer"); board.append(sizer); }
+  sizer.style.height = `${bottom}px`;
+  return slot;
+}
+
 function place(el, id) {
   el.hidden = hidden().includes(id);
-  const r0 = layout[id] || DEFAULT_LAYOUT[id], sz = sizeOf(id);
-  // a layout saved before the limits: shown within them
-  const r = { ...r0, w: Math.max(sz.w[0], Math.min(sz.w[1], r0.w)), h: Math.max(sz.h[0], Math.min(sz.h[1], r0.h)) };
-  el.style.gridColumn = `${r.x + 1} / span ${Math.min(r.w, COLS - r.x)}`;
-  el.style.gridRow = `${r.y + 1} / span ${Math.min(r.h, ROWS - r.y)}`;
+  reflow();
 }
 
 // a window's title moves it, its corner sizes it (a finger or the mouse)
 function movable(el, id) {
   el.dataset.win = id;
   const head = el.querySelector("header");
-  const grip = h("div.dv-resize", { title: "Drag to size this window" });
+  const grip = h("div.dv-resize", { title: "Drag to size this window: any height, the width in columns" });
   el.append(grip);
   const drag = (handle, resize) => handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || (!resize && e.target.closest("button"))) return;
+    if (board.classList.contains("dv-stack")) return;
     e.preventDefault();
-    // the window follows the pointer pixel by pixel; an outline shows the
-    // cells it will take, and it snaps there when let go (it used to jump
-    // a whole cell at a time while dragged)
-    const cs = getComputedStyle(board);
-    const gap = parseFloat(cs.columnGap) || 6;
-    const cw = (board.clientWidth + gap) / COLS;
-    const ch = (parseFloat(cs.gridTemplateRows) || 34) + (parseFloat(cs.rowGap) || gap);
-    const start = { ...(layout[id] || DEFAULT_LAYOUT[id]) }, sx = e.clientX, sy = e.clientY;
-    const box = el.getBoundingClientRect();
+    const cw = colW();
+    const start = px(id), sx = e.clientX, sy = e.clientY;
+    const top0 = el.offsetTop, left0 = el.offsetLeft;
     const ghost = h("div.dv-ghost");
-    board.append(ghost);
-    let target = { ...start };
-    const showGhost = () => {
-      ghost.style.gridColumn = `${target.x + 1} / span ${target.w}`;
-      ghost.style.gridRow = `${target.y + 1} / span ${target.h}`;
-    };
-    showGhost();
+    if (!resize) board.append(ghost);
     el.style.zIndex = ++zTop;
     el.classList.add("dragging");
     handle.setPointerCapture(e.pointerId);
-    let frame = 0, last = null;
+    let frame = 0, last = null, live = null;
     const paint = () => {
       frame = 0;
-      const px = last.clientX - sx, py = last.clientY - sy;
-      const sz = sizeOf(id), r = { ...start };
+      const dx = last.clientX - sx, dy = last.clientY - sy;
+      const sz = sizeOf(id);
       if (resize) {
-        el.style.width = `${Math.max(cw * sz.w[0] - gap, box.width + px)}px`;
-        el.style.height = `${Math.max(ch * sz.h[0] - gap, box.height + py)}px`;
-        r.w = Math.max(sz.w[0], Math.min(COLS - r.x, sz.w[1], start.w + Math.round(px / cw)));
-        r.h = Math.max(sz.h[0], Math.min(ROWS - r.y, sz.h[1], start.h + Math.round(py / ch)));
+        // the height follows the pointer to the pixel; the width snaps to columns
+        const w = Math.max(sz.w[0], Math.min(sz.w[1], COLS - start.x, start.w + Math.round(dx / cw)));
+        live = { id, x: start.x, w, hp: Math.max(MIN_H, start.hp + dy), yp: start.yp };
+        reflow(live);
       } else {
-        el.style.transform = `translate(${px}px, ${py}px)`;
-        r.x = Math.max(0, Math.min(COLS - r.w, start.x + Math.round(px / cw)));
-        r.y = Math.max(0, Math.min(ROWS - r.h, start.y + Math.round(py / ch)));
+        el.style.left = `${left0 + dx}px`;
+        el.style.top = `${Math.max(0, top0 + dy)}px`;
+        const x = Math.max(0, Math.min(COLS - start.w, start.x + Math.round(dx / cw)));
+        live = { id, x, w: start.w, hp: start.hp, yp: Math.max(0, top0 + dy) - 1, moving: true };
+        const slot = reflow(live);
+        if (slot) Object.assign(ghost.style, { left: `${slot.x * cw}px`, top: `${slot.top}px`, width: `${slot.w * cw - GAP}px`, height: `${slot.hp}px` });
       }
-      target = r;
-      showGhost();
     };
     const move = (ev) => { last = ev; if (!frame) frame = requestAnimationFrame(paint); };
     const up = () => {
       handle.removeEventListener("pointermove", move);
       cancelAnimationFrame(frame);
       el.classList.remove("dragging");
-      for (const k of ["transform", "width", "height"]) el.style.removeProperty(k);
       ghost.remove();
-      layout[id] = target;
-      place(el, id);
+      if (live) { layout[id] = { ...(layout[id] || DEFAULT_LAYOUT[id]), x: live.x, w: live.w, hp: live.hp, yp: live.yp }; layout._own = true; }
+      reflow();
       saveLayout();
     };
     handle.addEventListener("pointermove", move);
@@ -402,7 +436,7 @@ function movable(el, id) {
     drag(head, false);
   }
   drag(grip, true);
-  place(el, id);
+  el.hidden = hidden().includes(id);
   return el;
 }
 
@@ -443,23 +477,35 @@ function lookMenu(anchor, el, id) {
   ]);
 }
 
-// The windows' height is set when the desk view opens (and when the app's
-// window is resized, or on Fit): dragging the dock up or down shows more or
-// less of them - the board scrolls - instead of squashing them
+// Fit: every window's height scaled so the tallest column fills the panel
+// (the dock moving up or down never changes them by itself)
 function fitRows() {
-  if (!board || !board.isConnected) return;
-  board.style.removeProperty("--dv-row");
-  const gap = parseFloat(getComputedStyle(board).rowGap) || 6;
-  const h = board.clientHeight;
-  if (h > 0) board.style.setProperty("--dv-row", `${Math.max(34, Math.floor((h - gap * (ROWS - 1)) / ROWS))}px`);
+  if (!board || !board.isConnected || board.classList.contains("dv-stack")) return;
+  const avail = board.clientHeight;
+  const wins = [...board.querySelectorAll(":scope > [data-win]")].filter((el) => !hidden().includes(el.dataset.win));
+  const used = Math.max(0, ...wins.map((el) => el.offsetTop + el.offsetHeight));
+  if (!avail || !used) return;
+  const k = avail / used;
+  for (const el of wins) { const r = px(el.dataset.win); layout[el.dataset.win] = { ...(layout[el.dataset.win] || {}), ...r, hp: Math.max(MIN_H, Math.floor(r.hp * k - GAP * (1 - k))), yp: Math.round(r.yp * k) }; }
+  layout._own = true;
+  reflow();
+  saveLayout();
 }
-window.addEventListener("resize", (e) => { if (e.isTrusted) fitRows(); });
+window.addEventListener("resize", (e) => { if (e.isTrusted) reflow(); });
 
 export function resetDeskLayout() {
   layout = { ...DEFAULT_LAYOUT };
+  firstFit();
+  if (board) for (const el of board.children) if (el.dataset.win) { el.style.zIndex = ""; el.hidden = false; }
+  reflow();
   saveLayout();
-  fitRows();
-  if (board) for (const el of board.children) if (el.dataset.win) { el.style.zIndex = ""; place(el, el.dataset.win); }
+}
+// a layout with no heights yet (the default, or one from before): its rows
+// share out the panel's height once
+function firstFit() {
+  if (!board) return;
+  const hgt = board.clientHeight;
+  if (hgt > 0) rowPx = Math.max(34, Math.floor((hgt - GAP * (ROWS - 1)) / ROWS));
 }
 
 export function renderDeskView() {
@@ -474,11 +520,17 @@ export function renderDeskView() {
     // windows stack at their own height instead of being crushed
     // (a new width - another workspace, the panel sized - fits the rows
     // again; a new height alone is the dock moving, and changes nothing)
-    let fitW = 0;
+    let fitW = 0, fitH = 0;
     const fit = () => {
       if (!board) return;
-      board.classList.toggle("dv-stack", board.clientWidth > 0 && board.clientWidth < STACK_BELOW);
-      if (board.clientWidth && Math.abs(board.clientWidth - fitW) > 2) { fitW = board.clientWidth; fitRows(); }
+      const stack = board.clientWidth > 0 && board.clientWidth < STACK_BELOW;
+      board.classList.toggle("dv-stack", stack);
+      if (stack) for (const el of board.querySelectorAll(":scope > [data-win]")) for (const k of ["left", "top", "width", "height"]) el.style.removeProperty(k);
+      // (a new width: the windows' widths follow; a new height - the dock
+      // moving - changes nothing)
+      if (board.clientWidth && (owed || Math.abs(board.clientWidth - fitW) > 2)) { fitW = board.clientWidth; reflow(); }
+      // (the layout as it came, never sized by hand, keeps filling the panel)
+      if (!layout._own && board.clientHeight && Math.abs(board.clientHeight - fitH) > 2) { fitH = board.clientHeight; firstFit(); reflow(); }
     };
     new ResizeObserver(fit).observe(board);
     box.replaceChildren(h("div.dv",
@@ -496,7 +548,8 @@ export function renderDeskView() {
         h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started, all shown" }, "Reset layout")),
       board));
     shownKey = "";
-    fitRows();
+    firstFit();
+    reflow();
   }
   if (key === shownKey) return;
   shownKey = key;
@@ -506,6 +559,7 @@ export function renderDeskView() {
     const made = movable(el, id);
     if (old) { made.style.zIndex = old.style.zIndex; board.replaceChild(made, old); } else board.prepend(made);
   }
+  reflow();
 }
 
 export function initDeskView() {

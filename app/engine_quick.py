@@ -401,6 +401,10 @@ class QuickMixin:
                      for k, c in list(params["cells"].items())[:16] if str(k).isdigit() and isinstance(c, dict)}
             if any(cells.values()):
                 out["cells"] = {k: c for k, c in cells.items() if c}
+        if name in fxlib_mod.COLOUR_FX and params.get("colours"):
+            cols = fxlib_mod.clean_colours(params["colours"])
+            if cols:
+                out["colours"] = cols           # its own colours to go through
         for k, v in params.items():
             if k in known and v not in (None, ""):
                 try:

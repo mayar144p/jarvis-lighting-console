@@ -269,6 +269,15 @@ function spotsBlock() {
 // and the DJ booth".  Several zones share the lights out.
 const roamPick = new Set(["dancefloor"]);
 let roamSpeed = 1;
+// how fast they wander: a slider, any speed from a crawl to a race
+const roamWord = (v) => (v < 0.4 ? "Crawl" : v < 0.8 ? "Slow" : v < 1.5 ? "Medium" : v < 2.5 ? "Fast" : "Very fast");
+function roamSlider() {
+  const out = h("span.mv-roam-v", roamWord(roamSpeed));
+  const input = h("input.mv-roam-speed", { type: "range", min: 0.1, max: 4, step: 0.05, value: roamSpeed,
+    title: "How fast the lights wander (Start roaming again to use a new speed)", "aria-label": "Roam speed",
+    oninput: (e) => { roamSpeed = +e.target.value; out.textContent = roamWord(roamSpeed); } });
+  return h("label.mv-roam-sp", h("span.muted.small", "Speed"), input, out);
+}
 function roamBlock() {
   const zones = (((state.snap && state.snap.venue) || {}).zones || []);
   if (!zones.length) return null;
@@ -280,8 +289,7 @@ function roamBlock() {
     h("span.chip-row", ...kinds.map(([k, name]) => h("button.chip" + (roamPick.has(k) ? ".on" : ""), {
       title: `Wander inside the ${name}`, onclick: () => { if (roamPick.has(k) && roamPick.size > 1) roamPick.delete(k); else roamPick.add(k); render(true); },
     }, name))),
-    h("span.chip-row", ...[[0.5, "Slow"], [1, "Medium"], [2.5, "Fast"]].map(([v, l]) => h("button.chip" + (roamSpeed === v ? ".on" : ""), {
-      onclick: () => { roamSpeed = v; render(true); } }, l))),
+    roamSlider(),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
       onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
     roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…") : null,

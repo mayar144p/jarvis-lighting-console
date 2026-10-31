@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -121,13 +122,26 @@ def _online() -> dict | None:
         if st["key"] else None
 
 
-def local_models(force: bool = False) -> list[str] | None:
+def local_models(force: bool = False, wait: bool = True) -> list[str] | None:
     """The models the local AI offers, or None when none is running (asked
-    at most every 10 s: it is on the way of every request)."""
+    at most every 10 s: it is on the way of every request).  wait=False:
+    what was last seen, asked again in the background - on Windows a knock
+    on a port nobody listens on takes 1-2 s, and Settings waited for it."""
     st = settings()
     url = _local_url() or st["local_url"]
     if not force and _local_seen["url"] == url and time.monotonic() - _local_seen["t"] < 10:
         return _local_seen["models"]
+    if not wait and not force:
+        if not _local_seen.get("asking"):
+            _local_seen["asking"] = True
+
+            def ask():
+                try:
+                    local_models(force=True)
+                finally:
+                    _local_seen["asking"] = False
+            threading.Thread(target=ask, name="local-ai-ask", daemon=True).start()
+        return _local_seen["models"] if _local_seen["url"] == url else None
     models = None
     try:
         with urllib.request.urlopen(urllib.request.Request(f"{url}/models"), timeout=1.5) as resp:
@@ -175,10 +189,10 @@ def _can_start_local() -> bool:
         return False
 
 
-def public() -> dict:
+def public(wait: bool = True) -> dict:
     """What the screen may know: never the key itself."""
     st = settings()
-    models = local_models()
+    models = local_models(wait=wait)
     return {"mode": st["mode"], "has_key": bool(st["key"]), "model": st["model"],
             "local_url": st["local_url"], "local_model": st["local_model"],
             "local_running": bool(models), "local_models": models or [],

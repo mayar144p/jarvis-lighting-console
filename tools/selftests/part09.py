@@ -10141,7 +10141,7 @@ def test_room_by_pointing() -> None:
           "function movable(el, id)" in dv and '"jarvis.dvLayout"' in dv and "export function resetDeskLayout" in dv
           and ".dv-resize {" in css, "")
     check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
-          "grid-template-rows: repeat(12, var(--dv-row, minmax(calc(34px * var(--ctl)), 1fr)))" in css and "overflow: auto; align-content: start;" in css, "")
+          "function firstFit()" in dv and "if (!layout._own && board.clientHeight" in dv and ".dv-board {" in css, "")
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
           and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")
@@ -10467,9 +10467,23 @@ def test_programmer_overhaul() -> None:
     check("Pan / Tilt / Dimmer knobs on Palettes (a window of their own)", "export function mountWheels(box, list)" in (web / "wheels.js").read_text(encoding="utf-8"), "")
     dv = (web / "deskview.js").read_text(encoding="utf-8")
     check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
-          "el.style.transform = `translate(${px}px, ${py}px)`" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
+          "requestAnimationFrame(paint)" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
+    check("...sized to the pixel: the windows below move down or come up, never overlapping",
+          "function reflow(live = null)" in dv and "top = Math.max(top, p.top + p.hp + GAP)" in dv
+          and "if (board.clientWidth < 50) { owed = true; return null; }" in dv, "")
     check("...and the dock moving up or down doesn't resize them (Show -> Fit the windows to the panel)",
-          "function fitRows()" in dv and "if (e.isTrusted) fitRows();" in dv and "var(--dv-row," in css, "")
+          "function fitRows()" in dv and "if (e.isTrusted) reflow();" in dv and "layout._own = true;" in dv, "")
+    mp = (web / "movepanel.js").read_text(encoding="utf-8")
+    check("Roam's speed is a slider (any speed, named as it moves)", "function roamSlider()" in mp and '"Roam speed"' in mp, "")
+    pj2 = (web / "programmer.js").read_text(encoding="utf-8")
+    check("a colour effect (and Breathe) goes through the colours you pick, in order",
+          "function colourPicker(fx, params, mine)" in pj2 and '"jarvis.fxColours"' in pj2, "")
+    check("Set up and Live grow with their panel (bigger text, two columns on a wide one)",
+          "container: hub / inline-size" in css and "@container hub (min-width: 1000px)" in css, "")
+    check("Settings opens without waiting on the local AI", "ai = llm.public(wait=False)" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")
+    af = (web / "aimfollow.js").read_text(encoding="utf-8")
+    check("the map's DJ marker: an arrow with a head, its zone's label not drawn on top, a tooltip on each mark",
+          "am-front-head" in af and "Math.hypot(cx - bx, cz - bz) < 1.2" in af and "The middle of the room" in af, "")
     wh = (web / "wheels.js").read_text(encoding="utf-8")
     check("a wheel the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".wheel.off {" in css, "")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
@@ -10559,3 +10573,21 @@ def test_shapes_drawn_palettes_fit() -> None:
     check("the Copilot: wider (its edge sizes it), each part a card, no example chips",
           "function wireCopilotWidth()" in cp and "Techno warehouse" not in cp and ".drawer.copilot { width: var(--copilot-w," in css
           and 'class="autoshow cp-card"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_fx_own_colours() -> None:
+    """Colour effects and Breathe go through the colours chosen, in order."""
+    from app import fxlib as f
+    rgb = ["red", "green", "blue", "dimmer"]
+    cols = ["#ff0000", "#00ff00", "#0000ff"]
+    seen = {tuple(f.apply("colour_chase", {}, rgb, {"colours": cols}, elapsed=0, index=i, count=3).get(k) for k in ("red", "green", "blue")) for i in range(3)}
+    check("Colour chase steps through just the chosen colours", seen == {(255, 0, 0), (0, 255, 0), (0, 0, 255)}, seen)
+    row = f.apply("alternate", {}, rgb, {"colours": ["#ff00ff", "#00ffff"]}, elapsed=0, index=1, count=2)
+    check("Alternate uses the chosen pair", (row["red"], row["green"], row["blue"]) == (0, 255, 255), row)
+    b0 = f.apply("breathe", {}, rgb, {"colours": cols, "speed": 1.0}, elapsed=0.0)
+    b1 = f.apply("breathe", {}, rgb, {"colours": cols, "speed": 1.0}, elapsed=1.0)
+    check("Breathe changes colour each breath", (b0["red"], b0["green"]) != (b1["red"], b1["green"]), (b0, b1))
+    check("a colour list is cleaned (bad entries dropped, 8 at most)",
+          f.clean_colours("ff0000, nope, #0f0") == ["#ff0000", "#00ff00"] and len(f.clean_colours(["#fff"] * 20)) == 8, "")
+    w = f.apply("colour_chase", {}, ["white", "amber"], {"colours": cols})
+    check("a light that can't mix keeps its own colours", "white" in w, w)

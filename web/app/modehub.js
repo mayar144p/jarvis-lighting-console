@@ -53,7 +53,7 @@ function paintSetup() {
   const where = tgt.mode === "usb" ? "a USB DMX box" : o.virtual_node ? "the desk's own test node" : (tgt.host || (o.host || "").split(":")[0] || "the network");
   const hue = s.hue || {};
   const sb = s.standby || {};
-  const body = h("div.hub-body",
+  const body = h("div.hub-body.setup",
     h("p.muted.small", "Everything before the show, in order. The fixture list on the left follows along."),
     h("h3", "1 · The lights"),
     step("Add the lights", n ? `${n} light${n > 1 ? "s" : ""} patched` : "no lights yet", n > 0,

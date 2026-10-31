@@ -1187,7 +1187,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/status":
             status = config.status()
             # the AI switch (Settings -> AI): online, local or auto
-            ai = llm.public()
+            ai = llm.public(wait=False)        # (never waits on the local AI)
             status.update(llm_configured=ai["available"], ai=ai,
                           model=ai["model"] if ai["mode"] != "local" or not ai["local_running"]
                           else (ai["local_model"] or (ai["local_models"] or ["local AI"])[0]))

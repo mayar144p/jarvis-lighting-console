@@ -140,11 +140,16 @@ function floorMap() {
     : el("rect", { x: x0, y: z0, width: w, height: d, class: "am-room", rx: 0.2 }));
   const st = v.stage;
   if (st && st.width) room.append(el("rect", { x: (st.x || 0) - st.width / 2, y: st.z || 0, width: st.width, height: st.depth || 2, class: "am-stage" }));
+  const o = orient();
+  const bx = o.booth[0], bz = o.booth[2];
+  const tip = (g, text) => { const t = el("title", {}); t.textContent = text; g.append(t); return g; };
   for (const zn of v.zones || []) {
     if (!(zn.points || []).length) continue;
     room.append(el("polygon", { points: zn.points.map((p) => p.join(",")).join(" "), class: "am-zone am-" + zn.kind }));
     const cx = zn.points.reduce((a, p) => a + p[0], 0) / zn.points.length;
     const cz = zn.points.reduce((a, p) => a + p[1], 0) / zn.points.length;
+    // (the DJ marker names its own zone: two labels on one spot can't be read)
+    if (Math.hypot(cx - bx, cz - bz) < 1.2) continue;
     const t = el("text", { x: cx, y: cz, class: "am-label" });
     t.textContent = zn.name || zn.kind;
     room.append(upright(t, cx, cz));
@@ -156,6 +161,7 @@ function floorMap() {
     const g = el("g", { transform: `translate(${o.x} ${o.z}) rotate(${+o.rot || 0})`, class: "am-obj am-" + o.kind });
     if (o.kind === "mark") {
       g.append(el("path", { d: "M-.25 0H.25M0 -.25V.25", class: "am-mark" }));
+      tip(g, "A mark placed in the venue");
     } else {
       g.append(el("rect", { x: -(o.w || 1) / 2, y: -(o.d || 1) / 2, width: o.w || 1, height: o.d || 1, rx: 0.08 }));
     }
@@ -181,19 +187,22 @@ function floorMap() {
     g.append(el("rect", { x: -s, y: -s * 0.55, width: s * 2, height: s * 1.1, rx: s * 0.4 }));
     room.append(g);
   }
-  // the DJ booth, the middle, and an arrow the way the DJ faces
-  const o = orient();
-  const bx = o.booth[0], bz = o.booth[2];
-  const fr = o.front * Math.PI / 180;
+  // the DJ booth, the middle, and an arrow the way the DJ faces (starting
+  // at the marker's edge, with a head, so it reads as "facing this way")
+  const fr = o.front * Math.PI / 180, sx = Math.sin(fr), sz = Math.cos(fr);
   const dj = el("g", { class: "am-dj" });
-  dj.append(el("circle", { cx: bx, cy: bz, r: 0.35 }),
-    el("line", { x1: bx, y1: bz, x2: bx + Math.sin(fr) * 1.4, y2: bz + Math.cos(fr) * 1.4, class: "am-front" }));
+  const ax = bx + sx * 1.5, az = bz + sz * 1.5;
+  dj.append(el("line", { x1: bx + sx * 0.4, y1: bz + sz * 0.4, x2: ax, y2: az, class: "am-front" }),
+    el("path", { d: `M${ax + sx * 0.3} ${az + sz * 0.3}L${ax - sz * 0.22} ${az + sx * 0.22}L${ax + sz * 0.22} ${az - sx * 0.22}Z`, class: "am-front-head" }),
+    el("circle", { cx: bx, cy: bz, r: 0.35 }));
+  tip(dj, "Where the DJ stands - the arrow is the way the DJ faces (change both with the ⋯ above the map)");
   const djt = el("text", { x: bx, y: bz + 0.12, class: "am-label am-dj-t" });
   djt.textContent = "DJ";
   dj.append(upright(djt, bx, bz));
   const mid = el("g", { class: "am-mid" });
   mid.append(el("path", { d: `M${o.centre[0] - 0.4} ${o.centre[1]}H${o.centre[0] + 0.4}M${o.centre[0]} ${o.centre[1] - 0.4}V${o.centre[1] + 0.4}` }),
     el("circle", { cx: o.centre[0], cy: o.centre[1], r: 0.25 }));
+  tip(mid, "The middle of the room (⋯ above the map to move it)");
   room.append(dj, mid);
   const tg = el("g", { class: "aim-target" });
   tg.append(el("circle", { r: 0.5, class: "am-ring" }), el("circle", { r: 0.1, class: "am-dot" }));
