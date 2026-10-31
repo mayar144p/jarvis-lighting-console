@@ -10141,7 +10141,7 @@ def test_room_by_pointing() -> None:
           "function movable(el, id)" in dv and '"jarvis.dvLayout"' in dv and "export function resetDeskLayout" in dv
           and ".dv-resize {" in css, "")
     check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
-          "grid-template-rows: repeat(12, minmax(calc(34px * var(--ctl)), 1fr))" in css, "")
+          "grid-template-rows: repeat(12, var(--dv-row, minmax(calc(34px * var(--ctl)), 1fr)))" in css and "overflow: auto; align-content: start;" in css, "")
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
           and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")
@@ -10466,3 +10466,8 @@ def test_programmer_overhaul() -> None:
           and '.programmer[data-side="float"] { resize: both;' in css.replace(".fixtures[data-side=\"float\"], ", ""), "")
     check("Pan / Tilt wheels on Palettes, in its own bar", 'desk: [["pan", "Pan"], ["tilt", "Tilt"]]' in (web / "wheels.js").read_text(encoding="utf-8")
           and 'document.querySelector(".dv-wheels")' in pj, "")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
+          "el.style.transform = `translate(${px}px, ${py}px)`" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
+    check("...and the dock moving up or down doesn't resize them (Show -> Fit the windows to the panel)",
+          "function fitRows()" in dv and "if (e.isTrusted) fitRows();" in dv and "var(--dv-row," in css, "")

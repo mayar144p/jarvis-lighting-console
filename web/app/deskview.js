@@ -306,27 +306,53 @@ function movable(el, id) {
   const drag = (handle, resize) => handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || (!resize && e.target.closest("button"))) return;
     e.preventDefault();
-    const b = board.getBoundingClientRect();
-    const cw = b.width / COLS, ch = b.height / ROWS;
+    // the window follows the pointer pixel by pixel; an outline shows the
+    // cells it will take, and it snaps there when let go (it used to jump
+    // a whole cell at a time while dragged)
+    const cs = getComputedStyle(board);
+    const gap = parseFloat(cs.columnGap) || 6;
+    const cw = (board.clientWidth + gap) / COLS;
+    const ch = (parseFloat(cs.gridTemplateRows) || 34) + (parseFloat(cs.rowGap) || gap);
     const start = { ...(layout[id] || DEFAULT_LAYOUT[id]) }, sx = e.clientX, sy = e.clientY;
+    const box = el.getBoundingClientRect();
+    const ghost = h("div.dv-ghost");
+    board.append(ghost);
+    let target = { ...start };
+    const showGhost = () => {
+      ghost.style.gridColumn = `${target.x + 1} / span ${target.w}`;
+      ghost.style.gridRow = `${target.y + 1} / span ${target.h}`;
+    };
+    showGhost();
     el.style.zIndex = ++zTop;
     el.classList.add("dragging");
     handle.setPointerCapture(e.pointerId);
-    const move = (ev) => {
-      const dx = Math.round((ev.clientX - sx) / cw), dy = Math.round((ev.clientY - sy) / ch);
-      const r = { ...start };
-      const sz = sizeOf(id);
+    let frame = 0, last = null;
+    const paint = () => {
+      frame = 0;
+      const px = last.clientX - sx, py = last.clientY - sy;
+      const sz = sizeOf(id), r = { ...start };
       if (resize) {
-        r.w = Math.max(sz.w[0], Math.min(COLS - r.x, sz.w[1], start.w + dx));
-        r.h = Math.max(sz.h[0], Math.min(ROWS - r.y, sz.h[1], start.h + dy));
+        el.style.width = `${Math.max(cw * sz.w[0] - gap, box.width + px)}px`;
+        el.style.height = `${Math.max(ch * sz.h[0] - gap, box.height + py)}px`;
+        r.w = Math.max(sz.w[0], Math.min(COLS - r.x, sz.w[1], start.w + Math.round(px / cw)));
+        r.h = Math.max(sz.h[0], Math.min(ROWS - r.y, sz.h[1], start.h + Math.round(py / ch)));
+      } else {
+        el.style.transform = `translate(${px}px, ${py}px)`;
+        r.x = Math.max(0, Math.min(COLS - r.w, start.x + Math.round(px / cw)));
+        r.y = Math.max(0, Math.min(ROWS - r.h, start.y + Math.round(py / ch)));
       }
-      else { r.x = Math.max(0, Math.min(COLS - r.w, start.x + dx)); r.y = Math.max(0, Math.min(ROWS - r.h, start.y + dy)); }
-      layout[id] = r;
-      place(el, id);
+      target = r;
+      showGhost();
     };
+    const move = (ev) => { last = ev; if (!frame) frame = requestAnimationFrame(paint); };
     const up = () => {
       handle.removeEventListener("pointermove", move);
+      cancelAnimationFrame(frame);
       el.classList.remove("dragging");
+      for (const k of ["transform", "width", "height"]) el.style.removeProperty(k);
+      ghost.remove();
+      layout[id] = target;
+      place(el, id);
       saveLayout();
     };
     handle.addEventListener("pointermove", move);
@@ -384,9 +410,22 @@ function lookMenu(anchor, el, id) {
   ]);
 }
 
+// The windows' height is set when the desk view opens (and when the app's
+// window is resized, or on Fit): dragging the dock up or down shows more or
+// less of them - the board scrolls - instead of squashing them
+function fitRows() {
+  if (!board || !board.isConnected) return;
+  board.style.removeProperty("--dv-row");
+  const gap = parseFloat(getComputedStyle(board).rowGap) || 6;
+  const h = board.clientHeight;
+  if (h > 0) board.style.setProperty("--dv-row", `${Math.max(34, Math.floor((h - gap * (ROWS - 1)) / ROWS))}px`);
+}
+window.addEventListener("resize", (e) => { if (e.isTrusted) fitRows(); });
+
 export function resetDeskLayout() {
   layout = { ...DEFAULT_LAYOUT };
   saveLayout();
+  fitRows();
   if (board) for (const el of board.children) if (el.dataset.win) { el.style.zIndex = ""; place(el, el.dataset.win); }
 }
 
@@ -400,7 +439,14 @@ export function renderDeskView() {
     board.append(...strip().map(([id, el]) => movable(el, id)));
     // too narrow for the 24-column board (a laptop's programmer panel): the
     // windows stack at their own height instead of being crushed
-    const fit = () => { if (board) board.classList.toggle("dv-stack", board.clientWidth > 0 && board.clientWidth < STACK_BELOW); };
+    // (a new width - another workspace, the panel sized - fits the rows
+    // again; a new height alone is the dock moving, and changes nothing)
+    let fitW = 0;
+    const fit = () => {
+      if (!board) return;
+      board.classList.toggle("dv-stack", board.clientWidth > 0 && board.clientWidth < STACK_BELOW);
+      if (board.clientWidth && Math.abs(board.clientWidth - fitW) > 2) { fitW = board.clientWidth; fitRows(); }
+    };
     new ResizeObserver(fit).observe(board);
     box.replaceChildren(h("div.dv",
       h("div.dv-bar", h("span.muted.small.dv-hint", "Drag a window by its title to move it, by its corner to size it; × hides it."),
@@ -411,10 +457,11 @@ export function renderDeskView() {
             saveLayout();
             const el = board.querySelector(`:scope > [data-win="${id}"]`);
             if (el) place(el, id);
-          } }))) }, "Show ▾"),
+          } })).concat(["-", { label: "Fit the windows to the panel", hint: "after the dock was made taller or shorter", run: fitRows }])) }, "Show ▾"),
         h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started, all shown" }, "Reset layout")),
       board));
     shownKey = "";
+    fitRows();
     const w = document.getElementById("prog-wheels");   // the Pan / Tilt wheels into the bar
     if (w) box.querySelector(".dv-wheels").append(w);
   }

@@ -2530,7 +2530,9 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
    there is; drag a title to move, a corner to size (deskview.js) */
 .dv { display: flex; flex-direction: column; gap: 6px; height: 100%; min-height: 0; }
 .dv-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dv-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); grid-template-rows: repeat(12, minmax(calc(34px * var(--ctl)), 1fr)); gap: 6px; position: relative; overflow: auto; }
+.dv-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); grid-template-rows: repeat(12, var(--dv-row, minmax(calc(34px * var(--ctl)), 1fr))); gap: 6px; position: relative; overflow: auto; align-content: start; }
+.dv-board > .dv-win.dragging { will-change: transform; box-shadow: 0 12px 32px rgb(0 0 0 / .5); transition: none; }
+.dv-ghost { border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; z-index: 0; }
 .dv-board > .dv-win { position: relative; min-height: 0; }
 .dv-win header { cursor: grab; touch-action: none; user-select: none; }
 .dv-win.dragging { box-shadow: 0 10px 28px rgba(0, 0, 0, .55), 0 0 0 1px var(--accent); }
