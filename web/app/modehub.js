@@ -36,12 +36,23 @@ on("snapshot", () => {
 });
 
 // ------------------------------------------------------------------ Set up
-const step = (title, status, ok, ...buttons) =>
-  h("div.hub-step" + (ok === true ? ".ok" : ok === false ? ".todo" : ""),
-    h("div.hub-step-head", h("i.hub-dot", { "aria-hidden": "true" }), h("b", title), h("span.muted.small", status)),
-    h("div.hub-btns", ...buttons));
-const btn = (label, fn, primary = false) => h("button.btn.small" + (primary ? ".primary" : ""), { onclick: fn }, label);
+// Each step: how it stands (done / to do / nothing to judge), what it is
+// for, and its buttons - the first is the step's main job.  The first step
+// still to do is the one lit up: "do this next".
+const btn = (label, fn) => [label, fn];
 const lazy = (mod, fn, ...args) => () => import(mod).then((m) => m[fn](...args));
+const mark = (ok, n) => h("i.hub-mark", { "aria-hidden": "true" }, ok === true ? "✓" : ok === false ? "!" : "");
+
+function stepEl(st, n, next) {
+  const cls = (st.ok === true ? ".ok" : st.ok === false ? ".todo" : "") + (next ? ".next" : "") + (st.optional ? ".opt" : "");
+  return h("div.hub-step" + cls,
+    mark(st.ok, n),
+    h("div.hub-step-main",
+      h("div.hub-step-head", h("b", st.title), next ? h("span.hub-tag", "Next") : null, st.optional ? h("span.hub-tag.soft", "Optional") : null),
+      h("div.hub-status", st.status),
+      h("div.hub-btns", ...st.buttons.filter(Boolean).map(([label, fn], i) =>
+        h("button.btn.small" + (i === 0 ? (next ? ".primary" : "") : ".ghost"), { onclick: fn }, label)))));
+}
 
 function paintSetup() {
   const s = snap();
@@ -53,60 +64,63 @@ function paintSetup() {
   const where = tgt.mode === "usb" ? "a USB DMX box" : o.virtual_node ? "the desk's own test node" : (tgt.host || (o.host || "").split(":")[0] || "the network");
   const hue = s.hue || {};
   const sb = s.standby || {};
+  const mv = patch().filter((x) => (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
+  const lined = mv.filter((x) => x.align).length;
+  const zs = v.zones || [];
+  const keep = zs.filter((z) => z.kind === "keepout").length, areas = zs.length - keep;
+  const sections = [
+    ["The lights", "what is hung, and where it listens", [
+      { title: "Add the lights", status: n ? `${n} light${n > 1 ? "s" : ""} patched` : "no lights yet", ok: n > 0,
+        buttons: [btn("Add lights…", lazy("./dialogs.js", "openAddDialog")), btn("Import a plot (MVR)…", lazy("./dialogs.js", "importMvr")),
+          btn("Import a patch (CSV)…", lazy("./dialogs.js", "openCsvImport"))] },
+      { title: "DMX addresses", status: !n ? "add lights first" : clashes ? `${clashes} address clash${clashes > 1 ? "es" : ""}` : "no clashes", ok: n ? clashes === 0 : null,
+        buttons: [btn("DMX map…", lazy("./fixtures.js", "openDmxMap")), btn("Address them all", async () => {
+          if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Ctrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
+        })] }]],
+    ["The room", "the 3D room, and lights that aim where you point", [
+      { title: "Room and rigging", status: v.name || v.template ? `${v.name || v.template}` : "a plain room so far", ok: v.name || v.template || (v.room || {}).width ? true : null,
+        buttons: [btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
+          btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")), btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
+          btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue")), btn("Start again…", lazy("./venuepanel.js", "resetVenue"))] },
+      { title: "Lights match the real ones", status: mv.length ? `${lined} of ${mv.length} moving light${mv.length > 1 ? "s" : ""} lined up` : "no moving lights",
+        ok: mv.length ? lined === mv.length : null, buttons: [btn("Line up with the real lights…", lazy("./lineup.js", "openLineUp"))] },
+      { title: "The room the lights know", status: (areas ? `${areas} zone${areas === 1 ? "" : "s"} (dance floor, bar…)` : "no zones yet - point a light to mark them") + (keep ? ` · ${keep} kept out` : ""),
+        ok: mv.length ? areas > 0 : null,
+        buttons: [btn("Teach the room by pointing…", lazy("./roomteach.js", "openRoomTeach")), btn("Not here (keep out)…", lazy("./roomteach.js", "openRoomTeach", "keepout"))] }]],
+    ["Connections", "out to the lights, in from the DJ", [
+      { title: "Output to the lights", status: s.live ? `live to ${where}` : `blind - set to send to ${where}`, ok: s.live ? true : null,
+        buttons: [btn("Output settings…", lazy("./settings.js", "openSettingsAt", "output")), btn("Find nodes", lazy("./fixtures.js", "scanRig")),
+          btn("Ask the lights (RDM)…", lazy("./fixtures.js", "openRdm"))] },
+      { title: "DJ gear and controllers", status: tempoLine(s), ok: null,
+        buttons: [btn("MIDI, OSC, Stream Deck…", lazy("./settings.js", "openSettingsAt", "midi")), btn("Songs…", lazy("./songs.js", "openSongs"))] },
+      { title: "Smart lamps and a spare desk", optional: true, ok: hue.paired || sb.following ? true : null,
+        status: [hue.paired ? `Hue: ${hue.links} lamp(s)` : "", sb.following ? `backup of ${sb.host}` : ""].filter(Boolean).join(" · ") || "Philips Hue lamps, a second desk as a backup",
+        buttons: [btn("Philips Hue…", lazy("./settings.js", "openSettingsAt", "hue")), btn("Spare desk…", lazy("./settings.js", "openSettingsAt", "standby"))] }]],
+    ["Checks", "on the day, before the doors open", [
+      { title: "At the venue", status: "the lights found here against the show", ok: null,
+        buttons: [btn("Venue check-in…", lazy("./checkin.js", "openCheckin"))] },
+      { title: "Before doors", status: "test a light, then the ready check", ok: null,
+        buttons: [btn("Ready check…", lazy("./dialogs.js", "openReadyCheck")), btn("Test a light…", () => {
+          const sel = new Set(s.selected || []);
+          const hd = patch().find((x) => sel.has(x.head_no)) || patch()[0];
+          if (hd) import("./lightdialogs.js").then((m) => m.openLightTest(hd));
+        })] }]],
+  ];
+  const all = sections.flatMap((x) => x[2]);
+  const judged = all.filter((st) => st.ok !== null && !st.optional);
+  const done = judged.filter((st) => st.ok).length;
+  const next = all.find((st) => st.ok === false);
+  let k = 0;
   const body = h("div.hub-body.setup",
-    h("p.muted.small", "Everything before the show, in order. The fixture list on the left follows along."),
-    h("h3", "1 · The lights"),
-    step("Add the lights", n ? `${n} light${n > 1 ? "s" : ""} patched` : "no lights yet", n > 0,
-      btn("Add lights…", lazy("./dialogs.js", "openAddDialog"), !n),
-      btn("Import a plot (MVR)…", lazy("./dialogs.js", "importMvr")),
-      btn("Import a patch (CSV)…", lazy("./dialogs.js", "openCsvImport"))),
-    step("DMX addresses", clashes ? `${clashes} address clash${clashes > 1 ? "es" : ""}` : (n ? "no clashes" : "-"), n ? clashes === 0 : null,
-      btn("DMX map…", lazy("./fixtures.js", "openDmxMap")),
-      btn("Address them all", async () => {
-        if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Ctrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
-      })),
-    h("h3", "2 · The room"),
-    step("Room and rigging", v.name || v.template ? `${v.name || v.template}` : "a plain room", null,
-      btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
-      btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")),
-      btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
-      btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue")),
-      btn("Clear it to start again…", lazy("./venuepanel.js", "resetVenue"))),
-    step("Lights match the real ones", (() => {
-      const mv = (state.snap && state.snap.patch || []).filter((x) => (x.map || []).includes("pan") && (x.map || []).includes("tilt"));
-      const done = mv.filter((x) => x.align).length;
-      return mv.length ? `${done} of ${mv.length} moving light${mv.length > 1 ? "s" : ""} lined up` : "no moving lights";
-    })(), null,
-      btn("Line up with the real lights…", lazy("./lineup.js", "openLineUp"))),
-    step("The room the lights know", (() => {
-      const zs = (state.snap && state.snap.venue && state.snap.venue.zones) || [];
-      const keep = zs.filter((z) => z.kind === "keepout").length, areas = zs.length - keep;
-      return `${areas} zone${areas === 1 ? "" : "s"} (dance floor, bar...)${keep ? ` · ${keep} kept out` : ""} - point a light to mark them`;
-    })(), null,
-      btn("Teach the room by pointing…", lazy("./roomteach.js", "openRoomTeach")),
-      btn("Not here (keep out)…", lazy("./roomteach.js", "openRoomTeach", "keepout"))),
-    h("h3", "3 · Connections"),
-    step("Output to the lights", s.live ? `LIVE to ${where}` : `blind - set to send to ${where}`, null,
-      btn("Output settings…", lazy("./settings.js", "openSettingsAt", "output")),
-      btn("Find nodes", lazy("./fixtures.js", "scanRig")),
-      btn("Ask the lights (RDM)…", lazy("./fixtures.js", "openRdm"))),
-    step("DJ gear and controllers", tempoLine(s), null,
-      btn("MIDI, OSC, Stream Deck…", lazy("./settings.js", "openSettingsAt", "midi")),
-      btn("Songs…", lazy("./songs.js", "openSongs"))),
-    step("Smart lamps and a spare desk",
-      [hue.paired ? `Hue: ${hue.links} lamp(s)` : "", sb.following ? `backup of ${sb.host}` : ""].filter(Boolean).join(" · ") || "optional", null,
-      btn("Philips Hue…", lazy("./settings.js", "openSettingsAt", "hue")),
-      btn("Spare desk…", lazy("./settings.js", "openSettingsAt", "standby"))),
-    h("h3", "4 · Checks"),
-    step("At the venue", "the lights found here against the show", null,
-      btn("Venue check-in…", lazy("./checkin.js", "openCheckin"), n > 0)),
-    step("Before doors", "test a light, then the ready check", null,
-      btn("Test a light…", () => {
-        const sel = new Set(s.selected || []);
-        const hd = patch().find((x) => sel.has(x.head_no)) || patch()[0];
-        if (hd) import("./lightdialogs.js").then((m) => m.openLightTest(hd));
-      }),
-      btn("Ready check…", lazy("./dialogs.js", "openReadyCheck"))),
+    h("div.hub-hero",
+      h("div.hub-hero-text", h("b", next ? `Next: ${next.title.toLowerCase()}` : "Ready to program"),
+        h("span.muted", next ? "Everything before the show, in order. The fixture list on the left follows along."
+          : "The lights, the room and the output are set. Program the show, or go to Live.")),
+      h("div.hub-progress", { title: `${done} of ${judged.length} done` },
+        h("span.muted.small", `${done} of ${judged.length} done`), h("div.hub-bar", h("i", { style: `width:${judged.length ? (done / judged.length) * 100 : 0}%` })))),
+    h("div.hub-secs", ...sections.map(([name, sub, steps], i) => h("section.hub-sec",
+      h("div.hub-sec-head", h("span.hub-sec-n", String(i + 1)), h("div", h("h3", name), h("span.muted.small", sub))),
+      ...steps.map((st) => stepEl(st, ++k, st === next))))),
     h("div.hub-next", h("button.btn.primary", { onclick: () => import("./workspaces.js").then((m) => m.useMode("program")) }, "Program the show →"),
       h("button.btn", { onclick: () => import("./workspaces.js").then((m) => m.useMode("live")) }, "Go to Live")));
   $("#mode-hub-body").replaceChildren(body);
