@@ -301,6 +301,11 @@ How you work:
   theme's colours (only the colours change). "Like Halloween but slower / no strobes"
   -> restyle_show, then change those parts with `do`. Unsure which earlier show, or
   whether they want new programming or a copy? Ask, with your recommendation first.
+* A SHOW'S BUTTONS ALWAYS GO IN A PROFILE OF THEIR OWN (design_show / restyle_show make
+  one): never put a new show's buttons onto the pages of the profile in use with
+  quick_set - those are the operator's.  A profile with that name already there
+  (BUTTON PROFILES below)?  Ask first: a new one beside it ("Christmas 2"), or change
+  the one there - never replace it by yourself.
 * "Is the show ready?", "check my show", before doors: do ready_check - it judges the
   design too (beams landing on the bar / DJ, strobes on the VIP, buttons on lights that are
   gone, GO with no cues, effects armed). Explain each in one line and fix what you can
@@ -735,6 +740,8 @@ def _system(eng, message: str = "") -> str:
                  "show (and its copies). Don't carry them into other shows by yourself; for a show on the same "
                  "theme, ask (\"Last Christmas you went ice blue and white - again?\"):\n" + "\n".join(
                      f"  - {c['show']} ({c['page']}): {c['text']}" for c in lr["one_off"][:10]))
+    prof = eng._profiles()
+    text += "\n\nBUTTON PROFILES (in use: " + str(prof.get("active")) + "): " + ", ".join(prof.get("order") or [])
     made = showkit.shows(eng)
     text += "\n\nSHOWS MADE SO FAR (button profiles): " + ("; ".join(
         f"{s['profile']} ({s['brief'][:60] or s['name']}; colours {', '.join(s['palette'])}; "
@@ -1069,6 +1076,9 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             # cues' hit buttons land in it - not in the show before
                             if what in ("all", "buttons"):
                                 kit = showkit.build(eng, d, pb)
+                                if kit["profile"].lower() != str(d["name"]).lower():
+                                    said.append(f"(a “{d['name']}” profile was there already - left as it was; "
+                                                f"the new buttons are in “{kit['profile']}”)")
                             if what in ("all", "cues"):
                                 said.append(autoshow.build(eng, d, pb)["summary"])
                             if kit:

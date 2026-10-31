@@ -11595,3 +11595,46 @@ def test_learning_story() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_new_profile_not_overwrite() -> None:
+    """'A new profile of buttons for the Christmas show': a profile of its own, the operator's
+    pages untouched; asked again, the first Christmas stays and the new one sits beside it."""
+    import json
+    from pathlib import Path
+    from app import assistant, autoshow, config
+    from app import engine as eng_mod
+    old = config.DATA
+    real = autoshow.design
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=4)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "My flash", "target": {"heads": [1]}})
+            autoshow.design = lambda eng, brief="", offline=False, variants=1: real(eng, brief, offline=True)
+
+            def turn():
+                seq = iter([{"role": "assistant", "content": "", "tool_calls": [{"id": "1", "type": "function", "function": {
+                    "name": "design_show", "arguments": json.dumps({"brief": "christmas", "name": "Christmas", "make": "buttons"})}}]},
+                    {"role": "assistant", "content": "done"}])
+                return assistant.run_turn(e, "create a new profile of buttons for the christmas show", session="p",
+                                          preview=False, chat=lambda m, tools=None, **_: next(seq))
+            turn()
+            p = e._profiles()
+            check("the buttons go in a profile of their own", p["active"] == "Christmas" and "Default" in p["order"], str(p["order"]))
+            check("...your own pages untouched", any(b["label"] == "My flash" for b in (p["sets"].get("Default") or {}).get("quick") or []), "")
+            first = sorted(b["id"] for b in e.quick)
+            r = turn()
+            p = e._profiles()
+            check("asked again: the first Christmas stays as it was, the new one beside it (and it says so)",
+                  "Christmas 2" in p["order"] and sorted(b["id"] for b in (p["sets"].get("Christmas") or {}).get("quick") or []) == first
+                  and "already" in (r["steps"][0].get("summary") or ""), str(p["order"]))
+            check("the AI knows the profiles there are, and to ask before replacing one",
+                  "BUTTON PROFILES" in assistant._system(e, "x") and "never replace it by yourself" in assistant.SYSTEM, "")
+        finally:
+            autoshow.design = real
+            e.shutdown()
+            config.DATA = old
