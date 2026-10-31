@@ -10703,3 +10703,47 @@ def test_web_inspiration() -> None:
     check("the AI has search_web, read_web, design_show and restyle_show",
           {"search_web", "read_web", "design_show", "restyle_show"} <= names, str(sorted(names)))
 
+
+def test_busker() -> None:
+    """With a show's buttons, the AI operator plays them; with no AI, the desk does by its own rules."""
+    import os
+    import tempfile
+    from app import ai_operator as op
+    from app import autoshow, llm, showkit
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        avail = llm.available
+        llm.available = lambda: False
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=6)
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            showkit.build(e, d, None)
+            btns = op.show_buttons(e)
+            check("the operator sees the show's buttons (hits marked, effects left out)",
+                  any(b["kind"] == "hit" for b in btns) and not any(b["kind"] in ("sfx", "laser", "page") for b in btns), "")
+            op.start(e, thread=False)
+            r = op.decide(e, "start")
+            check("no AI: it busks the buttons - a colour per row, a movement", r and r["ok"] and len(e.quick_active) >= 3, str(r))
+            r = op.decide(e, "drop")
+            check("on a drop it hits a strobe", r and "Strobe" in r["text"], str(r))
+            plan_vip = {n for z in __import__("app.roomsense", fromlist=["x"]).plan(e)["zones"] if z["duty"] == "gentle"
+                        for n in __import__("app.roomsense", fromlist=["x"]).plan(e)["movers"].get(z["id"], [])}
+            on_vip = [b for b in e.quick if b["id"] in e.quick_active and b["kind"] == "colour"
+                      and set((b.get("target") or {}).get("heads") or []) <= plan_vip and plan_vip]
+            check("the VIP's colour row stays warm", all(str(b.get("colour")).lower() in ("#ffbf00", "#ff4fa0", "#ffb36b") for b in on_vip), "")
+            op.stop(e)
+        finally:
+            llm.available = avail
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+

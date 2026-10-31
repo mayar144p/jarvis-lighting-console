@@ -1052,16 +1052,14 @@ class Handler(BaseHTTPRequestHandler):
                         lst.pop(body["forget"])
                         assistant._save_notes(lst)
                 return self._json({"ok": True, "notes": assistant.notes()})
-            if not llm.available():
-                return self._json({"ok": False, "no_key": True,
-                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
             if body.get("operator"):
                 # the AI running the lights live: start / stop / status
                 from app import ai_operator
                 what = str(body.get("operator"))
                 if what == "start":
-                    if not llm.available():
-                        return self._json({"ok": False, "no_key": True, "error": "no AI yet - add a key or the offline AI in Settings -> AI"})
+                    # with no AI it still busks the show's buttons (the desk's own rules)
+                    if not llm.available() and not ai_operator.show_buttons(eng):
+                        return self._json({"ok": False, "no_key": True, "error": "no AI yet (Settings -> AI) and no show buttons to play - design a show first"})
                     try:
                         return self._json({"ok": True, "operator": ai_operator.start(
                             eng, body.get("brief") or "", int(body.get("bars") or 16), body.get("drops") is not False)})
@@ -1070,6 +1068,9 @@ class Handler(BaseHTTPRequestHandler):
                 if what == "stop":
                     return self._json({"ok": True, "operator": ai_operator.stop(eng, "you took over")})
                 return self._json({"ok": True, "operator": ai_operator.status(eng)})
+            if not llm.available():
+                return self._json({"ok": False, "no_key": True,
+                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
             if body.get("resume"):
                 # the screen's picture of the 3D view the AI asked to see
                 return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))

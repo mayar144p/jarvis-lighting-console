@@ -20,7 +20,7 @@ import math
 import threading
 import time
 
-from . import assistant, console_ai, llm
+from . import assistant, console_ai, llm, roomsense
 from .engine_base import _READ_ONLY
 
 BARS = (8, 16, 32)
@@ -46,6 +46,13 @@ you did lately.  Make ONE change that suits the moment, then stop:
   or when it is quiet; build up before an expected drop.
 * Use 2-8 `do` calls in ONE round (select, then set), on real heads / groups / zones.
 * Never black the whole room out, never strobe for long; follow the operator's brief.
+* THE SHOW'S BUTTONS (show_buttons, when there are any): PLAY THEM like a busking operator
+  - press with do quick_press {{"id": "...", "down": true}}. A colour or a movement stays on
+  (one per row: pressing another in its row swaps it); change colour on the phrase, keep the
+  rows in one palette, swap a movement now and then. A strobe / flash / blackout is a HIT:
+  press it down on the drop or the last bars of a build - the desk lets it go by itself
+  after two bars. Prefer the buttons to building looks from scratch.
+* The room's rules (THE ROOM) always hold.
 * Your reply: a few words on what you did and why ("drop: white strobe on the PARs").
 
 The operator's brief: {brief}
@@ -173,11 +180,104 @@ def _system(eng, st: dict) -> str:
     mem = assistant.notes()
     if mem:
         text += "\nWhat this operator likes:\n" + "\n".join(f"  - {n}" for n in mem)
-    return text + "\n\nTHE RIG:\n" + console_ai.rig_context(eng)
+    return text + "\n\nTHE RIG:\n" + console_ai.rig_context(eng) + "\n\n" + roomsense.describe(roomsense.plan(eng))
+
+
+HITS = ("strobe", "flash", "kill", "blackout")
+HIT_BARS = 2
+
+
+def show_buttons(eng) -> list[dict]:
+    """The buttons there are to play, in a short form: id, its page's name,
+    label, what it is, its row (one at a time), on or not."""
+    names = dict(getattr(eng, "quick_names", {}) or {})
+    on = set(eng.quick_active or [])
+    out = []
+    for b in eng.quick:
+        if b["kind"] in ("label", "page", "folder", "fader", "xy", "tempo", "cuelist", "estop", "arm", "fxkill",
+                         "sfx", "laser", "fog"):
+            continue                       # (effects are fired by the operator only)
+        out.append({"id": b["id"], "page": names.get(str(b["page"])) or f"page {b['page']}", "label": b["label"],
+                    "kind": "hit" if b["kind"] in HITS else b["kind"], "row": b.get("exclusive") or "",
+                    "on": b["id"] in on})
+    return out[:120]
+
+
+def _release_later(eng, ids: list[str]) -> None:
+    """A hit pressed live is let go after two bars (the AI can't hold it)."""
+    if not ids:
+        return
+    secs = HIT_BARS * 4 * 60.0 / max(30.0, float(eng._tempo().bpm or 120))
+
+    def go():
+        for i in ids:
+            try:
+                eng.act("quick_press", id=i, down=False)
+            except Exception:              # noqa: BLE001 - a gone button is fine
+                pass
+    t = threading.Timer(secs, go)
+    t.daemon = True
+    t.start()
+
+
+def rules_decide(eng, why: str) -> list[dict]:
+    """No AI: the desk busks the show's buttons by itself - the next colour
+    on every colour row (one palette across the rows), now and then the
+    next movement, and a two-bar strobe hit on a drop."""
+    st = _st(eng)
+    btns = [b for b in eng.quick if b["kind"] not in ("label", "page", "folder")]
+    rows: dict[str, list[dict]] = {}
+    for b in btns:
+        if b.get("exclusive"):
+            rows.setdefault(b["exclusive"], []).append(b)
+    k = st.setdefault("rule_step", 0)
+    steps = []
+    press = []
+    prof = eng._profiles()
+    pal = {c.lower() for c in ((prof.get("shows") or {}).get(prof["active"]) or {}).get("design", {}).get("palette") or []}
+    plan = roomsense.plan(eng)
+    gentle = {n for z in plan["zones"] if z["duty"] == "gentle"
+              for n in plan["movers"].get(z["id"], []) + plan["statics"].get(z["id"], [])}
+    warm = ("#ffbf00", "#ff4fa0", "#ffb36b")
+    for tag, bs in rows.items():
+        bs = sorted(bs, key=lambda b: (b["page"], b["slot"]))
+        if tag.startswith("colour"):
+            heads = set((bs[0].get("target") or {}).get("heads") or [])
+            if heads and heads <= gentle:
+                # the VIP stays warm and flattering whatever the floor does
+                pick = [b for b in bs if str(b.get("colour") or "").lower() in warm] or bs
+            else:
+                pick = [b for b in bs if str(b.get("colour") or "").lower() in pal] or bs
+            press.append(pick[k % len(pick)])
+        elif tag.startswith(("move", "fx")) and (why == "start" or k % 2 == 1):
+            press.append(bs[(k // 2) % len(bs)])
+    if why == "drop":
+        hit = next((b for b in btns if b["kind"] == "strobe" and "all" in b["label"].lower()), None) \
+            or next((b for b in btns if b["kind"] == "strobe"), None)
+        if hit:
+            press.append(hit)
+    hits = []
+    for b in press:
+        if b["id"] in (eng.quick_active or []) and b["kind"] not in HITS:
+            continue                       # (already on: pressing would turn it off)
+        r = eng.act("quick_press", id=b["id"], down=True)
+        steps.append({"action": "quick_press", "ok": bool(r.get("ok")), "summary": f"{b['label']}"})
+        if b["kind"] in HITS:
+            hits.append(b["id"])
+    _release_later(eng, hits)
+    st["rule_step"] = k + 1
+    return steps
 
 
 def decide(eng, why: str, chat=None, now: float | None = None) -> dict | None:
     st = _st(eng)
+    if chat is None and not llm.available():
+        # no AI: the desk busks the show's buttons by its own rules
+        st["last_at"] = time.monotonic() if now is None else now
+        steps = rules_decide(eng, why)
+        st["decisions"] += 1
+        _log(st, why, ", ".join(s["summary"] for s in steps) or "nothing to press", steps, ok=bool(steps))
+        return st["log"][-1]
     chat = chat or llm.chat
     gen = st["gen"]
     st["busy"] = True
@@ -186,7 +286,8 @@ def decide(eng, why: str, chat=None, now: float | None = None) -> dict | None:
         lights = assistant.check_lights(eng)
         moment = {"why": why, "music": assistant.music(eng),
                   "lights_now": lights["lights"][:40],
-                  "you_did_lately": [{"why": e["why"], "did": e["text"]} for e in st["log"][-6:] if e["why"] not in ("on", "stop")]}
+                  "you_did_lately": [{"why": e["why"], "did": e["text"]} for e in st["log"][-6:] if e["why"] not in ("on", "stop")],
+                  "show_buttons": show_buttons(eng)}
         msgs = [{"role": "system", "content": _system(eng, st)},
                 {"role": "user", "content": json.dumps(moment, default=str)[:12000]}]
         tools = [t for t in assistant.TOOLS if t["function"]["name"] in ("do", "check_lights")]
@@ -216,6 +317,10 @@ def decide(eng, why: str, chat=None, now: float | None = None) -> dict | None:
                         else {k: v for k, v in args.items() if k not in ("action", "params")}
                     result = assistant._do(eng, args.get("action"), params)
                     steps.append({"action": args.get("action"), "ok": result["ok"], "summary": result.get("summary")})
+                    if args.get("action") == "quick_press" and result["ok"] and params.get("down", True) not in (False, "false", 0):
+                        b = next((x for x in eng.quick if x["id"] == str(params.get("id"))), None)
+                        if b and b["kind"] in HITS:
+                            _release_later(eng, [b["id"]])      # a hit: let go after two bars
                 elif fn.get("name") == "check_lights":
                     result = assistant.check_lights(eng, args.get("heads"))
                 else:
