@@ -334,7 +334,7 @@ class OpenDmxSender:
             self._frame = open_frame(data)
         if self._thread is None:
             import threading
-            self._thread = threading.Thread(target=self._loop, name="jarvis-opendmx", daemon=True)
+            self._thread = threading.Thread(target=self._loop, name="haze-opendmx", daemon=True)
             self._thread.start()
         return self.last_error is None
 

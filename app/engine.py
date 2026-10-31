@@ -1,4 +1,4 @@
-"""Jarvis engine - our own lighting console.
+"""Haze engine - our own lighting console.
 
 Patch management (add/remove/re-address heads, groups), programmer,
 palettes, cue stacks, playbacks with real fades, frame building with
@@ -70,6 +70,7 @@ from app.engine_steps import StepsMixin
 from app.engine_desk import DeskMixin
 from app.engine_cuemodes import CueModesMixin
 from app.engine_roam import RoamMixin
+from app.engine_zones import ZoneMixin
 from app.engine_osc import OscMixin
 from app.engine_hue import HueMixin
 from app.engine_songs import SongsMixin
@@ -80,7 +81,7 @@ from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ZoneMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,
@@ -92,7 +93,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         self.db_path = Path(db_path or config.DB_PATH)
         self.dry_run = bool(dry_run)
         # The engine is the console; there is no second control path.
-        self.mode = "jarvis"
+        self.mode = "haze"
         self.show_dir = Path(show_dir or config.CONSOLE_SHOW_DIR)
         self._sender = sender
         # A sender handed in (tests, tools) is used as given, never rebuilt.
@@ -261,6 +262,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_layout": copy.deepcopy(self.__dict__.get("quick_layout") or {}),
             "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+            "quick_profiles": self._profiles_saved(),
             "media": copy.deepcopy(self._media()),
             "shapes": copy.deepcopy(self._shapes()),
             "sound_cfg": copy.deepcopy(self._sound_cfg()),
@@ -276,7 +278,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             # other, and this is the only record of it.
             "patch_extra": {h["head_no"]: {
                 k: v for k, v in h.items()
-                if k in ("limits", "orient", "mount", "rot", "stance")} for h in self.patch},
+                if k in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks", "stay")} for h in self.patch},
             # the programmer's own effects (not a button's, not a cue's):
             # recording a cue takes them off, so undo must put them back
             "prog_fx": [dict(f, params=dict(f.get("params") or {}), heads=list(f.get("heads") or []))
@@ -310,6 +312,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         self.quick_names = dict(state.get("quick_names") or {})
         self.quick_layout = copy.deepcopy(state.get("quick_layout") or {})
         self.quick_quant = float(state.get("quick_quant") or 0.0)
+        self.quick_profiles = self._profiles_load(state.get("quick_profiles"))
         if "media" in state:
             self.media = copy.deepcopy(state["media"])
         if "shapes" in state:
@@ -335,7 +338,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         extra = state.get("patch_extra") or {}
         for head in self.patch:
             got = extra.get(head["head_no"]) or {}
-            for key in ("limits", "orient", "mount", "rot", "stance"):
+            for key in ("limits", "orient", "mount", "rot", "stance", "hang", "align", "align_marks", "stay"):
                 if key in got:
                     head[key] = got[key]
                 else:
@@ -458,6 +461,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             # no-op that still costs the operator one Ctrl+Z.
             undoable = name not in UNDO_EXCLUDED and not self._batching
             pushed = self._push_undo(name) if undoable else False
+            # what holds the lock right now: the freeze watchdog names it
+            self.__dict__["_acting"] = (name, time.monotonic())
             try:
                 extra = handler(**params) or {}
             except Exception as exc:          # noqa: BLE001
@@ -578,7 +583,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
 
     def _result(self, action, ok: bool, error) -> dict:
         return {"ok": bool(ok), "action": str(action),
-                "simulated": self.dry_run, "engine": "jarvis",
+                "simulated": self.dry_run, "engine": "haze",
                 "error": error}
 
     def _log(self, action, ok: bool, error=None, detail=None) -> None:
@@ -652,22 +657,26 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             return done
         dur = float(fade.get("dur") or 0.0)
         parts = fade.get("parts") or {}
+        # the cue's delay before it starts, and its fan: each light starting
+        # a little after the one before (rank 0..1 across the lights)
+        delay, fan, rank = float(fade.get("delay") or 0.0), float(fade.get("fan") or 0.0), fade.get("rank") or {}
         longest = max([dur, *[float(v) for v in parts.values()]])
-        if longest <= 0:
+        if longest + delay + fan <= 0:
             return done
-        el = now - float(fade["t0"])
-        if el >= longest:
+        el0 = now - float(fade["t0"]) - delay
+        if el0 >= longest + fan:
             return done
-        if el <= 0:
+        if el0 <= 0:
             return fade["from"]
         src, dst = fade["from"], target
         out = {}
         for head_no in set(src) | set(dst):
             a, b = src.get(head_no) or {}, dst.get(head_no) or {}
             row = {}
+            el = el0 - fan * float(rank.get(head_no, 0.0))
             for attr in set(a) | set(b):
                 d = float(parts.get(self.attr_group(attr), dur)) if parts else dur
-                t = 1.0 if d <= 0 else min(1.0, el / d)
+                t = (1.0 if el > 0 else 0.0) if d <= 0 else max(0.0, min(1.0, el / d))
                 v0, v1 = a.get(attr, 0), b.get(attr, 0)
                 row[attr] = int(round(v0 + (v1 - v0) * t))
             out[head_no] = row
@@ -1270,12 +1279,15 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                             if pb.get("xfade") else None),
                 "index": pb["index"],
                 "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib")),
+                "bind": pb.get("bind") or None,
                 "stack": [{"n": c["n"], "name": c["name"],
                            "block": bool(c.get("block")),
                            "actions": c.get("actions") or None,
                            "fade_s": c["fade_s"], "hold_s": c["hold_s"],
                            "follow_s": c.get("follow_s"),
                            "times": c.get("times") or None,
+                           "delay_s": c.get("delay_s") or 0, "fan_s": c.get("fan_s") or 0,
+                           "fan_dir": c.get("fan_dir") or "left",
                            "fx": [(fxlib_mod.FX.get(f["name"]) or {}).get("label", f.get("label") or f["name"])
                                   for f in c.get("fx") or []],
                            "empty": not (c.get("values") or {}) and not c.get("fx")}
@@ -1337,6 +1349,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "show_file": self.show_file,
                 "venue": self.venue,
                 "venue_orient": venue_mod.orientation(self.venue),
+                "vis_source": dict(self._vis()),
                 "sfx": self._sfx_public(),
                 "quick": self._quick_public(),
                 "step_fx": [dict(f) for f in self._steps()],

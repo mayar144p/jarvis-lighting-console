@@ -1,9 +1,9 @@
 {
-  "name": "jarvis-desk",
-  "productName": "Jarvis",
+  "name": "haze-desk",
+  "productName": "Haze",
   "version": "0.1.0",
   "private": true,
-  "description": "Jarvis lighting desk as a desktop app: the engine runs hidden, the desk opens in its own windows.",
+  "description": "Haze lighting desk as a desktop app: the engine runs hidden, the desk opens in its own windows.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -15,8 +15,8 @@
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "com.jarvis.desk",
-    "productName": "Jarvis",
+    "appId": "com.haze.desk",
+    "productName": "Haze",
     "directories": {
       "output": "dist",
       "buildResources": "res"
@@ -49,7 +49,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Jarvis",
+      "shortcutName": "Haze",
       "include": "res/installer.nsh"
     },
     "linux": {
@@ -62,8 +62,11 @@
       "identity": null,
       "category": "public.app-category.entertainment",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Jarvis listens to the music (a microphone or line input) to follow the beat and the drops. Nothing is recorded or sent anywhere."
+        "NSMicrophoneUsageDescription": "Haze listens to the music (a microphone or line input) to follow the beat and the drops. Nothing is recorded or sent anywhere."
       }
     }
+  },
+  "dependencies": {
+    "koffi": "3.3.2"
   }
 }

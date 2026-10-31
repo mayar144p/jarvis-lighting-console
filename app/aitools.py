@@ -26,15 +26,18 @@ MORE = (
     "aim_spot", "autopilot", "autopilot_next", "clear_heads", "cue_info", "cue_set", "desk_strobe", "edit_cue",
     "floor_safe", "fx_available", "get_limits", "group_edit", "group_flash", "group_master", "insert_cue",
     "macro_run", "macro_save", "move_cue", "move_play", "move_range", "move_rename", "move_save",
-    "nudge", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
-    "quick_colour_row", "quick_group_controls", "quick_edit", "quick_fader", "quick_from_programmer", "quick_update", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_style",
-    "quick_quant", "quick_rate", "quick_release_all", "quick_xy", "ready_check", "rename_cue",
+    "nudge", "flip", "mirror_pan", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
+    "quick_colour_row", "quick_group_controls", "quick_edit", "quick_fader", "quick_from_programmer", "quick_update", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_profile", "quick_profile_use", "quick_style",
+    "quick_quant", "quick_rate", "quick_release_all", "playback_release_all", "quick_xy", "ready_check", "rename_cue",
     "rename_preset", "rig_add", "rig_pieces", "rig_report", "rig_trim", "run_media", "select_split",
     "show_versions", "sound_link", "sound_tempo", "sound_trigger", "step_capture", "step_fx_save",
     "tempo_nudge", "tempo_sync", "tempo_tap", "timeline_clip", "timeline_set", "timeline_track",
     "unpark", "venue_add", "venue_align", "venue_array", "venue_camera", "venue_ceiling",
     "venue_info", "venue_orient", "venue_preview", "venue_rig", "venue_room", "venue_stage", "venue_update", "keep_facing",
-    "fx_kill", "colour_cal_get", "fx_status",
+    "fx_kill", "colour_cal_get", "fx_status", "vis_source",
+    # the rest of the desk: everything an operator does by hand
+    "beam_spot", "palette_defaults", "palette_edit", "playback_bind", "room_fit", "select_step",
+    "show_files", "show_templates", "show_copy", "stay_in", "keep_out_here", "tempo_phrase", "venue_underlay",
 )
 # Prepared by the AI, done only when the operator taps "Do it".
 CONFIRM = {
@@ -70,6 +73,9 @@ CONFIRM = {
     "step_fx_delete": "Delete a step effect",
     "venue_remove": "Remove a room item",
     "venue_delete": "Delete a saved venue",
+    "venue_reset": "Clear the room to design it again",
+    "show_delete": "Delete a saved show",
+    "show_rename": "Rename a saved show",
 }
 # Never, whatever the request: network, the lock, calibration on the real
 # light, the AI's own preview and undo (the operator has Ctrl+Z).
@@ -84,6 +90,7 @@ NEVER = frozenset({
     "remap_heads", "osc", "virtual_node", "timecode", "tempo_prodj", "tempo_link",
     "rdm_compare", "teach_slots", "colour_cal", "media_save", "show_export",
     "quick_fx_defaults", "quick_from_laser", "blind", "undo", "redo",
+    "osc_out", "osc_send", "timecode_ltc", "line_up", "notice_seen",
 })
 
 
@@ -180,7 +187,7 @@ def _rows(eng, heads=None, group=None) -> list[dict]:
 _NEEDS = {
     "set_colour": "colour", "chase_colours": "colour", "run_gradient": "colour",
     "set_position": "move", "aim_at": "move", "aim_spot": "move", "roam": "move", "fan": "move",
-    "run_shape": "move", "nudge": "move", "follow_set": "move", "move_play": "move",
+    "run_shape": "move", "nudge": "move", "flip": "move", "mirror_pan": "move", "follow_set": "move", "move_play": "move",
     "set_intensity": "level",
 }
 
@@ -360,8 +367,8 @@ def add_to_room(eng, kind: str, name: str = "", where: str = "middle", length=No
             item = {"kind": k, "a": [x - half, y, z], "b": [x + half, y, z]} if across else \
                 {"kind": k, "a": [x, y, z - half], "b": [x, y, z + half]}
     elif k in venue_mod.OBJECT_KINDS:
-        item = {"kind": k, "x": x, "z": z, "w": float(width or (0.4 if k == "mark" else 2.0)),
-                "d": float(depth or (0.4 if k == "mark" else 1.0)), "h": float(height or (0.02 if k == "mark" else 1.0))}
+        w0, d0, h0 = venue_mod.OBJECT_SIZE.get(k, (2.0, 1.0, 1.0))
+        item = {"kind": k, "x": x, "z": z, "w": float(width or w0), "d": float(depth or d0), "h": float(height or h0)}
     elif k in venue_mod.ZONE_KINDS or k == "zone":
         hw, hd = float(width or 4.0) / 2, float(depth or 4.0) / 2
         item = {"kind": k if k != "zone" else "standing",

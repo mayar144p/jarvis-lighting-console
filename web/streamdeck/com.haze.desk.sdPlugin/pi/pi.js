@@ -1,4 +1,4 @@
-// Settings pages for the Jarvis keys.  Fields with data-key are this key's
+// Settings pages for the Haze keys.  Fields with data-key are this key's
 // settings; fields with data-global are shared by every key (where the desk is).
 "use strict";
 let socket = null, uuid = null;

@@ -1,7 +1,7 @@
 """Fixture database: SQLite + GDTF importer.
 
 The GDTF library (https://gdtf-share.com) is the open, manufacturer-fed
-fixture database - drop .gdtf files into jarvis/fixtures_inbox/ and run
+fixture database - drop .gdtf files into haze/fixtures_inbox/ and run
 `python tools/import_gdtf.py`. Everything is parsed locally with the
 standard library only.
 
@@ -91,6 +91,12 @@ MIGRATIONS = (("modes", "detail", "TEXT NOT NULL DEFAULT '[]'"),)
 # --------------------------------------------------------------------------
 # database
 # --------------------------------------------------------------------------
+
+def fixlib_old() -> str:
+    """The built-in library's key before the desk was called Haze."""
+    from . import fixlib
+    return fixlib.OLD_SRC
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -311,7 +317,7 @@ def _description_entry(zf: zipfile.ZipFile) -> str | None:
     """Find the GDTF document inside the archive.
 
     The spec puts it at the archive root as `description.xml`, and every
-    real file follows that.  Older Jarvis tooling and several tools in
+    real file follows that.  Older Haze tooling and several tools in
     the wild name the entry `something.gdtf` or plain `GDTF` instead, so
     those are tried too - but they are tried AFTER the spec location, and
     the deciding test is whether the bytes actually contain a <GDTF
@@ -1040,10 +1046,10 @@ def refresh_imports(db_path: Path, folders) -> dict:
         sources = [r["source"] for r in conn.execute(
             "SELECT DISTINCT source FROM fixtures WHERE lower(source) LIKE '%.gdtf'"
             " OR lower(source) LIKE '%.qxf' OR lower(source) LIKE '%.json'"
-            " OR source LIKE 'jarvis:%'")]
+            " OR source LIKE 'haze:%' OR source LIKE ?", (fixlib_old() + ":%",))]
     refreshed, missing, errors = 0, 0, []
     for name in sources:
-        if ":" in name and name.split(":", 1)[0] in ("ofl", "qlc", "jarvis"):
+        if ":" in name and name.split(":", 1)[0] in ("ofl", "qlc", "haze", fixlib_old()):
             try:                          # a bundled library fixture
                 from . import fixlib
                 src, key = name.split(":", 1)

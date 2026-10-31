@@ -34,13 +34,13 @@ const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, a
 const KNOB_DEFAULTS = JSON.parse(JSON.stringify(knobs));
 const PER_LIGHT = ["direction", "arc", "size", "secs", "spread", "lock", "across", "panA", "panB", "tiltA", "tiltB",
   "mode", "fullPan", "fullTilt", "cells", "tiltSecs", "panSecs", "mult"];
-let perLight = (() => { try { return JSON.parse(localStorage.getItem("jarvis.moveKnobs") || "{}"); } catch { return {}; } })();
+let perLight = (() => { try { return JSON.parse(localStorage.getItem("haze.moveKnobs") || "{}"); } catch { return {}; } })();
 let knobsFor = "";
 function rememberKnobs() {
   const saved = {};
   for (const k of PER_LIGHT) saved[k] = JSON.parse(JSON.stringify(knobs[k]));
   for (const x of movers()) perLight[x.head_no] = saved;
-  try { localStorage.setItem("jarvis.moveKnobs", JSON.stringify(perLight)); } catch { /* private window */ }
+  try { localStorage.setItem("haze.moveKnobs", JSON.stringify(perLight)); } catch { /* private window */ }
 }
 function loadKnobs(sel) {
   const first = sel[0];
@@ -66,7 +66,7 @@ let own = { key: "", attrs: [] };         // the selection's own motor channels 
 // A light's own motor channels (a Wave 360's continuous pan rotation, its
 // built-in tilt programs, their speeds) arrive as ranges like "1-127
 // counter-clockwise with decreasing speed".  Here they become ↺ ■ ↻ and a
-// slow-to-fast slider; Jarvis works out the value inside the right range.
+// slow-to-fast slider; Haze works out the value inside the right range.
 const OWN_RE = /rotat|spin|auto ?tilt|built.?in|program|macro|movement|moves?\b/i;
 const slowFirst = (text) => !/decreas|fast\s*(to|->|→|-)\s*slow/i.test(text || "");
 
@@ -196,10 +196,11 @@ const onZone = (f) => {
 };
 
 let lastLib = "circle";
-setShapeKnobs(() => params());
+setShapeKnobs(() => ({ ...params(), zoneName: knobs.zone ? zoneName() : "" }));
 
 async function startMove(name) {
   lastLib = name;
+  knobs.showAB = name === "range";
   rememberKnobs();
   const heads = movers().map((x) => x.head_no);
   if (!heads.length) { toast("Select a moving light first"); return; }
@@ -248,10 +249,15 @@ function spotsBlock() {
   }
   const floor = spots.some((s) => s.key === "floor");
   return h("div.mv-spotbox",
-    h("div.mv-spots", ...spots.map((s) => h("button.btn.mv-spot", {
-      title: `Every selected mover points at ${s.label}, each from where it hangs`,
-      onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
-    }, s.label))),
+    h("div.mv-spots", ...spots.map((s, i) => {
+      // two zones with the same name (two DJ zones): numbered, not "DJ DJ"
+      const same = spots.filter((x) => x.label === s.label);
+      const label = same.length > 1 ? `${s.label} ${same.indexOf(s) + 1}` : s.label;
+      return h("button.btn.mv-spot", {
+        title: `Every selected mover points at ${label}, each from where it hangs`,
+        onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
+      }, label);
+    })),
     floor ? h("div.mv-row", h("span.k", "Formation"),
       h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan", glide: followGlide() }, { toast: true }) }, "Fan out"),
       h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross", glide: followGlide() }, { toast: true }) }, "Cross"),
@@ -262,11 +268,24 @@ function spotsBlock() {
 // its own path, aimed from where it hangs) - "hover round the dance floor
 // and the DJ booth".  Several zones share the lights out.
 const roamPick = new Set(["dancefloor"]);
-let roamSpeed = 1;
+let roamPct = 25;               // % of the fastest these lights can follow
+// how fast they wander: a % of the fastest the selected lights can follow
+const roamWord = (p) => `${p}%`;
+function roamSlider() {
+  const out = h("span.mv-roam-v", roamWord(roamPct));
+  const input = h("input.mv-roam-speed", { type: "range", min: 5, max: 100, step: 5, value: roamPct,
+    title: "How fast they wander, as a share of the fastest these lights can follow (100% = their motors at full speed). Start roaming again to use a new speed.", "aria-label": "Roam speed",
+    oninput: (e) => { roamPct = +e.target.value; out.textContent = roamWord(roamPct); } });
+  return h("label.mv-roam-sp", h("span.muted.small", "Speed"), input, out);
+}
 function roamBlock() {
   const zones = (((state.snap && state.snap.venue) || {}).zones || []);
   if (!zones.length) return null;
-  const kinds = [...new Map(zones.map((z) => [z.kind, z.name || z.kind])).entries()];
+  // (never over the DJ, the bar, the stage, the operator or a keep-out: the
+  // desk refuses those, app/roomsense.py NO_ROAM)
+  const NO_ROAM = new Set(["dj", "bar", "stage", "foh", "backstage", "keepout"]);
+  const kinds = [...new Map(zones.filter((z) => !NO_ROAM.has(z.kind)).map((z) => [z.kind, z.name || z.kind])).entries()];
+  if (!kinds.length) return null;
   for (const k of [...roamPick]) if (!kinds.some(([x]) => x === k)) roamPick.delete(k);
   if (!roamPick.size) roamPick.add(kinds[0][0]);
   const roaming = ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam");
@@ -274,34 +293,55 @@ function roamBlock() {
     h("span.chip-row", ...kinds.map(([k, name]) => h("button.chip" + (roamPick.has(k) ? ".on" : ""), {
       title: `Wander inside the ${name}`, onclick: () => { if (roamPick.has(k) && roamPick.size > 1) roamPick.delete(k); else roamPick.add(k); render(true); },
     }, name))),
-    h("span.chip-row", ...[[0.5, "Slow"], [1, "Medium"], [2.5, "Fast"]].map(([v, l]) => h("button.chip" + (roamSpeed === v ? ".on" : ""), {
-      onclick: () => { roamSpeed = v; render(true); } }, l))),
+    roamSlider(),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
-      onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
+      onclick: () => run("roam", { zones: [...roamPick], percent: roamPct }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
     roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…") : null,
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }
 
-// Stay on the dance floor: every mover's own pan/tilt range for the floor,
-// worked out from where it hangs.  Movement always fits inside it (on by
-// default); the second switch holds cues and aims to it too.
+// Where the beams may go: the room's keep-out zones and the lights told to
+// stay in a zone (app/engine_zones.py) - every cue, palette, effect and roam
+// is held by them.  Taught by pointing a light (roomteach.js).
+function zonesBlock() {
+  const snap = state.snap || {};
+  const zs = (snap.venue && snap.venue.zones) || [];
+  const keep = zs.filter((z) => z.kind === "keepout");
+  const staying = (snap.patch || []).filter((x) => (x.stay || []).length);
+  const name = (id) => (zs.find((z) => z.id === id) || {}).name || "a zone";
+  const teach = (tab, label, title) => h("button.btn.small", { title, onclick: () => import("./roomteach.js").then((m) => m.openRoomTeach(tab)) }, label);
+  return section("Where the beams may go",
+    h("p.muted.small", (keep.length ? `Kept out: ${keep.map((z) => z.name || "keep-out").join(", ")}.` : "Nothing kept out yet.") + " "
+      + (staying.length ? `${staying.length} light(s) stay in ${[...new Set(staying.flatMap((x) => x.stay.map(name)))].join(" / ")}.` : "No light is held in a zone.")
+      + " Everything they play is held: cues, palettes, effects, roams."),
+    h("div.row-btns",
+      teach("keepout", "Not here (keep out)…", "Point a light at a wall, the bar staff, the DJ: no beam goes there"),
+      teach("stay", "Keep lights in a zone…", "These lights' beams stay inside the zones you pick"),
+      teach("zone", "Mark out a zone…", "Point a light at the corners of the dance floor, the bar...")));
+}
+
+// Movements fit the dance floor: every mover's own pan/tilt range for the
+// floor, worked out from where it hangs - a circle or a sweep is shrunk to
+// fit, keeping its shape (a zone only stops a beam at its edge).  "Cues &
+// aims too" is the old way of holding everything on the floor (Keep lights
+// in a zone does it exactly): shown only while a show has it on.
 function floorBlock() {
   const snap = state.snap || {};
   const n = snap.floor_movers || 0;
   if (!n) {
-    return section("Stay on the dance floor",
-      h("p.muted.small", "Draw a dance floor zone in the Venue tab (and place your lights roughly where they hang) - then every moving light keeps its beam on the floor."));
+    return section("Movements fit the dance floor",
+      h("p.muted.small", "Mark out a dance floor (above, or draw it in Arrange) - then circles and sweeps are sized to stay on it."));
   }
   const toggle = (label, key, on, title) => h("button.chip" + (on ? ".on" : ""), {
     title, onclick: () => run("floor_safe", { [key]: !on }, { toast: true }),
   }, (on ? "✓ " : "") + label);
   let checking = false;
-  return section("Stay on the dance floor",
+  return section("Movements fit the dance floor",
     h("div.chip-row",
-      toggle("Movement stays on the floor", "movement", snap.floor_safe !== false,
-        "Circles, sweeps and the rest fit inside the dance floor for every light"),
-      toggle("Cues & aims too", "everything", !!snap.floor_lock,
-        "Nothing may point off the dance floor - also cues, spots and the programmer")),
+      toggle("Circles and sweeps fit on the floor", "movement", snap.floor_safe !== false,
+        "Circles, sweeps and the rest are sized to stay on the dance floor for every light, keeping their shape"),
+      snap.floor_lock ? toggle("Cues & aims too (old)", "everything", true,
+        "This show holds everything on the floor the old way - Keep lights in a zone (above) does it exactly; tap to turn this off") : null),
     h("div.mv-row",
       h("span.muted.small", `${n} moving light(s) know where the floor is.`),
       h("button.btn.small", {
@@ -324,23 +364,16 @@ function nudgeBlock() {
   const btn = (label, axis, sign, title) => h("button.btn.mv-arrow", {
     title, onclick: () => run("nudge", { axis, step: sign * step() }, { silentError: false }),
   }, label);
-  return h("div.mv-nudgebox",
+  // nudge while watching the real beam; a position worth keeping is saved
+  // with the palette strip's + Save (there was a second Save spot here)
+  return h("div.mv-nudgebox", { title: "Nudge: a small step while you watch the real beam" },
     h("div.mv-nudge",
       h("div.mv-pad",
         h("span"), btn("↑", "tilt", 1, "Tilt up"), h("span"),
         btn("←", "pan", -1, "Pan left"), h("button.btn.mv-fine" + (fine ? ".on" : ""), {
           title: "Fine: tiny steps for exact focus", onclick: () => { fine = !fine; render(true); },
         }, fine ? "fine" : "coarse"), btn("→", "pan", 1, "Pan right"),
-        h("span"), btn("↓", "tilt", -1, "Tilt down"), h("span")),
-      h("div.mv-nudge-side",
-        h("span.muted.small", "Nudge: watch the real beam"),
-        h("button.btn.small", {
-          title: "Keep this position as a spot you can tap again (a position look)",
-          onclick: async () => {
-            const name = await promptBox("Save spot", "Name", "", { ok: "Save" });
-            if (name) run("record_palette", { kind: "position", name }, { toast: true });
-          },
-        }, "Save spot"))));
+        h("span"), btn("↓", "tilt", -1, "Tilt down"), h("span"))));
 }
 
 function bpmText() {
@@ -432,51 +465,54 @@ function movementBlock() {
         run("fx_tweak", { id: f.id, speed: +(1 / v).toFixed(4) }, { silentError: true });
       }
     } });
-  return section("Movement",
-    myMoves(act),
-    h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
-      title: params().zone ? `${label} across the ${zoneName()}` : `${label} around where the lights point now`, onclick: () => startMove(name),
-    }, h("b", icon), h("span", label)))),
-    axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
-      : "These lights only pan: Sweep and Fan are the movements they can do."),
-    zoneKinds().length ? h("div.mv-row", h("span.k", "Where"), h("span.chip-row",
-      ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
-        ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
-      (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
-    rangeBlock2(),
-    h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
-      ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
-        (v) => knobs.size === v, (v) => { knobs.size = v; }))),
-    secs,
-    h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
-      ...chips([["together", 0, "Every light at the same point"], ["½ wave", 180, "Half a cycle between the first light and the last"],
-        ["wave", 360, "A smooth wave: each light a step behind the one before"], ["2 waves", 720]], (v) => knobs.spread === v, (v) => { knobs.spread = v; }),
-      degIn(knobs.spread, 0, 720, (v) => { knobs.spread = v; }, "The wave's spread, in degrees of the cycle"))),
-    multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
-      ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
-        (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null,
-    // the knobs used now and then fold away (remembered while the page is open)
-    h("details.mv-more", { open: knobs.more, ontoggle: (e) => { knobs.more = e.currentTarget.open; } },
-      h("summary", "More: direction, arc, lock"),
+  const abOn = knobs.showAB || act.some((f) => f.lib === "range");
+  // three columns across the panel (it was one long column that scrolled):
+  // the movements and my moves | how the movement goes | A -> B, the speeds,
+  // what is running
+  return h("div.mv-sec.mv-move", { title: "Movements run around where the lights point now. They fit the dance floor - or the zone a light is kept in - and no beam crosses a keep-out zone (Zones & limits)." },
+    h("div.mv-col.mv-col-shapes",
+      h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) || (name === "range" && knobs.showAB) ? ".on" : ""), {
+        title: params().zone ? `${label} across the ${zoneName()}` : `${label} around where the lights point now`, onclick: () => startMove(name),
+      }, h("b", icon), h("span", label)))),
+      axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
+        : "These lights only pan: Sweep and Fan are the movements they can do."),
+      myMoves(act)),
+    h("div.mv-col.mv-col-knobs",
+      zoneKinds().length ? h("div.mv-row", h("span.k", "Where"), h("span.chip-row",
+        ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
+          ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
+        (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
+      h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
+        ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
+          (v) => knobs.size === v, (v) => { knobs.size = v; }))),
+      secs,
+      h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
+        ...chips([["together", 0, "Every light at the same point"], ["½ wave", 180, "Half a cycle between the first light and the last"],
+          ["wave", 360, "A smooth wave: each light a step behind the one before"], ["2 waves", 720]], (v) => knobs.spread === v, (v) => { knobs.spread = v; }),
+        degIn(knobs.spread, 0, 720, (v) => { knobs.spread = v; }, "The wave's spread, in degrees of the cycle"))),
+      multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
+        ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
+          (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null),
+    h("div.mv-col.mv-col-ab",
+      abOn ? rangeBlock2() : null,
       h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
-        ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
+        ...chips([["↻", 1, "Clockwise"], ["↺", -1, "Counter-clockwise"]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
       h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
         ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }),
         degIn(knobs.arc, 10, 360, (v) => { knobs.arc = v; }, "Any arc, in degrees"))),
       h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
         ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
-          (v) => knobs.lock === v, (v) => { knobs.lock = v; })))),
-    moveSpeed(),
-    speedMaster(),
-    theirs.length ? h("p.small.muted.mv-theirs", theirs.map((f) => `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} on ${f.heads.length} light(s) is played by a ${f.from}`
-      + ` - change it in that ${f.from}${f.from === "button" ? " (Buttons -> Edit)" : ""}, not here`).join(" · ")) : null,
-    act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
-      h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
-      spaceSelect(f), beatSelect(f),
-      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
-      fxKnobs(f))),
-    h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
-    h("p.muted.small", "Movements run around where the lights point now and stay inside each light's range. Point them first, then pick a movement."));
+          (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),
+      moveSpeed(),
+      speedMaster(),
+      theirs.length ? h("p.small.muted.mv-theirs", theirs.map((f) => `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} on ${f.heads.length} light(s) is played by a ${f.from}`
+        + ` - change it in that ${f.from}${f.from === "button" ? " (Buttons -> Edit)" : ""}, not here`).join(" · ")) : null,
+      act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
+        h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
+        spaceSelect(f), beatSelect(f),
+        h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
+        fxKnobs(f))),
+      h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null));
 }
 
 // a number of degrees, typed (no fixed stops); Enter or leaving the box applies it
@@ -615,7 +651,7 @@ function myMoves(act) {
             else run("move_play", { id: m.id, heads }, { toast: true });
           } },
         h("b", m.name), h("small", moveText(m))), more);
-    })) : h("p.muted.small", "Set a movement up below, then save it here with a name - it plays on any lights, any time."));
+    })) : null);
 }
 
 function rangeBlock(sel) {
@@ -636,7 +672,7 @@ function rangeBlock(sel) {
     return r ? "limited" : "full travel";
   };
   return section("This light's range",
-    h("p.muted.small", `Tilt: ${show("tilt")} · Pan: ${show("pan")}. Point it at one edge and set it, then the other. Everything stays between them - cues, movements, spots, buttons.`),
+    h("p.muted.small", `Tilt: ${show("tilt")} · Pan: ${show("pan")}. Point it at one edge and set it, then the other. Everything stays between them - cues, movements, spots, buttons. For what floor zones can't see: the ceiling, a balcony, the truss next to it.`),
     rangeButtons());
 }
 
@@ -737,12 +773,15 @@ function render(force = false) {
   if (nudge) nudge.replaceChildren(nudgeBlock());
   // each block on its sub-tab (Move / Limits; Point is the aim map and the pad)
   const tag = (el, k) => { if (el) el.dataset.in = k; return el; };
-  box.replaceChildren(...[tag(movementBlock(), "move"), tag(ownBlock(), "move"), tag(floorBlock(), "limits"),
+  box.replaceChildren(...[tag(movementBlock(), "move"), tag(ownBlock(), "move"), tag(zonesBlock(), "limits"), tag(floorBlock(), "limits"),
     tag(rangeBlock(sel), "limits"), tag(laserBlock(ls), "limits")].filter(Boolean));
   loadOwn();
 }
 
 export function initMovePanel() {
+  // Point sizes its map and pad from the height there is (app.css --ph)
+  const pane = document.querySelector('.tab-pane[data-pane="position"]');
+  if (pane && window.ResizeObserver) new ResizeObserver(() => pane.style.setProperty("--ph", `${pane.clientHeight}px`)).observe(pane);
   on("snapshot", () => render());
   on("lite", () => render());
   on("selection", () => render());

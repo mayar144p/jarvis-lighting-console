@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import time
@@ -400,6 +401,10 @@ class QuickMixin:
                      for k, c in list(params["cells"].items())[:16] if str(k).isdigit() and isinstance(c, dict)}
             if any(cells.values()):
                 out["cells"] = {k: c for k, c in cells.items() if c}
+        if name in fxlib_mod.COLOUR_FX and params.get("colours"):
+            cols = fxlib_mod.clean_colours(params["colours"])
+            if cols:
+                out["colours"] = cols           # its own colours to go through
         for k, v in params.items():
             if k in known and v not in (None, ""):
                 try:
@@ -601,6 +606,19 @@ class QuickMixin:
     def _quick_layouts(self) -> dict:
         return dict(self.__dict__.get("quick_layout") or {})
 
+    @staticmethod
+    def _quick_phantoms(layout: dict, quick: list, names: dict) -> dict:
+        """A page grid with no page under it (no button, no name, past the
+        first four) is dropped: "Every page" used to write a grid on all 32,
+        and an old show then listed 32 empty pages that couldn't go."""
+        used = {str(b.get("page")) for b in quick} | {k for k, v in (names or {}).items() if v}
+        empty = {k for k in layout if k not in used and int(k) > 4}
+        # one or two grids made ready before their buttons are kept: only
+        # the "every page" stamp (grids on a run of empty pages) goes
+        if len(empty) < 8:
+            return layout
+        return {k: v for k, v in layout.items() if k not in empty}
+
     def _quick_layout_load(self, raw) -> dict:
         """A show file's page grids, checked (a bad entry is dropped)."""
         out: dict = {}
@@ -636,7 +654,10 @@ class QuickMixin:
         # never more buttons than a page holds, never fewer rows than one
         cur["rows"] = int(_clamp(cur["rows"], 1, self.QUICK_SLOTS // cur["cols"]))
         lay = self._quick_layouts()
-        for p in (range(1, self.QUICK_PAGES + 1) if _truthy(all_pages) else [page]):
+        # "every page": the first four and every page that is there (buttons
+        # or a name), and this one - never 32 empty pages
+        there = {1, 2, 3, 4} | {b["page"] for b in self.quick} | {int(k) for k, v in (getattr(self, "quick_names", {}) or {}).items() if v}
+        for p in (sorted(there | {page}) if _truthy(all_pages) else [page]):
             if cur == self.LAYOUT_DEFAULT:
                 lay.pop(str(p), None)
             else:
@@ -647,11 +668,20 @@ class QuickMixin:
         return {"page": page, "layout": cur, "hidden": hidden,
                 "summary": f"page {page}: {cur['cols']} across, {cur['rows']} rows{note}"}
 
-    def _a_quick_page(self, page=1, name="", delete=False, swap=None, **_):
+    def _a_quick_page(self, page=1, name="", delete=False, swap=None, tidy=False, **_):
         """Name a page of buttons ("Main", "Movers", "Drops"); `delete`
         empties it (its buttons, name and grid); `swap` trades places with
         another page - every go-to-page button, timeline clip and sound
-        trigger follows its buttons to their new place."""
+        trigger follows its buttons to their new place.  `tidy`: every page
+        with no buttons goes (its name and grid), in one step."""
+        if _truthy(tidy):
+            have = {str(b["page"]) for b in self.quick}
+            names = dict(getattr(self, "quick_names", {}) or {})
+            lay = self._quick_layouts()
+            gone = sorted({int(k) for k in (set(names) | set(lay)) if k not in have and int(k) > 1})
+            self.quick_names = {k: v for k, v in names.items() if k in have or k == "1"}
+            self.quick_layout = {k: v for k, v in lay.items() if k in have or k == "1"}
+            return {"removed": gone, "summary": f"{len(gone)} empty page{'' if len(gone) == 1 else 's'} removed" if gone else "No empty pages"}
         page = int(_clamp(page, 1, self.QUICK_PAGES))
         if _truthy(delete):
             gone = [b for b in self.quick if b["page"] == page]
@@ -671,6 +701,135 @@ class QuickMixin:
             names.pop(str(page), None)
         self.quick_names = names
         return {"page": page, "name": name, "summary": f"page {page}: {name or 'unnamed'}"}
+
+    # ---- button profiles: whole sets of pages ("Default", "Halloween") ----
+    # The profile in use IS self.quick / quick_names / quick_layout; the
+    # others wait in quick_profiles["sets"], each with the same three.
+    PROFILE_DEFAULT = "Default"
+
+    def _profiles(self) -> dict:
+        p = self.__dict__.get("quick_profiles")
+        if not isinstance(p, dict) or not p.get("order"):
+            p = {"active": self.PROFILE_DEFAULT, "order": [self.PROFILE_DEFAULT], "sets": {}}
+            self.__dict__["quick_profiles"] = p
+        return p
+
+    def _profiles_saved(self) -> dict:
+        """The profiles for a show file / undo (the one in use is self.quick)."""
+        p = self._profiles()
+        return {"active": p["active"], "order": list(p["order"]),
+                "sets": json.loads(json.dumps(p["sets"], default=str)),
+                # the show each AI-made profile plays (app/showkit.py): its design
+                "shows": json.loads(json.dumps(p.get("shows") or {}, default=str))}
+
+    def _profiles_load(self, raw) -> dict:
+        """Profiles from a show file: tidied, the active one's buttons are
+        the show's own `quick` (loaded the usual way)."""
+        if not isinstance(raw, dict):
+            raw = {}
+        order = [str(n).strip()[:24] for n in (raw.get("order") or []) if str(n).strip()]
+        order = list(dict.fromkeys(order)) or [self.PROFILE_DEFAULT]
+        if self.PROFILE_DEFAULT not in order:
+            order.insert(0, self.PROFILE_DEFAULT)
+        active = str(raw.get("active") or "").strip()[:24]
+        if active not in order:
+            active = self.PROFILE_DEFAULT
+        sets = {}
+        for name, s in (raw.get("sets") or {}).items():
+            name = str(name).strip()[:24]
+            if name not in order or name == active or not isinstance(s, dict):
+                continue
+            quick = []
+            for b in s.get("quick") or []:
+                try:
+                    quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            names = s.get("quick_names")
+            sets[name] = {"quick": quick,
+                          "quick_names": {str(k): str(v)[:16] for k, v in names.items()} if isinstance(names, dict) else {},
+                          "quick_layout": self._quick_phantoms(self._quick_layout_load(s.get("quick_layout")), quick,
+                                                               names if isinstance(names, dict) else {})}
+        for name in order:                 # a profile with nothing saved yet: empty
+            if name != active and name not in sets:
+                sets[name] = {"quick": [], "quick_names": {}, "quick_layout": {}}
+        shows = {str(k)[:24]: v for k, v in (raw.get("shows") or {}).items()
+                 if str(k)[:24] in order and isinstance(v, dict) and isinstance(v.get("design"), dict)}
+        return {"active": active, "order": order, "sets": sets, "shows": shows}
+
+    def _profile_take(self, name: str) -> None:
+        """Put profile `name`'s buttons on the desk; the one in use is kept."""
+        p = self._profiles()
+        self._a_quick_release_all()
+        self.__dict__["quick_editing"] = None
+        p["sets"][p["active"]] = {"quick": self.quick, "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                                  "quick_layout": self._quick_layouts()}
+        s = p["sets"].pop(name, None) or {}
+        self.quick = list(s.get("quick") or [])
+        self.quick_names = dict(s.get("quick_names") or {})
+        self.quick_layout = dict(s.get("quick_layout") or {})
+        p["active"] = name
+
+    def _profile_name(self, name) -> str:
+        p = self._profiles()
+        name = str(name or "").strip()
+        hit = next((n for n in p["order"] if n.lower() == name.lower()), None)
+        if hit is None:
+            raise ValueError(f"no button profile called {name!r} (there are: {', '.join(p['order'])})")
+        return hit
+
+    def _a_quick_profile_use(self, name="", **_):
+        """Switch to another set of buttons ("Halloween"): every button of
+        the one in use is let go first; its pages wait for next time."""
+        name = self._profile_name(name)
+        if name == self._profiles()["active"]:
+            return {"profile": name, "summary": f"already on the {name} buttons"}
+        self._profile_take(name)
+        n = len(self.quick)
+        return {"profile": name, "summary": f"{name} buttons ({n} button{'s' if n != 1 else ''})"}
+
+    def _a_quick_profile(self, new=None, copy=False, rename=None, to=None, delete=None, **_):
+        """Button profiles: `new` makes one (empty, or a `copy` of the one
+        in use) and switches to it; `rename` + `to`; `delete` (never
+        Default, which is always there)."""
+        p = self._profiles()
+        if new not in (None, ""):
+            name = str(new).strip()[:24]
+            if any(n.lower() == name.lower() for n in p["order"]):
+                raise ValueError(f"there is already a button profile called {name!r}")
+            p["order"].append(name)
+            if _truthy(copy):
+                p["sets"][name] = {"quick": [dict(b) for b in self.quick],
+                                   "quick_names": dict(getattr(self, "quick_names", {}) or {}),
+                                   "quick_layout": json.loads(json.dumps(self._quick_layouts()))}
+            self._profile_take(name)
+            return {"profile": name, "summary": f"new button profile {name!r}" + (" (a copy)" if _truthy(copy) else "")}
+        if rename not in (None, ""):
+            old = self._profile_name(rename)
+            name = str(to or "").strip()[:24]
+            if old == self.PROFILE_DEFAULT:
+                raise ValueError("the Default profile keeps its name")
+            if not name:
+                raise ValueError("give the profile a name")
+            if any(n.lower() == name.lower() and n != old for n in p["order"]):
+                raise ValueError(f"there is already a button profile called {name!r}")
+            p["order"] = [name if n == old else n for n in p["order"]]
+            if old in p["sets"]:
+                p["sets"][name] = p["sets"].pop(old)
+            if p["active"] == old:
+                p["active"] = name
+            return {"profile": name, "summary": f"button profile {old!r} is now {name!r}"}
+        if delete not in (None, ""):
+            name = self._profile_name(delete)
+            if name == self.PROFILE_DEFAULT:
+                raise ValueError("the Default profile can't be deleted")
+            if p["active"] == name:
+                self._profile_take(self.PROFILE_DEFAULT)
+            p["sets"].pop(name, None)
+            p["order"] = [n for n in p["order"] if n != name]
+            return {"profile": p["active"], "summary": f"button profile {name!r} deleted"}
+        return {"profile": p["active"], "profiles": list(p["order"]),
+                "summary": f"on the {p['active']} buttons; profiles: {', '.join(p['order'])}"}
 
     def _quick_swap_pages(self, a: int, b: int) -> dict:
         if a == b:
@@ -909,10 +1068,10 @@ class QuickMixin:
         return out
 
     def _a_quick_group_controls(self, group=None, page=None, **_):
-        """A group's own controls on the buttons page, in one go: a Pulse
-        button, a Speed fader (its effects and moves - the pulse too), a
-        Strobe button and a Strobe speed fader, side by side - each renamed
-        like any button.  (Its level is the group's fader beside Blackout.)"""
+        """A group's own controls on the buttons page, in one go: a Speed
+        fader (its effects and moves), a Strobe button and a Strobe speed
+        fader, side by side - each renamed like any button.  (Its level is
+        the group's fader beside Blackout.)"""
         if group in (None, "") or isinstance(group, (dict, list, bool)):
             raise ValueError("which group? (its number)")
         g = self._group(group=group)
@@ -920,8 +1079,7 @@ class QuickMixin:
         page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
         used = self._quick_taken(page, lay["cols"])
-        tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
-                 {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
+        tiles = [{"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
                  {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10, "follow_fader": True},
                  {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 31}]
         total = lay["cols"] * lay["rows"]
@@ -937,7 +1095,7 @@ class QuickMixin:
             ids.append(btn["id"])
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"ids": ids, "page": page,
-                "summary": f"{g['name']}: pulse, speed, strobe and strobe speed on page {page}"}
+                "summary": f"{g['name']}: speed, strobe and strobe speed on page {page}"}
 
     def _quick_taken(self, page: int, cols: int) -> set:
         """The places on a page with a button - or under a big one."""
@@ -1853,7 +2011,7 @@ class QuickMixin:
             what.append(", ".join(sorted(beam)[:4]))
         return what
 
-    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, keep=None, **_):
+    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, keep=None, slot=None, **_):
         """Make a button of what the selected lights do now - position,
         colour, gobo..., and the movement or effects running on them - and
         turn it on: it holds those lights (the programmer lets go of them)
@@ -1870,7 +2028,7 @@ class QuickMixin:
         raw = self._quick_capture({"label": str(label or "My look")[:24], "kind": "custom", "mode": "latch",
                                    "target": target, "hold": True, **({"keep": want} if want else {})},
                                   live=True)
-        res = self._a_quick_set(page=page, slot="free", button=raw)
+        res = self._a_quick_set(page=page, slot=slot if slot not in (None, "") else "free", button=raw)
         key = res.get("id") or next((b["id"] for b in reversed(self.quick) if b["label"] == raw["label"]), None)
         # the programmer lets go of what the button has now (of a colour-only
         # button, only the colour: the movement stays in the programmer)

@@ -1,8 +1,8 @@
 // Dialogs: add fixtures, fixture profiles, DMX channels, CSV import, shows
 // and help.  Cues, settings and the one-light dialogs live in their own
 // files and are re-exported here, so `./dialogs.js` still has them all.
-import { FixturePreview } from "/js/stage/stage.js";
 import { get, post, token, modelBytes } from "./api.js";
+import { HAS_3D } from "./view3d.js";
 import { openNewShow, startTour } from "./welcome.js";
 import { state, patch, selected } from "./store.js";
 import { run } from "./actions.js";
@@ -47,15 +47,23 @@ export function openAddDialog(query = "") {
     h("div.lib", tabs, h("div.lib-search", search), shareNote, list), right);
 
   const close = modal({
-    title: "Add fixtures", wide: true, body,
+    title: "Add lights", wide: true, body,
     foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
       h("button.btn", { title: "Ask for a light no library has yet: it opens a filled-in request on the desk's GitHub page", onclick: () => requestFixture(search.value) }, "Request it…"),
       h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],
-    onClose: () => { if (preview) { preview.destroy(); preview = null; } },
+    onClose: () => { shut = true; if (preview) { preview.destroy(); preview = null; } },
   });
 
-  preview = new FixturePreview(pv);
+  // the light turning in 3D: only with the 3D view on (three.js loads now)
+  let shut = false;
+  if (HAS_3D) {
+    import("/js/stage/preview.js").then((m) => {
+      if (shut) return;
+      preview = new m.FixturePreview(pv);
+      if (chosen && chosen.body) showModel(chosen);
+    }).catch(() => { /* no 3D graphics here: the list still works */ });
+  }
 
   // the fixture shown on the right must be one of the results on the left:
   // a pick left over from before the search was what "Add to stage" added
@@ -232,7 +240,7 @@ export function openAddDialog(query = "") {
     return n.length ? `${n.join(" or ")} ch` : `${(modes || []).length} mode(s)`;
   };
 
-  // One box, every source: installed first, then the Jarvis library,
+  // One box, every source: installed first, then the Haze library,
   // OFL and QLC+ (offline), then GDTF Share when signed in.
   async function searchAll() {
     const my = ++seq;
@@ -455,7 +463,7 @@ export async function openShowMenu(anchor, menuFn) {
     { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
     { label: "Save everything to a file…", hint: "to move it to another computer: the show, its fixtures, per-light settings and files", run: saveEverything },
-    { label: "Open everything from a file…", hint: "a .jarvis file from another computer", run: openEverything },
+    { label: "Open everything from a file…", hint: "a .haze file (or an older .jarvis one) from another computer", run: openEverything },
     { label: "Paperwork…", hint: "light plot, patch sheet, rigging - print / PDF", run: () => window.open("/plot.html", "_blank") },
     { label: "Import MVR plot…", hint: "Vectorworks, Capture, grandMA3: lights patched and placed", run: importMvr },
     { label: "Export as MVR", hint: "the patch and the rigging, for other programs", run: exportMvr },
@@ -631,7 +639,7 @@ export function importMvr() {
     const t = token();
     const r = await fetch(`/api/mvr/import${replace ? "?replace=1" : ""}`, {
       method: "POST", body: file,
-      headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+      headers: { "Content-Type": "application/x-haze-upload", ...(t ? { "X-Haze-Token": t } : {}) },
     });
     const d = await r.json().catch(() => ({ error: `import failed (${r.status})` }));
     if (!d.ok) { toast(d.error || "Nothing could be imported", "bad"); if (!(d.problems || []).length) return; }
@@ -649,7 +657,7 @@ export function importMvr() {
 
 async function exportMvr() {
   const t = token();
-  const r = await fetch("/api/mvr/export", { headers: t ? { "X-Jarvis-Token": t } : {} });
+  const r = await fetch("/api/mvr/export", { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
     toast(d.error || `export failed (${r.status})`, "bad");
@@ -687,29 +695,29 @@ export async function saveShow(name) {
 }
 
 // Show menu -> Save everything to a file: the show saved, then it with its
-// fixtures, per-light settings and files as one .jarvis file, where the
+// fixtures, per-light settings and files as one .haze file, where the
 // operator picks (the desktop app asks; a browser that can, asks too)
 async function saveEverything() {
   const name = await saveShow((state.snap && state.snap.show_file) || "");
   if (!name) return;
   const t = token();
-  const r = await fetch("/api/console/pack?show=" + encodeURIComponent(name), { headers: t ? { "X-Jarvis-Token": t } : {} });
+  const r = await fetch("/api/console/pack?show=" + encodeURIComponent(name), { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
     toast(d.error || `could not make the file (${r.status})`, "bad");
     return;
   }
-  const file = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, `${name}.jarvis`])[1];
+  const file = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, `${name}.haze`])[1];
   const bytes = new Uint8Array(await r.arrayBuffer());
   try {
-    if (window.jarvisDesk && window.jarvisDesk.saveAs) {
-      const where = await window.jarvisDesk.saveAs(file, bytes);
+    if (window.hazeDesk && window.hazeDesk.saveAs) {
+      const where = await window.hazeDesk.saveAs(file, bytes);
       if (where) toast(`Saved everything to ${where}`, "ok", 8000);
       return;
     }
     if (window.showSaveFilePicker) {
       const fh = await window.showSaveFilePicker({ suggestedName: file,
-        types: [{ description: "Jarvis show (everything)", accept: { "application/zip": [".jarvis"] } }] });
+        types: [{ description: "Haze show (everything)", accept: { "application/zip": [".haze"] } }] });
       const w = await fh.createWritable();
       await w.write(bytes);
       await w.close();
@@ -718,7 +726,7 @@ async function saveEverything() {
     }
   } catch (e) {
     if (e && e.name === "AbortError") return;             // the Save box was cancelled
-    if (window.jarvisDesk && window.jarvisDesk.saveAs) { toast(`Not saved: ${e.message || e}`, "bad"); return; }
+    if (window.hazeDesk && window.hazeDesk.saveAs) { toast(`Not saved: ${e.message || e}`, "bad"); return; }
     // the browser wouldn't show its Save box (too long after the click, a
     // policy...): into Downloads instead, below
   }
@@ -731,10 +739,10 @@ async function saveEverything() {
   toast(`${file} is in your Downloads`, "ok", 8000);
 }
 
-// Show menu -> Open everything from a file: a .jarvis file from another
+// Show menu -> Open everything from a file: a .haze file from another
 // computer - its fixtures, settings and files come in, the show opens
 async function openEverything() {
-  const pick = h("input", { type: "file", accept: ".jarvis,.zip", style: { display: "none" } });
+  const pick = h("input", { type: "file", accept: ".haze,.jarvis,.zip", style: { display: "none" } });
   document.body.append(pick);
   pick.addEventListener("change", async () => {
     const file = pick.files && pick.files[0];
@@ -748,7 +756,7 @@ async function openEverything() {
     const t = token();
     const r = await fetch("/api/console/unpack", {
       method: "POST", body: file,
-      headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+      headers: { "Content-Type": "application/x-haze-upload", ...(t ? { "X-Haze-Token": t } : {}) },
     });
     const d = await r.json().catch(() => ({ error: `could not open it (${r.status})` }));
     if (!d.ok) { toast(d.error || "could not open it", "bad", 8000); return; }
@@ -758,34 +766,53 @@ async function openEverything() {
 }
 
 // ================================================================== help
-const KEYS = [
-  ["Space / Enter", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"],
-  ["/ or Ctrl+K", "command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-  ["A / Shift+A", "select all / none"], ["1 … 9", "select fixture 1–9 (Shift adds)"], ["G", "group the selection"],
-  ["L", "locate"], ["C", "clear the programmer"], ["R", "record a cue"], ["O", "overwrite the current cue"], ["I", "insert a cue after the current one"], ["D", "delete the current cue"], ["↑ ↓", "intensity ±5 (Shift ±1)"],
-  ["T / Shift+T", "tap the tempo / this is beat 1"], ["H / Shift+H", "highlight / solo the selection"], ["F", "frame the selection on stage"], ["Alt+1..9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"],
+// Help: three tabs - getting started, the keys (grouped), the command line
+const KEY_GROUPS = [
+  ["Playing the show", [["Space", "GO on the focused playback"], ["B", "back one cue"], ["X", "blackout"], ["Shift+X", "lights back after a blackout"],
+    ["T", "tap the tempo"], ["Shift+T", "this is beat 1"], ["Your keys", "a playback's own GO key (⋯ → Keys and MIDI)"]]],
+  ["Program", [["R", "record a cue"], ["Shift+click Record here", "record at once, no questions"], ["O", "update the cue that is on (merge)"], ["Shift+O", "replace the cue that is on"],
+    ["I / D", "insert a cue after / delete the current one"], ["C", "clear the programmer"], ["L", "locate (open white, centred)"], ["↑ ↓", "intensity ±5 (Shift: ±1)"]]],
+  ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
+    ["[ / ]", "previous / next light, one at a time"], ["{ or }", "all of them again"], ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
+  ["The desk", [["/ or Ctrl+K", "the command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
+    ["F1 / F2 / F3", "Set up / Program / Live"], ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"]]],
 ];
+const KEYS = KEY_GROUPS.flatMap(([, rows]) => rows);
 const SYNTAX = [
-  ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["all warm white", "every fixture warm white"],
-  ["1-4 pan 90", "pan 90° (through each fixture's own range)"], ["group 2 zoom 200", "a group, raw value"],
-  ["cue 3 go", "go to cue 3"], ["record", "record a cue"], ["master 60", "grand master"], ["blackout on", "blackout"],
+  ["1-4 red", "select 1 to 4, colour red"], ["1.3.5 dimmer 70", "select 1, 3 and 5, dimmer 70"], ["1 thru 8 @ 50", "select 1 to 8 at 50 %"],
+  ["all warm white", "every light warm white"], ["1-4 pan 90", "pan 90° (each light's own range)"], ["group 2 zoom 200", "a group, a raw value"],
+  ["cue 3 go", "go to cue 3"], ["3 go", "the same"], ["record", "record a cue"], ["master 60", "grand master at 60 %"], ["blackout on", "blackout"],
 ];
+let helpTab = "start";
 
 export function openHelp() {
-  const dl = (rows) => h("dl", ...rows.flatMap(([k, v]) => [h("dt", h("kbd", k)), h("dd", v)]));
+  const rows = (list) => h("div.help-rows", ...list.map(([k, v]) => h("div.help-row", h("kbd", k), h("span", v))));
+  const steps = [
+    ["Set up", "Add your lights (Set up → Add lights), make the room (a template, sizes, or point a light at its corners), put each light where it hangs, then Line up with the real lights so the beams land where the 3D shows."],
+    ["Mark the room", "Teach the room by pointing: the dance floor, the bar, and Not here on walls and the DJ - no beam goes there."],
+    ["Program", "Select lights, set level, colour, position, beam; save palettes; Record cue… onto a playback (or Make a button…)."],
+    ["Live", "GO on the playbacks, the buttons page for hits, tap the tempo. Lock the desk (top bar) so nothing gets changed by mistake."],
+    ["Go live", "Everything so far is BLIND - nothing reaches the lights. When the rig is connected: Go live. Hold to stop."],
+  ];
+  const panes = {
+    start: () => h("ol.help-steps", ...steps.map(([t, d]) => h("li", h("b", t), h("span", d)))),
+    keys: () => h("div.help-groups", ...KEY_GROUPS.map(([title, list]) => h("section.help-card", h("h4", title), rows(list)))),
+    cmd: () => h("div", h("p.small", "Type in the command bar (/ or any number key): console syntax runs straight away."),
+      h("section.help-card", rows(SYNTAX)),
+      h("p.muted.small", "Anything that is not console syntax - “slow blue wash on the movers” - goes to the copilot, which shows you the plan before it touches the rig.")),
+  };
+  const tabs = h("div.seg.help-tabs");
+  const pane = h("div.help-pane");
+  const show = (k) => {
+    helpTab = k;
+    for (const b of tabs.children) b.classList.toggle("on", b.dataset.k === k);
+    pane.replaceChildren(panes[k]());
+  };
+  for (const [k, l] of [["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]]) tabs.append(h("button", { dataset: { k }, onclick: () => show(k) }, l));
+  show(helpTab);
   modal({
     title: "Help", wide: true,
-    body: h("div.help-grid",
-      h("div", h("h3", "Keys"), dl(KEYS)),
-      h("div", h("h3", "Command bar syntax"), dl(SYNTAX),
-        h("p.muted.small", "Anything that is not console syntax - “slow blue wash on the movers” - goes to the copilot, which shows you the plan before it touches the rig.")),
-      h("div", h("h3", "Workflow"),
-        h("ol", { style: { paddingLeft: "18px", color: "var(--text-2)", lineHeight: 1.6, margin: 0 } },
-          h("li", "Add fixtures - they appear on the stage straight away."),
-          h("li", "Drag them to where they hang (Shift+drag for height)."),
-          h("li", "Select, then set intensity, colour, position, beam."),
-          h("li", "Record cues onto a playback and press GO."),
-          h("li", "When the rig is connected: Go live.")))),
+    body: h("div.help", tabs, pane),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
       h("button.btn", { title: "A minute round the mode on screen (Set up, Program or Live)", onclick: () => { closeTopModal(); startTour(); } },
         `Take the tour (${{ setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program"})`),

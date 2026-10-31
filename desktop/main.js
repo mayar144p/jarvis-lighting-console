@@ -1,4 +1,4 @@
-// Jarvis as a desktop app (docs/BACKLOG.md A9 step 1).
+// Haze as a desktop app (docs/BACKLOG.md A9 step 1).
 //
 // Nothing is rewritten: this starts the same Python engine, hidden, on a
 // free port that only this computer can reach, with a private key shared
@@ -8,12 +8,31 @@
 //   cd desktop && npm install && npm start      (or run-desktop.bat / .sh)
 "use strict";
 const { app, BrowserWindow, Menu, dialog, ipcMain, powerSaveBlocker, screen, session, shell } = require("electron");
+
+// A touch screen is the desk's control surface, not a web page: a sideways
+// swipe must not go "back" a page, a pinch must not zoom it (set before the
+// app is ready; the page's CSS and guard() below back this up)
+app.commandLine.appendSwitch("overscroll-history-navigation", "0");
+app.commandLine.appendSwitch("disable-pinch");
+app.commandLine.appendSwitch("disable-features", "OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation");
 const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
+
+// The desk's own folder (shows, settings, saved windows) was named "Jarvis"
+// before the desk was called Haze: it moves to "Haze" once, before anything
+// reads it; if it can't be moved (in use), the desk keeps using it there.
+(function moveOldFolder() {
+  try {
+    const appData = app.getPath("appData");
+    const neu = path.join(appData, "Haze"), old = path.join(appData, "Jarvis");
+    if (fs.existsSync(neu) || !fs.existsSync(old)) return;
+    try { fs.renameSync(old, neu); } catch { app.setPath("userData", old); }
+  } catch { /* the default folder */ }
+})();
 
 // Installed: the engine's files and a Python of its own sit in the app's
 // resources (see .github/workflows/desktop.yml).  From the repo: the repo.
@@ -24,10 +43,10 @@ const STATE_FILE = () => path.join(app.getPath("userData"), "windows.json");
 
 // the parts of the desk a window can show (?window=... in web/app/main.js)
 const PARTS = {
-  main: { q: "", title: "Jarvis" },
-  stage: { q: "stage", title: "Jarvis - 3D view" },
-  desk: { q: "desk", title: "Jarvis - Programmer" },
-  playbacks: { q: "playbacks", title: "Jarvis - Playbacks" },
+  main: { q: "", title: "Haze" },
+  stage: { q: "stage", title: "Haze - 3D view" },
+  desk: { q: "desk", title: "Haze - Programmer" },
+  playbacks: { q: "playbacks", title: "Haze - Playbacks" },
 };
 
 let engine = null, base = "", quitting = false, restarting = false, saved = {};
@@ -36,6 +55,26 @@ const open = new Map();                       // part -> BrowserWindow
 const reopen = new Set();                     // the windows to open next time
 
 // ---------------------------------------------------------------- engine
+// This computer only: the same port every time (8788, remembered; the
+// first free one after it if something else has it).  The desk keeps its screen settings -
+// window layouts, looks, text size, quality - per address, so a new port
+// at every start (as it was) came back with all of them reset.
+function localPort() {
+  // (its own port, not 8787 - a desk server started by hand sits there)
+  const want = +saved._localPort || 8788;
+  const tryPort = (p) => new Promise((resolve) => {
+    const s = net.createServer();
+    s.once("error", () => resolve(0));
+    s.listen(p, "127.0.0.1", () => s.close(() => resolve(p)));
+  });
+  return (async () => {
+    for (const p of [want, ...Array.from({ length: 20 }, (_, i) => 8788 + i)]) {   // eslint-disable-line no-await-in-loop
+      if (await tryPort(p)) { if (saved._localPort !== p) { saved._localPort = p; saveState(); } return p; }
+    }
+    return freePort();
+  })();
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -46,13 +85,13 @@ function freePort() {
 
 // The first Python that really runs.  Not just $PYTHON: on some computers
 // it names a folder (...\Python312\Scripts), and on Windows "python" can be
-// the Microsoft Store stand-in, which runs nothing.  JARVIS_PYTHON wins.
+// the Microsoft Store stand-in, which runs nothing.  HAZE_PYTHON wins.
 function findPython() {
   const win = process.platform === "win32";
   const tries = [];
   const own = path.join(process.resourcesPath, "python", win ? "python.exe" : "bin/python3");
   if (PACKED && fs.existsSync(own)) return [own, []];   // the installer's own Python
-  for (const v of [process.env.JARVIS_PYTHON, process.env.PYTHON]) {
+  for (const v of [process.env.HAZE_PYTHON, process.env.PYTHON]) {
     if (!v) continue;
     let p = v.replace(/^"|"$/g, "");
     try { if (fs.statSync(p).isDirectory()) p = path.join(p, win ? "python.exe" : "python3"); } catch { continue; }
@@ -67,7 +106,7 @@ function findPython() {
 }
 
 // Installed, the shows, fixtures, settings (.env) and inbox live in the
-// user's own folder (AppData\Roaming\Jarvis): they survive updates and a
+// user's own folder (AppData\Roaming\Haze): they survive updates and a
 // reinstall.  From the repo: the repo's data/ and .env (made from
 // .env.example the first time).
 function userFolders() {
@@ -129,7 +168,7 @@ const isTailscale = (a) => { const [x, y] = a.split(".").map(Number); return x =
 // isn't asked again - the page then just never loads on the other
 // computer.  One rule for the desk's port, from this network and Tailscale
 // only (never the open internet), added after Windows' admin prompt.
-const fwName = (port) => `Jarvis desk (port ${port})`;
+const fwName = (port) => `Haze desk (port ${port})`;
 function firewallHasRule(port) {
   if (process.platform !== "win32") return true;
   const r = spawnSync("netsh", ["advfirewall", "firewall", "show", "rule", `name=${fwName(port)}`], { windowsHide: true });
@@ -143,21 +182,23 @@ function firewallAllow(port) {
   return firewallHasRule(port);
 }
 
-// Jarvis from the repo brings itself up to date every time it opens, like
+// Haze from the repo brings itself up to date every time it opens, like
 // tools/update.py fast-forwards to the latest version (never with
 // local edits; your data is never touched).  If the update changed the app
 // itself, it opens again on the new version.  The installed app has no
 // repo to update from, so it skips this.
 async function selfUpdate() {
   if (PACKED || !fs.existsSync(path.join(ROOT, ".git"))) return;
+  // AUTO_UPDATE=false (as the engine reads it): no check, no "Checking" window
+  if (/^(false|0|no|off)$/i.test(String(process.env.AUTO_UPDATE || "").trim())) return;
   const found = findPython();
   if (!found) return;
-  const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
+  const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#070b10", show: false });
   // charset: without it Windows reads the "…" as "â€¦"
   splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
-    "<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0d;"
+    "<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;height:100vh;background:#070b10;"
     + "color:#c9cad3;font:14px system-ui;border:1px solid #303037;box-sizing:border-box'>"
-    + "<div style='text-align:center'><b style='color:#ececf0;letter-spacing:.08em'>JARVIS</b>"
+    + "<div style='text-align:center'><b style='color:#ececf0;letter-spacing:.08em'>HAZE</b>"
     + "<div style='margin-top:6px;color:#8e8e9a'>Checking for updates…</div></div></body>"));
   splash.once("ready-to-show", () => splash.show());
   const run = (cmd, args, opts = {}) => new Promise((resolve) => {
@@ -191,10 +232,10 @@ async function selfUpdate() {
 
 async function startEngine() {
   const remote = desk().remotes && desk().code;
-  const port = remote ? await portOr(desk().port) : await freePort();
+  const port = remote ? await portOr(desk().port) : await localPort();
   key = remote ? desk().code : TOKEN;
   const found = findPython();
-  if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Jarvis again");
+  if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Haze again");
   const [py, pre] = found;
   const log = fs.createWriteStream(path.join(app.getPath("userData"), "engine.log"), { flags: "w" });
   engine = spawn(py, [...pre, "app/main.py"], {
@@ -202,7 +243,7 @@ async function startEngine() {
     // HOST: this computer only (or the network, for phones).  CONSOLE_TOKEN:
     // the key.  The engine shuts down cleanly when our end of its stdin closes.
     env: { ...process.env, ...userFolders(), HOST: remote ? "0.0.0.0" : "127.0.0.1", PORT: String(port),
-      CONSOLE_TOKEN: key, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+      CONSOLE_TOKEN: key, HAZE_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);
@@ -210,12 +251,12 @@ async function startEngine() {
   engine.once("exit", (code) => {
     died = code;
     if (!quitting && !restarting) {
-      dialog.showErrorBox("Jarvis stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
+      dialog.showErrorBox("Haze stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
       app.exit(1);
     }
   });
   engine.once("error", (e) => {
-    dialog.showErrorBox("Jarvis can't start", `Python didn't start (${e.message}). Install Python 3 from python.org, then open Jarvis again.`);
+    dialog.showErrorBox("Haze can't start", `Python didn't start (${e.message}). Install Python 3 from python.org, then open Haze again.`);
     app.exit(1);
   });
   base = `http://127.0.0.1:${port}/`;
@@ -262,14 +303,28 @@ function openPart(part) {
   const mem = saved[part];
   const place = mem && onScreen(mem.bounds) ? mem : defaultPlace(part);
   const win = new BrowserWindow({
-    ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
-    icon: path.join(__dirname, "res", "icon.png"),
+    ...place.bounds, title: PARTS[part].title, backgroundColor: "#070b10", show: false,
+    icon: path.join(__dirname, "res", "icon.png"), minWidth: 1024, minHeight: 600,
+    // no system title bar: the desk's own top bar is the bar (drag it to move
+    // the window; minimise, maximise and close at its right end).  A Mac
+    // keeps its three window dots, over the top bar's left corner.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hidden", trafficLightPosition: { x: 12, y: 15 } } : { frame: false }),
     webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") },
   });
   open.set(part, win);
   reopen.add(part);
   win.loadURL(base + (PARTS[part].q ? `?window=${PARTS[part].q}` : ""));
-  win.once("ready-to-show", () => { if (place.full) win.setFullScreen(true); win.show(); });
+  win.once("ready-to-show", () => {
+    if (place.full) win.setFullScreen(true);
+    // a window opened from the desk comes to the front, not behind it
+    if (part === "stage" && saved._stageOnTop) win.setAlwaysOnTop(true, "floating");
+    win.show();
+    win.moveTop();
+    win.focus();
+  });
+  const tellState = () => { if (!win.isDestroyed()) win.webContents.send("win:state", { max: win.isMaximized(), full: win.isFullScreen(), top: win.isAlwaysOnTop() }); };
+  for (const ev of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "always-on-top-changed"]) win.on(ev, tellState);
+  win.webContents.on("did-finish-load", tellState);
   const remember = () => {
     if (win.isDestroyed()) return;
     saved[part] = { bounds: win.isFullScreen() || win.isMaximized() ? win.getNormalBounds() : win.getBounds(), full: win.isFullScreen() };
@@ -292,6 +347,7 @@ function openPart(part) {
     if (!open.size) app.quit();
   });
   guard(win.webContents);
+  watchFullScreen(win);
   win.webContents.on("did-start-loading", () => pageUp.delete(win.webContents));   // asks wait for the new page
   return win;
 }
@@ -307,11 +363,11 @@ ipcMain.on("desk:ready", (e) => pageUp.add(e.sender));
 // stick, another drive) - not straight into Downloads like other saves
 ipcMain.handle("desk:saveAs", async (e, name, bytes) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  const safe = String(name || "show.jarvis").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) || "show.jarvis";
+  const safe = String(name || "show.haze").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) || "show.haze";
   const r = await dialog.showSaveDialog(win, {
     title: "Save the show and everything it needs",
     defaultPath: path.join(app.getPath("documents"), safe),
-    filters: [{ name: "Jarvis show (everything)", extensions: ["jarvis"] }],
+    filters: [{ name: "Haze show (everything)", extensions: ["haze"] }],
   });
   if (r.canceled || !r.filePath) return null;
   await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
@@ -368,7 +424,7 @@ let quitAsk = null;
 function confirmQuit(win) {
   if (!quitAsk) {
     quitAsk = ask(win, {
-      title: "Close Jarvis?", type: "question", buttons: ["Keep the desk open", "Close Jarvis"], primary: 0, cancel: 0, danger: 1,
+      title: "Close Haze?", type: "question", buttons: ["Keep the desk open", "Close Haze"], primary: 0, cancel: 0, danger: 1,
       detail: "The show is saved. The lights stop getting DMX from this computer.",
     }).then((r) => { if (r === 1) quitting = true; return r === 1; })
       .finally(() => { quitAsk = null; });
@@ -385,6 +441,11 @@ function guard(wc) {
     if (k === "f5" || (mod && (k === "r" || k === "w"))) e.preventDefault();
   });
   wc.on("will-navigate", (e, url) => { if (!url.startsWith(base)) { e.preventDefault(); shell.openExternal(url); } });
+  // no zoom by pinch, and no page to go "back" to: a stray swipe stays in the show
+  wc.on("did-finish-load", () => {
+    wc.setVisualZoomLevelLimits(1, 1).catch(() => {});
+    try { wc.navigationHistory.clear(); } catch { /* an older Electron: the switches above */ }
+  });
   wc.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(base)) return { action: "allow" };
     if (/^https?:/i.test(url)) shell.openExternal(url);
@@ -407,6 +468,176 @@ function powershell(script, opts = {}) {
     { windowsHide: true, stdio: "ignore", ...opts });
 }
 const EDGE_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI";
+// Windows 11's three- and four-finger touch gestures (switch apps, show the
+// desktop): Settings > Bluetooth & devices > Touch, kept per user here (no
+// administrator needed; starts after signing back in)
+const FINGERS_KEY = "HKCU\\Control Panel\\Desktop";
+// ---- full screen = every Windows touch gesture locked ---------------------
+// While a desk window is full screen (the buttons page, a Show mode screen)
+// Windows' touch gestures are locked, and back as they were when it leaves:
+//  - edge swipes: the window's own "no edge gestures while full screen"
+//    switch (System.EdgeGesture.DisableTouchWhenFullscreen).  Windows only
+//    keeps it set from the window's own process, so it is set here, through
+//    koffi (calls into Windows from the app itself) - a helper process's
+//    setting was dropped;
+//  - Windows 11's own per-user switches (Settings > Bluetooth & devices >
+//    Touch): swipes in from the left and right edges, and the three- and
+//    four-finger gestures (switch apps, show the desktop) - off while full
+//    screen and put back exactly as they were after (at the next start if
+//    the app stopped while full screen).  No administrator needed.
+// What Windows took is written to touchlock.log in the app's data folder.
+// The whole-computer lock (Desk menu, admin once) stays the sure way.
+const gestureLock = () => saved._gestureLock !== false;   // (Desk menu: on by default)
+let ffi;                                       // undefined: not loaded yet; null: none here
+function winApi() {
+  if (ffi !== undefined) return ffi;
+  ffi = null;
+  if (process.platform !== "win32") return ffi;
+  try {
+    const koffi = require("koffi");
+    koffi.struct("JGUID", { d1: "uint32", d2: "uint16", d3: "uint16", d4: koffi.array("uint8", 8) });
+    koffi.struct("JPKEY", { fmtid: "JGUID", pid: "uint32" });
+    koffi.struct("JPROPVAR", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", val: "int64", pad: "int64" });
+    // (what a window's store hands back: Windows keeps these values as text)
+    koffi.struct("JPROPVARP", { vt: "uint16", r1: "uint16", r2: "uint16", r3: "uint16", p: "void *", pad: "int64" });
+    const ole32 = koffi.load("ole32.dll");
+    const shell32 = koffi.load("shell32.dll"), user32 = koffi.load("user32.dll");
+    ffi = {
+      koffi,
+      free: ole32.func("void __stdcall CoTaskMemFree(void *p)"),
+      getStore: shell32.func("long __stdcall SHGetPropertyStoreForWindow(void *hwnd, JGUID *riid, _Out_ void **ppv)"),
+      settingChange: user32.func("intptr_t __stdcall SendMessageTimeoutW(intptr_t hwnd, uint32 msg, uintptr_t wp, const char16_t *lp, uint32 flags, uint32 ms, _Out_ uintptr_t *res)"),
+      GetValue: koffi.proto("long __stdcall JGetValue(void *self, JPKEY *key, _Out_ JPROPVARP *pv)"),
+      SetValue: koffi.proto("long __stdcall JSetValue(void *self, JPKEY *key, JPROPVAR *pv)"),
+      Commit: koffi.proto("long __stdcall JCommit(void *self)"),
+      Release: koffi.proto("uint32 __stdcall JRelease(void *self)"),
+    };
+  } catch (e) { touchLog(`no Windows calls here: ${e.message}`); }
+  return ffi;
+}
+const guid = (s) => {
+  const h = s.replace(/-/g, "");
+  return { d1: parseInt(h.slice(0, 8), 16), d2: parseInt(h.slice(8, 12), 16), d3: parseInt(h.slice(12, 16), 16),
+    d4: Array.from({ length: 8 }, (_, i) => parseInt(h.slice(16 + i * 2, 18 + i * 2), 16)) };
+};
+function touchLog(line) {
+  try { fs.appendFileSync(path.join(app.getPath("userData"), "touchlock.log"), `${new Date().toISOString()} ${line}\n`); } catch { /* not fatal */ }
+}
+// the window's switch; returns what Windows reads back (1 on, 0 off, <0 refused)
+function edgeSwitch(win, on) {
+  const api = winApi();
+  if (!api || !win || win.isDestroyed()) return -9;
+  try {
+    const { koffi } = api;
+    const b = win.getNativeWindowHandle();
+    const hwnd = b.length >= 8 ? b.readBigUInt64LE(0) : BigInt(b.readUInt32LE(0));
+    const out = [null];
+    const hex = (n) => "0x" + (Number(n) >>> 0).toString(16);
+    const hr = api.getStore(hwnd, guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), out);
+    if (hr !== 0 || !out[0]) { touchLog(`edge switch: no property store (${hex(hr)}, ${typeof out[0]})`); return -2; }
+    const store = out[0];
+    const fns = koffi.decode(koffi.decode(store, "void *"), koffi.array("void *", 8));
+    const key = { fmtid: guid("32CE38B2-2C9A-41B1-9BC5-B3784394AA44"), pid: 2 };
+    const set = koffi.call(fns[6], api.SetValue, store, key, { vt: 11, r1: 0, r2: 0, r3: 0, val: on ? -1 : 0, pad: 0 });
+    const commit = koffi.call(fns[7], api.Commit, store);
+    const got = {};
+    const get = koffi.call(fns[5], api.GetValue, store, key, got);
+    koffi.call(fns[2], api.Release, store);
+    // read back: a boolean, or (as Windows keeps a window's values) its text
+    let back = null;
+    if (got.vt === 11) back = Number(BigInt.asIntN(16, BigInt(koffi.address ? koffi.address(got.p) : 0))) !== 0;
+    if (got.vt === 31 && got.p) {
+      try { back = koffi.decode(got.p, "char16_t", -1); } catch { back = "?"; }
+      try { api.free(got.p); } catch { /* a few bytes */ }
+    }
+    touchLog(`edge switch: hwnd ${hwnd} set ${hex(set)} commit ${hex(commit)} get ${hex(get)} vt ${got.vt} reads ${JSON.stringify(back)}`);
+    if (set !== 0 || commit !== 0) return -1;
+    if (typeof back === "string") return /^(-1|1|true)$/i.test(back.trim()) ? 1 : (/^(0|false)$/i.test(back.trim()) ? 0 : 1);
+    return back === null ? 1 : (back ? 1 : 0);   // set and committed: Windows took it
+  } catch (e) { touchLog(`edge switch failed: ${e.message}`); return -3; }
+}
+// tell Windows (and the shell) a setting changed, so it is read again now
+function settingChanged() {
+  const api = winApi();
+  if (!api) return;
+  for (const what of ["TouchGestureSetting", "Control Panel\\Desktop", "Software\\Microsoft\\Wisp\\Touch"]) {
+    try { api.settingChange(0xffff, 0x001a, 0, what, 0x0002, 1000, [0]); } catch { /* not fatal */ }
+  }
+}
+// the per-user touch switches full screen turns off: [key, value]
+const WISP_KEY = "HKCU\\Software\\Microsoft\\Wisp\\Touch";
+const TOUCH_SWITCHES = { fingers: [FINGERS_KEY, "TouchGestureSetting"],
+  left: [WISP_KEY, "Left_Edgy_Enabled"], right: [WISP_KEY, "Right_Edgy_Enabled"] };
+function readSwitch(name) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  const r = spawnSync("reg", ["query", key, "/v", value], { windowsHide: true, encoding: "utf8" });
+  const m = r.status === 0 && new RegExp(`${value}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, "i").exec(r.stdout || "");
+  return m ? parseInt(m[1], 16) : null;      // null: never set (Windows' default: on)
+}
+function writeSwitch(name, v) {
+  const [key, value] = TOUCH_SWITCHES[name];
+  if (v === null) spawnSync("reg", ["delete", key, "/v", value, "/f"], { windowsHide: true });
+  else spawnSync("reg", ["add", key, "/v", value, "/t", "REG_DWORD", "/d", String(v), "/f"], { windowsHide: true });
+}
+let gesturesLocked = false;
+function lockGestures(on) {
+  if (process.platform !== "win32" || on === gesturesLocked) return;
+  gesturesLocked = on;
+  if (on) {
+    if (!("_fingersWere" in saved)) {
+      saved._fingersWere = readSwitch("fingers");
+      saved._touchWere = Object.fromEntries(["left", "right"].map((n) => [n, readSwitch(n)]));
+      saveState();
+    }
+    for (const n of Object.keys(TOUCH_SWITCHES)) writeSwitch(n, 0);
+    settingChanged();
+  } else if ("_fingersWere" in saved) {
+    putTouchBack();
+  }
+  touchLog(`full screen ${on ? "on" : "off"}: three/four fingers ${readSwitch("fingers") === 0 ? "off" : "on"}, `
+    + `left edge ${readSwitch("left") === 0 ? "off" : "on"}, right edge ${readSwitch("right") === 0 ? "off" : "on"}`);
+}
+// the operator's own touch switches, as they were before full screen
+function putTouchBack() {
+  writeSwitch("fingers", saved._fingersWere);
+  for (const [n, v] of Object.entries(saved._touchWere || {})) writeSwitch(n, v);
+  delete saved._fingersWere;
+  delete saved._touchWere;
+  saveState();
+  settingChanged();
+}
+// a desk window went in or out of full screen: lock while any one is
+function fullScreenChanged() {
+  const any = gestureLock() && [...open.values()].some((w) => !w.isDestroyed() && w.isFullScreen());
+  lockGestures(any);
+}
+function watchFullScreen(win) {
+  if (process.platform !== "win32") return;
+  win.once("ready-to-show", () => {
+    if (gestureLock()) touchLog(`window ${win.getTitle()}: edge swipes while full screen ${edgeSwitch(win, true) === 1 ? "locked" : "NOT locked"}`);
+  });
+  for (const ev of ["enter-full-screen", "leave-full-screen", "enter-html-full-screen", "leave-html-full-screen", "closed"]) {
+    win.on(ev, () => setTimeout(fullScreenChanged, 50));
+  }
+}
+function setGestureLock(on) {
+  saved._gestureLock = on;
+  saveState();
+  for (const w of open.values()) edgeSwitch(w, on);
+  fullScreenChanged();
+  menu();
+}
+
+function fingersOff() {
+  const r = spawnSync("reg", ["query", FINGERS_KEY, "/v", "TouchGestureSetting"], { windowsHide: true, encoding: "utf8" });
+  return r.status === 0 && /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
+}
+function setFingers(on) {
+  // (the computer-wide lock is what full screen puts back afterwards, too)
+  if ("_fingersWere" in saved) { saved._fingersWere = on ? 1 : 0; saveState(); }
+  spawnSync("reg", ["add", FINGERS_KEY, "/v", "TouchGestureSetting", "/t", "REG_DWORD", "/d", on ? "1" : "0", "/f"], { windowsHide: true });
+  return fingersOff() === !on;
+}
 function machineSwipesOff() {
   const r = spawnSync("reg", ["query", EDGE_KEY, "/v", "AllowEdgeSwipe"], { windowsHide: true, encoding: "utf8" });
   return r.status === 0 && /AllowEdgeSwipe\s+REG_DWORD\s+0x0\b/i.test(r.stdout || "");
@@ -415,19 +646,26 @@ async function machineSwipes(lock) {
   const win = BrowserWindow.getFocusedWindow();
   const yes = await ask(win, lock ? {
     title: "Lock touch swipes on this computer",
-    message: "Turn off the touch swipes in from the screen's edges on this computer?",
-    detail: "No more Task View, notifications or taskbar from a swipe - for every app, until you unlock it here. "
-      + "Windows asks for an administrator's OK once, and it starts after you sign out and back in (or restart).\n\n"
-      + "Also turn off Settings > Bluetooth & devices > Touch > Three- and four-finger touch gestures: "
-      + "those switch apps too, and only Windows' own setting can stop them.",
+    message: "Turn off Windows' touch gestures on this computer?",
+    detail: "No more Task View, notifications or taskbar from a swipe in from an edge, and no app switching or "
+      + "desktop from three or four fingers - for every app, until you unlock it here. "
+      + "Windows asks for an administrator's OK once (for the edge swipes), and it starts after you sign out "
+      + "and back in (or restart).",
     buttons: ["Cancel", "Lock swipes"], primary: 1, cancel: 0,
   } : {
     title: "Unlock touch swipes on this computer",
-    message: "Turn the touch swipes in from the screen's edges back on?",
+    message: "Turn Windows' touch gestures back on (edge swipes, three and four fingers)?",
     detail: "Windows asks for an administrator's OK, and it starts after you sign out and back in.",
     buttons: ["Cancel", "Unlock swipes"], primary: 1, cancel: 0,
   });
   if (yes !== 1) return;
+  const fingers = setFingers(!lock);              // per user: no administrator needed
+  // Windows 11's own per-user left / right edge switches too
+  for (const n of ["left", "right"]) {
+    writeSwitch(n, lock ? 0 : null);
+    if (saved._touchWere) saved._touchWere[n] = lock ? 0 : null;
+  }
+  settingChanged();
   const args = lock ? ["add", EDGE_KEY, "/v", "AllowEdgeSwipe", "/t", "REG_DWORD", "/d", "0", "/f"]
     : ["delete", EDGE_KEY, "/v", "AllowEdgeSwipe", "/f"];
   const list = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
@@ -438,9 +676,11 @@ async function machineSwipes(lock) {
   const done = machineSwipesOff() === lock;
   await ask(win, {
     title: "Touch swipes",
-    message: done ? (lock ? "Touch swipes are locked on this computer." : "Touch swipes are back on.")
-      : "Nothing changed (the administrator's OK wasn't given).",
-    detail: done ? "Sign out and back in (or restart) for it to start." : "",
+    message: done ? (lock ? "Touch gestures are locked on this computer." : "Touch gestures are back on.")
+      : fingers ? (lock ? "Three- and four-finger gestures are off; the edge swipes weren't changed (the administrator's OK wasn't given)."
+        : "Three- and four-finger gestures are back on; the edge swipes weren't changed (the administrator's OK wasn't given).")
+        : "Nothing changed (the administrator's OK wasn't given).",
+    detail: done || fingers ? "Sign out and back in (or restart) for it to start." : "",
     buttons: ["OK"], cancel: 0,
   });
   menu();
@@ -459,28 +699,62 @@ function oneWindow() {
   }
 }
 
+// The Desk menu: the windows, Show mode, the touch locks, closing.  The
+// same items are in the desk's own top bar (its logo opens them: the
+// windows have no system title bar or menu bar) and in the app menu, which
+// keeps their keyboard shortcuts.
+function stageOnTop(on) {
+  saved._stageOnTop = !!on;
+  saveState();
+  const w = open.get("stage");
+  if (w && !w.isDestroyed()) w.setAlwaysOnTop(!!on, "floating");
+}
+function deskItems() {
+  return [
+    { id: "show", label: "Show mode (a window per monitor)", accelerator: "CmdOrCtrl+Shift+S", click: showMode },
+    { id: "one", label: "Everything in one window", accelerator: "CmdOrCtrl+Shift+A", click: oneWindow },
+    { type: "separator" },
+    { id: "stage", label: "3D view (its own window)", click: () => openPart("stage") },
+    { id: "ontop", label: "Keep the 3D view on top", type: "checkbox", checked: !!saved._stageOnTop,
+      click: (item) => stageOnTop(item ? item.checked : !saved._stageOnTop) },
+    { id: "desk", label: "Programmer and fixtures", click: () => openPart("desk") },
+    { id: "playbacks", label: "Playbacks and buttons", click: () => openPart("playbacks") },
+    { type: "separator" },
+    { id: "phones", label: "Other computers, phones and tablets…", click: phonesDialog },
+    ...(process.platform === "win32" ? [
+      { type: "separator" },
+      { id: "gestures", label: "Lock every touch gesture while full screen", type: "checkbox", checked: gestureLock(),
+        click: (item) => setGestureLock(item ? item.checked : !gestureLock()) },
+      machineSwipesOff()
+        ? { id: "swipes", label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
+        : { id: "swipes", label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
+    ] : []),
+    { type: "separator" },
+    { id: "quit", label: "Close Haze", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
+  ];
+}
+// the page's own window controls and Desk menu (preload.js)
+ipcMain.on("win:do", (e, what) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || win.isDestroyed()) return;
+  if (what === "min") win.minimize();
+  else if (what === "max") { if (win.isFullScreen()) win.setFullScreen(false); else if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+  else if (what === "full") win.setFullScreen(!win.isFullScreen());
+  else if (what === "close") win.close();
+});
+ipcMain.handle("win:menu", () => deskItems().map((x) => (x.type === "separator" ? "-"
+  : { id: x.id, label: x.label, checked: x.type === "checkbox" ? !!x.checked : undefined,
+    keys: x.accelerator ? x.accelerator.replace("CmdOrCtrl", process.platform === "darwin" ? "Cmd" : "Ctrl") : "" })));
+ipcMain.on("win:run", (_e, id) => {
+  const item = deskItems().find((x) => x.id === id);
+  if (item && item.click) Promise.resolve(item.click(null)).then(() => menu()).catch(() => {});
+});
+
 function menu() {
   const mac = process.platform === "darwin";
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(mac ? [{ role: "appMenu" }] : []),
-    { label: "Desk", submenu: [
-      { label: "Show mode (a window per monitor)", accelerator: "CmdOrCtrl+Shift+S", click: showMode },
-      { label: "Everything in one window", accelerator: "CmdOrCtrl+Shift+A", click: oneWindow },
-      { type: "separator" },
-      { label: "3D view", click: () => openPart("stage") },
-      { label: "Programmer and fixtures", click: () => openPart("desk") },
-      { label: "Playbacks and buttons", click: () => openPart("playbacks") },
-      { type: "separator" },
-      { label: "Other computers, phones and tablets…", click: phonesDialog },
-      ...(process.platform === "win32" ? [
-        { type: "separator" },
-        machineSwipesOff()
-          ? { label: "Unlock touch swipes on this computer…", click: () => machineSwipes(false) }
-          : { label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
-      ] : []),
-      { type: "separator" },
-      { label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
-    ] },
+    { label: "Desk", submenu: deskItems().map(({ id, ...x }) => x) },
     { label: "View", submenu: [
       { role: "togglefullscreen", accelerator: "F11" },
       { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
@@ -493,7 +767,7 @@ function menu() {
 // every request the app's windows make to the engine carries its key
 function trustEngine() {
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [base + "*"] }, (d, cb) => {
-    d.requestHeaders["X-Jarvis-Token"] = key;
+    d.requestHeaders["X-Haze-Token"] = key;
     cb({ requestHeaders: d.requestHeaders });
   });
 }
@@ -505,13 +779,13 @@ function trustEngine() {
 function quietDownloads() {
   session.defaultSession.on("will-download", (_e, item) => {
     const dir = app.getPath("downloads");
-    const name = path.basename(item.getFilename() || "jarvis-download");
+    const name = path.basename(item.getFilename() || "haze-download");
     const ext = path.extname(name), stem = name.slice(0, name.length - ext.length);
     let file = path.join(dir, name);
     for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, `${stem} (${i})${ext}`);
     item.setSavePath(file);
     item.once("done", (_ev, state) => {
-      if (state === "completed" && /^jarvis-report-/.test(name)) shell.showItemInFolder(file);
+      if (state === "completed" && /^haze-report-/.test(name)) shell.showItemInFolder(file);
     });
   });
 }
@@ -564,7 +838,7 @@ async function phonesDialog() {
       title: "Windows Firewall", type: ok ? "info" : "warning", buttons: ["OK"],
       message: ok ? "Windows Firewall now lets the desk in" : "Windows Firewall wasn't changed",
       detail: ok ? `From this network and Tailscale only, on port ${port}. Load the page on the other device again.`
-        : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Jarvis (and Python) on private and public networks.",
+        : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Haze (and Python) on private and public networks.",
     });
     return phonesDialog();
   }
@@ -575,17 +849,19 @@ async function phonesDialog() {
 // not Electron's default, which would end it when the update splash closes
 app.on("window-all-closed", () => {});
 const FIRST = app.requestSingleInstanceLock();
-if (!FIRST) app.quit();                    // Jarvis is already open: that one comes forward
+if (!FIRST) app.quit();                    // Haze is already open: that one comes forward
 app.on("second-instance", () => { const w = [...open.values()][0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
 
 app.whenReady().then(async () => {
   if (!FIRST) return;
   loadState();
+  // stopped while full screen last time: the operator's own touch setting back
+  if (process.platform === "win32" && "_fingersWere" in saved) putTouchBack();
   await selfUpdate();
   try {
     await startEngine();
   } catch (e) {
-    dialog.showErrorBox("Jarvis can't start", `${e.message}. Its log is in:\n${app.getPath("userData")}`);
+    dialog.showErrorBox("Haze can't start", `${e.message}. Its log is in:\n${app.getPath("userData")}`);
     await stopEngine();
     app.exit(1);
     return;
@@ -614,6 +890,7 @@ app.whenReady().then(async () => {
 // remember which windows were open, for next time
 app.on("before-quit", () => {
   quitting = true;
+  lockGestures(false);                          // the operator's own touch setting back
   for (const part of Object.keys(PARTS)) saved[part] = { ...(saved[part] || {}), open: reopen.has(part) };
   saveState();
 });

@@ -4,7 +4,7 @@ import { act } from "./api.js";
 // desk's own MIDI input (app/midi.py) is separate; this one is off until
 // switched on in Settings, so one controller heard by both never plays a
 // button twice.  Remembered per device.
-const KEY = "jarvis.webmidi";
+const KEY = "haze.webmidi";
 const listeners = new Set();
 let access = null;
 let error = "";
@@ -22,6 +22,13 @@ export function onNote(fn) {
 }
 
 const monitors = new Set();
+
+const ccs = new Set();
+/** Control changes (a controller's knobs and faders): fn({ number, value, channel }). */
+export function onCC(fn) {
+  ccs.add(fn);
+  return () => ccs.delete(fn);
+}
 
 /** Every message (notes, CC, anything): fn({ data, input, at }). For the MIDI monitor. */
 export function onAnyMidi(fn) {
@@ -69,6 +76,10 @@ function message(e) {
   if (own) { try { own([...(e.data || [])]); } catch (err) { console.error(err); } return; }
   const [status, number, velocity] = e.data || [];
   const kind = status & 0xf0;
+  if (kind === 0xb0) {
+    for (const fn of [...ccs]) { try { fn({ number, value: velocity, channel: (status & 0x0f) + 1 }); } catch (err) { /* ignore */ } }
+    return;
+  }
   if (kind !== 0x90 && kind !== 0x80) return;
   const ev = { number, velocity, channel: (status & 0x0f) + 1, on: kind === 0x90 && velocity > 0 };
   for (const fn of [...listeners]) {

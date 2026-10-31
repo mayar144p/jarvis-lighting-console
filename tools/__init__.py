@@ -1,1 +1,1 @@
-"""Jarvis command-line tools."""
+"""Haze command-line tools."""

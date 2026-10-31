@@ -133,7 +133,7 @@ def test_button_midi() -> None:
     check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
     wm = (ROOT / "web" / "app" / "webmidi.js").read_text(encoding="utf-8")
     check("a controller on this computer plays buttons too (Web MIDI, off until switched on)",
-          "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
+          "requestMIDIAccess" in wm and "onNote(" in qb and "haze.webmidi" in wm, "")
     check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
 
 
@@ -148,7 +148,7 @@ def test_group_flash_laser_button() -> None:
         tmp = Path(td)
         db = tmp / "f.db"
         fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="LED PARty RGBW", qty=2, universe=1, address=1)
@@ -196,9 +196,7 @@ def test_group_flash_laser_button() -> None:
         finally:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
-    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("the Laser tab records a cue and makes a button", "quick_from_laser" in fx and "openCueDialog" in fx, "")
-    check("group chips flash while held", "holdToFlash" in fj and "group_flash" in fj, "")
 
 
 def test_cue_fx_parts() -> None:
@@ -434,9 +432,6 @@ def test_review_fixes() -> None:
             check("...and an old one no longer is", not bad(), "")
         finally:
             e.shutdown()
-    fj = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
-    check("a hold that slides off the chip doesn't swallow the next tap",
-          'e.type === "pointerup"' in fj and "removeEventListener(\"click\", swallow" in fj, "")
 
 
 def test_steady_dmx() -> None:
@@ -546,7 +541,7 @@ def test_desktop_only() -> None:
           not (web / "manifest.webmanifest").exists() and not (web / "app" / "tablet.js").exists()
           and not (web / "remote.html").exists() and 'rel="manifest"' not in html and "apple-touch-icon" not in html, "")
     check("no phone layout: no bottom tabs, no narrow-screen rules, a desktop minimum width",
-          "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: calc(1280px / var(--ui-zoom, 1))" in css
+          "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: 1280px;" in css
           and "(max-width: 820px)" not in css, "")
     api = (web / "app" / "api.js").read_text(encoding="utf-8")
     check("a quiet stream is dropped and re-opened; coming back online retries at once",
@@ -592,7 +587,7 @@ def test_room_fit() -> None:
             e.shutdown()
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     check("an empty desk asks which venue at start-up", "Where are you playing tonight?" in vp
-          and "jarvis.venuepick" in vp, "")
+          and "haze.venuepick" in vp, "")
 
 
 def test_look_types() -> None:
@@ -1077,7 +1072,7 @@ def test_dmx_clashes() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "d.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=2)
@@ -1165,7 +1160,7 @@ def test_my_venues() -> None:
 
 
 def test_big_rig_groups() -> None:
-    """With 20+ lights, groups Jarvis makes by itself (by kind of light and
+    """With 20+ lights, groups Haze makes by itself (by kind of light and
     by the truss they hang on), odd / even / left / right splits of any
     selection, buttons aimed at those groups, a folded list and a box
     select on the stage."""
@@ -1220,9 +1215,10 @@ def test_big_rig_groups() -> None:
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    check("gig mode: 44 px controls, a switch in Settings (not on by itself)",
-          "body.gig .btn" in css and "min-height: 44px" in css and "(pointer: coarse)" not in mj
-          and "jarvis.gig" in dialogs_js(), "")
+    check("gig mode: 44 px controls, a switch in Settings; on by itself only on a touch-only screen with no choice saved",
+          "body.gig .btn" in css and "min-height: calc(44px * var(--ctl))" in css
+          and 'gig === null && matchMedia("(pointer: coarse) and (hover: none)").matches' in mj
+          and "haze.gig" in dialogs_js(), "")
     del html
 
 
@@ -1361,7 +1357,7 @@ def test_arm_for_set() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "a.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
@@ -1382,7 +1378,7 @@ def test_arm_for_set() -> None:
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
-    check("the ARM dialog offers 10 min / 1 hour / until I disarm", "Until I disarm" in js and 'minutes: armFor' in js, "")
+    check("ARM stays armed until a disarm (no timer to pick)", 'minutes: "until"' in js and "until you disarm" in js, "")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("tab dots use the same kinds as the programmer bar", "GROUP_OF[r.replace" in pj, "")
     check("a light with no dimmer gets big On / Off, not a fader that does nothing",
@@ -1464,7 +1460,7 @@ def test_aux_channels() -> None:
     check("heads on/off, auto programs and program speed are controllable",
           all(det[n]["role"].startswith("aux") for n in (28, 29, 30)), "")
     check("the maintenance channel (settings) stays untouched", det[33]["role"] == "unused", det[33]["role"])
-    laser = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("jarvis", "laserworld/beambar-10b-mk3")[0]))
+    laser = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("haze", "laserworld/beambar-10b-mk3")[0]))
     check("effects and lasers are left to their own roles",
           not any(d["role"].startswith("aux") for d in laser["modes"][0]["detail"]), "")
     with tempfile.TemporaryDirectory() as td:
@@ -1486,7 +1482,7 @@ def test_aux_channels() -> None:
             check("and records into a cue", "aux1" in json.dumps(e.playbacks[0]["stack"]), "")
         finally:
             e.shutdown()
-        # a Wave stored by an older Jarvis, its original file gone (a GDTF
+        # a Wave stored by an older Haze, its original file gone (a GDTF
         # Share download no longer cached): upgraded in the database on start
         old = tmp / "old.db"
         from app import fixlib as _fl

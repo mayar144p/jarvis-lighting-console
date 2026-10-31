@@ -1,4 +1,4 @@
-"""Jarvis desktop server - stdlib only.
+"""Haze desktop server - stdlib only.
 
 Run:  python app/main.py   (or run-desktop.bat / run-desktop.sh for the app)
 Then: http://localhost:8787
@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
+from app import (artnet, autoshow, showkit, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape, streamdeck)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -179,7 +179,7 @@ def audio_path(ident: str) -> Path | None:
 SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 SCREEN_MAX = 500 * 1024 * 1024
-UPLOAD_TYPE = "application/x-jarvis-upload"
+UPLOAD_TYPE = "application/x-haze-upload"
 RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import", "/api/console/unpack"})
 
 
@@ -276,7 +276,7 @@ def underlay_path(ident: str) -> Path | None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Jarvis/0.1"
+    server_version = "Haze/0.1"
     protocol_version = "HTTP/1.1"
 
     def handle(self) -> None:
@@ -411,7 +411,7 @@ class Handler(BaseHTTPRequestHandler):
         token = config.CONSOLE_TOKEN
         if not token:
             return not config.requires_token()
-        return hmac.compare_digest(self.headers.get("X-Jarvis-Token") or "", token)
+        return hmac.compare_digest(self.headers.get("X-Haze-Token") or "", token)
 
     # Everything under /api/ needs the token unless it is listed here: a new
     # endpoint is private until deliberately made public.  These two are
@@ -1016,9 +1016,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.refine(
                     eng, str(body["refine"]), offline=bool(body.get("offline"))))
             if body.get("apply") and isinstance(body.get("design"), dict):
-                return self._console_result(eng, autoshow.build(eng, body["design"], playback))
-            return self._console_result(eng, autoshow.design(
-                eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+                built = autoshow.build(eng, body["design"], playback)
+                if body.get("buttons", True):
+                    # and the buttons to play it live (a profile of its own)
+                    try:
+                        kit = showkit.build(eng, body["design"], playback)
+                        built["summary"] += "; " + kit["summary"]
+                        built["kit"] = kit
+                    except ValueError as exc:
+                        built["summary"] += f" (the buttons couldn't be made: {exc})"
+                return self._console_result(eng, built)
+            # (designing a whole show is the AI's: never the desk's rules alone)
+            return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", ""))))
         if route == "/api/console/sound":
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
@@ -1043,16 +1052,14 @@ class Handler(BaseHTTPRequestHandler):
                         lst.pop(body["forget"])
                         assistant._save_notes(lst)
                 return self._json({"ok": True, "notes": assistant.notes()})
-            if not llm.available():
-                return self._json({"ok": False, "no_key": True,
-                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
             if body.get("operator"):
                 # the AI running the lights live: start / stop / status
                 from app import ai_operator
                 what = str(body.get("operator"))
                 if what == "start":
-                    if not llm.available():
-                        return self._json({"ok": False, "no_key": True, "error": "no AI yet - add a key or the offline AI in Settings -> AI"})
+                    # with no AI it still busks the show's buttons (the desk's own rules)
+                    if not llm.available() and not ai_operator.show_buttons(eng):
+                        return self._json({"ok": False, "no_key": True, "error": "no AI yet (Settings -> AI) and no show buttons to play - design a show first"})
                     try:
                         return self._json({"ok": True, "operator": ai_operator.start(
                             eng, body.get("brief") or "", int(body.get("bars") or 16), body.get("drops") is not False)})
@@ -1061,6 +1068,9 @@ class Handler(BaseHTTPRequestHandler):
                 if what == "stop":
                     return self._json({"ok": True, "operator": ai_operator.stop(eng, "you took over")})
                 return self._json({"ok": True, "operator": ai_operator.status(eng)})
+            if not llm.available():
+                return self._json({"ok": False, "no_key": True,
+                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
             if body.get("resume"):
                 # the screen's picture of the 3D view the AI asked to see
                 return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))
@@ -1187,7 +1197,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/status":
             status = config.status()
             # the AI switch (Settings -> AI): online, local or auto
-            ai = llm.public()
+            ai = llm.public(wait=False)        # (never waits on the local AI)
             status.update(llm_configured=ai["available"], ai=ai,
                           model=ai["model"] if ai["mode"] != "local" or not ai["local_running"]
                           else (ai["local_model"] or (ai["local_models"] or ["local AI"])[0]))
@@ -1597,7 +1607,7 @@ def main() -> None:
         print("* midi: " + (f"open ({midi_info.get('device')})"
                             if midi_info.get("open")
                             else (midi_info.get("error") or "idle")))
-    if os.environ.get("JARVIS_DESKTOP") == "1":
+    if os.environ.get("HAZE_DESKTOP") == "1":
         # started by the desktop app: when it closes (or crashes) its end of
         # our stdin closes, and the desk shuts down cleanly - the show saved,
         # the outputs stopped - instead of being killed mid-write

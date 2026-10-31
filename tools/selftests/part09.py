@@ -4,6 +4,7 @@ from __future__ import annotations
 from tools.selftests import fakes
 
 import json
+import math
 import socket
 import tempfile
 import time
@@ -769,10 +770,10 @@ def test_osc() -> None:
     from app import engine as eng
     from app import osc
 
-    m = osc.build("/jarvis/cue", 1, 3)
-    check("a message round-trips", osc.parse(m) == [("/jarvis/cue", [1, 3])], str(osc.parse(m)))
-    b = fakes.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
-    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/jarvis/master", "/jarvis/cmd"], "")
+    m = osc.build("/haze/cue", 1, 3)
+    check("a message round-trips", osc.parse(m) == [("/haze/cue", [1, 3])], str(osc.parse(m)))
+    b = fakes.bundle(osc.build("/haze/master", 0.5), osc.build("/haze/cmd", "1-4 red"))
+    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/haze/master", "/haze/cmd"], "")
     check("junk is nothing", osc.parse(b"hello") == [] and osc.parse(b"") == [], "")
 
     port = _free_port()
@@ -791,18 +792,18 @@ def test_osc() -> None:
             check("OSC listens", r.get("ok") and e.osc_public()["on"], str(r))
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(2)
-            s.sendto(osc.build("/jarvis/master", 0.5), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/master", 0.5), ("127.0.0.1", port))
             reply = osc.parse(s.recvfrom(1024)[0])
-            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/jarvis/ok", str(reply))
-            s.sendto(osc.build("/jarvis/go", 1), ("127.0.0.1", port))
+            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/haze/ok", str(reply))
+            s.sendto(osc.build("/haze/go", 1), ("127.0.0.1", port))
             s.recvfrom(1024)
             check("GO", e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
-            s.sendto(osc.build("/jarvis/cmd", "1-2 red"), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/cmd", "1-2 red"), ("127.0.0.1", port))
             s.recvfrom(1024)
             check("a command line", e.programmer.get(1, {}).get("red") == 255, str(e.programmer))
-            s.sendto(osc.build("/jarvis/patch_clear"), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/patch_clear"), ("127.0.0.1", port))
             reply = osc.parse(s.recvfrom(1024)[0])
-            check("anything else is refused, with a reason", reply[0][0] == "/jarvis/error" and len(e.patch) == 4, str(reply))
+            check("anything else is refused, with a reason", reply[0][0] == "/haze/error" and len(e.patch) == 4, str(reply))
             s.close()
             e.act("osc", state=False)
             check("OSC off", not e.osc_public()["on"], "")
@@ -1189,8 +1190,14 @@ def test_roam() -> None:
             e.act("set_place", head=b[0], x=-5, y=0.3, z=6)
             e.act("set_place", head=b[1], x=5, y=0.3, z=6)
             heads = a + b
+            # the club's DJ zone as a VIP: lights never roam the DJ (roomsense)
+            r = e.act("roam", zones=["dj"], heads=heads)
+            check("lights never roam over the DJ", not r.get("ok") and "never roam" in (r.get("error") or ""), str(r))
+            for z in e.venue["zones"]:
+                if z["kind"] == "dj":
+                    z["kind"], z["name"] = "vip", "VIP"
             e.act("select_heads", heads=heads)
-            r = e.act("roam", zones=["dancefloor", "dj"], speed=2)
+            r = e.act("roam", zones=["dancefloor", "vip"], speed=2)
             check("roam starts on the movers", r.get("ok") and sorted(r["heads"]) == sorted(heads), str(r))
             zones = {z["kind"]: z for z in e.venue["zones"]}
             import time as _time
@@ -1221,20 +1228,20 @@ def test_roam() -> None:
                         bad += 1
             check("every path stays in its zone's bounds", bad == 0, str(bad))
             check("two zones share the lights out", {i % 2 for i in range(len(row["heads"]))} == {0, 1}
-                  and [z["name"] for z in row["roam"]] == ["Dance floor", "DJ"], "")
+                  and [z["name"] for z in row["roam"]] == ["Dance floor", "VIP"], "")
             check("a light that can't pan / tilt is left out", not e.act("roam", heads=[999]).get("ok"), "")
             check("an unknown zone says what there is", "Dance floor" in (e.act("roam", zones=["kitchen"]).get("error") or ""), "")
             e.act("record_cue", playback=1, name="Roaming")
             cue = e.playbacks[0]["stack"][0]
-            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["dj"]["id"]], str(cue.get("fx")))
+            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["vip"]["id"]], str(cue.get("fx")))
             e.act("cue_go", playback=1, cue=1)
             check("...and plays it back", any(f.get("roam") for f in e.fx), "")
             e.act("stop_fx")
             e.act("select_heads", heads=heads)
-            p = console_ai.plan("these lights should only hover around the dance floor and the DJ booth", offline=True, eng=e)
+            p = console_ai.plan("these lights should only hover around the dance floor and the VIP", offline=True, eng=e)
             out = console_ai.run(console_ai.resolve(p["steps"], e), e)
             check("the AI turns the sentence into a roam", out.get("ok") and any(f.get("roam") for f in e.fx)
-                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "DJ"], str(p["steps"]))
+                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "VIP"], str(p["steps"]))
         finally:
             e.shutdown()
 
@@ -1295,7 +1302,7 @@ def test_review_fixes_oct() -> None:
     from app import fixlib, osc
     from app.engine_base import UNDO_LIMIT
 
-    for junk in (b"/jarvis/go", b"/jarvis/go\x00\x00,i\x00\x00", b"/a\x00\x00,s\x00\x00abc"):
+    for junk in (b"/haze/go", b"/haze/go\x00\x00\x00\x00,i\x00\x00", b"/a\x00\x00,s\x00\x00abc"):
         check(f"a malformed OSC packet is nothing ({junk[:12]!r})", osc.parse(junk) == [], "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -1612,8 +1619,8 @@ def test_on_the_beat() -> None:
         finally:
             e.shutdown()
         aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
-        check("follow-me has a speed: instant / fast / medium / slow, sent to the desk",
-              "Follow speed" in aj and "pending.glide = glide" in aj and '"Slow"' in aj)
+        check("follow-me sends its glide to the desk (straight there: no speed row on screen)",
+              "pending.glide = glide" in aj and "const glide = 0;" in aj)
 
         # Ableton Link: the pure part
         node = b"peer0001"
@@ -1849,7 +1856,10 @@ def test_move_buttons_and_glide() -> None:
             e.act("select_heads", head=1, head_end=4)
             e.act("attach_heads", rig=e._rig_named("front truss")["id"])
             e.act("group_create", name="Front movers", heads=[1, 2])
-            zones = [z["id"] for z in e.venue["zones"] if z["kind"] in ("dancefloor", "bar")]
+            for z in e.venue["zones"]:                 # (lights never roam the bar: a VIP instead)
+                if z["kind"] == "bar":
+                    z["kind"], z["name"] = "vip", "VIP"
+            zones = [z["id"] for z in e.venue["zones"] if z["kind"] in ("dancefloor", "vip")]
             r = e.act("roam", zones=zones, speed=0.5, heads=[1, 2])
             check("a slow roam keeps its speed (no longer rounded to 0.05)",
                   r.get("ok") and e.fx[-1]["params"]["speed"] == 0.5, str(e.fx[-1]["params"]))
@@ -2308,7 +2318,7 @@ def test_screen_media() -> None:
 
         def send(data: bytes):
             req = urllib.request.Request(base, data=data, method="POST",
-                                         headers={"Content-Type": "application/x-jarvis-upload"})
+                                         headers={"Content-Type": "application/x-haze-upload"})
             try:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     return r.status, json.loads(r.read())
@@ -2717,7 +2727,9 @@ def test_aim_speed_everywhere() -> None:
         finally:
             e.shutdown()
     mj = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
-    check("the spot and formation buttons send the Aim speed", mj.count("glide: followGlide()") == 4, "")
+    aj = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
+    check("no Aim speed row: aims go straight there (the engine still glides when asked)",
+          '"Aim speed"' not in aj and "const glide = 0;" in aj and mj.count("glide: followGlide()") == 4, "")
 
 
 def test_colour_fixes() -> None:
@@ -3495,8 +3507,9 @@ def test_3d_detail() -> None:
           'tex.createView({ swizzle: "rgba" })' in sj and "forceWebGL: true" in sj and "export const GPU_DEVICE = await probeWebGPU()" in sj, "")
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
-    check("quality is named High / Medium / Low",
-          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj, "")
+    check("quality is named Max / Medium / Low, Max the standard",
+          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
+          and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"
@@ -3805,7 +3818,7 @@ def test_bug_report() -> None:
                   q2.get("template") == ["bug.yml"] and not any(f["name"] == "show.json" for f in r2["files"]), str(q2))
             check("a saved report comes back by its name, nothing else does",
                   bugreport.read_saved(r["zip"]) == z.read_bytes() and bugreport.read_saved("../../.env") is None
-                  and bugreport.read_saved("jarvis-report-x/../../a.zip") is None, "")
+                  and bugreport.read_saved("haze-report-x/../../a.zip") is None, "")
         finally:
             e.shutdown()
             cfg.DATA, cfg.LLM_API_KEY = saved
@@ -4243,7 +4256,8 @@ def test_button_looks() -> None:
             r = e.act("quick_layout", page=3, cols=8, rows=3, height="fit")
             check("back to the usual grid stores nothing", "3" not in e._quick_public()["layout"], str(e._quick_public()["layout"]))
             r = e.act("quick_layout", page=1, cols=6, all_pages=True)
-            check("one grid for every page", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 9)))
+            check("one grid for every page there (the first four and any with buttons)", all(e._quick_public()["layout"][str(p)]["cols"] == 6 for p in range(1, 5))
+                  and "8" not in e._quick_public()["layout"])
             check("slot 48 is a real slot (12 x 4)", e.act("quick_set", page=4, slot=48, button={"kind": "flash"}).get("ok"))
             e.act("undo")
             check("undo takes a button back", not any(x["id"] == "q4-48" for x in e.quick))
@@ -4800,8 +4814,8 @@ console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map(
     check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("five ready ones (fewer): Set up, Live, then programming, theatre, no 3D",
-          got["ids"] == ["setup", "live", "programming", "theatre", "nostage"], str(got["ids"]))
+    check("six ready ones: Set up, Live, then programming, theatre, the desk (palettes), no 3D",
+          got["ids"] == ["setup", "live", "programming", "theatre", "desk", "nostage"], str(got["ids"]))
     check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
     bad = got["bad"]
     check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
@@ -4919,7 +4933,7 @@ console.log(JSON.stringify({
   none: V.pickFormat(() => false), throws: V.pickFormat((m) => { if (m.includes("avc1")) throw new Error("x"); return m === "video/mp4"; }).ext,
   tl: V.plannedSeconds("timeline", 30, 161.2), live: [V.plannedSeconds("live", 2), V.plannedSeconds("live", 9999), V.plannedSeconds("live", "x")],
   name: V.fileName("shows/Club night.json", new Date(2026, 9, 8, 21, 5).getTime(), "mp4"),
-  odd: V.fileName('a<>:"/\\\\|?*b', 0, "webm").includes("<"), blank: V.fileName("", 0, "mp4").startsWith("jarvis-"),
+  odd: V.fileName('a<>:"/\\\\|?*b', 0, "webm").includes("<"), blank: V.fileName("", 0, "mp4").startsWith("haze-"),
   clock: V.clock(125) }));
 """
     r = subprocess.run([node, "--input-type=module", "-e", js, (web / "app" / "videoplan.js").as_uri()],
@@ -4933,7 +4947,7 @@ console.log(JSON.stringify({
     check("playing the timeline records its whole length (+1 s)", got["tl"] == 163, str(got["tl"]))
     check("recording by hand: 5 s to 10 min", got["live"] == [5, 600, 30], str(got["live"]))
     check("the file is named after the show and the time", got["name"] == "Club night-2026-10-08-21-05.mp4", got["name"])
-    check("no characters a disk refuses; no name: jarvis-...", not got["odd"] and got["blank"])
+    check("no characters a disk refuses; no name: haze-...", not got["odd"] and got["blank"])
     check("the clock reads m:ss", got["clock"] == "2:05")
 
 
@@ -5024,7 +5038,7 @@ def test_nothing_waits_forever() -> None:
     took = time.monotonic() - t
     check("a program whose helper keeps its output open is stopped on time", r.timed_out and took < 5, f"{took:.1f} s")
     check("...and what it printed is kept", "started" in r.stdout, r.stdout)
-    check("a program that isn't there: an answer, not a crash", procs.run(["no-such-program-jarvis"], 1).returncode == 127)
+    check("a program that isn't there: an answer, not a crash", procs.run(["no-such-program-haze"], 1).returncode == 127)
     api = (ROOT / "web" / "app" / "api.js").read_text(encoding="utf-8")
     check("every request from the screen has a time limit", "DEFAULT_WAIT_MS" in api and "AbortController" in api)
 
@@ -5550,7 +5564,7 @@ def test_report_relay() -> None:
             Relay.answer = (200, {"issue_url": "https://evil.example/x"})
             out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
             check("an answer that isn't this repo's issue is not shown as sent", "send_error" in out and "sent" not in out, str(out))
-            big = tmp / "bug_reports" / "jarvis-report-big.zip"
+            big = tmp / "bug_reports" / "haze-report-big.zip"
             big.write_bytes(b"PK" + b"\0" * (bugreport.RELAY_MAX + 10))
             try:
                 bugreport.relay_send(big, None, "x", [])
@@ -5579,7 +5593,7 @@ const zip = Buffer.from("PK\x03\x04hello").toString("base64");
 const rep = (extra = {}, head = {}) => new Request("https://relay.example/", { method: "POST",
   headers: { "X-Relay-Key": "rk", "CF-Connecting-IP": "1.2.3.4", ...head },
   body: JSON.stringify({ template: "light-bug.yml", title: "[Light] Acme Beam: dark", labels: ["light-bug", "brand:Acme", "admin", "x\ny"],
-    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "jarvis-report-1-acme.zip", zip, ...extra }) });
+    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "haze-report-1-acme.zip", zip, ...extra }) });
 const out = {};
 let r = await W.fetch(rep(), env);
 out.ok = [r.status, await r.json()];
@@ -5608,7 +5622,7 @@ console.log(JSON.stringify(out));
           got["gh"]["url"] == "https://api.github.com/repos/o/r/issues" and got["gh"]["labels"] == ["light-bug", "brand:Acme"]
           and not got["gh"]["mention"], str(got["gh"]))
     check("...the zip kept, linked from the issue, downloadable only with the maintainers' key",
-          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "jarvis-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
+          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "haze-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
     check("the wrong relay key, an unknown form, a file that isn't a zip: refused",
           got["wrongKey"] == 403 and got["badForm"] == 400 and got["notZip"] == 400, str(got))
     check("at most 6 reports an hour from one address", got["rate"] == [200] * 6, str(got["rate"]))
@@ -5690,7 +5704,14 @@ def test_sweep3_fixes() -> None:
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
-    check("the groups fold away for more fixture rows, remembered", 'id="grp-fold"' in html and "jarvis.groupsFolded" in fx)
+    check("no Groups strip above the fixture list (groups are its folders)", 'id="group-chips"' not in html and "#group-chips" not in fx)
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    gi = (ROOT / "web" / "app" / "goboicon.js").read_text(encoding="utf-8")
+    pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("each gobo button shows its gobo (its picture, as the light throws it)", "/api/console/gobo?ref=" in gi
+          and "export function goboIcon" in gi and "goboIcon(goboRef(role, s))" in pg and "goboIcon(goboRef(a.role, s))" in pg
+          and "goboIcon(ref)" in dv, "")
+    check("a group tile in the desk view flashes while held", "function holdToFlash" in dv and '"group_flash"' in dv, "")
 
 
 def test_sweep3_adds() -> None:
@@ -5794,10 +5815,10 @@ def test_sweep3_adds() -> None:
                 e.act("cue_set", playback=1, cue=1, actions=[{"action": "osc_send", "args": {"address": "/cue/5/start"}}])
                 e.act("cue_go", playback=1, cue=1)
                 got = [osc.parse(rx.recvfrom(2048)[0])[0] for _ in range(2)]
-                check("a cue's Send OSC action goes out, and GO is reported (/jarvis/go list cue)",
-                      ("/cue/5/start", []) in got and any(a == "/jarvis/go" and args[:1] == [1] for a, args in got), str(got))
+                check("a cue's Send OSC action goes out, and GO is reported (/haze/go list cue)",
+                      ("/cue/5/start", []) in got and any(a == "/haze/go" and args[:1] == [1] for a, args in got), str(got))
                 e.act("master", level=50)
-                check("the master is reported 0-1", osc.parse(rx.recvfrom(2048)[0]) == [("/jarvis/master", [0.5])])
+                check("the master is reported 0-1", osc.parse(rx.recvfrom(2048)[0]) == [("/haze/master", [0.5])])
                 saved_show = _json.loads(e._autosave_payload())
                 check("OSC out is saved with the show", (saved_show.get("osc_out") or {}).get("port") == port, str(saved_show.get("osc_out")))
             finally:
@@ -6161,7 +6182,7 @@ def test_remote_desk() -> None:
 
 def test_desk_popups() -> None:
     """Every box the desk shows is in its own look: the pairing-code box, the
-    drop-down lists, and the desktop app's own questions (Close Jarvis?,
+    drop-down lists, and the desktop app's own questions (Close Haze?,
     Other computers…), which used to be the system's grey boxes."""
     print("Pop-ups in the desk's own look")
     import re as _re
@@ -6179,11 +6200,11 @@ def test_desk_popups() -> None:
     pre = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
     pkg = (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
     check("the desktop app asks through the page (preload bridge, shipped in the build)",
-          'preload: path.join(__dirname, "preload.js")' in mj and "exposeInMainWorld(\"jarvisDesk\"" in pre and '"preload.js"' in pkg)
+          'preload: path.join(__dirname, "preload.js")' in mj and "exposeInMainWorld(\"hazeDesk\"" in pre and '"preload.js"' in pkg)
     check("...the window stays isolated and sandboxed", "contextIsolation: true, sandbox: true" in mj)
     body = mj[mj.index("async function phonesDialog"):]
     body = body[:body.index("\n}\n")]
-    check("Close Jarvis? and Other computers… use the desk's boxes; the system box is only the fallback",
+    check("Close Haze? and Other computers… use the desk's boxes; the system box is only the fallback",
           "showMessageBox" not in body and "showMessageBoxSync" not in mj and mj.count("dialog.showMessageBox(") == 1)
     check("...a question waits for a reloaded page instead of going to the old one",
           "pageUp.delete(w.webContents)" in mj and '"did-start-loading"' in mj)
@@ -6250,8 +6271,8 @@ def test_desktop_launch_quiet() -> None:
           bat.index('call npm install') < bat.index('call node "node_modules\\electron\\install.js"') < bat.index(":ready")
           and "Electron could not be downloaded" in bat and "set ELECTRON_SKIP_BINARY_DOWNLOAD=" in bat
           and "install.js" in (ROOT / "run-desktop.sh").read_text(encoding="utf-8"), "")
-    check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
-          "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
+    check("...and leaves a Haze shortcut that opens with no window at all (kept out of git)",
+          "Haze.lnk" in bat and "CreateShortcut" in bat and "Haze.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
     check("the desktop app is the only way in (run.bat and run.sh are gone)",
           not (ROOT / "run.bat").exists() and not (ROOT / "run.sh").exists())
     st = (ROOT / "desktop" / "stage.mjs").read_text(encoding="utf-8")
@@ -6375,16 +6396,16 @@ def test_show_backup() -> None:
                   not e.act("backup", folder=str(tmp / "nope")).get("ok"))
             check("...and a relative path too", not e.act("backup", folder="usb").get("ok"))
             r = e.act("backup", folder=str(stick))
-            check("a USB stick / cloud folder is taken", r.get("ok") and r["on"] and r["where"].endswith("Jarvis shows"), str(r))
+            check("a USB stick / cloud folder is taken", r.get("ok") and r["on"] and r["where"].endswith("Haze shows"), str(r))
             e.act("add_heads", query="PAR", qty=2)
             r = e.act("save_show", name="gig")
             check("saving says it is backed up", r.get("backed_up") and "backed up" in r.get("summary", ""), str(r.get("summary")))
             _time.sleep(0.3)
-            check("...and the show is in the backup folder", (stick / "Jarvis shows" / "gig.json").is_file())
+            check("...and the show is in the backup folder", (stick / "Haze shows" / "gig.json").is_file())
             e.act("add_heads", query="PAR", qty=1)
             e.act("save_show", name="gig")
             _time.sleep(0.3)
-            check("...with its earlier versions", len(list((stick / "Jarvis shows" / "versions" / "gig").glob("*.json"))) >= 1)
+            check("...with its earlier versions", len(list((stick / "Haze shows" / "versions" / "gig").glob("*.json"))) >= 1)
             check("backing up never holds up the save (a thread of its own)", "copy_later" in
                   (ROOT / "app" / "engine_shows.py").read_text(encoding="utf-8"))
         finally:
@@ -6406,7 +6427,7 @@ def test_show_backup() -> None:
     check("the AI never touches backups", {"backup", "backup_now", "backup_shows", "backup_restore"} <= set(aitools.NEVER))
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     dj = dialogs_js()
-    check("Settings -> Backup, and Show -> Restore from backup…", '"backup", "Backup"' in st and "Restore from backup…" in dj)
+    check("Settings -> Show backups, and Show -> Restore from backup…", '"backup", "Show backups"' in st and "Restore from backup…" in dj)
 
 
 def _ws_frame(text: str) -> bytes:
@@ -6456,7 +6477,7 @@ def test_streamdeck_plugin() -> None:
 
     z = zipfile.ZipFile(io.BytesIO(streamdeck.plugin_zip()))
     names = set(z.namelist())
-    root = "com.jarvis.desk.sdPlugin/"
+    root = "com.haze.desk.sdPlugin/"
     man = json.loads(z.read(root + "manifest.json"))
     check("the download is the plugin folder, manifest at its root", streamdeck.FILE_NAME.endswith(".streamDeckPlugin")
           and all(n.startswith(root) for n in names), sorted(names)[:3])
@@ -6466,7 +6487,7 @@ def test_streamdeck_plugin() -> None:
         want |= {s["Image"] + ".png" for s in a["States"]} | {s["Image"] + "@2x.png" for s in a["States"]}
     missing = sorted(w for w in want if root + w not in names)
     check("every file the manifest names is in it (pictures at 1x and 2x, settings pages)", not missing, missing)
-    check("every action is one of ours", all(a["UUID"].startswith("com.jarvis.desk.") for a in man["Actions"]), "")
+    check("every action is one of ours", all(a["UUID"].startswith("com.haze.desk.") for a in man["Actions"]), "")
     bo = next(a for a in man["Actions"] if a["UUID"].endswith(".blackout"))
     check("blackout has two states, and the plugin flips them (not the app)",
           len(bo["States"]) == 2 and bo.get("DisableAutomaticStates") is True, bo)
@@ -6480,26 +6501,26 @@ def test_streamdeck_plugin() -> None:
     from app import osc
     probe = (f"const p=require({json.dumps(str(plugin))});"
              "const m=(a,e,s,st)=>p.messagesFor(a,e,s,st).map(b=>b.toString('hex'));"
-             "console.log(JSON.stringify({go:m('com.jarvis.desk.go','keyDown',{playback:'2'}),"
-             "goSel:m('com.jarvis.desk.go','keyDown',{}),up:m('com.jarvis.desk.go','keyUp',{}),"
-             "btn:m('com.jarvis.desk.button','keyDown',{page:'2',slot:'5'}),"
-             "rel:m('com.jarvis.desk.button','keyUp',{slot:'5'}),"
-             "bad:m('com.jarvis.desk.button','keyDown',{button:'../x'}),"
-             "mac:m('com.jarvis.desk.macro','keyDown',{macro:'Walk-in'}),"
-             "one:m('com.jarvis.desk.master','dial',{},{level:1}),"
-             "fad:m('com.jarvis.desk.fader','dial',{playback:'3'},{level:50})}))")
+             "console.log(JSON.stringify({go:m('com.haze.desk.go','keyDown',{playback:'2'}),"
+             "goSel:m('com.haze.desk.go','keyDown',{}),up:m('com.haze.desk.go','keyUp',{}),"
+             "btn:m('com.haze.desk.button','keyDown',{page:'2',slot:'5'}),"
+             "rel:m('com.haze.desk.button','keyUp',{slot:'5'}),"
+             "bad:m('com.haze.desk.button','keyDown',{button:'../x'}),"
+             "mac:m('com.haze.desk.macro','keyDown',{macro:'Walk-in'}),"
+             "one:m('com.haze.desk.master','dial',{},{level:1}),"
+             "fad:m('com.haze.desk.fader','dial',{playback:'3'},{level:50})}))")
     out = json.loads(subprocess.run([node, "-e", probe], capture_output=True, text=True, timeout=30).stdout)
     dec = {k: [osc.parse(bytes.fromhex(x))[0] for x in v] for k, v in out.items()}
-    check("GO on playback 2 is /jarvis/go 2, as the desk reads it", dec["go"] == [("/jarvis/go", [2])], dec["go"])
+    check("GO on playback 2 is /haze/go 2, as the desk reads it", dec["go"] == [("/haze/go", [2])], dec["go"])
     check("GO with no playback: the selected one; a key's release sends nothing",
-          dec["goSel"] == [("/jarvis/go", [])] and dec["up"] == [], dec)
+          dec["goSel"] == [("/haze/go", [])] and dec["up"] == [], dec)
     check("a desk button by page and number: down 1, up 0",
-          dec["btn"] == [("/jarvis/button/q2-5", [1])] and dec["rel"] == [("/jarvis/button/q1-5", [0])], dec)
+          dec["btn"] == [("/haze/button/q2-5", [1])] and dec["rel"] == [("/haze/button/q1-5", [0])], dec)
     check("a made-up button id sends nothing", dec["bad"] == [], dec["bad"])
-    check("a macro by name", dec["mac"] == [("/jarvis/macro", ["Walk-in"])], dec["mac"])
+    check("a macro by name", dec["mac"] == [("/haze/macro", ["Walk-in"])], dec["mac"])
     lv = dec["one"][0][1][0]
     check("a dial at 1% sends 0.01 (never '1', which the desk reads as full)", abs(lv - 0.01) < 1e-6, dec["one"])
-    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/jarvis/playback/3/level"
+    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/haze/playback/3/level"
           and abs(dec["fad"][0][1][0] - 0.5) < 1e-6, dec["fad"])
 
     # The whole way: a fake Stream Deck app starts the plugin, presses keys
@@ -6544,33 +6565,33 @@ def test_streamdeck_plugin() -> None:
                     time.sleep(0.02)
                 return cond()
 
-            send({"event": "willAppear", "action": "com.jarvis.desk.blackout", "context": "K1",
+            send({"event": "willAppear", "action": "com.haze.desk.blackout", "context": "K1",
                   "payload": {"settings": {}, "state": 0}})
-            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            send({"event": "keyDown", "action": "com.haze.desk.blackout", "context": "K1", "payload": {"settings": {}}})
             check("the Blackout key blacks the desk out", wait(lambda: e.blackout is True), e.blackout)
             st = _ws_read(conn)
             check("... and lights its key (state 1)", st == {"event": "setState", "context": "K1", "payload": {"state": 1}}, st)
-            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            send({"event": "keyDown", "action": "com.haze.desk.blackout", "context": "K1", "payload": {"settings": {}}})
             check("a second press brings the lights back", wait(lambda: e.blackout is False), e.blackout)
             _ws_read(conn)
-            send({"event": "willAppear", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "willAppear", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "controller": "Encoder"}})
             fb = _ws_read(conn)
             check("the master dial shows its name and level", fb.get("event") == "setFeedback"
                   and fb["payload"]["value"] == "100%", fb)
-            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "dialRotate", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "ticks": -10}})
             check("ten clicks left: the grand master at 70%", wait(lambda: e.master == 70), e.master)
             fb = _ws_read(conn)
             check("... and the dial says so", fb["payload"]["value"] == "70%", fb)
-            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "dialRotate", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "ticks": -23}})
             check("a dial at 1% puts the master at 1%, not full", wait(lambda: e.master == 1), e.master)
             _ws_read(conn)
-            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            send({"event": "dialDown", "action": "com.haze.desk.master", "context": "D1", "payload": {"settings": {}}})
             check("pressing the dial: out", wait(lambda: e.master == 0), e.master)
             _ws_read(conn)
-            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            send({"event": "dialDown", "action": "com.haze.desk.master", "context": "D1", "payload": {"settings": {}}})
             check("pressing again: full", wait(lambda: e.master == 100), e.master)
             conn.close()
             conn = None
@@ -6595,7 +6616,7 @@ def test_streamdeck_plugin() -> None:
 
 class _FakeHue:
     """A Hue bridge on 127.0.0.1: its pairing button, its lamps, and every
-    lamp change Jarvis sent."""
+    lamp change Haze sent."""
 
     def __init__(self) -> None:
         import http.server
@@ -6899,10 +6920,10 @@ def test_songs() -> None:
             check("a tied track again: the autopilot hands back (fades out), the song fades in",
                   not e.autopilot_public()["on"] and pb3["level"] == 0 and pb1["level"] == 100 and pb1.get("xfade")
                   and e.songs_public()["following"] == sid["Track A"], (pb3["level"], pb1["level"]))
-            ok, said = e.osc_handle("/jarvis/song", ["track b"])
-            check("a laptop DJ (no Pro DJ Link): /jarvis/song <name> from a Stream Deck key plays it",
+            ok, said = e.osc_handle("/haze/song", ["track b"])
+            check("a laptop DJ (no Pro DJ Link): /haze/song <name> from a Stream Deck key plays it",
                   ok and e.__dict__.get("song_current") == sid["Track B"] and e.tl["playing"], said)
-            ok, said = e.osc_handle("/jarvis/song", ["nope"])
+            ok, said = e.osc_handle("/haze/song", ["nope"])
             check("... a song that isn't there is refused", not ok and "no song" in said, said)
             deck(track=4711, beat=41, playing=True)
             e.act("song_follow", state=None, between="hold")
@@ -6965,7 +6986,7 @@ def test_backup_desk() -> None:
         def main(action, **params):
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/console", method="POST",
                                          data=json.dumps({"action": action, "params": params}).encode(),
-                                         headers={"Content-Type": "application/json", "X-Jarvis-Token": code})
+                                         headers={"Content-Type": "application/json", "X-Haze-Token": code})
             with urllib.request.urlopen(req, timeout=15) as r:
                 return json.loads(r.read().decode()).get("result") or {}
 
@@ -7121,14 +7142,12 @@ def test_look_and_reach() -> None:
     th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
-    check("Look: density, size, reduced motion and your own accent colour, kept per computer",
-          all(k in th for k in ("DENSITIES", "SIZES", "motion", "resetTheme", "HEX.test"))
+    check("Look: density, reduced motion and your own accent colour, kept per computer",
+          all(k in th for k in ("DENSITIES", "motion", "resetTheme", "HEX.test"))
           and ':root[data-density="compact"]' in css and ':root[data-motion="reduced"]' in css
-          and "maxScale()" in st and "Look back to how it came" in st, "")
-    check("a bigger size never zooms past what the window holds (the desk needs 1280 px of room)",
-          "Math.min(want, maxScale())" in th and "/ 1280" in th, "")
-    check("full-screen sizes are divided by the zoom (nothing spills off the screen)",
-          "calc(100dvh / var(--ui-zoom, 1))" in css and "calc(1280px / var(--ui-zoom, 1))" in css, "")
+          and "Look back to how it came" in st, "")
+    check("no % size or zoom: big screens get their own layout",
+          "SIZES" not in th and "zoom" not in th and "ui-zoom" not in css and 'h("span", "Size")' not in st, "")
     check("buttons and chips follow the density", "height: var(--btn-h)" in css and "min-height: var(--chip-h)" in css, "")
     web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js")
                   if "vendor" not in p.parts and "streamdeck" not in p.parts)
@@ -7465,7 +7484,7 @@ def test_b1_real_lights() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"
-        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("jarvis", "chauvet-dj/funfetti-shot"),
+        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("haze", "chauvet-dj/funfetti-shot"),
                          ("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")):
             fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
@@ -7622,10 +7641,10 @@ def test_b2_groups() -> None:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
-    check("drag lights onto a group (folder or chip), out of its folder, between groups, or onto New group",
+    check("drag lights onto a group folder, out of its folder, or between groups",
           "function dragStart" in fx and "function dropTarget" in fx and '"group_edit", { group: t.to, add: d.heads }' in fx
-          and '"group_edit", { group: d.from, remove: d.heads }' in fx and "new-group-drop" in fx, "")
-    check("the screen: a group's menu (its chip, a right-click), Add to group on a light, Tidy auto copies",
+          and '"group_edit", { group: d.from, remove: d.heads }' in fx, "")
+    check("the screen: a group's menu (its folder, a right-click), Add to group on a light, Tidy auto copies",
           "export function groupMenu" in fx and '"group_edit"' in fx and "function groupItems" in fx
           and "auto: true" in fx and "auto: true" in cj, "")
 
@@ -7846,10 +7865,10 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "jarvis.moveKnobs" in mv and "loadKnobs(sel)" in mv and "const act = running().filter((f) => f.heads.some((n) => mine.has(n)))" in mv and '(f.from || "programmer") === "programmer");' in mv and "they will play the new one too" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "haze.moveKnobs" in mv and "loadKnobs(sel)" in mv and "const act = running().filter((f) => f.heads.some((n) => mine.has(n)))" in mv and '(f.from || "programmer") === "programmer");' in mv and "they will play the new one too" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
-          "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
+          "Copy head 1's colour to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
 
 
 def test_b5_room() -> None:
@@ -7895,12 +7914,12 @@ def test_b5_room() -> None:
     af = (ROOT / "web" / "app" / "aimfollow.js").read_text(encoding="utf-8")
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
-          "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
+          "Seen from the DJ" in af and '"venue_orient"' in af and 'h("div.aim-spotpad"' in af and "room.getScreenCTM()" in af, "")
     check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
           and "x.yaw" in mv, "")
-    check("the 3D: a DJ view from the booth (key 7)", 'data-view="dj"' in html and 'name === "dj"' in st and "this.djView" in st, "")
+    check("the 3D: a DJ view from the booth (key 7)", '"From the DJ booth"' in sp and 'name === "dj"' in st and "this.djView" in st, "")
 
 
 def test_b6_layouts() -> None:
@@ -7917,14 +7936,14 @@ def test_b6_layouts() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws and '"3D view"' in ws
+    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws
           and "body.ws-nostage .stage-wrap { display: none; }" in css and 'classList.contains("ws-nostage")' in st, "")
     check("full-screen buttons: pages, Edit, Layout and a Blackout of their own", 'id="qb-bo"' in html and ".qb.qb-full .qb-bo" in css, "")
     check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
           "clamp(140px, 27vh, 196px)" in css and 'id="grp-fold-btn"' in html and ".grp-masters.folded" in css
           and ".fx-table-wrap { min-height: 150px; }" in css and ".fixtures, .programmer, .modehub { min-width: 220px; }" in css, "")
-    mh = (web / "modehub.js").read_text(encoding="utf-8")
-    check("Live on 1280 x 720: blackout, hits, tempo and autopilot first", "live-bo" in mh and ".hub-body.live .live-bo { display: flex; order: -3; }" in css, "")
+    check("Live on 1280 x 720: one BLACKOUT (the dock's), hits, tempo and autopilot first", ".live-bo { display: none; }" in css
+          and ".hub-body.live .live-bo { display: flex" not in css, "")
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
           and '"cue_go"' in pb, "")
@@ -8166,23 +8185,22 @@ def test_lights_fader() -> None:
             g = e.act("group_create", name="Sides", heads=[1, 3])
             gc = e.act("quick_group_controls", group=g.get("n", 1), page=2)
             tiles = [b for b in e.quick if b["id"] in gc.get("ids", [])]
-            check("a group's controls on the buttons page in one tap (pulse, speed, strobe, strobe speed - its level is the group fader)",
+            check("a group's controls on the buttons page in one tap (speed, strobe, strobe speed - its level is the group fader)",
                   [(b["kind"], (b.get("control") or {}).get("mode") or b.get("fx")) for b in tiles]
-                  == [("fx", "pulse"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
+                  == [("fader", "speed"), ("strobe", None), ("fader", "strobe")]
                   and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
-            check("...each fader knows where its back-to-default button puts it", tiles[1].get("default") == 50 and tiles[3].get("default") == 31,
+            check("...each fader knows where its back-to-default button puts it", tiles[0].get("default") == 50 and tiles[2].get("default") == 31,
                   str([t.get("default") for t in tiles]))
-            pulse, sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
-            e.act("quick_press", id=pulse, down=True)
+            sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"]
+            e.act("run_fx", name="pulse", heads=[1, 3])
             pr = next((f for f in e.fx if f.get("lib") == "pulse"), None)
-            check("...its Pulse button pulses the group", pr is not None and set(pr["heads"]) == {1, 3}, str(pr and pr["heads"]))
             e.act("quick_fader", id=sp, level=100)
             t = time.monotonic()
             e._fx_values(t)
             v0 = pr["_v"]
             e._fx_values(t + 1.0)
-            check("...and the Speed fader speeds the pulse up (twice as fast)", round(pr["_v"] - v0, 2) == 2.0, str(pr["_v"] - v0))
-            e.act("quick_press", id=pulse, down=True)
+            check("...and the Speed fader speeds the group's pulse up (twice as fast)", round(pr["_v"] - v0, 2) == 2.0, str(pr["_v"] - v0))
+            e.act("stop_fx", heads=[1, 3])
             e.act("quick_fader", id=sp, level=50)
             e.act("run_fx", name="breathe", heads=[1, 3])
             e.act("run_fx", name="breathe", heads=[2])
@@ -8241,7 +8259,7 @@ def test_lights_fader() -> None:
             nb2 = e.act("quick_set", page=3, slot=2, button={"kind": "flash", "label": "Plain"})
             check("a button's description is the operator's own (kept, trimmed), none until written",
                   nb["button"].get("note") == "both cannons" and "note" not in nb2["button"], str(nb["button"].get("note")))
-            e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed", "default": 70})
+            e.act("quick_set", page=2, slot=tiles[0]["slot"], button={**tiles[0], "label": "Movers FX speed", "default": 70})
             mine = next(b for b in e.quick if b["id"] == sp)
             check("...renamed like any button, and its default set by the operator",
                   mine["label"] == "Movers FX speed" and mine.get("default") == 70, str(mine))
@@ -8251,7 +8269,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "renderSideFaders" in qb and "stripMenu" in qb and "jarvis.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "renderSideFaders" in qb and "stripMenu" in qb and "haze.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("a fader tile shows its name: on the value's line, two lines when tall, one line in S rows",
@@ -8273,7 +8291,7 @@ def test_programmer_subtabs() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
-    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "jarvis.sub." in pj
+    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "haze.sub." in pj
           and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
     check("each sub-tab hides the others' parts",
           all(f'.tab-pane[data-sub="{k}"] [data-in]:not([data-in="{k}"])' in css for ks in subs.values() for k in ks), "")
@@ -8281,8 +8299,8 @@ def test_programmer_subtabs() -> None:
     check("every part is on a sub-tab (the aim and pad on Point, movements on Move, limits on Limits)",
           tagged >= {k for ks in subs.values() for k in ks}, str(sorted(tagged)))
     check("FX shows how many effects run on its Running sub-tab", "sub-count" in pj, "")
-    check("rarely used knobs fold: direction, arc, lock; the shutter's open-value finder once it is known",
-          "More: direction, arc, lock" in mv and "Find its open value" in pj, "")
+    check("direction, arc, lock in the Move tab's third column; the shutter's open-value finder once it is known",
+          'h("div.mv-col.mv-col-ab"' in mv and 'h("span.k", "Direction")' in mv and "Find its open value" in pj, "")
 
 
 def test_look_shares_the_frame() -> None:
@@ -8659,7 +8677,7 @@ def test_blackout_buttons_lasers() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "l.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=1)
@@ -8742,7 +8760,7 @@ def test_show_pack() -> None:
             z = zipfile.ZipFile(__import__("io").BytesIO(data))
             names = z.namelist()
             check("the file: the show, its fixtures and settings, the files it points at",
-                  name == "gig.jarvis" and {"manifest.json", "show.json", "fixtures.json"} <= set(names)
+                  name == "gig.haze" and {"manifest.json", "show.json", "fixtures.json"} <= set(names)
                   and "files/audio/packcheck0123456789.mp3" in names, str(names))
         finally:
             e.shutdown()
@@ -8775,12 +8793,1957 @@ def test_show_pack() -> None:
                 bad = "accepted"
             except ValueError as exc:
                 bad = str(exc)
-            check("a file that isn't one is refused", "not a Jarvis show file" in bad, bad)
+            check("a file that isn't one is refused", "not a Haze show file" in bad, bad)
         finally:
             e2.shutdown()
             (audio / "packcheck0123456789.mp3").unlink(missing_ok=True)
     dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the Show menu: Save everything to a file (asks where) / Open everything from a file",
-          "Save everything to a file" in dj and "Open everything from a file" in dj and "jarvisDesk.saveAs" in dj
+          "Save everything to a file" in dj and "Open everything from a file" in dj and "hazeDesk.saveAs" in dj
           and "/api/console/unpack" in dj and '"desk:saveAs"' in mj and "showSaveDialog" in mj, "")
+
+
+def test_button_profiles() -> None:
+    """Button profiles: a whole set of pages per kind of show ("Default",
+    "Halloween"), one on the desk at a time, saved with the show."""
+    print("Button profiles (Default, Halloween...)")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "p.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "shows")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "Normal", "target": {"all": True}})
+            e.act("quick_page", page=1, name="Main")
+            check("a show starts with the Default profile only",
+                  e._quick_public()["profiles"] == ["Default"] and e._quick_public()["profile"] == "Default", "")
+            e.act("quick_profile", new="Halloween")
+            check("a new profile is empty and in use", e.quick == [] and e._profiles()["active"] == "Halloween", "")
+            e.act("quick_set", page=1, slot=2, button={"kind": "colour", "label": "Pumpkin", "colour": "#ff6600",
+                                                       "target": {"all": True}})
+            e.act("quick_press", id=e.quick[0]["id"], down=True)
+            e.act("quick_profile_use", name="default")
+            check("switching lets go of the old profile's buttons and brings back the other's pages",
+                  not e.quick_active and [b["label"] for b in e.quick] == ["Normal"]
+                  and e.quick_names == {"1": "Main"}, str(e.quick))
+            e.act("save_show", name="gigs")
+            e.act("show_new")
+            check("a new show has only Default", e._profiles()["order"] == ["Default"], "")
+            e.act("load_show", name="gigs")
+            e.act("quick_profile_use", name="Halloween")
+            check("saved with the show: Halloween's buttons come back",
+                  [b["label"] for b in e.quick] == ["Pumpkin"], str(e.quick))
+            e.act("quick_profile", new="Copy", copy=True)
+            check("a copy starts with the buttons in use", [b["label"] for b in e.quick] == ["Pumpkin"], "")
+            e.act("quick_profile", rename="Copy", to="Xmas")
+            e.act("quick_profile", delete="Xmas")
+            check("deleting the profile in use goes back to Default",
+                  e._profiles()["active"] == "Default" and e._profiles()["order"] == ["Default", "Halloween"], "")
+            e.act("undo")
+            check("undo brings a deleted profile back", "Xmas" in e._profiles()["order"], str(e._profiles()["order"]))
+            for bad in ({"delete": "Default"}, {"rename": "Default", "to": "X"}, {"new": "halloween"}):
+                r = e.act("quick_profile", **bad)
+                check(f"refused: {bad}", not r.get("ok", True), str(r))
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the buttons bar has the profile picker", "quick_profile_use" in qb and 'id="qb-profile"'
+          in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_inverted_aim_matches() -> None:
+    """Aim at a spot on an inverted light: the output flips it ONCE (the
+    aim used to flip it too, so the real light got the plain value and went
+    the other way), and the 3D draws it as programmed - the same spot."""
+    print("Inverted lights: the real light and the 3D agree")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover", "3ch", ["Pan = -270..270", "Tilt = -117..117", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover", mode="3ch", qty=1, universe=1, address=1)
+            h = e.patch[0]["head_no"]
+            e.act("set_place", head=h, x=0, y=6, z=2)
+
+            def wire(role):
+                return [c["value"] for c in e.channel_report([h])["heads"][0]["channels"] if c["role"] == role][0]
+
+            def look():
+                return [r for r in e._looks() if r["n"] == h][0]
+            e.act("select_heads", heads=[h])
+            e.act("set_intensity", level=100)
+            e.act("aim_at", x=3, y=0, z=6)
+            plain = (wire("pan"), wire("tilt"), look()["pan"], look()["tilt"])
+            e.act("set_orient", heads=[h], invert_pan=True, invert_tilt=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("an inverted light is sent the flipped value",
+                  wire("pan") == 255 - plain[0] and wire("tilt") == 255 - plain[1], f"{plain} {wire('pan')} {wire('tilt')}")
+            check("and the 3D still draws it at the same spot",
+                  abs(look()["pan"] - plain[2]) < 0.002 and abs(look()["tilt"] - plain[3]) < 0.002, str(look()))
+            e.act("set_orient", heads=[h], invert_pan=False, invert_tilt=False, swap=True)
+            e.act("aim_at", x=3, y=0, z=6)
+            check("a swapped light: pan goes out on the tilt channel, the 3D the same spot",
+                  wire("tilt") == plain[0] and abs(look()["pan"] - plain[2]) < 0.002, f"{wire('tilt')} {look()}")
+        finally:
+            e.shutdown()
+
+
+def test_line_up() -> None:
+    """Line up with the real light: a light whose pan/tilt zero is off (+7
+    / -3 degrees) pointed at three floor marks by hand - the desk learns the
+    error, then aims it onto any spot and the 3D draws it there."""
+    print("Line up a light with the real one")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=1, universe=1, address=1)
+            h = e.patch[0]
+            n = h["head_no"]
+            e.act("set_place", head=n, x=-1, y=6, z=2)
+            e.act("select_heads", heads=[n])
+            r = e.act("line_up", solve=True)
+            check("no marks: it asks for one", not r.get("ok", True), str(r))
+            for x, z in ((0, 6), (3, 8), (-3, 5)):
+                e.patch[0]["align"] = {"pan": 7, "tilt": -3}       # the real light, on the mark
+                e.act("aim_at", x=x, y=0, z=z)
+                e.patch[0].pop("align")
+                e.act("line_up", x=x, z=z)
+            check("three marks kept", len(e.patch[0].get("align_marks") or []) == 3, str(e.patch[0].get("align_marks")))
+            r = e.act("line_up", solve=True)
+            check("it learns the light's real zero", r.get("align") == {"pan": 7.0, "tilt": -3.0}
+                  and r.get("spread", 9) < 0.1, str(r))
+            e.act("aim_at", x=2, y=0, z=7)
+            got = dict(e.programmer[n])
+            e.patch[0]["align"] = {"pan": 7, "tilt": -3}
+            e.act("aim_at", x=2, y=0, z=7)
+            check("a new spot: the DMX the real light needs", got == dict(e.programmer[n]), f"{got} {e.programmer[n]}")
+            look = [r for r in e._looks() if r["n"] == n][0]
+            check("the 3D draws it from the real zero", look.get("deg", {}).get("pan") == [-263.0, 277.0]
+                  and look["deg"]["tilt"] == [-120.0, 114.0], str(look.get("deg")))
+            e.act("save_show", name="lined")
+            e.act("show_new")
+            e.act("load_show", name="lined")
+            check("saved with the show", e.patch[0].get("align") == {"pan": 7.0, "tilt": -3.0}, str(e.patch[0].get("align")))
+            e.act("line_up", head=n, clear=True)
+            check("Forget the line-up", "align" not in e.patch[0], "")
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("Line up, one step at a time: the light alone, aimed at the two marks furthest apart, one arrow pad, one button, worked out by itself",
+          '"line_up"' in pj and "function farPair" in pj and '"highlight", { state: true, solo: true }' in pj and '"aim_at"' in pj
+          and "`It's on ${m.label} ✓`" in pj and "solve: true" in pj and "Next light ▶" in pj and "lineup-pad" in pj
+          and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+    app_dir = ROOT / "web" / "app"
+    check("Which way up (Invert pan / tilt, Swap) is a link in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
+          and "Invert tilt" in pj and "Swap pan/tilt" in pj and "The arrows move it the wrong way?" in pj, "")
+    fx = (app_dir / "fixtures.js").read_text(encoding="utf-8")
+    check("each moving light's own menu: Line up and Invert", "Line up with the real light" in fx
+          and '"set_orient", { heads: sameSelection(head), invert_pan' in fx and "Invert tilt" in fx, "")
+    check("Line up is on the Set up screen, the command bar and the desk view",
+          "lineup.js" in (app_dir / "modehub.js").read_text(encoding="utf-8")
+          and "lineup.js" in (app_dir / "cmdbar.js").read_text(encoding="utf-8")
+          and "lineup.js" in (app_dir / "deskview.js").read_text(encoding="utf-8"), "")
+
+
+def test_programmer_pro_tools() -> None:
+    """The programmer, as on a pro desk: palettes keep each light's own
+    values and the cues made from them follow when they are recorded over;
+    FLIP / MIRROR; one light at a time; a cue's delay and fan; saved moves
+    on the timeline; four pages of ten playbacks."""
+    print("Programmer: per-light palettes, flip, fan, moves on the timeline")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Mover2", "5ch",
+                                ["Pan = -270..270", "Pan fine", "Tilt = -117..117", "Tilt fine", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Mover2", mode="5ch", qty=4, universe=1, address=1)
+            hs = [h["head_no"] for h in e.patch]
+            for i, n in enumerate(hs):
+                e.act("set_place", head=n, x=-3 + 2 * i, y=6, z=2)
+                e.programmer.setdefault(n, {}).update({"pan": 20000 + i * 5000, "tilt": 30000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", name="Fan out")
+            check("a palette keeps each light's own values", r.get("per_light") is True, str(r))
+            e.act("clear_programmer")
+            e.act("select_heads", heads=hs)
+            e.act("include_palette", kind="position", n=1)
+            check("each light gets its own back", [e.programmer[n]["pan"] for n in hs] == [20000, 25000, 30000, 35000], "")
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=1)
+            for i, n in enumerate(hs):
+                e.programmer.setdefault(n, {}).update({"pan": 40000 - i * 5000, "tilt": 31000})
+            e.act("select_heads", heads=hs)
+            r = e.act("record_palette", kind="position", palette=1)
+            vals = e.playbacks[0]["stack"][0]["values"]
+            check("the cue made from it follows when it is recorded over", r.get("cues") == 1
+                  and [vals[n]["pan"] for n in hs] == [40000, 35000, 30000, 25000]
+                  and vals[hs[0]].get("dimmer") == 100, str(vals))
+            e.act("undo")
+            check("undo puts the cue back too", e.playbacks[0]["stack"][0]["values"][hs[0]]["pan"] == 20000, "")
+            e.act("select_heads", heads=[hs[0]])
+            e.act("aim_at", x=2, y=0, z=7)
+            before = dict(e.programmer[hs[0]])
+            e.act("flip")
+            check("FLIP reaches it from the other end", dict(e.programmer[hs[0]]) != before, "")
+            e.act("flip")
+            check("and twice is back where it was", dict(e.programmer[hs[0]]) == before, "")
+            e.act("mirror_pan")
+            check("MIRROR reverses the pan only", e.programmer[hs[0]]["pan"] == 65535 - before["pan"]
+                  and e.programmer[hs[0]]["tilt"] == before["tilt"], "")
+            e.act("select_heads", heads=hs)
+            steps = [e.act("select_step", step=s)["selected"] for s in ("next", "next", "prev")]
+            e.act("select_step", step="all")
+            check("Next / Prev light, then All", steps == [[hs[0]], [hs[1]], [hs[0]]] and e.selected == hs, str(steps))
+            # a cue's delay and fan
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=100)
+            e.act("record_cue", playback=2)
+            e.act("edit_cue", playback=2, cue=1, fade=1, delay=1, fan=3, fan_dir="left")
+            pb = e.playbacks[1]
+            e._goto(pb, 0, 100.0)
+
+            def lv(t):
+                v = e._pb_values(pb, 100.0 + t)
+                return [v.get(n, {}).get("dimmer", 0) for n in hs]
+            check("the delay: nothing before 1 s", lv(0.5) == [0, 0, 0, 0], str(lv(0.5)))
+            check("the fan: left to right, one after another", lv(2.5) == [100, 50, 0, 0], str(lv(2.5)))
+            check("all there at the end", lv(5.5) == [100, 100, 100, 100], str(lv(5.5)))
+            # a saved move on the timeline
+            e.act("select_heads", heads=hs)
+            e.act("run_fx", name="circle")
+            e.act("move_save", name="Big circle")
+            mid = e.moves[0]["id"]
+            e.act("stop_fx")
+            e.act("timeline_track", kind="fx")
+            tid = e.timeline["tracks"][0]["id"]
+            c = e.act("timeline_clip", track=tid, t=0, move=mid, dur=4, target={"all": True})
+            check("a saved move as a timeline clip", (c.get("clip") or {}).get("move") == mid, str(c))
+            e.act("timeline_play")
+            time.sleep(0.4)
+            check("the timeline plays it", any(f.get("move") == mid for f in e.fx), str(e.fx))
+            e.act("timeline_stop")
+            # four pages of ten playbacks
+            check("40 playbacks", len(e.playbacks) == 40, str(len(e.playbacks)))
+            e.act("select_heads", heads=hs)
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=35)
+            e.act("save_show", name="pro")
+            e.act("show_new")
+            e.act("load_show", name="pro")
+            check("a cue on playback 35 is saved", len(e.playbacks[34]["stack"]) == 1, "")
+        finally:
+            e.shutdown()
+    cd = (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    tj = (ROOT / "web" / "app" / "timeline.js").read_text(encoding="utf-8")
+    check("on screen: delay / fan per cue, playback pages, My moves on the timeline",
+          "delayFan" in cd and "renderPages" in pj and "My moves" in tj, "")
+
+
+def test_desk_view() -> None:
+    """The desk view (Programmer -> Palettes, or the Desk workspace): the
+    usual palettes made for the rig (each light its own), palettes renamed
+    and deleted, and the windows / command strip on screen."""
+    print("Desk view: palette windows, the usual palettes, the command strip")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="moving head spot", qty=4)
+            e.act("add_heads", query="LED PAR", qty=4)
+            e.act("select_heads", heads=[1])
+            e.programmer[1] = {"pan": 5}
+            r = e.act("palette_defaults", kind="colour")
+            check("the usual colours, for this rig", r.get("made", [])[:3] == ["White", "Red", "Amber"]
+                  and len(e.palettes["colour"]) == 10, str(r))
+            check("the programmer and the selection are as they were", e.programmer == {1: {"pan": 5}} and e.selected == [1], "")
+            red = next(p for p in e.palettes["colour"] if p["name"] == "Red")
+            check("a colour palette knows its colour (for its tile)", red.get("hex", "").lower() in ("#ff0000",), str(red.get("hex")))
+            r = e.act("palette_defaults", kind="position")
+            check("the usual positions", {"Centre", "Down", "Out"} <= set(r.get("made") or []), str(r))
+            r = e.act("palette_defaults", kind="colour")
+            check("made once: a second time adds nothing", not r.get("ok", True), str(r))
+            e.act("palette_edit", kind="colour", palette=red["n"], name="Blood")
+            check("a palette renamed", any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+            e.act("palette_edit", kind="colour", palette="Blood", delete=True)
+            check("and deleted", not any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
+        finally:
+            e.shutdown()
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    ws = (ROOT / "web" / "app" / "wslayouts.js").read_text(encoding="utf-8")
+    check("the windows: Group, Position, Colour, Beam; the strip: select, flip, record, windows, keypad",
+          all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
+                                '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
+    check("the Desk workspace opens on it", 'id: "desk"' in ws and 'tab: "desk"' in ws, "")
+    pl = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
+    check("the plot: Plan / Front / Side, head numbers / names / DMX, click and box select, Design mode moves lights",
+          all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
+                                '"dmx", "DMX addresses"', '"set_place"', "Design mode", "pl-rect", "trussPath"))
+          and "openPlot" in dv, "")
+
+
+def _node_three(js: str) -> dict:
+    """Run a module script under node with `three` (and its addons) mapped
+    to the vendored copy; the last line it prints, as JSON ({} when node is
+    missing or it failed - the caller's check reports it)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three')return{{url:'{vend}three.module.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=60)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-400:]}
+
+
+def test_vis_toolbar() -> None:
+    """The 3D's toolbar, as on a pro visualiser: Move Camera / Select
+    Fixtures / Select Elements, Fit to whole room, Per / Top / Front / Side
+    / Free views (the flat ones drawn as white lines on black), Pers / Orth
+    and the frame rate; the old buttons still there (>> and the right)."""
+    print("3D toolbar: mouse modes, the views, line drawings, Pers/Orth, FPS")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    st = stage_js()
+    pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    check("the toolbar: Move Camera, Select Fixtures, Select Elements, Fit to whole room",
+          all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+              for k in ('data-mouse="camera"', ">Move Camera<", 'data-mouse="fixtures"', ">Select Fixtures<",
+                        'data-mouse="elements"', ">Select Elements<", 'id="vis-fit"', ">Fit to whole room<")), "")
+    check("...Per / Top / Front / Side / Free View, Pers / Orth, FPS",
+          all(f'data-cam="{k}"' in html for k in ("per", "top", "front", "side", "free"))
+          and all(k in html.replace('<span class="vis-long">', "").replace("</span>", "")
+                  for k in (">Per View<", ">Top View<", ">Front View<", ">Side View<", ">Free View<",
+                                      'id="vis-proj"', 'id="vis-fps"', "FPS: 0")), "")
+    check("...and everything that was on the 3D before: crowd, zones, lights only, arrange, full screen, >> for the rest",
+          all(f'id="{k}"' in html for k in ("people-btn", "zones-btn", "lightsonly-btn", "arrange-btn", "fullscreen-btn", "views-more"))
+          and "&gt;&gt;" in html and '"Frame the selection"' in sp and '"From the DJ booth"' in sp, "")
+    check("the stage: flat cameras framing the room, line drawings, the mouse modes, a head of a light under the pointer",
+          all(k in st for k in ("OrthographicCamera", "setProjection(kind)", "fitRoom(", "_setWire(", "wireUp(",
+                                "setMouseMode(", "cellAt(", "this.fps", "onElement", "isOrthographicCamera")), "")
+    check("the toolbar is wired: views, mouse, fit, Pers/Orth, FPS; a head picked in 3D reaches the programmer",
+          all(k in sp for k in ("stage.setProjection(", "stage.setMouseMode(", "stage.fitRoom()", '"Pers" : "Orth"', "FPS: ",
+                                'BroadcastChannel("haze.cells")'))
+          and 'BroadcastChannel("haze.cells")' in pg and "state.pendingCells" in pg, "")
+    # the line drawing itself, run for real: a box becomes its 12 edges and back
+    wire = (ROOT / "web" / "js" / "stage" / "wire.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const W=await import({json.dumps(wire)});"
+        "const g=new T.Group();const mat=new T.MeshStandardMaterial();"
+        "const box=new T.Mesh(new T.BoxGeometry(1,2,3),mat);g.add(box);"
+        "const hull=new T.Mesh(new T.BoxGeometry(1,1,1),new T.MeshBasicMaterial({visible:false}));g.add(hull);"
+        "W.wireUp(g,true);const lines=box.children.find(c=>c.isLineSegments);"
+        "const on={swapped:box.material!==mat,edges:lines?lines.geometry.attributes.position.count/2:0,"
+        "hidesBehind:box.material.colorWrite===false&&box.material.depthWrite!==false,hull:hull.children.length};"
+        "W.wireUp(g,true);const twice=box.children.filter(c=>c.isLineSegments).length;"
+        "W.wireTint(g,W.WIRE_SEL);const tint=lines.material===W.WIRE_SEL;"
+        "W.wireUp(g,false);"
+        "console.log(JSON.stringify({...on,twice,tint,back:box.material===mat,hidden:!lines.visible}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the line drawing is not run)")
+    else:
+        check("a line drawing: a box's surface hides what is behind it and its 12 edges are drawn",
+              got.get("swapped") and got.get("edges") == 12 and got.get("hidesBehind") and got.get("hull") == 0, str(got))
+        check("...drawn once however often it is asked, a selected light's lines in the accent, and back to solid",
+              got.get("twice") == 1 and got.get("tint") and got.get("back") and got.get("hidden"), str(got))
+
+
+def test_vis_source() -> None:
+    """What the 3D draws (the toolbar's Output / Programmer only / Next
+    GO): the 3D's feed follows it, the DMX never does."""
+    print("3D source: output, programmer only, next GO - the DMX untouched")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2, universe=1, address=1)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=100)
+            e.act("set_colour", hex="#ff0000")
+            e.act("record_cue", playback=1)                   # cue 1: red
+            e.act("set_colour", hex="#0000ff")
+            e.act("record_cue", playback=1)                   # cue 2: blue
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                       # live: cue 1, red
+            e.act("select_heads", heads=[2])
+            e.act("set_colour", hex="#00ff00")                # the programmer: head 2 green
+            e.act("set_intensity", level=100)
+
+            def feed():
+                return {r["n"]: r for r in e.look_rows()}
+
+            def wire():
+                return bytes(e.build_frames(time.monotonic())[1][:8])
+
+            out_feed, out_wire = feed(), wire()
+            check("Output: the 3D shows what the lights do (head 1 red from the cue, head 2 green from the programmer)",
+                  out_feed[1]["hex"].lower() == "#ff0000" and out_feed[2]["hex"].lower() == "#00ff00", str(out_feed))
+            r = e.act("vis_source", source="programmer")
+            pf = feed()
+            check("Programmer only: head 1 (only in the cue) is dark, head 2 shows the programmer's green",
+                  r["ok"] and 1 not in pf and pf[2]["hex"].lower() == "#00ff00", str(pf))
+            check("...and the DMX is exactly as it was", wire() == out_wire, f"{out_wire.hex()} -> {wire().hex()}")
+            check("...the lamps that follow the desk still get the output", e._looks()[0]["hex"].lower() == "#ff0000", "")
+            r = e.act("vis_source", source="next")
+            nf = feed()
+            check("Next GO: the 3D shows cue 2 (blue) on head 1, the programmer still on top of head 2",
+                  r["ok"] and nf[1]["hex"].lower() == "#0000ff" and nf[2]["hex"].lower() == "#00ff00"
+                  and "PB1" in r["summary"] and "cue 2" in r["summary"], str(nf) + r.get("summary", ""))
+            check("...the DMX still the output", wire() == out_wire, "")
+            e.act("cue_go", playback=1)                       # now on cue 2: next GO is the top again? no loop: stays on 2
+            check("after GO the preview moves on with it", feed()[1]["hex"].lower() == "#0000ff", "")
+            e.act("playback_level", playback=1, level=0)
+            check("a fader down still previews its next cue (at full)", feed()[1]["hex"].lower() == "#0000ff", "")
+            r = e.act("vis_source", source="next", playback=999)
+            check("a playback that isn't there is refused", not r["ok"], str(r))
+            r = e.act("vis_source", source="sideways")
+            check("an unknown source is refused, in plain words", not r["ok"] and "output" in (r.get("error") or ""), str(r))
+            before = e._undo_public() if hasattr(e, "_undo_public") else None
+            e.act("vis_source", source="output")
+            check("back to Output; not an undo step; in the snapshot for every window",
+                  e.vis_source["source"] == "output" and (e._undo_public() == before if before is not None else True)
+                  and e.snapshot()["vis_source"]["source"] == "output", "")
+        finally:
+            e.shutdown()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("the toolbar's source list: Output / Programmer only / Next GO",
+          all(k in html for k in ('id="vis-source"', '"output">Output<', '"programmer">Programmer only<', '"next">Next GO<'))
+          and 'run("vis_source"' in sp, "")
+
+
+def _node_stage(js: str) -> dict:
+    """Run a script that imports the 3D's own modules (three.js mapped to
+    the vendored WebGPU build, as the page's import map does)."""
+    import subprocess as _sp
+    from tools.selftests.common import _which
+    node = _which("node")
+    if not node:
+        return {"_skip": "no node"}
+    vend = (ROOT / "web" / "vendor" / "three").as_uri() + "/"
+    hook = ("export async function resolve(s,c,n){"
+            f"if(s==='three'||s==='three/webgpu')return{{url:'{vend}three.webgpu.js',shortCircuit:true}};"
+            f"if(s==='three/tsl')return{{url:'{vend}three.tsl.js',shortCircuit:true}};"
+            f"if(s.startsWith('three/addons/'))return{{url:'{vend}addons/'+s.slice(13),shortCircuit:true}};"
+            "return n(s,c)}")
+    head = ("import{register}from'node:module';"
+            f"register('data:text/javascript,'+encodeURIComponent({json.dumps(hook)}));")
+    proc = _sp.run([node, "--input-type=module", "-e", head + js], capture_output=True, text=True, timeout=90)
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"_error": (proc.stderr or proc.stdout)[-600:]}
+
+
+def test_curved_rigging() -> None:
+    """Curved truss: an arc, a spiral and an S curve (and a smooth circle)
+    from the rigging library - lights spread evenly along the curve, on it,
+    facing along it; the 3D draws the same curve the desk places them on."""
+    print("Curved rigging: arc, spiral, S curve; lights along the curve")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=1, y=5, z=3, radius=5, start=20, end=160)
+    mids = [venue_mod.curve_point(r, k / 4) for r in arc for k in range(5)]
+    check("an arc: every point of every piece on the circle (to 1 cm), the pieces joined",
+          max(abs(math.hypot(p[0] - 1, p[2] - 3) - 5) for p in mids) < 0.01
+          and all(math.dist(arc[i]["b"], arc[i + 1]["a"]) < 1e-6 for i in range(len(arc) - 1)), "")
+    sc = riglib.build("scurve", x=0, y=5, z=6, radius=3, start=0, end=90, rot=30)
+    kink = max(abs(math.degrees((venue_mod.curve_heading(sc[i], 1) - venue_mod.curve_heading(sc[i + 1], 0) + math.pi)
+                                % (2 * math.pi) - math.pi)) for i in range(len(sc) - 1))
+    turns = sum(r["bend"] for r in sc[:len(sc) // 2]), sum(r["bend"] for r in sc[len(sc) // 2:])
+    check("an S curve: one bend each way, smooth all along (no kink)",
+          kink < 0.5 and turns[0] > 80 and turns[1] < -80, f"{kink:.2f} {turns}")
+    sp = riglib.build("spiral", x=-6, y=3, z=5, radius=2, radius_end=1.2, turns=2.5, rise=1.4)
+    check("a spiral: winds 2.5 times round, rising 3.5 m, narrowing to 1.2 m",
+          abs(sum(r["bend"] for r in sp) - 900) < 3 and abs(sp[-1]["b"][1] - sp[0]["a"][1] - 3.5) < 0.01
+          and abs(math.hypot(sp[-1]["b"][0] + 6, sp[-1]["b"][2] - 5) - 1.2) < 0.01, "")
+    v = venue_mod.normalise({"version": 2, "rigging": [{"kind": "truss", "a": [0, 4, 0], "b": [2, 4, 0], "bend": 500},
+                                         {"kind": "truss", "a": [0, 4, 2], "b": [2, 4, 2]}]})
+    check("a piece keeps its bend (kept in range); a straight one has none",
+          v["rigging"][0]["bend"] == 179 and "bend" not in v["rigging"][1], str(v["rigging"]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            s = e.act("rig_add", preset="spiral", radius=2, radius_end=1.2, turns=2.5, rise=1.4, x=-6, z=5, trim=3)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=4, trim=5)
+            c = e.act("rig_add", preset="scurve", radius=3, start=0, end=90, x=0, z=12, trim=5.5)
+            check("spiral, arc and S curve added, each one shape",
+                  s.get("ok") and a.get("ok") and c.get("ok") and s["group"] and a["group"] and c["group"], str((s.get("error"), a.get("error"))))
+            e.act("add_heads", query="Moving Head", qty=12)
+            r = e.act("attach_heads", heads=list(range(1, 11)), rig=s["ids"][3])
+            on = sorted((h for h in e.patch if h["head_no"] <= 10), key=lambda h: h["y"])
+            rigs = {x["id"]: x for x in e.venue["rigging"]}
+            where = []
+            for h in on:
+                m = h["mount"]
+                p = venue_mod.curve_point(rigs[m["rig"]], m["t"])
+                where.append(p)
+            gaps = [venue_mod.length(x) for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            per = sum(gaps) / 10
+            # how far along the curve each one is
+            members = [x for x in e.venue["rigging"] if x.get("group") == s["group"]]
+            along = []
+            for h in on:
+                k = next(i for i, x in enumerate(members) if x["id"] == h["mount"]["rig"])
+                along.append(sum(venue_mod.length(x) for x in members[:k]) + venue_mod.length(members[k]) * h["mount"]["t"])
+            steps = [along[i + 1] - along[i] for i in range(9)]
+            check("ten lights spread evenly along the spiral (as far apart as each other)",
+                  r.get("ok") and max(abs(x - per) for x in steps) < 0.05, f"{per:.2f} {[round(x, 2) for x in steps]}")
+            check("...each hung under the truss, on the curve",
+                  all(h["stance"] == "hang" and abs(h["x"] - p[0]) < 1e-3 and abs(h["z"] - p[2]) < 1e-3 and h["y"] < p[1]
+                      for h, p in zip(on, where)), "")
+            yaw_err = 0.0
+            for h in on:
+                m = h["mount"]
+                want = math.degrees(-venue_mod.curve_heading(rigs[m["rig"]], m["t"]))
+                d = ((e._head_yaw(h) - want + 90) % 180) - 90               # facing along it, either way round
+                yaw_err = max(yaw_err, abs(d))
+            check("...each facing along the curve where it hangs (as the 3D turns it)", yaw_err < 0.5, f"{yaw_err:.2f}")
+            e.act("attach_heads", heads=[11, 12], rig=a["ids"][0])
+            check("two lights on the arc sit on its circle",
+                  all(abs(math.hypot(h["x"], h["z"] - 4) - 5) < 0.02 for h in e.patch if h["head_no"] in (11, 12)), "")
+            t = e.act("rig_trim", id=s["ids"][0], trim=2.5)
+            low = min(min(x["a"][1], x["b"][1]) - x["size"] / 2 for x in e.venue["rigging"] if x.get("group") == s["group"])
+            high = max(x["b"][1] for x in e.venue["rigging"] if x.get("group") == s["group"])
+            check("trimming a spiral moves it whole (its rise kept), its lights with it",
+                  t.get("ok") and abs(low - 2.5) < 1e-3 and abs(high - low - 3.5 - 0.145) < 0.01, f"{low} {high}")
+            rep = e.act("rig_report")["report"]
+            parts = [p["length"] for p in rep["parts"] if isinstance(p["length"], str)]
+            check("the rigging report lists curved sections by their radius",
+                  any(p.startswith("curved, radius 5.0") for p in parts) and any(p.startswith("curved, radius 3.0") for p in parts), str(parts))
+            pts = json.dumps([[x["a"], x["b"], x.get("bend", 0)] for x in e.venue["rigging"] if x.get("group") == a["group"]])
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});"
+        f"const rs={pts}.map(([a,b,bend])=>({{id:'x',kind:'truss',size:0.29,a,b,bend}}));"
+        "const out=rs.map(r=>[0,0.25,0.5,0.75,1].map(t=>V.curvePoint(r,t).toArray()));"
+        "const built=V.buildVenue({room:{width:24,depth:24,height:10,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "rigging:rs.map((r,i)=>({...r,id:'r'+i,group:'g'})),objects:[],zones:[],cameras:[],crowd:{show:false}},[],{people:false});"
+        "const T=await import('three');const box=new T.Box3().setFromObject(built.items.get('r3'));"
+        "console.log(JSON.stringify({out,box:[box.min.toArray(),box.max.toArray()]}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D's curve is not checked)")
+        return
+    want = [[venue_mod.curve_point({"a": a_, "b": b_, "bend": bd}, t) for t in (0, 0.25, 0.5, 0.75, 1)]
+            for a_, b_, bd in json.loads(pts)]
+    worst = max((math.dist(p, q) for row, wrow in zip(got.get("out") or [], want) for p, q in zip(row, wrow)), default=9)
+    check("the 3D's curve is the desk's (the same points to the mm)", bool(got.get("out")) and worst < 1e-3, str(got)[:300])
+    b = got.get("box") or [[0, 0, 0], [0, 0, 0]]
+    mid = venue_mod.curve_point({"a": json.loads(pts)[3][0], "b": json.loads(pts)[3][1], "bend": json.loads(pts)[3][2]}, 0.5)
+    check("...and its truss is drawn round that curve (the lattice round the middle of the piece)",
+          all(b[0][i] - 0.3 <= mid[i] <= b[1][i] + 0.3 for i in range(3)), str(b))
+    rd = (ROOT / "web" / "app" / "rigdialog.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arc / Spiral / S curve in the rigging library, and under + Truss",
+          all(k in rd for k in ('["arc", "Arc"', '["spiral", "Spiral"', '["scurve", "S curve"'))
+          and all(k in vp for k in ('rigDialog("arc")', 'rigDialog("spiral")', 'rigDialog("scurve")', 'rigDialog("circle")')), "")
+
+
+def test_room_look() -> None:
+    """The room as a pro visualiser draws it: a grey pleated drape (venue
+    object "drape": width, height, fold), a grey stage deck, LED panels in a
+    grid (object "panels": tile size and gap, each showing its part of the
+    picture)."""
+    print("Room look: pleated drapes, grey deck, LED panels")
+    from app import venue as venue_mod
+
+    v = venue_mod.normalise({"version": 2, "room": {"width": 20, "depth": 20, "height": 8},
+                             "stage": {"width": 10, "depth": 6},
+                             "objects": [{"kind": "drape", "x": 0, "z": 0.3, "w": 12, "h": 6, "d": 0.25, "fold": 9},
+                                         {"kind": "panels", "x": 0, "z": 1, "y": 1, "w": 6, "h": 3, "tile": 0.5, "gap": 0.25,
+                                          "content": "javascript:x"},
+                                         {"kind": "drape", "x": 0, "z": 0, "w": 4, "h": 3}]})
+    dr, pn, dr2 = v["objects"]
+    check("a drape keeps its size and folds (kept in range), a default fold when none is given",
+          dr["kind"] == "drape" and dr["w"] == 12 and dr["h"] == 6 and dr["fold"] == 2.0 and dr2["fold"] == 0.4, str(v["objects"]))
+    check("LED panels keep their tile and gap; what they show is the lights unless it is a clip or picture",
+          pn["tile"] == 0.5 and pn["gap"] == 0.25 and pn["content"] == "rig", str(pn))
+    check("a new stage deck is grey", v["stage"]["colour"] == venue_mod.DECK_GREY, str(v["stage"]))
+    t = venue_mod.template("concert")
+    drapes = [o for o in t["objects"] if o["kind"] == "drape"]
+    check("the concert template: a grey pleated drape across the back of a grey stage",
+          len(drapes) == 1 and drapes[0]["w"] >= t["stage"]["width"] and drapes[0]["colour"] == venue_mod.DRAPE_GREY
+          and drapes[0]["z"] < 1 and t["stage"]["colour"] == venue_mod.DECK_GREY, str(drapes))
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        # (a screen draws on a canvas: a stand-in for one, outside a browser)
+        "globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>null,addEventListener(){}})};"
+        f"const V=await import({json.dumps(venue_js)});"
+        "const g=V.drapeGeo(4,3,0.5,0.3);const p=g.attributes.position;"
+        "let zmin=9,zmax=-9,cross=0,prev=null;"
+        "for(let i=0;i<p.count;i++){if(Math.abs(p.getY(i)-3)>1e-6)continue;const z=p.getZ(i);zmin=Math.min(zmin,z);zmax=Math.max(zmax,z);"
+        "if(prev!==null&&Math.sign(z)!==Math.sign(prev)&&Math.abs(z)>1e-9)cross++;if(Math.abs(z)>1e-9)prev=z;}"
+        "const P=V.panelGeo(6,3,0.1,0.5,0.25);const uv=P.faces.attributes.uv;let umin=9,umax=-9;"
+        "for(let i=0;i<uv.count;i++){umin=Math.min(umin,uv.getX(i),uv.getY(i));umax=Math.max(umax,uv.getX(i),uv.getY(i));}"
+        "const built=V.buildVenue({version:2,room:{width:20,depth:20,height:8,back:-1,ceiling:'open',floor:'concrete',outline:[]},"
+        "stage:{x:0,z:0,width:10,depth:6,height:1,colour:'#55575d'},rigging:[],zones:[],cameras:[],crowd:{show:false},"
+        "objects:[{id:'o1',kind:'drape',x:0,z:0.3,y:0,w:12,h:6,d:0.25,fold:0.4,rot:0},"
+        "{id:'o2',kind:'panels',x:0,z:1,y:1,w:6,h:3,d:0.1,tile:0.5,gap:0.25,rot:0,content:'rig'}]},[],{people:false});"
+        "console.log(JSON.stringify({zmin,zmax,cross,cols:P.cols,rows:P.rows,umin,umax,"
+        "screens:built.screens.length,drape:!!built.items.get('o1').children.find(m=>m.userData.drape)}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the drawings are not checked)")
+        return
+    check("the drape is pleated: folds front and back by its depth, one every half metre (8 on 4 m)",
+          abs(got.get("zmax", 0) - 0.15) < 0.01 and abs(got.get("zmin", 0) + 0.15) < 0.01 and 14 <= got.get("cross", 0) <= 16, str(got))
+    check("LED panels: a grid of 8 x 4 on 6 x 3 m (0.5 m tiles, 0.25 m apart), the picture spread over all of them",
+          got.get("cols") == 8 and got.get("rows") == 4 and got.get("umin", -1) >= -1e-6 and got.get("umax", 9) <= 1 + 1e-6, str(got))
+    check("...and they show the rig's colours like a screen; the drape is drawn in the room",
+          got.get("screens") == 1 and got.get("drape") is True, str(got))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange's + More adds a drape and LED panels", '["drape", "Drape (pleated curtain)"]' in vp and '["panels", "LED panels (a grid)"]' in vp, "")
+
+
+def test_hang_types() -> None:
+    """Hang types as on a pro desk (hung, standing, bottom / top front and
+    rear, boom left / right): the desk's aim and the 3D's model agree for
+    every one - each beam, drawn by the 3D's own model, lands on the spot -
+    and a light on a boom points sideways at rest."""
+    print("Hang types: the aim and the 3D agree, a boom light points sideways")
+    from app import engine as eng
+    from app import fixture_kind
+    from app import venue as venue_mod
+
+    for name, m in venue_mod.HANG_BASE.items():
+        det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+               + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        if det != 1:
+            check(f"hang {name} is a turn (not a mirror)", False, str(m))
+    check("every hang is a real turn of the light", all(name in venue_mod.HANG_BASE for name in venue_mod.HANGS), "")
+    check("a boom light's head points sideways (left / right as the audience sees it), on its back towards the audience",
+          venue_mod.hang_turn("boom_left", (0, 1, 0)) == (-1, 0, 0) and venue_mod.hang_turn("boom_right", (0, 1, 0)) == (1, 0, 0)
+          and venue_mod.hang_turn("bottom_front", (0, 1, 0)) == (0, 0, 1) and venue_mod.hang_turn("top_rear", (0, 1, 0)) == (0, 0, -1), "")
+    look_js = (ROOT / "web" / "js" / "stage" / "look.js").read_text(encoding="utf-8")
+    for name, m in venue_mod.HANG_BASE.items():
+        row = f"{name}: [[{m[0][0]}, {m[0][1]}, {m[0][2]}], [{m[1][0]}, {m[1][1]}, {m[1][2]}], [{m[2][0]}, {m[2][1]}, {m[2][2]}]]"
+        if row not in look_js:
+            check(f"the 3D's table has {name} as the desk's", False, row)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        fixtures.create_profile(db, "TestCo", "Hangtest", "3ch", ["Pan = -270..270", "Tilt = -135..135", "Dimmer"])
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=16, depth=16, height=8, layout=False)
+            e.act("add_heads", query="Hangtest", mode="3ch", qty=1, universe=1, address=1)
+            n = e.patch[0]["head_no"]
+            r = e.act("set_place", head=n, x=-4, y=2.5, z=3, hang="boom left")
+            h = e._head(n)
+            check("set_place takes a hang type (in words too); the snapshot carries it",
+                  r.get("ok") and h.get("hang") == "boom_left" and r.get("hang") == "boom_left"
+                  and next(p for p in e.snapshot()["patch"] if p["head_no"] == n).get("hang") == "boom_left", str(r))
+            check("a hang that isn't one is refused", not e.act("set_place", head=n, hang="sideways-ish").get("ok"), "")
+            e.act("select_heads", heads=[n])
+            e.act("set_intensity", level=100)
+            body = fixture_kind.describe(h)
+            cases = []
+            targets = [(0.0, 0.0, 6.0), (2.0, 1.0, 9.0), (-4.0, 0.0, 7.0)]
+            for hang in venue_mod.HANGS:
+                for yaw in (0.0, 35.0):
+                    e.act("set_place", head=n, x=-4, y=2.5, z=3, hang=hang)
+                    h["yaw"] = yaw                              # free-standing: it keeps a facing
+                    for tgt in targets:
+                        got = e._aim_solve(h, *tgt, closest=True)
+                        if got is None or len(got) > 4:
+                            continue                            # out of its reach
+                        cases.append({"hang": hang, "yaw": yaw, "pan": got[2], "tilt": got[3], "t": list(tgt)})
+            e.act("set_place", head=n, hang="standing")
+            check("standing again clears the hang", "hang" not in h and h.get("stance") == "stand", str(h.get("hang")))
+            e.act("set_place", head=n, hang="boom_right")
+            e.act("set_place", head=n, stance="hang")
+            check("choosing hang / stand clears it too", "hang" not in h and h["stance"] == "hang", "")
+            time.sleep(1.3)                                 # (moves in a burst are one undo step)
+            e.act("set_place", head=n, hang="top_front")
+            on_back = e._head(n).get("hang")
+            e.act("undo")
+            check("undo puts the hang back as it was", on_back == "top_front" and e._head(n).get("hang") is None
+                  and e._head(n).get("stance") == "hang", str(e._head(n).get("hang")))
+        finally:
+            e.shutdown()
+    check("every hang reaches the spots (enough cases to test)", len({c["hang"] for c in cases}) == len(venue_mod.HANGS), str(len(cases)))
+    # the 3D's own model, turned by the 3D's own table: where does its beam go?
+    models = (ROOT / "web" / "js" / "stage" / "models.js").as_uri()
+    look = (ROOT / "web" / "js" / "stage" / "look.js").as_uri()
+    got = _node_three(
+        "const T=await import('three');"
+        f"const{{buildFixture}}=await import({json.dumps(models)});"
+        f"const L=await import({json.dumps(look)});"
+        f"const body={json.dumps(body)};const cases={json.dumps(cases)};"
+        "const out=cases.map(c=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "holder.position.set(-4,2.5,3);holder.rotation.set(0,c.yaw*Math.PI/180,0);"
+        "L.hangQuat(c.hang,sk.native==='hung',sk.root.quaternion);"
+        "sk.pan.rotation.y=c.pan*Math.PI/180;sk.tilt.rotation.x=c.tilt*Math.PI/180;holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];const o=em.node.getWorldPosition(new T.Vector3());"
+        "const d=em.dir.clone().transformDirection(em.node.matrixWorld).normalize();"
+        "const v=new T.Vector3(...c.t).sub(o);const along=v.dot(d);const off=Math.sqrt(Math.max(0,v.lengthSq()-along*along));"
+        "return [c.hang,+off.toFixed(3),along>0]});"
+        "const rest=(()=>{const sk=buildFixture(body,'TestCo Hangtest');const holder=new T.Group();holder.add(sk.root);"
+        "L.hangQuat('boom_left',sk.native==='hung',sk.root.quaternion);holder.updateMatrixWorld(true);"
+        "const em=sk.emitters[0];return em.dir.clone().transformDirection(em.node.matrixWorld).normalize().toArray().map(x=>+x.toFixed(3))})();"
+        "console.log(JSON.stringify({out,rest}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: the 3D model is not checked)")
+        return
+    out = got.get("out") or []
+    worst = {}
+    for hang, off, ahead in out:
+        worst[hang] = max(worst.get(hang, 0), off if ahead else 99)
+    check("for every hang, the 3D's beam lands within 10 cm of where the desk aimed it",
+          len(out) == len(cases) and all(v < 0.1 for v in worst.values()), str(worst) + str(got.get("_error", ""))[:300])
+    rest = got.get("rest") or [0, 0, 0]
+    check("a light on a boom (left) points sideways at rest, in the 3D too", rest[0] < -0.99, str(rest))
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: a light's Hang (Hung, Standing, Bottom / Top front and rear, Boom left / right)",
+          all(f'["{k}", ' in vp for k in venue_mod.HANGS) and 'hang: hangSel.value' in vp, "")
+
+
+def test_free_view_lines() -> None:
+    """Free View is a flat line drawing too (as on a pro visualiser), and
+    it still turns with the mouse; only Per View is shaded."""
+    print("Free View: a line drawing you can turn")
+    st = stage_js()
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("every flat view is drawn as lines; Per View alone is shaded",
+          'this._setWire(kind !== "per")' in st and 'kind === "top" || kind === "front" || kind === "side"' not in st, "")
+    check("Free View still turns (the others only slide and zoom)",
+          'this.controls.enableRotate = kind === "per" || kind === "free"' in st, "")
+    check("its button says it is a line drawing you can turn",
+          'data-cam="free"' in html and "turned any way you like (drag to turn it): a line drawing" in html, "")
+
+
+def test_next_go_focus() -> None:
+    """Next GO previews the playback the operator is working with: the
+    desk window tells the engine its focused playback, and the 3D (in any
+    window) shows that playback's next cue - the DMX untouched."""
+    print("Next GO follows the playback in focus")
+    from app import engine as eng
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "a.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=1, universe=1, address=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            for pb, hexes in ((1, ("#ff0000", "#00ff00")), (2, ("#0000ff", "#ffffff"))):
+                for hx in hexes:
+                    e.act("set_colour", hex=hx)
+                    e.act("record_cue", playback=pb)
+            e.act("clear_programmer")
+            e.act("cue_go", playback=1)                      # live: PB1 cue 1 (red); GO was last pressed on PB1
+            wire = bytes(e.build_frames(time.monotonic())[1][:8])
+
+            def shown():
+                return {r["n"]: r for r in e.look_rows()}[1]["hex"].lower()
+            e.act("vis_source", source="next")
+            check("no focus told: the playback GO was last pressed on (PB1's next: green)", shown() == "#00ff00", shown())
+            r = e.act("vis_source", focus=2)
+            check("the desk says PB2 is in focus: the 3D shows PB2's next GO (its cue 1, blue)",
+                  r["ok"] and shown() == "#0000ff" and e.vis_source["source"] == "next", shown())
+            e.act("vis_source", source="output")
+            e.act("vis_source", source="next")
+            check("the focus is kept when the source is changed in the 3D window", shown() == "#0000ff", shown())
+            e.act("vis_source", source="next", playback=1)
+            check("a playback asked for by number still wins", shown() == "#00ff00", shown())
+            check("the DMX never moved", bytes(e.build_frames(time.monotonic())[1][:8]) == wire, "")
+            check("a focus on a playback that isn't there is refused", not e.act("vis_source", focus=999).get("ok"), "")
+            check("telling the focus is not an undo step", "vis_source" not in str(e._undo_public()), str(e._undo_public())[:200])
+        finally:
+            e.shutdown()
+    pj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    check("the desk window tells the engine whenever the focused playback changes (GO and Back too)",
+          'act("vis_source", { focus: n })' in pj and "tellFocus(n);" in pj
+          and 'onclick: () => { setFocus(n); run("cue_go"' in pj, "")
+
+
+def test_curve_snap_and_shape() -> None:
+    """A light snaps onto a curved truss where the curve really is (not the
+    straight line between a piece's ends), in the desk and in Arrange; and
+    turning / resizing one piece of a curve changes the whole shape (or is
+    refused in plain words) - the curve never breaks."""
+    print("Curved truss: snap to the curve, the shape changes as one")
+    import math
+    from app import engine as eng
+    from app import riglib
+    from app import venue as venue_mod
+
+    arc = riglib.build("arc", x=0, y=5, z=4, radius=5, start=200, end=340, segments=4)
+    r = arc[1]
+    want = 0.37
+    on = venue_mod.curve_point(r, want)
+    out = [on[0] * 1.06, on[1], 4 + (on[2] - 4) * 1.06]           # 30 cm outside the curve
+    t, q = venue_mod.curve_nearest(r, out)
+    chord_t, chord_q = venue_mod.curve_nearest({**r, "bend": 0}, out)
+    check("the nearest point is on the curve, not on the straight line between the ends (over 10 cm off)",
+          abs(t - want) < 0.01 and abs(math.dist(q, out) - 0.3) < 0.01 and math.dist(chord_q, q) > 0.1,
+          f"{t:.3f} {math.dist(q, out):.3f} {math.dist(chord_q, q):.3f}")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_shape", shape="rectangle", width=24, depth=24, height=10, layout=False)
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=8, trim=5, segments=4)
+            pieces = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            p1 = pieces[1]
+            mid = venue_mod.curve_point(p1, 0.5)
+            e.act("add_heads", query="Moving Head", qty=1)
+            n = e.patch[-1]["head_no"]
+            e.act("set_place", head=n, x=mid[0], y=mid[1] - 0.4, z=mid[2], snap=True)
+            h = e._head(n)
+            check("a light dropped under the middle of a curved piece snaps onto it, on the curve",
+                  (h.get("mount") or {}).get("rig") == p1["id"] and abs(h["mount"]["t"] - 0.5) < 0.02
+                  and math.hypot(h["x"] - mid[0], h["z"] - mid[2]) < 0.02, str((h.get("mount"), h["x"], h["z"])))
+            before = {x["id"]: dict(x) for x in pieces}
+            r = e.act("venue_rig", id=p1["id"], turn=90)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            joined = all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1))
+            check("turning one piece of a curve turns the whole shape: still joined, the same bends",
+                  r.get("ok") and joined and all(x["bend"] == before[x["id"]]["bend"] for x in after)
+                  and "whole shape" in r.get("summary", ""), str(r.get("error") or r.get("summary")))
+            h = e._head(n)
+            p1now = venue_mod.rig(e.venue, p1["id"])
+            check("...its light goes round with it, still on the curve",
+                  math.dist([h["x"], h["z"]], [venue_mod.curve_point(p1now, h["mount"]["t"])[i] for i in (0, 2)]) < 0.01, "")
+            old_len = venue_mod.length(p1now)
+            r = e.act("venue_rig", id=p1["id"], length=old_len * 1.5)
+            after = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("resizing one piece of a curve resizes the whole shape (half as big again), still joined",
+                  r.get("ok") and abs(venue_mod.length(after[1]) - old_len * 1.5) < 0.02
+                  and all(math.dist(after[i]["b"], after[i + 1]["a"]) < 0.01 for i in range(len(after) - 1)), str(r.get("error")))
+            r = e.act("venue_rig", id=p1["id"], orient="vertical")
+            check("standing a curved piece up is refused, in plain words",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            cur = venue_mod.rig(e.venue, p1["id"])
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]]})
+            check("moving one end of a curved piece on its own is refused (the curve would break)",
+                  not r["ok"] and "part of a curve" in (r.get("error") or ""), str(r))
+            r = e.act("venue_update", id=p1["id"], changes={"a": [cur["a"][0] + 1, cur["a"][1], cur["a"][2]],
+                                                           "b": [cur["b"][0] + 1, cur["b"][1], cur["b"][2]]})
+            moved = [x for x in e.venue["rigging"] if x.get("group") == a["group"]]
+            check("...moving it whole still moves the whole shape", r["ok"] and all(math.dist(moved[i]["b"], moved[i + 1]["a"]) < 0.01
+                                                                                    for i in range(len(moved) - 1)), str(r.get("error")))
+        finally:
+            e.shutdown()
+    venue_js = (ROOT / "web" / "js" / "stage" / "venue.js").as_uri()
+    got = _node_stage(
+        f"const V=await import({json.dumps(venue_js)});const T=await import('three');"
+        f"const r={json.dumps(r_ := {**arc[1], 'id': 'x'})};"
+        f"const n=V.curveNearest(r,new T.Vector3(...{json.dumps(out)}));"
+        "console.log(JSON.stringify({t:n.t,p:n.point.toArray()}))")
+    if got.get("_skip"):
+        print("   (no Node.js here: Arrange's snap is not checked)")
+    else:
+        check("Arrange's snap finds the same point as the desk", abs(got.get("t", 9) - t) < 1e-3, str(got))
+    del r_
+    ed = (ROOT / "web" / "js" / "stage" / "editor.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange: snaps on the curve, no end handles on a curve's piece, the inspector says the shape changes as one",
+          "curveNearest(r, p)" in ed and "if (!it.bend)" in ed and "A piece of a curve: Turn, Length and Trim change the whole shape" in vp, "")
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    check("a flat view chosen while arranging leaves Arrange first (its handles work in perspective)",
+          'document.body.classList.contains("arranging")) $("#arrange-btn").click()' in sp, "")
+
+
+def test_mvr_curves_hangs() -> None:
+    """MVR out and back in keeps curved truss (other programs get short
+    straight trusses along the curve, grouped; the desk reads the curve
+    back exactly) and each light's hang type and facing (in its matrix, so
+    other programs draw it the right way up); the paperwork and the
+    rigging report say how each light hangs."""
+    print("MVR: curved truss and hang types out and back; hang in the paperwork")
+    import io
+    import zipfile
+
+    from app import engine as eng
+    from app import mvr
+    from app import venue as venue_mod
+    from tools.selftests.common import SPEC_GDTF
+
+    bad = [(hg, y) for hg in venue_mod.HANGS for y in (0.0, 30.0, -75.0)
+           if mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))) != mvr._pose(hg, y)
+           and max(abs(a - b) for ra, rb in zip(mvr._pose(*mvr.pose_from_rows(mvr.light_rows(hg, y))), mvr._pose(hg, y))
+                   for a, b in zip(ra, rb)) > 1e-6]
+    check("every hang and facing reads back from its MVR matrix as the same turn", not bad, str(bad))
+    check("a hung light is GDTF's own way up (no turn); a standing one turned over",
+          mvr.light_rows("hung", 0) == [[1, 0, 0], [0, 1, 0], [0, 0, 1]] and mvr.light_rows("standing", 0)[2][2] == -1,
+          str(mvr.light_rows("hung", 0)))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("description.xml", SPEC_GDTF)
+    gdtf = buf.getvalue()
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        again = None
+        try:
+            e.act("venue_shape", shape="rectangle", width=20, depth=20, height=9, layout=False)
+            mvr.import_into(e, _mvr_file(gdtf), tmp / "gdtf")
+            heads = {h["name"]: h["head_no"] for h in e.patch}
+            a = e.act("rig_add", preset="arc", radius=5, start=200, end=340, x=0, z=6, trim=6)
+            e.act("attach_heads", heads=[heads[f"Beam {i}"] for i in range(1, 5)], rig=a["ids"][0])
+            e.act("set_place", head=heads["Beam 1"], hang="bottom_front", rig=e._head(heads["Beam 1"])["mount"]["rig"],
+                  t=e._head(heads["Beam 1"])["mount"]["t"])
+            e.act("set_place", head=heads["Floor L"], x=-6, y=2.5, z=9, hang="boom_left")
+            e.act("keep_facing", heads={heads["Floor L"]: 30.0})
+            want = {n: (venue_mod.hang_of(e._head(h)), round(e._head_yaw(e._head(h)), 1)) for n, h in heads.items()}
+            pw = {r["name"]: r for r in e.act("paperwork")["lights"]}
+            check("the paperwork says how each light hangs",
+                  pw["Beam 1"]["hang_label"] == "Bottom front" and pw["Floor L"]["hang_label"] == "Boom left"
+                  and pw["Beam 2"]["hang_label"] == "Hung", str({k: v.get("hang_label") for k, v in pw.items()}))
+            rep = e.act("rig_report")["report"]
+            arc = next(x for x in rep["rigs"] if x["name"].startswith("Arc"))
+            check("...and the rigging report, for each light on a piece", any(lt["hang"] == "Bottom front" for lt in arc["lights"]), str(arc["lights"]))
+            out = mvr.export_from(e, [tmp / "gdtf"], "c")
+            xml = zipfile.ZipFile(io.BytesIO(out)).read("GeneralSceneDescription.xml").decode()
+            pieces = len([x for x in e.venue["rigging"] if x.get("group") == a["group"]])
+            check("out: the curve as short straight trusses in a group (other programs see its shape), and the curve itself in UserData",
+                  "<GroupObject" in xml and xml.count("<Truss") > pieces * 2 and 'provider="Haze"' in xml and '"bend"' in xml, "")
+            back = mvr.read(out)
+            byb = {lt["name"]: lt for lt in back["lights"]}
+            check("read back: the curve whole (its pieces and bends), its little straight bits skipped",
+                  len(back["curves"]) == pieces and all(c.get("bend") for c in back["curves"])
+                  and not any("(0." in t["name"] for t in back["trusses"]), f"{len(back['curves'])} {[t['name'] for t in back['trusses']][:4]}")
+            check("...and each light's hang and facing from its matrix",
+                  byb["Beam 1"]["hang"] == "bottom_front" and byb["Floor L"]["hang"] == "boom_left"
+                  and abs(byb["Floor L"]["yaw"] - 30) < 0.5 and byb["Beam 2"]["hang"] == "hung", str({k: (v["hang"], v["yaw"]) for k, v in byb.items()}))
+            again = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s2")
+            r = mvr.import_into(again, out, tmp / "gdtf2", replace=True)
+            curved = [x for x in again.venue["rigging"] if x.get("bend")]
+            h2 = {h["name"]: h for h in again.patch}
+            got = {n: (venue_mod.hang_of(h), round(again._head_yaw(h), 1)) for n, h in h2.items()}
+            check("into a new desk: the curved truss as it was (same pieces, bends, one shape)",
+                  r["ok"] and len(curved) == pieces and len({x["group"] for x in curved}) == 1, str(r.get("summary")))
+            check("...the lights on it hang on the curve again",
+                  all((h2[f"Beam {i}"].get("mount") or {}).get("rig") in {x["id"] for x in curved} for i in range(1, 5)),
+                  str([h2[f"Beam {i}"].get("mount") for i in range(1, 5)]))
+            check("...every light's hang type and facing as it was",
+                  all(got[n][0] == want[n][0] and abs(((got[n][1] - want[n][1] + 180) % 360) - 180) < 1.0 for n in want if n in got),
+                  f"{want} {got}")
+        finally:
+            e.shutdown()
+            if again:
+                again.shutdown()
+    pp = (ROOT / "web" / "plot" / "plot.js").read_text(encoding="utf-8")
+    check("the printed patch sheet shows how each light hangs", "L.hang_label" in pp and "Hangs on · how" in pp, "")
+
+
+def test_touch_surface() -> None:
+    """A touch screen is the desk's control surface: no swipe "back", no
+    pinch or double-tap zoom, no page bounce; one finger per button, fader
+    and knob; a finger held on a button opens no menu; the desktop app can
+    turn off Windows' edge swipes and three/four-finger gestures.  (Real
+    fingers: tools/touchcheck.mjs, run in CI's screen check.)"""
+    print("Touch: a control surface, not a web page")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the page: no overscroll, pan only (no zoom), no tap flash",
+          "html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }" in css, "")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the desktop app: swipe-back and pinch off, no page history to go back to",
+          '"overscroll-history-navigation", "0"' in mj and '"disable-pinch"' in mj
+          and "OverscrollHistoryNavigation" in mj and "setVisualZoomLevelLimits(1, 1)" in mj
+          and "navigationHistory.clear()" in mj, "")
+    check("Lock touch swipes also turns off three- and four-finger gestures (per user)",
+          "TouchGestureSetting" in mj and "setFingers(!lock)" in mj and "AllowEdgeSwipe" in mj, "")
+    check("full screen locks every touch gesture: the window's edge switch set from the app itself, "
+          "three/four fingers off while full screen and put back after (and at the next start after a crash)",
+          'require("koffi")' in mj and "SHGetPropertyStoreForWindow" in mj and "edgeSwitch(win, true)" in mj
+          and "lockGestures(any)" in mj and '"enter-html-full-screen"' in mj and "lockGestures(false)" in mj
+          and '"_fingersWere" in saved' in mj and "Lock every touch gesture while full screen" in mj
+          and '"Left_Edgy_Enabled"' in mj and '"Right_Edgy_Enabled"' in mj and "putTouchBack()" in mj, "")
+    dc = (ROOT / "tools" / "desktopcheck.mjs").read_text(encoding="utf-8")
+    check("the Windows desktop check reads back what Windows took",
+          "no edge swipes while full screen" in dc and "three- and four-finger gestures off" in dc, "")
+    ui = (ROOT / "web" / "app" / "ui.js").read_text(encoding="utf-8")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("one finger per fader, button, pad, Flash and knob",
+          "if (dragging !== null) return;" in ui and "if (finger !== null) return;" in qb
+          and "if (down !== null) return;" in qb
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
+    check("a finger held on a live button opens no menu (the mouse's right-click still does)",
+          "if (!byTouch(e)) speedMenu(el, b)" in qb and "export const byTouch" in ui, "")
+    tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check("the real-finger check runs in CI", "Input.dispatchTouchEvent" in tc and "node tools/touchcheck.mjs" in ci, "")
+
+
+def test_old_show_files() -> None:
+    """A show made before this round of changes (a .haze file and the
+    autosave, saved by the desk as it was in October 2026, kept in
+    tools/selftests/oldshows) opens on this desk exactly as it was - the same
+    lights, groups, palettes, cues, buttons, pages and room - and puts out
+    the SAME DMX, byte for byte: at rest, playing two cue lists, an old
+    Flash button and an old palette, and booting on the old autosave."""
+    print("Old show files open and play exactly as before")
+    from app import engine as eng
+    from app import showpack
+
+    data = ROOT / "tools" / "selftests" / "oldshows"
+    want = json.loads((data / "oldshow-2026-10-expected.json").read_text(encoding="utf-8"))
+    import time as _time
+    # an hour after now (the desk clock): every fade has finished, however
+    # long this computer has been on
+    T = _time.monotonic() + 3600.0
+
+    def frames(e):
+        return {str(u): list(b) for u, b in e.build_frames(now=T).items()}
+
+    def same(name, got, exp):
+        diffs = [(u, i) for u in exp for i in range(512) if exp[u][i] != (got.get(u) or [0] * 512)[i]]
+        check(f"old show: {name} - the same DMX", not diffs and set(got) == set(exp), str(diffs[:6]))
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "lib.db")
+        e = eng.Engine(db_path=tmp / "lib.db", dry_run=True, show_dir=tmp / "shows")
+        try:
+            r = showpack.restore(e, (data / "oldshow-2026-10.haze").read_bytes())
+            check("the old .haze opens", r.get("show") == "oldshow", str(r))
+            st = want["state"]
+            check("its lights, groups, palettes and cues", [list(x) for x in [(h["head_no"], h.get("model"), h.get("universe"), h.get("address"), h.get("orient")) for h in e.patch]] == st["lights"]
+                  and [g["name"] for g in e.groups] == st["groups"]
+                  and {k: [p["name"] for p in v] for k, v in e.palettes.items()} == st["palettes"]
+                  and [[c["name"] for c in pb["stack"]] for pb in e.playbacks[:10]] == st["cues"], "")
+            check("its buttons, pages, layouts, moves, room and timeline",
+                  [list(x) for x in sorted((b["page"], b["slot"], b["kind"], b.get("label")) for b in e.quick)] == st["buttons"]
+                  and dict(e.quick_names) == st["page_names"]
+                  and dict(e.__dict__.get("quick_layout") or {}) == st["layout"]
+                  and [m["name"] for m in e.moves] == st["moves"]
+                  and len((e.venue or {}).get("rigging") or []) == st["rig"]
+                  and [t["kind"] for t in e.timeline["tracks"]] == st["tracks"], "")
+            check("its buttons are the Default profile; 40 playbacks", e._quick_public()["profiles"] == ["Default"]
+                  and len(e.playbacks) == 40, "")
+            same("at rest", frames(e), want["f0"])
+            e.act("cue_go", playback=1)
+            same("cue list 1", frames(e), want["f_pb1"])
+            e.act("cue_go", playback=3)
+            same("cue list 3 on top", frames(e), want["f_pb3"])
+            e.act("playback_release", playback=1)
+            e.act("playback_release", playback=3)
+            b = next(b for b in e.quick if b.get("label") == "Old flash")
+            e.act("quick_press", id=b["id"], down=True)
+            same("an old Flash button", frames(e), want["f_flash"])
+            e.act("quick_press", id=b["id"], down=False)
+            e.act("select_heads", heads=[h["head_no"] for h in e.patch if "Intimidator" in (h.get("model") or "")])
+            e.act("include_palette", kind="position", palette="Spots out")
+            same("an old palette", frames(e), want["f_pal"])
+        finally:
+            e.shutdown()
+        fixtures.seed_generics(tmp / "lib2.db")
+        e2 = eng.Engine(db_path=tmp / "lib2.db", dry_run=True, show_dir=tmp / "shows2")
+        try:
+            payload = json.loads((data / "oldshow-2026-10-autosave.json").read_text(encoding="utf-8"))
+            e2._restore_payload(e2._clean_payload(payload))
+            same("the new desk booting on the old autosave", frames(e2), want["f_autosave"])
+        finally:
+            e2.shutdown()
+
+
+def test_club_furniture() -> None:
+    """The room builder's club furniture: a half-round bar, high and
+    half-round tables, VIP couches, curved VIP booths, armchairs, bar
+    stools, a VIP rope and plants - in the 3D, on the plot, in Add, by the
+    AI and from an MVR file - and a "Club with VIP lounge" room using them."""
+    print("Club furniture: half-round bar, VIP booths, couches, high tables")
+    from app import aitools, mvr
+    from app import venue as V
+
+    new = ("bar_curve", "high_table", "half_table", "couch", "vip_booth", "armchair", "stool", "rope", "plant")
+    check("the new pieces are room objects", all(k in V.OBJECT_KINDS for k in new), "")
+    v = V.template("lounge")
+    kinds = {o["kind"] for o in v["objects"]}
+    check("the VIP lounge room has a half-round bar, booths, couches, stools, high tables, ropes, plants",
+          {"bar_curve", "vip_booth", "couch", "stool", "high_table", "rope", "plant", "half_table"} <= kinds, str(kinds))
+    check("...and a VIP zone each side", sum(z["kind"] == "vip" for z in v["zones"]) == 2, "")
+    booth = next(o for o in v["objects"] if o["kind"] == "vip_booth")
+    v2, got = V.update_item(v, booth["id"], {"arc": 999, "d": 50, "colour": "#aa2233"})
+    check("a curve is 60-300 degrees, its seat no deeper than half across, any colour",
+          got["arc"] == 300 and got["d"] == round(got["w"] / 2, 3) and got["colour"] == "#aa2233", str(got))
+    stools = [o for o in v["objects"] if o["kind"] == "stool"]
+    bar = next(o for o in v["objects"] if o["kind"] == "bar_curve")
+    check("the stools stand outside the bar's curve, on the dance floor side",
+          all(math.hypot(s["x"] - bar["x"], s["z"] - bar["z"]) > bar["w"] / 2 and s["z"] < bar["z"] for s in stools), "")
+    check("an MVR file's furniture comes in as it", [mvr.object_kind(n) for n in
+          ("VIP Booth 2", "Bar table", "Round bar", "Bar stool", "Sofa", "Palm tree", "Stanchion", "Bar", "Table 3")]
+          == ["vip_booth", "high_table", "bar_curve", "stool", "couch", "plant", "rope", "bar", "table"], "")
+    check("added in words, each piece is its own size", V.OBJECT_SIZE["stool"][2] == 0.75
+          and "OBJECT_SIZE" in (ROOT / "app" / "aitools.py").read_text(encoding="utf-8") and aitools is not None, "")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("the 3D draws each one", all(f'case "{k}"' in vj for k in new) and "export function sectorGeo" in vj, "")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Add has them, with a curve and a colour to change",
+          all(f'["{k}",' in vp for k in new) and 'field("Curve°"' in vp and 'field("Colour"' in vp, "")
+    pj = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
+    check("the plot draws the room's objects, half-rounds as half-rounds", "pl-obj" in pj and "CURVED.has(o.kind)" in pj, "")
+
+
+def test_screen_sizes() -> None:
+    """Big screens are laid out for, not zoomed: a laptop (a 1080p one, or a
+    4K one with Windows scaling) is the standard layout; a 1440p-class and a
+    4K-class monitor at 100 % get wider panels, a taller dock and a bigger
+    3D, with the text and controls stepped up so they read from the same
+    distance.  Every text size and control height follows the step."""
+    print("Screen sizes: big screens laid out for, not zoomed")
+    import re
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("1440p-class and 4K-class breakpoints", "@media (min-width: 2200px) and (min-height: 1250px)" in css
+          and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts-base: 1.15" in css and "--ts-base: 1.45" in css, "")
+    check("...each with wider panels and a taller dock", css.count("--fixtures-w: clamp(") >= 3 and css.count("--pb-h: clamp(") >= 6, "")
+    left = re.findall(r"font-size: \d+(?:\.\d+)?px|font: [^;{}]*?(?<![\w.(])\d+(?:\.\d+)?px(?! \* var)", css)
+    check("every text size follows the screen (no fixed px text left)", not left, str(left[:5]))
+    check("control heights follow it too", "--btn-h: calc(32px * var(--ctl))" in css and "--row-h: calc(30px * var(--ctl))" in css
+          and "--topbar-h: calc(46px * var(--ctl))" in css, "")
+    uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
+    check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
+
+
+def test_desktop_frame() -> None:
+    """The desktop app's windows have no system title bar: the desk's own
+    top bar moves the window, with minimise / maximise / close and the Desk
+    menu in it (the 3D window's toolbar too); the 3D window comes to the
+    front when opened (and can be kept on top); a setting changed in one
+    window reaches the others."""
+    print("Desktop: the desk's own title bar, the 3D window in front")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    pj = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
+    wc = (ROOT / "web" / "app" / "wincontrols.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("no system title bar (a Mac keeps its window dots)", '{ frame: false }' in mj and 'titleBarStyle: "hidden"' in mj, "")
+    check("the bar's buttons and Desk menu reach the app", 'ipcMain.on("win:do"' in mj and 'ipcMain.handle("win:menu"' in mj
+          and 'ipcMain.on("win:run"' in mj and 'act: (what) => ipcRenderer.send("win:do"' in pj, "")
+    check("minimise / maximise / close on the top bar, the logo opens the Desk menu",
+          'btn("min", "Minimise"' in wc and 'btn("close", "Close"' in wc and "openDeskMenu(brand)" in wc, "")
+    check("the bar moves the window, its buttons stay clickable", ".frameless .topbar, .frameless[data-window=\"stage\"] .vis-bar { -webkit-app-region: drag; }" in css
+          and ".frameless .topbar > *, .frameless .vis-bar > * { -webkit-app-region: no-drag; }" in css, "")
+    check("the 3D window comes to the front, and can be kept on top", "win.moveTop();" in mj and "win.focus();" in mj
+          and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
+    mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    check("a setting changed in one window reaches the others (3D quality, look, Gig mode)",
+          'window.addEventListener("storage"' in mn and 'e.key === "haze.quality"' in mn and 'e.key === "haze.theme"' in mn, "")
+
+    ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    check("the keys have icons, as on a pro desk: Record, Update, Fade in, Delay, Fan, Flip, Mirror...",
+          all(f"  {k}: '" in ic for k in ("rec", "update", "fadein", "fadeout", "delay", "fan", "flip", "mirror", "locate", "go", "stop"))
+          and '"Record…": "rec"' in dv and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+          and 'icon("fadein"), "Fade in"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
+          and 'icon("stop")' in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8"), "")
+
+
+
+def test_council_fixes() -> None:
+    """What the UI/UX review council agreed must change: no stray GO (Enter,
+    typed numbers, "go live"), O merges, X only blacks out, Hold to stop,
+    Update in the programmer, recording can keep the programmer, Live
+    keeps GO on screen, finger-sized faders, touch-friendly options and
+    sliders, every programmer tab named, and the show-safety check in CI."""
+    print("UI/UX council: no stray GO, Update, Live playbacks, touch sizes")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("select_heads", heads=[1, 2])
+            e.act("set_intensity", level=50)
+            e.act("record_cue", playback=1)
+            r = e.act("run_command", text="go live", dry=True)
+            check("\"go live\" typed is refused, not a GO with a word dropped", not r.get("ok") and "Go live" in str(r.get("error")), str(r)[:200])
+            check("...a bare go still fires", e.act("run_command", text="go", dry=True).get("ok"), "")
+            e.act("set_intensity", level=70)
+            e.act("record_cue", playback=1, keep=True)
+            check("recording can keep the programmer (build the next cue from it)", bool(e.programmer), "")
+        finally:
+            e.shutdown()
+    kj = (ROOT / "web" / "app" / "keys.js").read_text(encoding="utf-8")
+    check("Enter never fires GO; a number starts a command; O merges; X only blacks out",
+          'if (k === "Enter") { e.preventDefault(); openCmdbar(); return; }' in kj and "openCmdbar(k)" in kj
+          and 'mode: replace ? "replace" : "merge"' in kj and "Shift+X or the BLACKOUT button" in kj, "")
+    tb = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
+    check("stopping the output takes a hold, not a tap", '"Hold to stop"' in tb and "}, 600);" in tb, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("Update next to Record cue; Live shows the playbacks with GO", 'id="prog-update"' in html and 'id="pb-mini"' in html
+          and "function renderMini" in pb, "")
+    check("finger-sized faders and options; sliders let a scrolling finger pass",
+          ".pb .vfader { width: calc(36px * var(--ctl));" in css and "@media (hover: none) { .pb-top .btn.icon, .row-menu { opacity: 1; } }" in css
+          and "touch-action: pan-y;" in css, "")
+    check("every programmer tab is named (Rig, not an icon)", "<span>Rig</span>" in html
+          and "#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }" not in css, "")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check("the show-safety check runs in CI", "node tools/safetycheck.mjs" in ci
+          and (ROOT / "tools" / "safetycheck.mjs").exists(), "")
+
+    mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
+    check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
+          'localStorage.getItem("haze.qualityV") !== "2"' in mn and 'localStorage.setItem("haze.quality", "high");' in mn
+          and 'localStorage.setItem("haze.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+
+
+
+def test_room_by_pointing() -> None:
+    """The room the lights know, taught by pointing: where a beam lands is
+    the exact reverse of aiming (every hang, with Line up); pointed corners
+    make a zone; Not here keeps every light off a spot or a whole wall,
+    whatever it plays; a light told to stay in a zone stays in it; the room
+    grows to take in corners pointed outside it; all saved with the show."""
+    print("Room zones taught by pointing; keep-out and stay-in hold every beam")
+    from app import engine as eng
+    from app.engine_roam import _inside
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head", qty=2)
+            h = e.patch[0]
+            worst = 0.0
+            for hang in ("hung", "standing", "bottom_front", "boom_left"):
+                h["hang"] = hang
+                for al in (None, {"pan": 4.0, "tilt": -2.0}):
+                    if al:
+                        h["align"] = al
+                    else:
+                        h.pop("align", None)
+                    for x, z in ((0, 8), (3, 12), (-4, 6), (2, 15)):
+                        s = e._aim_solve(h, x, 0, z, closest=True)
+                        hit = e._beam_hit(h, s[2], s[3])
+                        worst = max(worst, math.hypot(hit[0] - x, hit[1] - z))
+            check("where a beam lands is the exact reverse of aiming (every hang, lined up or not)", worst < 1e-6, str(worst))
+            h["hang"] = "hung"
+            h.pop("align", None)
+            e.patch_rev += 1
+
+            def lands(n):
+                e.build_frames()
+                vals = e._tick_vals[2][n]
+                hd = e._head(n)
+                return e._beam_hit(hd, *e._head_deg(hd, vals))
+            e.act("aim_at", x=0, y=0, z=10, heads=[1, 2], glide=0)
+            box = [[-1.5, 8.5], [1.5, 8.5], [1.5, 11.5], [-1.5, 11.5]]
+            e.act("venue_add", item={"kind": "keepout", "name": "DJ", "points": box})
+            hit = lands(1)
+            check("a keep-out holds the beam just off its edge (cues, aims, effects: at the merge)", not _inside(box, *hit), str(hit))
+            check("...the programmer keeps what was asked", e.programmer[1].get("pan") is not None, "")
+            e.act("aim_at", x=-30, y=0, z=10, heads=[2], glide=0)
+            sp = e.act("beam_spot", head=2)
+            check("a beam aimed past a wall is outside the room", sp.get("ok") and not sp["in_room"], str(sp))
+            r = e.act("keep_out_here", head=2)
+            check("Not here on a wall keeps the whole wall", r.get("ok") and "Left wall" in r["summary"], str(r))
+            b = __import__("app.venue", fromlist=["bounds"]).bounds(e.venue)
+            check("...the beam stays in the room", lands(2)[0] > b["x0"] - 0.1, str(lands(2)))
+            e.act("aim_at", x=4, y=0, z=8, heads=[2], glide=0)
+            e.act("keep_out_here", head=2)
+            e.act("aim_at", x=5.5, y=0, z=8, heads=[2], glide=0)
+            r2 = e.act("keep_out_here", head=2)
+            check("Not here pointed again nearby grows that area", "grown" in r2.get("summary", ""), str(r2))
+            r = e.act("stay_in", heads=[2], zones=["dancefloor"])
+            fl = next(z for z in e.venue["zones"] if z["kind"] == "dancefloor")
+            e.act("aim_at", x=7, y=0, z=21, heads=[2], glide=0)
+            check("a light told to stay on the dance floor stays on it", r.get("ok") and _inside(fl["points"], *lands(2)), str(lands(2)))
+            r = e.act("room_fit", points=[[0, 60]])
+            check("corners pointed outside the room grow it", r.get("ok") and e.venue["room"]["depth"] >= 60, str(e.venue["room"]))
+            e.act("save_show", name="taught")
+            e.act("show_new")
+            e.act("load_show", name="taught")
+            check("zones, keep-outs and stay-in are saved with the show",
+                  e.patch[1].get("stay") and sum(z["kind"] == "keepout" for z in e.venue["zones"]) >= 3, "")
+        finally:
+            e.shutdown()
+    rt = (ROOT / "web" / "app" / "roomteach.js").read_text(encoding="utf-8")
+    check("the Teach the room box: point, add corners, Not here, stay in", '"beam_spot"' in rt and '"keep_out_here"' in rt
+          and '"stay_in"' in rt and '"room_fit"' in rt and "Add this corner" in rt, "")
+    check("...on the Set up screen and the command bar", "roomteach.js" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "roomteach.js" in (ROOT / "web" / "app" / "cmdbar.js").read_text(encoding="utf-8"), "")
+    vj = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("keep-out zones always show in the 3D, a wall as a band along it", 'buildZones(v, (z) => z.kind === "keepout")' in vj
+          and "zoneOutline" in vj, "")
+
+    pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
+          "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
+    check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
+          ".programmer { container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
+          and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")
+
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            e.act("add_heads", query="Moving Head", qty=2)
+            floor_rng = dict(e._floor_limits()[2])
+            e.act("stay_in", heads=[2], zones=["bar"])
+            bar_rng = e._floor_limits()[2]
+            check("a light kept in a zone has its movements sized to that zone, not the dance floor",
+                  bar_rng != floor_rng and 1 in e._floor_limits(), str((floor_rng, bar_rng)))
+        finally:
+            e.shutdown()
+    mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
+    check("Zones & limits: where the beams may go first, the old Cues & aims too only while a show has it on",
+          "function zonesBlock" in mv and 'tag(zonesBlock(), "limits")' in mv and "snap.floor_lock ? toggle(" in mv, "")
+
+    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the desk view's windows move (by the title) and size (by the corner), snapped and remembered, with Reset",
+          "function movable(el, id)" in dv and '"haze.dvLayout"' in dv and "export function resetDeskLayout" in dv
+          and ".dv-resize {" in css, "")
+    check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
+          "function firstFit()" in dv and "if (!layout._own && board.clientHeight" in dv and ".dv-board {" in css, "")
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
+          and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")
+
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    check("the button editor in three tabs (what it does / look / how it plays), Timing explained, Try it",
+          '["does", "What it does"], ["look", "Look"], ["play", "How it plays"]' in qb and 'row("Timing"' in qb
+          and "When a press takes effect" in qb and "function tryIt(btn, save)" in qb and 'row("Fires"' not in qb, "")
+
+    pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
+          'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and '"haze.grpW"' in pb and '"haze.mastersSide"' in pb and "body.masters-left .masters" in css, "")
+
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=1)
+            e.act("select_heads", heads=[1])
+            e.act("set_lock", state="locked")
+            r = e.act("set_intensity", level=90)
+            check("LOCKED is playing only: the programmer is refused too, saying what still works",
+                  not r.get("ok") and "playing only" in str(r.get("error")), str(r))
+            check("...GO, the master and blackout still work",
+                  "LOCKED" not in str(e.act("cue_go", playback=1).get("error")) and e.act("master", level=80).get("ok") and e.act("blackout", state=1).get("ok"), "")
+            e.act("set_lock", state="operate")
+            check("OPERATE still lets the programmer busk", e.act("set_intensity", level=90).get("ok"), "")
+        finally:
+            e.shutdown()
+    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    check("the lock shows: LOCKED / OPERATE in colour in the top bar, the panels dimmed behind a note when locked",
+          'body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after' in css
+          and "document.body.dataset.lock = lk" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
+    dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
+    check("Help in three tabs, the keys grouped", '["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]' in dj and "KEY_GROUPS" in dj, "")
+    lu = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("Line up: another spot is tapped on a plan of the room (the metres typed only if wanted, explained)",
+          "Tap the plan where the spot is" in lu and "0 = the middle, minus = left, plus = right" in lu, "")
+
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    rd = (ROOT / "web" / "app" / "roomdialog.js").read_text(encoding="utf-8")
+    check("which end is which: the 3D writes DJ / STAGE END, BACK OF THE ROOM, LEFT, RIGHT on the floor while arranging; the plans and Make the room say it",
+          "function sideLabels(R, orient, outline)" in st and '"BACK OF THE ROOM"' in st and "this.sideLabels.visible = this.editing" in st
+          and "Which way round: " in rd and "export function roomSides" in (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8"), "")
+
+
+def test_show_safety_speed() -> None:
+    """Running playbacks counted on their page tabs, one Release all; the
+    patch deletes say how many; Live offers the lock; a playback has its
+    own key, GO and Flash pads and a fader CC (Flash can be Swop); a level
+    number on each fader; Shift+Record records at once; [ ] step through
+    the lights; F1-F3 are the modes."""
+    print("Show safety and speed: Release all, playback keys and MIDI, Swop, [ ], F1-F3")
+    from app import engine as eng
+    from app import midi
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=3)
+            e.act("select_all")
+            e.act("set_intensity", level=80)
+            for n in (1, 2, 12):
+                e.act("record_cue", playback=n, keep=True)
+            e.act("cue_go", playback=1)
+            e.act("cue_go", playback=12)
+            r = e.act("playback_release_all")
+            check("Release all lets go of every running playback, on every page",
+                  r.get("ok") and sorted(r.get("released")) == [1, 12] and not any(p["active"] for p in e.playbacks), str(r))
+            check("...and still works when the desk is locked", (e.act("set_lock", state="locked"), e.act("playback_release_all").get("ok"), e.act("set_lock", state="design"))[1], "")
+            r = e.act("playback_bind", playback=2, key="q", go=40, flash=41, fader=7, swop=True)
+            check("a playback keeps its key, GO pad, Flash pad and fader CC", r.get("ok") and e.playbacks[1]["bind"] == {"key": "q", "go": 40, "flash": 41, "fader": 7, "swop": True}, str(r))
+            e.act("playback_bind", playback=1, go=40)
+            check("...one note, one job: given to another playback, it moves there",
+                  e.playbacks[0]["bind"] == {"go": 40} and "go" not in e.playbacks[1]["bind"], str(e.playbacks[1]["bind"]))
+            check("...shown on the playback and saved with the show",
+                  e.snapshot()["playbacks"][1]["bind"]["fader"] == 7 and e._pb_saved(e.playbacks[1])["bind"]["key"] == "q", "")
+            m = midi.MidiManager(e, devices=[])
+            m.handle({"kind": "note", "channel": 1, "number": 40, "value": 100, "on": True})
+            check("the desk's MIDI: the GO pad GOes its playback", e.playbacks[0]["active"], "")
+            m.handle({"kind": "cc", "channel": 1, "number": 7, "value": 127 // 2})
+            check("...the fader CC sets its level", e.playbacks[1]["level"] == 49, str(e.playbacks[1]["level"]))
+            e.act("playback_level", playback=2, level=60)
+            m.handle({"kind": "note", "channel": 1, "number": 41, "value": 100, "on": True})
+            held = (e.playbacks[1]["active"], e.playbacks[1]["level"], e.playbacks[0]["level"])
+            m.handle({"kind": "note", "channel": 1, "number": 41, "value": 0, "on": False})
+            check("...Flash set to Swop: full and the others out while held, all back after",
+                  held == (True, 100, 0) and not e.playbacks[1]["active"] and e.playbacks[1]["level"] == 60
+                  and e.playbacks[0]["level"] == 100, str(held))
+            e.act("select_heads", heads=[2])
+            r = e.act("select_step", step="next")
+            check("] from one light goes to the next light in the rig", e.selected == [3], str(r))
+            e.act("select_step", step="next")
+            check("...and round to the first", e.selected == [1], str(e.selected))
+        finally:
+            e.shutdown()
+    web = ROOT / "web" / "app"
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    keys = (web / "keys.js").read_text(encoding="utf-8")
+    fx = (web / "fixtures.js").read_text(encoding="utf-8")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the page tabs count their running playbacks; RELEASE ALL beside BLACKOUT",
+          'h("span.pg-run", String(live))' in pb and 'id="pb-relall"' in html and 'run("playback_release_all"' in pb, "")
+    check("each fader shows its level; the Flash button says Swop when it is one; Shift+Record records at once",
+          "c.lvl.textContent = `${Math.round(pb.level ?? 100)}%`" in pb and 'swop ? "Swop" : "Flash"' in pb and "function quickRecord(e, n)" in pb, "")
+    check("keys and MIDI from a controller on this device play the playbacks", "function wireBindings()" in pb and "onCC((ev)" in pb
+          and "export function onCC" in (web / "webmidi.js").read_text(encoding="utf-8"), "")
+    check("F1-F3 switch the modes; [ and ] step through the lights",
+          '{ F1: "setup", F2: "program", F3: "live" }' in keys and 'k === "[" || k === "]"' in keys, "")
+    check("the patch deletes say how many lights, in red, last on the menu",
+          "Remove ${lights(sel.length)} from the patch" in fx and "Remove all ${lights(n)}" in fx, "")
+    check("going Live offers the lock once a session (Don't ask again kept)", "async function offerLock()" in ws and '"haze.noLockAsk"' in ws, "")
+
+
+def test_clarity() -> None:
+    """One name for each thing; the command bar finds every Set up step and
+    Settings page (and opens that page); Settings grouped, its backups named
+    apart; the status bar only says what you did; a folded row has a menu."""
+    print("Clarity: one name each, the command bar finds everything, Settings grouped")
+    web = ROOT / "web" / "app"
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    fx = (web / "fixtures.js").read_text(encoding="utf-8")
+    cb = (web / "cmdbar.js").read_text(encoding="utf-8")
+    st = (web / "settings.js").read_text(encoding="utf-8")
+    ac = (web / "actions.js").read_text(encoding="utf-8")
+    every = "".join(p.read_text(encoding="utf-8") for p in web.glob("*.js")) + html
+    check("one name each: Add lights, Find nodes, Copilot, Program",
+          "Add fixtures" not in every and "Scan the network" not in every and "Ask AI" not in every
+          and 'name: "Programming"' not in every, "")
+    check("the 3D arranging tools are Arrange: ..., not Line up (that is matching the real lights)",
+          "Arrange: in a row across the stage" in fx and "Line up in a row" not in fx, "")
+    check("the command bar finds every Settings page and opens it there, and the Set up steps",
+          "SETTINGS_PAGES.map(([key, name, words])" in cb and "openSettingsAt(key)" in cb
+          and all(t in cb for t in ("Make the room…", "Rigging…", "Find nodes", "Songs…", "Autopilot…", "MIDI monitor…", "DMX map…")), "")
+    check("...a query of several words finds by every word", "typed.every((w) => vocab.some((v) => v.startsWith(w)))" in cb, "")
+    check("Settings grouped; Show backups and Spare desk named apart",
+          "const SETTINGS_GROUPS" in st and '["backup", "Show backups"' in st and '["standby", "Spare desk"' in st
+          and '"Backup desk"' not in st, "")
+    check("the status bar only shows what you did, not what the desk looked up", "const LOOKUPS" in ac and "!lookup(action, params)" in ac, "")
+    check("a folded type row (8 movers as one) has its own menu", "function foldMenu(anchor, heads)" in fx
+          and "if (tr.dataset.fold) foldMenu(" in fx, "")
+
+
+def test_visual_polish() -> None:
+    """One type scale; the old symbols drawn as icons; one look for
+    selected / on; the Live band; menu descriptions under the item; Next GO
+    names its playback; touchcheck holds Gig mode's sizes."""
+    print("Visual polish: type scale, icons for symbols, one selected look, the Live band")
+    import re as _re
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    sizes = set(_re.findall(r"calc\(([0-9.]+)px \* var\(--ts\)\)", css)) - {"0.11"}
+    check("one type scale: six steps on :root, every text size is one of them (bar three big readouts)",
+          "--fs-xs: calc(11px * var(--ts));" in css and "--fs-2xl: calc(24px * var(--ts));" in css
+          and sizes <= {"11", "12", "13", "15", "18", "24", "30", "36", "44"}, str(sorted(sizes)))
+    ic = (web / "icons.js").read_text(encoding="utf-8")
+    check("the old text symbols (carets, notes, full screen, pages, camera, arrows) are drawn as the desk's icons, wherever they appear",
+          "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
+          and "upgradeGlyphs();" in (web / "main.js").read_text(encoding="utf-8"), "")
+    check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
+          "--sel-bg:" in css and css.count("background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg);") >= 15, "")
+    mh = (web / "modehub.js").read_text(encoding="utf-8")
+    check("Live: Now, Tempo and Autopilot in one compact band", 'h("div.live-band"' in mh and "div.live-pair" not in mh and ".lb-cells {" in css, "")
+    ui = (web / "ui.js").read_text(encoding="utf-8")
+    check("a menu item's description sits under it; a key or a count stays at the right",
+          'h("small.mi-desc", it.hint)' in ui and "String(it.hint).length > 14" in ui, "")
+    check("Next GO names the playback it shows", "`Next GO (PB${pbN})`" in (web / "stagepanel.js").read_text(encoding="utf-8"), "")
+    tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
+    check("touchcheck: in Gig mode every control played at a show is 40 px or more", "const MIN = 40;" in tc and "#pb-relall" in tc, "")
+
+
+def test_pages_and_venue_reset() -> None:
+    """An old show whose "Every page" grid made 32 empty pages: they are
+    dropped on load, can be deleted one by one or all at once, and Every
+    page no longer makes them.  The venue clears to be designed again: the
+    walls kept or not, the lights where they hang, one undo."""
+    print("Empty button pages go; the venue clears to start again")
+    from app import engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="Moving Head", qty=2)
+            e.act("quick_set", page=5, slot=1, button={"kind": "flash", "label": "Hit"})
+            e.act("quick_layout", page=1, cols=6, all_pages=True)
+            check("Every page sets the grid of the pages that are there, not all 32",
+                  set(e.quick_layout) == {"1", "2", "3", "4", "5"}, str(sorted(e.quick_layout)))
+            e.quick_layout = {str(p): {"cols": 6, "rows": 3, "height": "m"} for p in range(1, 33)}
+            e.act("save_show", name="old")
+            e.act("load_show", name="old")
+            check("an old show's grids on empty pages are dropped when it opens",
+                  set(e.quick_layout) == {"1", "2", "3", "4", "5"}, str(sorted(e.quick_layout, key=int)))
+            e.quick_layout = {"1": {"cols": 6, "rows": 4, "height": "xl"}, "8": {"cols": 4, "rows": 2, "height": "l"}}
+            e.act("save_show", name="mine")
+            e.act("load_show", name="mine")
+            check("...but a row height set on a page before its buttons is kept, and page 1's too",
+                  e.quick_layout.get("8") == {"cols": 4, "rows": 2, "height": "l"}
+                  and e.quick_layout.get("1") == {"cols": 6, "rows": 4, "height": "xl"}, str(e.quick_layout))
+            e.act("venue_template", name="lounge")
+            e.act("venue_add", item={"kind": "bar_curve", "x": 2, "z": 8, "w": 4, "d": 1.2, "curve": 200, "colour": "#663300", "rot": 30})
+            e.act("venue_add", item={"kind": "vip_booth", "x": -4, "z": 12, "colour": "#220044"})
+            v0 = json.loads(json.dumps(e.venue))
+            e.act("save_show", name="furnished")
+            e.act("venue_reset", keep_room=False)
+            e.act("load_show", name="furnished")
+            check("a furnished venue (curves, colours, turns) comes back exactly from the show file",
+                  json.loads(json.dumps(e.venue)) == v0, "")
+            e.quick_layout = {str(p): {"cols": 6, "rows": 3, "height": "m"} for p in range(1, 33)}
+            e.quick_names = {"7": "Spare"}
+            r = e.act("quick_page", tidy=True)
+            check("Remove the empty pages: every page with no buttons goes, in one step",
+                  r.get("ok") and set(e.quick_layout) == {"1", "5"} and e.quick_names == {} and 7 in r["removed"], str(r))
+            e.act("undo")
+            check("...and Ctrl+Z brings them back", len(e.quick_layout) == 32, str(len(e.quick_layout)))
+            e.act("venue_template", name="club")
+            before = (len(e.venue["rigging"]), [dict(h.get("pos") or {}) for h in e.patch])
+            r = e.act("venue_reset", keep_room=True)
+            check("Clear the venue: no stage, rigging, objects or zones; the walls kept",
+                  r.get("ok") and not e.venue["rigging"] and not e.venue["objects"] and not e.venue["zones"]
+                  and not e.venue.get("stage") and e.venue["room"]["width"] == 16, str(r.get("summary")))
+            check("...the lights stay where they are", [dict(h.get("pos") or {}) for h in e.patch] == before[1], "")
+            e.act("undo")
+            check("...one Ctrl+Z brings the venue back", len(e.venue["rigging"]) == before[0], "")
+            e.act("venue_reset", keep_room=False)
+            check("...or the room too: it sizes itself round the lights again", e.venue.get("auto") is True, "")
+        finally:
+            e.shutdown()
+    qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Pages: any page there can be deleted (an empty one without asking); Remove the empty pages",
+          "disabled: !used.has(p)" in qb and 'run("quick_page", { tidy: true }' in qb, "")
+    check("Clear the venue in the Venues menu, Settings, Set up and the command bar",
+          "export async function resetVenue" in vp and "Clear the venue to start again…" in vp
+          and "resetVenue" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
+          and "resetVenue" in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+
+
+def test_dock_and_desk_fit() -> None:
+    """The dock and the desk view fit what is in them: a fader's cap never
+    leaves its track; the group faders keep a finger's width each and
+    scroll; empty playback slots are slim; a card never runs past the dock;
+    the head chips sit in the programmer's title row (nothing moves); desk
+    view keys say their whole name and a window can't be sized past
+    usable; the usual-palettes tile shows only when the rig can do it, and
+    can be put away."""
+    print("The dock and the desk view fit: faders, group strip, slots, head chips, keys")
+    web = ROOT / "web" / "app"
+    ui = (web / "ui.js").read_text(encoding="utf-8")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("a fader's cap travels inside its track", "cap.style.bottom = `calc((100% - var(--cap-h)) * ${pct})`" in ui and "--cap-h:" in css, "")
+    check("group faders: a finger's width each, full names, a strip that scrolls and fades where more wait",
+          ".grp-masters > .master.grp { flex: none; width:" in css and 'h("span.m-name", g.name)' in pb
+          and "function scrollHints()" in pb and ".grp-masters.more-r" in css, "")
+    check("only the playbacks in use show, and one + after them; a card never taller than the dock",
+          "const shown = new Set(page.filter((pb) => (pb.stack || []).length || pb.n === plus)" in pb
+          and "grid-template-rows: minmax(0, 1fr)" in css, "")
+    check("a playback's options are buttons on its card (+ Cue, Cues, Loop, Auto)",
+          'const opts = h("div.pb-opts"' in pb and ".pb-opt.on {" in css, "")
+    check("the head chips sit in the programmer's title row", 'id="prog-heads"' in html and '$("#prog-heads")' in pj, "")
+    check("desk view keys: whole names, windows sized within limits", '"Line up": "lineup"' in dv and "const SIZE = {" in dv
+          and ".dv-keywin .dv-key span { white-space: nowrap;" in css, "")
+    check("the usual-palettes tile only when the rig can do it, and it can be put away",
+          "canMake(kind) && !noOffer().includes(kind)" in dv and '"haze.dvNoOffer"' in dv, "")
+    check("the keypad says what it is for", '"1 THRU 4 @ FULL, ENTER"' in dv, "")
+    check("Settings keeps one size whichever page is open; a long page scrolls inside",
+          ".modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh);" in css
+          and ".settings > .set-pane { overflow-y: auto;" in css, "")
+    check("the desk view board fills the programmer and scrolls rather than squash; a narrow one stacks its windows",
+          '.prog-body:has(> .tab-pane[data-pane="desk"]:not([hidden]))' in css and ".dv-board.dv-stack" in css
+          and "const STACK_BELOW" in dv, "")
+    check("the desk opens on Palettes", 'let tab = "desk";' in pj and 'showTab("desk");' in pj
+          and 'data-tab="desk" aria-selected="true"' in html, "")
+    check("a dialog that is one scrolling list scrolls once (no two-pixel scroll)",
+          ".modal-body:has(> :is(.dmx-map, .qe):only-child)" in css
+          and '"tiny-scroll"' in (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8"), "")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("every desk view window has its own look: tile size (to fill), text size, tiles across, numbers - kept with its place",
+          "function lookMenu(anchor, el, id)" in dv and "r.look = { ...(r.look || {}), ...change };" in dv
+          and '.dv-win[data-size="fill"] .dv-tiles' in css and '.dv-win[data-text="xl"]' in css and ".dv-win[data-cols] .dv-tiles" in css, "")
+    check("what the programmer holds: chips in its title row, saying how many lights", '<div class="prog-in" id="prog-in" hidden></div>\n        <div class="prog-heads"' in html.replace("\r\n", "\n")
+          and "light${counts[g] === 1 ? \"\" : \"s\"}`) : null," in (web / "programmer.js").read_text(encoding="utf-8"), "")
+
+
+def test_programmer_overhaul() -> None:
+    """The programmer laid out across the panel: its parts and wheels in
+    one row; Point in columns (the map and the pad sized to the height),
+    Move in three columns, Dimmer / Colour / Beam made for a wide panel; a
+    Text size; the foot no longer moves; a floating programmer keeps its
+    size; Pan / Tilt on Palettes."""
+    print("Programmer overhaul: one strip, columns, sized to the height, Text size")
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    af = (web / "aimfollow.js").read_text(encoding="utf-8")
+    mv = (web / "movepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the tab's parts and its wheels share one row", 'id="prog-subslot"' in html and '$("#prog-subslot").append(nav)' in pj
+          and ".prog-strip {" in css, "")
+    check("Point: the map with its own menu, the spots beside it, the pad sized to the height",
+          'h("div.aim-left"' in af and "mapMenu(e.currentTarget)" in af and "--ph" in css
+          and '.tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1;' in css and "Aim at one click" not in html, "")
+    check("Move in three columns, no folded rows", 'h("div.mv-col.mv-col-shapes"' in mv and 'h("div.mv-col.mv-col-knobs"' in mv
+          and "More: direction, arc, lock" not in mv, "")
+    check("Dimmer, Colour and Beam made for a wide panel", '.tab-pane[data-pane="intensity"] #int-fader' in css
+          and '.tab-pane[data-pane="colour"] #picker canvas' in css and ".beam-quick { display: grid;" in css, "")
+    check("Text size: Standard / Large / Extra large, layout and all", ':root[data-textsize="xl"]' in css
+          and "--ts: calc(var(--ts-base) * var(--ts-user))" in css
+          and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
+    check("the programmer's foot doesn't move (the why is a tooltip)", 'if (w) w.textContent = "";' in pj, "")
+    check("a floating programmer keeps a size (no 3D view: the workspace's area) and sizes by its corner",
+          "if (st.width < 200 || st.height < 200)" in (web / "workspaces.js").read_text(encoding="utf-8")
+          and '.programmer[data-side="float"] { resize: both;' in css.replace(".fixtures[data-side=\"float\"], ", ""), "")
+    check("Pan / Tilt / Dimmer knobs on Palettes (a window of their own)", "export function mountWheels(box, list)" in (web / "wheels.js").read_text(encoding="utf-8"), "")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
+          "requestAnimationFrame(paint)" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
+    check("...sized to the pixel: the windows below move down or come up, never overlapping",
+          "function reflow(live = null)" in dv and "top = Math.max(top, p.top + p.hp + GAP)" in dv
+          and "if (board.clientWidth < 50) { owed = true; return null; }" in dv, "")
+    check("...and the dock moving up or down doesn't resize them (Show -> Fit the windows to the panel)",
+          "function fitRows()" in dv and "if (e.isTrusted) reflow();" in dv and "layout._own = true;" in dv, "")
+    mp = (web / "movepanel.js").read_text(encoding="utf-8")
+    check("Roam's speed is a slider (any speed, named as it moves)", "function roamSlider()" in mp and '"Roam speed"' in mp, "")
+    pj2 = (web / "programmer.js").read_text(encoding="utf-8")
+    check("a colour effect (and Breathe) goes through the colours you pick, in order",
+          "function colourPicker(fx, params, mine)" in pj2 and '"haze.fxColours"' in pj2, "")
+    check("Set up and Live grow with their panel (bigger text, two columns on a wide one)",
+          "container: hub / inline-size" in css and "@container hub (min-width: 1000px)" in css, "")
+    check("Settings opens without waiting on the local AI", "ai = llm.public(wait=False)" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")
+    af = (web / "aimfollow.js").read_text(encoding="utf-8")
+    check("the map's DJ marker: an arrow with a head, its zone's label not drawn on top, a tooltip on each mark",
+          "am-front-head" in af and "Math.hypot(cx - bx, cz - bz) < 1.2" in af and "The middle of the room" in af, "")
+    wh = (web / "wheels.js").read_text(encoding="utf-8")
+    check("a wheel the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".wheel.off {" in css, "")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    check("the workspace menu stays open for layout toggles; no 3D view toggle there", "keep: again" in ws and '"3D view", hint: "show or hide' not in ws
+          and "if (it.keep) {" in (web / "ui.js").read_text(encoding="utf-8"), "")
+    check("Palettes has a 3D view button (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
+          and "m.open3d()" in dv, "")
+
+
+def test_freeze_watchdog() -> None:
+    """The lights stop following the desk when the output thread can't
+    send a frame (the engine's lock held and not let go).  A watchdog
+    notices after 3 s, writes what every thread was doing and the action
+    in progress to data/freeze_reports, and the status bar says so."""
+    print("The freeze watchdog: a held-up output is noticed and its cause written down")
+    import threading
+    import time as _time
+    from app import config, engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        old = config.DATA
+        config.DATA = tmp / "data"
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.STALL_S = 1.0
+            e._start_output()
+            _time.sleep(0.5)
+
+            def hog():
+                with e.lock:
+                    _time.sleep(3.2)
+            th = threading.Thread(target=hog, name="a-stuck-job")
+            th.start()
+            for _ in range(40):
+                _time.sleep(0.1)
+                if e.output.get("stall"):
+                    break
+            stall = dict(e.output.get("stall") or {})
+            th.join()
+            reports = list((config.DATA / "freeze_reports").glob("freeze-*.txt"))
+            text = reports[0].read_text(encoding="utf-8") if reports else ""
+            check("a held-up output is noticed and a report written", stall.get("report", "").startswith("freeze-") and reports, str(stall))
+            check("...the report shows the thread that held it (and the DMX thread waiting)", "a-stuck-job" in text and "haze-dmx" in text, text[:200])
+            _time.sleep(1.5)
+            check("...once frames flow again it is marked over", not e.output.get("stall") and (e.output.get("last_stall") or {}).get("over"), str(e.output.get("last_stall")))
+        finally:
+            e.shutdown()
+            config.DATA = old
+    check("the status bar says the lights stopped and where the report is",
+          "data/freeze_reports/${stall.report}" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
+
+
+def test_shapes_drawn_palettes_fit() -> None:
+    """A shape is drawn (press, drag, let go) and explained: the box in
+    degrees, pan / tilt, the motors' tracks, whether the path stays inside;
+    a palette the selected lights can't take is dimmed."""
+    print("Shapes drawn and explained; palettes dimmed for lights that can't take them")
+    web = ROOT / "web" / "app"
+    se = (web / "shapeeditor.js").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    check("a shape is drawn with one stroke, turned into key points (no clicking point by point)",
+          "function fromStroke(raw)" in se and "Draw the path: press and drag" in se and "s.points.splice(best + 1, 0, p)" not in se, "")
+    check("...the box says its degrees, which way is pan and tilt, and shows the motors' tracks",
+          "▲ tilt up" in se and "pan ▶" in se and 'track(zone ? "Across" : "Pan")' in se and "now: pan ${fmt(x)}, tilt ${fmt(y)}" in se, "")
+    check("...and whether the path stays inside the box (Fit inside the box)", "function overshoot(pts, smooth)" in se
+          and "Fit inside the box" in se and "The whole path stays inside the box." in se, "")
+    check("a palette the selected lights can't take is dimmed and says why", "export function paletteFits(p)" in dv
+          and '(fits === false ? ".na" : "")' in dv and ".dv-tile.na {" in css, "")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    check("...and the Beam / Colour / Position tabs list only the palettes the selected lights can take",
+          ".filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p))" in pj, "")
+    check("Dimmer, Pan and Tilt as a Knobs window on Palettes (no box, sized by its menu)", '["knobs", h("section.dv-win.dv-knobwin"' in dv
+          and 'mountWheels(body, [["dimmer", "Dimmer"], ["pan", "Pan"], ["tilt", "Tilt"]])' in dv and ".dv-knobwin[data-size=\"xl\"]" in css, "")
+    check("key windows can be sized small (no forced empty space)", "select: { w: [2, 10], h: [2, 8] }" in dv, "")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the desktop app keeps one address, so the screen settings survive a restart", "function localPort()" in mj
+          and "await localPort()" in mj and "saved._localPort" in mj, "")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    vp = (web / "venuepanel.js").read_text(encoding="utf-8")
+    check("the floor's DJ / back / left / right follow where the DJ is, inside the room's own outline",
+          "setSides(orient)" in st and "const reach = (u) =>" in st and "stage.setSides(stage.djView)" in (web / "stagepanel.js").read_text(encoding="utf-8"), "")
+    check("Which way round: the DJ at a side of the plan, or tapped, or worked out", "export function openWhichWay()" in vp
+          and 'id="vt-orient"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8") and '"venue_orient", { booth: b, front: "centre" }' in vp, "")
+    cp = (web / "copilot.js").read_text(encoding="utf-8")
+    check("the Copilot: wider (its edge sizes it), each part a card, no example chips",
+          "function wireCopilotWidth()" in cp and "Techno warehouse" not in cp and ".drawer.copilot { width: var(--copilot-w," in css
+          and 'class="autoshow cp-card"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+
+
+def test_fx_own_colours() -> None:
+    """Colour effects and Breathe go through the colours chosen, in order."""
+    from app import fxlib as f
+    rgb = ["red", "green", "blue", "dimmer"]
+    cols = ["#ff0000", "#00ff00", "#0000ff"]
+    seen = {tuple(f.apply("colour_chase", {}, rgb, {"colours": cols}, elapsed=0, index=i, count=3).get(k) for k in ("red", "green", "blue")) for i in range(3)}
+    check("Colour chase steps through just the chosen colours", seen == {(255, 0, 0), (0, 255, 0), (0, 0, 255)}, seen)
+    row = f.apply("alternate", {}, rgb, {"colours": ["#ff00ff", "#00ffff"]}, elapsed=0, index=1, count=2)
+    check("Alternate uses the chosen pair", (row["red"], row["green"], row["blue"]) == (0, 255, 255), row)
+    b0 = f.apply("breathe", {}, rgb, {"colours": cols, "speed": 1.0}, elapsed=0.0)
+    b1 = f.apply("breathe", {}, rgb, {"colours": cols, "speed": 1.0}, elapsed=1.0)
+    check("Breathe changes colour each breath", (b0["red"], b0["green"]) != (b1["red"], b1["green"]), (b0, b1))
+    check("a colour list is cleaned (bad entries dropped, 8 at most)",
+          f.clean_colours("ff0000, nope, #0f0") == ["#ff0000", "#00ff00"] and len(f.clean_colours(["#fff"] * 20)) == 8, "")
+    w = f.apply("colour_chase", {}, ["white", "amber"], {"colours": cols})
+    check("a light that can't mix keeps its own colours", "white" in w, w)
+
+
+def test_renamed_haze() -> None:
+    """The desk is called Haze; what was saved under the old name still works."""
+    import tempfile
+    from pathlib import Path
+    from app import fixlib, showbackup, showpack, config
+    old = "jar" + "vis"
+    check("the desk is called Haze", config.APP_NAME == "HAZE" or config.APP_NAME.upper() != old.upper(), config.APP_NAME)
+    check("a show file from before the rename is still a show file", f"{old}-pack" in showpack.OLD_KINDS, "")
+    check("fixtures stored under the old library key still load",
+          fixlib._src(old) == "haze" and len(fixlib.index(old)) == len(fixlib.index("haze")) > 0, "")
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / f"{old.capitalize()} shows").mkdir()
+        (Path(d) / f"{old.capitalize()} shows" / "gig.json").write_text("{}", encoding="utf-8")
+        dest = showbackup._dest(d)
+        check("the old backup folder is renamed to 'Haze shows', its shows with it",
+              dest.name == "Haze shows" and (dest / "gig.json").is_file(), str(dest))
+    osc = (ROOT / "app" / "engine_osc.py").read_text(encoding="utf-8")
+    check("OSC controllers set up with the old address keep working", f'parts[0] not in ("haze", "{old}")' in osc, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("settings saved under the old name move to the new one", f'o="{old}."' in html and '"haze."+k.slice' in html, "")
+    left = [str(f) for f in ROOT.rglob("*") if old in f.name.lower() and "node_modules" not in f.parts
+            and "data" not in f.parts and not any(x.startswith(".") for x in f.relative_to(ROOT).parts)]
+    check("no file or folder carries the old name", not left, left[:3])
+
+
+def test_showkit_room() -> None:
+    """A designed show comes with the buttons to play it live, by the room's rules."""
+    import os
+    import tempfile
+    from app import autoshow, llm, roomsense, showkit
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=6)
+            plan = roomsense.plan(e)
+            kinds = {z["id"]: z["kind"] for z in plan["zones"]}
+            share = {kinds[k]: len(v) for k, v in plan["movers"].items()}
+            check("3 movers: 2 on the dance floor, 1 on the VIP", share.get("dancefloor") == 2 and share.get("vip") == 1, str(share))
+            check("lights never roam the bar or the DJ", not e.act("roam", zones=["bar"], heads=[1]).get("ok")
+                  and not e.act("roam", zones=["dj"], heads=[1]).get("ok"), "")
+            avail = llm.available
+            llm.available = lambda: False
+            try:
+                check("a whole show without the AI is refused (no random shows)",
+                      not _raises_ok(lambda: autoshow.design(e, "halloween")), "")
+            finally:
+                llm.available = avail
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            autoshow.build(e, d)
+            vip = [k for k, g in a["groups"].items() if g.get("duty") == "gentle"]
+            check("the VIP's lights get no hits", all(h["group"] not in vip for s in d["sections"] for h in s["hits"]), "")
+            r = showkit.build(e, d)
+            check("the show's buttons: a profile named after it, five pages",
+                  r["profile"] == "Halloween" and r["pages"] == ["Default", "Show", "Colours", "Intensity", "Shoutout"], str(r))
+            pages = {}
+            for b in e.quick:
+                pages.setdefault(b["page"], []).append(b)
+            check("Default: each group's home look and its movements",
+                  any(b["kind"] == "custom" for b in pages[1]) and any(b["kind"] == "fx" for b in pages[1]), "")
+            check("Show: flash, strobe and blackout per group, GO",
+                  {"flash", "strobe", "kill", "go"} <= {b["kind"] for b in pages[2]}, "")
+            check("Colours: a row of colours per group", sum(b["kind"] == "colour" for b in pages[3]) >= 11, "")
+            check("Intensity: speed and strobe-speed faders", sum(b["kind"] == "fader" for b in pages[4]) >= 2, "")
+            check("every page has buttons to the others", all(sum(b["kind"] == "page" for b in pages[p]) >= 3 for p in pages), "")
+            vip_heads = {n for k in vip for n in a["groups"][k]["heads"]}
+            strobes = [b for b in pages[2] if b["kind"] == "strobe" and b["target"].get("heads")]
+            check("nothing on the Show page strobes the VIP's own lights",
+                  all(not (set(b["target"]["heads"]) & vip_heads) for b in strobes), "")
+        finally:
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+
+
+def test_web_inspiration() -> None:
+    """The AI can look things up on the internet (no key), and says so when it can't."""
+    from app import assistant, websearch
+    page = ('<div><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fxmas">'
+            'Christmas <b>lighting</b> colours</a><a class="result__snippet" href="x">Red, green and <b>gold</b></a></div>'
+            '<div><a class="result__a" href="https://example.org/two">Second</a></div>')
+    rows = websearch.parse(page)
+    check("search results are read: title, the real link, the snippet",
+          rows and rows[0]["url"] == "https://example.com/xmas" and rows[0]["title"] == "Christmas lighting colours"
+          and "gold" in rows[0]["snippet"] and rows[1]["url"] == "https://example.org/two", str(rows))
+    check("only web pages are read (no files, no other schemes)", not websearch.read("file:///etc/passwd")["ok"], "")
+    names = {t["function"]["name"] for t in assistant.TOOLS}
+    check("the AI has search_web, read_web, design_show and restyle_show",
+          {"search_web", "read_web", "design_show", "restyle_show"} <= names, str(sorted(names)))
+
+
+def test_busker() -> None:
+    """With a show's buttons, the AI operator plays them; with no AI, the desk does by its own rules."""
+    import os
+    import tempfile
+    from app import ai_operator as op
+    from app import autoshow, llm, showkit
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        avail = llm.available
+        llm.available = lambda: False
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=6)
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            showkit.build(e, d, None)
+            btns = op.show_buttons(e)
+            check("the operator sees the show's buttons (hits marked, effects left out)",
+                  any(b["kind"] == "hit" for b in btns) and not any(b["kind"] in ("sfx", "laser", "page") for b in btns), "")
+            op.start(e, thread=False)
+            r = op.decide(e, "start")
+            check("no AI: it busks the buttons - a colour per row, a movement", r and r["ok"] and len(e.quick_active) >= 3, str(r))
+            r = op.decide(e, "drop")
+            check("on a drop it hits a strobe", r and "Strobe" in r["text"], str(r))
+            plan_vip = {n for z in __import__("app.roomsense", fromlist=["x"]).plan(e)["zones"] if z["duty"] == "gentle"
+                        for n in __import__("app.roomsense", fromlist=["x"]).plan(e)["movers"].get(z["id"], [])}
+            on_vip = [b for b in e.quick if b["id"] in e.quick_active and b["kind"] == "colour"
+                      and set((b.get("target") or {}).get("heads") or []) <= plan_vip and plan_vip]
+            check("the VIP's colour row stays warm", all(str(b.get("colour")).lower() in ("#ffbf00", "#ff4fa0", "#ffb36b") for b in on_vip), "")
+            op.stop(e)
+        finally:
+            llm.available = avail
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+

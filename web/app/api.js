@@ -7,7 +7,7 @@
 
 import { promptBox } from "./ui.js";
 
-const TOKEN_KEY = "jarvis.token";
+const TOKEN_KEY = "haze.token";
 let asking = null;
 let snoozeUntil = 0;
 
@@ -22,7 +22,7 @@ const clean = (t) => {
 try {
   const u = new URL(location.href);
   if (u.searchParams.get("code")) {
-    sessionStorage.setItem("jarvis.token", clean(u.searchParams.get("code")));
+    sessionStorage.setItem("haze.token", clean(u.searchParams.get("code")));
     u.searchParams.delete("code");
     history.replaceState(null, "", u.pathname + u.search + u.hash);
   }
@@ -43,7 +43,7 @@ function headers(json) {
   const h = {};
   if (json) h["Content-Type"] = "application/json";
   const t = token();
-  if (t) h["X-Jarvis-Token"] = t;
+  if (t) h["X-Haze-Token"] = t;
   return h;
 }
 

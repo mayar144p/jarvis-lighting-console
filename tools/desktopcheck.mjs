@@ -5,7 +5,8 @@
 //
 //   cd desktop && npm install && cd .. && node tools/desktopcheck.mjs
 //   (Linux with no screen: xvfb-run -a node tools/desktopcheck.mjs)
-//   DESKTOP_EXE=path/to/Jarvis.exe node tools/desktopcheck.mjs   (a built app)
+//   DESKTOP_EXE=path/to/Haze.exe node tools/desktopcheck.mjs   (a built app)
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
@@ -17,21 +18,21 @@ try { ({ _electron } = await import("playwright")); } catch {
 }
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DESK = join(ROOT, "desktop");
-// DESKTOP_EXE: check an installed / built app (Jarvis.exe) instead of the repo's
+// DESKTOP_EXE: check an installed / built app (Haze.exe) instead of the repo's
 const PACKED = process.env.DESKTOP_EXE || "";
 const exe = PACKED || join(DESK, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
 
-const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-desk-")), CONSOLE_AUTOSAVE: "false",
+const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-desk-")), CONSOLE_AUTOSAVE: "false",
   DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false", ELECTRON_USER_DATA: "",
   // as on an operator's PC: PYTHON names a folder with no Python in it - the app must find the real one
-  PYTHON: mkdtempSync(join(tmpdir(), "jarvis-not-python-")) };
+  PYTHON: mkdtempSync(join(tmpdir(), "haze-not-python-")) };
 // CHECKS_GPU=1: the computer's graphics card; otherwise software drawing
 // (servers / cloud with no GPU), like the other browser checks
 const GPU = process.env.CHECKS_GPU === "1";
-const UD = mkdtempSync(join(tmpdir(), "jarvis-desk-ud-"));
+const UD = mkdtempSync(join(tmpdir(), "haze-desk-ud-"));
 const args = [...(process.platform === "linux" ? ["--no-sandbox"] : []),
   ...(GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
   `--user-data-dir=${UD}`, ...(PACKED ? [] : [DESK])];
@@ -65,17 +66,43 @@ if (process.platform === "win32") {
 }
 
 // a save (photo, export, bug report) lands in Downloads - no Save As box in the middle of the desk
-const DL = mkdtempSync(join(tmpdir(), "jarvis-dl-"));
+const DL = mkdtempSync(join(tmpdir(), "haze-dl-"));
 await app.evaluate(({ app: a }, dir) => a.setPath("downloads", dir), DL);
 await win.evaluate(() => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["hello"], { type: "text/plain" }));
-  a.download = "jarvis-save-check.txt";
+  a.download = "haze-save-check.txt";
   a.click();
 });
 let saved = false;
-for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "jarvis-save-check.txt")); if (!saved) await sleep(250); }
+for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "haze-save-check.txt")); if (!saved) await sleep(250); }
 check("a save goes straight into Downloads (no Save As box)", saved, DL);
+
+// no system title bar: the desk's own bar has minimise / maximise / close and
+// the Desk menu (its logo)
+const frame = await win.evaluate(() => ({ frameless: document.documentElement.classList.contains("frameless"),
+  btns: [...document.querySelectorAll(".topbar .win-ctl .win-btn")].map((b) => b.getAttribute("aria-label")),
+  drag: getComputedStyle(document.querySelector(".topbar")).getPropertyValue("-webkit-app-region") }));
+check("no system title bar: minimise, maximise and close are on the desk's own top bar",
+  frame.frameless && (process.platform === "darwin" || frame.btns.join(",") === "Minimise,Maximise,Close") && frame.drag === "drag", JSON.stringify(frame));
+if (process.platform !== "darwin") {
+  // (a test screen may have no window manager to maximise with: what reaches
+  // the app is checked, and on a real desktop the window too)
+  await app.evaluate(({ ipcMain }) => { globalThis.__winDo = []; ipcMain.on("win:do", (_e, w) => globalThis.__winDo.push(w)); });
+  await win.click(".topbar .win-btn.max");
+  await sleep(1200);
+  const asked = await app.evaluate(() => globalThis.__winDo.join(","));
+  const real = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized());
+  check("the bar's Maximise asks the app to maximise the window", asked === "max", asked);
+  if (real) await win.click(".topbar .win-btn.max");
+  await sleep(600);
+}
+await win.click(".topbar .brand");
+await sleep(600);
+const deskMenu = await win.evaluate(() => document.body.innerText);
+check("the logo opens the Desk menu (Show mode, the 3D window, keep it on top, close)",
+  /Show mode/.test(deskMenu) && /3D view \(its own window\)/.test(deskMenu) && /Keep the 3D view on top/.test(deskMenu) && /Close Haze/.test(deskMenu), deskMenu.slice(0, 300));
+await win.keyboard.press("Escape");
 
 // Show mode from the menu: the 3D, the programmer and the playbacks each in a window
 await app.evaluate(({ Menu }) => Menu.getApplicationMenu().items.find((m) => m.label === "Desk").submenu.items[0].click());
@@ -95,6 +122,10 @@ for (const w of wins) {
     desk: { stage: false, prog: true, fixtures: true, pb: false },
     playbacks: { stage: false, prog: false, fixtures: false, pb: true } }[part];
   if (want) check(`the ${part} window shows only its part`, Object.entries(want).every(([k, v]) => seen[k] === v), JSON.stringify(seen));
+  if (part === "stage" && process.platform !== "darwin") {
+    check("the 3D window has its own minimise / maximise / close and Desk menu",
+      await w.evaluate(() => document.querySelectorAll("#vis-bar .win-ctl .win-btn").length === 4));
+  }
   if (part === "desk" || part === "playbacks") check(`the ${part} window draws no 3D (one per computer)`, !seen.canvas);
   if (process.env.SHOTS) await w.screenshot({ path: join(process.env.SHOTS, `desktop-${part}.png`) });
 }
@@ -107,6 +138,29 @@ if (desk) {
   await desk.keyboard.press("F5");
   await sleep(1500);
   check("Ctrl+R and F5 don't reload a window", await desk.evaluate(() => window.__still === 1));
+  // a touch screen: no swipe "back" (no history, the switches) and no pinch zoom
+  const t = await app.evaluate(({ app: a, BrowserWindow }) => ({
+    pinch: a.commandLine.hasSwitch("disable-pinch"), swipe: a.commandLine.getSwitchValue("overscroll-history-navigation"),
+    back: BrowserWindow.getAllWindows().some((w) => w.webContents.navigationHistory.canGoBack()) }));
+  check("touch: no swipe back, no pinch zoom, no page to go back to", t.pinch && t.swipe === "0" && !t.back, JSON.stringify(t));
+  if (process.platform === "win32") {
+    // full screen locks every Windows touch gesture, and puts them back after
+    // (Windows' own read-backs, in touchlock.log - a finger can't be tested here)
+    const reg = () => (spawnSync("reg", ["query", "HKCU\\Control Panel\\Desktop", "/v", "TouchGestureSetting"], { encoding: "utf8" }).stdout || "");
+    const before = reg();
+    const logOf = () => { try { return readFileSync(join(UD, "touchlock.log"), "utf8"); } catch { return ""; } };
+    check("Windows keeps each window's \"no edge swipes while full screen\" (set from the app itself)",
+      /edge swipes while full screen locked/.test(logOf()) && !/NOT locked/.test(logOf()), logOf().slice(-400));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
+    await sleep(2500);
+    check("full screen: three- and four-finger gestures off", /TouchGestureSetting\s+REG_DWORD\s+0x0\b/i.test(reg()), reg() + logOf().slice(-300));
+    const wisp = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Wisp\\Touch"], { encoding: "utf8" }).stdout || "";
+    check("full screen: Windows 11's left and right edge swipes off",
+      /Left_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp) && /Right_Edgy_Enabled\s+REG_DWORD\s+0x0\b/i.test(wisp), wisp);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(false));
+    await sleep(2500);
+    check("out of full screen: the setting is back as it was", reg() === before, `${before} -> ${reg()}`);
+  }
 }
 
 // closing: the engine stops cleanly (not killed)
@@ -133,7 +187,7 @@ await win2.waitForSelector("#app", { timeout: 60000 });
 const lan = Object.values(networkInterfaces()).flat().find((i) => i && i.family === "IPv4" && !i.internal);
 const where = `http://${lan ? lan.address : "127.0.0.1"}:${PORT}/`;
 check("phones on: the desk answers the network on its fixed port", new URL(win2.url()).port === String(PORT), win2.url());
-const st = async (k) => fetch(where + "api/console", { headers: k ? { "X-Jarvis-Token": k } : {} })
+const st = async (k) => fetch(where + "api/console", { headers: k ? { "X-Haze-Token": k } : {} })
   .then((r) => r.status).catch((e) => String(e));
 check("from the network, no code is refused", (await st("")) === 401, String(await st("")));
 check("from the network, the pairing code gets in", (await st(CODE)) === 200, String(await st(CODE)));

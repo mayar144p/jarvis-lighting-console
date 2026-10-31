@@ -1,6 +1,6 @@
 # Architecture
 
-Jarvis is two programs that ship together: a Python engine that owns all
+Haze is two programs that ship together: a Python engine that owns all
 state and the DMX output, and a browser front end that renders it. The
 browser holds no state the engine does not have.
 

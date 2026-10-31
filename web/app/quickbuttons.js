@@ -10,8 +10,8 @@
 import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
-import { onNote, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle } from "./ui.js";
+import { onNote, onCC, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -75,7 +75,7 @@ const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill", "fader", "
 // tiles that are a control, not a button (drawn live, see controlTile)
 const CONTROL = new Set(["fader", "xy", "tempo", "cuelist"]);
 let locked = false;
-try { locked = localStorage.getItem("jarvis.qb.locked") === "1"; } catch { /* private window */ }
+try { locked = localStorage.getItem("haze.qb.locked") === "1"; } catch { /* private window */ }
 // Icons a tile can carry: 24x24 stroke paths (the engine keeps the same names).
 const ICONS = {
   bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
@@ -112,6 +112,15 @@ const ICONS = {
   party: "M3 21l5-14 9 9zM14 3l1 2M19 5l-2 2M21 10l-2-.5M11 4.5c1 1 1 2.5 0 3.5M16.5 9c1-1 2.5-1 3.5 0",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
+// a slider's level as a fill up its track (the --v the CSS draws), set
+// whenever its value is set from the desk; a finger's moves set it here
+export function faderFill(inp) {
+  const lo = +inp.min || 0, hi = +inp.max || 100;
+  inp.style.setProperty("--v", `${((+inp.value - lo) / ((hi - lo) || 1)) * 100}%`);
+  return inp;
+}
+document.addEventListener("input", (e) => { if (e.target.classList && e.target.classList.contains("qfader-in")) faderFill(e.target); }, true);
+
 function icon(name) {
   const svg = document.createElementNS(SVGNS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -130,7 +139,7 @@ const rateText = (r) => (RATES.find(([v]) => v === r) || [0, `${r}×`])[1];
 // kinds whose brightness can fade in / out
 const FADES = new Set(["flash", "dim", "custom", "capture", "kill"]);
 // the console's own keys a button may not take
-const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f", "/", "?", " "]);
+export const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g", "f", "/", "?", " "]);
 
 let page = 1;
 let editing = false;
@@ -283,6 +292,37 @@ function renderPages() {
     }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
+  const prof = $("#qb-profile");
+  if (prof) prof.textContent = `${q.profile || "Default"} ▾`;
+}
+
+// Button profiles: a whole set of pages per kind of show ("Default",
+// "Halloween"); one is on the desk at a time
+function profileMenu(anchor) {
+  const q = quick();
+  const cur = q.profile || "Default";
+  const go = async (action, params) => {
+    const r = await run(action, params, { toast: true });
+    if (r.ok) { folderBack.length = 0; page = 1; render(true); emit("qbpage", page); }
+  };
+  const named = async (title, start = "") => {
+    const n = await promptBox(title, "Name", start, { ok: "Save", placeholder: "e.g. Halloween" });
+    return n && n.trim() ? n.trim() : null;
+  };
+  menu(anchor, [
+    ...(q.profiles || ["Default"]).map((n) => ({ label: (n === cur ? "✓ " : "  ") + n,
+      hint: n === cur ? "in use" : "", run: () => n !== cur && go("quick_profile_use", { name: n }) })),
+    "-",
+    { label: "New profile (empty)…", run: async () => { const n = await named("New button profile"); if (n) go("quick_profile", { new: n }); } },
+    { label: "New profile from these buttons…", hint: "a copy to change", run: async () => {
+      const n = await named("New button profile (a copy)", `${cur} copy`); if (n) go("quick_profile", { new: n, copy: true }); } },
+    cur !== "Default" && { label: `Rename ${cur}…`, run: async () => {
+      const n = await named(`Rename ${cur}`, cur); if (n && n !== cur) run("quick_profile", { rename: cur, to: n }, { toast: true }); } },
+    cur !== "Default" && { label: `Delete ${cur}…`, danger: true, run: async () => {
+      if (await confirmBox(`Delete ${cur}?`, `Its buttons and pages go with it (Ctrl+Z brings them back). The desk goes back to the Default buttons.`, { ok: "Delete", danger: true }))
+        go("quick_profile", { delete: cur });
+    } },
+  ]);
 }
 
 async function renamePage(p) {
@@ -446,11 +486,14 @@ function render(force = false) {
           const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.length - 1 : i) + (e.deltaY < 0 ? 1 : -1)))][0];
           if (next !== cur) run("quick_rate", { id: b.id, rate: next });
         }, { passive: false });
-        el.addEventListener("contextmenu", (e) => { e.preventDefault(); speedMenu(el, b); });
+        // (a finger held on it is Windows' right-click: it's a held strobe, not a menu - the badge is the speed by touch)
+        el.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!byTouch(e)) speedMenu(el, b); });
       }
+      let finger = null;                        // the finger holding it: a second one on the same button is ignored
       el.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;             // right-click is the speed menu
         e.preventDefault();
+        if (finger !== null) return;
         if (b.kind === "page" || b.kind === "folder") {
           // the screen turns the page (a folder remembers the way back)
           if (b.kind === "folder") folderBack.push(page); else folderBack.length = 0;
@@ -460,10 +503,13 @@ function render(force = false) {
         }
         if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
         el.setPointerCapture(e.pointerId);
+        finger = e.pointerId;
         el.classList.add("down");
         press(b, true, e.pointerId);
       });
-      const up = () => {
+      const up = (e) => {
+        if (finger === null || e.pointerId !== finger) return;
+        finger = null;
         el.classList.remove("down");
         if (b.mode === "hold" && held.has(b.id)) press(b, false);
         else held.delete(b.id);
@@ -482,7 +528,7 @@ function render(force = false) {
       h("span.muted.small", "Flash, strobe, colour bumps, effects and faders - one tap each, live."),
       h("div.row-btns",
         h("button.btn.primary", { onclick: () => $("#qb-suggest").click() }, "Suggest buttons for this rig"),
-        h("button.btn", { onclick: () => { editing = true; render(true); } }, "Set up buttons"))));
+        h("button.btn", { onclick: () => { editing = true; render(true); } }, "Edit buttons"))));
   } else box.replaceChildren(...cells);
   renderPages();
   $("#qb-edit").classList.toggle("on", editing);
@@ -529,9 +575,9 @@ function controlTile(b) {
     const c = b.control || { what: "master" };
     const v = faderValue(c, b);
     const out = h("output.qval", faderText(c, v));
-    const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label });
+    const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: v, "aria-label": b.label }));
     const send = throttle((x) => run("quick_fader", { id: b.id, level: x }, { silentError: true }), 60);
-    const to = (x) => { inp.value = x; out.textContent = faderText(c, x); inp.dataset.busy = "1"; send(x);
+    const to = (x) => { inp.value = x; faderFill(inp); out.textContent = faderText(c, x); inp.dataset.busy = "1"; send(x);
       setTimeout(() => { delete inp.dataset.busy; }, 400); };
     inp.addEventListener("input", () => { out.textContent = faderText(c, +inp.value); inp.dataset.busy = "1"; send(+inp.value); });
     inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
@@ -553,7 +599,7 @@ function controlTile(b) {
     const dot = h("i.qxy-dot");
     const pad = h("div.qxy", dot);
     const send = throttle((pan, tilt) => run("quick_xy", { id: b.id, pan, tilt }, { silentError: true }), 70);
-    let down = false;
+    let down = null;                             // the finger on the pad
     const at = (e) => {
       const r = pad.getBoundingClientRect();
       const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
@@ -561,9 +607,9 @@ function controlTile(b) {
       dot.style.top = y * 100 + "%";
       send(Math.round(x * 255), Math.round((1 - y) * 255));
     };
-    pad.addEventListener("pointerdown", (e) => { down = true; pad.setPointerCapture(e.pointerId); at(e); });
-    pad.addEventListener("pointermove", (e) => { if (down) at(e); });
-    pad.addEventListener("pointerup", () => { down = false; });
+    pad.addEventListener("pointerdown", (e) => { if (down !== null) return; down = e.pointerId; pad.setPointerCapture(e.pointerId); at(e); });
+    pad.addEventListener("pointermove", (e) => { if (down === e.pointerId) at(e); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) pad.addEventListener(ev, (e) => { if (down === e.pointerId) down = null; });
     el.append(head, pad);
   } else if (b.kind === "tempo") {
     el.append(head, h("output.qval.qbpm", "–"), h("small.qsub", "tap on the beat"));
@@ -588,6 +634,7 @@ function updateControls() {
       if (inp.dataset.busy) continue;
       const v = faderValue(b.control || { what: "master" }, b);
       inp.value = v;
+      faderFill(inp);
       el.querySelector(".qval").textContent = faderText(b.control || { what: "master" }, v);
     } else if (b.kind === "tempo") {
       const t = snapOrLite("tempo") || {};
@@ -608,13 +655,18 @@ let sideKey = "";
 const sideFaders = new Map();
 // where the full-screen sliders sit, which way they run and how long they
 // are - set from their own ⚙, remembered on this computer
-const STRIP_DEFAULT = { place: "bottom", dir: "h", size: "m" };
+const STRIP_DEFAULT = { place: "bottom", dir: "v", size: "m" };
 function stripLook() {
-  try { return { ...STRIP_DEFAULT, ...JSON.parse(localStorage.getItem("jarvis.qbStrip") || "{}") }; } catch { return { ...STRIP_DEFAULT }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem("haze.qbStrip") || "{}");
+    // horizontal was the standard before: a strip still on it turns upright once
+    if (saved.dir === "h" && !saved.v2) { saved.dir = "v"; saved.v2 = 1; localStorage.setItem("haze.qbStrip", JSON.stringify(saved)); }
+    return { ...STRIP_DEFAULT, ...saved };
+  } catch { return { ...STRIP_DEFAULT }; }
 }
 function setStripLook(k, v) {
-  const cur = { ...stripLook(), [k]: v };
-  try { localStorage.setItem("jarvis.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
+  const cur = { ...stripLook(), [k]: v, v2: 1 };
+  try { localStorage.setItem("haze.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
   applyStripLook();
 }
 function applyStripLook() {
@@ -653,12 +705,12 @@ function renderSideFaders() {
     // a wide slider each: the whole name shows, and the buttons keep the width
     const one = (id, name, title, send) => {
       const num = h("output.mono");
-      const inp = h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title });
+      const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title }));
       const go = throttle((v) => send(v), 60);
       inp.addEventListener("input", () => { num.textContent = inp.value; inp.dataset.busy = "1"; go(+inp.value); });
       inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
       inp.addEventListener("dblclick", () => { inp.value = 100; inp.dispatchEvent(new Event("input")); inp.dispatchEvent(new Event("change")); });
-      const f = { set: (v) => { if (!inp.dataset.busy) inp.value = v; } };
+      const f = { set: (v) => { if (!inp.dataset.busy) { inp.value = v; faderFill(inp); } } };
       sideFaders.set(id, { f, num });
       return h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
         h("span.qb-side-top", h("b", name), num), inp);
@@ -934,13 +986,19 @@ function editPages() {
           onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, "▲"),
         h("button.btn.small.ghost", { title: "Move down (swap with the page below)", disabled: p >= (q.pages || 32),
           onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, "▼"),
-        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !n && !(q.names || {})[p],
+        // any page that is there can go; an empty one without asking
+        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !used.has(p),
           onclick: async () => {
-            if (!(await confirmBox("Empty page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+            if (n && !(await confirmBox("Delete page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
             await run("quick_page", { page: p, delete: true }); draw(); render(true);
           } }, "Delete")));
     }
-    body.replaceChildren(...rows,
+    const empty = [...used].filter((p) => p > 1 && !q.buttons.some((b) => b.page === p)).length;
+    body.replaceChildren(
+      empty ? h("div.pages-tidy", h("span.muted.small", `${empty} page${empty === 1 ? " has" : "s have"} no buttons.`),
+        h("button.btn.small", { onclick: async () => { await run("quick_page", { tidy: true }, { toast: true }); if (!quick().buttons.some((b) => b.page === page)) page = 1; draw(); render(true); } },
+          `Remove the empty page${empty === 1 ? "" : "s"}`)) : null,
+      ...rows,
       last < (q.pages || 32) ? h("button.btn.small", { onclick: async () => {
         const name = await promptBox("New page", "Name", "", { ok: "Add", placeholder: "e.g. Show" });
         if (name === null || name === undefined) return;
@@ -984,9 +1042,13 @@ function editLayout() {
   });
 }
 
+// The button editor in three tabs - what it does, how it looks, how it
+// plays - so nothing needs scrolling: each tab fits the screen.
+let qeTab = "does";
 function editButton(slot, btn) {
   const s = fromButton(btn);
   const body = h("div.qe");
+  const tabsBar = h("div.seg.qe-tabs", { role: "tablist" });
   const selected = (state.snap && state.snap.selected) || [];
   const tags = [...new Set(quick().buttons.map((b) => b.exclusive).filter(Boolean))];
 
@@ -1002,14 +1064,16 @@ function editButton(slot, btn) {
       if (split) s.target.split = split;
       draw();
     };
-    const kids = [
+    const look = [
+      lookSection(s, slot, btn, draw),
       btn ? row("Page", chips(pageChoices(), s.toPageOf || page, (v) => { s.toPageOf = v; draw(); }),
         h("span.qe-note", "Pick another page and Save: the button moves there (in Edit you can also drag it onto a page's tab).")) : null,
+    ];
+    const kids = [
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
       row("Description", h("input.qe-name", { type: "text", value: s.note, maxlength: 40, placeholder: "optional - shown under the name",
         oninput: (e) => { s.note = e.target.value; } })),
-      lookSection(s, slot, btn, draw),
       row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
     if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
@@ -1189,6 +1253,7 @@ function editButton(slot, btn) {
           ? `“${s.key}” is already on another button (both will play)` : "Press the key to play this button (hold keys hold it).";
       } });
     const keyNote = h("span.qe-note", "A letter or digit on the keyboard that plays this button.");
+    const playFrom = kids.length;                    // from here: how it plays
     kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));
     const midiIn = h("input.qe-num.qe-key", { type: "number", min: 0, max: 127, value: s.midi, placeholder: "—",
       oninput: (e) => { const v = e.target.value; s.midi = v === "" ? "" : Math.max(0, Math.min(127, Math.round(+v))); } });
@@ -1196,9 +1261,9 @@ function editButton(slot, btn) {
     const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
     kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
     if (!NO_QUANT.has(d)) {
-      kids.push(row("Fires", chips([["", "Like the page"], [0, "As pressed"], [1, "On the beat"], [4, "On the bar"], [32, "On the phrase"]],
+      kids.push(row("Timing", chips([["", "Like the page"], [0, "Straight away"], [1, "Next beat"], [4, "Next bar"], [32, "Next phrase"]],
         s.quant, (v) => { s.quant = v; draw(); }),
-      h("span.qe-note", "On the beat: a press waits for the next beat (or bar) of the tempo, so a strobe hit or a GO lands on it.")));
+      h("span.qe-note", "When a press takes effect: straight away, or held until the next beat, bar or phrase of the tempo so a strobe hit or a GO lands in time. Like the page: the buttons page's On the beat setting.")));
     }
     // behaviour
     if (!ONE_SHOT.has(d)) {
@@ -1222,8 +1287,12 @@ function editButton(slot, btn) {
           h("div.qe-note", "Buttons in the same radio group switch each other off - one colour, one movement at a time."))));
       }
     }
-    body.replaceChildren(...kids.filter(Boolean));
+    const tabs = { does: kids.slice(0, playFrom), look, play: kids.slice(playFrom) };
+    tabsBar.replaceChildren(...[["does", "What it does"], ["look", "Look"], ["play", "How it plays"]].map(([k, l]) =>
+      h("button" + (qeTab === k ? ".on" : ""), { role: "tab", "aria-selected": String(qeTab === k), onclick: () => { qeTab = k; draw(); } }, l)));
+    body.replaceChildren(tabsBar, h("div.qe-tab", ...tabs[qeTab].filter(Boolean)));
   };
+  qeTab = "does";
   draw();
 
   const save = async (toSlot = slot) => {
@@ -1258,11 +1327,35 @@ function editButton(slot, btn) {
           render(true);
           emit("openprogrammer");
         } }, "Open in the programmer") : null,
+      btn ? tryIt(btn, save) : null,
       h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", { onclick: async () => { if (await save()) close(); } }, "Save"),
     ],
   });
+}
+
+// Try it: held, the button plays on the rig with what is set in the editor
+// now (saved first), and stops when let go - see it before closing
+function tryIt(btn, save) {
+  let down = false;
+  const el = h("button.btn.qe-try", { title: "Hold to try it on the rig (it saves first)" }, "▶ Try it (hold)");
+  el.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    if (down) return;
+    down = true;
+    el.setPointerCapture(e.pointerId);
+    if (!(await save())) { down = false; return; }
+    if (down) run("quick_press", { id: btn.id, down: true }, { silentError: true });
+  });
+  const up = () => {
+    if (!down) return;
+    down = false;
+    run("quick_press", { id: btn.id, down: false }, { silentError: true });
+  };
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  return el;
 }
 
 function speedMenu(el, b) {
@@ -1278,7 +1371,8 @@ async function midiStatus() {
   const d = await post("/api/console/midi", {});
   return (d.result && d.result.midi) || d.midi || {};
 }
-async function learnMidi(btn, input, note, set) {
+export async function learnMidi(btn, input, note, set, kind = "note") {
+  const last = kind === "cc" ? "last_cc" : "last_note";
   const st = await midiStatus().catch(() => ({}));
   const desk = st.enabled && st.open;
   if (!desk && !webMidiOn() && webMidiSupported()) await setWebMidi(true);   // a controller on this device
@@ -1288,24 +1382,24 @@ async function learnMidi(btn, input, note, set) {
     note.classList.add("warn");
     return;
   }
-  const since = (st.last_note && st.last_note.at) || 0;
+  const since = (st[last] && st[last].at) || 0;
   let heard = null;
-  const off = onNote((ev) => { if (ev.on) heard = ev; });
-  btn.textContent = "Hit a pad…";
+  const off = kind === "cc" ? onCC((ev) => { heard = ev; }) : onNote((ev) => { if (ev.on) heard = ev; });
+  btn.textContent = kind === "cc" ? "Move a fader…" : "Hit a pad…";
   btn.classList.add("on");
   const end = Date.now() + 10000;
   while (Date.now() < end && btn.isConnected && !heard) {
     await new Promise((r) => setTimeout(r, 250));
     if (desk && !heard) {
       const cur = await midiStatus().catch(() => ({}));
-      if (cur.last_note && cur.last_note.at > since) heard = cur.last_note;
+      if (cur[last] && cur[last].at > since) heard = cur[last];
     }
   }
   off();
   if (heard) {
     set(heard.number);
     input.value = heard.number;
-    note.textContent = `Note ${heard.number} (channel ${heard.channel})`;
+    note.textContent = `${kind === "cc" ? "CC" : "Note"} ${heard.number} (channel ${heard.channel})`;
     note.classList.remove("warn");
   } else if (!desk && !webMidiInputs().length) {
     note.textContent = "No MIDI controller found on this device.";
@@ -1360,13 +1454,14 @@ export function initQuickButtons() {
   $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
+  $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
   $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {
     locked = !locked;
     if (locked) editing = false;
-    try { localStorage.setItem("jarvis.qb.locked", locked ? "1" : "0"); } catch { /* private window */ }
+    try { localStorage.setItem("haze.qb.locked", locked ? "1" : "0"); } catch { /* private window */ }
     toast(locked ? "Layout locked on this device - buttons play, nothing can be moved or edited" : "Layout unlocked", "ok");
     render(true);
   });

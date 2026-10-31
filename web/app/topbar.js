@@ -18,7 +18,7 @@ const LABELS = {
   live: ["LIVE", ""],
 };
 
-async function goLive() {
+export async function goLive() {
   const s = state.snap || {};
   const host = (s.output && s.output.host) || "the network";
   const ok = await confirmBox("Go live",
@@ -57,8 +57,8 @@ function renderOutput() {
   $("#out-label").textContent = label;
   $("#out-sub").textContent = st === "live" ? `→ ${(s.output && s.output.host) || ""}` : sub;
   const arm = $("#out-arm");
-  arm.textContent = st === "live" ? "Stop" : "Go live…";
-  arm.title = st === "live" ? "Stop sending DMX (the rig holds its last look)" : "Start sending DMX to the rig";
+  arm.textContent = st === "live" ? "Hold to stop" : "Go live…";
+  arm.title = st === "live" ? "Hold to stop sending DMX (the rig holds its last look) - a tap can't stop a show" : "Start sending DMX to the rig";
 }
 
 function renderUndo() {
@@ -85,7 +85,8 @@ function renderLock() {
   const lk = s.lock || "design";
   const b = $("#lock-btn");
   b.dataset.state = lk;
-  $("#lock-label").textContent = (LOCKS[lk] || LOCKS.design)[0];
+  document.body.dataset.lock = lk;              // the panels show it (app.css)
+  $("#lock-label").textContent = lk === "locked" ? "LOCKED" : lk === "operate" ? "OPERATE" : (LOCKS[lk] || LOCKS.design)[0];
   b.title = (LOCKS[lk] || LOCKS.design)[1];
 }
 
@@ -102,9 +103,9 @@ function lockMenu(anchor) {
     run("set_lock", { state: target }, { toast: true });
   };
   menu(anchor, [
-    { label: "Design", hint: "edit anything", run: () => setTo("design") },
-    { label: "Operate", hint: "run the show, no edits", run: () => setTo("operate") },
-    { label: "Locked", hint: "patch frozen too", run: () => setTo("locked") },
+    { label: (cur === "design" ? "✓ " : "") + "Design", hint: "edit anything", run: () => setTo("design") },
+    { label: (cur === "operate" ? "✓ " : "") + "Operate", hint: "play and busk with the programmer - the show can't be edited", run: () => setTo("operate") },
+    { label: (cur === "locked" ? "✓ " : "") + "Locked", hint: "playing only: GO, faders, buttons, blackout", run: () => setTo("locked") },
     "-",
     { label: "Lock with a password…", run: async () => {
       const pw = await promptBox("Lock with a password", "Password (needed to unlock)", "", { ok: "Lock" });
@@ -134,6 +135,14 @@ function renderStatus() {
     : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
   out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
     : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  // the freeze watchdog: the lights stopped getting frames (and why was saved)
+  const stall = o.stall || (o.last_stall && Date.now() / 1000 - (o.last_stall.at || 0) < 600 ? o.last_stall : null);
+  if (stall) {
+    out.className = "bad";
+    out.textContent = o.stall ? `⚠ The lights are not getting frames (${stall.seconds} s) - a report is saved: data/freeze_reports/${stall.report}`
+      : `⚠ The lights stopped for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`;
+    out.title = "The desk's output was held up. The report says what held it.";
+  }
   // a backup desk standing by: its output is off on purpose
   const sb = s.standby || {};
   if (sb.following) {
@@ -230,7 +239,27 @@ export function initTopbar() {
       { label: "Leave preview", hint: "drops what wasn't recorded", run: () => run("blind", { state: false }, { toast: true }) },
     ].filter(Boolean));
   });
-  $("#out-arm").addEventListener("click", () => (outputState() === "live" ? run("set_output", { state: 0 }) : goLive()));
+  // Live, the same button stops sending - so it takes a 0.6 s hold (it
+  // fills while held), never one stray tap.  From the keyboard it asks.
+  const arm = $("#out-arm");
+  let holdTimer = 0, held = false, byPointer = false;
+  const cancel = () => { clearTimeout(holdTimer); arm.classList.remove("holding"); };
+  arm.addEventListener("pointerdown", (e) => {
+    byPointer = true;
+    if (outputState() !== "live" || e.button !== 0) return;
+    held = false;
+    arm.classList.add("holding");
+    holdTimer = setTimeout(() => { held = true; arm.classList.remove("holding"); run("set_output", { state: 0 }, { toast: true }); }, 600);
+  });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) arm.addEventListener(ev, cancel);
+  arm.addEventListener("click", async () => {
+    const pointer = byPointer;
+    byPointer = false;
+    if (outputState() !== "live") { if (!held) goLive(); held = false; return; }
+    if (held) { held = false; return; }
+    if (pointer) { toast("Hold to stop sending to the lights"); return; }
+    if (await confirmBox("Stop sending", "Stop sending DMX? The rig holds its last look.", { ok: "Stop", danger: true })) run("set_output", { state: 0 }, { toast: true });
+  });
   $("#out-state").addEventListener("click", (e) => outputMenu(e.currentTarget));
   $("#out-state").style.cursor = "pointer";
   $("#undo-btn").addEventListener("click", () => run("undo", {}, { toast: true }));

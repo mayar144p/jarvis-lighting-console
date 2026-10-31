@@ -78,6 +78,10 @@ jobs:
         run: >
           node tools/uicheck.mjs screencheck --widths 1440
           --only "^(02-select-all|03-level|04-colour|06-fx|10-move|17-buttons|19-timeline|21-show-menu|23-views-menu|33-settings|35-cmdbar|41-cue-dialog|47-light-test)$"
+      - name: Touch check (two fingers, a held finger, swipes and pinches)
+        run: node tools/touchcheck.mjs
+      - name: Show safety check (no stray GO, blackout or stop; Live keeps GO on screen)
+        run: node tools/safetycheck.mjs
       - name: Keep the screenshots when it fails
         if: failure()
         uses: actions/upload-artifact@v4

@@ -12,7 +12,7 @@ the same code as a GDTF file:
                  "detail": [{role, label, bits, coarse, phys_from,
                              phys_to, open_from, slots, ...}, ...]}]}]
 
-Both libraries also ship with Jarvis, compressed, under app/fixlib/
+Both libraries also ship with Haze, compressed, under app/fixlib/
 (built by tools/build_fixture_libraries.py), so they can be searched and
 installed offline at a venue.  Licences: OFL is MIT, QLC+ is Apache 2.0;
 see app/fixlib/NOTICE.md.
@@ -33,10 +33,10 @@ from .engine_support import channel_role
 
 BUNDLE_DIR = Path(__file__).resolve().parent / "fixlib"
 SOURCES = {
-    # Jarvis's own profiles, written from the manufacturers' manuals, for
+    # Haze's own profiles, written from the manufacturers' manuals, for
     # what no open library carries yet (confetti launchers first).
-    "jarvis": {"name": "Built-in library", "file": "jarvis.json",
-               "licence": "part of this desk", "url": "app/fixlib/jarvis.json"},
+    "haze": {"name": "Built-in library", "file": "haze.json",
+               "licence": "part of this desk", "url": "app/fixlib/haze.json"},
     "ofl": {"name": "Open Fixture Library", "file": "ofl.zip",
             "licence": "MIT", "url": "https://open-fixture-library.org"},
     "qlc": {"name": "QLC+ fixture library", "file": "qlcplus.zip",
@@ -627,19 +627,29 @@ _LOCK = threading.Lock()
 _INDEX: dict[str, list[dict]] = {}
 
 
+# the built-in library's key before the desk was called Haze: fixtures
+# stored as "jarvis:<key>" (older shows, the fixture list) still load
+OLD_SRC = "jarvis"
+
+
+def _src(src: str) -> str:
+    return "haze" if src == OLD_SRC else src
+
+
 def _bundle(src: str) -> Path | None:
-    meta = SOURCES.get(src)
+    meta = SOURCES.get(_src(src))
     path = BUNDLE_DIR / meta["file"] if meta else None
     return path if path is not None and path.is_file() else None
 
 
 def index(src: str) -> list[dict]:
     """[{key, manufacturer, model, type, modes: [[name, channels]]}]."""
+    src = _src(src)
     with _LOCK:
         if src not in _INDEX:
             path = _bundle(src)
             rows: list[dict] = []
-            if path is not None and src == "jarvis":
+            if path is not None and src == "haze":
                 try:
                     rows = [{"key": f["key"], "manufacturer": f["manufacturer"],
                              "model": f["model"], "type": f.get("type", ""),
@@ -685,13 +695,14 @@ def search(query: str, limit: int = 60) -> list[dict]:
 
 def load(src: str, key: str) -> list[dict]:
     """Parse one bundled fixture into the parse_gdtf shape."""
+    src = _src(src)
     path = _bundle(src)
     if path is None:
         raise ValueError(f"the {src} library is not installed")
     row = next((r for r in index(src) if r["key"] == key), None)
     if row is None:
         raise ValueError(f"no fixture {key!r} in the {SOURCES[src]['name']}")
-    if src == "jarvis":
+    if src == "haze":
         fixture = next(f for f in json.loads(path.read_text(encoding="utf-8")) if f["key"] == key)
         item = json.loads(json.dumps(fixture))          # a private copy
         for mode in item["modes"]:
@@ -752,7 +763,7 @@ def libraries() -> list[dict]:
 # "dimmer", a "shutter" or an "intensity" - so a Flash all button, Full or
 # the auto show would fire the fog, open a CO2 valve or light a laser.
 # `apply_fx` runs on EVERY fixture as it is stored (GDTF, OFL, QLC+, the
-# Jarvis library, dropped files): it works out whether the fixture is a
+# Haze library, dropped files): it works out whether the fixture is a
 # light, a laser or an SFX machine, and gives an effect's channels their
 # own vocabulary (fx_fire, fx_arm, fog, laser_on, laser_pattern...), which
 # no light action ever drives.  The value that means "fire", "armed" or

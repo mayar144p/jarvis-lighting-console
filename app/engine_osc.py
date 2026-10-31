@@ -2,19 +2,19 @@
 show.  Off until switched on; then it listens on a UDP port for these
 addresses (a value of 0..1 or 0..100 is a level):
 
-    /jarvis/go [playback]        /jarvis/back [playback]
-    /jarvis/cue <playback> <cue> /jarvis/release [playback]
-    /jarvis/master <level>       /jarvis/blackout <0|1>
-    /jarvis/playback/<n>/level <level>
-    /jarvis/group/<n>/master <level>
-    /jarvis/button/<id> <1 down|0 up>   (id like q1-3)
-    /jarvis/macro <name or id>   /jarvis/cmd <command line>
-    /jarvis/song <name>          (plays that song's show from its start)
-    /jarvis/tap                  /jarvis/bpm <bpm>
-    /jarvis/highlight <0|1>      /jarvis/autopilot <0|1>
+    /haze/go [playback]        /haze/back [playback]
+    /haze/cue <playback> <cue> /haze/release [playback]
+    /haze/master <level>       /haze/blackout <0|1>
+    /haze/playback/<n>/level <level>
+    /haze/group/<n>/master <level>
+    /haze/button/<id> <1 down|0 up>   (id like q1-3)
+    /haze/macro <name or id>   /haze/cmd <command line>
+    /haze/song <name>          (plays that song's show from its start)
+    /haze/tap                  /haze/bpm <bpm>
+    /haze/highlight <0|1>      /haze/autopilot <0|1>
 
 Only show control: nothing here patches, deletes or saves.  Each message
-is answered to its sender with /jarvis/ok or /jarvis/error and a line.
+is answered to its sender with /haze/ok or /haze/error and a line.
 
 Part of the Engine class (see app/engine.py): a mixin.
 """
@@ -39,9 +39,9 @@ def _level(v) -> int:
 # OSC out: what the desk tells another program (QLab, Resolume, a video
 # server, Companion) when feedback is on - one message per event
 FEEDBACK = {
-    "cue_go": "/jarvis/go", "cue_back": "/jarvis/back", "playback_release": "/jarvis/release",
-    "master": "/jarvis/master", "blackout": "/jarvis/blackout", "timeline_play": "/jarvis/timeline/play",
-    "timeline_stop": "/jarvis/timeline/stop", "quick_press": "/jarvis/button",
+    "cue_go": "/haze/go", "cue_back": "/haze/back", "playback_release": "/haze/release",
+    "master": "/haze/master", "blackout": "/haze/blackout", "timeline_play": "/haze/timeline/play",
+    "timeline_stop": "/haze/timeline/stop", "quick_press": "/haze/button",
 }
 _HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 
@@ -198,12 +198,12 @@ class OscMixin:
                     except Exception as exc:
                         ok, said = False, f"{addr}: {exc}"
                     try:
-                        sock.sendto(osc_mod.build("/jarvis/ok" if ok else "/jarvis/error", said), peer)
+                        sock.sendto(osc_mod.build("/haze/ok" if ok else "/haze/error", said), peer)
                     except OSError:
                         pass
             sock.close()
 
-        st["thread"] = threading.Thread(target=loop, name="jarvis-osc", daemon=True)
+        st["thread"] = threading.Thread(target=loop, name="haze-osc", daemon=True)
         st["thread"].start()
         return None
 
@@ -223,8 +223,10 @@ class OscMixin:
         st["last"] = {"address": addr, "args": [a if isinstance(a, (int, float, str)) else str(a) for a in args][:4],
                       "at": time.time()}
         parts = [p for p in addr.split("/") if p]
-        if not parts or parts[0] != "jarvis":
-            return False, f"not a Jarvis address: {addr}"
+        # (/jarvis/... is the address before the desk was called Haze: a
+        # controller set up then keeps working)
+        if not parts or parts[0] not in ("haze", "jarvis"):
+            return False, f"not a Haze address: {addr}"
         cmd, rest = (parts[1] if len(parts) > 1 else ""), parts[2:]
         a0 = args[0] if args else None
         try:

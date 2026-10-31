@@ -5,6 +5,7 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
+import { stagePanel } from "./view3d.js";
 
 const history = [];            // [{role, content}] for follow-ups ("warmer")
 
@@ -99,10 +100,10 @@ function planView(plan, onApply) {
 // With an AI key: a loop of tools on the desk (it looks, acts, checks the
 // real lights, asks, remembers).  Without one: the plan-first copilot below.
 let session = "";
-try { session = sessionStorage.getItem("jarvis.ai.session") || ""; } catch (e) { /* ignore */ }
+try { session = sessionStorage.getItem("haze.ai.session") || ""; } catch (e) { /* ignore */ }
 if (!session) {
   session = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  try { sessionStorage.setItem("jarvis.ai.session", session); } catch (e) { /* ignore */ }
+  try { sessionStorage.setItem("haze.ai.session", session); } catch (e) { /* ignore */ }
 }
 let attached = null;           // a photo to match (data URL), for the next message
 
@@ -132,8 +133,8 @@ function shrink(url, side = 768) {
 
 async function viewShot() {
   try {
-    const m = await import("./stagepanel.js");
-    const st = m.getStage && m.getStage();
+    const m = await stagePanel();
+    const st = m && m.getStage();
     return st ? await shrink(st.photo(1024)) : null;
   } catch (e) { return null; }
 }
@@ -155,7 +156,7 @@ async function assist(text) {
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
-    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.jarvisStage && !window.jarvisStage.failed) });
+    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed) });
     // the AI asked to see its changes: let the 3D draw them, then send a picture
     while (r.ok && r.need_view) {
       thinking.firstChild.textContent = "Looking at the 3D…";
@@ -265,20 +266,9 @@ export function askCopilot(text) {
   plan(text);
 }
 
-function suggestions() {
-  const p = (state.snap && state.snap.patch) || [];
-  const movers = p.some((x) => x.body && x.body.moving);
-  const colour = p.some((x) => (x.map || []).includes("red"));
-  const out = [];
-  if (!p.length) return ["Add 6 LED pars", "Add 4 moving head spots"];
-  if (colour) out.push("Warm amber wash, everything at 70%", "Slow rainbow across the rig");
-  if (movers) out.push("Movers circle slowly", "Point the movers at centre stage");
-  out.push("Everything to 50% over 3 seconds", "Blackout");
-  return out.slice(0, 5);
-}
-
+// (the example chips are gone - the box says what to type)
 function renderSuggest() {
-  $("#ai-suggest").replaceChildren(...suggestions().map((s) => h("button.chip", { onclick: () => { say("user", s); plan(s); } }, s)));
+  $("#ai-suggest").replaceChildren();
 }
 
 // ---------------------------------------------------------- show design
@@ -315,7 +305,6 @@ async function design() {
 }
 
 // ------------------------------------------------------------ whole show
-const STYLES = ["Techno warehouse", "House party", "EDM festival drop", "Hip hop club", "Chill lounge", "Wedding dance", "Latin night"];
 let autoDesign = null;
 
 function sectionBar(sections) {
@@ -440,7 +429,25 @@ export function closeCopilot() {
 
 export const copilotOpen = () => !$("#copilot").classList.contains("hidden");
 
+// its left edge sizes it (kept on this computer); double-click: back to normal
+function wireCopilotWidth() {
+  const box = $("#copilot");
+  const keep = (w) => { try { if (w) localStorage.setItem("haze.copilotW", String(w)); else localStorage.removeItem("haze.copilotW"); } catch (e) { /* private window */ } };
+  const set = (w) => { if (w) box.style.setProperty("--copilot-w", `${w}px`); else box.style.removeProperty("--copilot-w"); };
+  try { set(+localStorage.getItem("haze.copilotW") || 0); } catch (e) { /* private window */ }
+  const grip = h("div.copilot-grip", { title: "Drag to make the Copilot wider or narrower (double-click: back to normal)" });
+  box.append(grip);
+  let x0 = 0, w0 = 0, on = false;
+  grip.addEventListener("pointerdown", (e) => { on = true; x0 = e.clientX; w0 = box.getBoundingClientRect().width; grip.setPointerCapture(e.pointerId); grip.classList.add("on"); });
+  grip.addEventListener("pointermove", (e) => { if (on) set(Math.round(Math.max(360, Math.min(window.innerWidth * 0.8, w0 + (x0 - e.clientX))))); });
+  const end = () => { if (!on) return; on = false; grip.classList.remove("on"); keep(Math.round(box.getBoundingClientRect().width)); };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { set(0); keep(0); });
+}
+
 export function initCopilot() {
+  wireCopilotWidth();
   $("#ai-btn").addEventListener("click", () => (copilotOpen() ? closeCopilot() : openCopilot()));
   $("#copilot-close").addEventListener("click", closeCopilot);
   $$("#copilot-tabs button").forEach((b) => b.addEventListener("click", () => openCopilot(b.dataset.ctab)));
@@ -481,7 +488,7 @@ export function initCopilot() {
   $("#design-btn").addEventListener("click", design);
   $("#auto-btn").addEventListener("click", autoshow);
   $("#auto-ask-form").addEventListener("submit", (e) => { e.preventDefault(); changeShow(); });
-  $("#auto-styles").replaceChildren(...STYLES.map((st) => h("button.chip", { onclick: () => { $("#auto-text").value = st; autoshow(); } }, st)));
+  $("#auto-styles").replaceChildren();
   $("#doctor-btn").addEventListener("click", diagnose);
   on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
   const st = state.status;

@@ -31,7 +31,7 @@ from pathlib import Path
 
 from app import config
 
-REPO = "mayar144p/jarvis-lighting-console"
+REPO = "mayar144p/haze-lighting-console"
 # the server's last errors (main.py records them), newest last
 SERVER_ERRORS: collections.deque = collections.deque(maxlen=30)
 _KEYLIKE = re.compile(r"\b(AIza[0-9A-Za-z_\-]{20,}|sk-[0-9A-Za-z_\-]{20,}|ghp_[0-9A-Za-z]{20,}|"
@@ -98,7 +98,7 @@ def _read_version(root: Path) -> str:
 
 
 def computer() -> str:
-    app = "desktop app" if os.environ.get("JARVIS_DESKTOP") else "browser"
+    app = "desktop app" if os.environ.get("HAZE_DESKTOP") else "browser"
     return f"{platform.system()} {platform.release()}, Python {sys.version.split()[0]}, {app}"
 
 
@@ -161,7 +161,7 @@ def save(files: dict[str, bytes], head: dict | None) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", f"{head.get('manufacturer', '')} {head.get('model', '')}".lower()).strip("-") \
         if head else "desk"
-    path = folder / f"jarvis-report-{time.strftime('%Y%m%d-%H%M%S')}-{slug[:40] or 'light'}.zip"
+    path = folder / f"haze-report-{time.strftime('%Y%m%d-%H%M%S')}-{slug[:40] or 'light'}.zip"
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, data in files.items():
             zf.writestr(name, data)
@@ -217,7 +217,7 @@ def relay_send(path: Path, head: dict | None, what: str, areas: list[str]) -> di
     q["files"] = f"Sent from the desk: **{path.name}** (kept by the report relay)."
     payload = {"template": q.pop("template"), "title": q.pop("title"), "labels": q.pop("labels").split(","),
                "fields": q, "zip_name": path.name, "zip": base64.b64encode(data).decode("ascii")}
-    headers = {"Content-Type": "application/json", "User-Agent": "jarvis-desk/1"}
+    headers = {"Content-Type": "application/json", "User-Agent": "haze-desk/1"}
     if config.REPORT_RELAY_KEY:
         headers["X-Relay-Key"] = config.REPORT_RELAY_KEY
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
@@ -278,7 +278,7 @@ def report(eng, head_no: int | None, what: str, areas, include_show: bool, pictu
 
 def read_saved(name: str) -> bytes | None:
     """A saved report's zip by its name (only from DATA/bug_reports)."""
-    if not re.fullmatch(r"jarvis-report-[\w\-]{1,120}\.zip", name or ""):
+    if not re.fullmatch(r"haze-report-[\w\-]{1,120}\.zip", name or ""):
         return None
     p = config.DATA / "bug_reports" / name
     return p.read_bytes() if p.is_file() else None

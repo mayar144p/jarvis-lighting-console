@@ -174,7 +174,7 @@ def to_parsed(draft: dict) -> list[dict]:
 
 
 def round_trip(draft: dict) -> dict:
-    """The draft as Jarvis will store it: each channel's function is what
+    """The draft as Haze will store it: each channel's function is what
     the effects classifier and the role table make of it, so the review
     table shows exactly what will happen."""
     d = clean_draft(draft)

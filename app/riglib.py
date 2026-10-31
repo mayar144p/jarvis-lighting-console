@@ -2,9 +2,11 @@
 shapes they make (a straight run, a corner, a frame, a circle, a goal post)
 and the rigging report - pick-up points and the load on each.
 
-A shape is made of plain straight pieces (venue rigging items) that share a
-`group`, so lights attach, aim and draw on a circle truss exactly as on a
-straight one.  Weights are typical for the type (a 29 cm box truss is about
+A shape is made of plain pieces (venue rigging items) that share a `group`,
+so lights attach, aim and draw on a circle truss exactly as on a straight
+one.  A curved shape (a circle, an arc, a spiral, an S) is short pieces that
+each carry how far they turn (`bend`): the 3D draws them as one smooth
+lattice and the lights sit on the curve.  Weights are typical for the type (a 29 cm box truss is about
 5 kg/m); the fixtures' own weights come from their library files.
 
 Pure: the engine hands in the venue, the patch and a weight lookup.
@@ -27,7 +29,8 @@ PIECES = {
     "base": {"name": "Base plate", "kind": "base", "size": 0.4, "kg": 25.0},
 }
 LENGTHS = (4.0, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5)       # straight sections sold
-PRESETS = ("straight", "corner", "frame", "circle", "goalpost", "pole", "stand")
+PRESETS = ("straight", "corner", "frame", "circle", "arc", "spiral", "scurve", "goalpost", "pole", "stand")
+CURVED = ("circle", "arc", "spiral", "scurve")
 
 # a light whose file gives no weight: a typical one for its kind
 KIND_KG = {"mover": 18.0, "laser": 6.0, "bar": 4.0, "par": 3.0, "blinder": 6.0,
@@ -43,11 +46,50 @@ def _r(v: float) -> float:
     return round(float(v), 3)
 
 
+def _wrap(a: float) -> float:
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def _curve(pts: list[list[float]], closed: bool = False,
+           heads: list[float] | None = None) -> list[tuple[list[float], list[float], float]]:
+    """Points along a curve -> pieces (a, b, bend degrees): each piece an
+    arc through its two points, turning as the curve does between them."""
+    n = len(pts)
+    if heads is not None:                       # the directions are known (an S)
+        return [(pts[i], pts[i + 1], round(math.degrees(_wrap(heads[i + 1] - heads[i])), 3)) for i in range(n - 1)]
+    heads = []
+    for i in range(n):
+        if closed:
+            p0, p1 = pts[(i - 1) % n], pts[(i + 1) % n]
+        else:
+            p0, p1 = pts[max(0, i - 1)], pts[min(n - 1, i + 1)]
+        heads.append(math.atan2(p1[2] - p0[2], p1[0] - p0[0]))
+    if not closed and n > 2:
+        # the ends: a piece's chord runs halfway between its end directions
+        def chord(i, j):
+            return math.atan2(pts[j][2] - pts[i][2], pts[j][0] - pts[i][0])
+        heads[0] = heads[1] + 2 * _wrap(chord(0, 1) - heads[1])
+        heads[-1] = heads[-2] + 2 * _wrap(chord(n - 2, n - 1) - heads[-2])
+    out = []
+    for i in range(n if closed else n - 1):
+        j = (i + 1) % n
+        out.append((pts[i], pts[j], round(math.degrees(_wrap(heads[j] - heads[i])), 3)))
+    return out
+
+
 def build(preset: str, piece: str = "box30", x: float = 0.0, y: float = 4.0, z: float = 2.0,
           length: float = 4.0, width: float = 4.0, depth: float = 3.0, diameter: float = 4.0,
-          segments: int | None = None, height: float = 3.0, rot: float = 0.0, name: str = "") -> list[dict]:
+          segments: int | None = None, height: float = 3.0, rot: float = 0.0, name: str = "",
+          radius: float | None = None, start: float = 0.0, end: float = 180.0, radius_end: float | None = None,
+          turns: float = 2.0, rise: float = 1.0) -> list[dict]:
     """The rigging items a shape is made of (centred on x, z; at height y
-    for hung pieces; `rot` degrees about the vertical)."""
+    for hung pieces; `rot` degrees about the vertical).
+
+    Curved shapes: `arc` (radius, from angle `start` to `end` degrees: 0 is
+    along +x, 90 towards the audience), `spiral` (radius at the bottom ->
+    `radius_end` at the top, `turns` times round, rising `rise` metres a
+    turn, hung from height y at its lowest) and `scurve` (two opposite
+    arcs of `radius`, each turning `end` - `start` degrees)."""
     preset = str(preset or "straight").lower()
     if preset not in PRESETS:
         raise ValueError("a shape is one of " + ", ".join(PRESETS))
@@ -58,10 +100,18 @@ def build(preset: str, piece: str = "box30", x: float = 0.0, y: float = 4.0, z: 
     def at(dx, dy, dz):
         return [_r(x + dx * ca - dz * sa), _r(dy), _r(z + dx * sa + dz * ca)]
 
-    def seg(a, b, pc=piece, label=""):
+    def seg(a, b, pc=piece, label="", bend=0.0):
         k = PIECES[pc]
-        return {"kind": k["kind"], "model": pc, "size": k["size"], "a": a, "b": b,
-                "name": (label or name or k["name"])[:40]}
+        out = {"kind": k["kind"], "model": pc, "size": k["size"], "a": a, "b": b,
+               "name": (label or name or k["name"])[:40]}
+        if bend:
+            out["bend"] = bend
+        return out
+
+    def curved(local, closed, label, heads=None):
+        pts = [at(px, py, pz) for px, py, pz in local]
+        hs = [hd + math.radians(rot) for hd in heads] if heads else None
+        return [seg(a, b, label=label, bend=bend) for a, b, bend in _curve(pts, closed, hs)]
 
     length, width, depth = (max(0.5, min(60.0, float(v))) for v in (length, width, depth))
     height = max(0.5, min(20.0, float(height)))
@@ -79,8 +129,50 @@ def build(preset: str, piece: str = "box30", x: float = 0.0, y: float = 4.0, z: 
         n = int(segments) if segments else (8 if d <= 4 else 12 if d <= 8 else 16)
         n = max(4, min(32, n))
         pts = [(d / 2 * math.cos(2 * math.pi * i / n), d / 2 * math.sin(2 * math.pi * i / n)) for i in range(n)]
-        return [seg(at(pts[i][0], y, pts[i][1]), at(pts[(i + 1) % n][0], y, pts[(i + 1) % n][1]),
-                    label=name or f"Circle {d:g} m") for i in range(n)]
+        return curved([(px, y, pz) for px, pz in pts], True, name or f"Circle {d:g} m")
+    if preset == "arc":
+        rad = max(0.5, min(30.0, float(radius if radius else diameter / 2)))
+        a0, a1 = float(start), float(end)
+        if abs(a1 - a0) < 5:
+            raise ValueError("an arc turns at least 5 degrees")
+        a1 = a0 + max(-359.0, min(359.0, a1 - a0))
+        span = math.radians(abs(a1 - a0)) * rad
+        n = int(segments) if segments else max(2, min(48, math.ceil(span / 1.0)))
+        pts = [(rad * math.cos(math.radians(a0 + (a1 - a0) * i / n)), y,
+                rad * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+        return curved(pts, False, name or f"Arc {rad:g} m")
+    if preset == "spiral":
+        r0 = max(0.5, min(20.0, float(radius if radius else diameter / 2)))
+        r1 = max(0.5, min(20.0, float(radius_end if radius_end else r0)))
+        tn = max(0.25, min(8.0, float(turns)))
+        up = max(0.0, min(5.0, float(rise)))
+        span = 2 * math.pi * tn * (r0 + r1) / 2
+        n = int(segments) if segments else max(8, min(160, math.ceil(span / 0.8)))
+        pts = []
+        for i in range(n + 1):
+            u = i / n
+            ang = math.radians(float(start)) + 2 * math.pi * tn * u
+            rr = r0 + (r1 - r0) * u
+            pts.append((rr * math.cos(ang), y + up * tn * u, rr * math.sin(ang)))
+        return curved(pts, False, name or f"Spiral {r0:g} m")
+    if preset == "scurve":
+        rad = max(0.5, min(30.0, float(radius if radius else diameter / 2)))
+        sweep = math.radians(max(10.0, min(170.0, abs(float(end) - float(start)) or 90.0)))
+        per = max(2, min(32, int(segments) // 2 if segments else math.ceil(sweep * rad / 1.0)))
+        # walk it: one arc turning one way, then one the other; the middle
+        # of the S at x, z, running along the x axis overall
+        pts, hx, hz, hd = [(0.0, 0.0)], 0.0, 0.0, -sweep / 2
+        hds = [hd]
+        step = sweep * rad / per
+        for k in (1, -1):
+            for _i in range(per):
+                hd += k * sweep / per / 2
+                hx, hz = hx + step * math.cos(hd), hz + step * math.sin(hd)
+                hd += k * sweep / per / 2
+                pts.append((hx, hz))
+                hds.append(hd)
+        mx, mz = (pts[0][0] + pts[-1][0]) / 2, (pts[0][1] + pts[-1][1]) / 2
+        return curved([(px - mx, y, pz - mz) for px, pz in pts], False, name or f"S curve {rad:g} m", hds)
     if preset == "goalpost":
         top = height
         return [seg(at(-width / 2, 0, 0), at(-width / 2, top, 0), "pole30", name or "Goal post"),
@@ -145,7 +237,8 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
         first = items[0]
         model = first.get("model") or ""
         spec = PIECES.get(model) or {}
-        length = sum(math.dist(r["a"], r["b"]) for r in items)
+        from app import venue as venue_mod
+        length = sum(venue_mod.length(r) for r in items)
         if "kg" in spec:
             self_kg = spec["kg"] * len(items)
         else:
@@ -161,7 +254,7 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
                 light_kg += kg
                 light_w += ph.get("watts") or 0
                 lights.append({"head": h["head_no"], "name": h.get("name", ""), "kg": round(kg, 1),
-                               "guessed": "kg" not in ph})
+                               "guessed": "kg" not in ph, "hang": venue_mod.HANG_LABEL[venue_mod.hang_of(h)]})
         total = self_kg + light_kg
         ground = first["kind"] in ("tower", "stand", "base") or all(_vertical(r) for r in items) \
             or any(min(r["a"][1], r["b"][1]) < 0.3 for r in items)
@@ -182,14 +275,25 @@ def report(venue: dict, patch: list[dict], phys_of) -> dict:
         if spec.get("max_kg") and light_kg > spec["max_kg"] * len(items):
             warn.append(f"{light_kg:.0f} kg on a {spec['name'].lower()} made for {spec['max_kg']} kg")
         if ceiling and horiz and (venue.get("room") or {}).get("areas"):
-            from app import venue as venue_mod     # a lower ceiling over part of the room
             ceiling = min(venue_mod.ceiling_over(venue, [r["a"], r["b"]]) for r in horiz)
         if ceiling and trim is not None and trim > ceiling - 0.2:
             warn.append("hangs at the ceiling - no room for motors / chains")
         if guessed:
             warn.append(f"{guessed} light weight(s) guessed from the kind of light")
         arc = len(items) >= 4 and first.get("name", "").startswith("Circle")
-        if arc and model:
+        bent = [r for r in items if r.get("bend")]
+        if bent and not arc and model:
+            # curved sections, by the radius they are rolled to
+            for r in bent:
+                chord = math.hypot(r["b"][0] - r["a"][0], r["b"][2] - r["a"][2])
+                rad = chord / (2 * math.sin(math.radians(abs(r["bend"])) / 2)) if abs(r["bend"]) > 0.01 else 0
+                k = (model, f"curved, radius {rad:.1f} m")
+                parts[k] = parts.get(k, 0) + 1
+            for r in items:
+                if not r.get("bend"):
+                    for L in sections(math.dist(r["a"], r["b"])):
+                        parts[(model, L)] = parts.get((model, L), 0) + 1
+        elif arc and model:
             dia = max(math.hypot(r["a"][0] - items[0]["a"][0], r["a"][2] - items[0]["a"][2]) for r in items)
             k = (model, f"arc 1/{len(items)} of Ø{dia:.1f} m")
             parts[k] = parts.get(k, 0) + len(items)

@@ -12,7 +12,7 @@
 // and saves a screenshot per step, to look through by eye.
 // At 1440 it also presses every (safe) button of every tab and dialog.
 //
-//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920] [--no-click] [--only regex] [--big]
+//   node tools/uicheck.mjs [outDir] [--widths 1280,1440,1920 | 1366x768,2560x1440,3840x2160] [--no-click] [--only regex] [--big]
 //
 // It starts its own server on a scratch fixture database and show folder,
 // so your shows and patch are never touched.  Needs Playwright.
@@ -27,7 +27,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const outDir = args.find((a, i) => !a.startsWith("--") && !(i && args[i - 1].startsWith("--"))) || join(ROOT, "uicheck-out");
-const WIDTHS = opt("--widths", "1280,1440,1920").split(",").map(Number);
+// a width (its usual height), or a whole screen: 2560x1440
+const SIZES = opt("--widths", "1280,1440,1920").split(",").map((s) => s.split("x").map(Number));
+const WIDTHS = SIZES.map(([w]) => w);
 const CLICK = !args.includes("--no-click");
 // --only <regex>: run just the steps whose name matches (plus the start)
 const ONLY = opt("--only", "") ? new RegExp(opt("--only", "")) : null;
@@ -44,7 +46,7 @@ try { ({ chromium } = await import("playwright")); } catch {
 const exe = process.env.CHROMIUM || (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 
 // ------------------------------------------------------------- the server
-const scratch = mkdtempSync(join(tmpdir(), "jarvis-ui-"));
+const scratch = mkdtempSync(join(tmpdir(), "haze-ui-"));
 const server = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], {
   cwd: ROOT, stdio: ["ignore", "ignore", "pipe"],
   env: { ...process.env, PORT: String(PORT), CONSOLE_AUTORESTORE: "false", CONSOLE_AUTOSAVE: "false",
@@ -143,6 +145,16 @@ const AUDIT = () => {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || getComputedStyle(el).visibility === "hidden") continue;
     if ((r.right > innerWidth + 1 || r.left < -1) && !clips(el)) out.push(["off-screen", name(el), `x ${Math.round(r.left)}..${Math.round(r.right)}`]);
+  }
+  // 5. a box that scrolls by a few pixels only, or a dialog that scrolls
+  //    inside a dialog that scrolls (the DMX map moved 2 px, then stopped)
+  const scrolls = (el) => { const cs = getComputedStyle(el); return /auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight; };
+  for (const el of document.querySelectorAll(".modal, .modal *, .panel, .panel *, .playbacks *")) {
+    if (!inScope(el) || !vis(el) || !scrolls(el)) continue;
+    const extra = el.scrollHeight - el.clientHeight;
+    if (extra <= 6) out.push(["tiny-scroll", name(el), `scrolls ${extra}px`]);
+    const outer = el.parentElement && el.parentElement.closest(".modal-body");
+    if (outer && el.closest(".modal") && scrolls(outer) && outer.scrollHeight - outer.clientHeight > 0) out.push(["double-scroll", name(el), `inside ${name(outer).slice(0, 40)}`]);
   }
   return out;
 };
@@ -362,8 +374,8 @@ const GPU = process.env.CHECKS_GPU === "1";
 const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 let rigBuilt = false;
-for (const width of WIDTHS) {
-  const height = width >= 1900 ? 1080 : width >= 1440 ? 900 : 800;
+for (const [width, tall] of SIZES) {
+  const height = tall || (width >= 1900 ? 1080 : width >= 1440 ? 900 : 800);
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
@@ -371,11 +383,12 @@ for (const width of WIDTHS) {
   // page too busy for clicks on CI's machines (the nightly: 03/04/14/15
   // timed out there, never on a faster machine): draw it Fast, as with the
   // big rig - the screen check is about the panels, not the 3D's detail
-  const fast = BIG || (!GPU && width >= 1900);
+  // (and with Max the standard 3D quality now, at every size)
+  const fast = BIG || !GPU;
   await p.addInitScript((fast) => {
-    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ }
+    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); if (fast) localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
   }, fast);
-  await p.goto(BASE);
+  await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
   // an empty show opens in Set up; the steps below check the programmer

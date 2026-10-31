@@ -4,12 +4,13 @@
 // and the programmer's tab.  Four ready ones and your own; each one keeps
 // the screen as you left it.  Switch from the top bar or with Alt+1..9.
 // Kept per computer (each operator's own), not in the show.
-import { $, $$, h, menu, toast, promptBox, confirmBox } from "./ui.js";
+import { $, $$, h, menu, toast, promptBox, confirmBox, choiceBox } from "./ui.js";
 import { BUILTIN, clean, gridFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
 import { renderHub } from "./modehub.js";
 import { state, on } from "./store.js";
+import { HAS_3D } from "./view3d.js";
 
-const KEY = "jarvis.workspaces";
+const KEY = "haze.workspaces";
 
 let saved = { active: "programming", list: [], lastByMode: {} };
 let applying = false;
@@ -40,7 +41,8 @@ function capture(into) {
   Object.assign(into, clean({
     ...into,
     fix: !b.classList.contains("ws-nofix"), prog: !b.classList.contains("ws-noprog"), swap: b.classList.contains("ws-swap"),
-    stage: !b.classList.contains("ws-nostage"), cues: b.classList.contains("ws-cues"),
+    // (with the 3D view off everywhere, a workspace keeps its own choice)
+    stage: HAS_3D ? !b.classList.contains("ws-nostage") : into.stage !== false, cues: b.classList.contains("ws-cues"),
     fixAt: into.fixAt, progAt: into.progAt, dockAt: into.dockAt,
     fixW: parseInt(ws().style.getPropertyValue("--fixtures-w"), 10) || 0,
     progW: parseInt(ws().style.getPropertyValue("--prog-w"), 10) || 0,
@@ -63,13 +65,13 @@ function apply(w) {
     b.classList.toggle("ws-nofix", !w.fix);
     b.classList.toggle("ws-noprog", !w.prog);
     b.classList.toggle("ws-swap", !!w.swap);
-    b.classList.toggle("ws-nostage", w.stage === false);
+    b.classList.toggle("ws-nostage", w.stage === false || !HAS_3D);
     b.classList.toggle("ws-cues", !!w.cues);
     // the job: Set up and Live put their hub where the programmer is
     b.dataset.mode = w.mode;
     saved.lastByMode = { ...(saved.lastByMode || {}), [w.mode]: w.id };
     // where each panel sits: the grid from the workspace (wslayouts.js)
-    const g = gridFor(w);
+    const g = gridFor(HAS_3D ? w : { ...w, stage: false });
     el.style.setProperty("--ws-cols", g.cols);
     el.style.setProperty("--ws-rows", g.rows);
     el.style.setProperty("--ws-areas", g.areas);
@@ -81,8 +83,8 @@ function apply(w) {
     if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
     // the dock's height lives per mode (playbacks.js reads it when the mode is picked)
     try {
-      if (w.dock) localStorage.setItem("jarvis.dockh." + w.bottom, String(w.dock));
-      else localStorage.removeItem("jarvis.dockh." + w.bottom);
+      if (w.dock) localStorage.setItem("haze.dockh." + w.bottom, String(w.dock));
+      else localStorage.removeItem("haze.dockh." + w.bottom);
     } catch (e) { /* private window */ }
     const mode = $(`#pb-mode button[data-mode="${w.bottom}"]`);
     if (mode) mode.click();
@@ -115,14 +117,22 @@ function floatAt(panel, at, p) {
     for (const k of ["left", "top", "max-height"]) panel.style.removeProperty(k);
     return;
   }
-  // inside the 3D view's area: never over the dock or off the screen
-  const box = ws().getBoundingClientRect(), st = $("#stage-wrap").getBoundingClientRect();
+  // inside the 3D view's area: never over the dock or off the screen (with
+  // no 3D view in this workspace, the workspace's own area - it collapsed
+  // to its title when it measured a 3D view that wasn't there)
+  const box = ws().getBoundingClientRect();
+  let st = $("#stage-wrap").getBoundingClientRect();
+  if (st.width < 200 || st.height < 200) {
+    const dock = document.querySelector(".playbacks");
+    const bottom = dock && dock.offsetParent ? dock.getBoundingClientRect().top : box.bottom;
+    st = { left: box.left, top: box.top, width: box.width, height: Math.max(240, bottom - box.top) };
+  }
   const x0 = st.left - box.left, y0 = st.top - box.top;
   const x = Math.max(x0, Math.min((p && p.x) || 0, x0 + st.width - 160));
   const y = Math.max(y0, Math.min((p && p.y) || 0, y0 + st.height - 120));
   panel.style.left = x + "px";
   panel.style.top = y + "px";
-  panel.style.maxHeight = Math.max(120, y0 + st.height - y - 8) + "px";
+  panel.style.maxHeight = Math.max(320, y0 + st.height - y - 8) + "px";
 }
 function refloat() {
   const w = activeWorkspace();
@@ -137,12 +147,35 @@ function refloat() {
 export function useWorkspace(which, { quiet = false } = {}) {
   const w = typeof which === "number" ? saved.list[which - 1] : saved.list.find((x) => x.id === which);
   if (!w) return false;
+  const was = activeWorkspace();
   remember();                                     // the one we leave keeps how it was
   saved.active = w.id;
   store();
   apply(w);
   if (!quiet) toast(`Workspace: ${w.name}`);
+  if (w.mode === "live" && (!was || was.mode !== "live")) offerLock();
   return true;
+}
+
+// Into Live with the show still open for editing: offer the lock, once a
+// session (a stray drag on a busy night can't move a cue or a light).
+// "Don't ask again" is kept on this computer.
+let lockAsked = false;
+async function offerLock() {
+  const s = state.snap || {};
+  if (lockAsked || (s.lock || "design") !== "design" || document.documentElement.dataset.window === "stage") return;
+  try { if (localStorage.getItem("haze.noLockAsk") === "1") return; } catch (e) { /* private window */ }
+  lockAsked = true;
+  const i = await choiceBox("Lock the show for tonight?", {
+    message: "Live: the show can still be edited. Lock it so a stray tap can't change a cue, a palette or the patch?",
+    detail: "Operate: play and busk with the programmer. Playing only: GO, faders, buttons and blackout. The lock button at the top unlocks it.",
+    buttons: ["Not now", "Don't ask again", "Playing only", "Operate"], primary: 3, cancel: 0,
+  });
+  if (i === 1) { try { localStorage.setItem("haze.noLockAsk", "1"); } catch (e) { /* private window */ } }
+  if (i === 2 || i === 3) {
+    const { run } = await import("./actions.js");
+    run("set_lock", { state: i === 3 ? "operate" : "locked" }, { toast: true });
+  }
 }
 
 function toggle(field) {
@@ -271,27 +304,33 @@ function openMenu(anchor) {
   remember();
   const cur = activeWorkspace();
   const builtin = BUILTIN.some((b) => b.id === cur.id);
+  // a layout change keeps the menu open (drawn again with its new ticks);
+  // picking a workspace or saving closes it
+  const again = () => openMenu(anchor);
+  // (Set up / Program / Live are the mode switch beside this button: only
+  // the other layouts are listed here, not the same three again)
+  const MODES = new Set(["setup", "live", "programming"]);
+  const others = saved.list.map((w, i) => [w, i]).filter(([w]) => !MODES.has(w.id));
   menu(anchor, [
-    ...saved.list.map((w, i) => ({
+    ...others.map(([w, i]) => ({
       label: (w.id === cur.id ? "✓ " : "") + w.name,
       hint: i < 9 ? `Alt+${i + 1}` : "",
       run: () => useWorkspace(w.id),
     })),
-    "-",
-    { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", run: () => toggle("fix") },
-    { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", run: () => toggle("prog") },
-    { label: (cur.stage !== false ? "✓ " : "") + "3D view", hint: "show or hide (no 3D: more room, less work for the computer)", run: () => toggle("stage") },
-    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", run: () => toggle("cues") },
-    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
-    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
+    others.length ? "-" : null,
+    { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", keep: again, run: () => toggle("fix") },
+    { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", keep: again, run: () => toggle("prog") },
+    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", keep: again, run: () => toggle("cues") },
+    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", keep: again, run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
+    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", keep: again, run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
     cur.fixAt === "float"
       ? null
-      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", run: () => place("fixAt", "float") },
+      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("fixAt", "float") },
     cur.progAt === "float"
       ? null
-      : { label: "Programmer floating over the 3D", hint: "drag it by its title", run: () => place("progAt", "float") },
-    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
-    { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
+      : { label: "Programmer floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("progAt", "float") },
+    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", keep: again, run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
+    { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, keep: again, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
     "-",
     { label: "Save as a new workspace…", run: saveAs },
     { label: `Rename "${cur.name}"…`, run: () => rename(cur) },
@@ -311,8 +350,10 @@ function paintButton() {
   const b = $("#ws-btn");
   if (!b) return;
   const w = activeWorkspace();
-  $("#ws-name").textContent = w ? w.name : "";
-  b.title = `Workspace: ${w ? w.name : ""} - the screen arranged for the job (Alt+1..9 to switch)`;
+  // the mode's own name is on the mode switch: this says only a layout of its own
+  const MODES = new Set(["setup", "live", "programming"]);
+  $("#ws-name").textContent = w && !MODES.has(w.id) ? w.name : "";
+  b.title = `Layout${w ? `: ${w.name}` : ""} - the panels, other layouts, save your own (Alt+1..9)`;
 }
 
 // Drag a side panel's inner edge to make it wider or narrower; double-click

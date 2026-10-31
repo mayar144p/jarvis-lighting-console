@@ -1,0 +1,3888 @@
+{
+  "version": 1,
+  "saved": "2026-10-23T14:33:27+00:00",
+  "patch": [
+    {
+      "head_no": 1,
+      "name": "Sharpy Plus 1",
+      "manufacturer": "Clay Paky",
+      "model": "Sharpy Plus",
+      "mode": "Standard",
+      "channels": 31,
+      "universe": 1,
+      "address": 1,
+      "x": -3.0,
+      "y": 4.3,
+      "z": 0.4,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r1",
+        "t": 0.125,
+        "yaw0": -0.0
+      },
+      "map": [
+        "cyan",
+        "magenta",
+        "yellow",
+        "wheel",
+        "aux1",
+        "aux2",
+        "strobe",
+        "dimmer",
+        "dimmer_fine",
+        "gobo",
+        "aux3",
+        "aux4",
+        "gobo_rot",
+        "aux5",
+        "gobo_rot_fine",
+        "prism",
+        "aux6",
+        "aux7",
+        "aux8",
+        "frost",
+        "zoom",
+        "focus",
+        "focus_fine",
+        "aux9",
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "unused",
+        "unused",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 2,
+      "name": "Sharpy Plus 2",
+      "manufacturer": "Clay Paky",
+      "model": "Sharpy Plus",
+      "mode": "Standard",
+      "channels": 31,
+      "universe": 1,
+      "address": 32,
+      "x": -1.0,
+      "y": 4.3,
+      "z": 0.4,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r1",
+        "t": 0.375,
+        "yaw0": -0.0
+      },
+      "map": [
+        "cyan",
+        "magenta",
+        "yellow",
+        "wheel",
+        "aux1",
+        "aux2",
+        "strobe",
+        "dimmer",
+        "dimmer_fine",
+        "gobo",
+        "aux3",
+        "aux4",
+        "gobo_rot",
+        "aux5",
+        "gobo_rot_fine",
+        "prism",
+        "aux6",
+        "aux7",
+        "aux8",
+        "frost",
+        "zoom",
+        "focus",
+        "focus_fine",
+        "aux9",
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "unused",
+        "unused",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 3,
+      "name": "Sharpy Plus 3",
+      "manufacturer": "Clay Paky",
+      "model": "Sharpy Plus",
+      "mode": "Standard",
+      "channels": 31,
+      "universe": 1,
+      "address": 63,
+      "x": 1.0,
+      "y": 4.3,
+      "z": 0.4,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r1",
+        "t": 0.625,
+        "yaw0": -0.0
+      },
+      "map": [
+        "cyan",
+        "magenta",
+        "yellow",
+        "wheel",
+        "aux1",
+        "aux2",
+        "strobe",
+        "dimmer",
+        "dimmer_fine",
+        "gobo",
+        "aux3",
+        "aux4",
+        "gobo_rot",
+        "aux5",
+        "gobo_rot_fine",
+        "prism",
+        "aux6",
+        "aux7",
+        "aux8",
+        "frost",
+        "zoom",
+        "focus",
+        "focus_fine",
+        "aux9",
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "unused",
+        "unused",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 4,
+      "name": "Sharpy Plus 4",
+      "manufacturer": "Clay Paky",
+      "model": "Sharpy Plus",
+      "mode": "Standard",
+      "channels": 31,
+      "universe": 1,
+      "address": 94,
+      "x": 3.0,
+      "y": 4.3,
+      "z": 0.4,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r1",
+        "t": 0.875,
+        "yaw0": -0.0
+      },
+      "map": [
+        "cyan",
+        "magenta",
+        "yellow",
+        "wheel",
+        "aux1",
+        "aux2",
+        "strobe",
+        "dimmer",
+        "dimmer_fine",
+        "gobo",
+        "aux3",
+        "aux4",
+        "gobo_rot",
+        "aux5",
+        "gobo_rot_fine",
+        "prism",
+        "aux6",
+        "aux7",
+        "aux8",
+        "frost",
+        "zoom",
+        "focus",
+        "focus_fine",
+        "aux9",
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "unused",
+        "unused",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 5,
+      "name": "Intimidator Wash Zoom 350 IRC 5",
+      "manufacturer": "Chauvet",
+      "model": "Intimidator Wash Zoom 350 IRC",
+      "mode": "14-Ch",
+      "channels": 14,
+      "universe": 1,
+      "address": 125,
+      "x": -4.8,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.125,
+        "yaw0": -0.0
+      },
+      "map": [
+        "pan",
+        "tilt",
+        "speed",
+        "red",
+        "green",
+        "blue",
+        "white",
+        "aux1",
+        "aux2",
+        "dimmer",
+        "shutter",
+        "zoom",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 6,
+      "name": "Intimidator Wash Zoom 350 IRC 6",
+      "manufacturer": "Chauvet",
+      "model": "Intimidator Wash Zoom 350 IRC",
+      "mode": "14-Ch",
+      "channels": 14,
+      "universe": 1,
+      "address": 139,
+      "x": -1.6,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.375,
+        "yaw0": -0.0
+      },
+      "map": [
+        "pan",
+        "tilt",
+        "speed",
+        "red",
+        "green",
+        "blue",
+        "white",
+        "aux1",
+        "aux2",
+        "dimmer",
+        "shutter",
+        "zoom",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang",
+      "orient": {
+        "invert_pan": true
+      }
+    },
+    {
+      "head_no": 7,
+      "name": "Intimidator Wash Zoom 350 IRC 7",
+      "manufacturer": "Chauvet",
+      "model": "Intimidator Wash Zoom 350 IRC",
+      "mode": "14-Ch",
+      "channels": 14,
+      "universe": 1,
+      "address": 153,
+      "x": 1.6,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.625,
+        "yaw0": -0.0
+      },
+      "map": [
+        "pan",
+        "tilt",
+        "speed",
+        "red",
+        "green",
+        "blue",
+        "white",
+        "aux1",
+        "aux2",
+        "dimmer",
+        "shutter",
+        "zoom",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 8,
+      "name": "Intimidator Wash Zoom 350 IRC 8",
+      "manufacturer": "Chauvet",
+      "model": "Intimidator Wash Zoom 350 IRC",
+      "mode": "14-Ch",
+      "channels": 14,
+      "universe": 1,
+      "address": 167,
+      "x": 4.8,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.875,
+        "yaw0": -0.0
+      },
+      "map": [
+        "pan",
+        "tilt",
+        "speed",
+        "red",
+        "green",
+        "blue",
+        "white",
+        "aux1",
+        "aux2",
+        "dimmer",
+        "shutter",
+        "zoom",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 9,
+      "name": "Mega PAR Profile Plus 9",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 181,
+      "x": -5.6,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.0833,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 10,
+      "name": "Mega PAR Profile Plus 10",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 185,
+      "x": -3.36,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.25,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 11,
+      "name": "Mega PAR Profile Plus 11",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 189,
+      "x": -1.12,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.4167,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 12,
+      "name": "Mega PAR Profile Plus 12",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 193,
+      "x": 1.12,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.5833,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 13,
+      "name": "Mega PAR Profile Plus 13",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 197,
+      "x": 3.36,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.75,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 14,
+      "name": "Mega PAR Profile Plus 14",
+      "manufacturer": "American DJ",
+      "model": "Mega PAR Profile Plus",
+      "mode": "4 channel mode",
+      "channels": 4,
+      "universe": 1,
+      "address": 201,
+      "x": 5.6,
+      "y": 4.6,
+      "z": 9.5,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r3",
+        "t": 0.9167,
+        "yaw0": -0.0
+      },
+      "map": [
+        "red",
+        "green",
+        "blue",
+        "uv"
+      ],
+      "mapped": true,
+      "yaw": 0.0,
+      "stance": "hang"
+    },
+    {
+      "head_no": 15,
+      "name": "Shocker 90 IRC\nQRG 15",
+      "manufacturer": "Chauvet",
+      "model": "Shocker 90 IRC\nQRG",
+      "mode": "2 Channel mode",
+      "channels": 2,
+      "universe": 1,
+      "address": 205,
+      "x": -5.888,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.04,
+        "yaw0": -0.0
+      },
+      "stance": "hang",
+      "map": [
+        "strobe",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0
+    },
+    {
+      "head_no": 16,
+      "name": "Shocker 90 IRC\nQRG 16",
+      "manufacturer": "Chauvet",
+      "model": "Shocker 90 IRC\nQRG",
+      "mode": "2 Channel mode",
+      "channels": 2,
+      "universe": 1,
+      "address": 207,
+      "x": 5.888,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.96,
+        "yaw0": -0.0
+      },
+      "stance": "hang",
+      "map": [
+        "strobe",
+        "dimmer"
+      ],
+      "mapped": true,
+      "yaw": 0.0
+    },
+    {
+      "head_no": 17,
+      "name": "Intimidator Spot 260 17",
+      "manufacturer": "Chauvet DJ",
+      "model": "Intimidator Spot 260",
+      "mode": "14-channel",
+      "channels": 14,
+      "universe": 2,
+      "address": 1,
+      "x": 0.0,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.5,
+        "yaw0": -0.0
+      },
+      "stance": "hang",
+      "map": [
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "speed",
+        "wheel",
+        "gobo",
+        "gobo_rot",
+        "prism",
+        "zoom",
+        "dimmer",
+        "strobe",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0
+    },
+    {
+      "head_no": 18,
+      "name": "Intimidator Spot 260 18",
+      "manufacturer": "Chauvet DJ",
+      "model": "Intimidator Spot 260",
+      "mode": "14-channel",
+      "channels": 14,
+      "universe": 2,
+      "address": 15,
+      "x": 0.8,
+      "y": 4.6,
+      "z": 4.6,
+      "kind": "truss",
+      "role": "generic",
+      "curve": "linear",
+      "mount": {
+        "rig": "r2",
+        "t": 0.5625,
+        "yaw0": -0.0
+      },
+      "stance": "hang",
+      "map": [
+        "pan",
+        "pan_fine",
+        "tilt",
+        "tilt_fine",
+        "speed",
+        "wheel",
+        "gobo",
+        "gobo_rot",
+        "prism",
+        "zoom",
+        "dimmer",
+        "strobe",
+        "unused",
+        "macro"
+      ],
+      "mapped": true,
+      "yaw": 0.0
+    }
+  ],
+  "groups": [
+    {
+      "n": 1,
+      "name": "Beams",
+      "heads": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "n": 2,
+      "name": "Washes",
+      "heads": [
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "n": 3,
+      "name": "PARs",
+      "heads": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "n": 4,
+      "name": "Strobes",
+      "heads": [
+        15,
+        16
+      ]
+    }
+  ],
+  "palettes": {
+    "position": [
+      {
+        "n": 1,
+        "name": "DJ",
+        "values": {
+          "pan": 25252,
+          "tilt": 42922
+        }
+      },
+      {
+        "n": 2,
+        "name": "Dance floor",
+        "values": {
+          "pan": 30750,
+          "tilt": 49781
+        }
+      },
+      {
+        "n": 3,
+        "name": "Bar",
+        "values": {
+          "pan": 31653,
+          "tilt": 51840
+        }
+      },
+      {
+        "n": 4,
+        "name": "Spots out",
+        "values": {
+          "pan": 30000,
+          "tilt": 20000
+        }
+      }
+    ],
+    "colour": [
+      {
+        "n": 1,
+        "name": "Red",
+        "values": {
+          "cyan": 0,
+          "magenta": 255,
+          "yellow": 255,
+          "red": 255,
+          "green": 0,
+          "blue": 0,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 2,
+        "name": "Blue",
+        "values": {
+          "cyan": 255,
+          "magenta": 204,
+          "yellow": 0,
+          "red": 0,
+          "green": 51,
+          "blue": 255,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 3,
+        "name": "Magenta",
+        "values": {
+          "cyan": 0,
+          "magenta": 255,
+          "yellow": 51,
+          "red": 255,
+          "green": 0,
+          "blue": 204,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 4,
+        "name": "Cyan",
+        "values": {
+          "cyan": 255,
+          "magenta": 55,
+          "yellow": 0,
+          "red": 0,
+          "green": 200,
+          "blue": 255,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 5,
+        "name": "Amber",
+        "values": {
+          "cyan": 0,
+          "magenta": 79,
+          "yellow": 255,
+          "red": 255,
+          "green": 176,
+          "blue": 0,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 6,
+        "name": "Green",
+        "values": {
+          "cyan": 255,
+          "magenta": 0,
+          "yellow": 191,
+          "red": 0,
+          "green": 255,
+          "blue": 64,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 7,
+        "name": "UV",
+        "values": {
+          "cyan": 133,
+          "magenta": 255,
+          "yellow": 0,
+          "red": 122,
+          "green": 0,
+          "blue": 255,
+          "white": 0,
+          "uv": 0
+        }
+      },
+      {
+        "n": 8,
+        "name": "White",
+        "values": {
+          "cyan": 0,
+          "magenta": 0,
+          "yellow": 0,
+          "red": 255,
+          "green": 255,
+          "blue": 255,
+          "white": 255,
+          "uv": 0
+        }
+      }
+    ],
+    "beam": []
+  },
+  "presets": [],
+  "playbacks": [
+    {
+      "n": 1,
+      "name": "",
+      "stack": [
+        {
+          "n": 1,
+          "name": "Intro",
+          "fade_s": 3.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 51,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 23218,
+              "tilt": 47566,
+              "zoom": 215
+            },
+            "2": {
+              "dimmer": 51,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 25603,
+              "tilt": 41137,
+              "zoom": 215
+            },
+            "3": {
+              "dimmer": 51,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 39932,
+              "tilt": 41137,
+              "zoom": 215
+            },
+            "4": {
+              "dimmer": 51,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 42317,
+              "tilt": 47566,
+              "zoom": 215
+            },
+            "5": {
+              "dimmer": 51,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 153,
+              "tilt": 61,
+              "zoom": 215
+            },
+            "6": {
+              "dimmer": 51,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 139,
+              "tilt": 69,
+              "zoom": 215
+            },
+            "7": {
+              "dimmer": 51,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 116,
+              "tilt": 69,
+              "zoom": 215
+            },
+            "8": {
+              "dimmer": 51,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 102,
+              "tilt": 61,
+              "zoom": 215
+            },
+            "9": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 51,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 51
+            },
+            "16": {
+              "dimmer": 51
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 2,
+          "name": "Build",
+          "fade_s": 1.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 74,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 33607,
+              "tilt": 49621,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "2": {
+              "dimmer": 74,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 34924,
+              "tilt": 49808,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "3": {
+              "dimmer": 74,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 36099,
+              "tilt": 50112,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "4": {
+              "dimmer": 74,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 37099,
+              "tilt": 50471,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "5": {
+              "dimmer": 74,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 125,
+              "tilt": 179,
+              "zoom": 40
+            },
+            "6": {
+              "dimmer": 74,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 139,
+              "tilt": 181,
+              "zoom": 40
+            },
+            "7": {
+              "dimmer": 74,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 149,
+              "tilt": 187,
+              "zoom": 40
+            },
+            "8": {
+              "dimmer": 74,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 154,
+              "tilt": 192,
+              "zoom": 40
+            },
+            "9": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 74,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 74
+            },
+            "16": {
+              "dimmer": 74
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 3,
+          "name": "Drop",
+          "fade_s": 0.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 30750,
+              "tilt": 51740,
+              "zoom": 40
+            },
+            "2": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 32078,
+              "tilt": 51632,
+              "zoom": 40
+            },
+            "3": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 33457,
+              "tilt": 51632,
+              "zoom": 40
+            },
+            "4": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 34785,
+              "tilt": 51740,
+              "zoom": 40
+            },
+            "5": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 109,
+              "tilt": 195,
+              "zoom": 40
+            },
+            "6": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 120,
+              "tilt": 191,
+              "zoom": 40
+            },
+            "7": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 135,
+              "tilt": 191,
+              "zoom": 40
+            },
+            "8": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 146,
+              "tilt": 195,
+              "zoom": 40
+            },
+            "9": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 100
+            },
+            "16": {
+              "dimmer": 100
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 4,
+          "name": "Breakdown",
+          "fade_s": 3.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 58,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 40283,
+              "tilt": 12945,
+              "zoom": 215,
+              "gobo": 40
+            },
+            "2": {
+              "dimmer": 58,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 36652,
+              "tilt": 14511,
+              "zoom": 215,
+              "gobo": 40
+            },
+            "3": {
+              "dimmer": 58,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 28883,
+              "tilt": 14511,
+              "zoom": 215,
+              "gobo": 40
+            },
+            "4": {
+              "dimmer": 58,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 25252,
+              "tilt": 12945,
+              "zoom": 215,
+              "gobo": 40
+            },
+            "5": {
+              "dimmer": 58,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 146,
+              "tilt": 49,
+              "zoom": 215
+            },
+            "6": {
+              "dimmer": 58,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 135,
+              "tilt": 51,
+              "zoom": 215
+            },
+            "7": {
+              "dimmer": 58,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 120,
+              "tilt": 51,
+              "zoom": 215
+            },
+            "8": {
+              "dimmer": 58,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 109,
+              "tilt": 49,
+              "zoom": 215
+            },
+            "9": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 58,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 58
+            },
+            "16": {
+              "dimmer": 58
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 5,
+          "name": "Build 2",
+          "fade_s": 1.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 80,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 28436,
+              "tilt": 50471,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "2": {
+              "dimmer": 80,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 29436,
+              "tilt": 50112,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "3": {
+              "dimmer": 80,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 30611,
+              "tilt": 49808,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "4": {
+              "dimmer": 80,
+              "cyan": 0,
+              "magenta": 76,
+              "yellow": 148,
+              "pan": 31928,
+              "tilt": 49621,
+              "zoom": 40,
+              "gobo": 40
+            },
+            "5": {
+              "dimmer": 80,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 101,
+              "tilt": 192,
+              "zoom": 40
+            },
+            "6": {
+              "dimmer": 80,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 106,
+              "tilt": 187,
+              "zoom": 40
+            },
+            "7": {
+              "dimmer": 80,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 116,
+              "tilt": 181,
+              "zoom": 40
+            },
+            "8": {
+              "dimmer": 80,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "white": 255,
+              "pan": 130,
+              "tilt": 179,
+              "zoom": 40
+            },
+            "9": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 80,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 80
+            },
+            "16": {
+              "dimmer": 80
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 6,
+          "name": "Drop 2",
+          "fade_s": 0.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 30750,
+              "tilt": 51740,
+              "zoom": 40
+            },
+            "2": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 32078,
+              "tilt": 51632,
+              "zoom": 40
+            },
+            "3": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 33457,
+              "tilt": 51632,
+              "zoom": 40
+            },
+            "4": {
+              "dimmer": 100,
+              "cyan": 0,
+              "magenta": 0,
+              "yellow": 0,
+              "pan": 34785,
+              "tilt": 51740,
+              "zoom": 40
+            },
+            "5": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 109,
+              "tilt": 195,
+              "zoom": 40
+            },
+            "6": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 120,
+              "tilt": 191,
+              "zoom": 40
+            },
+            "7": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 135,
+              "tilt": 191,
+              "zoom": 40
+            },
+            "8": {
+              "dimmer": 100,
+              "red": 255,
+              "green": 217,
+              "blue": 168,
+              "white": 0,
+              "pan": 146,
+              "tilt": 195,
+              "zoom": 40
+            },
+            "9": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 100,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 100
+            },
+            "16": {
+              "dimmer": 100
+            }
+          },
+          "follow_s": 0.0
+        },
+        {
+          "n": 7,
+          "name": "Outro",
+          "fade_s": 3.0,
+          "hold_s": 0.0,
+          "values": {
+            "1": {
+              "dimmer": 48,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 23218,
+              "tilt": 47566,
+              "zoom": 215
+            },
+            "2": {
+              "dimmer": 48,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 25603,
+              "tilt": 41137,
+              "zoom": 215
+            },
+            "3": {
+              "dimmer": 48,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 39932,
+              "tilt": 41137,
+              "zoom": 215
+            },
+            "4": {
+              "dimmer": 48,
+              "cyan": 0,
+              "magenta": 38,
+              "yellow": 87,
+              "pan": 42317,
+              "tilt": 47566,
+              "zoom": 215
+            },
+            "5": {
+              "dimmer": 48,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 153,
+              "tilt": 61,
+              "zoom": 215
+            },
+            "6": {
+              "dimmer": 48,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 139,
+              "tilt": 69,
+              "zoom": 215
+            },
+            "7": {
+              "dimmer": 48,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 116,
+              "tilt": 69,
+              "zoom": 215
+            },
+            "8": {
+              "dimmer": 48,
+              "red": 255,
+              "green": 179,
+              "blue": 107,
+              "white": 0,
+              "pan": 102,
+              "tilt": 61,
+              "zoom": 215
+            },
+            "9": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "10": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "11": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "12": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "13": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "14": {
+              "_vdim": 48,
+              "red": 255,
+              "green": 255,
+              "blue": 255,
+              "uv": 0
+            },
+            "15": {
+              "dimmer": 48
+            },
+            "16": {
+              "dimmer": 48
+            }
+          },
+          "follow_s": 0.0
+        }
+      ],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 2,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 3,
+      "name": "",
+      "stack": [
+        {
+          "n": 1,
+          "name": "Spots green",
+          "fade_s": 0.0,
+          "hold_s": 0.0,
+          "values": {
+            "5": {
+              "dimmer": 80,
+              "red": 0,
+              "green": 255,
+              "blue": 64,
+              "white": 0,
+              "pan": 30000,
+              "tilt": 20000
+            },
+            "6": {
+              "dimmer": 80,
+              "red": 0,
+              "green": 255,
+              "blue": 64,
+              "white": 0,
+              "pan": 30000,
+              "tilt": 20000
+            },
+            "7": {
+              "dimmer": 80,
+              "red": 0,
+              "green": 255,
+              "blue": 64,
+              "white": 0,
+              "pan": 30000,
+              "tilt": 20000
+            },
+            "8": {
+              "dimmer": 80,
+              "red": 0,
+              "green": 255,
+              "blue": 64,
+              "white": 0,
+              "pan": 30000,
+              "tilt": 20000
+            },
+            "17": {
+              "dimmer": 80,
+              "wheel": 38,
+              "pan": 30000,
+              "tilt": 20000
+            },
+            "18": {
+              "dimmer": 80,
+              "wheel": 38,
+              "pan": 30000,
+              "tilt": 20000
+            }
+          }
+        }
+      ],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 4,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 5,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 6,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 7,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 8,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 9,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    },
+    {
+      "n": 10,
+      "name": "",
+      "stack": [],
+      "index": -1,
+      "active": false,
+      "level": 100,
+      "xfade_s": null,
+      "follow": {
+        "on": false,
+        "delay": 0.0,
+        "paused": false,
+        "loop": false
+      },
+      "tracking": false,
+      "mib": false
+    }
+  ],
+  "programmer": {},
+  "selected": [
+    5,
+    6,
+    7,
+    8,
+    17,
+    18
+  ],
+  "venue": {
+    "version": 2,
+    "name": "Club",
+    "auto": false,
+    "room": {
+      "width": 16.0,
+      "depth": 22.0,
+      "height": 5.5,
+      "back": -1.5,
+      "cx": 0.0,
+      "outline": [],
+      "ceiling": "flat",
+      "floor": "concrete",
+      "wall_colour": "#3a3d45",
+      "areas": []
+    },
+    "stage": {
+      "x": 0.0,
+      "z": 0.0,
+      "width": 8.0,
+      "depth": 4.0,
+      "height": 0.8,
+      "colour": "#1f2026"
+    },
+    "zones": [
+      {
+        "id": "z12",
+        "kind": "dj",
+        "name": "DJ",
+        "points": [
+          [
+            -4.0,
+            0.0
+          ],
+          [
+            4.0,
+            0.0
+          ],
+          [
+            4.0,
+            4.0
+          ],
+          [
+            -4.0,
+            4.0
+          ]
+        ],
+        "y": 0,
+        "density": -1
+      },
+      {
+        "id": "z13",
+        "kind": "dancefloor",
+        "name": "Dance floor",
+        "points": [
+          [
+            -7.04,
+            4.8
+          ],
+          [
+            7.04,
+            4.8
+          ],
+          [
+            7.04,
+            16.1
+          ],
+          [
+            -7.04,
+            16.1
+          ]
+        ],
+        "y": 0,
+        "density": 0.7
+      },
+      {
+        "id": "z14",
+        "kind": "bar",
+        "name": "Bar",
+        "points": [
+          [
+            -7.04,
+            17.64
+          ],
+          [
+            7.04,
+            17.64
+          ],
+          [
+            7.04,
+            20.28
+          ],
+          [
+            -7.04,
+            20.28
+          ]
+        ],
+        "y": 0,
+        "density": 0.35
+      }
+    ],
+    "rigging": [
+      {
+        "id": "r1",
+        "kind": "truss",
+        "name": "Upstage truss",
+        "a": [
+          -4.0,
+          4.5,
+          0.4
+        ],
+        "b": [
+          4.0,
+          4.5,
+          0.4
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r2",
+        "kind": "truss",
+        "name": "Front truss",
+        "a": [
+          -6.4,
+          4.8,
+          4.6
+        ],
+        "b": [
+          6.4,
+          4.8,
+          4.6
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r3",
+        "kind": "truss",
+        "name": "Mid truss",
+        "a": [
+          -6.72,
+          4.8,
+          9.5
+        ],
+        "b": [
+          6.72,
+          4.8,
+          9.5
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r4",
+        "kind": "truss",
+        "name": "Rear truss",
+        "a": [
+          -6.72,
+          4.8,
+          14.56
+        ],
+        "b": [
+          6.72,
+          4.8,
+          14.56
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r5",
+        "kind": "tower",
+        "name": "Tower SL",
+        "a": [
+          -4.6,
+          0.0,
+          4.2
+        ],
+        "b": [
+          -4.6,
+          4.2,
+          4.2
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r6",
+        "kind": "tower",
+        "name": "Tower SR",
+        "a": [
+          4.6,
+          0.0,
+          4.2
+        ],
+        "b": [
+          4.6,
+          4.2,
+          4.2
+        ],
+        "size": 0.3
+      },
+      {
+        "id": "r15",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          2.0,
+          5.155,
+          4.0
+        ],
+        "b": [
+          1.732,
+          5.155,
+          5.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r16",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          1.732,
+          5.155,
+          5.0
+        ],
+        "b": [
+          1.0,
+          5.155,
+          5.732
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r17",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          1.0,
+          5.155,
+          5.732
+        ],
+        "b": [
+          0.0,
+          5.155,
+          6.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r18",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          0.0,
+          5.155,
+          6.0
+        ],
+        "b": [
+          -1.0,
+          5.155,
+          5.732
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r19",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -1.0,
+          5.155,
+          5.732
+        ],
+        "b": [
+          -1.732,
+          5.155,
+          5.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r20",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -1.732,
+          5.155,
+          5.0
+        ],
+        "b": [
+          -2.0,
+          5.155,
+          4.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r21",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -2.0,
+          5.155,
+          4.0
+        ],
+        "b": [
+          -1.732,
+          5.155,
+          3.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r22",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -1.732,
+          5.155,
+          3.0
+        ],
+        "b": [
+          -1.0,
+          5.155,
+          2.268
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r23",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -1.0,
+          5.155,
+          2.268
+        ],
+        "b": [
+          -0.0,
+          5.155,
+          2.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r24",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          -0.0,
+          5.155,
+          2.0
+        ],
+        "b": [
+          1.0,
+          5.155,
+          2.268
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r25",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          1.0,
+          5.155,
+          2.268
+        ],
+        "b": [
+          1.732,
+          5.155,
+          3.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      },
+      {
+        "id": "r26",
+        "kind": "truss",
+        "name": "Circle 4 m",
+        "a": [
+          1.732,
+          5.155,
+          3.0
+        ],
+        "b": [
+          2.0,
+          5.155,
+          4.0
+        ],
+        "size": 0.29,
+        "model": "box30",
+        "group": "g1"
+      }
+    ],
+    "objects": [
+      {
+        "id": "o7",
+        "kind": "dj_booth",
+        "name": "DJ booth",
+        "x": 0.0,
+        "z": 2.0,
+        "y": 0.8,
+        "w": 3.0,
+        "d": 1.0,
+        "h": 1.05,
+        "rot": 0.0
+      },
+      {
+        "id": "o8",
+        "kind": "speaker",
+        "name": "Stack SL",
+        "x": -4.9,
+        "z": 3.6,
+        "y": 0,
+        "w": 1.1,
+        "d": 1.0,
+        "h": 2.3,
+        "rot": 0.0
+      },
+      {
+        "id": "o9",
+        "kind": "speaker",
+        "name": "Stack SR",
+        "x": 4.9,
+        "z": 3.6,
+        "y": 0,
+        "w": 1.1,
+        "d": 1.0,
+        "h": 2.3,
+        "rot": 0.0
+      },
+      {
+        "id": "o10",
+        "kind": "bar",
+        "name": "Bar",
+        "x": 0.0,
+        "z": 21.16,
+        "y": 0,
+        "w": 9.6,
+        "d": 0.8,
+        "h": 1.1,
+        "rot": 0.0
+      },
+      {
+        "id": "o11",
+        "kind": "mark",
+        "name": "DJ",
+        "x": 0.0,
+        "z": 1.0,
+        "y": 0.8,
+        "w": 0.5,
+        "d": 0.5,
+        "h": 0.02,
+        "rot": 0.0
+      }
+    ],
+    "cameras": [],
+    "crowd": {
+      "style": "varied",
+      "density": 0.45,
+      "show": true
+    },
+    "underlay": null,
+    "orient": {},
+    "seq": 26,
+    "template": "club"
+  },
+  "quick": [
+    {
+      "id": "q1-1",
+      "page": 1,
+      "slot": 1,
+      "label": "Flash all",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#ffffff",
+      "level": 100
+    },
+    {
+      "id": "q1-2",
+      "page": 1,
+      "slot": 2,
+      "label": "Strobe all",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "hz": 12.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-3",
+      "page": 1,
+      "slot": 3,
+      "label": "Kill all",
+      "kind": "kill",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": null
+    },
+    {
+      "id": "q1-4",
+      "page": 1,
+      "slot": 4,
+      "label": "Slow strobe",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "hz": 4.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-5",
+      "page": 1,
+      "slot": 5,
+      "label": "Flash Movers",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "type": "spot"
+      },
+      "colour": null,
+      "level": 100
+    },
+    {
+      "id": "q1-6",
+      "page": 1,
+      "slot": 6,
+      "label": "Strobe Movers",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "type": "spot"
+      },
+      "colour": null,
+      "hz": 10.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-7",
+      "page": 1,
+      "slot": 7,
+      "label": "Flash Beams",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "type": "beam"
+      },
+      "colour": null,
+      "level": 100
+    },
+    {
+      "id": "q1-8",
+      "page": 1,
+      "slot": 8,
+      "label": "Strobe Beams",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "type": "beam"
+      },
+      "colour": null,
+      "hz": 10.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-9",
+      "page": 1,
+      "slot": 9,
+      "label": "Flash Washes",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "type": "wash"
+      },
+      "colour": null,
+      "level": 100
+    },
+    {
+      "id": "q1-10",
+      "page": 1,
+      "slot": 10,
+      "label": "Strobe Washes",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "type": "wash"
+      },
+      "colour": null,
+      "hz": 10.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-11",
+      "page": 1,
+      "slot": 11,
+      "label": "Flash Lights",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "type": "generic"
+      },
+      "colour": null,
+      "level": 100
+    },
+    {
+      "id": "q1-12",
+      "page": 1,
+      "slot": 12,
+      "label": "Strobe Lights",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "type": "generic"
+      },
+      "colour": null,
+      "hz": 10.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q1-13",
+      "page": 1,
+      "slot": 13,
+      "label": "All Red",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#ff0000"
+    },
+    {
+      "id": "q1-14",
+      "page": 1,
+      "slot": 14,
+      "label": "All Blue",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#0033ff"
+    },
+    {
+      "id": "q1-15",
+      "page": 1,
+      "slot": 15,
+      "label": "All White",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#ffffff"
+    },
+    {
+      "id": "q1-16",
+      "page": 1,
+      "slot": 16,
+      "label": "All Magenta",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#ff00cc"
+    },
+    {
+      "id": "q1-17",
+      "page": 1,
+      "slot": 17,
+      "label": "All Cyan",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#00ffaa"
+    },
+    {
+      "id": "q1-18",
+      "page": 1,
+      "slot": 18,
+      "label": "All Amber",
+      "kind": "colour",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": "#ffb000"
+    },
+    {
+      "id": "q1-19",
+      "page": 1,
+      "slot": 19,
+      "label": "Rainbow",
+      "kind": "fx",
+      "mode": "latch",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "fx": "rainbow"
+    },
+    {
+      "id": "q1-20",
+      "page": 1,
+      "slot": 20,
+      "label": "Dimmer chase",
+      "kind": "fx",
+      "mode": "latch",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "fx": "dimmer_chase"
+    },
+    {
+      "id": "q1-21",
+      "page": 1,
+      "slot": 21,
+      "label": "Sparks",
+      "kind": "fx",
+      "mode": "latch",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "fx": "sparks"
+    },
+    {
+      "id": "q1-22",
+      "page": 1,
+      "slot": 22,
+      "label": "Circle",
+      "kind": "fx",
+      "mode": "latch",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "fx": "circle"
+    },
+    {
+      "id": "q1-23",
+      "page": 1,
+      "slot": 23,
+      "label": "GO PB1",
+      "kind": "go",
+      "mode": "tap",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "playback": 1
+    },
+    {
+      "id": "q1-24",
+      "page": 1,
+      "slot": 24,
+      "label": "Blackout (hold)",
+      "kind": "blackout",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": null
+    },
+    {
+      "id": "q2-1",
+      "page": 2,
+      "slot": 1,
+      "label": "Old flash",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "all": true
+      },
+      "colour": null,
+      "level": 100
+    },
+    {
+      "id": "q4-1",
+      "page": 4,
+      "slot": 1,
+      "label": "Strobe Washes",
+      "kind": "strobe",
+      "mode": "hold",
+      "target": {
+        "heads": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "colour": null,
+      "hz": 12.0,
+      "follow_fader": false
+    },
+    {
+      "id": "q4-2",
+      "page": 4,
+      "slot": 2,
+      "label": "Flash Washes",
+      "kind": "flash",
+      "mode": "hold",
+      "target": {
+        "heads": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "colour": null,
+      "level": 100
+    }
+  ],
+  "strobe_fader_hz": 30,
+  "quick_names": {
+    "2": "Old page"
+  },
+  "quick_layout": {
+    "2": {
+      "cols": 6,
+      "rows": 2,
+      "height": "fit"
+    }
+  },
+  "sound": {
+    "links": [],
+    "triggers": [],
+    "tempo": false
+  },
+  "step_fx": [],
+  "parked": {},
+  "macros": [],
+  "moves": [
+    {
+      "id": "m69f6fab9",
+      "name": "Old circle",
+      "lib": "circle",
+      "params": {
+        "speed": 0.125,
+        "size": 20.0,
+        "arc": 360.0,
+        "direction": 1.0,
+        "lock": 0.0,
+        "spread": 0.0,
+        "phase": 0.0
+      }
+    }
+  ],
+  "timeline": {
+    "length": 162.0,
+    "bpm": 120.0,
+    "loop": false,
+    "audio": null,
+    "markers": [],
+    "tracks": [
+      {
+        "id": "t1",
+        "kind": "cue",
+        "name": "Auto \u00b7 Cues",
+        "mute": false,
+        "playback": 1,
+        "clips": [
+          {
+            "id": "c2",
+            "t": 0,
+            "cue": 1,
+            "label": "Intro"
+          },
+          {
+            "id": "c3",
+            "t": 32.0,
+            "cue": 2,
+            "label": "Build"
+          },
+          {
+            "id": "c4",
+            "t": 48.0,
+            "cue": 3,
+            "label": "Drop"
+          },
+          {
+            "id": "c5",
+            "t": 80.0,
+            "cue": 4,
+            "label": "Breakdown"
+          },
+          {
+            "id": "c6",
+            "t": 96.0,
+            "cue": 5,
+            "label": "Build 2"
+          },
+          {
+            "id": "c7",
+            "t": 112.0,
+            "cue": 6,
+            "label": "Drop 2"
+          },
+          {
+            "id": "c8",
+            "t": 144.0,
+            "cue": 7,
+            "label": "Outro"
+          }
+        ]
+      },
+      {
+        "id": "t9",
+        "kind": "fx",
+        "name": "Auto \u00b7 Beams",
+        "mute": false,
+        "clips": [
+          {
+            "id": "c10",
+            "t": 32.0,
+            "fx": "fan_pan",
+            "dur": 16.0,
+            "target": {
+              "heads": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            "label": "fan pan"
+          },
+          {
+            "id": "c11",
+            "t": 48.0,
+            "fx": "fan_pan",
+            "dur": 32.0,
+            "target": {
+              "heads": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            "label": "fan pan"
+          },
+          {
+            "id": "c12",
+            "t": 96.0,
+            "fx": "fan_pan",
+            "dur": 16.0,
+            "target": {
+              "heads": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            "label": "fan pan"
+          },
+          {
+            "id": "c13",
+            "t": 112.0,
+            "fx": "fan_pan",
+            "dur": 32.0,
+            "target": {
+              "heads": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            "label": "fan pan"
+          }
+        ]
+      },
+      {
+        "id": "t14",
+        "kind": "fx",
+        "name": "Auto \u00b7 Washes",
+        "mute": false,
+        "clips": [
+          {
+            "id": "c15",
+            "t": 0,
+            "fx": "breathe",
+            "dur": 32.0,
+            "target": {
+              "heads": [
+                5,
+                6,
+                7,
+                8
+              ]
+            },
+            "label": "breathe"
+          },
+          {
+            "id": "c16",
+            "t": 48.0,
+            "fx": "rainbow",
+            "dur": 32.0,
+            "target": {
+              "heads": [
+                5,
+                6,
+                7,
+                8
+              ]
+            },
+            "label": "rainbow"
+          },
+          {
+            "id": "c17",
+            "t": 80.0,
+            "fx": "breathe",
+            "dur": 16.0,
+            "target": {
+              "heads": [
+                5,
+                6,
+                7,
+                8
+              ]
+            },
+            "label": "breathe"
+          },
+          {
+            "id": "c18",
+            "t": 112.0,
+            "fx": "rainbow",
+            "dur": 32.0,
+            "target": {
+              "heads": [
+                5,
+                6,
+                7,
+                8
+              ]
+            },
+            "label": "rainbow"
+          },
+          {
+            "id": "c19",
+            "t": 144.0,
+            "fx": "breathe",
+            "dur": 16.0,
+            "target": {
+              "heads": [
+                5,
+                6,
+                7,
+                8
+              ]
+            },
+            "label": "breathe"
+          }
+        ]
+      },
+      {
+        "id": "t20",
+        "kind": "button",
+        "name": "Auto \u00b7 Hits",
+        "mute": false,
+        "clips": [
+          {
+            "id": "c21",
+            "t": 44.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c22",
+            "t": 44.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c23",
+            "t": 45.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c24",
+            "t": 45.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c25",
+            "t": 46.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c26",
+            "t": 46.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c27",
+            "t": 47.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c28",
+            "t": 47.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c29",
+            "t": 48.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c30",
+            "t": 50.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c31",
+            "t": 52.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c32",
+            "t": 54.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c33",
+            "t": 56.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c34",
+            "t": 58.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c35",
+            "t": 60.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c36",
+            "t": 62.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c37",
+            "t": 64.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c38",
+            "t": 66.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c39",
+            "t": 68.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c40",
+            "t": 70.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c41",
+            "t": 72.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c42",
+            "t": 74.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c43",
+            "t": 76.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c44",
+            "t": 78.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c45",
+            "t": 108.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c46",
+            "t": 108.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c47",
+            "t": 109.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c48",
+            "t": 109.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c49",
+            "t": 110.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c50",
+            "t": 110.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c51",
+            "t": 111.0,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c52",
+            "t": 111.5,
+            "button": "q4-1",
+            "dur": 0.25
+          },
+          {
+            "id": "c53",
+            "t": 112.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c54",
+            "t": 114.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c55",
+            "t": 116.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c56",
+            "t": 118.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c57",
+            "t": 120.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c58",
+            "t": 122.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c59",
+            "t": 124.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c60",
+            "t": 126.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c61",
+            "t": 128.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c62",
+            "t": 130.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c63",
+            "t": 132.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c64",
+            "t": 134.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c65",
+            "t": 136.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c66",
+            "t": 138.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c67",
+            "t": 140.0,
+            "button": "q4-2",
+            "dur": 0.25
+          },
+          {
+            "id": "c68",
+            "t": 142.0,
+            "button": "q4-2",
+            "dur": 0.25
+          }
+        ]
+      },
+      {
+        "id": "t69",
+        "kind": "level",
+        "name": "Auto \u00b7 Master",
+        "mute": false,
+        "target": "master",
+        "clips": [
+          {
+            "id": "c70",
+            "t": 0,
+            "v": 0
+          },
+          {
+            "id": "c71",
+            "t": 31.95,
+            "v": 55.0
+          },
+          {
+            "id": "c72",
+            "t": 32.0,
+            "v": 76.0
+          },
+          {
+            "id": "c73",
+            "t": 47.95,
+            "v": 76.0
+          },
+          {
+            "id": "c74",
+            "t": 48.0,
+            "v": 100
+          },
+          {
+            "id": "c75",
+            "t": 79.95,
+            "v": 100
+          },
+          {
+            "id": "c76",
+            "t": 80.0,
+            "v": 61.0
+          },
+          {
+            "id": "c77",
+            "t": 95.95,
+            "v": 61.0
+          },
+          {
+            "id": "c78",
+            "t": 96.0,
+            "v": 82.0
+          },
+          {
+            "id": "c79",
+            "t": 111.95,
+            "v": 82.0
+          },
+          {
+            "id": "c80",
+            "t": 112.0,
+            "v": 100
+          },
+          {
+            "id": "c81",
+            "t": 143.95,
+            "v": 100
+          },
+          {
+            "id": "c82",
+            "t": 144.0,
+            "v": 52.0
+          },
+          {
+            "id": "c83",
+            "t": 159.95,
+            "v": 0
+          }
+        ]
+      },
+      {
+        "id": "t84",
+        "kind": "fx",
+        "name": "Fx",
+        "mute": false,
+        "clips": []
+      }
+    ],
+    "seq": 84,
+    "design": {
+      "name": "A High-Energy Club Night: A Warm-Up, A B",
+      "palette": [
+        "#ffd9a8",
+        "#ffb36b",
+        "#ffffff"
+      ],
+      "sections": [
+        {
+          "name": "Intro",
+          "bars": 16,
+          "energy": 0.25,
+          "fade": 3.0,
+          "master": [
+            0,
+            55
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 51,
+              "colour": "#ffd9a8",
+              "aim": "dj",
+              "zoom": "wide"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 51,
+              "colour": "#ffb36b",
+              "aim": "dj",
+              "zoom": "wide",
+              "fx": "breathe"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 51,
+              "colour": "#ffffff"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 51
+            }
+          ],
+          "hits": []
+        },
+        {
+          "name": "Build",
+          "bars": 8,
+          "energy": 0.6,
+          "fade": 1.0,
+          "master": [
+            76,
+            76
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 74,
+              "colour": "#ffb36b",
+              "aim": "floor_left",
+              "zoom": "narrow",
+              "gobo": true,
+              "fx": "fan_pan"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 74,
+              "colour": "#ffffff",
+              "aim": "floor_left",
+              "zoom": "narrow"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 74,
+              "colour": "#ffd9a8"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 74
+            }
+          ],
+          "hits": [
+            {
+              "kind": "strobe",
+              "group": "wash@front_truss",
+              "every": "beat",
+              "last_bars": 2
+            }
+          ]
+        },
+        {
+          "name": "Drop",
+          "bars": 16,
+          "energy": 1.0,
+          "fade": 0.0,
+          "master": [
+            100,
+            100
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 100,
+              "colour": "#ffffff",
+              "aim": "crowd",
+              "zoom": "narrow",
+              "fx": "fan_pan"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 100,
+              "colour": "#ffd9a8",
+              "aim": "crowd",
+              "zoom": "narrow",
+              "fx": "rainbow"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 100,
+              "colour": "#ffb36b"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 100
+            }
+          ],
+          "hits": [
+            {
+              "kind": "flash",
+              "group": "wash@front_truss",
+              "every": "bar",
+              "last_bars": 0
+            }
+          ]
+        },
+        {
+          "name": "Breakdown",
+          "bars": 8,
+          "energy": 0.35,
+          "fade": 3.0,
+          "master": [
+            61,
+            61
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 58,
+              "colour": "#ffd9a8",
+              "aim": "back_wall",
+              "zoom": "wide",
+              "gobo": true
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 58,
+              "colour": "#ffb36b",
+              "aim": "back_wall",
+              "zoom": "wide",
+              "fx": "breathe"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 58,
+              "colour": "#ffffff"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 58
+            }
+          ],
+          "hits": []
+        },
+        {
+          "name": "Build 2",
+          "bars": 8,
+          "energy": 0.7,
+          "fade": 1.0,
+          "master": [
+            82,
+            82
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 80,
+              "colour": "#ffb36b",
+              "aim": "floor_right",
+              "zoom": "narrow",
+              "gobo": true,
+              "fx": "fan_pan"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 80,
+              "colour": "#ffffff",
+              "aim": "floor_right",
+              "zoom": "narrow"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 80,
+              "colour": "#ffd9a8"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 80
+            }
+          ],
+          "hits": [
+            {
+              "kind": "strobe",
+              "group": "wash@front_truss",
+              "every": "beat",
+              "last_bars": 2
+            }
+          ]
+        },
+        {
+          "name": "Drop 2",
+          "bars": 16,
+          "energy": 1.0,
+          "fade": 0.0,
+          "master": [
+            100,
+            100
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 100,
+              "colour": "#ffffff",
+              "aim": "crowd",
+              "zoom": "narrow",
+              "fx": "fan_pan"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 100,
+              "colour": "#ffd9a8",
+              "aim": "crowd",
+              "zoom": "narrow",
+              "fx": "rainbow"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 100,
+              "colour": "#ffb36b"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 100
+            }
+          ],
+          "hits": [
+            {
+              "kind": "flash",
+              "group": "wash@front_truss",
+              "every": "bar",
+              "last_bars": 0
+            }
+          ]
+        },
+        {
+          "name": "Outro",
+          "bars": 8,
+          "energy": 0.2,
+          "fade": 3.0,
+          "master": [
+            52,
+            0
+          ],
+          "looks": [
+            {
+              "group": "beam@upstage_truss",
+              "intensity": 48,
+              "colour": "#ffd9a8",
+              "aim": "dj",
+              "zoom": "wide"
+            },
+            {
+              "group": "wash@front_truss",
+              "intensity": 48,
+              "colour": "#ffb36b",
+              "aim": "dj",
+              "zoom": "wide",
+              "fx": "breathe"
+            },
+            {
+              "group": "spot@mid_truss",
+              "intensity": 48,
+              "colour": "#ffffff"
+            },
+            {
+              "group": "generic@front_truss",
+              "intensity": 48
+            }
+          ],
+          "hits": []
+        }
+      ],
+      "brief": "A high-energy club night: a warm-up, a build, big drops with strobes, a cool-down.",
+      "playback": 1
+    }
+  },
+  "output_target": {
+    "mode": "auto",
+    "host": "",
+    "transport": ""
+  },
+  "osc_out": {},
+  "hue": {
+    "links": {}
+  },
+  "songs": [],
+  "meta": {
+    "master": 100,
+    "show_file": "oldshow",
+    "bpm": 120.0,
+    "tempo_follow": true
+  }
+}

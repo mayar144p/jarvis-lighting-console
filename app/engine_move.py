@@ -203,25 +203,31 @@ class MoveMixin:
         out: dict = {}
         zones = (self.venue or {}).get("zones") or []
         floor = next((z for z in zones if z.get("kind") == "dancefloor" and z.get("points")), None)
-        if floor:
-            cx, cz = venue_mod.zone_centroid(floor)
-            pts = [(cx + (x - cx) * 0.95, cz + (z - cz) * 0.95) for x, z in floor["points"]]
+        by_id = {z["id"]: z for z in zones if z.get("points")}
+        # a light kept in a zone (Keep lights in a zone) has its movements
+        # sized to THAT zone - the bar, the VIP area - not the dance floor
+        for h in self.patch:
+            if "pan" not in h["map"] or "tilt" not in h["map"] or h.get("x") is None:
+                continue
+            own = next((by_id[i] for i in h.get("stay") or [] if i in by_id), None) or floor
+            if not own:
+                continue
+            cx, cz = venue_mod.zone_centroid(own)
+            y0 = float(own.get("y") or 0.0)
+            pts = [(cx + (x - cx) * 0.95, cz + (z - cz) * 0.95) for x, z in own["points"]]
             ring = pts + [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(pts, pts[1:] + pts[:1])]
-            for h in self.patch:
-                if "pan" not in h["map"] or "tilt" not in h["map"] or h.get("x") is None:
-                    continue
-                mid = self._aim_solve(h, cx, 0.0, cz)
-                if mid is None:
-                    continue
-                fps, fts = [mid[0]], [mid[1]]
-                for x, z in ring:
-                    s = self._aim_solve(h, x, 0.0, z, near=(mid[2], mid[3]))
-                    if s is not None:
-                        fps.append(s[0])
-                        fts.append(s[1])
-                m = 0.01
-                out[h["head_no"]] = {"pan": (max(0.0, min(fps) - m), min(1.0, max(fps) + m)),
-                                     "tilt": (max(0.0, min(fts) - m), min(1.0, max(fts) + m))}
+            mid = self._aim_solve(h, cx, y0, cz)
+            if mid is None:
+                continue
+            fps, fts = [mid[0]], [mid[1]]
+            for x, z in ring:
+                s = self._aim_solve(h, x, y0, z, near=(mid[2], mid[3]))
+                if s is not None:
+                    fps.append(s[0])
+                    fts.append(s[1])
+            m = 0.01
+            out[h["head_no"]] = {"pan": (max(0.0, min(fps) - m), min(1.0, max(fps) + m)),
+                                 "tilt": (max(0.0, min(fts) - m), min(1.0, max(fts) + m))}
         self._floor_cache = (key, out)
         return out
 
@@ -287,15 +293,19 @@ class MoveMixin:
         """The patch as the frame builder sees it: with floor_lock on, each
         mover carries its floor range as its limits, so cues and aims can't
         leave the dance floor either."""
-        if not self.floor_lock:
+        conf = self._confiners()
+        if not self.floor_lock and not conf:
             return self.patch
-        fl = self._floor_limits()
-        key = (self.patch_rev, id(fl))
+        fl = self._floor_limits() if self.floor_lock else {}
+        key = (self.patch_rev, id(fl), id(conf))
         cache = getattr(self, "_frame_patch_cache", None)
         if cache and cache[0] == key:
             return cache[1]
         out = []
         for h in self.patch:
+            if h["head_no"] in conf:
+                # keep-out / stay-in zones: the frame merge holds its beam
+                h = dict(h, confine=conf[h["head_no"]])
             if h["head_no"] not in fl:
                 out.append(h)
                 continue
@@ -332,6 +342,77 @@ class MoveMixin:
         if v is None:
             return dom // 2 if role in ("pan", "tilt") else 0
         return int(_logical16(v)) if dom > 255 else int(v)
+
+    def _a_flip(self, **_):
+        """FLIP: the selected lights reach the SAME spot from the other end
+        of their travel (pan half a turn round, tilt the other way) - for a
+        light that would otherwise swing through the audience to get to
+        its next position."""
+        done, stuck = [], []
+        for h in self._require_selection():
+            if "pan" not in h["map"] or "tilt" not in h["map"]:
+                continue
+            pmin, pmax, tmin, tmax = self._aim_span(h)
+            dp, dt = attr_domain(h, "pan"), attr_domain(h, "tilt")
+            p = pmin + self._move_now(h, "pan") / dp * (pmax - pmin)
+            t = tmin + self._move_now(h, "tilt") / dt * (tmax - tmin)
+            mid = (tmin + tmax) / 2.0
+            t2 = 2 * mid - t
+            p2 = next((q for q in (p + 180.0, p - 180.0) if pmin - 0.01 <= q <= pmax + 0.01), None)
+            if p2 is None or not tmin - 0.01 <= t2 <= tmax + 0.01:
+                stuck.append(h["head_no"])
+                continue
+            self._set_programmer(h["head_no"], "pan", int(round((p2 - pmin) / ((pmax - pmin) or 1) * dp)))
+            self._set_programmer(h["head_no"], "tilt", int(round((t2 - tmin) / ((tmax - tmin) or 1) * dt)))
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError("none of the selected lights can reach that spot the other way round" if stuck
+                             else "none of the selected lights can pan and tilt")
+        return {"heads": done, "stuck": stuck, "summary": f"flipped {len(done)} light(s)"
+                + (f"; {len(stuck)} can't turn far enough" if stuck else "")}
+
+    def _a_mirror_pan(self, **_):
+        """MIRROR: the selected lights' pan reversed about the middle of
+        its travel (tilt kept) - left becomes right."""
+        done = []
+        for h in self._require_selection():
+            if "pan" not in h["map"]:
+                continue
+            dp = attr_domain(h, "pan")
+            self._set_programmer(h["head_no"], "pan", dp - self._move_now(h, "pan"))
+            done.append(h["head_no"])
+        if not done:
+            raise ValueError("none of the selected lights can pan")
+        return {"heads": done, "summary": f"mirrored the pan of {len(done)} light(s)"}
+
+    def _a_select_step(self, step="next", **_):
+        """Next / Prev / All: work on one light of the selection at a time
+        (what you set goes to that light only); All brings them all back."""
+        step = str(step or "next").lower()
+        keep = self.__dict__.get("step_set") or []
+        cur = list(self.selected)
+        if step == "all":
+            if keep:
+                self.selected = [n for n in keep if any(h["head_no"] == n for h in self.patch)]
+            self.__dict__["step_set"] = []
+            return {"selected": list(self.selected), "summary": f"all {len(self.selected)} light(s)"}
+        if step not in ("next", "prev"):
+            raise ValueError("step is next, prev or all")
+        if not keep or not (len(cur) == 1 and cur[0] in keep):
+            # several selected: step through them; one (or none): through
+            # the whole rig, from that one
+            keep = cur if len(cur) > 1 else [h["head_no"] for h in self.patch]
+            if not keep:
+                raise ValueError("no lights to step through")
+            self.__dict__["step_set"] = list(keep)
+            i = keep.index(cur[0]) if len(cur) == 1 and cur[0] in keep else (-1 if step == "next" else 0)
+        else:
+            i = keep.index(cur[0])
+        i = (i + (1 if step == "next" else -1)) % len(keep)
+        self.selected = [keep[i]]
+        name = next((h.get("name") for h in self.patch if h["head_no"] == keep[i]), None)
+        return {"selected": [keep[i]], "of": len(keep),
+                "summary": f"{name or f'light {keep[i]}'} ({i + 1} of {len(keep)})"}
 
     def _a_nudge(self, axis="pan", step=0.01, attribute=None, **_):
         """Move the selection's pan or tilt - or any attribute (`attribute`:

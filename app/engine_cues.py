@@ -99,7 +99,7 @@ class CueMixin:
 
     def _a_record_cue(self, playback=None, name="", fade=None, hold=None,
                       cue=None, follow=None, mode="replace", effects=True,
-                      cue_only=False, **_):
+                      cue_only=False, keep=False, **_):
         """Record the programmer as a cue.  Over an existing cue, `mode`:
         "replace" (the cue becomes exactly the programmer), "merge" (the
         programmer's values are added into the cue, the rest of it kept) or
@@ -127,18 +127,30 @@ class CueMixin:
             (self._tracked(pb, cue_n - 2) if _truthy(cue_only) and cue_n >= 2 else {})
         before = {h: dict(r) for h, r in before.items()}
         prog_vals = {h: dict(r) for h, r in values.items()}
+        # the values that came from a palette: the cue follows it (_palette_refs)
+        refs = self._palette_refs(values)
         if old is not None and mode == "merge":
             merged = {int(k): dict(v) for k, v in (old.get("values") or {}).items()}
             for h, row in values.items():
                 merged.setdefault(int(h), {}).update(row)
             values = merged
+            kept = {h: {r: ref for r, ref in rr.items() if r not in (prog_vals.get(int(h)) or {})}
+                    for h, rr in (old.get("refs") or {}).items()}
+            for h, rr in refs.items():
+                kept.setdefault(h, {}).update(rr)
+            refs = {h: rr for h, rr in kept.items() if rr}
         entry = {"n": cue_n,
                  "name": str(name).strip() or (old or {}).get("name") or f"Cue {cue_n}",
                  "fade_s": float(fade if fade is not None else (old or {}).get("fade_s", 0.0)),
                  "hold_s": float(hold if hold is not None else (old or {}).get("hold_s", 0.0)),
                  "values": values}
+        if refs:
+            entry["refs"] = refs
         if old is not None and old.get("times"):
             entry["times"] = dict(old["times"])       # its part times stay
+        for k in ("delay_s", "fan_s", "fan_dir"):        # and its delay and fan
+            if old is not None and old.get(k) not in (None, ""):
+                entry[k] = old[k]
         fx_list = list((old or {}).get("fx") or []) if old is not None and mode == "merge" else []
         for item in fx_items:
             # merge: a new effect replaces one of the same kind on the same lights
@@ -164,7 +176,8 @@ class CueMixin:
                 c["n"] = i
             kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
             self._blind_recorded(pb, cue_n)
-            self.programmer.clear()
+            if not _truthy(keep):
+                self.programmer.clear()
             return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
                     "summary": f"inserted cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}
         # follow_s is stored ONLY when the caller gave one, so a new cue
@@ -197,7 +210,10 @@ class CueMixin:
             pb["stack"].append(entry)
         kept = self._cue_only_fix(pb, cue_n - 1, before, prog_vals) if _truthy(cue_only) else 0
         self._blind_recorded(pb, cue_n)
-        self.programmer.clear()
+        # `keep`: the programmer stays (build the next cue from this one, as
+        # on a pro desk); the Record dialog remembers the operator's choice
+        if not _truthy(keep):
+            self.programmer.clear()
         verb = "merged into" if old is not None and mode == "merge" else "updated" if old is not None else "recorded"
         return {"playback": pb["n"], "cue": cue_n, "cues": len(pb["stack"]),
                 "summary": f"{verb} cue {cue_n} on PB{pb['n']}" + (" (cue only)" if kept else "")}
@@ -326,9 +342,32 @@ class CueMixin:
                 "summary": f"renamed cue {num} to {label!r}"}
 
     CUE_PARTS = ("intensity", "colour", "position", "beam")
+    FAN_DIRS = ("left", "right", "centre", "edges")
+
+    def _fan_rank(self, heads, how=None) -> dict:
+        """0..1 per light for a cue's fan: who starts first.  Across the
+        stage (where they hang): left to right, right to left, from the
+        middle out, or from the edges in."""
+        by_no = {h["head_no"]: h for h in self.patch}
+        nums = sorted((n for n in heads if n in by_no), key=lambda n: (float(by_no[n].get("x") or 0.0), n))
+        if len(nums) < 2:
+            return {}
+        how = how if how in self.FAN_DIRS else "left"
+        k = len(nums) - 1
+        out = {}
+        for i, n in enumerate(nums):
+            r = i / k
+            if how == "right":
+                r = 1 - r
+            elif how == "centre":
+                r = abs(r - 0.5) * 2
+            elif how == "edges":
+                r = 1 - abs(r - 0.5) * 2
+            out[n] = round(r, 4)
+        return out
 
     def _a_edit_cue(self, playback=None, cue=None, fade=None, hold=None,
-                    name=None, follow=_UNSET, times=None, **_):
+                    name=None, follow=_UNSET, times=None, delay=None, fan=None, fan_dir=None, **_):
         """Change a cue's timing or name in place, without re-recording it."""
         pb = self._playback(playback if playback is not None else 1)
         stack = pb["stack"]
@@ -346,6 +385,21 @@ class CueMixin:
         if name is not None and str(name).strip():
             entry["name"] = str(name).strip()
             changed.append("name")
+        if delay not in (None, ""):
+            entry["delay_s"] = max(0.0, min(600.0, float(delay)))
+            changed.append(f"delay {entry['delay_s']:g}s")
+        if fan not in (None, ""):
+            # the fan: the lights start one after another over this long
+            entry["fan_s"] = max(0.0, min(600.0, float(fan)))
+            changed.append(f"fan {entry['fan_s']:g}s")
+        if fan_dir not in (None, ""):
+            if fan_dir not in self.FAN_DIRS:
+                raise ValueError(f"the fan goes {', '.join(self.FAN_DIRS)}")
+            entry["fan_dir"] = fan_dir
+            changed.append(f"fan from the {fan_dir}")
+        for k in ("delay_s", "fan_s"):
+            if not entry.get(k):
+                entry.pop(k, None)
         if isinstance(times, dict):
             # a part's own fade; empty / None puts it back on the cue's fade
             cur = dict(entry.get("times") or {})
@@ -420,6 +474,8 @@ class CueMixin:
         return {
             "playback": pb["n"], "cue": num, "name": entry.get("name"),
             "fade_s": entry.get("fade_s"), "hold_s": entry.get("hold_s"),
+            "delay_s": entry.get("delay_s") or 0.0, "fan_s": entry.get("fan_s") or 0.0,
+            "fan_dir": entry.get("fan_dir") or "left",
             "heads": live, "stale_heads": gone,
             "roles": sorted(roles),
             "role_heads": {k: sorted(v) for k, v in sorted(roles.items())},
@@ -476,7 +532,10 @@ class CueMixin:
         pb["fade"] = {"t0": now,
                       "dur": float(cue.get("fade_s") or 0.0), "from": was,
                       # its own fade per kind of value (position 4 s, colour 0...)
-                      "parts": dict(cue.get("times") or {})}
+                      "parts": dict(cue.get("times") or {}),
+                      "delay": float(cue.get("delay_s") or 0.0), "fan": float(cue.get("fan_s") or 0.0),
+                      "rank": self._fan_rank(set(was) | set(target), cue.get("fan_dir"))
+                      if cue.get("fan_s") else {}}
         # The target is kept, not re-derived: after the fade has finished
         # `_pb_values` used to return `cue["values"]` directly, which would
         # have snapped the rig back to full the instant the fade ended.
@@ -616,6 +675,45 @@ class CueMixin:
         return {"playback": pb["n"], "active": False,
                 "summary": f"PB{pb['n']} released"}
 
+    def _a_playback_bind(self, playback=None, key=None, go=None, flash=None, fader=None, swop=False, **_):
+        """Give a playback its own key and MIDI controls (empty: none).
+        A note or CC another playback had moves here - one control, one job."""
+        from app.engine_base import clean_bind
+        pb = self._playback(playback if playback is not None else 1)
+        bind = clean_bind({"key": key, "go": go, "flash": flash, "fader": fader, "swop": swop})
+        for other in self.playbacks:
+            if other is pb:
+                continue
+            ob = other.get("bind") or {}
+            for k in ("key", "go", "flash", "fader"):
+                if k in bind and ob.get(k) == bind[k]:
+                    ob.pop(k, None)
+        pb["bind"] = bind
+        said = []
+        if "key" in bind:
+            said.append("key %s = GO" % bind["key"].upper())
+        if "go" in bind:
+            said.append("note %d = GO" % bind["go"])
+        if "flash" in bind:
+            said.append("note %d = Flash" % bind["flash"])
+        if "fader" in bind:
+            said.append("CC %d = fader" % bind["fader"])
+        if bind.get("swop"):
+            said.append("Flash is Swop")
+        return {"playback": pb["n"], "bind": bind,
+                "summary": "PB%d: %s" % (pb["n"], ", ".join(said) if said else "no key or MIDI")}
+
+    def _a_playback_release_all(self, **_):
+        """Let go of every running playback, on every page."""
+        gone = []
+        for pb in self.playbacks:
+            if pb.get("active"):
+                self._a_playback_release(playback=pb["n"])
+                gone.append(pb["n"])
+        return {"released": gone,
+                "summary": ("Released %d playback%s" % (len(gone), "" if len(gone) == 1 else "s"))
+                if gone else "No playback was running"}
+
     def _a_playback_activate(self, playback=None, **_):
         pb = self._playback(playback if playback is not None else 1)
         if not pb["stack"]:
@@ -753,7 +851,7 @@ class CueMixin:
             return
         self._follow_stop.clear()
         thread = threading.Thread(target=self._follow_loop,
-                                  name="jarvis-follow", daemon=True)
+                                  name="haze-follow", daemon=True)
         self._follow_thread = thread
         thread.start()
 

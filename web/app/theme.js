@@ -3,13 +3,14 @@
 //               (the 3D view keeps its true colours: it shows the lights);
 //   accent    - the highlight colour;
 //   panels    - their brightness (the 3D has its own House slider).
-const KEY = "jarvis.theme";
+const KEY = "haze.theme";
 export const ACCENTS = {
-  violet: ["#8b8dff", "#7577f5"], blue: ["#4ea1ff", "#2f86ef"], cyan: ["#22d3ee", "#06b6d4"], green: ["#3dd68c", "#25b873"],
+  haze: ["#2fd6f5", "#14bfe0"], violet: ["#8b8dff", "#7577f5"], blue: ["#4ea1ff", "#2f86ef"], cyan: ["#22d3ee", "#06b6d4"], green: ["#3dd68c", "#25b873"],
   amber: ["#f5a524", "#dd8f10"], red: ["#ff6b6b", "#ef4444"], pink: ["#f472b6", "#e2559c"], white: ["#e4e4ea", "#c9c9d2"],
 };
 export const DENSITIES = { compact: "Compact", standard: "Standard", roomy: "Roomy" };
-export const SIZES = [0.9, 1, 1.1, 1.25, 1.4];
+// text size on top of the screen's own size class: the layout grows with it
+export const TEXT_SCALE = { standard: "Standard", large: "Large", xl: "Extra large" };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 /** Darker by a fraction (the accent's pressed / second shade). */
@@ -22,21 +23,24 @@ function shade(hex, k = 0.12) {
 export function themeNow() {
   let t = {};
   try { t = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { t = {}; }
-  const scale = SIZES.includes(+t.scale) ? +t.scale : 1;
+  // violet was the standard before the desk was called Haze: a desk still on
+  // it moves to Haze's cyan once (a colour picked on purpose stays)
+  if (t.accent === "violet" && !t.v2) { t.accent = "haze"; t.v2 = 1; try { localStorage.setItem(KEY, JSON.stringify(t)); } catch (e) { /* fine */ } }
   return { mode: t.mode === "showdark" ? "showdark" : "normal",
-    accent: ACCENTS[t.accent] || HEX.test(String(t.accent)) ? t.accent : "violet",
+    accent: ACCENTS[t.accent] || HEX.test(String(t.accent)) ? t.accent : "haze",
     bright: Math.max(0.3, Math.min(1, +t.bright || 1)),
-    density: DENSITIES[t.density] ? t.density : "standard", scale,
-    motion: t.motion === "reduced" ? "reduced" : "full" };
+    density: DENSITIES[t.density] ? t.density : "standard",
+    text: TEXT_SCALE[t.text] ? t.text : "standard",
+    motion: t.motion === "reduced" ? "reduced" : "full", v2: 1 };
 }
 
 export function applyTheme(t = themeNow()) {
   const root = document.documentElement;
   root.dataset.theme = t.mode;
   root.dataset.density = t.density;
+  root.dataset.textsize = t.text;
   root.dataset.motion = t.motion;
-  setZoom(t.scale);
-  const [a, a2] = ACCENTS[t.accent] || (HEX.test(String(t.accent)) ? [t.accent, shade(t.accent)] : ACCENTS.violet);
+  const [a, a2] = ACCENTS[t.accent] || (HEX.test(String(t.accent)) ? [t.accent, shade(t.accent)] : ACCENTS.haze);
   root.style.setProperty("--accent", a);
   root.style.setProperty("--accent-2", a2);
   root.style.setProperty("--accent-bg", a + "24");
@@ -46,27 +50,6 @@ export function applyTheme(t = themeNow()) {
     : b < 0.999 ? `brightness(${b})` : "none");
   window.dispatchEvent(new Event("resize"));            // the 3D and the panels measure again
 }
-
-/** The biggest size this window has room for: the desk is laid out for at
- *  least 1280 px, so a 1440 px screen goes to 110%, a 1920 px one to 140%. */
-export function maxScale() {
-  return Math.max(1, (window.innerWidth || 1280) / 1280);
-}
-
-// the whole screen bigger or smaller (text and controls); the 3D's picking
-// reads the canvas's on-screen box, so it stays right
-let zoomNow = 1;
-function setZoom(want) {
-  const z = want > 1 ? Math.min(want, maxScale()) : want;
-  if (z === zoomNow && document.documentElement.style.getPropertyValue("--ui-zoom")) return false;
-  zoomNow = z;
-  const root = document.documentElement;
-  root.style.zoom = z === 1 ? "" : String(z);
-  root.style.setProperty("--ui-zoom", String(z));
-  return true;
-}
-// a window made narrower (or wider) gets the size that fits it
-window.addEventListener("resize", () => { if (setZoom(themeNow().scale)) window.dispatchEvent(new Event("resize")); });
 
 export function setTheme(patch) {
   const t = { ...themeNow(), ...patch };

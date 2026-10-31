@@ -289,7 +289,7 @@ class DmxInputListener:
             self._socks.append(sock)
             thread = threading.Thread(target=self._listen,
                                       args=(sock, kind),
-                                      name=f"jarvis-dmxin-{kind}",
+                                      name=f"haze-dmxin-{kind}",
                                       daemon=True)
             self._threads.append(thread)
             thread.start()

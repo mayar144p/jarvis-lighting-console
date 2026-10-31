@@ -23,7 +23,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = +(process.env.PIXCHECK_PORT || 8817), BASE = `http://127.0.0.1:${PORT}/`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const srv = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], { cwd: ROOT, stdio: "ignore",
-  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-pix-")), CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
+  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-pix-")), CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
 const done = (code) => { try { srv.kill(); } catch { /* gone */ } process.exit(code); };
 for (let i = 0; ; i++) {
   try { if ((await fetch(BASE)).ok) break; } catch { /* not yet */ }
@@ -54,12 +54,12 @@ const GPU = process.env.CHECKS_GPU === "1";
 const b = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ } });
-await p.goto(BASE);
-for (let i = 0; i < 40; i++) { if (await p.evaluate(() => window.jarvisStage && window.jarvisStage.fixtures.size)) break; await sleep(500); }
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
+await p.goto(BASE + "?3d=1");
+for (let i = 0; i < 40; i++) { if (await p.evaluate(() => window.hazeStage && window.hazeStage.fixtures.size)) break; await sleep(500); }
 await sleep(3000);
 const out = await p.evaluate(() => {
-  const i = window.jarvisStage.fixtures.get(1), sk = i.sk, px = sk.pixels;
+  const i = window.hazeStage.fixtures.get(1), sk = i.sk, px = sk.pixels;
   const hue = (r, g, b) => (r > 0.5 ? "R" : "") + (g > 0.5 ? "G" : "") + (b > 0.5 ? "B" : "");
   const drawn = px ? Array.from({ length: px.count }, (_, k) => { const a = px.instanceColor.array; return hue(a[k * 3], a[k * 3 + 1], a[k * 3 + 2]); }) : [];
   const fed = (i.cur.cells || []).map((c) => hue(c.r, c.g, c.b));

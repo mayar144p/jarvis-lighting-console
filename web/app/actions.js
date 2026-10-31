@@ -10,6 +10,13 @@ const LABELS = {
   select_all: "select all", cue_go: "GO", record_cue: "record cue",
 };
 
+// What the desk looks up by itself (the templates, the Hue bridge, a
+// backup's state...) is not something you did: it never takes the status
+// bar's "last thing done" (it read "6 templates", "no Hue bridge paired")
+const LOOKUPS = /(_info|_get|_list|_status|_templates|_versions|_files|_shows|_available|_report|_compare)$|^(status|paperwork|export_patch|ready_check)$/;
+const ASKING = new Set(["hue", "hue_lights", "hue_find", "backup", "standby", "osc_send", "midi"]);
+const lookup = (action, params) => LOOKUPS.test(action) || (ASKING.has(action) && !Object.keys(params || {}).length);
+
 export async function run(action, params = {}, opts = {}) {
   // heads of a multi-head light picked in the programmer (Heads: 1 3):
   // colour and attribute changes go to just those heads
@@ -24,7 +31,9 @@ export async function run(action, params = {}, opts = {}) {
     toast(err.message || String(err), "bad");
     return { ok: false, error: err.message };
   }
-  state.lastAction = (res.ok ? "" : "✕ ") + (res.summary || res.error || LABELS[action] || action);
+  if (!opts.quiet && !lookup(action, params)) {
+    state.lastAction = (res.ok ? "" : "✕ ") + (res.summary || res.error || LABELS[action] || action);
+  }
   emit("action", { action, params, res });
   if (res.internal) noteError(`${action}: ${res.error}`);     // a bug in the desk, not "can't do that"
   if (!res.ok && !opts.silentError) toast(res.error || `${action} failed`, "bad");

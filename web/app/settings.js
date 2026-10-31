@@ -3,11 +3,12 @@
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, resetTheme, maxScale, ACCENTS, DENSITIES, SIZES } from "./theme.js";
+import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES, TEXT_SCALE } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state } from "./store.js";
+import { HAS_3D, set3d, stagePanel } from "./view3d.js";
 import { run } from "./actions.js";
 import { h, modal, toast, confirmBox } from "./ui.js";
 
@@ -187,9 +188,28 @@ function outputSection(con) {
   return box;
 }
 
+// Settings' pages, grouped, with the words the command bar finds them by
+export const SETTINGS_PAGES = [
+  ["output", "Output", "output dmx node art-net sacn usb universe ip network send"],
+  ["venue", "Venue", "venue room size template width depth ceiling describe"],
+  ["screen", "Screen & 3D", "screen gig mode theme dark show dark 3d quality window number keys"],
+  ["midi", "MIDI & OSC", "midi osc controller stream deck monitor learn launchpad apc"],
+  ["hue", "Philips Hue", "hue lamps smart bridge"],
+  ["standby", "Spare desk", "spare desk standby second computer take over failover backup desk"],
+  ["library", "Fixture library", "fixture library import gdtf qxf ofl inbox types"],
+  ["backup", "Show backups", "backup show copy usb onedrive dropbox cloud folder"],
+  ["ai", "AI", "ai copilot key model memory"],
+];
+const SETTINGS_GROUPS = [
+  ["The show", ["output", "venue"]],
+  ["This computer", ["screen"]],
+  ["Plugged in", ["midi", "hue", "standby"]],
+  ["Files and AI", ["library", "backup", "ai"]],
+];
+
 /** Settings, opened on one of its pages ("ai", "output"...). */
 export function openSettingsAt(tab) {
-  try { localStorage.setItem("jarvis.settingsTab", tab); } catch (e) { /* fine */ }
+  try { localStorage.setItem("haze.settingsTab", tab); } catch (e) { /* fine */ }
   return openSettings();
 }
 
@@ -205,19 +225,21 @@ export async function openSettings() {
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
   const quality = h("select.select", { style: { minWidth: "340px" } },
-    h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (a good graphics card)"),
+    h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (the standard)"),
     h("option", { value: "auto" }, "Medium: adapts to this computer"),
     h("option", { value: "fast" }, "Low: older laptops, no shadows"));
-  try { quality.value = localStorage.getItem("jarvis.quality") || "auto"; } catch (e) { /* ignore */ }
+  try { quality.value = localStorage.getItem("haze.quality") || "high"; } catch (e) { /* ignore */ }
   quality.addEventListener("change", () => {
-    try { localStorage.setItem("jarvis.quality", quality.value); } catch (e) { /* ignore */ }
-    import("./stagepanel.js").then((m) => { const st = m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
+    try { localStorage.setItem("haze.quality", quality.value); localStorage.setItem("haze.qualityV", "2"); } catch (e) { /* ignore */ }
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
   });
+  const view3d = h("input", { type: "checkbox", checked: HAS_3D });
+  view3d.addEventListener("change", () => set3d(view3d.checked));
   const gigBox = h("input", { type: "checkbox" });
   gigBox.checked = document.body.classList.contains("gig");
   gigBox.addEventListener("change", () => {
     document.body.classList.toggle("gig", gigBox.checked);
-    try { localStorage.setItem("jarvis.gig", gigBox.checked ? "1" : "0"); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("haze.gig", gigBox.checked ? "1" : "0"); } catch (e) { /* ignore */ }
   });
   const midi = status.midi || {};
   // one section at a time, its name down the side: output first, it is
@@ -229,6 +251,8 @@ export async function openSettings() {
         : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
       h("div.row-btns", h("button.btn.primary", { onclick: () => import("./roomdialog.js").then((m) => m.openRoomDialog()) }, "Make the room…"),
         h("span.muted.small", "a shape and its sizes, described in words, a template, a floor plan, or drawn")),
+      h("div.row-btns", h("button.btn", { onclick: () => import("./venuepanel.js").then((m) => m.resetVenue()) }, "Clear the venue…"),
+        h("span.muted.small", "everything out of the room to design it again; the lights stay")),
       h("h3", "Start from a template"),
       h("div.form-grid",
         h("label.field", h("span", "Template"), tpl),
@@ -247,8 +271,19 @@ export async function openSettings() {
       describeRoomRow()]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
+      (() => {
+        const box = h("input", { type: "checkbox" });
+        try { box.checked = localStorage.getItem("haze.digitsSelect") === "1"; } catch (e) { /* fine */ }
+        box.addEventListener("change", () => { try { localStorage.setItem("haze.digitsSelect", box.checked ? "1" : "0"); } catch (e) { /* fine */ } });
+        return h("label.check", box, h("span", "Number keys pick lights 1-9 directly (the old way; normally they start a command: 1 THRU 4 @ 70)"));
+      })(),
       themeRow(),
       h("h3", "3D view"),
+      window.hazeDesk && window.hazeDesk.win ? h("div.row-btns",
+        h("button.btn.primary", { onclick: () => window.hazeDesk.win.pick("stage") }, "Open the 3D window"),
+        h("button.btn", { onclick: () => window.hazeDesk.win.pick("ontop") }, "Keep it on top / not"),
+        h("span.muted.small", "its own window: put it on a second screen, or full screen")) : null,
+      h("label.check", view3d, h("span", "Also show the 3D in this window (the desk reloads)")),
       h("label.field", h("span", "Quality"), quality)]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
@@ -261,7 +296,7 @@ export async function openSettings() {
       oscOutRow(),
       h("h3", "Stream Deck"),
       streamDeckRow()]],
-    ["library", "Fixtures", [
+    ["library", "Fixture library", [
       h("p.muted.small", `${status.fixtures ?? "?"} fixture types installed.`),
       h("div.row-btns", h("button.btn", {
         onclick: async () => {
@@ -270,13 +305,13 @@ export async function openSettings() {
           else toast(`Imported ${(r.imported || []).length} file(s) from fixtures_inbox/` + ((r.errors || []).length ? ` · ${(r.errors || []).length} failed` : ""), (r.errors || []).length ? "bad" : "ok");
         },
       }, "Import fixture files from fixtures_inbox/"), h("span.muted.small", ".gdtf, .qxf or OFL .json"))]],
-    ["backup", "Backup", [backupPanel()]],
+    ["backup", "Show backups", [backupPanel()]],
     ["hue", "Philips Hue", [huePanel()]],
-    ["standby", "Backup desk", [standbyPanel()]],
+    ["standby", "Spare desk", [standbyPanel()]],
     ["ai", "AI", [aiPanel()]],
   ];
   let last = "output";
-  try { last = localStorage.getItem("jarvis.settingsTab") || last; } catch (e) { /* fine */ }
+  try { last = localStorage.getItem("haze.settingsTab") || last; } catch (e) { /* fine */ }
   if (!sections.some(([k]) => k === last)) last = "output";
   const nav = h("nav.set-nav", { role: "tablist", "aria-orientation": "vertical", "aria-label": "Settings sections" });
   const pane = h("div.set-pane");
@@ -284,9 +319,16 @@ export async function openSettings() {
     for (const b of nav.children) b.setAttribute("aria-selected", String(b.dataset.k === key));
     const sec = sections.find(([k]) => k === key);
     pane.replaceChildren(h("h2.set-title", sec[1]), ...sec[2]);
-    try { localStorage.setItem("jarvis.settingsTab", key); } catch (e) { /* fine */ }
+    try { localStorage.setItem("haze.settingsTab", key); } catch (e) { /* fine */ }
   };
-  for (const [k, label] of sections) nav.append(h("button", { role: "tab", dataset: { k }, onclick: () => show(k) }, label));
+  // grouped: the show, this computer, what plugs in, files and the AI
+  for (const [title, keys] of SETTINGS_GROUPS) {
+    nav.append(h("div.set-group", title));
+    for (const k of keys) {
+      const sec = sections.find(([x]) => x === k);
+      if (sec) nav.append(h("button", { role: "tab", dataset: { k }, onclick: () => show(k) }, sec[1]));
+    }
+  }
   show(last);
   const body = h("div.settings", nav, pane);
   modal({ title: "Settings", body, wide: true });
@@ -309,7 +351,7 @@ function backupPanel() {
   const load = async () => { const r = await run("backup", {}, { silentError: true }); if (r.ok) paint(r); };
   const set = async (value) => { const r = await run("backup", { folder: value }, { toast: true }); if (r.ok) paint(r); };
   box.append(
-    h("p.muted.small", "Every time a show is saved, it (and its earlier versions) is copied here too, under “Jarvis shows”. "
+    h("p.muted.small", "Every time a show is saved, it (and its earlier versions) is copied here too, under “Haze shows”. "
       + "A OneDrive, Dropbox or Google Drive folder syncs it to the cloud by itself; a USB stick goes home with you."),
     h("label.field", h("span", "Backup folder"), folder),
     places,
@@ -468,7 +510,7 @@ function oscRow() {
   return h("div",
     h("label.check", box, h("span", "OSC in (TouchOSC, Companion, QLab) on UDP port "), port),
     note,
-    h("p.muted.small", "/jarvis/go 1 · /jarvis/cue 1 3 · /jarvis/master 0.8 · /jarvis/blackout 1 · /jarvis/button/q1-3 1 · /jarvis/macro Walk-in · /jarvis/song \"Track A\" · /jarvis/cmd \"1-4 red\" · /jarvis/tap · /jarvis/bpm 128. Anyone on this network can play the show while it is on."));
+    h("p.muted.small", "/haze/go 1 · /haze/cue 1 3 · /haze/master 0.8 · /haze/blackout 1 · /haze/button/q1-3 1 · /haze/macro Walk-in · /haze/song \"Track A\" · /haze/cmd \"1-4 red\" · /haze/tap · /haze/bpm 128. Anyone on this network can play the show while it is on."));
 }
 
 // The Stream Deck plugin: GO, blackout, buttons, tap and macros on the
@@ -478,16 +520,16 @@ function streamDeckRow() {
   const o = (state.snap && state.snap.osc) || {};
   const download = async () => {
     const t = token();
-    const r = await fetch("/api/console/streamdeck_plugin", { headers: t ? { "X-Jarvis-Token": t } : {} });
+    const r = await fetch("/api/console/streamdeck_plugin", { headers: t ? { "X-Haze-Token": t } : {} });
     if (!r.ok) { toast(`download failed (${r.status})`, "bad"); return; }
-    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, "com.jarvis.desk.streamDeckPlugin"])[1];
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [0, "com.haze.desk.streamDeckPlugin"])[1];
     const url = URL.createObjectURL(await r.blob());
     const a = h("a", { href: url, download: name });
     document.body.append(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("Saved. Double-click it to add Jarvis to the Stream Deck app.");
+    toast("Saved. Double-click it to add Haze to the Stream Deck app.");
   };
   return h("div",
     h("div.row-btns", h("button.btn", { onclick: download }, "Get the Stream Deck plugin"),
@@ -513,8 +555,8 @@ function oscOutRow() {
   fb.addEventListener("change", apply);
   return h("div",
     h("div.row-btns", h("span", "Send to"), host, h("span", "port"), port,
-      h("button.btn.small", { title: "Sends /jarvis/hello - see it arrive in QLab / Resolume", onclick: () => run("osc_send", { address: "/jarvis/hello", value: 1 }, { toast: true }) }, "Test"), note),
-    h("label.check", fb, h("span", "Tell it what the desk does: /jarvis/go <list> <cue> · /jarvis/master 0-1 · /jarvis/blackout · /jarvis/button <id>")),
+      h("button.btn.small", { title: "Sends /haze/hello - see it arrive in QLab / Resolume", onclick: () => run("osc_send", { address: "/haze/hello", value: 1 }, { toast: true }) }, "Test"), note),
+    h("label.check", fb, h("span", "Tell it what the desk does: /haze/go <list> <cue> · /haze/master 0-1 · /haze/blackout · /haze/button <id>")),
     h("p.muted.small", "A cue sends its own: Cue list → ⋯ → Actions… → Send OSC (QLab: /go, Resolume: /composition/layers/1/clips/2/connect 1). QLab listens on 53000, Resolume on 7000."));
 }
 
@@ -534,7 +576,7 @@ function themeRow() {
     const bright = h("input", { type: "range", min: 30, max: 100, step: 5, value: Math.round(t.bright * 100), "aria-label": "Panel brightness" });
     bright.addEventListener("input", () => setTheme({ bright: +bright.value / 100 }));
     const custom = /^#/.test(t.accent);
-    const pickColour = h("input", { type: "color", value: custom ? t.accent : (ACCENTS[t.accent] || ACCENTS.violet)[0], "aria-label": "Your own accent colour", title: "Your own colour" });
+    const pickColour = h("input", { type: "color", value: custom ? t.accent : (ACCENTS[t.accent] || ACCENTS.haze)[0], "aria-label": "Your own accent colour", title: "Your own colour" });
     pickColour.addEventListener("change", () => { setTheme({ accent: pickColour.value }); paint(); });
     const sw = h("div.qe-swatches", ...Object.entries(ACCENTS).map(([k, [c]]) => h("button.qe-sw" + (t.accent === k ? ".on" : ""), {
       type: "button", title: k, "aria-label": `Accent ${k}`, style: { background: c }, onclick: () => { setTheme({ accent: k }); paint(); },
@@ -547,10 +589,10 @@ function themeRow() {
       h("h3", "Look"),
       h("p.muted.small", "This computer only. Which panels show, where and how wide: the workspace button in the top bar (each workspace keeps its own)."),
       h("div.look-rows",
+        h("div.look-row", h("span", "Text size"), seg(Object.entries(TEXT_SCALE), t.text, (k) => setTheme({ text: k })),
+          h("span.muted.small", "every text on the desk bigger - buttons and rows grow with it, nothing gets cut off")),
         h("div.look-row", h("span", "Density"), seg(Object.entries(DENSITIES), t.density, (k) => setTheme({ density: k })),
           h("span.muted.small", "more on screen, or more room around it")),
-        h("div.look-row", h("span", "Size"), seg(SIZES.map((z) => [z, `${Math.round(z * 100)}%`]), t.scale, (k) => setTheme({ scale: k }), (z) => z <= maxScale() + 1e-6),
-          h("span.muted.small", "text and controls (a bigger size needs a wider screen)")),
         h("div.look-row", h("span", "Accent"), sw),
         h("div.look-row", h("span", "Panel brightness"), bright)),
       h("div.look-checks",

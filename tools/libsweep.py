@@ -2,7 +2,7 @@
 default mode, does each control the light has actually work - on the DMX
 and in what the 3D view is told?
 
-    python tools/libsweep.py                 # QLC+, OFL and Jarvis libraries
+    python tools/libsweep.py                 # QLC+, OFL and Haze libraries
     python tools/libsweep.py --limit 200     # the first 200 (a quick look)
     python tools/libsweep.py --only "moover" # names containing this
     python tools/libsweep.py --out report.json
@@ -43,7 +43,7 @@ def lights(only: str = "", limit: int = 0, all_modes: bool = False) -> list[tupl
     """(src, key, name) per light - or (src, key, name, mode) per mode."""
     from app import fixlib
     out = []
-    for src in ("qlc", "ofl", "jarvis"):
+    for src in ("qlc", "ofl", "haze"):
         try:
             rows = fixlib.index(src)
         except Exception:          # noqa: BLE001 - a missing bundle is not this check's business

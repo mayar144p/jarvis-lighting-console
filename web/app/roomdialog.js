@@ -8,6 +8,7 @@ import { act, post } from "./api.js";
 import { run } from "./actions.js";
 import { state } from "./store.js";
 import { h, modal, toast } from "./ui.js";
+import { needs3d } from "./view3d.js";
 
 const SHAPES = [
   ["rectangle", "Rectangle"], ["l", "L-shape"], ["t", "T-shape"], ["u", "U-shape"],
@@ -58,15 +59,18 @@ export function planSvg(p, { w = 420, hgt = 300 } = {}) {
   }
   for (const o of p.objects || []) {
     if (o.kind === "mark") continue;
-    const col = { bar: "#f59e0b", dj_booth: "#a78bfa", speaker: "#475569", pillar: "#cbd5e1", riser: "#3f3f58", balcony: "#64748b", screen: "#38bdf8", door: "#22c55e" }[o.kind] || "#64748b";
+    const col = { bar: "#f59e0b", dj_booth: "#a78bfa", speaker: "#475569", pillar: "#cbd5e1", riser: "#3f3f58", balcony: "#64748b", screen: "#38bdf8", door: "#22c55e",
+      bar_curve: "#f59e0b", couch: "#a855f7", vip_booth: "#a855f7", armchair: "#a855f7", rope: "#e11d48", plant: "#22c55e" }[o.kind] || "#64748b";
     const cx = +X(o.x), cz = +Z(o.z);
-    s += `<rect x="${(cx - o.w * k / 2).toFixed(1)}" y="${(cz - o.d * k / 2).toFixed(1)}" width="${Math.max(2, o.w * k).toFixed(1)}" height="${Math.max(2, o.d * k).toFixed(1)}" fill="${col}" fill-opacity="${o.kind === "riser" || o.kind === "balcony" ? 0.35 : 0.85}" transform="rotate(${-(o.rot || 0)} ${cx} ${cz})"><title>${esc(o.name || o.kind)}</title></rect>`;
+    s += `<rect x="${(cx - o.w * k / 2).toFixed(1)}" y="${(cz - o.d * k / 2).toFixed(1)}" width="${Math.max(2, o.w * k).toFixed(1)}" height="${Math.max(2, o.d * k).toFixed(1)}" fill="${col}" fill-opacity="${o.kind === "riser" || o.kind === "balcony" ? 0.35 : 0.85}" transform="rotate(${o.rot || 0} ${cx} ${cz})"><title>${esc(o.name || o.kind)}</title></rect>`;
   }
   for (const r of p.rigging || []) {
     s += `<line x1="${X(r.a[0])}" y1="${Z(r.a[2])}" x2="${X(r.b[0])}" y2="${Z(r.b[2])}" stroke="#e2e8f0" stroke-width="${r.kind === "truss" ? 4 : 2}" stroke-linecap="round" opacity=".8"><title>${esc(r.name)}</title></line>`;
   }
   // sizes along two walls, and which end is which
-  s += `<text x="${w / 2}" y="${(+Z(z0) - 8).toFixed(1)}" text-anchor="middle" class="rp-dim">${(x1 - x0).toFixed(1)} m · stage end</text>`;
+  s += `<text x="${w / 2}" y="${(+Z(z0) - 8).toFixed(1)}" text-anchor="middle" class="rp-dim">DJ / stage end · ${(x1 - x0).toFixed(1)} m</text>`;
+  s += `<text x="${w / 2}" y="${(+Z(z1) + 16).toFixed(1)}" text-anchor="middle" class="rp-dim">back of the room</text>`;
+  s += `<text x="${(+X(x0) - 8).toFixed(1)}" y="${hgt / 2}" class="rp-dim" transform="rotate(-90 ${(+X(x0) - 8).toFixed(1)} ${hgt / 2})" text-anchor="middle">left (looking at the DJ)</text>`;
   s += `<text x="${(+X(x1) + 8).toFixed(1)}" y="${hgt / 2}" class="rp-dim" transform="rotate(90 ${(+X(x1) + 8).toFixed(1)} ${hgt / 2})" text-anchor="middle">${(z1 - z0).toFixed(1)} m</text>`;
   s += "</svg>";
   return s;
@@ -229,10 +233,10 @@ export function openRoomDialog(start = "shape") {
       h("li", "Walls snap to right angles and a 10 cm grid; hold Shift for any angle."),
       h("li", "Type a length while drawing (e.g. 8.5 then Enter) to make the next wall exactly that long."),
       h("li", "Backspace takes the last corner back; Esc stops.")),
-    h("div.row-btns", h("button.btn.primary", { onclick: () => { close(); import("./venuepanel.js").then((m) => m.startDrawRoom()); } }, "Draw the walls")));
+    h("div.row-btns", h("button.btn.primary", { onclick: () => { if (!needs3d("Drawing the walls")) return; close(); import("./venuepanel.js").then((m) => m.startDrawRoom()); } }, "Draw the walls")));
   const planPane = () => h("div",
     h("p", "Upload a floor plan (image or PDF), set its scale by measuring one known wall, then trace the room on it."),
-    h("div.row-btns", h("button.btn.primary", { onclick: () => { close(); import("./venuepanel.js").then((m) => m.startPlanUpload()); } }, "Upload a floor plan…")));
+    h("div.row-btns", h("button.btn.primary", { onclick: () => { if (!needs3d("A floor plan")) return; close(); import("./venuepanel.js").then((m) => m.startPlanUpload()); } }, "Upload a floor plan…")));
 
   const PANES = [["shape", "Shape & size", shapePane], ["describe", "Describe it", describePane], ["template", "Template", templatePane],
     ["draw", "Draw it", drawPane], ["plan", "Floor plan", planPane]];
@@ -241,7 +245,12 @@ export function openRoomDialog(start = "shape") {
     pane.replaceChildren(PANES.find((p) => p[0] === key)[2]());
   };
   tabs.append(...PANES.map(([k, label]) => h("button", { type: "button", dataset: { k }, onclick: () => show(k) }, label)));
-  close = modal({ title: "Make the room", body: h("div.room-dlg", tabs, pane), wide: true });
+  // which end is which, said once at the top: everything below follows it
+  const way = h("p.room-way", h("b", "Which way round: "),
+    "stand at the DJ booth (or the stage) and look out at the room. That wall is the top of every plan here - the DJ / stage end; "
+    + "the far wall is the back of the room; left and right are as you look at the DJ from the dance floor. "
+    + "The 3D writes them on the floor while you Arrange.");
+  close = modal({ title: "Make the room", body: h("div.room-dlg", way, tabs, pane), wide: true });
   show(start);
   return close;
 }

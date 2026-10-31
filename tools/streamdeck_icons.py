@@ -1,5 +1,5 @@
 """Draws the Stream Deck plugin's key pictures (plain PNGs, no packages):
-python tools/streamdeck_icons.py  ->  web/streamdeck/com.jarvis.desk.sdPlugin/imgs/"""
+python tools/streamdeck_icons.py  ->  web/streamdeck/com.haze.desk.sdPlugin/imgs/"""
 from __future__ import annotations
 
 import math
@@ -7,7 +7,7 @@ import struct
 import zlib
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "web" / "streamdeck" / "com.jarvis.desk.sdPlugin" / "imgs"
+OUT = Path(__file__).resolve().parent.parent / "web" / "streamdeck" / "com.haze.desk.sdPlugin" / "imgs"
 BG = (24, 26, 31)
 
 

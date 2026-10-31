@@ -3,10 +3,14 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
+import { paletteOn, paletteFits, paletteSwatch } from "./deskview.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
+import { icon } from "./icons.js";
+import { focusedPlayback } from "./playbacks.js";
 import { renderWheels, initWheels } from "./wheels.js";
+import { goboIcon, goboRef } from "./goboicon.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -15,7 +19,7 @@ const SWATCHES = [
   ["Warm", "#ffd9a8"], ["Neutral", "#fff1dc"], ["Cool", "#e6f0ff"], ["White", "#ffffff"],
 ];
 
-let tab = "intensity";
+let tab = "desk";
 let intFader = null;
 let picker = null;
 let attrState = null;
@@ -93,7 +97,7 @@ function renderHeader() {
     box.textContent = `${heads.length} × ${types.length === 1 ? types[0] : types.length + " types"}`;
     box.classList.add("has");
   }
-  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx"].includes(tab));
+  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx", "desk"].includes(tab));
   applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
   // the same kinds as the "In the programmer" bar (GROUP_OF): a shutter is
@@ -353,12 +357,21 @@ function attrEntry(role) {
 
 // Buttons for a wheel: the fixture's own named slots (each sent to the
 // middle of its range) when the file lists them, otherwise 8 even guesses.
+// a slot's name as a chip says it: "GoboShake Wheel Slot 3" -> "Shake 3",
+// "Wheel Slot 0 OPEN" -> "Open" (the whole name is its tooltip)
+function slotLabel(name) {
+  const n = String(name || "").replace(/\bgobo\s*shake\b/i, "Shake").replace(/\b(gobo\s*)?wheel\s*slot\s*/i, "").replace(/\s+/g, " ").trim();
+  const open = /^\d*\s*open$/i.test(n);
+  return open ? "Open" : n || name;
+}
+
 function slotButtons(role, entry) {
   const send = (value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
   if (entry && entry.slots && entry.slots.length) {
-    return entry.slots.map((s) => h("button.chip.slot", {
+    const gobo = role.startsWith("gobo");
+    return entry.slots.map((s) => h("button.chip.slot" + (gobo ? ".gobo" : ""), {
       title: `${s.name} - DMX ${s.from}-${s.to}`, onclick: send(s.value),
-    }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name));
+    }, gobo ? goboIcon(goboRef(role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, slotLabel(s.name)));
   }
   return Array.from({ length: 8 }, (_, i) => h("button.chip", {
     title: `DMX ${i * 16 + 8} - this fixture's file lists no slots, so these are guesses`,
@@ -451,15 +464,6 @@ function wireColourMatch() {
 }
 
 function wirePad() {
-  $("#aim-spot").addEventListener("click", () => {
-    if (!hasSel()) { toast("Select the lights to aim first"); return; }
-    import("./stagepanel.js").then((m) => {
-      const st = m.getStage();
-      if (!st) return;
-      toast("Click a spot in the 3D view (Esc cancels)", "", 4000);
-      st.pickPoint((p) => run("aim_at", { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, { toast: true }));
-    });
-  });
   $("#aim-mark").addEventListener("change", (e) => {
     const name = e.target.value;
     e.target.value = "";
@@ -572,7 +576,7 @@ function renderBeamQuick() {
   }
   // A shutter whose "open" value nobody knows sits at 0 - closed on many
   // movers - so the light tilts but never lights.  Find it on the real
-  // light, once, and Jarvis remembers it for every head of that model.
+  // light, once, and Haze remembers it for every head of that model.
   if (strobe) {
     const first = selectionHeads()[0];
     const openV = strobe.open ?? 0;
@@ -801,16 +805,34 @@ function attrRow(a, heads = null) {
     apply(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * full);
   };
   let dragging = false;
-  bar.addEventListener("pointerdown", (e) => {
-    e.preventDefault();                     // no text selection, and keep focus for the arrow keys
-    bar.focus({ preventScroll: true });
+  // a finger: the bar only takes over once it moves sideways (8 px) - a
+  // finger scrolling the list up or down passes through and changes nothing
+  // (these values go straight to the lights); a tap still sets the value
+  let touch = null;
+  const start = (e) => {
     dragging = true;
     attrHeld = true;
     bar.setPointerCapture(e.pointerId);
     row.classList.add("drag");
     fromPointer(e);
+  };
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") { touch = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+    e.preventDefault();                     // no text selection, and keep focus for the arrow keys
+    bar.focus({ preventScroll: true });
+    start(e);
   });
-  bar.addEventListener("pointermove", (e) => { if (dragging) fromPointer(e); });
+  bar.addEventListener("pointermove", (e) => {
+    if (dragging) { fromPointer(e); return; }
+    if (!touch || e.pointerId !== touch.id) return;
+    const dx = Math.abs(e.clientX - touch.x), dy = Math.abs(e.clientY - touch.y);
+    if (dy > 8 && dy > dx) { touch = null; return; }       // a scroll
+    if (dx > 8) { touch = null; start(e); }
+  });
+  bar.addEventListener("pointerup", (e) => {
+    if (touch && e.pointerId === touch.id && !dragging) { touch = null; fromPointer(e); setTimeout(loadAttributes, 250); }
+  });
+  bar.addEventListener("pointercancel", () => { touch = null; });
   const end = () => {
     if (!dragging) return;
     dragging = false;
@@ -842,10 +864,11 @@ function attrRow(a, heads = null) {
   }
   if (!a.slots || !a.slots.length || a.mixed) return row;
   // a wheel / gobo: its named slots as one-tap chips under the bar
-  const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {
+  const gobo = /^gobo2?$/.test(a.role);
+  const chips = h("div.attr-slots", ...a.slots.map((s) => h("button.chip.slot" + (gobo ? ".gobo" : "") + (val !== null && val >= s.from && val <= s.to ? ".on" : ""), {
     title: `${s.name} - DMX ${s.from}-${s.to}`,
     onclick: () => { apply(s.value); setTimeout(loadAttributes, 150); },
-  }, s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name)));
+  }, gobo ? goboIcon(goboRef(a.role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name)));
   return h("div.attr-wrap", row, chips);
 }
 
@@ -865,7 +888,13 @@ function renderProgCells() {
   const box = $("#prog-cells");
   const heads = selectionHeads();
   const sig = heads.map((x) => x.head_no).join(",");
-  if (sig !== cellsSel) { cellsSel = sig; state.cells = []; }       // a new selection starts on All
+  if (sig !== cellsSel) {                                            // a new selection starts on All
+    cellsSel = sig;
+    // ...unless the heads were picked in the 3D (Select Elements)
+    const want = state.pendingCells;
+    state.cells = want && sig === String(want.head) ? [...want.cells] : [];
+    state.pendingCells = null;
+  }
   const n = Math.max(0, ...heads.map(headCount));
   // each head's colour now (the first light's), so you can see what you set
   const look = heads.length ? (state.looks || {})[heads[0].head_no] : null;
@@ -873,8 +902,13 @@ function renderProgCells() {
   const key = JSON.stringify([n, state.cells || [], dots, tab === "position"]);
   if (key === cellsKey) return;
   cellsKey = key;
-  box.hidden = n < 2;
-  if (n < 2) { state.cells = []; return; }
+  // the head chips sit in the programmer's title row (they used to be a
+  // row of their own that pushed everything down when a light with heads
+  // was picked); only the per-head tilt bar, on Position, is a row
+  const row = $("#prog-heads");
+  row.hidden = n < 2;
+  box.hidden = true;
+  if (n < 2) { state.cells = []; row.replaceChildren(); return; }
   const cur = new Set(state.cells || []);
   const set = (list) => {
     state.cells = list.length === n ? [] : [...new Set(list)].sort((a, b) => a - b);
@@ -893,7 +927,13 @@ function renderProgCells() {
   const same = (list) => list.length === cur.size && list.every((k) => cur.has(k));
   const odd = Array.from({ length: n }, (_, i) => i + 1).filter((k) => k % 2);
   const even = Array.from({ length: n }, (_, i) => i + 1).filter((k) => !(k % 2));
-  box.replaceChildren(...[h("span.muted.small", "Heads:"),
+  const more = (e) => menu(e.currentTarget, [
+    { label: "Copy head 1's colour to all", disabled: !dots[0], run: () => run("set_colour", { hex: dots[0] }) },
+    { label: "Spread a gradient", hint: `from head 1's colour to head ${n}'s`, disabled: !(dots[0] && dots[n - 1] && dots[0] !== dots[n - 1]),
+      run: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } },
+  ]);
+  row.title = cur.size ? `Changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "Tap a head to colour it on its own (Ctrl/Shift + tap adds heads)";
+  row.replaceChildren(...[h("span.prog-heads-k", "Heads"),
     h("button.chip" + (!cur.size ? ".on" : ""), { title: "Every head of the light", onclick: () => pick(0) }, "All"),
     ...Array.from({ length: n }, (_, i) => h("button.chip.cell-chip" + (cur.has(i + 1) ? ".on" : ""), {
       title: `Head ${i + 1} on its own - Ctrl or Shift + tap to add it to the heads already picked`,
@@ -901,11 +941,12 @@ function renderProgCells() {
       dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
     n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
     n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
-    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own"),
-    dots[0] ? h("button.chip", { title: "Every head takes head 1's colour", onclick: () => run("set_colour", { hex: dots[0] }) }, "Copy 1 to all") : null,
-    dots[0] && dots[n - 1] && dots[0] !== dots[n - 1] ? h("button.chip", { title: `A gradient from head 1's colour to head ${n}'s`,
-      onclick: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } }, "Spread a gradient") : null,
-    tab === "position" ? headBar(heads, n) : null].filter(Boolean));
+    dots[0] ? h("button.chip.icon", { title: "Copy a head's colour to all, spread a gradient", "aria-label": "More for the heads", onclick: more }, "⋯") : null,
+    // tilt per head: a chip in this row, its sliders floating under it -
+    // never a row of its own pushing the programmer down
+    tab === "position" ? headBar(heads, n) : null,
+  ].filter(Boolean));
+  box.hidden = true;
 }
 
 const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
@@ -923,11 +964,12 @@ function headBar(heads, n) {
   const send = throttle((k, v) => run("set_attribute", { attribute: "tilt", value: v, cell: [k] }, { silentError: true }), 60);
   // folded by default: it is a lot of sliders above every tab (remembered)
   let open = false;
-  try { open = localStorage.getItem("jarvis.headBar") === "1"; } catch { /* private window */ }
+  try { open = localStorage.getItem("haze.headBar") === "1"; } catch { /* private window */ }
   return h("details.head-bar", { title: "Tilt each head (degrees from straight out)", open,
-    ontoggle: (e) => { try { localStorage.setItem("jarvis.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
-    h("summary.muted.small", `Tilt per head (${tilts})`),
-    ...Array.from({ length: tilts }, (_, i) => {
+    ontoggle: (e) => { try { localStorage.setItem("haze.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
+    h("summary.chip", `Tilt ▾`),
+    // (it opens over the programmer, never pushing it down)
+    h("div.head-bar-pop", ...Array.from({ length: tilts }, (_, i) => {
       const v = vals[`tilt@${i + 1}`] ?? 128;
       const out = h("small", deg(v));
       const input = h("input", { type: "range", min: 0, max: 255, value: v, "aria-label": `Head ${i + 1} tilt`,
@@ -936,7 +978,7 @@ function headBar(heads, n) {
     }),
     h("button.chip", { title: "A tilt wave through the heads (Move tab for the angles and speed)",
       onclick: () => run("run_fx", { name: "range", heads: heads.map((x) => x.head_no), across: true,
-        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave"));
+        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave")));
 }
 
 // ------------------------------------------------------ in the programmer
@@ -988,9 +1030,11 @@ function renderProgIn() {
   box.hidden = !groups.length && !mineFx.length;
   box.replaceChildren(...(groups.length || mineFx.length ? [
     // what is in the programmer, by family (each in its colour): × clears it
+    // (in the title row: they used to be a row of their own that pushed the
+    // panel down the moment anything was set)
     ...groups.map(([g, label]) => h("span.chip.prog-in-chip", { dataset: { g },
-      title: counts[g] ? `${label} on ${counts[g]} light(s) - in the programmer` : `${label}: a movement is running` },
-      label, counts[g] ? h("small", ` ${counts[g]}`) : null,
+      title: counts[g] ? `The programmer holds ${label.toLowerCase()} for ${counts[g]} light${counts[g] === 1 ? "" : "s"} - it goes into the next cue or palette you record. × clears just that.` : `${label}: a movement is running` },
+      label, counts[g] ? h("small", ` · ${counts[g]} light${counts[g] === 1 ? "" : "s"}`) : null,
       h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
     mineFx.length ? h("span.chip.prog-in-chip.prog-fx", { dataset: { g: "fx" }, title: mineFx.map((f) => f.label).join(", ") },
       "Effects", h("small", ` ${mineFx.length}`),
@@ -1002,12 +1046,34 @@ function renderProgIn() {
   $("#prog-clear").disabled = !any;
   $("#prog-record").disabled = !any;
   $("#prog-make").disabled = !any || !hasSel();
+  // Update: the cue that is on in the focused playback, by name
+  const upd = $("#prog-update");
+  const on = cueOn();
+  upd.disabled = !any || !on;
+  const label = on ? `Update PB${on.pb} · ${on.name}` : "Update";
+  const lab = upd.querySelector("span");
+  if (lab && lab.textContent !== label) lab.textContent = label;
+  upd.title = on ? `Merge the programmer into ${on.name} on PB${on.pb} - what you didn't touch stays (O)` : "Update: press GO on a playback first - it merges into the cue that is on (O)";
   // a greyed-out button says why (a disabled button shows no tooltip everywhere)
   const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
     : !hasSel() ? "Select the lights to make a button of them." : "";
+  // (the why is the greyed button's own tooltip: a line of text under the
+  // buttons that came and went moved the whole panel)
   $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
+  for (const b of [$("#prog-make"), $("#prog-clear")]) {
+    if (b.dataset.title === undefined) b.dataset.title = b.title;
+    b.title = (b.id === "prog-clear" ? !any : why) ? why || b.dataset.title : b.dataset.title;
+  }
   const w = $("#prog-why");
-  if (w && w.textContent !== why) w.textContent = why;
+  if (w) w.textContent = "";
+}
+
+// the cue that is on in the focused playback (what Update merges into)
+function cueOn() {
+  const n = focusedPlayback();
+  const pb = ((state.snap && state.snap.playbacks) || []).find((p) => p.n === n);
+  const c = pb && pb.index >= 0 ? (pb.stack || [])[pb.index] : null;
+  return c ? { pb: n, cue: c.n, name: c.name || `Cue ${c.n}` } : null;
 }
 
 // a button holding some of the selected lights: say so, with a Turn off
@@ -1175,15 +1241,63 @@ function renderFx() {
 
 let fxAcross = false;
 
+// Your own colours for a colour effect (and Breathe): the colours it goes
+// through, in order - none chosen, every colour the light can make.  Kept
+// per effect between runs.
+const COLOUR_FX = new Set(["rainbow", "colour_chase", "alternate", "fan", "breathe"]);
+const FX_SWATCHES = [["#ff0000", "Red"], ["#ff6a00", "Orange"], ["#ffd000", "Yellow"], ["#00ff00", "Green"], ["#00ffff", "Cyan"],
+  ["#0040ff", "Blue"], ["#7a00ff", "Purple"], ["#ff00ff", "Magenta"], ["#ff4fa0", "Pink"], ["#ffffff", "White"]];
+const FX_COLS_KEY = "haze.fxColours";
+function fxColours(name) {
+  try { return (JSON.parse(localStorage.getItem(FX_COLS_KEY) || "{}")[name] || []).slice(0, 8); } catch { return []; }
+}
+function setFxColours(name, cols) {
+  try {
+    const all = JSON.parse(localStorage.getItem(FX_COLS_KEY) || "{}");
+    all[name] = cols;
+    localStorage.setItem(FX_COLS_KEY, JSON.stringify(all));
+  } catch { /* private window */ }
+}
+function colourPicker(fx, params, mine) {
+  const box = h("div.fx-cols");
+  const apply = (cols) => {
+    setFxColours(fx.name, cols);
+    params.colours = cols;
+    for (const f of mine()) run("fx_tweak", { id: f.id, params: { colours: cols } }, { silentError: true });
+    draw();
+  };
+  const draw = () => {
+    const cols = fxColours(fx.name);
+    const custom = h("input", { type: "color", value: "#ff00aa", "aria-label": "Any colour",
+      onchange: (e) => { if (cols.length < 8) apply([...cols, e.target.value]); } });
+    box.replaceChildren(
+      h("div.fx-cols-head", h("b", "Colours"),
+        h("span.muted.small", cols.length ? (fx.name === "breathe" ? "a new one each breath, in this order"
+          : fx.name === "fan" ? "from the middle out, in this order" : "in this order")
+          : fx.name === "breathe" ? "none: it breathes in the colour the lights have"
+          : "none chosen: every colour the light can make"),
+        cols.length ? h("button.btn.small.ghost", { title: "Back to every colour the light can make", onclick: () => apply([]) }, "Clear") : null),
+      h("div.fx-cols-row",
+        ...cols.map((c, i) => h("button.fx-col.on", { style: `--c:${c}`, title: "Take this colour out", "aria-label": `Take colour ${i + 1} out`,
+          onclick: () => apply(cols.filter((_, j) => j !== i)) }, h("span", String(i + 1)))),
+        cols.length < 8 ? h("span.fx-cols-add", h("span.muted.small", cols.length ? "add" : "pick"),
+          ...FX_SWATCHES.map(([c, n]) => h("button.fx-col", { style: `--c:${c}`, title: `Add ${n}`, "aria-label": `Add ${n}`, onclick: () => apply([...cols, c]) })),
+          h("label.fx-col.fx-col-any", { title: "Add any colour" }, "+", custom)) : h("span.muted.small", "8 at most")));
+  };
+  draw();
+  return box;
+}
+
 function startFx(fx) {
   fxChosen = fx.name;
   const params = {};
   for (const p of fx.params || []) params[p.key] = p.default;
+  if (COLOUR_FX.has(fx.name) && fxColours(fx.name).length) params.colours = fxColours(fx.name);
   run("run_fx", { name: fx.name, params, heads: sel(), across: fxAcross }, { toast: true }).then(() => renderFx());
   // its other knobs (speed is on the running row below): tap or type, and
   // the running effect changes as it runs - no restart, no jump
   const mine = () => ((state.snap && state.snap.fx) || []).filter((f) => f.lib === fx.name && (f.from || "programmer") === "programmer");
-  $("#fx-params").replaceChildren(...(fx.params || []).filter((p) => !["phase", "speed"].includes(p.key)).map((p) => knob({
+  $("#fx-params").replaceChildren(COLOUR_FX.has(fx.name) ? colourPicker(fx, params, mine) : "", ...(fx.params || []).filter((p) => !["phase", "speed"].includes(p.key)).map((p) => knob({
     label: p.label.replace(/^./, (c) => c.toUpperCase()), value: p.default, min: p.min, max: p.max,
     step: { add: Math.max(0.01, +((p.max - p.min) / 20).toPrecision(2)) }, halves: false,
     onSet: (v) => {
@@ -1269,7 +1383,9 @@ function renderRunning(force = false) {
 // ----------------------------------------------------------------- looks
 function renderLooks(force = false) {
   const pals = (state.snap && state.snap.palettes) || {};
-  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || [], ($("#look-search") || {}).value]);
+  // (the selection and its values too: a tile shows whether the selection holds it)
+  const key = JSON.stringify([pals, (state.snap && state.snap.presets) || [], ($("#look-search") || {}).value,
+    selected(), ((state.snap && state.snap.programmer) || {}).values || {}]);
   if (!force && key === looksKey) return;  // (same: Record stays put under the pointer)
   looksKey = key;
   const kinds = ["colour", "position", "beam"];
@@ -1289,7 +1405,9 @@ function renderLooks(force = false) {
   for (const kind of kinds) {
     const strip = $(`.palette-strip[data-kind=${kind}]`);
     if (!strip) continue;
-    strip.replaceChildren(...(pals[kind] || []).map((p) => palButton(kind, p)),
+    // only the palettes the selected lights can take (no gobo wheel: no
+    // gobo palettes); nothing selected: all of them
+    strip.replaceChildren(...(pals[kind] || []).filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p)),
       h("button.pal-item.pal-save", {
         title: `Save the selection's ${kind} as a palette`,
         onclick: async () => {
@@ -1377,16 +1495,34 @@ async function saveLook() {
   });
 }
 
+// A palette tile: lit while the selection holds it.  Tap: put it on the
+// selection; tap a lit one: take it off again (that part of the programmer,
+// for these lights).  Right-click / long-press: update, rename, delete.
 function palButton(kind, p) {
   const v = p.values || {};
+  // a colour's swatch; a beam palette's gobo, as the light throws it
   const sw = kind === "colour" && ("red" in v || "green" in v || "blue" in v)
-    ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } }) : null;
-  return h("button.pal-item", {
-    title: `Apply ${p.name} to the selection`,
+    ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } })
+    : kind === "beam" ? paletteSwatch("beam", p) : null;
+  const lit = paletteOn(kind, p);
+  const opts = (e) => {
+    e.preventDefault();
+    menu(e.currentTarget, [
+      { label: "Update from the selection", hint: "record it again", run: () => hasSel() ? run("record_palette", { kind, name: p.name }, { toast: true }) : toast("Select fixtures first") },
+      { label: "Rename…", run: async () => { const name = await promptBox("Rename palette", "Name", p.name, { ok: "Rename" }); if (name) run("palette_edit", { kind, palette: p.n, name }, { toast: true }); } },
+      "-",
+      { label: "Delete", danger: true, run: async () => { if (await confirmBox("Delete palette", `Delete “${p.name}”? Cues keep their values. Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) run("palette_edit", { kind, palette: p.n, delete: true }, { toast: true }); } },
+    ]);
+  };
+  return h("button.pal-item" + (lit ? ".on" : ""), {
+    title: lit ? `${p.name} is on the selection - tap to take it off (right-click: rename, delete)` : `Apply ${p.name} to the selection (right-click: rename, delete)`,
+    "aria-pressed": String(lit),
     onclick: () => {
       if (!hasSel()) { toast("Select fixtures first"); return; }
-      run("include_palette", { kind, palette: p.n });
+      if (lit) run("clear_attrs", { group: kind === "beam" ? "beam" : kind, heads: selected() });
+      else run("include_palette", { kind, palette: p.n });
     },
+    oncontextmenu: opts,
   }, sw, p.name);
 }
 
@@ -1418,6 +1554,10 @@ function wireTools() {
     const k = b.dataset.orient;
     run("set_orient", k === "clear" ? { heads: sel(), clear: true } : { heads: sel(), [k]: true }, { toast: true });
   }));
+  // FLIP / MIRROR on the Position tab
+  $$("[data-pt]").forEach((b) => b.addEventListener("click", () => run(b.dataset.pt === "flip" ? "flip" : "mirror_pan", {}, { toast: true })));
+  $$("[data-step]").forEach((b) => b.addEventListener("click", () => run("select_step", { step: b.dataset.step }, { toast: true })));
+  $("#lineup-btn").addEventListener("click", () => import("./lineup.js").then((m) => m.openLineUp()));
   $("#sel-similar").addEventListener("click", () => {
     const first = sel()[0];
     if (first === undefined) { toast("Select one fixture of the type you want"); return; }
@@ -1430,6 +1570,8 @@ function wireTools() {
 function showTab(name) {
   tab = name;
   renderWheels(name);
+  for (const n of $$("#prog-subslot .sub-tabs")) n.hidden = n.dataset.for !== name;
+  // (on Palettes the wheels are the palette view's Knobs window)
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
@@ -1438,16 +1580,29 @@ function showTab(name) {
   if (name === "fx") loadFx();
   if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
+  if (name === "desk") import("./deskview.js").then((m) => { m.initDeskView(); m.renderDeskView(); });
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
   if (name === "laser" || name === "sfx") {
     loadAttributes();
     import("./fxpanel.js").then((m) => m.renderFxPane(name, attrState));
   }
-  try { localStorage.setItem("jarvis.progtab", name); } catch (e) { /* ignore */ }
+  try { localStorage.setItem("haze.progtab", name); } catch (e) { /* ignore */ }
 }
 
 function wireActs() {
+  // the foot's keys get their icons (icons.js), as on a pro desk
+  $("#prog-clear").prepend(icon("clear"));
+  $("#prog-make").prepend(icon("button"));
+  const upd = $("#prog-update");
+  upd.replaceChildren(icon("update"), h("span", "Update"));
+  upd.addEventListener("click", () => {
+    const on = cueOn();
+    if (on) run("record_cue", { playback: on.pb, cue: on.cue, mode: "merge" }, { toast: true });
+  });
+  const rec = $("#prog-record");
+  rec.textContent = rec.textContent.replace(/^●\s*/, "");
+  rec.prepend(icon("rec"));
   $("#prog-clear").addEventListener("click", () => run("clear_programmer"));
   $("#prog-record").addEventListener("click", () => openCueDialog());
   $("#prog-make").addEventListener("click", makeHoldButton);
@@ -1459,7 +1614,7 @@ function wireActs() {
 // remembered on this computer.
 const SUBS = {
   position: [["point", "Point", "Aim at spots, the room map, the pan / tilt pad"], ["move", "Move", "Movements: circles, A → B in degrees, waves, the light's own moves"],
-    ["limits", "Limits", "Stay on the floor, each light's own range, laser safety"]],
+    ["limits", "Zones & limits", "Where the beams may go (keep-out, stay in a zone), movements fit the floor, each light's own range, laser safety"]],
   beam: [["quick", "Quick", "Strobe, gobo, prism, zoom, iris, frost and focus in one press"], ["all", "All channels", "Every beam channel the light has, as a slider"]],
   fx: [["effects", "Effects", "The effect library and its knobs"], ["running", "Running", "What is running now, and where it comes from"],
     ["paint", "Step & paint", "Step effects from your looks; gradients, pictures and video across the lights"]],
@@ -1469,29 +1624,36 @@ function initSubTabs() {
     const el = $(`.tab-pane[data-pane="${pane}"]`);
     if (!el) continue;
     let cur = subs[0][0];
-    try { cur = localStorage.getItem("jarvis.sub." + pane) || cur; } catch { /* private window */ }
+    try { cur = localStorage.getItem("haze.sub." + pane) || cur; } catch { /* private window */ }
     if (!subs.some(([k]) => k === cur)) cur = subs[0][0];
     const nav = h("nav.sub-tabs", { role: "tablist", "aria-label": `${pane} parts` });
     const pick = (k) => {
       el.dataset.sub = k;
       for (const b of nav.children) b.setAttribute("aria-selected", String(b.dataset.sub === k));
-      try { localStorage.setItem("jarvis.sub." + pane, k); } catch { /* private window */ }
+      try { localStorage.setItem("haze.sub." + pane, k); } catch { /* private window */ }
     };
     nav.append(...subs.map(([k, label, title]) => h("button", { role: "tab", type: "button", dataset: { sub: k }, title, onclick: () => pick(k) },
       label, h("span.sub-count", { hidden: true }))));
-    el.prepend(nav);
+    // in the row with the wheels, not a full-width row of its own
+    nav.dataset.for = pane;
+    nav.hidden = true;
+    $("#prog-subslot").append(nav);
     pick(cur);
   }
   // how many effects are running: on the FX tab's Running sub-tab
   on("snapshot", () => {
     const n = ((state.snap && state.snap.fx) || []).length;
-    const c = document.querySelector('.tab-pane[data-pane="fx"] .sub-tabs [data-sub="running"] .sub-count');
+    const c = document.querySelector('.sub-tabs[data-for="fx"] [data-sub="running"] .sub-count');
     if (c) { c.hidden = !n; c.textContent = String(n); }
   });
 }
 
 export function initProgrammer() {
   initSubTabs();
+  // every tab sizes its big parts (fader, colour wheel, map, pad) from the
+  // height there is: app.css --ph
+  const body = $("#prog-body");
+  if (body && window.ResizeObserver) new ResizeObserver(() => body.style.setProperty("--ph", `${body.clientHeight}px`)).observe(body);
   wireActs();
   intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
   $$("#int-quick button").forEach((b) => b.addEventListener("click", () => {
@@ -1545,9 +1707,8 @@ export function initProgrammer() {
   $("#look-search").addEventListener("input", () => renderLooks(true));
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   initWheels();
-  let saved = "intensity";
-  try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }
-  showTab(saved);
+  // the desk opens on Palettes (Group, Position, Colour, Beam) every time
+  showTab("desk");
 
   const refresh = () => {
     renderHeader();
@@ -1572,6 +1733,17 @@ export function initProgrammer() {
     if (tab === "position") renderPad();
   });
   on("looks", () => { renderProgCells(); if (tab === "position") renderPad(); });
+  // heads of a multi-head light picked in the 3D (Select Elements), in this
+  // window or the 3D's own window
+  const cellsPicked = (m) => {
+    if (!m || !Array.isArray(m.cells)) return;
+    const sel = selectionHeads().map((x) => x.head_no);
+    if (sel.length === 1 && sel[0] === m.head) { state.cells = [...m.cells]; cellsSel = String(m.head); cellsKey = ""; }
+    else state.pendingCells = { head: m.head, cells: [...m.cells] };
+    renderProgCells();
+  };
+  on("cells", cellsPicked);
+  try { new BroadcastChannel("haze.cells").onmessage = (ev) => cellsPicked(ev.data); } catch (e) { /* an old browser */ }
   on("selection", () => loadPadInfo());
   on("snapshot", () => loadPadInfo());
   void patch; void select;

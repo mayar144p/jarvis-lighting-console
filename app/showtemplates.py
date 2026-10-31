@@ -101,6 +101,14 @@ def public() -> list[dict]:
 def _install(eng, src: str, key: str) -> int:
     from . import engine as engine_mod
     from . import fixlib, fixtures
+    # already in the library (a second template, a new show): use it - no
+    # reading the bundle and rewriting the library each time (slow disks)
+    with fixtures.db(eng.db_path) as conn:
+        row = conn.execute("SELECT f.id FROM fixtures f WHERE f.source = ? AND EXISTS "
+                           "(SELECT 1 FROM modes m WHERE m.fixture_id = f.id) ORDER BY f.id LIMIT 1",
+                           (f"{src}:{key}",)).fetchone()
+    if row:
+        return row["id"]
     done = fixtures.store_parsed(eng.db_path, fixlib.load(src, key), f"{src}:{key}")
     fixtures.invalidate_cache()
     engine_mod._FIXTURE_CACHE.clear()

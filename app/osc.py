@@ -1,7 +1,7 @@
 """OSC (Open Sound Control) for TouchOSC, Bitfocus Companion, QLab ...:
 the message format (UDP), parse and build.  Pure stdlib.
 
-A message is an address ("/jarvis/go"), a type tag string (",if") and
+A message is an address ("/haze/go"), a type tag string (",if") and
 the arguments: i int32, f float32, s string, T/F true/false, N nil.
 Bundles ("#bundle") hold messages (and bundles); the time tag is
 ignored - everything happens as it arrives.

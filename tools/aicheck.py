@@ -52,7 +52,7 @@ class Desk:
     """The test rig, on scratch data, put back before every sentence."""
     MOVERS = ("qlc", "Clay_Paky/Clay-Paky-Sharpy-Plus.qxf", 4)
     PARS = ("qlc", "American_DJ/American-DJ-Mega-PAR-Profile-Plus.qxf", 6)
-    EXTRAS = (("qlc", "Laserworld/Laserworld-RS400G.qxf", 1), ("jarvis", "chauvet-dj/funfetti-shot", 1),
+    EXTRAS = (("qlc", "Laserworld/Laserworld-RS400G.qxf", 1), ("haze", "chauvet-dj/funfetti-shot", 1),
               ("qlc", "Stairville/Stairville-AF-180-LED-Fogger-Co2-FX.qxf", 1))
 
     def __init__(self, tmp: Path):
@@ -238,8 +238,8 @@ def main(argv) -> int:
     a = ap.parse_args(argv)
     tmp = Path(tempfile.mkdtemp(prefix="aicheck-"))
     # your AI settings and offline model, read from your data folder
-    homes = [Path(a.ai_data)] if a.ai_data else [ROOT / "data", Path(os.environ.get("APPDATA", "~")).expanduser() / "Jarvis" / "data",
-                                                 Path("~/Library/Application Support/Jarvis/data").expanduser()]
+    homes = [Path(a.ai_data)] if a.ai_data else [ROOT / "data", Path(os.environ.get("APPDATA", "~")).expanduser() / "Haze" / "data",
+                                                 Path("~/Library/Application Support/Haze/data").expanduser()]
     home = next((h for h in homes if (h / "ai.json").is_file() or (h / "ai").is_dir()), None)
     os.environ["CONSOLE_DATA_DIR"] = str(tmp / "data")
     os.environ["CONSOLE_AUTOSAVE"] = "false"
