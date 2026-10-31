@@ -30,3 +30,12 @@ export function needs3d(what) {
   toast(`${what} needs the 3D view: Settings → Screen & 3D`, "", 5000);
   return false;
 }
+
+/** Show the 3D visualiser: the desktop app's own 3D window (opened, or
+ *  brought to the front); in a browser, the 3D page in a window of its own. */
+export function open3d() {
+  const w = window.jarvisDesk && window.jarvisDesk.win;
+  if (w && w.pick) { w.pick("stage"); return; }
+  const tab = window.open(`${location.pathname}?window=stage`, "jarvis-3d");
+  if (tab) tab.focus();
+}

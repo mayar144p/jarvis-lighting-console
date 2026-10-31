@@ -77,21 +77,25 @@ export function renderWheels(name = tab) {
   const box = $("#prog-wheels");
   if (!box) return;
   const roles = rolesOfSelection();
-  const list = (WHEELS[name] || []).filter(([a]) => roles.has(a));
-  // the row keeps its place on a tab with wheels (selecting lights never
-  // shifts the page under the pointer); only a tab change shows / hides it
+  // every wheel of the tab is always in its place; one the selected lights
+  // don't have (Tilt on a light that only pans) is greyed, not taken away
+  // - the row never shifts under the pointer
+  const list = WHEELS[name] || [];
   box.hidden = !WHEELS[name];
-  const sig = name + list.map(([a]) => a).join();
-  if (!list.length) {
-    if (box.dataset.sig !== sig) box.replaceChildren(h("span.muted.small", "Select lights to get wheels for them here."));
-    box.dataset.sig = sig;
-    return;
-  }
+  const sig = name + list.map(([a]) => (roles.has(a) ? a : "-")).join();
   if (box.dataset.sig === sig) return;              // the same wheels: keep them (a drag in progress)
   box.dataset.sig = sig;
   const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
     title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; fineBtn.classList.toggle("on", fine); fineBtn.setAttribute("aria-pressed", String(fine)); } }, "FINE");
-  box.replaceChildren(...list.map(([a, l]) => wheel(a, l)), fineBtn);
+  box.replaceChildren(...list.map(([a, l]) => {
+    const el = wheel(a, l);
+    if (!roles.has(a)) {
+      el.classList.add("off");
+      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
+      el.querySelector(".wheel-knob").tabIndex = -1;
+    }
+    return el;
+  }), fineBtn);
 }
 
 export function initWheels() {

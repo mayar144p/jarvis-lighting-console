@@ -451,6 +451,8 @@ export function renderDeskView() {
     box.replaceChildren(h("div.dv",
       h("div.dv-bar", h("span.muted.small.dv-hint", "Drag a window by its title to move it, by its corner to size it; × hides it."),
         h("span.grow"), h("div.dv-wheels"),
+        h("button.btn.small.dv-3d", { title: "Show the 3D visualiser (its own window: put it on a second screen, or full screen)",
+          onclick: () => import("./view3d.js").then((m) => m.open3d()) }, icon("cube"), "3D view"),
         h("button.btn.small.ghost", { title: "Bring back a hidden window", onclick: (e) => menu(e.currentTarget,
           Object.entries(NAMES).map(([id, name]) => ({ label: (hidden().includes(id) ? "" : "✓ ") + name, run: () => {
             layout._hidden = hidden().includes(id) ? hidden().filter((x) => x !== id) : [...hidden(), id];

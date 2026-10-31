@@ -153,7 +153,10 @@ export function menu(anchor, items) {
     const long = it.hint && String(it.hint).length > 14;
     box.append(h("button" + (it.danger ? ".danger" : "") + (long ? ".has-desc" : ""), {
       role: "menuitem", disabled: it.disabled,
-      onclick: () => { close(); it.run(); },
+      onclick: () => {
+        if (it.keep) { it.run(); if (typeof it.keep === "function") it.keep(); return; }   // a toggle: the menu stays
+        close(); it.run();
+      },
     }, long ? h("span.mi", h("span.mi-label", it.label), h("small.mi-desc", it.hint)) : it.label,
     !long && it.hint ? h("small", it.hint) : null));
   }

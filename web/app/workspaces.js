@@ -304,6 +304,9 @@ function openMenu(anchor) {
   remember();
   const cur = activeWorkspace();
   const builtin = BUILTIN.some((b) => b.id === cur.id);
+  // a layout change keeps the menu open (drawn again with its new ticks);
+  // picking a workspace or saving closes it
+  const again = () => openMenu(anchor);
   menu(anchor, [
     ...saved.list.map((w, i) => ({
       label: (w.id === cur.id ? "✓ " : "") + w.name,
@@ -311,20 +314,19 @@ function openMenu(anchor) {
       run: () => useWorkspace(w.id),
     })),
     "-",
-    { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", run: () => toggle("fix") },
-    { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", run: () => toggle("prog") },
-    { label: (cur.stage !== false ? "✓ " : "") + "3D view", hint: "show or hide (no 3D: more room, less work for the computer)", run: () => toggle("stage") },
-    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", run: () => toggle("cues") },
-    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
-    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
+    { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", keep: again, run: () => toggle("fix") },
+    { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", keep: again, run: () => toggle("prog") },
+    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", keep: again, run: () => toggle("cues") },
+    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", keep: again, run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
+    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", keep: again, run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
     cur.fixAt === "float"
       ? null
-      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", run: () => place("fixAt", "float") },
+      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("fixAt", "float") },
     cur.progAt === "float"
       ? null
-      : { label: "Programmer floating over the 3D", hint: "drag it by its title", run: () => place("progAt", "float") },
-    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
-    { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
+      : { label: "Programmer floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("progAt", "float") },
+    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", keep: again, run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
+    { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, keep: again, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
     "-",
     { label: "Save as a new workspace…", run: saveAs },
     { label: `Rename "${cur.name}"…`, run: () => rename(cur) },

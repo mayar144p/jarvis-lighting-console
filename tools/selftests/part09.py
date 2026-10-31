@@ -7927,7 +7927,7 @@ def test_b6_layouts() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws and '"3D view"' in ws
+    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws
           and "body.ws-nostage .stage-wrap { display: none; }" in css and 'classList.contains("ws-nostage")' in st, "")
     check("full-screen buttons: pages, Edit, Layout and a Blackout of their own", 'id="qb-bo"' in html and ".qb.qb-full .qb-bo" in css, "")
     check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
@@ -10471,3 +10471,10 @@ def test_programmer_overhaul() -> None:
           "el.style.transform = `translate(${px}px, ${py}px)`" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
     check("...and the dock moving up or down doesn't resize them (Show -> Fit the windows to the panel)",
           "function fitRows()" in dv and "if (e.isTrusted) fitRows();" in dv and "var(--dv-row," in css, "")
+    wh = (web / "wheels.js").read_text(encoding="utf-8")
+    check("a wheel the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".wheel.off {" in css, "")
+    ws = (web / "workspaces.js").read_text(encoding="utf-8")
+    check("the workspace menu stays open for layout toggles; no 3D view toggle there", "keep: again" in ws and '"3D view", hint: "show or hide' not in ws
+          and "if (it.keep) {" in (web / "ui.js").read_text(encoding="utf-8"), "")
+    check("Palettes has a 3D view button (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
+          and "m.open3d()" in dv, "")

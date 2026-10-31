@@ -1995,6 +1995,8 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .wheel-knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--accent);
   transform-origin: 50% 17px; transform: rotate(var(--a)); }
 .wheel-knob:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wheel.off { opacity: .32; }
+.wheel.off .wheel-knob { pointer-events: none; cursor: default; }
 .prog-wheels .btn.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
 
 /* hover help (Settings -> Screen & 3D -> Hover help) */
@@ -2722,6 +2724,7 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 /* Palettes: Pan / Tilt wheels in the palette view's bar, compact */
 .dv-bar { align-items: center; }
 .dv-wheels { display: flex; align-items: center; }
+.dv-bar .dv-3d { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; }
 .dv-wheels > .prog-wheels { border: 0; padding: 0; min-height: 0; gap: 10px; }
 .dv-wheels .wheel { flex-direction: row; gap: 6px; }
 .dv-wheels .wheel-knob { width: calc(34px * var(--ctl)); height: calc(34px * var(--ctl)); }

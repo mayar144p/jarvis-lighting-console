@@ -37,6 +37,7 @@ const P = {
   copy: '<rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>',
   enter: '<path d="M13.5 3v5.5H3"/><path d="M6 5.5l-3 3 3 3"/>',
   rubout: '<path d="M5 3.5h9v9H5L1.5 8z"/><path d="M7.5 6l4 4M11.5 6l-4 4"/>',
+  cube: '<path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9z"/><path d="M2.4 4.9L8 8l5.6-3.1M8 8v6.2"/>',
   caret: '<path d="M4 6.5l4 4 4-4"/>',
   caretr: '<path d="M6.5 4l4 4-4 4"/>',
   full: '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/>',
