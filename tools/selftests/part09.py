@@ -10906,7 +10906,21 @@ def test_learn_from_corrections() -> None:
             new = assistant.learn_from_corrections(e)
             check("they become notes the AI keeps (once)", new and assistant.learn_from_corrections(e) == []
                   and all(n in assistant.notes() for n in new), str(new))
-            check("the AI reads them", "WHAT THE OPERATOR CHANGED" in assistant._system(e), "")
+            check("the AI reads them (one show's own changes, kept to that show)", "ONE SHOW ONLY" in assistant._system(e), "")
+            e.act("quick_profile_use", name="Halloween")
+            d2 = dict(d)
+            d2["name"] = "Christmas"
+            showkit.build(e, d2, None)
+            st2 = next(b for b in e.quick if b["kind"] == "strobe")
+            e.act("quick_set", page=st2["page"], slot=st2["slot"], clear=True)
+            lr = showkit.learning(e)
+            check("the same change in two shows is a habit", any("took off" in h["text"] and len(h["shows"]) == 2 for h in lr["habits"]),
+                  str(lr["habits"]))
+            check("a change in one show stays that show's own", any(c["show"] == "Halloween" and "speed" in c["text"]
+                                                                     for c in lr["one_off"]), str(lr["one_off"]))
+            new2 = assistant.learn_from_corrections(e)
+            check("notes say which: a habit, or for that show only", any(x.startswith("Habit") for x in new2)
+                  and not any(x.startswith("Habit") and "speed" in x for x in new2), str(new2))
         finally:
             e.shutdown()
             if old is None:

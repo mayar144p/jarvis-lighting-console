@@ -275,7 +275,8 @@ How you work:
 * A QUESTION ("why is head 7 dark?", "what's on the movers?") is answered, not
   acted on: check first (check_lights / look_at_rig), say what you found and why,
   and offer the fix - change nothing unless they asked for it.  Never guess.
-* Remember (remember) lasting preferences the operator states or clearly shows.
+* Remember (remember) lasting preferences the operator states or clearly shows - but a choice
+  for one show is that show's, not a rule: note it as "for the X show" unless they say "always".
 * Keep replies short: what you did and why, in the operator's language.
 
 Rules:
@@ -513,14 +514,19 @@ def find_fixtures(eng, query: str, limit: int = 8) -> dict:
 
 
 def learn_from_corrections(eng) -> list[str]:
-    """What the operator changed in the AI's last shows, kept as notes (so
-    it outlives this show file); each only once."""
-    learnt = showkit.corrections(eng, limit=8)
-    if not learnt:
+    """What the operator changed in the AI's shows, kept as notes (so it
+    outlives this show file), each only once: a HABIT (the same change in
+    two or more shows) to follow from now on; a ONE-OFF kept to its own
+    show - never carried to other shows by itself (ice blue for one
+    Christmas is not every show's colour)."""
+    lr = showkit.learning(eng)
+    want = [f"Habit (in {', '.join(h['shows'])}): {h['text']}" for h in lr["habits"][:6]]
+    want += [f"For the {c['show']} show only: {c['text']}" for c in lr["one_off"][:8]]
+    if not want:
         return []
     with _mem_lock:
         lst = notes()
-        new = [f"Learnt: {x}" for x in learnt if f"Learnt: {x}" not in lst]
+        new = [x for x in want if x not in lst]
         if new:
             _save_notes(lst + new)
     return new
@@ -605,11 +611,16 @@ def _system(eng) -> str:
     text = SYSTEM.format(actions=ref, colours=", ".join(n for n, _h in showdesign.COLOR_NAMES[:24]),
                          effects=", ".join(sorted(console_ai.fxlib.FX)), design=roomsense.DESIGN_KNOWLEDGE)
     text += "\n" + roomsense.describe(roomsense.plan(eng))
-    learnt = showkit.corrections(eng)
-    if learnt:
-        text += ("\n\nWHAT THE OPERATOR CHANGED IN SHOWS YOU MADE - learn from it, and do it their way in the "
-                 "next show (same kinds of buttons, colours, speeds), unless they ask otherwise:\n"
-                 + "\n".join(f"  - {x}" for x in learnt))
+    lr = showkit.learning(eng)
+    if lr["habits"]:
+        text += ("\n\nTHE OPERATOR'S HABITS (the same change in several of your shows) - do it this way in new "
+                 "shows unless they ask otherwise:\n" + "\n".join(
+                     f"  - {h['text']} (in {', '.join(h['shows'])})" for h in lr["habits"][:8]))
+    if lr["one_off"]:
+        text += ("\n\nCHANGES THE OPERATOR MADE TO ONE SHOW ONLY - that show's own choices: keep them in that "
+                 "show (and its copies). Don't carry them into other shows by yourself; for a show on the same "
+                 "theme, ask (\"Last Christmas you went ice blue and white - again?\"):\n" + "\n".join(
+                     f"  - {c['show']} ({c['page']}): {c['text']}" for c in lr["one_off"][:10]))
     made = showkit.shows(eng)
     text += "\n\nSHOWS MADE SO FAR (button profiles): " + ("; ".join(
         f"{s['profile']} ({s['brief'][:60] or s['name']}; colours {', '.join(s['palette'])}; "

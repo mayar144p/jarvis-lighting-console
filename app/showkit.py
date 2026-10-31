@@ -270,10 +270,11 @@ def _page_name(eng, profile: str, page) -> str:
     return names.get(str(page)) or f"page {page}"
 
 
-def corrections(eng, limit: int = 12) -> list[str]:
-    """What the operator changed in the buttons of shows the AI made: taken
-    off, recoloured, slowed down / sped up, renamed - in words, to do it
-    that way next time."""
+def changes(eng) -> list[dict]:
+    """What the operator changed in the buttons of shows the AI made, one
+    item each: {show, page, text, sig} - sig is the change without its
+    numbers or colours, so the same habit in two shows can be told apart
+    from a one-off."""
     p = eng._profiles()
     out = []
     for profile, s in (p.get("shows") or {}).items():
@@ -282,31 +283,60 @@ def corrections(eng, limit: int = 12) -> list[str]:
             continue
         now = eng.quick if profile == p["active"] else (p["sets"].get(profile) or {}).get("quick") or []
         cur = {b["id"]: _brief_btn(b) for b in now if b["kind"] not in ("label", "page")}
+
+        def add(was, text, sig):
+            out.append({"show": profile, "page": _page_name(eng, profile, was.get("page")), "text": text, "sig": sig})
         for bid, was in built.items():
-            where = f"{profile} ({_page_name(eng, profile, was.get('page'))})"
             got = cur.get(bid)
+            lab = was["label"]
             if got is None:
-                out.append(f"{where}: took off “{was['label']}” ({was['kind']})")
+                add(was, f"took off “{lab}” ({was['kind']})", f"took off “{lab}” ({was['kind']})")
                 continue
             if got.get("kind") != was.get("kind"):
-                out.append(f"{where}: made “{was['label']}” a {got.get('kind')} button instead of {was.get('kind')}")
+                t = f"made “{lab}” a {got.get('kind')} button instead of {was.get('kind')}"
+                add(was, t, t)
                 continue
             if got.get("colour") != was.get("colour") and was.get("colour"):
-                out.append(f"{where}: “{was['label']}” from {was['colour']} to {got.get('colour')}")
+                # a colour belongs to its show's theme: the same new colour in
+                # two shows is a habit, a different one is that show's own
+                add(was, f"“{lab}” from {was['colour']} to {got.get('colour')}", f"“{lab}” to {got.get('colour')}")
             for k, word in (("speed", "speed"), ("size", "size"), ("hz", "strobe rate")):
-                a, b = was.get(k), got.get(k)
-                if isinstance(a, (int, float)) and isinstance(b, (int, float)) and abs(a - b) > 1e-6:
-                    out.append(f"{where}: {word} of “{was['label']}” {'down' if b < a else 'up'} from {a:g} to {b:g}")
-                elif a is None and isinstance(b, (int, float)):
-                    out.append(f"{where}: set the {word} of “{was['label']}” to {b:g}")
+                va, vb = was.get(k), got.get(k)
+                if isinstance(va, (int, float)) and isinstance(vb, (int, float)) and abs(va - vb) > 1e-6:
+                    way = "down" if vb < va else "up"
+                    add(was, f"{word} of “{lab}” {way} from {va:g} to {vb:g}", f"{word} of “{lab}” {way}")
+                elif va is None and isinstance(vb, (int, float)):
+                    add(was, f"set the {word} of “{lab}” to {vb:g}", f"set the {word} of “{lab}”")
             if got.get("label") != was.get("label"):
-                out.append(f"{where}: renamed “{was['label']}” to “{got.get('label')}”")
+                t = f"renamed “{lab}” to “{got.get('label')}”"
+                add(was, t, t)
             if got.get("mode") != was.get("mode"):
-                out.append(f"{where}: “{was['label']}” works as {got.get('mode')} instead of {was.get('mode')}")
-        added = [b for bid, b in cur.items() if bid not in built]
-        for b in added[:4]:
-            out.append(f"{profile} ({_page_name(eng, profile, b.get('page'))}): added “{b['label']}” ({b['kind']})")
-    return out[:limit]
+                t = f"“{lab}” works as {got.get('mode')} instead of {was.get('mode')}"
+                add(was, t, t)
+        for b in [b for bid, b in cur.items() if bid not in built][:4]:
+            t = f"added “{b['label']}” ({b['kind']})"
+            add(b, t, t)
+    return out
+
+
+def corrections(eng, limit: int = 12) -> list[str]:
+    """The changes in words: "<show> (<page>): <what>"."""
+    return [f"{c['show']} ({c['page']}): {c['text']}" for c in changes(eng)][:limit]
+
+
+def learning(eng) -> dict:
+    """The changes sorted out: habits (the same change in two or more
+    shows - do it that way from now on) and one-offs (one show's own - keep
+    them to that show, or a show on the same theme, and ask before carrying
+    them anywhere else)."""
+    by_sig: dict[str, set] = {}
+    for c in changes(eng):
+        by_sig.setdefault(c["sig"], set()).add(c["show"])
+    habits = [{"text": sig, "shows": sorted(shows_)} for sig, shows_ in by_sig.items() if len(shows_) >= 2]
+    common = {h["text"] for h in habits}
+    one_off = [c for c in changes(eng) if c["sig"] not in common]
+    return {"habits": habits, "one_off": one_off}
+
 
 def shows(eng) -> list[dict]:
     """The shows made so far: their profile, theme, colours, playback."""
