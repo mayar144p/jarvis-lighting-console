@@ -11004,3 +11004,96 @@ def test_ai_training() -> None:
     check("the fine-tuning kit is there", (ROOT / "tools" / "finetune" / "train.py").is_file()
           and (ROOT / "tools" / "finetune" / "README.md").is_file(), "")
 
+
+
+def test_busy_desk_output() -> None:
+    """A long job holding the desk never stops the lights: the last frame keeps going out."""
+    import threading
+    from app import engine as eng_mod
+    e = eng_mod.Engine(dry_run=True)
+    try:
+        e.act("venue_template", name="lounge")
+        e.act("add_heads", query="LED PAR", qty=2)
+        e.act("set_output", state=True)
+        time.sleep(0.3)
+        s0 = e.output.get("simulated_frames", 0)
+        h0 = e.output.get("held_frames", 0)
+        done = threading.Event()
+
+        def busy():
+            with e.lock:
+                time.sleep(0.8)
+            done.set()
+        threading.Thread(target=busy, daemon=True).start()
+        done.wait(5)
+        sent = e.output.get("simulated_frames", 0) - s0
+        held = e.output.get("held_frames", 0) - h0
+        check("frames keep going out while the desk is busy (the last look, held)", sent >= 10 and held >= 10,
+              f"sent {sent}, held {held}")
+        time.sleep(0.1)
+        h1, s1 = e.output.get("held_frames", 0), e.output.get("simulated_frames", 0)
+        time.sleep(0.3)
+        check("and fresh frames follow once the desk is free",
+              e.output.get("held_frames", 0) == h1 and e.output.get("simulated_frames", 0) > s1, "")
+    finally:
+        e.shutdown()
+
+
+def test_action_registry() -> None:
+    """Every desk action is one list: a method, and a place in the AI's tiers."""
+    from app import aitools, assistant, engine_base
+    from app.engine import Engine
+    acts = set(engine_base.ACTIONS)
+    methods = {n[3:] for n in dir(Engine) if n.startswith("_a_")}
+    inner = {"run_fx_named"}            # (a helper the effects share, not an action of its own)
+    check("every action has its method, every method is an action", not (acts - methods) and not (methods - acts - inner),
+          f"{sorted(acts - methods)} {sorted(methods - acts - inner)}")
+    tiers = [set(assistant.ALLOWED), set(assistant.CONFIRMABLE), set(aitools.NEVER)]
+    check("every action is filed for the AI: done, prepared for a tap, or never",
+          set().union(*tiers) == acts, str(sorted(acts - set().union(*tiers))))
+    check("...and in one tier only", not (tiers[0] & tiers[1] or tiers[0] & tiers[2] or tiers[1] & tiers[2]), "")
+    check("questions never make an undo step", engine_base._READ_ONLY <= engine_base.UNDO_EXCLUDED,
+          str(sorted(engine_base._READ_ONLY - engine_base.UNDO_EXCLUDED)))
+    check("the undo and read-only lists name real actions",
+          engine_base.UNDO_EXCLUDED <= acts and engine_base._READ_ONLY <= acts, "")
+
+
+def test_ai_routing() -> None:
+    """The AI gets what the request is about: the actions it needs spelled out, the rest by name;
+    the operator's own kept examples like this request; a wrong setting answered with the right ones."""
+    from pathlib import Path
+    from app import aiexamples, assistant, config
+    from app import engine as eng_mod
+    check("a show request is about building, a truss about the room, the drop about the music",
+          "build" in assistant.route("design me a halloween show") and "room" in assistant.route("hang 2 spots on the truss")
+          and "music" in assistant.route("hit on the drop") and not assistant.route("warmer please"), "")
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="LED PAR", qty=2)
+            look = assistant._system(e, "warmer please")
+            build = assistant._system(e, "design me a halloween show")
+            check("a quick look leaves the button settings out (names only)",
+                  "    quick_edit(" not in look and "quick_edit" in look and "    quick_edit(" in build, "")
+            check("the same rules come first every time (the AI service reuses them)",
+                  look[:2000] == build[:2000], "")
+            r = assistant._do(e, "set_intensity", {"lvl": 50})
+            check("a wrong setting is answered with the right ones", not r["ok"] and "level" in r["error"], str(r))
+            msgs = [{"role": "user", "content": "warm amber wash on the vip"},
+                    {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "type": "function", "function": {
+                        "name": "do", "arguments": '{"action": "set_colour", "params": {"colour": "amber"}}'}}]}]
+            rid = aiexamples.record(msgs, "warm amber wash on the vip", "Amber on the VIP.", [{"action": "set_colour", "ok": True}], True)
+            aiexamples.record(msgs, "strobe everything", "done", [], True)
+            check("a request not kept is never shown as an example", not aiexamples.similar("warm amber wash on the vip please"), "")
+            aiexamples.verdict(rid, True)
+            ex = aiexamples.similar("a warm amber wash over the vip")
+            check("a kept request like this one comes back, with what was done",
+                  len(ex) == 1 and "set_colour" in ex[0]["how"][0], str(ex))
+            check("...and goes to the AI with the request", "OPERATOR KEPT" in assistant._system(e, "warm amber wash on the vip"), "")
+            check("...but not with an unlike one", "OPERATOR KEPT" not in assistant._system(e, "add a truss"), "")
+        finally:
+            e.shutdown()
+            config.DATA = old

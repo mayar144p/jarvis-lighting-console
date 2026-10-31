@@ -143,7 +143,10 @@ class OutputMixin:
         one thing that says why - and the status bar says so."""
         logged = False
         while not self._stop.wait(1.0):
-            last = self.__dict__.get("_tick_at")
+            # a fresh look, not just a frame: when the desk stays busy the
+            # lights hold their last look (the output never stops), but the
+            # desk itself isn't following - that's the freeze worth a report
+            last = min(self.__dict__.get("_tick_at") or 0, self.__dict__.get("_fresh_at") or 0) or None
             if last is None:
                 continue
             stalled = time.monotonic() - last
@@ -172,7 +175,7 @@ class OutputMixin:
         folder.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         acting = self.__dict__.get("_acting")
-        lines = [f"The light output stopped: no DMX frame for {stalled:.1f} s ({stamp}).",
+        lines = [f"The desk was held up: no new look for {stalled:.1f} s ({stamp}) - the lights held their last one.",
                  f"Last action into the engine: {acting[0]!r}, {time.monotonic() - acting[1]:.1f} s ago" if acting else "No action recorded yet.",
                  ""]
         names = {t.ident: t.name for t in threading.enumerate()}
@@ -494,13 +497,29 @@ class OutputMixin:
                     self._stop.wait(min(0.004, target - now))
                     continue
                 try:
-                    with self.lock:
-                        frames = self.build_frames()
+                    # the lights never wait for a busy desk: when something
+                    # long holds the lock (the AI building a show, a check of
+                    # every beam), the last frame goes out again - the rig
+                    # holds its look, the nodes keep their signal - and the
+                    # new frames follow the moment the desk is free (the
+                    # job itself is never shown half-done)
+                    got = self.lock.acquire(timeout=max(0.005, period * 0.75))
+                    if got:
+                        try:
+                            frames = self.build_frames()
+                        finally:
+                            self.lock.release()
+                        self.__dict__["_last_frames"] = frames
+                        self.__dict__["_fresh_at"] = time.monotonic()
+                    else:
+                        frames = self.__dict__.get("_last_frames") or {}
+                        self.output["held_frames"] = self.output.get("held_frames", 0) + 1
+                        self.output["held_at"] = time.monotonic()
                     self._dispatch(frames)
                     # the screens' 3D look, right after the frame is out: the
                     # next tick is a whole period away, so screens never make
                     # the DMX wait for the lock (only while someone watches)
-                    if time.monotonic() - self._look_wanted < 1.0:
+                    if got and time.monotonic() - self._look_wanted < 1.0:
                         rev = self.act_rev
                         self._look_cache = (time.monotonic(),
                                             json.dumps(self.look_rows(), separators=(",", ":")), rev)

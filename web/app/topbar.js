@@ -139,8 +139,8 @@ function renderStatus() {
   const stall = o.stall || (o.last_stall && Date.now() / 1000 - (o.last_stall.at || 0) < 600 ? o.last_stall : null);
   if (stall) {
     out.className = "bad";
-    out.textContent = o.stall ? `⚠ The lights are not getting frames (${stall.seconds} s) - a report is saved: data/freeze_reports/${stall.report}`
-      : `⚠ The lights stopped for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`;
+    out.textContent = o.stall ? `⚠ The desk is held up (${stall.seconds} s) - the lights are holding their last look. A report is saved: data/freeze_reports/${stall.report}`
+      : `⚠ The desk was held up for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`;
     out.title = "The desk's output was held up. The report says what held it.";
   }
   // a backup desk standing by: its output is off on purpose

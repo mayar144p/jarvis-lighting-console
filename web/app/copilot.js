@@ -113,7 +113,10 @@ function showAi(st) {
   $("#ai-status").textContent = st && st.llm_configured ? `${st.model}${mode ? " · " + mode : ""} ▾` : "offline compiler ▾";
 }
 
-const assistantOn = () => !!(state.status && state.status.llm_configured) && !$("#ai-offline").checked;
+// no AI set up (or the key was refused): the desk's own offline planner
+// answers; the AI is chosen in the list above (Online / Local / Auto)
+let noKey = false;
+const assistantOn = () => !!(state.status && state.status.llm_configured) && !noKey;
 
 // a small JPEG: the 3D view, or a photo, shrunk to at most `side` pixels
 function shrink(url, side = 768) {
@@ -166,7 +169,7 @@ async function assist(text) {
     }
     clearInterval(tick);
     thinking.remove();
-    if (r.no_key) { $("#ai-offline").checked = true; say("bot", r.error); plan(text); return; }
+    if (r.no_key) { noKey = true; say("bot", r.error); plan(text); return; }
     if (r.ai_note) toast(r.ai_note, "", 6000);          // "Gemini limit reached - using the offline AI"
     if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
     const extra = h("div");
@@ -240,7 +243,7 @@ async function showMemory() {
 }
 
 async function plan(text) {
-  const offline = $("#ai-offline").checked;
+  const offline = !assistantOn();
   const btn = $("#ai-send");
   btn.disabled = true;
   btn.textContent = "…";
@@ -286,7 +289,7 @@ async function design() {
   const box = $("#concepts");
   box.replaceChildren(h("p.muted", "Designing…"));
   try {
-    const d = await post("/api/console/generate", { prompt: text, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/generate", { prompt: text, offline: !assistantOn() });
     const r = d.result || {};
     const concepts = (r.design && r.design.concepts) || [];
     box.replaceChildren(...concepts.map((c) => h("div.concept",
@@ -314,6 +317,23 @@ async function design() {
 
 // ------------------------------------------------------------ whole show
 let autoDesign = null;
+
+// "Put its cues on": each playback (a GO fader on the Live page), and
+// whether it's empty or what would be replaced
+function fillPlaybacks() {
+  const sel = $("#auto-pb");
+  if (!sel) return;
+  const pbs = (state.snap && state.snap.playbacks) || [];
+  const keep = sel.value;
+  const list = pbs.length ? pbs : Array.from({ length: 10 }, (_, i) => ({ n: i + 1 }));
+  sel.replaceChildren(...list.map((p) => {
+    const n = (p.stack || p.cues || []).length || p.count || 0;
+    const name = p.name && !/^(PB|Playback) ?\d+$/i.test(p.name) ? ` "${p.name}"` : "";
+    return h("option", { value: String(p.n) }, `Fader ${p.n}${name} - ${n ? `${n} cue${n > 1 ? "s" : ""}, replaced` : "empty"}`);
+  }));
+  const firstEmpty = list.find((p) => !((p.stack || p.cues || []).length || p.count));
+  sel.value = keep && list.some((p) => String(p.n) === keep) ? keep : String((firstEmpty || list[0]).n);
+}
 
 function sectionBar(sections) {
   return h("div.auto-bar", ...sections.map((s) => {
@@ -362,7 +382,7 @@ async function changeShow() {
   box.replaceChildren(h("p.muted", `Changing: “${ask}”…`));
   let r;
   try {
-    const d = await post("/api/console/autoshow", { refine: ask, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/autoshow", { refine: ask, offline: !assistantOn() });
     r = d.result || {};
   } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
   showPlan(r, ask);
@@ -513,7 +533,6 @@ export function initCopilot() {
   $("#ai-memory").addEventListener("click", showMemory);
   $("#ai-operator").addEventListener("click", () => import("./aioperator.js").then((m) => m.openOperator()));
   const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan"; };
-  $("#ai-offline").addEventListener("change", syncTools);
   $("#ai-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); }
   });
@@ -522,10 +541,10 @@ export function initCopilot() {
   $("#auto-ask-form").addEventListener("submit", (e) => { e.preventDefault(); changeShow(); });
   $("#auto-styles").replaceChildren();
   $("#doctor-btn").addEventListener("click", diagnose);
-  on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
+  on("snapshot", () => { if (copilotOpen()) renderSuggest(); fillPlaybacks(); });
+  fillPlaybacks();
   const st = state.status;
   showAi(st);
-  if (!(st && st.llm_configured)) $("#ai-offline").checked = true;
   // the AI switch: Online / Local / Auto, and the AI's settings
   $("#ai-status").addEventListener("click", (e) => {
     const cur = (state.status && state.status.ai && state.status.ai.mode) || "";
@@ -535,13 +554,13 @@ export function initCopilot() {
         if (d && state.status) {
           state.status.ai = d;
           state.status.llm_configured = d.available;
-          if (d.available) $("#ai-offline").checked = false;
+          if (d.available) noKey = false;
           showAi(state.status);
           syncTools();
         }
       } })),
       "-",
-      { label: "AI settings…", run: () => import("./dialogs.js").then((m) => m.openSettingsAt("ai")) },
+      { label: "AI settings…", run: () => import("./settings.js").then((m) => m.openSettingsAt("ai")) },
     ]);
   });
   syncTools();

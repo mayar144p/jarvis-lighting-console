@@ -107,3 +107,80 @@ def export(dest=None, tools: list[dict] | None = None) -> dict:
         for r in rows:
             f.write(json.dumps({"messages": r["messages"], **({"tools": tools} if tools else {})}, ensure_ascii=False) + "\n")
     return {"examples": len(rows), "file": str(dest)}
+
+
+# -- the operator's own kept examples, shown to the AI with a request like them
+_STOP = frozenset("a an the and or to of on in at for with me my it this that is are be do make set some all "
+                  "please can you i want would like just them they lights light".split())
+_index: dict = {"key": None, "rows": []}
+
+
+def _words(text: str) -> set[str]:
+    import re
+    return {w for w in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(w) > 1 and w not in _STOP}
+
+
+def _how(row: dict) -> list[str]:
+    """What the AI did in a kept example, short: its tool calls in order."""
+    out = []
+    for m in row.get("messages") or []:
+        for c in m.get("tool_calls") or []:
+            fn = c.get("function") or {}
+            args = fn.get("arguments") or ""
+            if not isinstance(args, str):
+                args = json.dumps(args, ensure_ascii=False)
+            out.append(f"{fn.get('name')} {args[:220]}")
+    return out[:14]
+
+
+def _kept() -> list[dict]:
+    """The kept examples (cached until the file changes)."""
+    try:
+        st = _path().stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return []
+    if _index["key"] != key:
+        rows = [r for r in _rows() if r.get("verdict") == "good" and r.get("prompt")]
+        _index.update(key=key, rows=[{"prompt": r["prompt"], "words": _words(r["prompt"]), "how": _how(r),
+                                      "reply": next((str(m.get("content") or "") for m in reversed(r["messages"])
+                                                     if m.get("role") == "assistant" and m.get("content")), "")[:240]}
+                                     for r in rows[-2000:]])
+    return _index["rows"]
+
+
+def similar(message: str, k: int = 3) -> list[dict]:
+    """Up to k kept examples most like this request (by the words they
+    share; nothing under a third alike)."""
+    want = _words(message)
+    if not want:
+        return []
+    scored = []
+    for r in _kept():
+        if not r["how"] or not r["words"]:
+            continue
+        s = len(want & r["words"]) / len(want | r["words"])
+        if s >= 0.34:
+            scored.append((s, r))
+    scored.sort(key=lambda t: -t[0])
+    out, seen = [], set()
+    for _s, r in scored:
+        if r["prompt"].lower() in seen:
+            continue
+        seen.add(r["prompt"].lower())
+        out.append({"prompt": r["prompt"], "how": r["how"], "reply": r["reply"]})
+        if len(out) >= k:
+            break
+    return out
+
+
+def describe_similar(message: str, k: int = 3) -> str:
+    ex = similar(message, k)
+    if not ex:
+        return ""
+    parts = ["REQUESTS LIKE THIS ONE THAT THE OPERATOR KEPT (done the way they liked - follow the approach, "
+             "adapted to this rig and this request):"]
+    for e in ex:
+        parts.append(f'  "{e["prompt"][:200]}"\n    you did: ' + " -> ".join(e["how"])
+                     + (f'\n    and said: {e["reply"]}' if e["reply"] else ""))
+    return "\n".join(parts)

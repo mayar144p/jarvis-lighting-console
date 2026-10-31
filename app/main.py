@@ -800,6 +800,10 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/media_frame", "/api/console/assistant", "/api/console/transcribe",
                          "/api/console/requests"):
                 return self._console_post(route, body, query)
+        except ValueError as exc:
+            # "can't do that" said back (a show needs the AI, nothing patched):
+            # the screen shows it where it was asked - not a desk problem
+            return self._json({"error": str(exc)}, 400)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             bugreport.note_error(route, exc)
             return self._json({"error": str(exc)}, 500)
@@ -1162,11 +1166,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._console_result(eng, result)
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
-            # operator confirms via /api/console/import_show.
+            # operator confirms via /api/console/import_show.  Designing is
+            # the AI's (the desk's templates alone gave the same few looks)
+            if not llm.available():
+                return self._json({"error": "Designing concepts needs the AI: choose it in the list at the top "
+                                            "of the Copilot (Settings -> AI)"}, 400)
             result = console_ai.generate(
                 str(body.get("prompt", "")),
                 variant=int(body.get("variant", 0) or 0),
-                offline=bool(body.get("offline")), eng=eng)
+                offline=False, eng=eng)
             return self._console_result(eng, result)
 
     def _stream(self) -> None:

@@ -455,6 +455,8 @@ def _do(eng, action: str, params: dict, waiting: list | None = None) -> dict:
     if action in aitools.NEVER or action not in ALLOWED or \
             (action in console_ai.DENY_ACTIONS and action not in aitools.MORE):
         return {"ok": False, "error": f"'{action}' is not something the assistant may do - ask the operator"}
+    if params and ALLOWED[action] and action != "set_colour" and not set(params) & set(ALLOWED[action]):
+        return {"ok": False, "error": f"'{action}' takes: {', '.join(ALLOWED[action])}", "settings": list(ALLOWED[action])}
     keep = {k: v for k, v in params.items() if k in ALLOWED[action]}
     dropped = sorted(set(params) - set(keep))
     if action == "set_colour" and keep.get("hex") is None:
@@ -602,14 +604,62 @@ def add_fixture(eng, src: str, key: str, qty=1, mode=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# a turn
+# what a request is about: the AI gets the parts of the desk it needs
 # ---------------------------------------------------------------------------
-def _system(eng) -> str:
-    ref = "\n".join(f"    {a}({', '.join(ALLOWED[a])})" for a in sorted(ALLOWED))
+# A request is one or more of these.  "look" (the lights now: colour, level,
+# movement, effects) is always in.  The others bring their own actions (with
+# their settings spelled out) and their own knowledge; every other action
+# is still listed by name, and asking for one with the wrong settings is
+# answered with its settings - nothing is out of reach, the instructions are
+# just shorter and the AI is quicker and less distracted.
+ROUTE_WORDS = {
+    "build": ("show", "design", "theme", "halloween", "christmas", "xmas", "wedding", "party", "night", "set list",
+              "setlist", "cue", "button", "page", "profile", "restyle", "same programming", "palette", "preset",
+              "macro", "record", "timeline", "playback", "busk", "build", "make me", "create", "program"),
+    "room": ("room", "venue", "zone", "truss", "pole", "hang", "rig", "patch", "fixture", "add ", "place", "position",
+             "address", "universe", "dance floor", "vip", "bar", "stage", "dj", "ceiling", "wall", "keep out",
+             "keep-out", "photo", "plot", "remove", "move the light"),
+    "music": ("song", "track", "bpm", "beat", "tempo", "drop", "build up", "music", "sound", "audio", "bar ",
+              "bars", "phrase", "timecode", "intro", "outro", "chorus", "verse"),
+}
+ROUTE_ACTIONS = {
+    "build": ("record_", "cue_", "edit_cue", "insert_cue", "move_cue", "rename_cue", "quick_", "palette_",
+              "record_palette", "record_preset", "include_", "rename_preset", "macro_", "group_", "playback_",
+              "move_", "step_", "shape_", "show_", "timeline_", "autopilot", "ready_check", "paperwork", "follow_set"),
+    "room": ("venue_", "rig_", "patch_", "add_heads", "attach_heads", "auto_patch", "rename_head", "set_address",
+             "set_place", "place_many", "room_fit", "stay_in", "keep_out_here", "floor_safe", "align", "distribute"),
+    "music": ("tempo_", "sound_", "timeline_", "autopilot", "follow_set", "move_play", "fx_beats", "speed_master"),
+}
+
+
+def route(message: str) -> set[str]:
+    """What a request is about (see ROUTE_WORDS); empty: just the lights now."""
+    m = f" {str(message or '').lower()} "
+    return {k for k, words in ROUTE_WORDS.items() if any(w in m for w in words)}
+
+
+def _area(action: str) -> str:
+    for k, starts in ROUTE_ACTIONS.items():
+        if any(action == s or (s.endswith("_") and action.startswith(s)) for s in starts):
+            return k
+    return "look"
+
+
+def _system(eng, message: str = "") -> str:
+    """The instructions: the same rules and actions first (so the AI service
+    can reuse what it read last time - quicker and cheaper), then this
+    room, this operator and this rig."""
+    kinds = route(message) | {"look"}
+    full = sorted(a for a in ALLOWED if _area(a) in kinds)
+    rest = sorted(a for a in ALLOWED if _area(a) not in kinds)
+    ref = "\n".join(f"    {a}({', '.join(ALLOWED[a])})" for a in full)
+    if rest:
+        ref += ("\n  more (call with `do`; their settings come back if you need them): " + ", ".join(rest))
     ref += "\n  prepared for the operator's tap:\n" + "\n".join(
         f"    {a}({', '.join(CONFIRMABLE[a])})" for a in sorted(CONFIRMABLE))
     text = SYSTEM.format(actions=ref, colours=", ".join(n for n, _h in showdesign.COLOR_NAMES[:24]),
-                         effects=", ".join(sorted(console_ai.fxlib.FX)), design=roomsense.DESIGN_KNOWLEDGE)
+                         effects=", ".join(sorted(console_ai.fxlib.FX)),
+                         design=roomsense.DESIGN_KNOWLEDGE if kinds & {"build", "look"} else "")
     text += "\n" + roomsense.describe(roomsense.plan(eng))
     lr = showkit.learning(eng)
     if lr["habits"]:
@@ -625,6 +675,10 @@ def _system(eng) -> str:
     text += "\n\nSHOWS MADE SO FAR (button profiles): " + ("; ".join(
         f"{s['profile']} ({s['brief'][:60] or s['name']}; colours {', '.join(s['palette'])}; "
         f"{'cues on playback ' + str(s['playback']) if s['playback'] else 'buttons only'})" for s in made) or "none")
+    from . import aiexamples
+    like = aiexamples.describe_similar(message)
+    if like:
+        text += "\n\n" + like
     mem = notes()
     if mem:
         text += "\nWhat this operator likes (your notes):\n" + "\n".join(f"  {i + 1}. {n}" for i, n in enumerate(mem))
@@ -664,7 +718,7 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                                             {"type": "image_url", "image_url": {"url": image}}]}
     with eng.lock:
         st = {"message": message, "session": session, "preview": preview, "can_see": bool(can_see),
-              "msgs": [{"role": "system", "content": _system(eng)}, *hist[-MAX_HISTORY:], user],
+              "msgs": [{"role": "system", "content": _system(eng, message)}, *hist[-MAX_HISTORY:], user],
               "before": eng._undo_state(), "top": eng._undo[-1] if eng._undo else None,
               "was_blind": eng.blind_public()["on"], "blind_started": False, "steps": [],
               "changed": False, "rounds": 0, "views": 0, "t0": time.monotonic(), "waiting": []}
