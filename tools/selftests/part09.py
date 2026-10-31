@@ -10806,3 +10806,26 @@ def test_voice() -> None:
         llm._online = online
     check("with no online AI, voice says what it needs", "online AI" in said, said)
 
+
+def test_dj_requests() -> None:
+    """The DJ / host asks from a phone; the operator decides on the desk."""
+    from app import djrequests as dj
+
+    class E:
+        pass
+    e = E()
+    c = dj.code(e)
+    check("the requests page has its own code", len(c) == 8 and dj.allowed(e, c.lower()) and not dj.allowed(e, "nope"), c)
+    r = dj.add(e, "  More   energy ", "DJ Max", "phone1")
+    check("a request waits for the operator", [x["text"] for x in dj.pending(e)] == ["More energy"], str(dj.pending(e)))
+    dj.add(e, "Calmer", "", "phone1")
+    dj.add(e, "Speech", "", "phone1")
+    check("a phone can't flood the desk (three waiting at most)", _raises_ok(lambda: dj.add(e, "again", "", "phone1")) is False, "")
+    dj.answer(e, r["id"], False, "not now")
+    check("the phone sees the answer", dj.mine(e, "phone1")[-1]["state"] == "declined", str(dj.mine(e, "phone1")))
+    old = dj.code(e)
+    dj.new_code(e)
+    check("a new code shuts out the old link", not dj.allowed(e, old), "")
+    html = (ROOT / "web" / "requests.html").read_text(encoding="utf-8")
+    check("the phone page sends with the request code only", '"X-Haze-Request": code' in html and "X-Haze-Token" not in html, "")
+

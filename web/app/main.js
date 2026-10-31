@@ -103,6 +103,8 @@ async function boot() {
   initMovePanel();
   initCmdbar();
   initCopilot();
+  // DJ / host requests show on the desk's own screen
+  if (!WINDOW || WINDOW === "desk") import("./djreq.js").then((m) => m.initDjRequests());
   initKeys();
   initWorkspaces();
   initConnections();

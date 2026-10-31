@@ -65,6 +65,7 @@ from app.engine_quick import QuickMixin
 from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
+from app import djrequests
 from app.engine_autopilot import AutopilotMixin
 from app.engine_steps import StepsMixin
 from app.engine_desk import DeskMixin
@@ -1316,6 +1317,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
                 "ai_operator": self._ai_operator_lite(),
+                "requests": djrequests.pending(self),
                 "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),
@@ -1404,6 +1406,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
                 "sound": self.sound_public(),
                 "autopilot": self.autopilot_public(),
                 "ai_operator": self._ai_operator_lite(),
+                "requests": djrequests.pending(self),
                 "held": self.held_public(),
                 "blind": self.blind_public(),
                 "highlight": dict(self.__dict__.get("highlight") or {"on": False, "solo": False}),

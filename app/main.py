@@ -421,6 +421,8 @@ class Handler(BaseHTTPRequestHandler):
     def _needs_auth(self, route: str, method: str) -> bool:
         if not route.startswith("/api/"):
             return False        # a static file; reads nothing sensitive
+        if route == "/api/request":
+            return False        # (the requests page: its own code, checked there - it can only ask)
         if method == "GET" and route in self.PUBLIC_API_GET:
             return False
         return True
@@ -512,6 +514,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": refused}, 403)
         if self._needs_auth(route, "POST") and not self._authorised():
             return self._deny()
+        if route == "/api/request":
+            # a DJ / host asking from a phone (web/requests.html): only with
+            # the requests code (or the desk's own token)
+            from app import djrequests
+            eng = engine_mod.ENGINE
+            try:
+                body = self._read_body()
+            except (ValueError, json.JSONDecodeError):
+                body = {}
+            if eng is None or not (djrequests.allowed(eng, self.headers.get("X-Haze-Request") or "") or self._authorised()):
+                return self._json({"ok": False, "error": "the request code isn't right - ask the operator for the link"}, 403)
+            client = str(body.get("client") or "")[:40]
+            if body.get("text"):
+                try:
+                    djrequests.add(eng, body["text"], body.get("who") or "", client)
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            return self._json({"ok": True, "mine": djrequests.mine(eng, client)})
         if route == "/api/console/screen_media":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -777,7 +797,8 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm", "/api/console/rekordbox",
                          "/api/console/look", "/api/console/room", "/api/console/sound",
-                         "/api/console/media_frame", "/api/console/assistant", "/api/console/transcribe"):
+                         "/api/console/media_frame", "/api/console/assistant", "/api/console/transcribe",
+                         "/api/console/requests"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             bugreport.note_error(route, exc)
@@ -1032,6 +1053,17 @@ class Handler(BaseHTTPRequestHandler):
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
             return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/requests":
+            # the operator's side of the DJ requests: the code, an answer
+            from app import djrequests
+            if body.get("new_code"):
+                djrequests.new_code(eng)
+            if body.get("answer") is not None:
+                try:
+                    djrequests.answer(eng, int(body["answer"]), body.get("yes") is not False, str(body.get("note") or ""))
+                except (ValueError, TypeError) as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            return self._json({"ok": True, "code": djrequests.code(eng), "pending": djrequests.pending(eng)})
         if route == "/api/console/transcribe":
             # the copilot's hold-to-talk, when the browser can't do it itself
             audio = str(body.get("audio") or "")

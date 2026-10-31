@@ -460,6 +460,7 @@ export function initCopilot() {
     if (assistantOn()) assist(text); else plan(text);
   });
   $("#ai-attach").addEventListener("click", () => $("#ai-photo").click());
+  $("#ai-requests").addEventListener("click", () => import("./djreq.js").then((m) => m.openRequestsLink()));
   // hold to talk: the words go in as if typed, and are sent
   import("./voice.js").then((m) => m.wireMic($("#ai-mic"), (text) => {
     say("user", text);
