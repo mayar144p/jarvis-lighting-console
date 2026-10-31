@@ -10418,3 +10418,19 @@ def test_dock_and_desk_fit() -> None:
     check("Settings keeps one size whichever page is open; a long page scrolls inside",
           ".modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh);" in css
           and ".settings > .set-pane { overflow-y: auto;" in css, "")
+    check("the desk view board fills the programmer and scrolls rather than squash; a narrow one stacks its windows",
+          '.prog-body:has(> .tab-pane[data-pane="desk"]:not([hidden]))' in css and ".dv-board.dv-stack" in css
+          and "const STACK_BELOW" in dv, "")
+    check("the desk opens on Palettes", 'let tab = "desk";' in pj and 'showTab("desk");' in pj
+          and 'data-tab="desk" aria-selected="true"' in html, "")
+    check("a dialog that is one scrolling list scrolls once (no two-pixel scroll)",
+          ".modal-body:has(> :is(.dmx-map, .qe):only-child)" in css
+          and '"tiny-scroll"' in (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8"), "")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("every desk view window has its own look: tile size (to fill), text size, tiles across, numbers - kept with its place",
+          "function lookMenu(anchor, el, id)" in dv and "r.look = { ...(r.look || {}), ...change };" in dv
+          and '.dv-win[data-size="fill"] .dv-tiles' in css and '.dv-win[data-text="xl"]' in css and ".dv-win[data-cols] .dv-tiles" in css, "")
+    check("what the programmer holds: chips in its title row, saying how many lights", '<div class="prog-in" id="prog-in" hidden></div>\n        <div class="prog-heads"' in html.replace("\r\n", "\n")
+          and "light${counts[g] === 1 ? \"\" : \"s\"}`) : null," in (web / "programmer.js").read_text(encoding="utf-8"), "")

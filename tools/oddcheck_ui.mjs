@@ -112,6 +112,7 @@ ms = await until(A, () => /14/.test(document.querySelector("#sel-count").textCon
 check(ms >= 0, "selecting on one screen selects on the other", ms >= 0 ? `${ms} ms` : await A.evaluate(() => document.querySelector("#sel-count").textContent));
 // Full in A -> B's level reads 100
 await A.click('#prog-tabs [data-tab="intensity"]');
+await B.click('#prog-tabs [data-tab="intensity"]');            // (the desk opens on Palettes)
 await A.click('#int-quick [data-level="100"]');
 ms = await until(B, () => parseInt(document.querySelector("#int-num").textContent) === 100);
 check(ms >= 0, "Full on one screen reads 100 on the other", ms >= 0 ? `${ms} ms` : await B.evaluate(() => document.querySelector("#int-num").textContent));

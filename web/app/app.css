@@ -1330,6 +1330,11 @@ body.gig .pb-mode button { min-height: calc(44px * var(--ctl)); }
 .fx-clash { margin: 0 12px 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--live) 50%, transparent); background: var(--live-bg); border-radius: var(--radius); display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-s); color: #fecaca; }
 .fx-clash[hidden] { display: none; }
 .dmx-map { display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow: auto; }
+/* a dialog whose whole body is one scrolling list scrolls once: the list
+   fills the body and the body itself doesn't scroll (two scrollers, one
+   in the other, moved a few pixels and then stopped) */
+.modal-body:has(> :is(.dmx-map, .qe):only-child) { overflow: hidden; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.modal-body > :is(.dmx-map, .qe):only-child { flex: 1; min-height: 0; max-height: none; }
 .dmx-uni h4 { margin: 0 0 6px; }
 .dmx-uni h4 small { color: var(--muted); font-weight: 400; }
 .dmx-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; max-width: 760px; }
@@ -1870,6 +1875,11 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
    What is in the programmer: one row of family chips (each its colour);
    Clear / Make a button / Record cue at the foot, always in one place. */
 .prog-in { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 5px; padding: 2px 10px 6px; }
+/* what the programmer holds: chips in its title row, no row of their own */
+.panel-head > .prog-in { padding: 0; min-width: 0; flex: 0 1 auto; }
+.panel-head > .prog-in[hidden] { display: none; }
+.programmer .panel-head:has(.prog-in:not([hidden])) h2 { flex: none; }
+.programmer .panel-head:has(.prog-in:not([hidden])) .prog-sel { margin-left: auto; }
 .prog-in-chip { --fam: var(--muted); height: calc(24px * var(--ctl)); padding: 0 2px 0 8px; font-size: var(--fs-s); white-space: nowrap; flex: none;
   border-color: color-mix(in srgb, var(--fam) 45%, var(--border-2)); background: color-mix(in srgb, var(--fam) 10%, transparent); }
 .prog-in-chip[data-g=intensity] { --fam: var(--f-dim); }
@@ -2297,6 +2307,21 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 /* ---- the desk view (Programmer -> Palettes): a pro desk's palette windows,
    in the desk's own colours ---- */
 .tab-pane[data-pane="desk"], #desk-view { height: 100%; min-height: 0; }
+/* the desk view fills the programmer: the board takes every free pixel,
+   and gives them back when the dock is dragged up (below the windows'
+   least size it scrolls - windows never overlap) */
+.prog-body:has(> .tab-pane[data-pane="desk"]:not([hidden])) { display: flex; flex-direction: column; overflow: hidden; }
+.prog-body > .tab-pane[data-pane="desk"]:not([hidden]) { flex: 1; min-height: 0; height: auto; display: flex; flex-direction: column; }
+.tab-pane[data-pane="desk"] > #desk-view { flex: 1; min-height: 0; height: auto; display: flex; flex-direction: column; }
+#desk-view > .dv { flex: 1; min-height: 0; height: auto; }
+/* a narrow board: the windows one under another (two across when there is
+   room), each its own height; the board scrolls */
+.dv-board.dv-stack { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(300px * var(--ctl))), 1fr)); grid-template-rows: none; grid-auto-rows: auto; align-content: start; }
+.dv-board.dv-stack > .dv-win { grid-column: auto !important; grid-row: auto !important; max-height: none; }
+.dv-board.dv-stack > .dv-win .dv-tiles { overflow: visible; }
+.dv-board.dv-stack > .dv-win > .dv-sec { overflow: visible; }
+.dv-board.dv-stack > .dv-padwin .dv-keys { grid-auto-rows: calc(40px * var(--ctl)); }
+.dv-board.dv-stack .dv-resize { display: none; }
 .dv { display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 10px; height: 100%; min-height: 420px; }
 .dv-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; min-width: 0; min-height: 0; }
 .dv-win { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -2311,6 +2336,8 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 .dv-tile .dv-count { position: absolute; top: 3px; right: 6px; font-size: var(--fs-xs); color: var(--text-2); }
 .dv-tile .dv-sw { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
 .dv-tile .dv-per { font-size: var(--fs-xs); color: var(--text-2); }
+.dv-win header .dv-x, .dv-win header .dv-opt { width: calc(26px * var(--ctl)); height: calc(26px * var(--ctl)); margin: -4px -4px -4px 0; border-radius: 6px; border: 0; background: transparent; color: var(--muted); font-size: var(--fs-l); line-height: 1; display: inline-grid; place-items: center; flex: none; align-self: center; }
+.dv-win header .dv-x:hover, .dv-win header .dv-opt:hover { background: var(--surface-3); color: var(--text); }
 .dv-tile.dv-add { border-style: dashed; color: var(--text-2); background: transparent; }
 .dv-tile .dv-tile-x { position: absolute; top: 2px; right: 4px; width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); line-height: calc(20px * var(--ctl)); border-radius: 50%; color: var(--muted); font-size: var(--fs-m); }
 .dv-tile .dv-tile-x:hover { color: var(--text); background: var(--surface-3); }
@@ -2554,8 +2581,30 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 .lu-stage { fill: rgba(255, 255, 255, .08); stroke: #6b6f7c; stroke-width: .05; }
 .lu-txt { fill: var(--muted); font-size: .7px; text-anchor: middle; }
 .lu-planbox { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-.dv-win header .dv-x { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: var(--fs-l); line-height: 1; padding: 0 2px; cursor: pointer; }
-.dv-win header .dv-x:hover { color: var(--text); }
+.dv-win header .dv-opt, .dv-win header .dv-x { margin-left: auto; cursor: pointer; }
+.dv-win header .dv-opt + .dv-x { margin-left: 2px; }
+
+/* each window's look (its ⋯ menu): tile size, text size, tiles across,
+   numbers - a 2K screen can have big tiles and big text, a laptop small */
+.dv-win { --tile-min: calc(86px * var(--ctl)); --tile-h: calc(58px * var(--ctl)); --tile-fs: var(--fs-s); --tile-sw: calc(22px * var(--ctl)); --key-h: calc(34px * var(--ctl)); }
+.dv-win[data-size="s"] { --tile-min: calc(68px * var(--ctl)); --tile-h: calc(44px * var(--ctl)); --tile-sw: calc(16px * var(--ctl)); --key-h: calc(30px * var(--ctl)); }
+.dv-win[data-size="l"] { --tile-min: calc(124px * var(--ctl)); --tile-h: calc(84px * var(--ctl)); --tile-sw: calc(32px * var(--ctl)); --key-h: calc(46px * var(--ctl)); }
+.dv-win[data-size="xl"] { --tile-min: calc(170px * var(--ctl)); --tile-h: calc(116px * var(--ctl)); --tile-sw: calc(44px * var(--ctl)); --key-h: calc(60px * var(--ctl)); }
+.dv-win[data-text="s"] { --tile-fs: var(--fs-xs); }
+.dv-win[data-text="l"] { --tile-fs: var(--fs-l); }
+.dv-win[data-text="xl"] { --tile-fs: var(--fs-xl); }
+.dv-win .dv-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tile-min)), 1fr)); }
+.dv-win[data-cols] .dv-tiles { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
+.dv-win .dv-tile { min-height: var(--tile-h); font-size: var(--tile-fs); }
+.dv-win .dv-tile .dv-sw { width: var(--tile-sw); height: var(--tile-sw); }
+.dv-win .dv-tile small, .dv-win .dv-tile .dv-count, .dv-win .dv-tile .dv-per { font-size: max(var(--fs-xs), calc(var(--tile-fs) * .72)); }
+.dv-win .dv-tile .gobo-ic { width: var(--tile-sw); height: var(--tile-sw); }
+.dv-win[data-nums="off"] .dv-tile > small, .dv-win[data-nums="off"] .dv-tile .dv-count { display: none; }
+.dv-win[data-nums="off"] .dv-tile { padding-top: 6px; }
+/* Fill: the tiles share out the whole window, rows and all */
+.dv-win[data-size="fill"] .dv-tiles { grid-auto-rows: minmax(var(--tile-h), 1fr); align-content: stretch; }
+.dv-keywin .dv-key { min-height: var(--key-h); max-height: none; font-size: var(--tile-fs); }
+.dv-keywin[data-size="xl"] .dv-sec, .dv-keywin[data-size="l"] .dv-sec { grid-template-columns: repeat(auto-fill, minmax(calc(var(--tile-min) + 20px), 1fr)); }
 .dv-board > .dv-win[hidden] { display: none; }
 
 /* Help: tabs; keys grouped in cards, the key on the left, its meaning beside it */

@@ -259,12 +259,13 @@ function strip() {
 // the keys "lagged"); the palette windows are redrawn only when what they
 // show changes (groups, palettes, the selection, its values).
 const COLS = 24, ROWS = 12;
+const STACK_BELOW = 880;          // px: a narrower board stacks its windows
 const LAYOUT_KEY = "jarvis.dvLayout";
 const DEFAULT_LAYOUT = {
   group: { x: 0, y: 0, w: 7, h: 6 }, position: { x: 7, y: 0, w: 7, h: 6 },
   colour: { x: 0, y: 6, w: 7, h: 6 }, beam: { x: 7, y: 6, w: 7, h: 6 },
-  select: { x: 14, y: 0, w: 5, h: 3 }, poskeys: { x: 14, y: 3, w: 5, h: 3 }, progkeys: { x: 14, y: 6, w: 5, h: 3 },
-  windows: { x: 14, y: 9, w: 5, h: 3 }, keypad: { x: 19, y: 0, w: 5, h: 8 },
+  select: { x: 14, y: 0, w: 5, h: 4 }, poskeys: { x: 14, y: 4, w: 5, h: 4 }, progkeys: { x: 14, y: 8, w: 5, h: 4 },
+  keypad: { x: 19, y: 0, w: 5, h: 8 }, windows: { x: 19, y: 8, w: 5, h: 4 },
 };
 let layout = (() => {
   try { return { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {}) }; } catch (e) { return { ...DEFAULT_LAYOUT }; }
@@ -330,8 +331,11 @@ function movable(el, id) {
     handle.addEventListener("pointerup", up, { once: true });
     handle.addEventListener("pointercancel", up, { once: true });
   });
+  look(el, id);
   if (head) {
     head.title = "Drag to move this window";
+    head.append(h("button.dv-opt", { title: "This window's look: tile size, text size, tiles across, numbers", "aria-label": `${NAMES[id] || id}: look`,
+      onclick: (e) => { e.stopPropagation(); lookMenu(e.currentTarget, el, id); } }, "⋯"));
     head.append(h("button.dv-x", { title: "Hide this window (Show brings it back)", "aria-label": `Hide ${NAMES[id] || id}`,
       onclick: (e) => { e.stopPropagation(); layout._hidden = [...new Set([...hidden(), id])]; saveLayout(); place(el, id); } }, "×"));
     drag(head, false);
@@ -339,6 +343,43 @@ function movable(el, id) {
   drag(grip, true);
   place(el, id);
   return el;
+}
+
+// A window's look, kept with its place: tile size (s / m / l / xl / fill),
+// text size, how many tiles across (0 = as many as fit), numbers on/off
+function look(el, id) {
+  const lk = (layout[id] && layout[id].look) || {};
+  el.dataset.size = lk.size || "m";
+  el.dataset.text = lk.text || "m";
+  el.dataset.nums = lk.nums === false ? "off" : "on";
+  if (lk.cols) { el.dataset.cols = lk.cols; el.style.setProperty("--cols", lk.cols); } else { delete el.dataset.cols; el.style.removeProperty("--cols"); }
+}
+function setLook(el, id, change) {
+  const r = { ...(layout[id] || DEFAULT_LAYOUT[id]) };
+  r.look = { ...(r.look || {}), ...change };
+  layout[id] = r;
+  saveLayout();
+  look(el, id);
+}
+function lookMenu(anchor, el, id) {
+  const lk = (layout[id] && layout[id].look) || {};
+  const tick = (on, label) => (on ? "✓ " : "") + label;
+  const tiles = el.querySelector(".dv-tiles");
+  const sizes = [["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"], ...(tiles ? [["fill", "Fill the window"]] : [])];
+  menu(anchor, [
+    ...sizes.map(([v, label]) => ({ label: tick((lk.size || "m") === v, `${tiles ? "Tiles" : "Keys"}: ${label}`), run: () => setLook(el, id, { size: v }) })),
+    "-",
+    ...[["s", "Small"], ["m", "Normal"], ["l", "Large"], ["xl", "Extra large"]].map(([v, label]) => ({ label: tick((lk.text || "m") === v, `Text: ${label}`), run: () => setLook(el, id, { text: v }) })),
+    ...(tiles ? ["-",
+      ...[[0, "As many as fit"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [6, "6"], [8, "8"]].map(([v, label]) => ({ label: tick((lk.cols || 0) === v, `Across: ${label}`), run: () => setLook(el, id, { cols: v }) })),
+      "-",
+      { label: tick(lk.nums !== false, "Numbers on the tiles"), hint: "G1, P2, C3…", run: () => setLook(el, id, { nums: lk.nums === false }) }] : []),
+    "-",
+    { label: "Back to the standard look", run: () => setLook(el, id, { size: "m", text: "m", cols: 0, nums: true }) },
+    { label: "This look on every window", hint: "size and text", run: () => {
+      for (const w of board.querySelectorAll(":scope > [data-win]")) setLook(w, w.dataset.win, { size: lk.size === "fill" && !w.querySelector(".dv-tiles") ? "l" : (lk.size || "m"), text: lk.text || "m" });
+    } },
+  ]);
 }
 
 export function resetDeskLayout() {
@@ -355,6 +396,10 @@ export function renderDeskView() {
   if (!board || !box.contains(board)) {
     board = h("div.dv-board");
     board.append(...strip().map(([id, el]) => movable(el, id)));
+    // too narrow for the 24-column board (a laptop's programmer panel): the
+    // windows stack at their own height instead of being crushed
+    const fit = () => { if (board) board.classList.toggle("dv-stack", board.clientWidth > 0 && board.clientWidth < STACK_BELOW); };
+    new ResizeObserver(fit).observe(board);
     box.replaceChildren(h("div.dv",
       h("div.dv-bar", h("span.muted.small", "Drag a window by its title to move it, by its corner to size it; × hides it."),
         h("span.grow"),

@@ -20,7 +20,7 @@ const SWATCHES = [
   ["Warm", "#ffd9a8"], ["Neutral", "#fff1dc"], ["Cool", "#e6f0ff"], ["White", "#ffffff"],
 ];
 
-let tab = "intensity";
+let tab = "desk";
 let intFader = null;
 let picker = null;
 let attrState = null;
@@ -1030,9 +1030,11 @@ function renderProgIn() {
   box.hidden = !groups.length && !mineFx.length;
   box.replaceChildren(...(groups.length || mineFx.length ? [
     // what is in the programmer, by family (each in its colour): × clears it
+    // (in the title row: they used to be a row of their own that pushed the
+    // panel down the moment anything was set)
     ...groups.map(([g, label]) => h("span.chip.prog-in-chip", { dataset: { g },
-      title: counts[g] ? `${label} on ${counts[g]} light(s) - in the programmer` : `${label}: a movement is running` },
-      label, counts[g] ? h("small", ` ${counts[g]}`) : null,
+      title: counts[g] ? `The programmer holds ${label.toLowerCase()} for ${counts[g]} light${counts[g] === 1 ? "" : "s"} - it goes into the next cue or palette you record. × clears just that.` : `${label}: a movement is running` },
+      label, counts[g] ? h("small", ` · ${counts[g]} light${counts[g] === 1 ? "" : "s"}`) : null,
       h("button.x", { title: `Clear ${label.toLowerCase()} only`, onclick: () => run("clear_attrs", { group: g }) }, "×"))),
     mineFx.length ? h("span.chip.prog-in-chip.prog-fx", { dataset: { g: "fx" }, title: mineFx.map((f) => f.label).join(", ") },
       "Effects", h("small", ` ${mineFx.length}`),
@@ -1638,9 +1640,8 @@ export function initProgrammer() {
   $("#look-search").addEventListener("input", () => renderLooks(true));
   $$("#prog-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   initWheels();
-  let saved = "intensity";
-  try { saved = localStorage.getItem("jarvis.progtab") || saved; } catch (e) { /* ignore */ }
-  showTab(saved);
+  // the desk opens on Palettes (Group, Position, Colour, Beam) every time
+  showTab("desk");
 
   const refresh = () => {
     renderHeader();

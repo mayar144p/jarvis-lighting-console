@@ -146,6 +146,16 @@ const AUDIT = () => {
     if (r.width < 1 || getComputedStyle(el).visibility === "hidden") continue;
     if ((r.right > innerWidth + 1 || r.left < -1) && !clips(el)) out.push(["off-screen", name(el), `x ${Math.round(r.left)}..${Math.round(r.right)}`]);
   }
+  // 5. a box that scrolls by a few pixels only, or a dialog that scrolls
+  //    inside a dialog that scrolls (the DMX map moved 2 px, then stopped)
+  const scrolls = (el) => { const cs = getComputedStyle(el); return /auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight; };
+  for (const el of document.querySelectorAll(".modal, .modal *, .panel, .panel *, .playbacks *")) {
+    if (!inScope(el) || !vis(el) || !scrolls(el)) continue;
+    const extra = el.scrollHeight - el.clientHeight;
+    if (extra <= 6) out.push(["tiny-scroll", name(el), `scrolls ${extra}px`]);
+    const outer = el.parentElement && el.parentElement.closest(".modal-body");
+    if (outer && el.closest(".modal") && scrolls(outer) && outer.scrollHeight - outer.clientHeight > 0) out.push(["double-scroll", name(el), `inside ${name(outer).slice(0, 40)}`]);
+  }
   return out;
 };
 
