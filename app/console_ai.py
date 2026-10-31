@@ -74,7 +74,7 @@ PARAMS: dict[str, tuple[str, ...]] = {
     "align": ("axis",),
     "distribute": ("axis",),
     "mirror": ("axis",),
-    "record_palette": ("kind", "name"),
+    "record_palette": ("kind", "name", "palette"),
     "include_palette": ("kind", "palette"),
     "record_preset": ("name",),
     "include_preset": ("preset",),

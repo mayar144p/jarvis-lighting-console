@@ -11288,3 +11288,80 @@ def test_ai_control() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_ai_show_craft() -> None:
+    """What makes a better show: the AI hears the song's parts (false builds too), strobes are held
+    to a safe limit when asked, the AI knows what's on screen, and a show is built on palettes."""
+    from pathlib import Path
+    from app import assistant, autoshow, config, llm, songear
+    from app import engine as eng_mod
+    marks = songear.parts_to_markers({"parts": [
+        {"start": 0, "kind": "intro", "energy": 1}, {"start": 30, "kind": "build", "energy": 3},
+        {"start": 31, "kind": "verse"}, {"start": 45, "kind": "false build", "energy": 3},
+        {"start": 60, "kind": "drop", "energy": 5}, {"start": 90, "kind": "drop"}, {"start": 500, "kind": "outro"},
+        {"start": 70, "kind": "nonsense"}]}, 200)
+    check("the song's parts become markers: in order, named, inside the song, not crowded",
+          [m["name"] for m in marks] == ["Intro (1/5)", "Build 1 (3/5)", "False build (3/5)", "Drop 1 (5/5)", "Drop 2"]
+          and [m["t"] for m in marks] == [0, 30, 45, 60, 90], str(marks))
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            check("no song on the timeline: it says so", not songear.listen(e)["ok"], "")
+            (Path(td) / "audio").mkdir()
+            (Path(td) / "audio" / "abc.mp3").write_bytes(b"ID3fake")
+            e.act("timeline_set", audio={"id": "abc", "name": "track"}, length=200)
+            real = llm.hear
+            llm.hear = lambda *a, **k: {"bpm": 126, "feel": "dark", "parts": [{"start": 0, "kind": "intro"}, {"start": 60, "kind": "drop"}]}
+            try:
+                r = songear.listen(e)
+            finally:
+                llm.hear = real
+            check("it listens and marks the timeline (with the tempo)", r["ok"] and len(e.timeline["markers"]) == 2
+                  and abs(float(e.timeline["bpm"]) - 126) < 0.01, str(r))
+            # strobe safety
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=1)
+            h = e.patch[0]
+            role = e._shutter_role(h)
+            e.act("select_heads", heads=[1])
+            e.act("set_intensity", level=100)
+            e.act("set_attribute", attribute=role, value=200)
+            pos = h["address"] - 1 + h["map"].index(role)
+            fast = e._strobe_hz(h, {role: e.build_frames()[h["universe"]][pos]}, None)
+            e.act("strobe_limit", safe=True)
+            slow = e._strobe_hz(h, {role: e.build_frames()[h["universe"]][pos]}, None)
+            check("with the strobe limit on, a fast strobe in the programmer goes out at 3 a second or less",
+                  fast > 10 and 0 < slow <= 3.5, f"{fast} -> {slow}")
+            check("...the limit is kept for the desk, and the AI is told", eng_mod.Engine._strobe_cap_load(e) == 3.0
+                  and "STROBE LIMIT ON" in assistant._system(e, "strobe it"), "")
+            check("...a silly limit is refused", not e.act("strobe_limit", hz=50)["ok"], "")
+            e.act("strobe_limit", hz=0)
+            check("...and off, it isn't", not e.strobe_cap and e._strobe_hz(h, {role: e.build_frames()[h["universe"]][pos]}, None) > 10, "")
+            # what's on screen
+            txt = assistant._screen_text({"screen": "Live", "buttons_page": "3 (Colours)",
+                                          "last_button": {"id": "q9", "label": "Purple", "kind": "colour", "page": 3, "slot": 2},
+                                          "open_windows": ["PB1 cue list"]})
+            check("the AI knows what's on screen (this button, this page)", "Purple" in txt and "page 3" in txt and "PB1 cue list" in txt, txt)
+            check("...nothing sent: nothing said", assistant._screen_text(None) == "" and assistant._screen_text("x") == "", "")
+            # palettes
+            e.act("add_heads", query="LED PAR", qty=4)
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            autoshow.build(e, d, 1)
+            cols = [p for p in e.palettes["colour"] if p["name"].startswith("Halloween · ")]
+            check("a built show records its colours as palettes named after it", len(cols) >= 2, str([p["name"] for p in e.palettes["colour"]]))
+            check("...and every cue takes them from there", all(c.get("refs") for c in e.playbacks[0]["stack"]), "")
+            n_before = len(e.palettes["colour"])
+            autoshow.build(e, d, 1)
+            check("...built again: the same palettes, not more", len(e.palettes["colour"]) == n_before, "")
+            e.act("select_heads", heads=[x["head_no"] for x in e.patch])
+            e.act("set_colour", hex="#ff0000")
+            r = e.act("record_palette", kind="colour", palette=cols[0]["name"], name="Halloween · red")
+            check("one palette recorded over by its name: the cues follow", r["ok"] and r.get("cues", 0) >= 1, str(r))
+        finally:
+            e.shutdown()
+            config.DATA = old

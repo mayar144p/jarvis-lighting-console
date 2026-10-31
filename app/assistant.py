@@ -195,6 +195,13 @@ TOOLS = [
             "make": {"type": "string", "enum": ["all", "buttons", "cues"]}},
             "required": ["from_show", "name", "colours"]}}},
     {"type": "function", "function": {
+        "name": "listen_to_song",
+        "description": "Listen to the song on the timeline (the online AI hears it) and mark its parts on the "
+                       "timeline: intro, verse, build, FALSE build, drop, breakdown, outro, with their energy and "
+                       "the tempo. Use it before designing a show for a song whose parts aren't marked, or when "
+                       "asked to find the drops.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
         "name": "propose_plan",
         "description": "For a BIG job (a whole show or night, rebuilding the room or the buttons, 10+ changes) "
                        "show the operator your plan and stop here, before changing anything: what you'll make, "
@@ -247,6 +254,12 @@ How you work:
   model names as the options (up to 4, the closest first).  No exact match (the
   result says so): never add a near model in its place - say that model isn't in
   the library and ask, offering the nearest names.
+* A designed show's colours and aims are PALETTES named after it ("Halloween · purple",
+  "Halloween · Movers · Dance floor"), and its cues take them from there.  "Make the purple
+  red everywhere": select the lights, set the new colour, record_palette kind colour with
+  palette "Halloween · purple" (and a new name) - every cue follows.  Don't edit cue by cue.
+* A SONG on the timeline whose parts aren't marked: listen_to_song before designing for
+  it - real drops get the hits, false builds don't; breakdowns go calm.
 * BIG jobs (a whole show or night, rebuilding the room or the buttons, 10+ changes):
   propose_plan first and stop - the operator taps Go ahead (then do exactly that plan)
   or says what to change.  Not for small jobs, or when they said "just do it".
@@ -742,6 +755,9 @@ def _system(eng, message: str = "") -> str:
         text += "\n\nWHAT EACH LIGHT CAN DO (from the desk):\n" + "\n".join(
             f"  {m['model']} (heads {', '.join(map(str, m['heads'][:24]))}): can {', '.join(m['can'])}"
             + (f"; can't {', '.join(m['cannot'])}" if m["cannot"] else "") for m in caps)
+    if getattr(eng, "strobe_cap", 0):
+        text += (f"\n\nSTROBE LIMIT ON: nothing flashes faster than {eng.strobe_cap:g} a second (photosensitive "
+                 "safety) - the desk slows anything faster. Don't promise faster strobes.")
     if not websearch.allowed():
         text += "\n\nLooking things up online is switched OFF by the operator: don't use search_web or read_web."
     return text + "\n\nTHE RIG NOW:\n" + console_ai.rig_context(eng)
@@ -804,8 +820,26 @@ def do_request(eng, rid: int, chat=None) -> dict:
     return run_turn(eng, message, session="dj-requests", preview=False, chat=chat, guard="request")
 
 
+def _screen_text(screen) -> str:
+    """What the operator has on screen (sent by the copilot), in a few lines."""
+    if not isinstance(screen, dict):
+        return ""
+    lines = []
+    for key, label in (("screen", "screen"), ("programmer_tab", "programmer tab"), ("buttons_page", "buttons page")):
+        if screen.get(key):
+            lines.append(f"  {label}: {str(screen[key])[:60]}")
+    b = screen.get("last_button")
+    if isinstance(b, dict) and b.get("id"):
+        lines.append(f"  the last button they {'opened' if b.get('editing') else 'pressed'}: \u201c{str(b.get('label') or '')[:40]}\u201d "
+                     f"(id {str(b['id'])[:24]}, {str(b.get('kind') or '')[:12]}, page {b.get('page')} slot {b.get('slot')})")
+    wins = [str(w)[:60] for w in (screen.get("open_windows") or [])][:3] if isinstance(screen.get("open_windows"), list) else []
+    if wins:
+        lines.append("  open windows: " + "; ".join(wins))
+    return ("ON THE OPERATOR'S SCREEN NOW (for \"this\", \"here\", \"this button / page\"):\n" + "\n".join(lines)) if lines else ""
+
+
 def run_turn(eng, message: str, session: str = "", image: str | None = None,
-             preview: bool = True, chat=None, can_see: bool = False, guard: str = "") -> dict:
+             preview: bool = True, chat=None, can_see: bool = False, guard: str = "", screen=None) -> dict:
     """One request.  `chat` replaces llm.chat (tests).  `can_see`: the
     screen asking can draw the 3D view, so the AI may ask to see it after
     its changes (the turn then pauses: resume_turn carries the picture)."""
@@ -820,7 +854,8 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
                                             {"type": "image_url", "image_url": {"url": image}}]}
     with eng.lock:
         st = {"message": message, "session": session, "preview": preview, "can_see": bool(can_see),
-              "msgs": [{"role": "system", "content": _system(eng, message)}, *hist[-MAX_HISTORY:], user],
+              "msgs": [{"role": "system", "content": _system(eng, message)
+                        + (("\n\n" + _screen_text(screen)) if _screen_text(screen) else "")}, *hist[-MAX_HISTORY:], user],
               "before": eng._undo_state(), "top": eng._undo[-1] if eng._undo else None,
               "was_blind": eng.blind_public()["on"], "blind_started": False, "steps": [],
               "changed": False, "rounds": 0, "views": 0, "t0": time.monotonic(), "waiting": [], "guard": guard}
@@ -865,7 +900,8 @@ DOING = {"look_at_rig": "Looking at the rig", "check_lights": "Checking the ligh
          "design_show": "Designing the show", "design_night": "Designing the night", "restyle_show": "Restyling the show",
          "search_web": "Looking it up online", "read_web": "Reading a page", "see_3d": "Looking at the 3D view",
          "place_lights": "Hanging the lights", "add_to_room": "Adding to the room", "add_fixture": "Adding lights",
-         "what_lights_can_do": "Checking what the lights can do", "remember": "Noting it down", "ask": "Asking you"}
+         "what_lights_can_do": "Checking what the lights can do", "remember": "Noting it down", "ask": "Asking you",
+         "listen_to_song": "Listening to the song", "propose_plan": "Writing the plan"}
 
 
 def _doing(name: str, args: dict) -> str:
@@ -1103,6 +1139,13 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                         steps.append({"action": "add_heads", "params": {"src": args.get("src"), "key": args.get("key"),
                                       "qty": args.get("qty") or 1}, "ok": result["ok"], "summary": result.get("summary")})
                         st["changed"] = st["changed"] or result["ok"]
+                elif name == "listen_to_song":
+                    from . import songear
+                    result = songear.listen(eng)
+                    steps.append({"action": "listen_to_song", "params": {}, "ok": bool(result.get("ok")),
+                                  "summary": ("Listened to the song: " + result["summary"]) if result.get("ok")
+                                  else f"Couldn't listen to the song: {result.get('error')}"})
+                    st["changed"] = st["changed"] or bool(result.get("ok"))
                 elif name == "propose_plan":
                     st["plan"] = {"summary": str(args.get("summary") or "")[:200],
                                   "steps": [str(x)[:160] for x in (args.get("steps") or []) if str(x).strip()][:8],

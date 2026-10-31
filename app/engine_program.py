@@ -969,6 +969,12 @@ class ProgrammerMixin:
                 continue
         if not values:
             raise ValueError(f"programmer holds no {key} values")
+        if palette and not str(palette).strip().isdigit():
+            # recorded over by its name ("Halloween · purple"): the cues made from it follow
+            hit = self._by_number_or_name(self.palettes[key], palette)
+            if hit is None:
+                raise ValueError(f"no {key} palette {palette!r}")
+            palette = hit["n"]
         n = int(palette) if palette else len(self.palettes[key]) + 1
         old_entry = next((p for p in self.palettes[key] if p["n"] == n), None)
         label = str(name).strip() or (old_entry or {}).get("name") or f"{key.title()} {n}"

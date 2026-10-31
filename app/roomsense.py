@@ -175,6 +175,10 @@ DESIGN_KNOWLEDGE = """LIGHTING DESIGN - what looks good and what doesn't:
 * Strobes and flashes: short, only on the drops / the last bars of a build, only over
   the dance floor; never the VIP, the bar, the DJ or the stage; never for speeches.
 * Speeches, first dance, cake: warm and steady, no movement or effects, the person lit.
+* SAFETY: a crowd must always see where it's going - never hold a full blackout for more than
+  a few seconds (a bar or two into a drop is the trick); calm parts keep a dim wash on. Strobes
+  in short bursts (a few seconds), never minutes; some people have photosensitive epilepsy -
+  when the desk's strobe limit is on, nothing flashes faster than 3 a second, so design for it.
 * Beams (narrow, gobos) need haze to show; without it, use colour washes.
 * Use what each light can do (WHAT EACH LIGHT CAN DO): PARs and bars wash and chase,
   spots do gobos and aims, beams cut the air, washes colour the room.

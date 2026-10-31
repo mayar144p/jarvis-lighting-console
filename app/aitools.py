@@ -75,6 +75,7 @@ CONFIRM = {
     "venue_delete": "Delete a saved venue",
     "venue_reset": "Clear the room to design it again",
     "show_delete": "Delete a saved show",
+    "strobe_limit": "Change the strobe safety limit",
     "show_rename": "Rename a saved show",
 }
 # Never, whatever the request: network, the lock, calibration on the real

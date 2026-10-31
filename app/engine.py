@@ -154,6 +154,9 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
         # movement always fits inside it (floor_safe), and with floor_lock
         # EVERYTHING does - cues, aims, the programmer.
         self.floor_safe = True
+        # the strobe safety limit, Hz (0: off): every strobe - buttons, the
+        # desk's, a light's own strobe channel - no faster (engine_fxlayer)
+        self.strobe_cap = self._strobe_cap_load()
         self.floor_lock = False
         self.autosave_path = Path(autosave_path) if autosave_path else None
         self._autosave_at = 0.0
@@ -756,6 +759,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
         # colour matching scales what the looks / cues / effects ask for; a
         # raw channel the operator holds is written after it, untouched
         self._write_colour_cal(frames)
+        if self.strobe_cap:
+            self._write_strobe_cap(frames)
         if not self.blackout:
             self._write_raw(frames)
         return frames
@@ -1332,7 +1337,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
                 "desk_strobe": {str(k): v for k, v in (self.__dict__.get("desk_strobe") or {}).items()},
                 "parked": sorted(int(k) for k in (self.__dict__.get("parked") or {})),
                 "move_spots": self._move_spots(),
-                "floor_safe": self.floor_safe, "floor_lock": self.floor_lock,
+                "floor_safe": self.floor_safe, "floor_lock": self.floor_lock, "strobe_cap": self.strobe_cap,
                 "floor_movers": len(self._floor_limits()),
                 "blackout": self.blackout,
                 "notice": self.__dict__.get("boot_notice"),

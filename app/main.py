@@ -1143,7 +1143,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))
             return self._json(_ai_noted(assistant.run_turn(eng, str(body.get("message") or ""), session,
                                                  image=body.get("image"), preview=body.get("preview") is not False,
-                                                 can_see=bool(body.get("can_see")))))
+                                                 can_see=bool(body.get("can_see")), screen=body.get("screen"))))
         if route == "/api/console/media_frame":
             # A video playing in a browser, ~25 frames a second, shrunk to
             # at most 96 x 96: not an action, the engine keeps the latest.

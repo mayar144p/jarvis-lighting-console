@@ -492,6 +492,15 @@ TAKES = (("Dark and minimal", "few colours, slow and moody, lots of contrast and
 
 def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> dict:
     """Analyse the rig and design a show for it: {design, analysis, source}."""
+    heard = None
+    if not offline and llm.available() and llm.google() is not None \
+            and len((eng.timeline or {}).get("markers") or []) < 2:
+        # a song on the timeline with no parts marked: the AI listens first,
+        # so the hits land on the real drops (not the false builds)
+        from app import songear
+        if songear.audio_file(eng) is not None:
+            r = songear.listen(eng)
+            heard = r.get("summary") if r.get("ok") else None
     a = analyse(eng)
     if not a["groups"]:
         raise ValueError("patch some lights first - there is nothing to design for")
@@ -530,6 +539,8 @@ def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> di
             raise ValueError(f"the AI couldn't design the show this time ({str(exc)[:160]}) - try again") from None
         d, fixed = critique(d, a, brief, sysmsg)
         out = {"design": d, "analysis": _public(a), "source": "llm", "web": bool(web)}
+        if heard:
+            out["heard"] = heard
         if fixed:
             out["reviewed"] = fixed
         return out
@@ -609,6 +620,55 @@ def _layout(sections: list[dict], a: dict) -> list[tuple[float, float]]:
     return times
 
 
+def _show_palettes(d: dict, a: dict, eng, calls: list[dict]) -> tuple[dict, dict]:
+    """Calls recording the show's colours and aims as palettes: ({hex:
+    palette n}, {(target, group): palette n}).  A palette of the same name
+    (the show built again) is recorded over, not added twice."""
+    from app import showdesign
+    groups, targets = a["groups"], a["targets"]
+    name = str(d.get("name") or "Show")[:28]
+    have = {k: {str(p.get("name") or ""): p["n"] for p in eng.palettes.get(k) or []} for k in ("colour", "position")}
+    nxt = {k: max([p["n"] for p in eng.palettes.get(k) or []] or [0]) + 1 for k in ("colour", "position")}
+
+    def number(kind: str, label: str) -> int:
+        if label in have[kind]:
+            return have[kind][label]
+        n = nxt[kind]
+        nxt[kind] += 1
+        have[kind][label] = n
+        return n
+    looks = [lk for s in d["sections"] for lk in s["looks"]]
+    col: dict[str, int] = {}
+    colour_heads = sorted({n for lk in looks if lk.get("colour") for n in groups[lk["group"]]["heads"]})
+    for hx in dict.fromkeys(lk["colour"].lower() for lk in looks if lk.get("colour")):
+        if not colour_heads:
+            break
+        label = f"{name} · {showdesign._name_of(hx)}"
+        if label in col.values():
+            label += f" {hx}"
+        n = number("colour", label)
+        calls += [{"action": "clear_programmer", "params": {}},
+                  {"action": "select_heads", "params": {"heads": colour_heads}},
+                  {"action": "set_colour", "params": {"hex": hx}},
+                  {"action": "record_palette", "params": {"kind": "colour", "name": label, "palette": n}}]
+        col[hx] = n
+    pos: dict[tuple, int] = {}
+    for tgt, grp in dict.fromkeys((lk["aim"], lk["group"]) for lk in looks if lk.get("aim")):
+        if tgt not in targets:
+            continue
+        x, y, z = targets[tgt]
+        where = re.sub(r"^zone[_ ]", "", str(tgt)).replace("_", " ")
+        gname = str(groups[grp]["name"])
+        label = f"{name} · {gname}" + ("" if where.lower() in gname.lower() else f" on {where}")
+        n = number("position", label)
+        calls += [{"action": "clear_programmer", "params": {}},
+                  {"action": "select_heads", "params": {"heads": groups[grp]["heads"]}},
+                  {"action": "aim_at", "params": {"x": x, "y": y, "z": z}},
+                  {"action": "record_palette", "params": {"kind": "position", "name": label, "palette": n}}]
+        pos[(tgt, grp)] = n
+    return col, pos
+
+
 def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict], dict]:
     """The design as engine calls (applied together, one undo step)."""
     groups, targets = a["groups"], a["targets"]
@@ -621,6 +681,10 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
     # operator's groups keep their names in the analysis, see analyse)
     used = sorted({lk["group"] for s in d["sections"] for lk in s["looks"]})
     times = _layout(d["sections"], a)
+    # the show's colours and aims as palettes first (named after the show):
+    # every cue takes them from there, so changing one palette changes the
+    # whole show ("make the purple red everywhere") - as on a pro desk
+    pal_col, pal_pos = _show_palettes(d, a, eng, calls)
     # one cue per section
     for s, _span in zip(d["sections"], times):
         calls.append({"action": "clear_programmer", "params": {}})
@@ -635,10 +699,16 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
                 value = eng._open_value(gated[0], role) if lk["intensity"] > 0 else 0
                 calls.append({"action": "set_attribute", "params": {"attribute": role, "value": value}})
             if lk.get("colour"):
-                calls.append({"action": "set_colour", "params": {"hex": lk["colour"]}})
+                if lk["colour"].lower() in pal_col:
+                    calls.append({"action": "include_palette", "params": {"kind": "colour", "palette": pal_col[lk["colour"].lower()]}})
+                else:
+                    calls.append({"action": "set_colour", "params": {"hex": lk["colour"]}})
             if lk.get("aim"):
-                x, y, z = targets[lk["aim"]]
-                calls.append({"action": "aim_at", "params": {"x": x, "y": y, "z": z}})
+                if (lk["aim"], lk["group"]) in pal_pos:
+                    calls.append({"action": "include_palette", "params": {"kind": "position", "palette": pal_pos[(lk["aim"], lk["group"])]}})
+                else:
+                    x, y, z = targets[lk["aim"]]
+                    calls.append({"action": "aim_at", "params": {"x": x, "y": y, "z": z}})
             if lk.get("zoom"):
                 calls.append({"action": "set_attribute", "params": {
                     "attribute": "zoom", "value": 40 if lk["zoom"] == "narrow" else 215}})

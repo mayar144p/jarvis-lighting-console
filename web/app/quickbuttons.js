@@ -143,6 +143,9 @@ export const RESERVED = new Set(["b", "x", "a", "l", "c", "r", "o", "i", "d", "g
 
 let page = 1;
 let editing = false;
+// the last button the operator pressed or opened (the copilot's "this button")
+let lastTouched = null;
+export const lastButton = () => lastTouched;
 /** The buttons page on screen (a controller's pads play this page). */
 export const currentPage = () => page;
 export function setPage(p) {
@@ -174,7 +177,7 @@ const autoGroups = () => (state.snap && state.snap.auto_groups) || [];
 const CLIENT = Math.random().toString(36).slice(2, 10);
 let pressSeq = 0;
 function press(btn, down, pointer = null) {
-  if (down) held.set(btn.id, pointer); else held.delete(btn.id);
+  if (down) { held.set(btn.id, pointer); lastTouched = { id: btn.id, label: btn.label, page: btn.page, slot: btn.slot, kind: btn.kind }; } else held.delete(btn.id);
   run("quick_press", { id: btn.id, down, seq: ++pressSeq, client: CLIENT }, { silentError: false }).catch(() => {});
 }
 // a finger lifted anywhere lets go of the button IT held, even if the grid
@@ -1046,6 +1049,7 @@ function editLayout() {
 // plays - so nothing needs scrolling: each tab fits the screen.
 let qeTab = "does";
 function editButton(slot, btn) {
+  if (btn) lastTouched = { id: btn.id, label: btn.label, page: btn.page, slot: btn.slot, kind: btn.kind, editing: true };
   const s = fromButton(btn);
   const body = h("div.qe");
   const tabsBar = h("div.seg.qe-tabs", { role: "tablist" });

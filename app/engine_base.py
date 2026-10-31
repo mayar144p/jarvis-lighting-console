@@ -105,7 +105,7 @@ UNDO_EXCLUDED = frozenset({
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "remember_open", "own_strobe", "light_test", "light_tested", "zero_dark", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
-    "speed_master", "floor_safe",
+    "speed_master", "floor_safe", "strobe_limit",
     "tempo_tap", "tempo_set", "tempo_sync", "tempo_nudge", "tempo_prodj", "tempo_link", "tempo_phrase", "fx_beats", "fx_space", "fx_tweak",
     "step_fx_run", "highlight", "group_master", "desk_strobe",
     # a macro manages its own undo: its lines are ONE step
@@ -658,7 +658,7 @@ def _new_playback(n: int) -> dict:
 
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
-    "add_heads", "auto_patch", "blackout", "clear_heads",
+    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset", "rename_preset",

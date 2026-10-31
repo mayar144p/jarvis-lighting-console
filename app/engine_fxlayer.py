@@ -5,6 +5,7 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import time
@@ -481,12 +482,79 @@ class FxLayerMixin:
                 by = {h["head_no"]: h for h in self.patch}
             head = by.get(n)
             own = self._own_strobe(head) if head is not None else None
+            cap = float(self.__dict__.get("strobe_cap") or 0)
+            if cap:
+                hz = min(float(hz), cap)
             if own is None:
                 o["strobe"] = min(float(hz), self.DESK_STROBE_MAX_HZ)
                 continue
             o.setdefault("set", {})[own["role"]] = self._strobe_dmx(own, float(hz))
             o["strobe_shown"] = min(float(hz), own["hz_hi"])     # for the 3D view
             o.pop("strobe", None)
+
+    # -- the strobe safety limit ---------------------------------------------
+    # Flashing faster than about three times a second can bring on a seizure
+    # in people with photosensitive epilepsy; UK broadcast rules and venue
+    # guidance use 3 a second.  With the limit on, nothing the desk sends
+    # strobes faster: buttons and the desk strobe are slowed, and a light's
+    # own strobe channel set faster (in a cue, by hand) is turned down to it.
+    SAFE_STROBE_HZ = 3.0
+
+    def _strobe_cap_file(self):
+        from app import config as _config
+        return _config.DATA / "safety.json"
+
+    def _strobe_cap_load(self) -> float:
+        try:
+            return float(json.loads(self._strobe_cap_file().read_text(encoding="utf-8")).get("strobe_hz") or 0)
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 0.0
+
+    def _a_strobe_limit(self, hz=None, safe=None, **_):
+        """The strobe safety limit: safe=true (3 a second - photosensitive
+        safe), hz=N (2-20), or off (hz=0).  Kept for this desk, not the show."""
+        if safe is not None:
+            cap = self.SAFE_STROBE_HZ if _truthy(safe) else 0.0
+        elif hz is not None:
+            cap = float(hz)
+            if cap and not 2.0 <= cap <= 20.0:
+                raise ValueError("the strobe limit is 2 to 20 flashes a second (or 0: off)")
+        else:
+            raise ValueError("say safe=true, hz=N or hz=0")
+        self.strobe_cap = cap
+        try:
+            p = self._strobe_cap_file()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"strobe_hz": cap}), encoding="utf-8")
+        except OSError:
+            pass
+        return {"strobe_cap": cap, "summary": f"strobes at most {cap:g} a second" if cap else "strobe limit off"}
+
+    def _write_strobe_cap(self, frames: dict) -> None:
+        """A light's own strobe channel faster than the limit: turned down."""
+        cap = float(self.strobe_cap or 0)
+        for h in self.patch:
+            role = self._shutter_role(h)
+            buf = frames.get(h["universe"])
+            if role is None or buf is None or role not in h["map"]:
+                continue
+            pos = h["address"] - 1 + h["map"].index(role)
+            if not 0 <= pos < len(buf):
+                continue
+            v = buf[pos]
+            if self._strobe_hz(h, {role: v}, None) <= cap:
+                continue
+            band = next((b for b in self._strobe_bands(h, role) if b["lo"] <= v <= b["hi"]), None)
+            if band is not None:
+                buf[pos] = self._strobe_dmx(band, max(band["hz_lo"], min(cap, band["hz_hi"])))
+                if self._strobe_hz(h, {role: buf[pos]}, None) > cap + 0.5:
+                    buf[pos] = self._open_value(h, role)       # its slowest is still too fast: steady
+            else:
+                # no ranges in its file: the same guess _strobe_hz makes (1-20 a second)
+                opened = self._open_value(h, role)
+                buf[pos] = max(opened + 9, int(opened + (cap - 1) / 19 * (255 - opened)))
+                if self._strobe_hz(h, {role: buf[pos]}, None) > cap + 0.5:
+                    buf[pos] = opened
 
     def strobe_steps(self, head: dict, role: str) -> dict:
         """{off, slow, medium, fast}: DMX values for the programmer's strobe

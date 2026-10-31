@@ -245,7 +245,7 @@ export async function openSettings() {
   // one section at a time, its name down the side: output first, it is
   // what matters at a gig
   const sections = [
-    ["output", "Output", [outputSection(con)]],
+    ["output", "Output", [outputSection(con), strobeSafetyRow()]],
     ["venue", "Venue", [
       h("p.muted.small", auto ? "No room drawn yet: the 3D view sizes one around your lights."
         : `${v.name || "Room"}: ${room.width} × ${room.depth} m, ${room.height} m ceiling · ${(v.rigging || []).length} rigging · ${(v.zones || []).length} zones`),
@@ -336,6 +336,20 @@ export async function openSettings() {
 
 // Backup: every saved show copied off this computer (a dead laptop at a
 // gig must not take the show with it) - a cloud folder or a USB stick.
+// Strobe safety: nothing the desk sends flashes faster than 3 a second
+// (photosensitive epilepsy guidance) - buttons, the desk strobe, and a
+// light's own strobe channel in a cue.  Kept for this desk.
+function strobeSafetyRow() {
+  const on = !!(state.snap && state.snap.strobe_cap);
+  const box = h("input", { type: "checkbox", checked: on,
+    onchange: () => run("strobe_limit", { safe: box.checked }, { toast: true }) });
+  return h("div.field",
+    h("h4", "Strobe safety"),
+    h("label.check", box, " Strobes at most 3 flashes a second (safe for people with photosensitive epilepsy)"),
+    h("p.muted.small", "Buttons, the desk's strobe and every light's own strobe channel are slowed to it - even a cue that asks for faster. "
+      + "Venues and events with a strobe warning policy often require it."));
+}
+
 function backupPanel() {
   const box = h("div.backup-box");
   const folder = h("input", { type: "text", placeholder: "e.g. C:\\Users\\you\\OneDrive or E:\\", spellcheck: "false", style: { width: "100%" } });

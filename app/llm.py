@@ -259,6 +259,26 @@ def _effort(ai: dict) -> str | None:
     return level
 
 
+def hear(prompt: str, audio_b64: str, fmt: str, name: str, description: str, schema: dict) -> dict:
+    """The online AI listens to a recording and fills in `schema` (the
+    offline AI can't hear)."""
+    online = _online()
+    if online is None:
+        raise LLMError("listening to a song needs the online AI (a Gemini key in Settings -> AI)")
+    tool = {"type": "function", "function": {"name": name, "description": description, "parameters": schema}}
+    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt},
+                                         {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}}]}]
+    with thinking("low"):
+        msg = _chat(online, msgs, [tool], {"type": "function", "function": {"name": name}}, 0.1)
+    for call in msg.get("tool_calls") or []:
+        args = (call.get("function") or {}).get("arguments")
+        if isinstance(args, dict):
+            return args
+        if isinstance(args, str) and args.strip():
+            return json.loads(args)
+    return extract_json(str(msg.get("content") or ""))
+
+
 def chat(messages: list[dict], tools: list[dict] | None = None,
          tool_choice=None, temperature: float = 0.3) -> dict:
     """One chat completion through the switch; returns the assistant message."""

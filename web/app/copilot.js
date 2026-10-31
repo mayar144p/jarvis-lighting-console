@@ -6,6 +6,23 @@ import { run } from "./actions.js";
 import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
 import { stagePanel } from "./view3d.js";
+import { currentPage, lastButton } from "./quickbuttons.js";
+
+// What the operator is looking at, for "this button", "this page", "here":
+// the screen, the tab, the buttons page, the last button touched, open windows
+function screenContext() {
+  const tab = document.querySelector("#prog-tabs button[aria-selected='true']");
+  const names = (state.snap && state.snap.quick && state.snap.quick.names) || {};
+  const pg = currentPage();
+  const wins = [...document.querySelectorAll(".modal[aria-label]")].map((m) => m.getAttribute("aria-label")).filter(Boolean).slice(0, 3);
+  const out = { screen: { setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program" };
+  if (tab) out.programmer_tab = tab.textContent.trim();
+  out.buttons_page = pg + (names[pg] || names[String(pg)] ? ` (${names[pg] || names[String(pg)]})` : "");
+  const b = lastButton();
+  if (b) out.last_button = b;
+  if (wins.length) out.open_windows = wins;
+  return out;
+}
 
 const history = [];            // [{role, content}] for follow-ups ("warmer")
 
@@ -176,7 +193,7 @@ async function assist(text) {
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
-    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed) });
+    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed), screen: screenContext() });
     // the AI asked to see its changes: let the 3D draw them, then send a picture
     while (r.ok && r.need_view) {
       thinking.firstChild.textContent = "Looking at the 3D…";
@@ -326,7 +343,7 @@ function renderSuggest() {
   const s = state.snap || {};
   const lights = (s.patch || []).length;
   const zones = ((s.venue || {}).zones || []).length;
-  const shows = (s.playbacks || []).some((p) => (p.stack || []).length) || (s.quick || []).length > 12;
+  const shows = (s.playbacks || []).some((p) => (p.stack || []).length) || ((s.quick || {}).buttons || []).length > 12;
   const asks = [];
   if (!lights) asks.push("Add 4 moving heads and 8 LED PARs on the truss", "Here's a photo of my rig - set it up");
   if (lights && !zones) asks.push("Draw the dance floor, the VIP, the bar and the DJ booth");
