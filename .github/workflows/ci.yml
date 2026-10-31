@@ -96,9 +96,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install ruff
+      - run: pip install ruff mypy
       - name: ruff (pyflakes rules)
         run: ruff check --select F app tools
+      - name: type check (the fully typed modules)
+        run: python tools/typecheck.py
       - name: No secrets committed
         run: |
           if git ls-files | grep -E '(^|/)\.env$'; then

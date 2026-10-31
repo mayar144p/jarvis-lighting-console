@@ -47,7 +47,7 @@ def _models(patch: list[dict]) -> set[tuple[str, str]]:
 def _fixture_rows(db_path: Path, models: set[tuple[str, str]]) -> dict:
     """The library rows of these models: fixtures + modes, the per-model
     settings (channel_overrides) and the movement times (motion)."""
-    out = {"fixtures": [], "overrides": [], "motion": []}
+    out: dict[str, list] = {"fixtures": [], "overrides": [], "motion": []}
     with fixtures.db(db_path) as conn:
         fixtures._override_table(conn)
         fixtures._motion_table(conn)

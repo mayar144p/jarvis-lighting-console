@@ -62,6 +62,7 @@ from app.engine_patch import PatchMixin
 from app.engine_select import SelectMixin
 from app.engine_program import ProgrammerMixin
 from app.engine_quick import QuickMixin
+from app.engine_quickpages import QuickPagesMixin
 from app.engine_rig import RigMixin
 from app.engine_shows import ShowMixin
 from app.engine_support import HTP_ROLES
@@ -82,7 +83,7 @@ from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
-class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ZoneMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
+class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPagesMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ZoneMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
     def __init__(self, db_path: Path | None = None, dry_run: bool = True,

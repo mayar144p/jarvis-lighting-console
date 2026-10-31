@@ -94,7 +94,7 @@ def _copies(ranges: dict, values: dict, role: str):
     name = _AUX_NAME.get(role)
     for key in sorted(ranges, key=lambda r: int(r[3:]) if r[3:].isdigit() else 0) if name else ():
         aux = ranges[key]
-        if key.startswith("aux") and aux.get("caps") and key in values and name.search(str(aux.get("name") or "")):
+        if key.startswith("aux") and aux.get("caps") and key in values and name is not None and name.search(str(aux.get("name") or "")):
             yield aux["caps"], max(0, min(255, int(values[key])))
 
 
@@ -180,7 +180,7 @@ def _describe(ranges: dict, values: dict, shutter_role: str | None) -> dict:
         if c and re.search(r"shak|wobbl|vibrat", c[2], re.I):
             out["gshake"] = round(_speed(c[0], c[1], v, c[2], 1.0) * 8, 2)   # a second wheel's gobo shaking
             continue
-        t = c and _turn(*c[:2], v, c[2])
+        t = c and _turn(c[0], c[1], v, c[2])
         if t and "grot" not in out:
             out["grot"] = t
     for caps, v in _copies(ranges, values, "gobo"):
