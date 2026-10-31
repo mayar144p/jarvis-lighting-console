@@ -246,8 +246,67 @@ def _remember(eng, profile: str, d: dict, playback) -> None:
     show): a later show can reuse its programming ("Christmas, from the
     Halloween one")."""
     p = eng._profiles()
-    p.setdefault("shows", {})[profile] = {"design": d, "playback": playback}
+    # (and its buttons as made: what the operator changes after is learnt from)
+    p.setdefault("shows", {})[profile] = {"design": d, "playback": playback,
+                                          "built": {b["id"]: _brief_btn(b) for b in eng.quick if b["kind"] not in ("label", "page")}}
 
+
+def _brief_btn(b: dict) -> dict:
+    out = {"label": b.get("label"), "kind": b.get("kind"), "page": b.get("page")}
+    for k in ("colour", "fx", "hz", "mode"):
+        if b.get(k) not in (None, ""):
+            out[k] = b[k]
+    prm = b.get("params") or {}
+    for k in ("speed", "size", "colours"):
+        if k in prm:
+            out[k] = prm[k]
+    return out
+
+
+def _page_name(eng, profile: str, page) -> str:
+    p = eng._profiles()
+    names = dict(getattr(eng, "quick_names", {}) or {}) if profile == p["active"] else \
+        dict((p["sets"].get(profile) or {}).get("quick_names") or {})
+    return names.get(str(page)) or f"page {page}"
+
+
+def corrections(eng, limit: int = 12) -> list[str]:
+    """What the operator changed in the buttons of shows the AI made: taken
+    off, recoloured, slowed down / sped up, renamed - in words, to do it
+    that way next time."""
+    p = eng._profiles()
+    out = []
+    for profile, s in (p.get("shows") or {}).items():
+        built = s.get("built") or {}
+        if not built or profile not in p["order"]:
+            continue
+        now = eng.quick if profile == p["active"] else (p["sets"].get(profile) or {}).get("quick") or []
+        cur = {b["id"]: _brief_btn(b) for b in now if b["kind"] not in ("label", "page")}
+        for bid, was in built.items():
+            where = f"{profile} ({_page_name(eng, profile, was.get('page'))})"
+            got = cur.get(bid)
+            if got is None:
+                out.append(f"{where}: took off “{was['label']}” ({was['kind']})")
+                continue
+            if got.get("kind") != was.get("kind"):
+                out.append(f"{where}: made “{was['label']}” a {got.get('kind')} button instead of {was.get('kind')}")
+                continue
+            if got.get("colour") != was.get("colour") and was.get("colour"):
+                out.append(f"{where}: “{was['label']}” from {was['colour']} to {got.get('colour')}")
+            for k, word in (("speed", "speed"), ("size", "size"), ("hz", "strobe rate")):
+                a, b = was.get(k), got.get(k)
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)) and abs(a - b) > 1e-6:
+                    out.append(f"{where}: {word} of “{was['label']}” {'down' if b < a else 'up'} from {a:g} to {b:g}")
+                elif a is None and isinstance(b, (int, float)):
+                    out.append(f"{where}: set the {word} of “{was['label']}” to {b:g}")
+            if got.get("label") != was.get("label"):
+                out.append(f"{where}: renamed “{was['label']}” to “{got.get('label')}”")
+            if got.get("mode") != was.get("mode"):
+                out.append(f"{where}: “{was['label']}” works as {got.get('mode')} instead of {was.get('mode')}")
+        added = [b for bid, b in cur.items() if bid not in built]
+        for b in added[:4]:
+            out.append(f"{profile} ({_page_name(eng, profile, b.get('page'))}): added “{b['label']}” ({b['kind']})")
+    return out[:limit]
 
 def shows(eng) -> list[dict]:
     """The shows made so far: their profile, theme, colours, playback."""

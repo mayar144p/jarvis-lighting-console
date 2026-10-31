@@ -512,6 +512,20 @@ def find_fixtures(eng, query: str, limit: int = 8) -> dict:
     return {"matches": exact or out, "exact": len(exact), "note": note}
 
 
+def learn_from_corrections(eng) -> list[str]:
+    """What the operator changed in the AI's last shows, kept as notes (so
+    it outlives this show file); each only once."""
+    learnt = showkit.corrections(eng, limit=8)
+    if not learnt:
+        return []
+    with _mem_lock:
+        lst = notes()
+        new = [f"Learnt: {x}" for x in learnt if f"Learnt: {x}" not in lst]
+        if new:
+            _save_notes(lst + new)
+    return new
+
+
 def design_night(eng, brief: str, which="new", buttons: bool = True, name: str = "") -> dict:
     """A show per song (its own parts and tempo), kept in each song, and one
     set of live buttons for the night."""
@@ -527,6 +541,7 @@ def design_night(eng, brief: str, which="new", buttons: bool = True, name: str =
         pick = [s for s in songs if not (s.get("timeline") or {}).get("tracks")]
     if not pick:
         return {"ok": False, "error": "every song already has a show - say which to redo, or all"}
+    learn_from_corrections(eng)
     done, failed, first = [], [], None
     for s in pick[:40]:
         r = eng.act("song_load", id=s["id"])
@@ -590,6 +605,11 @@ def _system(eng) -> str:
     text = SYSTEM.format(actions=ref, colours=", ".join(n for n, _h in showdesign.COLOR_NAMES[:24]),
                          effects=", ".join(sorted(console_ai.fxlib.FX)), design=roomsense.DESIGN_KNOWLEDGE)
     text += "\n" + roomsense.describe(roomsense.plan(eng))
+    learnt = showkit.corrections(eng)
+    if learnt:
+        text += ("\n\nWHAT THE OPERATOR CHANGED IN SHOWS YOU MADE - learn from it, and do it their way in the "
+                 "next show (same kinds of buttons, colours, speeds), unless they ask otherwise:\n"
+                 + "\n".join(f"  - {x}" for x in learnt))
     made = showkit.shows(eng)
     text += "\n\nSHOWS MADE SO FAR (button profiles): " + ("; ".join(
         f"{s['profile']} ({s['brief'][:60] or s['name']}; colours {', '.join(s['palette'])}; "
@@ -731,6 +751,7 @@ def _go(eng, st: dict, chat) -> dict:
                         if st["preview"] and not st["was_blind"] and not st["blind_started"]:
                             eng.act("blind", state=True)
                             st["blind_started"] = True
+                        learn_from_corrections(eng)
                         try:
                             made = autoshow.design(eng, str(args.get("brief") or ""))
                             d = made["design"]

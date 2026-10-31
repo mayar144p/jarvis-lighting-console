@@ -10873,3 +10873,44 @@ def test_rig_from_photo() -> None:
           "A PHOTO OF A RIG" in sysp and "place_lights" in sysp and "find_fixtures" in sysp, "")
     check("the copilot can take a photo with the message", "image" in assistant.run_turn.__code__.co_varnames, "")
 
+
+def test_learn_from_corrections() -> None:
+    """What the operator changes in a show the AI made is learnt for the next one."""
+    import os
+    import tempfile
+    from app import assistant, autoshow, showkit
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=4)
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            showkit.build(e, d, None)
+            check("nothing changed yet: nothing to learn", showkit.corrections(e) == [], str(showkit.corrections(e)))
+            st = next(b for b in e.quick if b["kind"] == "strobe")
+            e.act("quick_set", page=st["page"], slot=st["slot"], clear=True)
+            c = next(b for b in e.quick if b["kind"] == "fx" and b["label"] == "Circle")
+            e.act("quick_set", page=c["page"], slot=c["slot"],
+                  button={**{k: v for k, v in c.items() if k not in ("id", "page", "slot")}, "params": {"speed": 0.05}})
+            got = showkit.corrections(e)
+            check("a strobe taken off and a movement slowed are seen", any("took off" in x and "Strobe" in x for x in got)
+                  and any("speed" in x and "Circle" in x for x in got), str(got))
+            e.act("quick_profile_use", name="Default")
+            check("...even with another profile in use", len(showkit.corrections(e)) == len(got), "")
+            new = assistant.learn_from_corrections(e)
+            check("they become notes the AI keeps (once)", new and assistant.learn_from_corrections(e) == []
+                  and all(n in assistant.notes() for n in new), str(new))
+            check("the AI reads them", "WHAT THE OPERATOR CHANGED" in assistant._system(e), "")
+        finally:
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+
