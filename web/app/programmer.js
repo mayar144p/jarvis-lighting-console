@@ -3,7 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
-import { paletteOn } from "./deskview.js";
+import { paletteOn, paletteFits } from "./deskview.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
@@ -1355,7 +1355,9 @@ function renderLooks(force = false) {
   for (const kind of kinds) {
     const strip = $(`.palette-strip[data-kind=${kind}]`);
     if (!strip) continue;
-    strip.replaceChildren(...(pals[kind] || []).map((p) => palButton(kind, p)),
+    // only the palettes the selected lights can take (no gobo wheel: no
+    // gobo palettes); nothing selected: all of them
+    strip.replaceChildren(...(pals[kind] || []).filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p)),
       h("button.pal-item.pal-save", {
         title: `Save the selection's ${kind} as a palette`,
         onclick: async () => {
@@ -1517,11 +1519,7 @@ function showTab(name) {
   tab = name;
   renderWheels(name);
   for (const n of $$("#prog-subslot .sub-tabs")) n.hidden = n.dataset.for !== name;
-  // on Palettes the Pan / Tilt wheels sit in the palette view's own bar (no
-  // extra row); on every other tab they are back in the strip
-  const wheels = $("#prog-wheels"), slot = document.querySelector(".dv-wheels");
-  if (name === "desk" && slot) slot.append(wheels);
-  else if (wheels.parentElement !== $("#prog-strip")) $("#prog-strip").append(wheels);
+  // (on Palettes the wheels are the palette view's Knobs window)
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();

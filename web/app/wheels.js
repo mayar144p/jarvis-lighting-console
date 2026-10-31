@@ -11,7 +11,7 @@ const WHEELS = {
   intensity: [["dimmer", "Dimmer"]],
   colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]],
   position: [["pan", "Pan"], ["tilt", "Tilt"]],
-  desk: [["pan", "Pan"], ["tilt", "Tilt"]],          // (in the palette view's own bar)
+
   beam: [["zoom", "Zoom"], ["focus", "Focus"], ["iris", "Iris"], ["frost", "Frost"], ["gobo_rot", "Gobo spin"], ["prism_rot", "Prism spin"]],
 };
 const COARSE = 0.01, FINE = 0.001;                 // a share of the travel per notch
@@ -98,7 +98,37 @@ export function renderWheels(name = tab) {
   }), fineBtn);
 }
 
+// Other places with wheels of their own (the palette view's Knobs window):
+// [box, [[attr, label]...]] - kept up to date with the selection like the strip
+const extra = new Set();
+export function mountWheels(box, list) {
+  extra.add([box, list]);
+  fill(box, list);
+}
+function fill(box, list) {
+  const roles = rolesOfSelection();
+  const sig = list.map(([a]) => (roles.has(a) ? a : "-")).join() + fine;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
+    title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; refreshExtra(); renderWheels(); } }, "FINE");
+  box.replaceChildren(...list.map(([a, l]) => {
+    const el = wheel(a, l);
+    if (!roles.has(a)) {
+      el.classList.add("off");
+      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
+      el.querySelector(".wheel-knob").tabIndex = -1;
+    }
+    return el;
+  }), fineBtn);
+}
+function refreshExtra() {
+  for (const it of [...extra]) { if (!it[0].isConnected) { extra.delete(it); continue; } fill(it[0], it[1]); }
+}
+
 export function initWheels() {
+  on("snapshot", refreshExtra);
+  on("lite", refreshExtra);
   on("snapshot", () => renderWheels());
   on("lite", () => renderWheels());
 }

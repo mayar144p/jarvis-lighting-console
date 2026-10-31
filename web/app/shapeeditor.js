@@ -127,7 +127,7 @@ export function openShapeEditor(shape) {
   const fitBtn = h("button.btn.small", { onclick: () => fit() }, "Fit inside the box");
   const fmt = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * deg))}°`;
   const draw = () => {
-    const lab = (x, y, text, cls = "") => { const e = el("text", { x, y, class: "shape-lab " + cls }); e.textContent = text; return e; };
+    const lab = (x, y, text, cls = "") => { const e = el("text", { x, y, class: "shape-lab " + cls, "font-size": cls === "c" ? 0.07 : 0.085 }); e.textContent = text; return e; };
     svg.replaceChildren(el("rect", { x: -1, y: -1, width: 2, height: 2, class: "shape-bg" }),
       ...[-0.5, 0.5].flatMap((v) => [el("line", { x1: v, y1: -1, x2: v, y2: 1, class: "shape-grid" }), el("line", { x1: -1, y1: v, x2: 1, y2: v, class: "shape-grid" })]),
       el("line", { x1: -1, y1: 0, x2: 1, y2: 0, class: "shape-axis" }), el("line", { x1: 0, y1: -1, x2: 0, y2: 1, class: "shape-axis" }),

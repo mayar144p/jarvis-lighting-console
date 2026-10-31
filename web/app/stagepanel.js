@@ -134,7 +134,7 @@ export function initStage() {
   initVenuePanel(stage);
 
   on("snapshot", syncRig);
-  on("snapshot", (s) => { stage.djView = s && s.venue_orient; });
+  on("snapshot", (s) => { stage.djView = s && s.venue_orient; stage.setSides(stage.djView); });
   on("models3d", showDrawn);
   $("#drawn-chip").addEventListener("click", () => realBodies());
   on("selection", (sel) => stage.setSelected(sel));

@@ -10188,7 +10188,7 @@ def test_room_by_pointing() -> None:
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
     rd = (ROOT / "web" / "app" / "roomdialog.js").read_text(encoding="utf-8")
     check("which end is which: the 3D writes DJ / STAGE END, BACK OF THE ROOM, LEFT, RIGHT on the floor while arranging; the plans and Make the room say it",
-          "function sideLabels(R, stageFront)" in st and '"BACK OF THE ROOM"' in st and "this.sideLabels.visible = this.editing" in st
+          "function sideLabels(R, orient, outline)" in st and '"BACK OF THE ROOM"' in st and "this.sideLabels.visible = this.editing" in st
           and "Which way round: " in rd and "export function roomSides" in (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8"), "")
 
 
@@ -10464,8 +10464,7 @@ def test_programmer_overhaul() -> None:
     check("a floating programmer keeps a size (no 3D view: the workspace's area) and sizes by its corner",
           "if (st.width < 200 || st.height < 200)" in (web / "workspaces.js").read_text(encoding="utf-8")
           and '.programmer[data-side="float"] { resize: both;' in css.replace(".fixtures[data-side=\"float\"], ", ""), "")
-    check("Pan / Tilt wheels on Palettes, in its own bar", 'desk: [["pan", "Pan"], ["tilt", "Tilt"]]' in (web / "wheels.js").read_text(encoding="utf-8")
-          and 'document.querySelector(".dv-wheels")' in pj, "")
+    check("Pan / Tilt / Dimmer knobs on Palettes (a window of their own)", "export function mountWheels(box, list)" in (web / "wheels.js").read_text(encoding="utf-8"), "")
     dv = (web / "deskview.js").read_text(encoding="utf-8")
     check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
           "el.style.transform = `translate(${px}px, ${py}px)`" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
@@ -10541,3 +10540,18 @@ def test_shapes_drawn_palettes_fit() -> None:
           and "Fit inside the box" in se and "The whole path stays inside the box." in se, "")
     check("a palette the selected lights can't take is dimmed and says why", "export function paletteFits(p)" in dv
           and '(fits === false ? ".na" : "")' in dv and ".dv-tile.na {" in css, "")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    check("...and the Beam / Colour / Position tabs list only the palettes the selected lights can take",
+          ".filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p))" in pj, "")
+    check("Dimmer, Pan and Tilt as a Knobs window on Palettes (no box, sized by its menu)", '["knobs", h("section.dv-win.dv-knobwin"' in dv
+          and 'mountWheels(body, [["dimmer", "Dimmer"], ["pan", "Pan"], ["tilt", "Tilt"]])' in dv and ".dv-knobwin[data-size=\"xl\"]" in css, "")
+    check("key windows can be sized small (no forced empty space)", "select: { w: [2, 10], h: [2, 8] }" in dv, "")
+    mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("the desktop app keeps one address, so the screen settings survive a restart", "function localPort()" in mj
+          and "await localPort()" in mj and "saved._localPort" in mj, "")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    vp = (web / "venuepanel.js").read_text(encoding="utf-8")
+    check("the floor's DJ / back / left / right follow where the DJ is, inside the room's own outline",
+          "setSides(orient)" in st and "const reach = (u) =>" in st and "stage.setSides(stage.djView)" in (web / "stagepanel.js").read_text(encoding="utf-8"), "")
+    check("Which way round: the DJ at a side of the plan, or tapped, or worked out", "export function openWhichWay()" in vp
+          and 'id="vt-orient"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8") and '"venue_orient", { booth: b, front: "centre" }' in vp, "")

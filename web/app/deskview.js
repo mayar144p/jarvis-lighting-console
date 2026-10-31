@@ -8,6 +8,7 @@ import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox } from "./ui.js";
 import { goboIcon } from "./goboicon.js";
 import { icon } from "./icons.js";
+import { mountWheels } from "./wheels.js";
 
 const KINDS = [["position", "Position", "P"], ["colour", "Colour", "C"], ["beam", "Beam", "B"]];
 const DEFAULTS_LABEL = { colour: "Make the usual colours", position: "Make the usual positions", beam: "Make Narrow / Mid / Wide" };
@@ -270,6 +271,12 @@ function strip() {
       key("Outputs", "What goes out to the nodes", async () => (await import("./monitors.js")).openNodeMonitor()),
       key("Setup", "Settings", async () => (await import("./settings.js")).openSettings()),
       key("Help", "Help and keys", async () => (await import("./dialogs.js")).openHelp())),
+    // Dimmer, Pan and Tilt as knobs on the board - no box round them
+    (() => {
+      const body = h("div.dv-knobs");
+      mountWheels(body, [["dimmer", "Dimmer"], ["pan", "Pan"], ["tilt", "Tilt"]]);
+      return ["knobs", h("section.dv-win.dv-knobwin", h("header", { title: "Turn: drag up or down, or scroll (Shift or FINE: fine). Drag here to move the knobs." }, h("b", "KNOBS")), body)];
+    })(),
     ["keypad", h("section.dv-win.dv-keywin.dv-padwin", h("header", { title: "The command line by touch: tap 1 THRU 4 @ FULL then ENTER to bring lights 1 to 4 to full - the same as typing it. With a keyboard you can hide this window (×)." },
       h("b", "KEYPAD"), h("span", "1 THRU 4 @ FULL, ENTER")), h("div.dv-sec.dv-pad", shown, h("div.dv-keys", ...pad,
       key("⌫", "Rub out", () => { line = line.trimEnd().split(" ").slice(0, -1).join(" "); line = line ? line + " " : ""; shown.textContent = line || " "; }),
@@ -293,7 +300,7 @@ const DEFAULT_LAYOUT = {
   group: { x: 0, y: 0, w: 7, h: 6 }, position: { x: 7, y: 0, w: 7, h: 6 },
   colour: { x: 0, y: 6, w: 7, h: 6 }, beam: { x: 7, y: 6, w: 7, h: 6 },
   select: { x: 14, y: 0, w: 5, h: 4 }, poskeys: { x: 14, y: 4, w: 5, h: 4 }, progkeys: { x: 14, y: 8, w: 5, h: 4 },
-  keypad: { x: 19, y: 0, w: 5, h: 8 }, windows: { x: 19, y: 8, w: 5, h: 4 },
+  keypad: { x: 19, y: 0, w: 5, h: 6 }, knobs: { x: 19, y: 6, w: 5, h: 3 }, windows: { x: 19, y: 9, w: 5, h: 3 },
 };
 let layout = (() => {
   try { return { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {}) }; } catch (e) { return { ...DEFAULT_LAYOUT }; }
@@ -305,13 +312,13 @@ let board = null, shownKey = "", zTop = 1;
 // enough to tuck away, never so small its keys can't be read, never so big
 // its keys float in empty space
 const SIZE = {
-  select: { w: [3, 8], h: [3, 6] }, poskeys: { w: [3, 8], h: [3, 5] }, progkeys: { w: [3, 8], h: [3, 5] },
-  windows: { w: [3, 8], h: [3, 6] }, keypad: { w: [4, 9], h: [5, 12] },
+  select: { w: [2, 10], h: [2, 8] }, poskeys: { w: [2, 10], h: [1, 8] }, progkeys: { w: [2, 10], h: [1, 8] },
+  windows: { w: [2, 10], h: [1, 8] }, keypad: { w: [3, 10], h: [4, 12] }, knobs: { w: [2, 14], h: [1, 8] },
 };
 const sizeOf = (id) => SIZE[id] || { w: [3, 24], h: [2, 12] };
 
 const NAMES = { group: "Group", position: "Position palettes", colour: "Colour palettes", beam: "Beam palettes",
-  select: "Select keys", poskeys: "Position keys", progkeys: "Programmer keys", windows: "Window keys", keypad: "Keypad" };
+  select: "Select keys", poskeys: "Position keys", progkeys: "Programmer keys", windows: "Window keys", keypad: "Keypad", knobs: "Knobs (dimmer, pan, tilt)" };
 const hidden = () => (layout._hidden || []);
 
 function place(el, id) {
@@ -421,7 +428,7 @@ function lookMenu(anchor, el, id) {
   const tiles = el.querySelector(".dv-tiles");
   const sizes = [["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"], ...(tiles ? [["fill", "Fill the window"]] : [])];
   menu(anchor, [
-    ...sizes.map(([v, label]) => ({ label: tick((lk.size || "m") === v, `${tiles ? "Tiles" : "Keys"}: ${label}`), run: () => setLook(el, id, { size: v }) })),
+    ...sizes.map(([v, label]) => ({ label: tick((lk.size || "m") === v, `${tiles ? "Tiles" : id === "knobs" ? "Knobs" : "Keys"}: ${label}`), keep: () => lookMenu(anchor, el, id), run: () => setLook(el, id, { size: v }) })),
     "-",
     ...[["s", "Small"], ["m", "Normal"], ["l", "Large"], ["xl", "Extra large"]].map(([v, label]) => ({ label: tick((lk.text || "m") === v, `Text: ${label}`), run: () => setLook(el, id, { text: v }) })),
     ...(tiles ? ["-",
@@ -476,7 +483,7 @@ export function renderDeskView() {
     new ResizeObserver(fit).observe(board);
     box.replaceChildren(h("div.dv",
       h("div.dv-bar", h("span.muted.small.dv-hint", "Drag a window by its title to move it, by its corner to size it; × hides it."),
-        h("span.grow"), h("div.dv-wheels"),
+        h("span.grow"),
         h("button.btn.small.dv-3d", { title: "Show the 3D visualiser (its own window: put it on a second screen, or full screen)",
           onclick: () => import("./view3d.js").then((m) => m.open3d()) }, icon("cube"), "3D view"),
         h("button.btn.small.ghost", { title: "Bring back a hidden window", onclick: (e) => menu(e.currentTarget,
@@ -490,8 +497,6 @@ export function renderDeskView() {
       board));
     shownKey = "";
     fitRows();
-    const w = document.getElementById("prog-wheels");   // the Pan / Tilt wheels into the bar
-    if (w) box.querySelector(".dv-wheels").append(w);
   }
   if (key === shownKey) return;
   shownKey = key;

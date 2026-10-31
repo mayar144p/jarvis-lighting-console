@@ -43,6 +43,26 @@ const open = new Map();                       // part -> BrowserWindow
 const reopen = new Set();                     // the windows to open next time
 
 // ---------------------------------------------------------------- engine
+// This computer only: the same port every time (8788, remembered; the
+// first free one after it if something else has it).  The desk keeps its screen settings -
+// window layouts, looks, text size, quality - per address, so a new port
+// at every start (as it was) came back with all of them reset.
+function localPort() {
+  // (its own port, not 8787 - a desk server started by hand sits there)
+  const want = +saved._localPort || 8788;
+  const tryPort = (p) => new Promise((resolve) => {
+    const s = net.createServer();
+    s.once("error", () => resolve(0));
+    s.listen(p, "127.0.0.1", () => s.close(() => resolve(p)));
+  });
+  return (async () => {
+    for (const p of [want, ...Array.from({ length: 20 }, (_, i) => 8788 + i)]) {   // eslint-disable-line no-await-in-loop
+      if (await tryPort(p)) { if (saved._localPort !== p) { saved._localPort = p; saveState(); } return p; }
+    }
+    return freePort();
+  })();
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -200,7 +220,7 @@ async function selfUpdate() {
 
 async function startEngine() {
   const remote = desk().remotes && desk().code;
-  const port = remote ? await portOr(desk().port) : await freePort();
+  const port = remote ? await portOr(desk().port) : await localPort();
   key = remote ? desk().code : TOKEN;
   const found = findPython();
   if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Jarvis again");

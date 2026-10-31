@@ -665,6 +665,74 @@ export async function resetVenue() {
   if (i === 1 || i === 2) run("venue_reset", { keep_room: i === 2 }, { toast: true });
 }
 
+// Which way round: after the room is modelled, say where the DJ is - a
+// side of the plan, or a tap where the DJ stands - and the desk turns
+// everything that goes by it: the floor's DJ / back / left / right, the
+// Move tab's map and spots, "left" and "right" in Line up.
+export function openWhichWay() {
+  const v = venue();
+  const pts = outlineOf(v.room ? v : { room: { width: 16, depth: 20, back: -1 } });
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const W = x1 - x0, D = z1 - z0, pad = Math.max(W, D) * 0.08;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const [k, val] of Object.entries(a)) e.setAttribute(k, val); return e; };
+  const svg = el("svg", { viewBox: `${x0 - pad} ${z0 - pad} ${W + pad * 2} ${D + pad * 2}`, class: "ww-plan" });
+  const or = () => (state.snap && state.snap.venue_orient) || null;
+  let mode = "booth";
+  const draw = () => {
+    const o = or();
+    svg.replaceChildren(el("polygon", { points: pts.map((p) => p.join(",")).join(" "), class: "ww-room" }));
+    for (const z of v.zones || []) if (z.points && z.points.length > 2) {
+      svg.append(el("polygon", { points: z.points.map((p) => p.join(",")).join(" "), class: "ww-zone" }));
+      const [cx, cz] = [z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length];
+      const t = el("text", { x: cx, y: cz, class: "ww-zt", "font-size": Math.max(W, D) / 30 });
+      t.textContent = z.name || z.kind;
+      svg.append(t);
+    }
+    if (o) {
+      const [bx, , bz] = o.booth, f = (o.front * Math.PI) / 180, L = Math.max(W, D) / 6;
+      svg.append(el("line", { x1: bx, y1: bz, x2: bx + Math.sin(f) * L, y2: bz + Math.cos(f) * L, class: "ww-face", "stroke-width": Math.max(W, D) / 120 }),
+        el("circle", { cx: bx, cy: bz, r: Math.max(W, D) / 40, class: "ww-dj" }));
+      const t = el("text", { x: bx, y: bz - Math.max(W, D) / 25, class: "ww-djt", "font-size": Math.max(W, D) / 26 });
+      t.textContent = "DJ";
+      svg.append(t);
+    }
+  };
+  const at = (ev) => { const m = svg.getScreenCTM().inverse(); const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m); return [+p.x.toFixed(2), +p.y.toFixed(2)]; };
+  svg.addEventListener("click", async (ev) => {
+    const [x, z] = at(ev);
+    if (mode === "booth") await run("venue_orient", { booth: [x, z], front: "centre" }, { toast: true });
+    else {
+      const o = or();
+      if (o) await run("venue_orient", { front: (Math.atan2(x - o.booth[0], z - o.booth[2]) * 180 / Math.PI + 360) % 360 }, { toast: true });
+    }
+    draw();
+  });
+  // a side of the plan: the DJ at the middle of that wall, facing the room
+  const side = async (k) => {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const b = { top: [cx, z0 + D * 0.08], bottom: [cx, z1 - D * 0.08], left: [x0 + W * 0.08, cz], right: [x1 - W * 0.08, cz] }[k];
+    await run("venue_orient", { booth: b, front: "centre" }, { toast: true });
+    draw();
+  };
+  const modeRow = h("div.chip-row", ...[["booth", "Tap where the DJ stands"], ["front", "Tap the way the DJ faces"]].map(([k, l]) =>
+    h("button.chip" + (mode === k ? ".on" : ""), { onclick: (e) => { mode = k; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); } }, l)));
+  draw();
+  const close = modal({
+    title: "Which way round is the room?",
+    body: h("div.ww",
+      h("div.ww-left", svg, h("p.muted.small", "The room from above. The dot is the DJ, the line the way the DJ faces (towards the crowd).")),
+      h("div.ww-right",
+        h("p.small", "Where is the DJ? Everything that goes by it turns with it: the 3D floor's DJ / back / left / right, the Move tab's map and spots, left and right in Line up."),
+        h("div.field", h("span", "The DJ is at the"), h("div.chip-row", ...[["top", "Top"], ["right", "Right"], ["bottom", "Bottom"], ["left", "Left"]]
+          .map(([k, l]) => h("button.chip", { onclick: () => side(k) }, `${l} of the plan`)))),
+        h("div.field", h("span", "Or on the plan"), modeRow),
+        h("button.btn.small.ghost", { title: "From the DJ booth, a DJ zone or the stage, and the dance floor", onclick: async () => { await run("venue_orient", { clear: "all" }, { toast: true }); draw(); } }, "Back to what the desk works out"))),
+    foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")],
+  });
+}
+
 async function saveVenue() {
   const cur = venue().name || "";
   const name = await promptBox("Save venue", "Venue name", cur, { ok: "Save", placeholder: "e.g. Club Nova" });
@@ -761,6 +829,7 @@ export function initVenuePanel(theStage) {
   $("#vt-rigging").addEventListener("click", () => import("./rigdialog.js").then((m) => m.openRigDialog()));
   $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
   $("#vt-room").addEventListener("click", () => openRoomDialog());
+  $("#vt-orient").addEventListener("click", () => openWhichWay());
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));
   $("#vt-plan").addEventListener("click", (e) => openPlan(e.currentTarget));
   $("#vt-done").addEventListener("click", () => setArranging(false));

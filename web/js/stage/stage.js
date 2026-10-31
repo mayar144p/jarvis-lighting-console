@@ -18,8 +18,11 @@ import { buildVenue, hitDistance, cutaway } from "./venue.js";
 /** The room's four sides written on the floor (Arrange, Zones): the DJ /
  *  stage end, the back of the room, left and right as you look at the DJ
  *  from the dance floor - so building a venue, it is plain which end is
- *  which.  (The desk's room always has the DJ end at the back wall, z0.) */
-function sideLabels(R, stageFront) {
+ *  which.  They follow where the desk knows the DJ is and which way the DJ
+ *  faces (the DJ booth, a DJ zone or the stage, or as set - Room ▸ Which
+ *  way round), each written just inside the room's own outline, whatever
+ *  its shape (an L-shaped room's labels stay in the room). */
+function sideLabels(R, orient, outline) {
   const g = new THREE.Group();
   const label = (text, w, x, z, turn) => {
     const c = document.createElement("canvas");
@@ -39,14 +42,56 @@ function sideLabels(R, stageFront) {
     g.add(m);
   };
   const W = Math.max(2, R.x1 - R.x0), D = Math.max(2, R.z1 - R.z0);
-  const s = Math.min(W, D) * 0.55;
-  const cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2;
-  // the DJ end's name just in front of the stage (not under its deck)
-  const djz = Math.min(R.z1 - D * 0.3, Math.max(R.z0, stageFront || R.z0) + s / 16 + 0.35);
-  label("▲ DJ / STAGE END", s, cx, djz, 0);
-  label("BACK OF THE ROOM", s, cx, R.z1 - s / 16 - 0.25, 0);
-  label("LEFT", s * 0.9, R.x0 + s * 0.9 / 16 + 0.3, cz, Math.PI / 2);
-  label("RIGHT", s * 0.9, R.x1 - s * 0.9 / 16 - 0.3, cz, -Math.PI / 2);
+  const s = Math.min(W, D) * 0.45;
+  const o = orient || {};
+  const poly = outline && outline.length >= 3 ? outline : [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]];
+  const inside = (x, z) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, zi] = poly[i], [xj, zj] = poly[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  let cx = o.centre ? o.centre[0] : (R.x0 + R.x1) / 2, cz = o.centre ? o.centre[1] : (R.z0 + R.z1) / 2;
+  if (!inside(cx, cz)) {
+    // an L-shaped room's middle can be outside it: the floor's own middle
+    let a = 0, sx = 0, sz = 0;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const k = poly[j][0] * poly[i][1] - poly[i][0] * poly[j][1];
+      a += k; sx += (poly[j][0] + poly[i][0]) * k; sz += (poly[j][1] + poly[i][1]) * k;
+    }
+    if (Math.abs(a) > 1e-6) { cx = sx / (3 * a); cz = sz / (3 * a); }
+  }
+  // the way the DJ faces (towards the crowd): 0 = +z, as the desk counts it
+  const f = ((o.front ?? 0) * Math.PI) / 180;
+  const d = [Math.sin(f), Math.cos(f)];
+  // from the middle, how far to the wall along u (the outline, else the box)
+  const reach = (u) => {
+    let best = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const [ax, az] = poly[i], [bx, bz] = poly[(i + 1) % poly.length];
+      const ex = bx - ax, ez = bz - az, den = u[0] * ez - u[1] * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((ax - cx) * ez - (az - cz) * ex) / den, k = ((ax - cx) * u[1] - (az - cz) * u[0]) / den;
+      if (t > 0.05 && k >= -1e-6 && k <= 1 + 1e-6) best = Math.min(best, t);
+    }
+    return Number.isFinite(best) ? best : Math.min(W, D) / 2;
+  };
+  const at = (u, w, text, turn) => {
+    const r = Math.max(0.5, reach(u) - w / 16 - 0.4);
+    label(text, w, cx + u[0] * r, cz + u[1] * r, turn + f);
+  };
+  // the DJ's end is behind the DJ (against the way they face); the left as
+  // you look at the DJ from the floor is the DJ's right
+  if (o.booth && inside(o.booth[0], o.booth[2])) {
+    // just in front of the DJ, not on the booth
+    const k = Math.min(2.5, Math.hypot(cx - o.booth[0], cz - o.booth[2]) * 0.45);
+    label("▲ DJ / STAGE END", s, o.booth[0] + d[0] * k, o.booth[2] + d[1] * k, f);
+  } else at([-d[0], -d[1]], s, "▲ DJ / STAGE END", 0);
+  at([d[0], d[1]], s, "BACK OF THE ROOM", 0);
+  at([-d[1], d[0]], s * 0.9, "LEFT", Math.PI / 2);
+  at([d[1], -d[0]], s * 0.9, "RIGHT", -Math.PI / 2);
   g.visible = false;
   return g;
 }
@@ -236,9 +281,9 @@ export class Stage {
     this.room = { ...built.room };
     this.stageFront = built.stageFront;
     // which end is which, written on the floor while building the room
-    this.sideLabels = sideLabels(this.room, built.stageFront);
-    this.sideLabels.visible = !!this.editing || !!this.options.zones;
-    this.venueGroup.add(this.sideLabels);
+    this._outline = venue && venue.room && venue.room.outline && venue.room.outline.length >= 3 ? venue.room.outline : null;
+    this._sidesSig = "";
+    this.setSides(this.djView);
     // a new room size: the view goes back to the front of THIS room (the
     // camera was placed once, for the default room - 24 m back from a 3 m
     // room)
@@ -701,6 +746,22 @@ export class Stage {
   /** Per (perspective, shaded and lit), or a flat view drawn as lines,
    *  white on black: Top / Front / Side (framing the room) or Free (turned
    *  any way you like).  Returns the projection now in use. */
+  /** The floor's side labels for where the DJ is (the desk's venue_orient). */
+  setSides(orient) {
+    if (!this.room || !this.venueGroup) return;
+    const sig = JSON.stringify([orient && orient.centre, orient && orient.front, this._outline, this.room.x0, this.room.x1, this.room.z0, this.room.z1]);
+    if (sig === this._sidesSig && this.sideLabels) return;
+    this._sidesSig = sig;
+    if (this.sideLabels) {
+      this.sideLabels.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+      this.venueGroup.remove(this.sideLabels);
+    }
+    this.sideLabels = sideLabels(this.room, orient, this._outline);
+    this.sideLabels.visible = !!this.editing || !!this.options.zones;
+    this.venueGroup.add(this.sideLabels);
+    this.dirty = true;
+  }
+
   setProjection(kind) {
     kind = ["per", "top", "front", "side", "free"].includes(kind) ? kind : "per";
     if (kind !== "per" && this.walking) this.walk(false);
