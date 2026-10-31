@@ -608,7 +608,12 @@ class QuickMixin:
         first four) is dropped: "Every page" used to write a grid on all 32,
         and an old show then listed 32 empty pages that couldn't go."""
         used = {str(b.get("page")) for b in quick} | {k for k, v in (names or {}).items() if v}
-        return {k: v for k, v in layout.items() if k in used or int(k) <= 4}
+        empty = {k for k in layout if k not in used and int(k) > 4}
+        # one or two grids made ready before their buttons are kept: only
+        # the "every page" stamp (grids on a run of empty pages) goes
+        if len(empty) < 8:
+            return layout
+        return {k: v for k, v in layout.items() if k not in empty}
 
     def _quick_layout_load(self, raw) -> dict:
         """A show file's page grids, checked (a bad entry is dropped)."""

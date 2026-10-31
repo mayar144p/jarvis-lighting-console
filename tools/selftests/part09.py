@@ -10342,6 +10342,21 @@ def test_pages_and_venue_reset() -> None:
             e.act("load_show", name="old")
             check("an old show's grids on empty pages are dropped when it opens",
                   set(e.quick_layout) == {"1", "2", "3", "4", "5"}, str(sorted(e.quick_layout, key=int)))
+            e.quick_layout = {"1": {"cols": 6, "rows": 4, "height": "xl"}, "8": {"cols": 4, "rows": 2, "height": "l"}}
+            e.act("save_show", name="mine")
+            e.act("load_show", name="mine")
+            check("...but a row height set on a page before its buttons is kept, and page 1's too",
+                  e.quick_layout.get("8") == {"cols": 4, "rows": 2, "height": "l"}
+                  and e.quick_layout.get("1") == {"cols": 6, "rows": 4, "height": "xl"}, str(e.quick_layout))
+            e.act("venue_template", name="lounge")
+            e.act("venue_add", item={"kind": "bar_curve", "x": 2, "z": 8, "w": 4, "d": 1.2, "curve": 200, "colour": "#663300", "rot": 30})
+            e.act("venue_add", item={"kind": "vip_booth", "x": -4, "z": 12, "colour": "#220044"})
+            v0 = json.loads(json.dumps(e.venue))
+            e.act("save_show", name="furnished")
+            e.act("venue_reset", keep_room=False)
+            e.act("load_show", name="furnished")
+            check("a furnished venue (curves, colours, turns) comes back exactly from the show file",
+                  json.loads(json.dumps(e.venue)) == v0, "")
             e.quick_layout = {str(p): {"cols": 6, "rows": 3, "height": "m"} for p in range(1, 33)}
             e.quick_names = {"7": "Spare"}
             r = e.act("quick_page", tidy=True)
