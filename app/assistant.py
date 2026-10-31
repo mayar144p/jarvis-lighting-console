@@ -592,6 +592,14 @@ def learn_from_corrections(eng) -> list[str]:
         [f"For the {c['show']} show only: {c['text']}" for c in lr["one_off"][:8]]
 
 
+def free_playback(eng) -> int | None:
+    """The first playback with no cues (None: every one has some)."""
+    return next((pl["n"] for pl in eng.playbacks if not pl.get("stack")), None)
+
+
+REPLACE_WORDS = re.compile(r"\b(replace|overwrite|over the top|instead of|wipe|redo|again)\b", re.I)
+
+
 def design_night(eng, brief: str, which="new", buttons: bool = True, name: str = "") -> dict:
     """A show per song (its own parts and tempo), kept in each song, and one
     set of live buttons for the night."""
@@ -608,6 +616,14 @@ def design_night(eng, brief: str, which="new", buttons: bool = True, name: str =
     if not pick:
         return {"ok": False, "error": "every song already has a show - say which to redo, or all"}
     learn_from_corrections(eng)
+    # each song's cues are built on an EMPTY playback (they go with the song;
+    # the operator's own cues on playback 1 were replaced song after song),
+    # and the timeline is put back as it was afterwards
+    pb = free_playback(eng)
+    if pb is None:
+        return {"ok": False, "error": "every playback has cues - free one (or say which to use) so the songs' cues don't replace yours"}
+    import copy as _copy
+    tl_before = _copy.deepcopy(eng.timeline)
     done, failed, first = [], [], None
     for s in pick[:40]:
         r = eng.act("song_load", id=s["id"])
@@ -618,7 +634,7 @@ def design_night(eng, brief: str, which="new", buttons: bool = True, name: str =
             made = autoshow.design(eng, f"{brief}. This song: {s['name']}.")
             d = made["design"]
             d["name"] = s["name"][:40]
-            autoshow.build(eng, d, 1)
+            autoshow.build(eng, d, pb)
         except (ValueError, llm.LLMError) as exc:
             failed.append(f"{s['name']} ({exc})")
             continue
@@ -628,6 +644,7 @@ def design_night(eng, brief: str, which="new", buttons: bool = True, name: str =
             continue
         first = first or d
         done.append(s["name"])
+    eng.act("timeline_set", timeline=tl_before)
     out = {"ok": bool(done), "songs": done, "failed": failed}
     if first and buttons:
         night = dict(first)
@@ -1069,8 +1086,19 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             pb = None
                             said = []
                             if what in ("all", "cues"):
-                                pb = max(1, min(64, int(args.get("playback") or 0) or next(
-                                    (pl["n"] for pl in eng.playbacks if not pl.get("stack")), 1)))
+                                # never over the operator's cues without asking: a
+                                # playback with cues only when they said to replace
+                                asked_pb = int(args.get("playback") or 0)
+                                pb = asked_pb or free_playback(eng)
+                                if pb is None:
+                                    raise ValueError("every playback has cues - ask the operator which to replace "
+                                                     "(or to free one); nothing was built")
+                                pb = max(1, min(len(eng.playbacks), pb))
+                                has = len(eng._playback(pb).get("stack") or [])
+                                if asked_pb and has and not REPLACE_WORDS.search(st["message"]):
+                                    raise ValueError(f"playback {pb} has {has} cue(s) of the operator's - ask whether to "
+                                                     f"replace them or use playback {free_playback(eng) or '(none free)'}; "
+                                                     "nothing was built")
                             kit = None
                             # its live buttons first (a profile of its own), so the
                             # cues' hit buttons land in it - not in the show before
@@ -1079,6 +1107,9 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                                 if kit["profile"].lower() != str(d["name"]).lower():
                                     said.append(f"(a “{d['name']}” profile was there already - left as it was; "
                                                 f"the new buttons are in “{kit['profile']}”)")
+                                    # its palettes take that name too: "Halloween · purple"
+                                    # recorded over would recolour the FIRST Halloween's cues
+                                    d["name"] = kit["profile"]
                             if what in ("all", "cues"):
                                 said.append(autoshow.build(eng, d, pb)["summary"])
                             if kit:

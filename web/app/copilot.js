@@ -494,7 +494,9 @@ function showPlan(r, ask = "") {
       h("button.btn.primary", { onclick: async () => {
         const pb = ask ? (autoDesign.playback || +$("#auto-pb").value || 1) : (+$("#auto-pb").value || 1);
         if (!(await confirmBox(ask ? "Build the change" : "Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
-        const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb }).catch((e) => ({ error: e.message }));
+        // a change to the show rebuilds its cues and timeline; its buttons stay
+        // (it used to make a new button profile - "Halloween 2" - every time)
+        const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb, buttons: !ask }).catch((e) => ({ error: e.message }));
         const rr = res.result || {};
         if (res.error || rr.error || !rr.built) { toast(res.error || rr.error || "failed", "bad"); return; }
         toast(rr.summary || "Show built", "ok", 6000);

@@ -1052,12 +1052,16 @@ class Handler(BaseHTTPRequestHandler):
                 # the buttons to play it live first (a profile of its own), so
                 # the cues' hit buttons land in it - not in the show before
                 kit, note = None, ""
+                design = dict(body["design"])
                 if body.get("buttons", True):
                     try:
-                        kit = showkit.build(eng, body["design"], playback)
+                        kit = showkit.build(eng, design, playback)
+                        # (named "Halloween 2": its palettes too, or the first
+                        # Halloween's cues would follow the new palettes)
+                        design["name"] = kit["profile"]
                     except ValueError as exc:
                         note = f" (the buttons couldn't be made: {exc})"
-                built = autoshow.build(eng, body["design"], playback)
+                built = autoshow.build(eng, design, playback)
                 if kit:
                     built["summary"] += "; " + kit["summary"]
                     built["kit"] = kit

@@ -38,7 +38,7 @@ PENDING_DAYS = 14
 SIMILAR = 0.5                 # word overlap at which a new note replaces an old one
 _lock = threading.Lock()
 # a request in these words means the operator asked for it to be remembered
-ASKED = re.compile(r"\b(remember|from now on|always|never|every time|in future|i (?:like|prefer|want|hate|don'?t like)|"
+ASKED = re.compile(r"\b(remember|from now on|always|never(?!\s*mind)|every time|in future|i (?:like|prefer|want|hate|don'?t like)|"
                    r"don'?t ever|make sure you)\b", re.I)
 # an auto-learnt line from before (it's worked out live now)
 OLD_AUTO = re.compile(r"^(Habit \(in |For the .+ show only: )")
@@ -130,7 +130,13 @@ def add(text: str, asked: bool, typed: bool = False) -> dict:
         d = _load()
         if d["paused"] and not typed:          # (a note the operator types in still goes in)
             return {"ok": False, "error": "learning is paused (Settings -> AI) - nothing new is remembered"}
-        if any(n["text"].lower() == text.lower() for n in d["notes"]):
+        same = next((n for n in d["notes"] if n["text"].lower() == text.lower()), None)
+        if same is not None:
+            if asked and same["status"] == "pending":
+                same["status"] = "kept"          # (suggested before, now asked for: kept)
+                same["source"] = "you"
+                _save(d)
+                return {"ok": True, "status": "kept", "note": text, "id": same["id"]}
             return {"ok": True, "status": "already", "note": text}
         old = max((n for n in d["notes"] if n["status"] == "kept"), key=lambda n: _alike(n["text"], text), default=None)
         replaces = old if old is not None and _alike(old["text"], text) >= SIMILAR else None

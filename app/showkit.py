@@ -452,7 +452,12 @@ def restyle(eng, source: str, name: str, colours: list[str], cues: bool = True, 
     out = {"name": d["name"]}
     # the buttons first: the cues' hit buttons then land in the NEW show's
     # profile (built first, they went into the old show's and overwrote it)
-    pb = next((pl["n"] for pl in eng.playbacks if not pl.get("stack")), None) or old.get("playback") or 1 if cues else None
+    pb = next((pl["n"] for pl in eng.playbacks if not pl.get("stack")), None) if cues else None
+    if cues and pb is None:
+        # (it used to fall back to the earlier show's own playback - and
+        # replace the Halloween cues with Christmas's)
+        raise ValueError("every playback has cues - free one (or make the buttons only) so the new show's cues "
+                         f"don't replace the {src} show's or yours")
     if buttons:
         profile = _free_name(eng, d["name"])
         with eng.lock:
@@ -476,7 +481,10 @@ def restyle(eng, source: str, name: str, colours: list[str], cues: bool = True, 
     if cues:
         built = autoshow.build(eng, d, pb)
         out["cues"] = built["summary"]
+    if buttons and out.get("profile", "").lower() != d["name"].lower():
+        out["note"] = f"a “{d['name']}” profile was there already - left as it was; the new buttons are in “{out['profile']}”"
     out["summary"] = (f"“{d['name']}”: the {src} show's programming in new colours"
                       + (f" - cues on playback {pb}" if pb else "")
-                      + (f", buttons in the “{out['profile']}” profile" if buttons else ""))
+                      + (f", buttons in the “{out['profile']}” profile" if buttons else "")
+                      + (f" ({out['note']})" if out.get("note") else ""))
     return out

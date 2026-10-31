@@ -212,6 +212,9 @@ class QuickPagesMixin:
             if any(n.lower() == name.lower() for n in p["order"]):
                 raise ValueError(f"there is already a button profile called {name!r}")
             p["order"].append(name)
+            # (a show of this name deleted before: its record goes, or the new
+            # profile would be "learnt from" against the old show's buttons)
+            (p.get("shows") or {}).pop(name, None)
             if _truthy(copy):
                 p["sets"][name] = {"quick": [dict(b) for b in self.quick],
                                    "quick_names": dict(getattr(self, "quick_names", {}) or {}),
@@ -230,6 +233,10 @@ class QuickPagesMixin:
             p["order"] = [name if n == old else n for n in p["order"]]
             if old in p["sets"]:
                 p["sets"][name] = p["sets"].pop(old)
+            if old in (p.get("shows") or {}):
+                # the AI's record of the show goes with it (to copy it from, and
+                # to learn from the operator's edits to it)
+                p["shows"][name] = p["shows"].pop(old)
             if p["active"] == old:
                 p["active"] = name
             return {"profile": name, "summary": f"button profile {old!r} is now {name!r}"}
@@ -240,6 +247,7 @@ class QuickPagesMixin:
             if p["active"] == name:
                 self._profile_take(self.PROFILE_DEFAULT)
             p["sets"].pop(name, None)
+            (p.get("shows") or {}).pop(name, None)
             p["order"] = [n for n in p["order"] if n != name]
             return {"profile": p["active"], "summary": f"button profile {name!r} deleted"}
         return {"profile": p["active"], "profiles": list(p["order"]),

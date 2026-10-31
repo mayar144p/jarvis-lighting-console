@@ -670,6 +670,14 @@ def _show_palettes(d: dict, a: dict, eng, calls: list[dict]) -> tuple[dict, dict
 
 
 HITS_PAGE = "Hits"
+HIT_KINDS = ("strobe", "flash", "blind", "blinder", "kill", "blackout")
+
+
+def _auto_hit(b: dict) -> bool:
+    """A hit button a build made ("Strobe Movers", "Flash PARs") - not one
+    the operator put there."""
+    k = str(b.get("kind") or "")
+    return k in HIT_KINDS and str(b.get("label") or "").startswith(k.title() + " ") and b.get("mode") == "hold"
 
 
 def _hits_page(eng) -> int:
@@ -747,17 +755,27 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
     # - never on top of their buttons (it used to be page 4 whatever was
     # there: a show's Intensity page, overwritten when the next show was made)
     hits_page = _hits_page(eng)
+    # the hit buttons an earlier build made there go; a button the operator
+    # put on the Hits page themselves stays where it is (the new hits go
+    # round it)
+    on_page = {int(b["slot"]): b for b in eng.quick if int(b["page"]) == hits_page}
+    mine = {n for n, b in on_page.items() if not _auto_hit(b)}
     if any(s["hits"] for s in d["sections"]):
-        calls.append({"action": "quick_page", "params": {"page": hits_page, "delete": True}})
+        for n in sorted(set(on_page) - mine):
+            calls.append({"action": "quick_set", "params": {"page": hits_page, "slot": n, "clear": True}})
         calls.append({"action": "quick_page", "params": {"page": hits_page, "name": HITS_PAGE}})
     hit_btn: dict[tuple, str] = {}
     slot = 0
     for s in d["sections"]:
         for hit in s["hits"]:
             key = (hit["kind"], hit["group"])
-            if key in hit_btn or slot >= 24:
+            if key in hit_btn:
                 continue
             slot += 1
+            while slot in mine:
+                slot += 1
+            if slot > 24:
+                break
             hit_btn[key] = f"q{hits_page}-{slot}"
             g = groups[hit["group"]]
             button = {"kind": hit["kind"], "label": f"{hit['kind'].title()} {g['name']}"[:24],
