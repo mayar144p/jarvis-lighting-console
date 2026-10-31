@@ -1704,10 +1704,32 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: var(--fs-l); }
 .pix-col { width: calc(34px * var(--ctl)); height: calc(26px * var(--ctl)); padding: 0; border: 1px solid var(--line, #333); border-radius: 4px; background: none; }
 .pix-media { display: flex; flex-direction: column; gap: 4px; }
 /* Move tab -> Shapes */
-.shape-ed { display: flex; gap: 18px; flex-wrap: wrap; }
-.shape-left { display: flex; flex-direction: column; gap: 6px; }
-.shape-right { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 240px; }
-.shape-svg { background: var(--bg-2); border: 1px solid var(--line, #333); border-radius: 6px; cursor: crosshair; touch-action: none; }
+.shape-ed { display: flex; gap: 22px; flex-wrap: wrap; }
+.shape-left { display: flex; flex-direction: column; gap: 8px; width: min(100%, calc(380px * var(--ctl))); }
+.shape-right { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 260px; }
+.shape-svg { width: 100%; height: auto; aspect-ratio: 2.64 / 2.44; background: var(--bg-2); border: 1px solid var(--line, #333); border-radius: 6px; cursor: crosshair; touch-action: none; }
+.shape-grid { stroke: var(--border); stroke-width: 0.008; }
+.shape-aim { fill: none; stroke: var(--muted); stroke-width: 0.015; }
+.shape-lab { fill: var(--text-2); font-size: calc(0.085px * var(--ts)); font-weight: 600; }
+.shape-lab.t { text-anchor: middle; }
+.shape-lab.l { text-anchor: end; dominant-baseline: middle; }
+.shape-lab.r { text-anchor: start; dominant-baseline: middle; }
+.shape-lab.c { fill: var(--muted); font-size: calc(0.07px * var(--ts)); font-weight: 500; }
+.shape-ink { fill: none; stroke: #fbbf24; stroke-width: 0.03; stroke-linecap: round; stroke-linejoin: round; }
+.shape-trail { fill: none; stroke: #ff4d6d; stroke-width: 0.05; stroke-linecap: round; opacity: .35; }
+.shape-now { font: var(--fs-s) var(--mono); color: var(--text-2); min-height: 1.3em; }
+.shape-tracks { display: grid; gap: 4px; }
+.shape-trackrow { display: grid; grid-template-columns: calc(70px * var(--ctl)) 1fr calc(48px * var(--ctl)); align-items: center; gap: 8px; }
+.shape-track-k { font-size: var(--fs-s); color: var(--text-2); font-weight: 600; }
+.shape-track { width: 100%; height: calc(34px * var(--ctl)); background: var(--bg-2); border-radius: 4px; }
+.shape-track-mid { stroke: var(--border-2); stroke-width: 0.02; vector-effect: non-scaling-stroke; }
+.shape-track-line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.shape-track-cur { stroke: #ff4d6d; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.shape-track-v { font: var(--fs-s) var(--mono); color: var(--text); text-align: right; }
+.shape-how { color: var(--text-2); line-height: 1.45; margin: 0; }
+.shape-status { padding: 8px 10px; border-radius: var(--radius-sm); font-size: var(--fs-s); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.shape-status.ok { background: color-mix(in srgb, var(--ok, #4ade80) 12%, transparent); color: var(--ok, #4ade80); }
+.shape-status.warn { background: color-mix(in srgb, var(--blind) 14%, transparent); color: #fde68a; }
 .shape-bg { fill: var(--surface); }
 .shape-axis { stroke: var(--border-2); stroke-width: 0.01; }
 .shape-path { fill: none; stroke: var(--accent, #3ab0ff); stroke-width: 0.025; opacity: .8; }
@@ -2353,6 +2375,8 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 .dv-tile .dv-per { font-size: var(--fs-xs); color: var(--text-2); }
 .dv-win header .dv-x, .dv-win header .dv-opt { width: calc(26px * var(--ctl)); height: calc(26px * var(--ctl)); margin: -4px -4px -4px 0; border-radius: 6px; border: 0; background: transparent; color: var(--muted); font-size: var(--fs-l); line-height: 1; display: inline-grid; place-items: center; flex: none; align-self: center; }
 .dv-win header .dv-x:hover, .dv-win header .dv-opt:hover { background: var(--surface-3); color: var(--text); }
+/* a palette the selected lights can't take (no gobo wheel, recorded on others) */
+.dv-tile.na { opacity: .32; filter: grayscale(.7); }
 .dv-tile.dv-add { border-style: dashed; color: var(--text-2); background: transparent; }
 .dv-tile .dv-tile-x { position: absolute; top: 2px; right: 4px; width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); line-height: calc(20px * var(--ctl)); border-radius: 50%; color: var(--muted); font-size: var(--fs-m); }
 .dv-tile .dv-tile-x:hover { color: var(--text); background: var(--surface-3); }

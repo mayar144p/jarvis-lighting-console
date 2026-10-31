@@ -125,6 +125,70 @@ class OutputMixin:
                                   daemon=True)
         self._thread = thread
         thread.start()
+        dog = self.__dict__.get("_watchdog")
+        if dog is None or not dog.is_alive():
+            dog = threading.Thread(target=self._watch, name="jarvis-watchdog", daemon=True)
+            self.__dict__["_watchdog"] = dog
+            dog.start()
+
+    STALL_S = 3.0          # no frame for this long: the lights have frozen
+
+    def _watch(self) -> None:
+        """The freeze watchdog.  The lights stop following the desk when
+        the output thread can't send a frame - nearly always because
+        something holds the engine's lock and doesn't let go (a network
+        call, a file copy, a device that doesn't answer).  After STALL_S
+        without a frame it writes down what every thread of the desk was
+        doing, and which action held the lock, to data/freeze_reports - the
+        one thing that says why - and the status bar says so."""
+        logged = False
+        while not self._stop.wait(1.0):
+            last = self.__dict__.get("_tick_at")
+            if last is None:
+                continue
+            stalled = time.monotonic() - last
+            if stalled < self.STALL_S:
+                if logged:
+                    self.output["last_stall"] = dict(self.output.get("stall") or {}, over=True, at=time.time())
+                    self.output.pop("stall", None)
+                logged = False
+                continue
+            if logged:
+                self.output["stall"]["seconds"] = round(stalled, 1)
+                continue
+            logged = True
+            try:
+                name = self._write_freeze_report(stalled)
+            except Exception as exc:                # noqa: BLE001 - the report must never add a fault
+                name = f"(no report: {exc})"
+            self.output["stall"] = {"seconds": round(stalled, 1), "report": name}
+
+    def _write_freeze_report(self, stalled: float) -> str:
+        import sys
+        import traceback
+        from pathlib import Path
+        from app import config as _config
+        folder = Path(_config.DATA) / "freeze_reports"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        acting = self.__dict__.get("_acting")
+        lines = [f"The light output stopped: no DMX frame for {stalled:.1f} s ({stamp}).",
+                 f"Last action into the engine: {acting[0]!r}, {time.monotonic() - acting[1]:.1f} s ago" if acting else "No action recorded yet.",
+                 ""]
+        names = {t.ident: t.name for t in threading.enumerate()}
+        for ident, frame in sys._current_frames().items():
+            lines.append(f"--- thread {names.get(ident, ident)} ---")
+            lines.extend(x.rstrip("\n") for x in traceback.format_stack(frame))
+            lines.append("")
+        path = folder / f"freeze-{stamp}.txt"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        # keep the last 20 only
+        for old in sorted(folder.glob("freeze-*.txt"))[:-20]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        return path.name
 
     def _stop_output(self) -> None:
         self._stop.set()
@@ -456,6 +520,7 @@ class OutputMixin:
                 self.output["drift_ms"] = round(
                     max(0.0, done - target) * 1000, 1)
                 previous = done
+                self.__dict__["_tick_at"] = done            # (the watchdog reads it)
                 target += period
                 if target < done - period:
                     target = done           # fell behind: resync, no burst

@@ -196,7 +196,7 @@ const onZone = (f) => {
 };
 
 let lastLib = "circle";
-setShapeKnobs(() => params());
+setShapeKnobs(() => ({ ...params(), zoneName: knobs.zone ? zoneName() : "" }));
 
 async function startMove(name) {
   lastLib = name;

@@ -26,6 +26,24 @@ function selLabel() {
 }
 
 // a palette is lit when every selected light that it has values for holds them
+// Can the selected lights take this palette?  A per-light palette only on
+// the lights it was recorded on; any palette only on lights that have its
+// channels (no gobo wheel: no gobo palette).  null: nothing selected.
+export function paletteFits(p) {
+  const sel = selected();
+  if (!sel.length) return null;
+  const roles = (o) => Object.keys(o || {}).map((r) => r.replace(/@\d+$/, "").replace(/_fine$/, ""));
+  for (const n of sel) {
+    const head = patch().find((x) => x.head_no === n);
+    if (!head) continue;
+    const own = p.per ? p.per[String(n)] : p.values;
+    if (!own) continue;
+    const map = head.map || [];
+    if (roles(own).some((r) => map.includes(r)) || (own.hex && map.some((r) => ["red", "cyan", "wheel", "colour_macro"].includes(r)))) return true;
+  }
+  return false;
+}
+
 export function paletteOn(kind, p) {
   const sel = selected();
   if (!sel.length) return false;
@@ -146,11 +164,19 @@ const setNoOffer = (v) => { try { localStorage.setItem("jarvis.dvNoOffer", JSON.
 
 function paletteWindow(kind, title, letter) {
   const pals = (snap().palettes || {})[kind] || [];
-  const tiles = pals.map((p) => tile(paletteOn(kind, p) ? ".on" : "", [h("small", `${letter}${p.n}`), swatch(kind, p), h("b", p.name),
-    p.per ? h("span.dv-per", { title: "Each light keeps its own" }, "per light") : null],
-    `${p.name}: apply to the selection (right-click: update, rename, delete)`,
-    () => { if (!selected().length) { toast("Select lights first (Group window)"); return; } run("include_palette", { kind, palette: p.n }); },
-    { oncontextmenu: (e) => { e.preventDefault(); paletteMenu(e.currentTarget, kind, p); } }));
+  const tiles = pals.map((p) => {
+    const fits = paletteFits(p);
+    return tile((paletteOn(kind, p) ? ".on" : "") + (fits === false ? ".na" : ""), [h("small", `${letter}${p.n}`), swatch(kind, p), h("b", p.name),
+      p.per ? h("span.dv-per", { title: "Each light keeps its own" }, "per light") : null],
+      fits === false ? `${p.name}: the selected lights can't take it (${p.per ? "it was recorded on other lights" : "they don't have its channels"}) - right-click: update, rename, delete`
+        : `${p.name}: apply to the selection (right-click: update, rename, delete)`,
+      () => {
+        if (!selected().length) { toast("Select lights first (Group window)"); return; }
+        if (fits === false) { toast(`${p.name} isn't for the selected lights`); return; }
+        run("include_palette", { kind, palette: p.n });
+      },
+      { oncontextmenu: (e) => { e.preventDefault(); paletteMenu(e.currentTarget, kind, p); } });
+  });
   tiles.push(tile(".dv-add", [h("b", "+ Record")], `Record the selection's ${kind} as a palette`, async () => {
     if (!selected().length) { toast("Select lights and set them first"); return; }
     const name = await promptBox(`Record ${kind} palette`, "Name", "", { ok: "Record" });

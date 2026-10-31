@@ -135,6 +135,14 @@ function renderStatus() {
     : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
   out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
     : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  // the freeze watchdog: the lights stopped getting frames (and why was saved)
+  const stall = o.stall || (o.last_stall && Date.now() / 1000 - (o.last_stall.at || 0) < 600 ? o.last_stall : null);
+  if (stall) {
+    out.className = "bad";
+    out.textContent = o.stall ? `⚠ The lights are not getting frames (${stall.seconds} s) - a report is saved: data/freeze_reports/${stall.report}`
+      : `⚠ The lights stopped for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`;
+    out.title = "The desk's output was held up. The report says what held it.";
+  }
   // a backup desk standing by: its output is off on purpose
   const sb = s.standby || {};
   if (sb.following) {

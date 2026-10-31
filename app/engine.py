@@ -461,6 +461,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
             # no-op that still costs the operator one Ctrl+Z.
             undoable = name not in UNDO_EXCLUDED and not self._batching
             pushed = self._push_undo(name) if undoable else False
+            # what holds the lock right now: the freeze watchdog names it
+            self.__dict__["_acting"] = (name, time.monotonic())
             try:
                 extra = handler(**params) or {}
             except Exception as exc:          # noqa: BLE001

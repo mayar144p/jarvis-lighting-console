@@ -10478,3 +10478,66 @@ def test_programmer_overhaul() -> None:
           and "if (it.keep) {" in (web / "ui.js").read_text(encoding="utf-8"), "")
     check("Palettes has a 3D view button (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
           and "m.open3d()" in dv, "")
+
+
+def test_freeze_watchdog() -> None:
+    """The lights stop following the desk when the output thread can't
+    send a frame (the engine's lock held and not let go).  A watchdog
+    notices after 3 s, writes what every thread was doing and the action
+    in progress to data/freeze_reports, and the status bar says so."""
+    print("The freeze watchdog: a held-up output is noticed and its cause written down")
+    import threading
+    import time as _time
+    from app import config, engine as eng
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        fixtures.seed_generics(tmp / "f.db")
+        old = config.DATA
+        config.DATA = tmp / "data"
+        e = eng.Engine(db_path=tmp / "f.db", dry_run=True, show_dir=tmp / "s")
+        try:
+            e.STALL_S = 1.0
+            e._start_output()
+            _time.sleep(0.5)
+
+            def hog():
+                with e.lock:
+                    _time.sleep(3.2)
+            th = threading.Thread(target=hog, name="a-stuck-job")
+            th.start()
+            for _ in range(40):
+                _time.sleep(0.1)
+                if e.output.get("stall"):
+                    break
+            stall = dict(e.output.get("stall") or {})
+            th.join()
+            reports = list((config.DATA / "freeze_reports").glob("freeze-*.txt"))
+            text = reports[0].read_text(encoding="utf-8") if reports else ""
+            check("a held-up output is noticed and a report written", stall.get("report", "").startswith("freeze-") and reports, str(stall))
+            check("...the report shows the thread that held it (and the DMX thread waiting)", "a-stuck-job" in text and "jarvis-dmx" in text, text[:200])
+            _time.sleep(1.5)
+            check("...once frames flow again it is marked over", not e.output.get("stall") and (e.output.get("last_stall") or {}).get("over"), str(e.output.get("last_stall")))
+        finally:
+            e.shutdown()
+            config.DATA = old
+    check("the status bar says the lights stopped and where the report is",
+          "data/freeze_reports/${stall.report}" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
+
+
+def test_shapes_drawn_palettes_fit() -> None:
+    """A shape is drawn (press, drag, let go) and explained: the box in
+    degrees, pan / tilt, the motors' tracks, whether the path stays inside;
+    a palette the selected lights can't take is dimmed."""
+    print("Shapes drawn and explained; palettes dimmed for lights that can't take them")
+    web = ROOT / "web" / "app"
+    se = (web / "shapeeditor.js").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    check("a shape is drawn with one stroke, turned into key points (no clicking point by point)",
+          "function fromStroke(raw)" in se and "Draw the path: press and drag" in se and "s.points.splice(best + 1, 0, p)" not in se, "")
+    check("...the box says its degrees, which way is pan and tilt, and shows the motors' tracks",
+          "▲ tilt up" in se and "pan ▶" in se and 'track(zone ? "Across" : "Pan")' in se and "now: pan ${fmt(x)}, tilt ${fmt(y)}" in se, "")
+    check("...and whether the path stays inside the box (Fit inside the box)", "function overshoot(pts, smooth)" in se
+          and "Fit inside the box" in se and "The whole path stays inside the box." in se, "")
+    check("a palette the selected lights can't take is dimmed and says why", "export function paletteFits(p)" in dv
+          and '(fits === false ? ".na" : "")' in dv and ".dv-tile.na {" in css, "")
