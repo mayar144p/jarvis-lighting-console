@@ -10785,3 +10785,24 @@ def test_show_review() -> None:
             else:
                 os.environ["CONSOLE_DATA_DIR"] = old
 
+
+def test_voice() -> None:
+    """Hold to talk: the browser's speech, or the AI writes down a recording."""
+    from app import llm
+    v = (ROOT / "web" / "app" / "voice.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("a hold-to-talk mic beside Send", 'id="ai-mic"' in html and "export function wireMic(btn, onText)" in v, "")
+    check("the browser's own speech first, a 16 kHz WAV for the AI otherwise",
+          "window.SpeechRecognition || window.webkitSpeechRecognition" in v and "const to = 16000" in v, "")
+    online = llm._online
+    llm._online = lambda: None
+    try:
+        try:
+            llm.transcribe("AAAA")
+            said = ""
+        except llm.LLMError as exc:
+            said = str(exc)
+    finally:
+        llm._online = online
+    check("with no online AI, voice says what it needs", "online AI" in said, said)
+

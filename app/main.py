@@ -777,7 +777,7 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm", "/api/console/rekordbox",
                          "/api/console/look", "/api/console/room", "/api/console/sound",
-                         "/api/console/media_frame", "/api/console/assistant"):
+                         "/api/console/media_frame", "/api/console/assistant", "/api/console/transcribe"):
                 return self._console_post(route, body, query)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             bugreport.note_error(route, exc)
@@ -1032,6 +1032,15 @@ class Handler(BaseHTTPRequestHandler):
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
             return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/transcribe":
+            # the copilot's hold-to-talk, when the browser can't do it itself
+            audio = str(body.get("audio") or "")
+            if not audio or len(audio) > 4_000_000:
+                return self._json({"ok": False, "error": "a recording of up to about a minute"})
+            try:
+                return self._json({"ok": True, "text": llm.transcribe(audio, str(body.get("format") or "wav"))})
+            except llm.LLMError as exc:
+                return self._json({"ok": False, "error": str(exc)})
         if route == "/api/console/assistant":
             # The AI assistant: a loop of tool calls (look, act, check, ask)
             # off the engine lock; everything it does is one undo step and,

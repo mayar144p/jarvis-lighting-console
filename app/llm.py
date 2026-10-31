@@ -199,6 +199,21 @@ def public(wait: bool = True) -> dict:
             "available": available(), "last_used": last_used, "last_note": last_note}
 
 
+def transcribe(audio_b64: str, fmt: str = "wav") -> str:
+    """What was said in a recording (the copilot's hold-to-talk), by the
+    online AI (it takes sound); the local AI can't hear."""
+    online = _online()
+    if online is None:
+        raise LLMError("voice needs the online AI (a key in Settings -> AI), or a browser with speech recognition")
+    msg = _chat(online, [{"role": "user", "content": [
+        {"type": "text", "text": "Write down exactly what is said in this recording - an operator talking to a "
+                                 "lighting desk (cues, playbacks, colours, movers, strobes). Reply with the words only, "
+                                 "nothing else; if nothing is said, reply with nothing."},
+        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}}]}],
+        None, None, 0.0)
+    return str(msg.get("content") or "").strip().strip('"')
+
+
 def chat(messages: list[dict], tools: list[dict] | None = None,
          tool_choice=None, temperature: float = 0.3) -> dict:
     """One chat completion through the switch; returns the assistant message."""
