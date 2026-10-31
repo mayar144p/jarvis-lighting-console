@@ -73,8 +73,18 @@ class RoamMixin:
     def _a_roam(self, zones=None, heads=None, group=None, speed=1.0, size=1.0, beats=None, **_):
         """Moving lights wander inside zones ("dancefloor", "dj", a zone's
         name or id; several share the lights out).  `speed` about metres a
-        second, `size` how much of the zone each path covers (0.2-1)."""
-        zs = self._roam_zones(zones)
+        second, `size` how much of the zone each path covers (0.2-1).
+        Never over the DJ, the bar, the stage, the operator or a keep-out
+        (app/roomsense.NO_ROAM): a roaming beam there blinds the DJ and the
+        performers and drives the bar staff mad."""
+        from . import roomsense
+        kinds = {z["id"]: z["kind"] for z in venue_mod.normalise(self.venue).get("zones") or []}
+        asked = self._roam_zones(zones)
+        zs = [z for z in asked if kinds.get(z["id"]) not in roomsense.NO_ROAM]
+        if not zs:
+            raise ValueError(f"lights never roam over the {' or the '.join(z['name'] for z in asked)} "
+                             "(it would blind the DJ or the performers, or annoy the bar staff) - "
+                             "roam the dance floor or the VIP, or aim a light at it instead")
         rows = self._fx_targets(heads, group)
         movers = [h for h in rows if "pan" in h["map"] and "tilt" in h["map"]]
         if not movers:

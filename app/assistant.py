@@ -25,13 +25,13 @@ import os
 import threading
 import time
 
-from . import aitools, config, console_ai, llm, showdesign
+from . import aitools, autoshow, config, console_ai, llm, roomsense, showdesign
 from . import venue as venue_mod
 from .engine import ACTIONS as ENGINE_ACTIONS
 from .engine import Engine
 
-MAX_ROUNDS = 14
-MAX_ACTIONS = 40
+MAX_ROUNDS = 24             # a whole show or a room is many steps
+MAX_ACTIONS = 120
 MAX_HISTORY = 12
 MAX_NOTES = 40
 
@@ -138,9 +138,27 @@ TOOLS = [
             "length_m": {"type": "number"}, "width_m": {"type": "number"}, "depth_m": {"type": "number"},
             "height_m": {"type": "number"}, "across": {"type": "boolean"}}, "required": ["kind"]}}},
     {"type": "function", "function": {
+        "name": "room_plan",
+        "description": "What each zone of the room is FOR (dance floor: the show; VIP: gentle; bar: staff "
+                       "working; DJ: never in their eyes; stage: the performers), which moving lights serve "
+                       "which zone, and where never to roam or strobe. Read it before any look or show.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "design_show",
+        "description": "Design and build a WHOLE show for this rig and room onto the timeline (cues per part "
+                       "of the song, effects, hits, master), following the room's rules: the dance floor gets "
+                       "the show, the VIP stays gentle, the bar / DJ / stage are never swept. brief = the "
+                       "event, mood, genre, colours to use or avoid, pace. Preview first; one undo step.",
+        "parameters": {"type": "object", "properties": {
+            "brief": {"type": "string"},
+            "playback": {"type": "integer", "description": "the playback for its cues (default 1)"}},
+            "required": ["brief"]}}},
+    {"type": "function", "function": {
         "name": "ask",
-        "description": "Ask the operator something and stop here (when the request is unclear, or "
-                       "before anything risky). Give 2-4 short answers they can tap.",
+        "description": "Ask the operator something and stop here: when the request is unclear, when "
+                       "parts of it contradict each other or the room's rules, or before anything risky. "
+                       "Say what you understood and what's unclear; give 2-4 short answers they can tap "
+                       "(your recommendation first).",
         "parameters": {"type": "object", "properties": {
             "question": {"type": "string"},
             "options": {"type": "array", "items": {"type": "string"}}},
@@ -175,6 +193,19 @@ How you work:
   the library and ask, offering the nearest names.
 * Ask (ask) when the request is unclear or could mean very different things
   ("the back truss or the upstage one?"), and before anything you aren't sure of.
+* BIG REQUESTS ("a full show for tonight", "set up the whole room and the lights"): make
+  a short plan first (in your head), then work through it step by step - you have many
+  rounds - checking as you go, and say at the end what you did, part by part.
+* THINK LIKE A LIGHTING DESIGNER (LIGHTING DESIGN below, and room_plan): every look
+  and show respects what each zone is for, uses the right lights for each job, and
+  looks good - not just "colour and movement on everything".
+* CONTRADICTIONS AND PROBLEMS: before acting, check the request against itself, the
+  room and the rig ("all lights warm for the speech" + "strobe the floor"; "roam the
+  bar"; "gobos on the PARs"; "blue" on lights with only white). When something can't
+  or shouldn't be done, say why in one line and do the sensible version - or ask, with
+  your recommendation first, when the choice is really theirs.
+* Help them do the job: if what they asked won't get what they're after (a strobe for
+  a slow ballad, beams with no haze), say so and suggest what will.
 * Suggest a next idea when it would help, in one line.
 * A QUESTION ("why is head 7 dark?", "what's on the movers?") is answered, not
   acted on: check first (check_lights / look_at_rig), say what you found and why,
@@ -205,6 +236,8 @@ Rules:
 
 ACTIONS (for `do`; most act on the selection):
 {actions}
+
+{design}
 
 Colour names you can use: {colours}
 Named effects (run_fx name=...): {effects}
@@ -441,7 +474,8 @@ def _system(eng) -> str:
     ref += "\n  prepared for the operator's tap:\n" + "\n".join(
         f"    {a}({', '.join(CONFIRMABLE[a])})" for a in sorted(CONFIRMABLE))
     text = SYSTEM.format(actions=ref, colours=", ".join(n for n, _h in showdesign.COLOR_NAMES[:24]),
-                         effects=", ".join(sorted(console_ai.fxlib.FX)))
+                         effects=", ".join(sorted(console_ai.fxlib.FX)), design=roomsense.DESIGN_KNOWLEDGE)
+    text += "\n" + roomsense.describe(roomsense.plan(eng))
     mem = notes()
     if mem:
         text += "\nWhat this operator likes (your notes):\n" + "\n".join(f"  {i + 1}. {n}" for i, n in enumerate(mem))
@@ -568,6 +602,31 @@ def _go(eng, st: dict, chat) -> dict:
                         steps.append({"action": args.get("action"), "params": params,
                                       "ok": result["ok"], "summary": result.get("summary")})
                         st["changed"] = st["changed"] or (result["ok"] and not held)
+                elif name == "room_plan":
+                    p = roomsense.plan(eng)
+                    result = {"room": roomsense.describe(p), "zones": p["zones"], "movers": p["movers"],
+                              "statics": p["statics"]}
+                elif name == "design_show":
+                    if len(steps) >= MAX_ACTIONS:
+                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
+                    else:
+                        if st["preview"] and not st["was_blind"] and not st["blind_started"]:
+                            eng.act("blind", state=True)
+                            st["blind_started"] = True
+                        try:
+                            made = autoshow.design(eng, str(args.get("brief") or ""))
+                            pb = max(1, min(64, int(args.get("playback") or 1)))
+                            built = autoshow.build(eng, made["design"], pb)
+                            d = made["design"]
+                            result = {"ok": True, "summary": built["summary"], "name": d["name"],
+                                      "sections": [{"name": s["name"], "bars": s["bars"], "energy": s["energy"],
+                                                    "looks": s["looks"], "hits": s["hits"]} for s in d["sections"]],
+                                      "groups": made["analysis"]["groups"]}
+                        except (ValueError, TypeError) as exc:
+                            result = {"ok": False, "error": str(exc)}
+                        steps.append({"action": "design_show", "params": {"brief": args.get("brief")},
+                                      "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
+                        st["changed"] = st["changed"] or bool(result.get("ok"))
                 elif name == "what_lights_can_do":
                     result = aitools.capabilities(eng, args.get("heads"), args.get("group"))
                 elif name in ("place_lights", "add_to_room"):

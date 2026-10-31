@@ -281,7 +281,11 @@ function roamSlider() {
 function roamBlock() {
   const zones = (((state.snap && state.snap.venue) || {}).zones || []);
   if (!zones.length) return null;
-  const kinds = [...new Map(zones.map((z) => [z.kind, z.name || z.kind])).entries()];
+  // (never over the DJ, the bar, the stage, the operator or a keep-out: the
+  // desk refuses those, app/roomsense.py NO_ROAM)
+  const NO_ROAM = new Set(["dj", "bar", "stage", "foh", "backstage", "keepout"]);
+  const kinds = [...new Map(zones.filter((z) => !NO_ROAM.has(z.kind)).map((z) => [z.kind, z.name || z.kind])).entries()];
+  if (!kinds.length) return null;
   for (const k of [...roamPick]) if (!kinds.some(([x]) => x === k)) roamPick.delete(k);
   if (!roamPick.size) roamPick.add(kinds[0][0]);
   const roaming = ((state.snap && state.snap.fx) || []).filter((f) => f.lib === "roam");

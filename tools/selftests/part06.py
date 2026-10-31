@@ -446,11 +446,12 @@ def test_autoshow() -> None:
             roles = {g["role"] for g in a["groups"].values()}
             check("the analysis groups lights by type and where they are",
                   {"spot", "par"} <= roles
-                  and any("Front truss" in g["name"] or "truss" in g["name"].lower()
+                  and any("truss" in g["name"].lower() or g.get("zone")
                           for g in a["groups"].values() if g["role"] == "spot"), json.dumps(
                       {k: g["name"] for k, g in a["groups"].items()}))
             check("it finds aim targets in the room",
-                  {"dj", "floor", "crowd"} <= set(a["targets"]), str(list(a["targets"])))
+                  {"floor", "crowd"} <= set(a["targets"]) and "dj" not in set(a["targets"])
+                  and any(k.startswith("zone_") for k in a["targets"]), str(list(a["targets"])))
             movers = next(g for g in a["groups"].values() if g["role"] == "spot")
             pars = next(g for g in a["groups"].values() if g["role"] == "par")
             check("capabilities are what every light in the group can do",

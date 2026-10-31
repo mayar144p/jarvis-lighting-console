@@ -23,7 +23,7 @@ import copy
 import json
 import re
 
-from app import fixture_kind, fxlib, llm
+from app import fixture_kind, fxlib, llm, roomsense
 from app import venue as venue_mod
 
 ROLE_NAME = {"spot": "Movers", "beam": "Beams", "wash": "Washes", "par": "PARs",
@@ -72,15 +72,25 @@ def analyse(eng) -> dict:
     st = v.get("stage")
     front = (st["z"] + st["depth"]) if st else 4.0
     groups: dict[str, dict] = {}
+    # what each zone is for, and which lights serve it (roomsense): the movers
+    # shared out (2 on the dance floor, 1 on the VIP...), the static lights
+    # by the zone they light
+    room = roomsense.plan(eng)
+    zinfo = {z["id"]: z for z in room["zones"]}
+    serves = {n: zinfo[k] for k, ns in room["movers"].items() for n in ns}
+    serves.update({n: zinfo[k] for k, ns in room["statics"].items() for n in ns
+                   if zinfo[k]["duty"] != "show"})          # a PAR by the bar is the bar's
     for h in eng.patch:
         if fixture_kind.describe(h).get("class", "light") != "light":
             continue                    # lasers and SFX are never auto-designed
         role = fixture_kind.design_role(h)
-        where = _where(h, v, front)
+        zone = serves.get(h["head_no"])
+        where = zone["name"] if zone else _where(h, v, front)
         key = f"{role}@{_slug(where)}"
         g = groups.setdefault(key, {"name": f"{ROLE_NAME.get(role, role.title())} · {where}",
                                     "role": role, "where": where, "heads": [], "caps": None,
-                                    "fx": None, "x": 0.0})
+                                    "fx": None, "x": 0.0, "duty": zone["duty"] if zone else "show",
+                                    "zone": zone["id"] if zone else ""})
         g["heads"].append(h["head_no"])
         caps = _caps(h)
         if g["caps"] is None:
@@ -108,6 +118,7 @@ def analyse(eng) -> dict:
             parts = [g for g in groups.values() if g["role"] == role]
             groups[f"{role}@all"] = {
                 "name": f"All {ROLE_NAME.get(role, role).lower()}", "role": role, "where": "everywhere",
+                "duty": "all", "zone": "",
                 "heads": sorted(heads), "x": 0.0,
                 "caps": {k: _agree([p["caps"][k] for p in parts]) for k in parts[0]["caps"]},
                 "fx": sorted(set.intersection(*[set(p["fx"]) for p in parts]))}
@@ -115,11 +126,10 @@ def analyse(eng) -> dict:
     targets: dict[str, list[float]] = {}
     w, d, hgt = venue_mod.dims(v)
     b = venue_mod.bounds(v)
-    mark = next((o for o in v.get("objects") or [] if o.get("kind") == "mark"), None)
-    if mark:
-        targets["dj"] = [mark["x"], float(mark.get("y") or 0) + 1.3, mark["z"]]
-    elif st:
-        targets["dj"] = [st["x"], st["height"] + 1.3, st["z"] + st["depth"] * 0.4]
+    # (no "dj" target: a beam is never aimed at the DJ's face - roomsense)
+    for z in room["zones"]:
+        if z["kind"] not in roomsense.NO_ROAM:
+            targets[f"zone_{_slug(z['name'])}"] = [z["centre"][0], 0.0, z["centre"][1]]
     floor = next((z for z in v.get("zones") or [] if z["kind"] in ("dancefloor", "standing")), None)
     if floor:
         xs = [p[0] for p in floor["points"]]
@@ -128,10 +138,10 @@ def analyse(eng) -> dict:
         sx, sz = (max(xs) - min(xs)) / 2, (max(zs) - min(zs)) / 2
         targets.update({"floor": [cx, 0.0, cz], "floor_left": [cx - sx * 0.6, 0.0, cz],
                         "floor_right": [cx + sx * 0.6, 0.0, cz], "floor_front": [cx, 0.0, cz - sz * 0.6],
-                        "floor_back": [cx, 0.0, cz + sz * 0.6], "crowd": [cx, 1.6, cz]})
+                        "floor_back": [cx, 0.0, cz + sz * 0.6], "crowd": [cx, 0.4, cz]})
     else:
         targets["floor"] = [0.0, 0.0, front + 5]
-        targets["crowd"] = [0.0, 1.6, front + 5]
+        targets["crowd"] = [0.0, 0.4, front + 5]       # (below eye level: never into faces)
     if w and d:
         targets["back_wall"] = [b["x0"] + w / 2, (hgt or 6) * 0.6, b["z0"] + 0.3]
         targets["ceiling"] = [b["x0"] + w / 2, hgt or 6, (b["z0"] + b["z1"]) / 2]
@@ -143,7 +153,7 @@ def analyse(eng) -> dict:
         duration = float(tl.get("length") or 0)       # a song from rekordbox: parts and length, no music file
     return {"groups": groups, "targets": {k: [round(c, 2) for c in t] for k, t in targets.items()},
             "bpm": float(tl.get("bpm") or 120), "duration": duration,
-            "markers": marks, "notes": str(tl.get("notes") or ""),
+            "markers": marks, "notes": str(tl.get("notes") or ""), "room": roomsense.describe(room),
             "venue": v.get("name") or v.get("template") or ""}
 
 
@@ -162,9 +172,15 @@ def describe(a: dict) -> str:
         c = g["caps"]
         can = [x for x, ok in (("pan/tilt", c["pan_tilt"]), ("colour", c["colour"] == "mix"),
                                ("gobo", c["gobo"]), ("zoom", c["zoom"])) if ok]
+        duty = {"gentle": "GENTLE (VIP / seating)", "staff": "STAFF AREA (bar)", "protect": "DJ",
+                "performer": "STAGE", "work": "OPERATOR"}.get(g.get("duty", "show"), "")
         lines.append(f"- {key}: {g['name']}, {len(g['heads'])} lights, x≈{g['x']:+.1f} m; "
-                     f"can {', '.join(can) or 'intensity only'}; effects {', '.join(g['fx']) or 'none'}")
-    lines.append("AIM TARGETS (only for groups with pan/tilt): " + ", ".join(a["targets"]))
+                     f"can {', '.join(can) or 'intensity only'}; effects {', '.join(g['fx']) or 'none'}"
+                     + (f"; serves {duty}" if duty else ""))
+    lines.append("AIM TARGETS (only for groups with pan/tilt; a zone's group aims at its own zone_...): "
+                 + ", ".join(a["targets"]))
+    if a.get("room"):
+        lines.append(a["room"])
     return "\n".join(lines)
 
 
@@ -223,9 +239,14 @@ Rules:
   groups that can pan/tilt. Give colour only to groups that can colour.
 - Make sections contrast: calm sections dim and slow, drops full and
   fast. Keep a coherent palette of 2-5 colours.
-- Movers on a front truss suit aims at the crowd and the DJ; washes on a
-  rear truss suit the dance floor; floor PARs and bars suit uplighting
-  the back wall and chases; towers and blinders suit hits.
+- Every group has a job (THE ROOM, and "serves" on the group): a group
+  serving a zone aims at that zone's own zone_... target. Dance-floor
+  groups carry the show. GENTLE (VIP / seating) groups stay soft, warm,
+  slow: intensity 30-60, no strobes or hits, at most a slow breathe. STAFF
+  (bar), DJ and STAGE groups get a soft static warm wash or nothing: no
+  aims, no movement, no effects, no hits. Never aim a beam at the DJ.
+- Washes on a rear truss suit the dance floor; floor PARs and bars suit
+  uplighting the back wall and chases; towers and blinders suit hits.
 - Section bars should add up to roughly the song length.
 - When markers are given, make one section per marker, with the marker's
   name, so the looks change exactly where the song does.
@@ -234,7 +255,9 @@ Rules:
   mid-range lead (a voice or a melody) suits warmer, softer looks with the
   movers on the DJ or the stage; heavy bass suits the floor PARs and bars
   pumping; bright highs suit fast sparkle effects; "rising" suits climbing
-  intensity and hits in its last bars; "falling away" suits a fade down."""
+  intensity and hits in its last bars; "falling away" suits a fade down.
+
+""" + roomsense.DESIGN_KNOWLEDGE
 
 
 def _palette(brief: str) -> list[str]:
@@ -296,7 +319,9 @@ def fallback_design(a: dict, brief: str = "") -> dict:
     targets = a["targets"]
     hear = {m["name"].strip().lower(): m.get("hear") or "" for m in a.get("markers") or [] if m.get("name")}
     base = [k for k in groups if not k.endswith("@all")]
-    strobey = [k for k in base if groups[k]["role"] in ("par", "bar", "wash")] or base[:1]
+    show = [k for k in base if groups[k].get("duty", "show") == "show"]
+    strobey = [k for k in show if groups[k]["role"] in ("par", "bar", "wash")] or show[:1]
+    warm = "#ffb36b"
     out = []
     for i, (name, bars, energy) in enumerate(sections):
         looks = []
@@ -304,11 +329,32 @@ def fallback_design(a: dict, brief: str = "") -> dict:
             g = groups[key]
             c = g["caps"]
             role = g["role"]
+            duty = g.get("duty", "show")
+            if duty != "show":
+                # the VIP soft and warm, gently breathing in the calm parts;
+                # the bar, the DJ and the stage a low static warm wash
+                gentle = duty == "gentle"
+                look = {"group": key, "intensity": round((30 + 25 * energy) if gentle else 30)}
+                if c["colour"] == "mix":
+                    look["colour"] = warm if (not gentle or i % 2 == 0) else pal[i % len(pal)]
+                zt = f"zone_{_slug(g['where'])}"
+                if gentle and c["pan_tilt"] and zt in targets:
+                    look["aim"] = zt
+                    look["zoom"] = "wide"
+                if gentle and energy < 0.5 and "breathe" in g["fx"]:
+                    look["fx"] = "breathe"
+                looks.append(look)
+                continue
             colour = pal[(i + j) % len(pal)]
             look = {"group": key, "intensity": round(35 + 65 * energy)}
             if c["colour"] == "mix":
                 look["colour"] = colour
-            if c["pan_tilt"]:
+            own = f"zone_{_slug(g['where'])}" if g.get("zone") else ""
+            if c["pan_tilt"] and own in targets:
+                look["aim"] = own                 # its own zone (the dance floor's movers)
+                look["zoom"] = "narrow" if energy >= 0.6 else "wide"
+                look["gobo"] = bool(c["gobo"]) and 0.3 < energy < 0.9
+            elif c["pan_tilt"]:
                 if energy >= 0.9:
                     look["aim"] = "crowd" if "crowd" in targets else "floor"
                 elif energy >= 0.55:
@@ -316,7 +362,7 @@ def fallback_design(a: dict, brief: str = "") -> dict:
                 elif "back_wall" in targets and name.lower().startswith("break"):
                     look["aim"] = "back_wall"
                 else:
-                    look["aim"] = "dj" if "dj" in targets else "floor"
+                    look["aim"] = "floor"
                 look["zoom"] = "narrow" if energy >= 0.6 else "wide"
                 look["gobo"] = bool(c["gobo"]) and 0.3 < energy < 0.9
             fx_pref = {
@@ -333,10 +379,10 @@ def fallback_design(a: dict, brief: str = "") -> dict:
         hits = []
         heard = hear.get(name.strip().lower(), "")
         drums = "no kick" not in heard
-        if heard and "rising" in heard and drums and not name.lower().startswith(("build", "drop")):
+        if strobey and heard and "rising" in heard and drums and not name.lower().startswith(("build", "drop")):
             hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
-        if not drums:
-            pass                         # nothing to hit on: no strobes in a part with no kick
+        if not drums or not strobey:
+            pass                         # nothing to hit on (no kick), or nothing on the dance floor to hit
         elif name.lower().startswith("build"):
             hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
         elif name.lower().startswith("drop"):
@@ -384,10 +430,23 @@ def validate(raw, a: dict) -> dict:
                 look["gobo"] = True
             if lk.get("fx") in g["fx"]:
                 look["fx"] = lk["fx"]
+            # the room's rules hold whatever the design says (roomsense): the
+            # VIP soft, the bar / DJ / stage a low static wash, no beam on the DJ
+            duty = g.get("duty", "show")
+            if duty == "gentle":
+                look["intensity"] = min(look["intensity"], 70)
+                if look.get("fx") not in (None, "breathe"):
+                    look.pop("fx")
+                look.pop("gobo", None)
+            elif duty not in ("show", "all"):
+                look["intensity"] = min(look["intensity"], 45)
+                for k in ("fx", "aim", "gobo", "zoom"):
+                    look.pop(k, None)
             looks.append(look)
         hits = []
         for hit in (s.get("hits") or [])[:6]:
-            if isinstance(hit, dict) and hit.get("group") in groups and hit.get("kind") in ("strobe", "flash"):
+            if isinstance(hit, dict) and hit.get("group") in groups and hit.get("kind") in ("strobe", "flash") \
+                    and groups[hit["group"]].get("duty", "show") in ("show", "all"):
                 hits.append({"kind": hit["kind"], "group": hit["group"],
                              "every": hit.get("every") if hit.get("every") in ("beat", "half", "bar") else "beat",
                              "last_bars": max(0, int(hit.get("last_bars") or 0))})

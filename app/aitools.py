@@ -35,6 +35,9 @@ MORE = (
     "unpark", "venue_add", "venue_align", "venue_array", "venue_camera", "venue_ceiling",
     "venue_info", "venue_orient", "venue_preview", "venue_rig", "venue_room", "venue_stage", "venue_update", "keep_facing",
     "fx_kill", "colour_cal_get", "fx_status", "vis_source",
+    # the rest of the desk: everything an operator does by hand
+    "beam_spot", "palette_defaults", "palette_edit", "playback_bind", "room_fit", "select_step",
+    "show_files", "show_templates", "show_copy", "stay_in", "keep_out_here", "tempo_phrase", "venue_underlay",
 )
 # Prepared by the AI, done only when the operator taps "Do it".
 CONFIRM = {
@@ -70,6 +73,9 @@ CONFIRM = {
     "step_fx_delete": "Delete a step effect",
     "venue_remove": "Remove a room item",
     "venue_delete": "Delete a saved venue",
+    "venue_reset": "Clear the room to design it again",
+    "show_delete": "Delete a saved show",
+    "show_rename": "Rename a saved show",
 }
 # Never, whatever the request: network, the lock, calibration on the real
 # light, the AI's own preview and undo (the operator has Ctrl+Z).
@@ -84,6 +90,7 @@ NEVER = frozenset({
     "remap_heads", "osc", "virtual_node", "timecode", "tempo_prodj", "tempo_link",
     "rdm_compare", "teach_slots", "colour_cal", "media_save", "show_export",
     "quick_fx_defaults", "quick_from_laser", "blind", "undo", "redo",
+    "osc_out", "osc_send", "timecode_ltc", "line_up", "notice_seen",
 })
 
 

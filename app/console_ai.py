@@ -265,11 +265,12 @@ fx: only for run_fx.  Prefer a NAMED effect: {{"name": "circle",
   phase in degrees, duration seconds.
 timing: {{"fade": seconds}} for set_intensity and record_cue.
 roam: moving lights wander smoothly INSIDE venue zones, each aimed from
-  where it hangs: attributes {{"zones": ["dancefloor", "dj"], "speed": 1}}
-  (zone kinds dancefloor / dj / bar / standing, or a zone's name; several
-  zones share the lights out).  Use it for "hover / wander / roam / move
-  around the dance floor (and the DJ booth)", "keep them searching the
-  crowd".
+  where it hangs: attributes {{"zones": ["dancefloor", "vip"], "speed": 1}}
+  (zone kinds dancefloor / standing / vip / seating, or a zone's name;
+  several zones share the lights out).  NEVER the DJ, the bar or the stage:
+  the desk refuses them (the DJ's eyes, the bar staff, the performers) -
+  say so and roam the dance floor instead.  Use it for "hover / wander /
+  roam / move around the dance floor", "keep them searching the crowd".
 chase_colours: lights swap between colours step by step, neighbours apart:
   {{"colours": ["#ff0000", "#ffffff"], "beats": 1, "section": "drop"}}
   (beats a step, 1 = on the beat; section: a part of the song on the
@@ -694,7 +695,8 @@ def _fallback(text: str) -> dict:
     roam_words = re.search(r"\b(roam\w*|hover\w*|wander\w*|drift\w*|float\w*|search\w*|sweep\w* around|mov\w* around)\b", low)
     zone_words = []
     for pat, zone in ((r"dance\s*floor|\bfloor\b", "dancefloor"), (r"\bdj\b|\bbooth\b|\bstage\b", "dj"),
-                      (r"\bbar\b(?!s)", "bar"), (r"\bcrowd\b|\baudience\b", "standing")):
+                      (r"\bbar\b(?!s)", "bar"), (r"\bcrowd\b|\baudience\b", "standing"),
+                      (r"\bvip\b|\blounge\b", "vip"), (r"\bseat(s|ing)?\b|\btables\b", "seating")):
         if re.search(pat, low) and zone not in zone_words:
             zone_words.append(zone)
     btns = re.search(r"(?:\b(?:build|make|create|give|set up|add)\s+(?:me\s+)?|^\s*)(?:a\s+page\s+of\s+)?(\d{1,2})?\s*"

@@ -1190,8 +1190,14 @@ def test_roam() -> None:
             e.act("set_place", head=b[0], x=-5, y=0.3, z=6)
             e.act("set_place", head=b[1], x=5, y=0.3, z=6)
             heads = a + b
+            # the club's DJ zone as a VIP: lights never roam the DJ (roomsense)
+            r = e.act("roam", zones=["dj"], heads=heads)
+            check("lights never roam over the DJ", not r.get("ok") and "never roam" in (r.get("error") or ""), str(r))
+            for z in e.venue["zones"]:
+                if z["kind"] == "dj":
+                    z["kind"], z["name"] = "vip", "VIP"
             e.act("select_heads", heads=heads)
-            r = e.act("roam", zones=["dancefloor", "dj"], speed=2)
+            r = e.act("roam", zones=["dancefloor", "vip"], speed=2)
             check("roam starts on the movers", r.get("ok") and sorted(r["heads"]) == sorted(heads), str(r))
             zones = {z["kind"]: z for z in e.venue["zones"]}
             import time as _time
@@ -1222,20 +1228,20 @@ def test_roam() -> None:
                         bad += 1
             check("every path stays in its zone's bounds", bad == 0, str(bad))
             check("two zones share the lights out", {i % 2 for i in range(len(row["heads"]))} == {0, 1}
-                  and [z["name"] for z in row["roam"]] == ["Dance floor", "DJ"], "")
+                  and [z["name"] for z in row["roam"]] == ["Dance floor", "VIP"], "")
             check("a light that can't pan / tilt is left out", not e.act("roam", heads=[999]).get("ok"), "")
             check("an unknown zone says what there is", "Dance floor" in (e.act("roam", zones=["kitchen"]).get("error") or ""), "")
             e.act("record_cue", playback=1, name="Roaming")
             cue = e.playbacks[0]["stack"][0]
-            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["dj"]["id"]], str(cue.get("fx")))
+            check("a cue keeps the roam", (cue.get("fx") or [{}])[0].get("roam") == [zones["dancefloor"]["id"], zones["vip"]["id"]], str(cue.get("fx")))
             e.act("cue_go", playback=1, cue=1)
             check("...and plays it back", any(f.get("roam") for f in e.fx), "")
             e.act("stop_fx")
             e.act("select_heads", heads=heads)
-            p = console_ai.plan("these lights should only hover around the dance floor and the DJ booth", offline=True, eng=e)
+            p = console_ai.plan("these lights should only hover around the dance floor and the VIP", offline=True, eng=e)
             out = console_ai.run(console_ai.resolve(p["steps"], e), e)
             check("the AI turns the sentence into a roam", out.get("ok") and any(f.get("roam") for f in e.fx)
-                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "DJ"], str(p["steps"]))
+                  and [z["name"] for z in next(f for f in e.fx if f.get("roam"))["roam"]] == ["Dance floor", "VIP"], str(p["steps"]))
         finally:
             e.shutdown()
 
@@ -1850,7 +1856,10 @@ def test_move_buttons_and_glide() -> None:
             e.act("select_heads", head=1, head_end=4)
             e.act("attach_heads", rig=e._rig_named("front truss")["id"])
             e.act("group_create", name="Front movers", heads=[1, 2])
-            zones = [z["id"] for z in e.venue["zones"] if z["kind"] in ("dancefloor", "bar")]
+            for z in e.venue["zones"]:                 # (lights never roam the bar: a VIP instead)
+                if z["kind"] == "bar":
+                    z["kind"], z["name"] = "vip", "VIP"
+            zones = [z["id"] for z in e.venue["zones"] if z["kind"] in ("dancefloor", "vip")]
             r = e.act("roam", zones=zones, speed=0.5, heads=[1, 2])
             check("a slow roam keeps its speed (no longer rounded to 0.05)",
                   r.get("ok") and e.fx[-1]["params"]["speed"] == 0.5, str(e.fx[-1]["params"]))
