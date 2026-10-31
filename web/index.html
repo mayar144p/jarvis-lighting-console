@@ -232,7 +232,8 @@
       </nav>
       <div class="prog-held" id="prog-held" hidden></div>
       <div class="prog-held prog-editing" id="prog-editing" hidden></div>
-      <div class="prog-wheels" id="prog-wheels" hidden></div>
+      <!-- the tab's parts (Point / Move / Zones...) and its wheels share one row -->
+      <div class="prog-strip" id="prog-strip"><div class="prog-subslot" id="prog-subslot"></div><div class="prog-wheels" id="prog-wheels" hidden></div></div>
       <div class="prog-body" id="prog-body">
 
         <div class="tab-pane" data-pane="desk" hidden><div id="desk-view"></div></div>
@@ -296,7 +297,6 @@
               <button class="btn small ghost" data-pt="mirror_pan" title="MIRROR: pan reversed about the middle - left becomes right">Mirror</button>
             </div>
             <div class="row-btns aim-tools">
-              <button class="btn small" id="aim-spot" title="Then click once anywhere in the 3D view: every selected mover points there">Aim at one click…</button>
               <select class="select" id="aim-mark" title="Point the selection at a performer mark"><option value="">Aim at a mark…</option></select>
             </div>
             <div class="palette-strip" data-kind="position"></div>

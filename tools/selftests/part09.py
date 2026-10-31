@@ -7907,7 +7907,7 @@ def test_b5_room() -> None:
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
     check("the Move map: from the audience / from the DJ / turned, set the booth / middle / front, a spot pad as the DJ sees it",
-          "From the DJ" in af and '"venue_orient"' in af and "Spot (DJ)" in af and "room.getScreenCTM()" in af, "")
+          "Seen from the DJ" in af and '"venue_orient"' in af and 'h("div.aim-spotpad"' in af and "room.getScreenCTM()" in af, "")
     check("...it redraws when objects, trusses or lights move", "state.snap.venue.objects" in mv and "state.snap.venue.rigging" in mv
           and "x.yaw" in mv, "")
     check("the 3D: a DJ view from the booth (key 7)", '"From the DJ booth"' in sp and 'name === "dj"' in st and "this.djView" in st, "")
@@ -8176,23 +8176,22 @@ def test_lights_fader() -> None:
             g = e.act("group_create", name="Sides", heads=[1, 3])
             gc = e.act("quick_group_controls", group=g.get("n", 1), page=2)
             tiles = [b for b in e.quick if b["id"] in gc.get("ids", [])]
-            check("a group's controls on the buttons page in one tap (pulse, speed, strobe, strobe speed - its level is the group fader)",
+            check("a group's controls on the buttons page in one tap (speed, strobe, strobe speed - its level is the group fader)",
                   [(b["kind"], (b.get("control") or {}).get("mode") or b.get("fx")) for b in tiles]
-                  == [("fx", "pulse"), ("fader", "speed"), ("strobe", None), ("fader", "strobe")]
+                  == [("fader", "speed"), ("strobe", None), ("fader", "strobe")]
                   and all(b["target"] == {"group": g.get("n", 1)} for b in tiles), str(gc))
-            check("...each fader knows where its back-to-default button puts it", tiles[1].get("default") == 50 and tiles[3].get("default") == 31,
+            check("...each fader knows where its back-to-default button puts it", tiles[0].get("default") == 50 and tiles[2].get("default") == 31,
                   str([t.get("default") for t in tiles]))
-            pulse, sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"], tiles[3]["id"]
-            e.act("quick_press", id=pulse, down=True)
+            sp, strobe, rate = tiles[0]["id"], tiles[1]["id"], tiles[2]["id"]
+            e.act("run_fx", name="pulse", heads=[1, 3])
             pr = next((f for f in e.fx if f.get("lib") == "pulse"), None)
-            check("...its Pulse button pulses the group", pr is not None and set(pr["heads"]) == {1, 3}, str(pr and pr["heads"]))
             e.act("quick_fader", id=sp, level=100)
             t = time.monotonic()
             e._fx_values(t)
             v0 = pr["_v"]
             e._fx_values(t + 1.0)
-            check("...and the Speed fader speeds the pulse up (twice as fast)", round(pr["_v"] - v0, 2) == 2.0, str(pr["_v"] - v0))
-            e.act("quick_press", id=pulse, down=True)
+            check("...and the Speed fader speeds the group's pulse up (twice as fast)", round(pr["_v"] - v0, 2) == 2.0, str(pr["_v"] - v0))
+            e.act("stop_fx", heads=[1, 3])
             e.act("quick_fader", id=sp, level=50)
             e.act("run_fx", name="breathe", heads=[1, 3])
             e.act("run_fx", name="breathe", heads=[2])
@@ -8251,7 +8250,7 @@ def test_lights_fader() -> None:
             nb2 = e.act("quick_set", page=3, slot=2, button={"kind": "flash", "label": "Plain"})
             check("a button's description is the operator's own (kept, trimmed), none until written",
                   nb["button"].get("note") == "both cannons" and "note" not in nb2["button"], str(nb["button"].get("note")))
-            e.act("quick_set", page=2, slot=tiles[1]["slot"], button={**tiles[1], "label": "Movers FX speed", "default": 70})
+            e.act("quick_set", page=2, slot=tiles[0]["slot"], button={**tiles[0], "label": "Movers FX speed", "default": 70})
             mine = next(b for b in e.quick if b["id"] == sp)
             check("...renamed like any button, and its default set by the operator",
                   mine["label"] == "Movers FX speed" and mine.get("default") == 70, str(mine))
@@ -8291,8 +8290,8 @@ def test_programmer_subtabs() -> None:
     check("every part is on a sub-tab (the aim and pad on Point, movements on Move, limits on Limits)",
           tagged >= {k for ks in subs.values() for k in ks}, str(sorted(tagged)))
     check("FX shows how many effects run on its Running sub-tab", "sub-count" in pj, "")
-    check("rarely used knobs fold: direction, arc, lock; the shutter's open-value finder once it is known",
-          "More: direction, arc, lock" in mv and "Find its open value" in pj, "")
+    check("direction, arc, lock in the Move tab's third column; the shutter's open-value finder once it is known",
+          'h("div.mv-col.mv-col-ab"' in mv and 'h("span.k", "Direction")' in mv and "Find its open value" in pj, "")
 
 
 def test_look_shares_the_frame() -> None:
@@ -9934,7 +9933,7 @@ def test_screen_sizes() -> None:
     import re
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("1440p-class and 4K-class breakpoints", "@media (min-width: 2200px) and (min-height: 1250px)" in css
-          and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts: 1.15" in css and "--ts: 1.45" in css, "")
+          and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts-base: 1.15" in css and "--ts-base: 1.45" in css, "")
     check("...each with wider panels and a taller dock", css.count("--fixtures-w: clamp(") >= 3 and css.count("--pb-h: clamp(") >= 6, "")
     left = re.findall(r"font-size: \d+(?:\.\d+)?px|font: [^;{}]*?(?<![\w.(])\d+(?:\.\d+)?px(?! \* var)", css)
     check("every text size follows the screen (no fixed px text left)", not left, str(left[:5]))
@@ -10434,3 +10433,36 @@ def test_dock_and_desk_fit() -> None:
           and '.dv-win[data-size="fill"] .dv-tiles' in css and '.dv-win[data-text="xl"]' in css and ".dv-win[data-cols] .dv-tiles" in css, "")
     check("what the programmer holds: chips in its title row, saying how many lights", '<div class="prog-in" id="prog-in" hidden></div>\n        <div class="prog-heads"' in html.replace("\r\n", "\n")
           and "light${counts[g] === 1 ? \"\" : \"s\"}`) : null," in (web / "programmer.js").read_text(encoding="utf-8"), "")
+
+
+def test_programmer_overhaul() -> None:
+    """The programmer laid out across the panel: its parts and wheels in
+    one row; Point in columns (the map and the pad sized to the height),
+    Move in three columns, Dimmer / Colour / Beam made for a wide panel; a
+    Text size; the foot no longer moves; a floating programmer keeps its
+    size; Pan / Tilt on Palettes."""
+    print("Programmer overhaul: one strip, columns, sized to the height, Text size")
+    web = ROOT / "web" / "app"
+    css = (web / "app.css").read_text(encoding="utf-8")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    af = (web / "aimfollow.js").read_text(encoding="utf-8")
+    mv = (web / "movepanel.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("the tab's parts and its wheels share one row", 'id="prog-subslot"' in html and '$("#prog-subslot").append(nav)' in pj
+          and ".prog-strip {" in css, "")
+    check("Point: the map with its own menu, the spots beside it, the pad sized to the height",
+          'h("div.aim-left"' in af and "mapMenu(e.currentTarget)" in af and "--ph" in css
+          and '.tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1;' in css and "Aim at one click" not in html, "")
+    check("Move in three columns, no folded rows", 'h("div.mv-col.mv-col-shapes"' in mv and 'h("div.mv-col.mv-col-knobs"' in mv
+          and "More: direction, arc, lock" not in mv, "")
+    check("Dimmer, Colour and Beam made for a wide panel", '.tab-pane[data-pane="intensity"] #int-fader' in css
+          and '.tab-pane[data-pane="colour"] #picker canvas' in css and ".beam-quick { display: grid;" in css, "")
+    check("Text size: Standard / Large / Extra large, layout and all", ':root[data-textsize="xl"]' in css
+          and "--ts: calc(var(--ts-base) * var(--ts-user))" in css
+          and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
+    check("the programmer's foot doesn't move (the why is a tooltip)", 'if (w) w.textContent = "";' in pj, "")
+    check("a floating programmer keeps a size (no 3D view: the workspace's area) and sizes by its corner",
+          "if (st.width < 200 || st.height < 200)" in (web / "workspaces.js").read_text(encoding="utf-8")
+          and '.programmer[data-side="float"] { resize: both;' in css.replace(".fixtures[data-side=\"float\"], ", ""), "")
+    check("Pan / Tilt wheels on Palettes, in its own bar", 'desk: [["pan", "Pan"], ["tilt", "Tilt"]]' in (web / "wheels.js").read_text(encoding="utf-8")
+          and 'document.querySelector(".dv-wheels")' in pj, "")

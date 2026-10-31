@@ -58,8 +58,9 @@
   --ease: cubic-bezier(.2, .7, .3, 1);
   /* the screen's size class (the breakpoints below): --ts how big the text
      is, --ctl how tall the controls - 1 on a laptop and a 1080p screen */
-  --ts: 1;
-  --ctl: 1;
+  /* (each is the screen's size class times this computer's Text size) */
+  --ts-base: 1; --ts-user: 1; --ts: calc(var(--ts-base) * var(--ts-user));
+  --ctl-base: 1; --ctl-user: 1; --ctl: calc(var(--ctl-base) * var(--ctl-user));
   /* the type scale: six steps, every text on the desk is one of them
      (11 px the smallest - a label; 12 px and up anything read at a show) */
   --fs-xs: calc(11px * var(--ts));
@@ -80,6 +81,10 @@
   --btn-h-s: calc(26px * var(--ctl));
   --chip-h: calc(24px * var(--ctl));
 }
+/* Text size (Settings -> Screen & 3D): text and the controls round it grow
+   together, so nothing is cut off */
+:root[data-textsize="large"] { --ts-user: 1.15; --ctl-user: 1.08; }
+:root[data-textsize="xl"] { --ts-user: 1.32; --ctl-user: 1.16; }
 /* Density: more on screen, or more room around it */
 :root[data-density="compact"] { --btn-h: calc(28px * var(--ctl)); --btn-h-s: calc(23px * var(--ctl)); --chip-h: calc(21px * var(--ctl)); --gap: 7px; --row-h: calc(26px * var(--ctl)); --topbar-h: calc(42px * var(--ctl)); }
 :root[data-density="roomy"] { --btn-h: calc(36px * var(--ctl)); --btn-h-s: calc(30px * var(--ctl)); --chip-h: calc(28px * var(--ctl)); --gap: 13px; --row-h: calc(36px * var(--ctl)); --topbar-h: calc(50px * var(--ctl)); }
@@ -89,14 +94,14 @@
    4K one with Windows scaling) is the standard layout above.
    1440p-class monitor at 100 % (2560 x 1440): */
 @media (min-width: 2200px) and (min-height: 1250px) {
-  :root { --ts: 1.15; --ctl: 1.15; --gap: 12px;
+  :root { --ts-base: 1.15; --ctl-base: 1.15; --gap: 12px;
     --fixtures-w: clamp(340px, 16vw, 520px); --prog-w: clamp(440px, 21vw, 660px); --pb-h: 250px; }
   body[data-bottom="buttons"] .workspace { --pb-h: clamp(300px, 38vh, 600px); }
   body[data-bottom="timeline"] .workspace { --pb-h: clamp(290px, 36vh, 560px); }
 }
 /* 4K-class monitor at 100 % (3840 x 2160): */
 @media (min-width: 3000px) and (min-height: 1700px) {
-  :root { --ts: 1.45; --ctl: 1.45; --gap: 15px; --radius: 10px; --radius-sm: 8px; --radius-lg: 15px;
+  :root { --ts-base: 1.45; --ctl-base: 1.45; --gap: 15px; --radius: 10px; --radius-sm: 8px; --radius-lg: 15px;
     --fixtures-w: clamp(460px, 15vw, 720px); --prog-w: clamp(600px, 20vw, 880px); --pb-h: 340px; }
   body[data-bottom="buttons"] .workspace { --pb-h: clamp(400px, 38vh, 820px); }
   body[data-bottom="timeline"] .workspace { --pb-h: clamp(380px, 36vh, 760px); }
@@ -1177,7 +1182,9 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 #prog-tabs { gap: 0; padding: 0 6px; overflow: visible; }
 #prog-tabs button { flex: 1 1 0; min-width: 0; height: calc(50px * var(--ctl)); padding: 6px 2px 5px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 4px; font-size: var(--fs-s); font-weight: 500; position: relative; }
-#prog-tabs button svg { width: calc(17px * var(--ctl)); height: calc(17px * var(--ctl)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#prog-tabs button svg { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+
 #prog-tabs button span { white-space: nowrap; }
 #prog-tabs button[aria-selected=true] { color: var(--text); font-weight: 600; }
 #prog-tabs button[aria-selected=true] svg { color: var(--accent); }
@@ -1542,10 +1549,6 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
   .tab-pane[data-pane="colour"]:not(.wheel-only) > #swatches { grid-column: 2; align-self: center; }
   /* sliders a hand can travel, not the whole width of a big screen */
   .tab-pane[data-pane="colour"] .colour-extra, .tab-pane[data-pane="colour"] .kelvin-row { max-width: calc(760px * var(--ctl)); }
-  .tab-pane[data-pane="position"][data-sub="point"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; align-items: start; }
-  .tab-pane[data-pane="position"][data-sub="point"] > * { grid-column: 1 / -1; }
-  .tab-pane[data-pane="position"][data-sub="point"] > #move-aim { grid-column: 1; }
-  .tab-pane[data-pane="position"][data-sub="point"] > #mv-pt { grid-column: 2; }
 }
 .mv-nudgebox .mv-nudge { flex-direction: column; align-items: stretch; gap: 8px; }
 .mv-nudgebox .mv-pad { grid-template-columns: repeat(3, calc(38px * var(--ctl))); grid-template-rows: repeat(3, calc(34px * var(--ctl))); }
@@ -2046,7 +2049,9 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
   box-shadow: 0 12px 32px rgb(0 0 0 / .45);
 }
 .fixtures[data-side="float"] { width: var(--fixtures-w, 300px); }
-.programmer[data-side="float"] { width: var(--prog-w, 340px); }
+.programmer[data-side="float"] { width: max(var(--prog-w, 340px), calc(420px * var(--ctl))); min-height: calc(360px * var(--ctl)); }
+/* a floating panel is sized by its corner (and keeps it while the page is open) */
+.fixtures[data-side="float"], .programmer[data-side="float"] { resize: both; min-width: calc(280px * var(--ctl)); display: flex; flex-direction: column; }
 [data-side="float"].fixtures > .ws-grip, [data-side="float"].programmer > .ws-grip { left: auto; right: -2px; }
 .ws-grip::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: calc(48px * var(--ctl)); margin-top: -24px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .15s; }
 .ws-grip:hover::after, .ws-grip.on::after { opacity: 1; background: var(--accent); }
@@ -2270,8 +2275,15 @@ body.masters-left .masters { order: -1; flex-direction: row-reverse; border-left
 .live-bo .btn.on { background: var(--live); border-color: var(--live); color: #fff; }
 
 /* sub-tabs inside the busy programmer tabs (programmer.js SUBS) */
-.sub-tabs { display: flex; gap: 2px; padding: 6px 12px 4px; position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--border); }
-.sub-tabs button { flex: 1; padding: 5px 8px; font-size: var(--fs-s); border-radius: var(--radius-sm); color: var(--text-2); background: transparent; border: 1px solid transparent; }
+.sub-tabs { display: flex; gap: 2px; padding: 3px; border-radius: calc(var(--radius-sm) + 3px); background: var(--bg-2); border: 1px solid var(--border); flex: none; }
+.sub-tabs[hidden] { display: none; }
+.sub-tabs button { flex: none; min-height: calc(32px * var(--ctl)); padding: 0 calc(16px * var(--ctl)); font-size: var(--fs-m); font-weight: 600; border-radius: var(--radius-sm); color: var(--text-2); background: transparent; border: 1px solid transparent; white-space: nowrap; }
+/* the strip under the tabs: the tab's parts on the left, its wheels on the right */
+.prog-strip { display: flex; align-items: center; gap: 16px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-width: 0; }
+.prog-strip:not(:has(.sub-tabs:not([hidden]))):not(:has(> .prog-wheels:not([hidden]))) { display: none; }
+.prog-subslot { display: flex; flex: none; }
+.prog-subslot:not(:has(.sub-tabs:not([hidden]))) { display: none; }
+.prog-strip > .prog-wheels { border: 0; padding: 0; min-height: 0; flex: 1; min-width: 0; justify-content: flex-end; }
 .sub-tabs button[aria-selected="true"] { color: var(--accent); background: var(--accent-bg); border-color: var(--accent); font-weight: 600; }
 .sub-count { margin-left: 5px; font-size: var(--fs-xs); padding: 0 5px; border-radius: 999px; background: var(--accent); color: #fff; }
 .tab-pane[data-sub="point"] [data-in]:not([data-in="point"]),
@@ -2317,8 +2329,9 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 /* a narrow board: the windows one under another (two across when there is
    room), each its own height; the board scrolls */
 .dv-board.dv-stack { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(300px * var(--ctl))), 1fr)); grid-template-rows: none; grid-auto-rows: auto; align-content: start; }
-.dv-board.dv-stack > .dv-win { grid-column: auto !important; grid-row: auto !important; max-height: none; }
-.dv-board.dv-stack > .dv-win .dv-tiles { overflow: visible; }
+.dv-board.dv-stack > .dv-win { grid-column: auto !important; grid-row: auto !important; max-height: none; min-height: max-content; }
+.dv-board.dv-stack > .dv-win .dv-tiles { overflow: visible; flex: none; }
+.dv-board.dv-stack > .dv-win > .dv-sec { flex: none; }
 .dv-board.dv-stack > .dv-win > .dv-sec { overflow: visible; }
 .dv-board.dv-stack > .dv-padwin .dv-keys { grid-auto-rows: calc(40px * var(--ctl)); }
 .dv-board.dv-stack .dv-resize { display: none; }
@@ -2644,3 +2657,114 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
    text at full strength (the rules above use these).  The live red, blind
    amber, GO green and the palette families keep their own colours. */
 :root { --sel-bg: color-mix(in srgb, var(--accent) 18%, transparent); --sel-line: var(--accent); --sel-fg: var(--text); }
+
+/* Position -> Point, laid out across the panel (it was one tall column
+   that scrolled): the room map fitted to the height, the spots beside it,
+   the pan/tilt pad and its tools on the right */
+.prog-body:has(> .tab-pane[data-pane="position"][data-sub="point"]:not([hidden])) { display: flex; flex-direction: column; overflow: hidden; }
+.tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1; min-height: 0; display: grid; gap: 10px 18px;
+  grid-template-columns: auto minmax(calc(240px * var(--ctl)), 1fr) auto; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+.tab-pane[data-pane="position"][data-sub="point"] > #move-aim, .tab-pane[data-pane="position"][data-sub="point"] .aim-sec { display: contents; }
+.tab-pane[data-pane="position"][data-sub="point"] > #move-panel { display: none; }
+.aim-left { display: flex; flex-direction: column; gap: 6px; min-height: 0; grid-column: 1;
+  width: clamp(calc(200px * var(--ctl)), calc((var(--ph, 300px) - 80px * var(--ctl)) * var(--map-ar, .8)), 34cqw); }
+.aim-head { display: flex; gap: 6px; }
+.aim-head .aim-follow { flex: 1; width: auto; margin: 0; white-space: nowrap; }
+.aim-left .aim-map { flex: 1 1 0; min-height: calc(120px * var(--ctl)); margin: 0; width: 100%; display: flex; justify-content: center; }
+.aim-left .aim-map svg { height: 100%; width: 100%; max-width: none; }
+.aim-spotpad { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aim-spotpad .btn { min-width: calc(30px * var(--ctl)); padding: 0 6px; flex: 1 0 auto; }
+.aim-ctl { grid-column: 2; display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow: auto; }
+.aim-ctl > * { flex: none; }
+.aim-ctl .mv-spotbox .mv-spots { margin-bottom: 4px; }
+.aim-ctl .mv-row .k { width: auto; min-width: calc(70px * var(--ctl)); }
+/* the pad column: the pad as tall as there is room, its tools beside it */
+.tab-pane[data-pane="position"][data-sub="point"] > #mv-pt { grid-column: 3; display: grid; gap: 6px 12px; min-height: 0; margin: 0;
+  grid-template-columns: auto calc(230px * var(--ctl)); grid-template-rows: auto auto auto auto auto minmax(0, 1fr); align-content: start; }
+#mv-pt .aim-row { flex-wrap: wrap; gap: 6px; }
+#mv-pt .aim-row .field.inline input { width: calc(58px * var(--ctl)); }
+#mv-pt .aim-tools .select { max-width: 100%; }
+#mv-pt .mv-nudgebox, #mv-pt .mv-nudge { flex-wrap: wrap; }
+#mv-pt .mv-pad .btn { min-width: calc(36px * var(--ctl)); min-height: calc(32px * var(--ctl)); }
+#mv-pt > h3 { display: none; }
+#mv-pt > .mv-pt-row { display: contents; }
+#mv-pt .pad { grid-column: 1; grid-row: 1 / -1; aspect-ratio: 1.2; height: auto; align-self: start; justify-self: start;
+  width: clamp(calc(180px * var(--ctl)), calc((var(--ph, 300px) - 30px * var(--ctl)) * 1.2), 36cqw); }
+#mv-pt > .pad-read { grid-column: 2; grid-row: 5; margin: 0; align-self: start; font-size: var(--fs-xs); }
+#mv-pt #move-nudge { grid-column: 2; grid-row: 1; }
+#mv-pt > .aim-row { grid-column: 2; grid-row: 2; }
+#mv-pt > .aim-tools { grid-column: 2; grid-row: 3; margin: 0; }
+#mv-pt > .palette-strip { grid-column: 2; grid-row: 4; margin: 0; align-self: start; }
+/* a narrow programmer: map and spots on top, the pad below */
+@container (max-width: 760px) {
+  .tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .tab-pane[data-pane="position"][data-sub="point"] > #mv-pt { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Position -> Move: three columns across the panel */
+.mv-move { display: grid; grid-template-columns: minmax(calc(220px * var(--ctl)), 1fr) minmax(calc(300px * var(--ctl)), 1.3fr) minmax(calc(260px * var(--ctl)), 1fr); gap: 10px 22px; align-items: start; margin: 0; }
+.mv-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mv-col > * { flex: none; }
+.mv-move .mv-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.mv-move .mv-tile { min-height: calc(52px * var(--ctl)); padding: 4px; }
+.mv-move .mv-row { min-height: calc(30px * var(--ctl)); }
+.mv-move .mv-row .k { width: calc(68px * var(--ctl)); flex: none; }
+.mv-move .mv-row .chip-row { flex: 1; min-width: 0; }
+.mv-col-ab .mv-row .k { width: auto; min-width: calc(60px * var(--ctl)); }
+.mv-move .mv-mine .mv-row { flex-wrap: wrap; row-gap: 4px; }
+@container (max-width: 1000px) {
+  .mv-move { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .mv-col-ab { grid-column: 1 / -1; }
+}
+
+/* Palettes: Pan / Tilt wheels in the palette view's bar, compact */
+.dv-bar { align-items: center; }
+.dv-wheels { display: flex; align-items: center; }
+.dv-wheels > .prog-wheels { border: 0; padding: 0; min-height: 0; gap: 10px; }
+.dv-wheels .wheel { flex-direction: row; gap: 6px; }
+.dv-wheels .wheel-knob { width: calc(34px * var(--ctl)); height: calc(34px * var(--ctl)); }
+.dv-wheels .wheel-knob i { top: 4px; height: 8px; transform-origin: 50% calc(13px * var(--ctl)); }
+.dv-wheels .wheel .small { font-size: var(--fs-s); font-weight: 600; color: var(--text-2); }
+@container (max-width: 760px) { .dv-hint { display: none; } }
+
+/* Dimmer on a wide programmer: the fader as tall as the panel, the level
+   keys big beside it (not stretched across the whole screen) */
+@container (min-width: 700px) {
+  .tab-pane[data-pane="intensity"]:not([hidden]) { display: grid; grid-template-columns: auto minmax(0, calc(760px * var(--ctl))); gap: 12px 28px; align-content: start; justify-content: start; }
+  .tab-pane[data-pane="intensity"] > .open-warn { grid-column: 1 / -1; }
+  .tab-pane[data-pane="intensity"] > .big-fader-row { display: contents; }
+  .tab-pane[data-pane="intensity"] #int-fader { grid-column: 1; grid-row: span 3; width: calc(72px * var(--ctl)); height: clamp(calc(180px * var(--ctl)), calc(var(--ph, 400px) - 90px), calc(560px * var(--ctl))); }
+  .tab-pane[data-pane="intensity"] .int-side { grid-column: 2; gap: 14px; }
+  .tab-pane[data-pane="intensity"] > #int-gate, .tab-pane[data-pane="intensity"] > .row-btns { grid-column: 2; margin: 0; }
+  .tab-pane[data-pane="intensity"] .big-num { font-size: calc(44px * var(--ts)); }
+  .tab-pane[data-pane="intensity"] #int-quick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .tab-pane[data-pane="intensity"] #int-quick button { height: calc(56px * var(--ctl)); font-size: var(--fs-l); }
+  .tab-pane[data-pane="intensity"] > .row-btns .btn { min-height: calc(46px * var(--ctl)); font-size: var(--fs-m); }
+}
+/* Colour on a wide programmer: the wheel as big as the height allows, the
+   colours as big tiles beside it, and the rest under them */
+@container (min-width: 920px) {
+  .tab-pane[data-pane="colour"]:not(.wheel-only):not([hidden]) { grid-template-columns: auto minmax(0, 1fr); column-gap: 28px; row-gap: 10px; align-content: start; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > :is(.colour-row, .colour-extra, .kelvin-row, #wheel-steps, #colour-match) { grid-column: 2; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > #picker { grid-row: span 6; align-self: start; }
+  .tab-pane[data-pane="colour"] #picker canvas { width: clamp(220px, calc(var(--ph, 400px) - 90px), calc(440px * var(--ctl))); height: auto; aspect-ratio: 1; }
+  .tab-pane[data-pane="colour"]:not(.wheel-only) > #swatches { align-self: start; margin: 0; grid-template-columns: repeat(auto-fill, minmax(calc(66px * var(--ctl)), 1fr)); max-width: calc(1100px * var(--ctl)); gap: 8px; }
+  .tab-pane[data-pane="colour"] #swatches button { border-radius: 10px; }
+  .tab-pane[data-pane="colour"] #colour-match { justify-self: start; }
+}
+/* Beam: its rows two across on a wide programmer; the shutter finder a strip */
+@container (min-width: 1100px) {
+  .beam-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(480px * var(--ctl)), 1fr)); gap: 8px 32px; align-items: center; }
+  .beam-quick > :not(.chip-row) { grid-column: 1 / -1; max-width: calc(1100px * var(--ctl)); }
+}
+.beam-quick > .chip-row > .k { min-width: calc(70px * var(--ctl)); }
+
+/* the programmer's tabs: bigger names and icons; a wide programmer puts
+   the icon beside its name in a lower bar (after the council's rules,
+   which keep wrapping a narrow one rather than cutting a name short) */
+@container (min-width: 600px) { #prog-tabs button { font-size: var(--fs-s); } }
+@container (min-width: 900px) {
+  #prog-tabs button { flex-direction: row; gap: 8px; height: calc(46px * var(--ctl)); font-size: var(--fs-l); }
+  #prog-tabs button svg { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); }
+  #prog-tabs .dotmark { top: 9px; right: auto; left: calc(50% + 4px); }
+}

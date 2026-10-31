@@ -5,7 +5,7 @@
 // Both send aim_at: each light solves its own pan/tilt from where it hangs.
 import { run } from "./actions.js";
 import { state, selectionHeads, on } from "./store.js";
-import { h, toast } from "./ui.js";
+import { h, toast, menu } from "./ui.js";
 import { stagePanel } from "./view3d.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -83,7 +83,7 @@ export async function setFollow(on) {
 function syncButtons() {
   for (const b of document.querySelectorAll(".aim-follow")) {
     b.classList.toggle("on", following);
-    b.textContent = following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor";
+    b.textContent = following ? "✋ Following - drag the 3D floor" : "✋ Follow me";
   }
 }
 
@@ -235,27 +235,32 @@ function floorMap() {
   return svg;
 }
 
-/** The Aim section: follow toggle + floor map (+ the spots, from the caller). */
+/** The Aim section: the map (Follow me and the map's own menu above it,
+ *  the spot nudges under it) and, beside it, what the caller adds: the
+ *  spots, formations and roam. */
 export function aimBlock(...after) {
   const btn = h("button.btn.aim-follow" + (following ? ".on" : ""), {
-    title: "Then press and drag on the 3D view: every selected moving light follows the pointer over the floor (right-drag still turns the view, Esc stops)",
+    title: "Follow me: then press and drag on the 3D view - every selected moving light follows the pointer over the floor (right-drag still turns the view, Esc stops)",
     onclick: () => setFollow(!following),
-  }, following ? "✋ Following - drag on the 3D floor" : "✋ Follow me on the 3D floor");
-  const map = h("div.aim-map", { title: "The room as drawn in Arrange, trusses at their real angle. Drag on it: every selected light points at that spot, wherever its truss is turned. (The pan/tilt pad below moves each light's own pan and tilt.)" });
+  }, following ? "✋ Following - drag the 3D floor" : "✋ Follow me");
+  const map = h("div.aim-map", { title: "The room as drawn in Arrange, trusses at their real angle. Drag on it: every selected light points at that spot, wherever its truss is turned. (The pan/tilt pad moves each light's own pan and tilt.)" });
   map.append(floorMap());
-  const turn = h("div.mv-row", h("span.k", "Map"), h("span.chip-row",
-    ...[["audience", "From the audience", "The stage at the top, as the audience sees it"], ["dj", "From the DJ", "The way the DJ faces at the top: left on the map is the DJ's left"]]
-      .map(([v, l, t]) => h("button.chip.am-turn" + (mapTurn === v ? ".on" : ""), { title: t, dataset: { turn: v }, onclick: () => turnMap(v) }, l)),
-    h("button.chip", { title: "Turn the map a quarter", onclick: () => turnMap(String((turnDeg() + 90) % 360)) }, "↻ 90°")));
-  const set = h("div.mv-row", h("span.k", "Set"), h("span.chip-row",
-    ...[["booth", "DJ booth", "Tap the map where the DJ stands"], ["centre", "Middle", "Tap the middle of the room (where the lights' Middle spot is)"],
-      ["front", "Front", "Tap the way the DJ faces (towards the crowd)"]].map(([k, l, t]) => h("button.chip" + (setting === k ? ".on" : ""), {
-      title: t, onclick: (e) => {
-        setting = setting === k ? "" : k;
-        for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget && !!setting);
-        if (setting) toast(`${t} - the next tap on the map sets it`, "", 3500);
-      } }, l)),
-    (orient().set || []).length ? h("button.chip", { title: "Back to what the desk works out from the room", onclick: () => run("venue_orient", { clear: "all" }, { toast: true }) }, "Reset") : null));
+  const vb = map.querySelector("svg") && map.querySelector("svg").viewBox.baseVal;
+  const mapAr = vb && vb.width && vb.height ? (vb.width / vb.height).toFixed(3) : "";
+  // which way round the map is, and where the DJ / the middle / the front
+  // are: setup, kept in the map's menu (they were three rows of chips)
+  const mapMenu = (anchor) => menu(anchor, [
+    ...[["audience", "Seen from the audience", "the stage at the top"], ["dj", "Seen from the DJ", "left on the map is the DJ's left"]]
+      .map(([v, l, hint]) => ({ label: (mapTurn === v ? "✓ " : "") + l, hint, run: () => turnMap(v) })),
+    { label: "Turn the map a quarter", run: () => turnMap(String((turnDeg() + 90) % 360)) },
+    "-",
+    ...[["booth", "Set where the DJ stands…", "then tap the map"], ["centre", "Set the middle of the room…", "then tap the map"],
+      ["front", "Set the way the DJ faces…", "then tap towards the crowd"]].map(([k, l, hint]) => ({ label: l, hint, run: () => {
+      setting = k;
+      toast(`${l.replace("…", "")}: the next tap on the map sets it`, "", 3500);
+    } })),
+    ...((orient().set || []).length ? [{ label: "Back to what the desk works out", run: () => run("venue_orient", { clear: "all" }, { toast: true }) }] : []),
+  ]);
   // the spot, moved as the DJ sees it: left / right / away / nearer
   const step = (fwd, right) => {
     if (!movers().length) { toast("Select moving lights first"); return; }
@@ -267,19 +272,22 @@ export function aimBlock(...after) {
     aimTo({ x: Math.max(x0, Math.min(x0 + w, from.x + (f[0] * fwd + r[0] * right) * S)), y: 0,
       z: Math.max(z0, Math.min(z0 + d, from.z + (f[1] * fwd + r[1] * right) * S)) }, true);
   };
-  const pad = h("div.mv-row", h("span.k", "Spot (DJ)"), h("span.chip-row",
-    h("button.chip", { title: "The spot to the DJ's left", onclick: () => step(0, -1) }, "◀ left"),
-    h("button.chip", { title: "The spot further from the DJ", onclick: () => step(1, 0) }, "▲ away"),
-    h("button.chip", { title: "The spot nearer the DJ", onclick: () => step(-1, 0) }, "▼ nearer"),
-    h("button.chip", { title: "The spot to the DJ's right", onclick: () => step(0, 1) }, "right ▶"),
-    h("button.chip", { title: "The middle of the room", onclick: () => { const o = orient(); target = null; aimTo({ x: o.centre[0], y: 0, z: o.centre[1] }, true); } }, "● middle")));
+  const nudge = h("div.aim-spotpad", { title: "Move the spot as the DJ sees it" },
+    h("span.muted.small", "Spot"),
+    h("button.btn.small", { title: "The spot to the DJ's left", onclick: () => step(0, -1) }, "◀"),
+    h("button.btn.small", { title: "The spot further from the DJ", onclick: () => step(1, 0) }, "▲"),
+    h("button.btn.small", { title: "The spot nearer the DJ", onclick: () => step(-1, 0) }, "▼"),
+    h("button.btn.small", { title: "The spot to the DJ's right", onclick: () => step(0, 1) }, "▶"),
+    h("button.btn.small", { title: "The middle of the room", onclick: () => { const o = orient(); target = null; aimTo({ x: o.centre[0], y: 0, z: o.centre[1] }, true); } }, "Middle"));
   queueMicrotask(drawTarget);
   const heads = multiHead() ? h("div.mv-row", h("span.k", "Heads"),
     h("span.chip-row", ...[[0, "Together"], [0.8, "Fan out"], [2, "Wide fan"]].map(([v, l]) => h("button.chip" + (fan === v ? ".on" : ""), {
-      title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar)",
+      title: v ? `Each head of a multi-head light aims at its own spot, ${v} m apart along the throw` : "Every head on the spot (they sit side by side on the bar) - or pick heads in the title row to move them alone",
       onclick: (e) => { fan = v; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); },
-    }, l))), h("span.muted.small", "or pick heads (Heads: 1 2 3 4) to move them alone")) : null;
-  return h("div.mv-sec.aim-sec", h("h3", "Aim"), btn, map, turn, set, pad, heads, ...after.filter(Boolean));
+    }, l)))) : null;
+  const left = h("div.aim-left", h("div.aim-head", btn, h("button.btn.small.ghost.aim-mapmenu", { title: "The map: which way round; where the DJ, the middle and the front are", "aria-label": "Map options", onclick: (e) => mapMenu(e.currentTarget) }, "⋯")), map, nudge);
+  if (mapAr) left.style.setProperty("--map-ar", mapAr);           // its width follows the room's shape
+  return h("div.mv-sec.aim-sec", left, h("div.aim-ctl", ...after.filter(Boolean), heads));
 }
 
 function turnMap(v) {

@@ -11,7 +11,6 @@ import { icon } from "./icons.js";
 import { focusedPlayback } from "./playbacks.js";
 import { renderWheels, initWheels } from "./wheels.js";
 import { goboIcon, goboRef } from "./goboicon.js";
-import { needs3d, stagePanel } from "./view3d.js";
 
 const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
@@ -358,13 +357,21 @@ function attrEntry(role) {
 
 // Buttons for a wheel: the fixture's own named slots (each sent to the
 // middle of its range) when the file lists them, otherwise 8 even guesses.
+// a slot's name as a chip says it: "GoboShake Wheel Slot 3" -> "Shake 3",
+// "Wheel Slot 0 OPEN" -> "Open" (the whole name is its tooltip)
+function slotLabel(name) {
+  const n = String(name || "").replace(/\bgobo\s*shake\b/i, "Shake").replace(/\b(gobo\s*)?wheel\s*slot\s*/i, "").replace(/\s+/g, " ").trim();
+  const open = /^\d*\s*open$/i.test(n);
+  return open ? "Open" : n || name;
+}
+
 function slotButtons(role, entry) {
   const send = (value) => () => run("set_attribute", { attribute: role, value }).then(loadAttributes);
   if (entry && entry.slots && entry.slots.length) {
     const gobo = role.startsWith("gobo");
     return entry.slots.map((s) => h("button.chip.slot" + (gobo ? ".gobo" : ""), {
       title: `${s.name} - DMX ${s.from}-${s.to}`, onclick: send(s.value),
-    }, gobo ? goboIcon(goboRef(role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, s.name));
+    }, gobo ? goboIcon(goboRef(role, s)) : s.hex ? h("i.slot-dot", { style: { background: s.hex } }) : null, slotLabel(s.name)));
   }
   return Array.from({ length: 8 }, (_, i) => h("button.chip", {
     title: `DMX ${i * 16 + 8} - this fixture's file lists no slots, so these are guesses`,
@@ -457,15 +464,6 @@ function wireColourMatch() {
 }
 
 function wirePad() {
-  $("#aim-spot").addEventListener("click", () => {
-    if (!hasSel()) { toast("Select the lights to aim first"); return; }
-    stagePanel().then((m) => {
-      const st = m && m.getStage();
-      if (!st) { needs3d("Aiming at a spot"); return; }
-      toast("Click a spot in the 3D view (Esc cancels)", "", 4000);
-      st.pickPoint((p) => run("aim_at", { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, { toast: true }));
-    });
-  });
   $("#aim-mark").addEventListener("change", (e) => {
     const name = e.target.value;
     e.target.value = "";
@@ -1057,9 +1055,15 @@ function renderProgIn() {
   // a greyed-out button says why (a disabled button shows no tooltip everywhere)
   const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
     : !hasSel() ? "Select the lights to make a button of them." : "";
+  // (the why is the greyed button's own tooltip: a line of text under the
+  // buttons that came and went moved the whole panel)
   $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
+  for (const b of [$("#prog-make"), $("#prog-clear")]) {
+    if (b.dataset.title === undefined) b.dataset.title = b.title;
+    b.title = (b.id === "prog-clear" ? !any : why) ? why || b.dataset.title : b.dataset.title;
+  }
   const w = $("#prog-why");
-  if (w && w.textContent !== why) w.textContent = why;
+  if (w) w.textContent = "";
 }
 
 // the cue that is on in the focused playback (what Update merges into)
@@ -1512,6 +1516,12 @@ function wireTools() {
 function showTab(name) {
   tab = name;
   renderWheels(name);
+  for (const n of $$("#prog-subslot .sub-tabs")) n.hidden = n.dataset.for !== name;
+  // on Palettes the Pan / Tilt wheels sit in the palette view's own bar (no
+  // extra row); on every other tab they are back in the strip
+  const wheels = $("#prog-wheels"), slot = document.querySelector(".dv-wheels");
+  if (name === "desk" && slot) slot.append(wheels);
+  else if (wheels.parentElement !== $("#prog-strip")) $("#prog-strip").append(wheels);
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
@@ -1574,19 +1584,26 @@ function initSubTabs() {
     };
     nav.append(...subs.map(([k, label, title]) => h("button", { role: "tab", type: "button", dataset: { sub: k }, title, onclick: () => pick(k) },
       label, h("span.sub-count", { hidden: true }))));
-    el.prepend(nav);
+    // in the row with the wheels, not a full-width row of its own
+    nav.dataset.for = pane;
+    nav.hidden = true;
+    $("#prog-subslot").append(nav);
     pick(cur);
   }
   // how many effects are running: on the FX tab's Running sub-tab
   on("snapshot", () => {
     const n = ((state.snap && state.snap.fx) || []).length;
-    const c = document.querySelector('.tab-pane[data-pane="fx"] .sub-tabs [data-sub="running"] .sub-count');
+    const c = document.querySelector('.sub-tabs[data-for="fx"] [data-sub="running"] .sub-count');
     if (c) { c.hidden = !n; c.textContent = String(n); }
   });
 }
 
 export function initProgrammer() {
   initSubTabs();
+  // every tab sizes its big parts (fader, colour wheel, map, pad) from the
+  // height there is: app.css --ph
+  const body = $("#prog-body");
+  if (body && window.ResizeObserver) new ResizeObserver(() => body.style.setProperty("--ph", `${body.clientHeight}px`)).observe(body);
   wireActs();
   intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
   $$("#int-quick button").forEach((b) => b.addEventListener("click", () => {

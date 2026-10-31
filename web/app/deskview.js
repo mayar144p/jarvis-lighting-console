@@ -102,6 +102,8 @@ function groupMenu(anchor, g) {
   menu(anchor, [
     { label: "Add the selection to it", run: () => run("group_edit", { n: g.n, add: true }, { toast: true }) },
     { label: "Rename…", run: async () => { const name = await promptBox("Rename group", "Name", g.name, { ok: "Rename" }); if (name) run("group_edit", { n: g.n, name }, { toast: true }); } },
+    { label: "Faders on the buttons page", hint: "effect speed, strobe, strobe speed",
+      run: () => import("./quickbuttons.js").then((m) => run("quick_group_controls", { group: g.n, page: m.currentPage() }, { toast: true })) },
     "-",
     { label: "Delete", danger: true, run: async () => { if (await confirmBox("Delete group", `Delete “${g.name}”? The lights stay.`, { ok: "Delete", danger: true })) run("group_delete", { n: g.n }, { toast: true }); } },
   ]);
@@ -401,8 +403,8 @@ export function renderDeskView() {
     const fit = () => { if (board) board.classList.toggle("dv-stack", board.clientWidth > 0 && board.clientWidth < STACK_BELOW); };
     new ResizeObserver(fit).observe(board);
     box.replaceChildren(h("div.dv",
-      h("div.dv-bar", h("span.muted.small", "Drag a window by its title to move it, by its corner to size it; × hides it."),
-        h("span.grow"),
+      h("div.dv-bar", h("span.muted.small.dv-hint", "Drag a window by its title to move it, by its corner to size it; × hides it."),
+        h("span.grow"), h("div.dv-wheels"),
         h("button.btn.small.ghost", { title: "Bring back a hidden window", onclick: (e) => menu(e.currentTarget,
           Object.entries(NAMES).map(([id, name]) => ({ label: (hidden().includes(id) ? "" : "✓ ") + name, run: () => {
             layout._hidden = hidden().includes(id) ? hidden().filter((x) => x !== id) : [...hidden(), id];
@@ -413,6 +415,8 @@ export function renderDeskView() {
         h("button.btn.small.ghost", { onclick: resetDeskLayout, title: "Every window back where it started, all shown" }, "Reset layout")),
       board));
     shownKey = "";
+    const w = document.getElementById("prog-wheels");   // the Pan / Tilt wheels into the bar
+    if (w) box.querySelector(".dv-wheels").append(w);
   }
   if (key === shownKey) return;
   shownKey = key;

@@ -117,14 +117,22 @@ function floatAt(panel, at, p) {
     for (const k of ["left", "top", "max-height"]) panel.style.removeProperty(k);
     return;
   }
-  // inside the 3D view's area: never over the dock or off the screen
-  const box = ws().getBoundingClientRect(), st = $("#stage-wrap").getBoundingClientRect();
+  // inside the 3D view's area: never over the dock or off the screen (with
+  // no 3D view in this workspace, the workspace's own area - it collapsed
+  // to its title when it measured a 3D view that wasn't there)
+  const box = ws().getBoundingClientRect();
+  let st = $("#stage-wrap").getBoundingClientRect();
+  if (st.width < 200 || st.height < 200) {
+    const dock = document.querySelector(".playbacks");
+    const bottom = dock && dock.offsetParent ? dock.getBoundingClientRect().top : box.bottom;
+    st = { left: box.left, top: box.top, width: box.width, height: Math.max(240, bottom - box.top) };
+  }
   const x0 = st.left - box.left, y0 = st.top - box.top;
   const x = Math.max(x0, Math.min((p && p.x) || 0, x0 + st.width - 160));
   const y = Math.max(y0, Math.min((p && p.y) || 0, y0 + st.height - 120));
   panel.style.left = x + "px";
   panel.style.top = y + "px";
-  panel.style.maxHeight = Math.max(120, y0 + st.height - y - 8) + "px";
+  panel.style.maxHeight = Math.max(320, y0 + st.height - y - 8) + "px";
 }
 function refloat() {
   const w = activeWorkspace();

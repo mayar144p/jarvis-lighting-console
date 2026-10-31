@@ -11,6 +11,7 @@ const WHEELS = {
   intensity: [["dimmer", "Dimmer"]],
   colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]],
   position: [["pan", "Pan"], ["tilt", "Tilt"]],
+  desk: [["pan", "Pan"], ["tilt", "Tilt"]],          // (in the palette view's own bar)
   beam: [["zoom", "Zoom"], ["focus", "Focus"], ["iris", "Iris"], ["frost", "Frost"], ["gobo_rot", "Gobo spin"], ["prism_rot", "Prism spin"]],
 };
 const COARSE = 0.01, FINE = 0.001;                 // a share of the travel per notch

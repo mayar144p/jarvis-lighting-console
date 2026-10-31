@@ -3,7 +3,7 @@
 import { get, post, token } from "./api.js";
 import { aiPanel } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES } from "./theme.js";
+import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES, TEXT_SCALE } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -589,6 +589,8 @@ function themeRow() {
       h("h3", "Look"),
       h("p.muted.small", "This computer only. Which panels show, where and how wide: the workspace button in the top bar (each workspace keeps its own)."),
       h("div.look-rows",
+        h("div.look-row", h("span", "Text size"), seg(Object.entries(TEXT_SCALE), t.text, (k) => setTheme({ text: k })),
+          h("span.muted.small", "every text on the desk bigger - buttons and rows grow with it, nothing gets cut off")),
         h("div.look-row", h("span", "Density"), seg(Object.entries(DENSITIES), t.density, (k) => setTheme({ density: k })),
           h("span.muted.small", "more on screen, or more room around it")),
         h("div.look-row", h("span", "Accent"), sw),

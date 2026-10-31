@@ -9,6 +9,8 @@ export const ACCENTS = {
   amber: ["#f5a524", "#dd8f10"], red: ["#ff6b6b", "#ef4444"], pink: ["#f472b6", "#e2559c"], white: ["#e4e4ea", "#c9c9d2"],
 };
 export const DENSITIES = { compact: "Compact", standard: "Standard", roomy: "Roomy" };
+// text size on top of the screen's own size class: the layout grows with it
+export const TEXT_SCALE = { standard: "Standard", large: "Large", xl: "Extra large" };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 /** Darker by a fraction (the accent's pressed / second shade). */
@@ -25,6 +27,7 @@ export function themeNow() {
     accent: ACCENTS[t.accent] || HEX.test(String(t.accent)) ? t.accent : "violet",
     bright: Math.max(0.3, Math.min(1, +t.bright || 1)),
     density: DENSITIES[t.density] ? t.density : "standard",
+    text: TEXT_SCALE[t.text] ? t.text : "standard",
     motion: t.motion === "reduced" ? "reduced" : "full" };
 }
 
@@ -32,6 +35,7 @@ export function applyTheme(t = themeNow()) {
   const root = document.documentElement;
   root.dataset.theme = t.mode;
   root.dataset.density = t.density;
+  root.dataset.textsize = t.text;
   root.dataset.motion = t.motion;
   const [a, a2] = ACCENTS[t.accent] || (HEX.test(String(t.accent)) ? [t.accent, shade(t.accent)] : ACCENTS.violet);
   root.style.setProperty("--accent", a);

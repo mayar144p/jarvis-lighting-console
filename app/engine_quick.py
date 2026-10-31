@@ -1060,10 +1060,10 @@ class QuickMixin:
         return out
 
     def _a_quick_group_controls(self, group=None, page=None, **_):
-        """A group's own controls on the buttons page, in one go: a Pulse
-        button, a Speed fader (its effects and moves - the pulse too), a
-        Strobe button and a Strobe speed fader, side by side - each renamed
-        like any button.  (Its level is the group's fader beside Blackout.)"""
+        """A group's own controls on the buttons page, in one go: a Speed
+        fader (its effects and moves), a Strobe button and a Strobe speed
+        fader, side by side - each renamed like any button.  (Its level is
+        the group's fader beside Blackout.)"""
         if group in (None, "") or isinstance(group, (dict, list, bool)):
             raise ValueError("which group? (its number)")
         g = self._group(group=group)
@@ -1071,8 +1071,7 @@ class QuickMixin:
         page = int(_clamp(page or 1, 1, self.QUICK_PAGES))
         lay = {**self.LAYOUT_DEFAULT, **self._quick_layouts().get(str(page), {})}
         used = self._quick_taken(page, lay["cols"])
-        tiles = [{"kind": "fx", "label": f"{g['name']} pulse", "fx": "pulse", "mode": "latch"},
-                 {"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
+        tiles = [{"kind": "fader", "label": f"{g['name']} speed", "control": {"what": "lights", "mode": "speed"}, "default": 50},
                  {"kind": "strobe", "label": f"{g['name']} strobe", "mode": "hold", "hz": 10, "follow_fader": True},
                  {"kind": "fader", "label": f"{g['name']} strobe speed", "control": {"what": "lights", "mode": "strobe"}, "default": 31}]
         total = lay["cols"] * lay["rows"]
@@ -1088,7 +1087,7 @@ class QuickMixin:
             ids.append(btn["id"])
         self.quick.sort(key=lambda b: (b["page"], b["slot"]))
         return {"ids": ids, "page": page,
-                "summary": f"{g['name']}: pulse, speed, strobe and strobe speed on page {page}"}
+                "summary": f"{g['name']}: speed, strobe and strobe speed on page {page}"}
 
     def _quick_taken(self, page: int, cols: int) -> set:
         """The places on a page with a button - or under a big one."""

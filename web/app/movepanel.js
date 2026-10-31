@@ -200,6 +200,7 @@ setShapeKnobs(() => params());
 
 async function startMove(name) {
   lastLib = name;
+  knobs.showAB = name === "range";
   rememberKnobs();
   const heads = movers().map((x) => x.head_no);
   if (!heads.length) { toast("Select a moving light first"); return; }
@@ -248,10 +249,15 @@ function spotsBlock() {
   }
   const floor = spots.some((s) => s.key === "floor");
   return h("div.mv-spotbox",
-    h("div.mv-spots", ...spots.map((s) => h("button.btn.mv-spot", {
-      title: `Every selected mover points at ${s.label}, each from where it hangs`,
-      onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
-    }, s.label))),
+    h("div.mv-spots", ...spots.map((s, i) => {
+      // two zones with the same name (two DJ zones): numbered, not "DJ DJ"
+      const same = spots.filter((x) => x.label === s.label);
+      const label = same.length > 1 ? `${s.label} ${same.indexOf(s) + 1}` : s.label;
+      return h("button.btn.mv-spot", {
+        title: `Every selected mover points at ${label}, each from where it hangs`,
+        onclick: () => run("aim_spot", { spot: s.key, glide: followGlide() }, { toast: true }),
+      }, label);
+    })),
     floor ? h("div.mv-row", h("span.k", "Formation"),
       h("button.chip", { title: "Spread the lights across the dance floor", onclick: () => run("aim_spot", { formation: "fan", glide: followGlide() }, { toast: true }) }, "Fan out"),
       h("button.chip", { title: "Left lights to the right side, right lights to the left", onclick: () => run("aim_spot", { formation: "cross", glide: followGlide() }, { toast: true }) }, "Cross"),
@@ -346,23 +352,16 @@ function nudgeBlock() {
   const btn = (label, axis, sign, title) => h("button.btn.mv-arrow", {
     title, onclick: () => run("nudge", { axis, step: sign * step() }, { silentError: false }),
   }, label);
-  return h("div.mv-nudgebox",
+  // nudge while watching the real beam; a position worth keeping is saved
+  // with the palette strip's + Save (there was a second Save spot here)
+  return h("div.mv-nudgebox", { title: "Nudge: a small step while you watch the real beam" },
     h("div.mv-nudge",
       h("div.mv-pad",
         h("span"), btn("↑", "tilt", 1, "Tilt up"), h("span"),
         btn("←", "pan", -1, "Pan left"), h("button.btn.mv-fine" + (fine ? ".on" : ""), {
           title: "Fine: tiny steps for exact focus", onclick: () => { fine = !fine; render(true); },
         }, fine ? "fine" : "coarse"), btn("→", "pan", 1, "Pan right"),
-        h("span"), btn("↓", "tilt", -1, "Tilt down"), h("span")),
-      h("div.mv-nudge-side",
-        h("span.muted.small", "Nudge: watch the real beam"),
-        h("button.btn.small", {
-          title: "Keep this position as a spot you can tap again (a position look)",
-          onclick: async () => {
-            const name = await promptBox("Save spot", "Name", "", { ok: "Save" });
-            if (name) run("record_palette", { kind: "position", name }, { toast: true });
-          },
-        }, "Save spot"))));
+        h("span"), btn("↓", "tilt", -1, "Tilt down"), h("span"))));
 }
 
 function bpmText() {
@@ -454,51 +453,54 @@ function movementBlock() {
         run("fx_tweak", { id: f.id, speed: +(1 / v).toFixed(4) }, { silentError: true });
       }
     } });
-  return section("Movement",
-    myMoves(act),
-    h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) ? ".on" : ""), {
-      title: params().zone ? `${label} across the ${zoneName()}` : `${label} around where the lights point now`, onclick: () => startMove(name),
-    }, h("b", icon), h("span", label)))),
-    axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
-      : "These lights only pan: Sweep and Fan are the movements they can do."),
-    zoneKinds().length ? h("div.mv-row", h("span.k", "Where"), h("span.chip-row",
-      ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
-        ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
-      (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
-    rangeBlock2(),
-    h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
-      ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
-        (v) => knobs.size === v, (v) => { knobs.size = v; }))),
-    secs,
-    h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
-      ...chips([["together", 0, "Every light at the same point"], ["½ wave", 180, "Half a cycle between the first light and the last"],
-        ["wave", 360, "A smooth wave: each light a step behind the one before"], ["2 waves", 720]], (v) => knobs.spread === v, (v) => { knobs.spread = v; }),
-      degIn(knobs.spread, 0, 720, (v) => { knobs.spread = v; }, "The wave's spread, in degrees of the cycle"))),
-    multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
-      ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
-        (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null,
-    // the knobs used now and then fold away (remembered while the page is open)
-    h("details.mv-more", { open: knobs.more, ontoggle: (e) => { knobs.more = e.currentTarget.open; } },
-      h("summary", "More: direction, arc, lock"),
+  const abOn = knobs.showAB || act.some((f) => f.lib === "range");
+  // three columns across the panel (it was one long column that scrolled):
+  // the movements and my moves | how the movement goes | A -> B, the speeds,
+  // what is running
+  return h("div.mv-sec.mv-move", { title: "Movements run around where the lights point now. They fit the dance floor - or the zone a light is kept in - and no beam crosses a keep-out zone (Zones & limits)." },
+    h("div.mv-col.mv-col-shapes",
+      h("div.mv-tiles", ...MOVES.filter(([name]) => canRun(name)).map(([name, label, icon]) => h("button.mv-tile" + (act.some((f) => f.lib === name) || (name === "range" && knobs.showAB) ? ".on" : ""), {
+        title: params().zone ? `${label} across the ${zoneName()}` : `${label} around where the lights point now`, onclick: () => startMove(name),
+      }, h("b", icon), h("span", label)))),
+      axes().both ? shapesRow() : h("p.muted.small", axes().tilt ? "These lights only tilt: Bounce is the movement they can do."
+        : "These lights only pan: Sweep and Fan are the movements they can do."),
+      myMoves(act)),
+    h("div.mv-col.mv-col-knobs",
+      zoneKinds().length ? h("div.mv-row", h("span.k", "Where"), h("span.chip-row",
+        ...chips([["around the aim", "", "The movement goes round wherever the lights point now"],
+          ...zoneKinds().map(([k, name]) => [name, k, `The movement is drawn on the ${name}: every beam stays on it, wherever the light hangs`])],
+        (v) => (params().zone || "") === v, (v) => { knobs.zone = v; }))) : null,
+      h("div.mv-row", h("span.k", "Size"), h("span.chip-row",
+        ...chips(SIZES.map(([l, v], i) => [l, v, params().zone ? `${["a quarter", "half", "all"][i]} of the ${zoneName()}` : `${v}° around the aim`]),
+          (v) => knobs.size === v, (v) => { knobs.size = v; }))),
+      secs,
+      h("div.mv-row", h("span.k", "Lights"), h("span.chip-row",
+        ...chips([["together", 0, "Every light at the same point"], ["½ wave", 180, "Half a cycle between the first light and the last"],
+          ["wave", 360, "A smooth wave: each light a step behind the one before"], ["2 waves", 720]], (v) => knobs.spread === v, (v) => { knobs.spread = v; }),
+        degIn(knobs.spread, 0, 720, (v) => { knobs.spread = v; }, "The wave's spread, in degrees of the cycle"))),
+      multiTilt() ? h("div.mv-row", h("span.k", "Heads"), h("span.chip-row",
+        ...chips([["all together", false], ["a wave through the heads", true, "Each head of a multi-head light moves in turn"]],
+          (v) => knobs.across === v, (v) => { knobs.across = v; }))) : null),
+    h("div.mv-col.mv-col-ab",
+      abOn ? rangeBlock2() : null,
       h("div.mv-row", h("span.k", "Direction"), h("span.chip-row",
-        ...chips([["↻ clockwise", 1], ["↺ counter-clockwise", -1]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
+        ...chips([["↻", 1, "Clockwise"], ["↺", -1, "Counter-clockwise"]], (v) => knobs.direction === v, (v) => { knobs.direction = v; }))),
       h("div.mv-row", h("span.k", "Arc"), h("span.chip-row",
         ...chips([["90°", 90], ["180°", 180], ["270°", 270], ["full", 360]], (v) => knobs.arc === v, (v) => { knobs.arc = v; }),
         degIn(knobs.arc, 10, 360, (v) => { knobs.arc = v; }, "Any arc, in degrees"))),
       h("div.mv-row", h("span.k", "Lock"), h("span.chip-row",
         ...chips([["none", 0], ["keep tilt", 1, "Only pan moves"], ["keep pan", 2, "Only tilt moves"]],
-          (v) => knobs.lock === v, (v) => { knobs.lock = v; })))),
-    moveSpeed(),
-    speedMaster(),
-    theirs.length ? h("p.small.muted.mv-theirs", theirs.map((f) => `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} on ${f.heads.length} light(s) is played by a ${f.from}`
-      + ` - change it in that ${f.from}${f.from === "button" ? " (Buttons -> Edit)" : ""}, not here`).join(" · ")) : null,
-    act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
-      h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
-      spaceSelect(f), beatSelect(f),
-      h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
-      fxKnobs(f))),
-    h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null,
-    h("p.muted.small", "Movements run around where the lights point now. They fit the dance floor - or the zone a light is kept in - and no beam crosses a keep-out zone (Zones & limits). Point them first, then pick a movement."));
+          (v) => knobs.lock === v, (v) => { knobs.lock = v; }))),
+      moveSpeed(),
+      speedMaster(),
+      theirs.length ? h("p.small.muted.mv-theirs", theirs.map((f) => `${(MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]} on ${f.heads.length} light(s) is played by a ${f.from}`
+        + ` - change it in that ${f.from}${f.from === "button" ? " (Buttons -> Edit)" : ""}, not here`).join(" · ")) : null,
+      act.length ? h("div.mv-running", ...act.map((f) => h("div.mv-run",
+        h("span", `${f.lib === "shape" ? f.label : (MOVES.find((m) => m[0] === f.lib) || [0, f.lib])[1]}${onZone(f)} · ${f.heads.length} light(s)`),
+        spaceSelect(f), beatSelect(f),
+        h("button.btn.small", { onclick: () => run("stop_fx", { id: f.id }) }, "Stop"),
+        fxKnobs(f))),
+      h("button.btn.small.ghost", { onclick: () => { for (const f of act) run("stop_fx", { id: f.id }, { silentError: true }); } }, "Stop all")) : null));
 }
 
 // a number of degrees, typed (no fixed stops); Enter or leaving the box applies it
@@ -637,7 +639,7 @@ function myMoves(act) {
             else run("move_play", { id: m.id, heads }, { toast: true });
           } },
         h("b", m.name), h("small", moveText(m))), more);
-    })) : h("p.muted.small", "Set a movement up below, then save it here with a name - it plays on any lights, any time."));
+    })) : null);
 }
 
 function rangeBlock(sel) {
@@ -765,6 +767,9 @@ function render(force = false) {
 }
 
 export function initMovePanel() {
+  // Point sizes its map and pad from the height there is (app.css --ph)
+  const pane = document.querySelector('.tab-pane[data-pane="position"]');
+  if (pane && window.ResizeObserver) new ResizeObserver(() => pane.style.setProperty("--ph", `${pane.clientHeight}px`)).observe(pane);
   on("snapshot", () => render());
   on("lite", () => render());
   on("selection", () => render());
