@@ -86,7 +86,9 @@
       <button data-mode="program" title="Program: the programmer, cues, palettes, effects, buttons, timeline (F2)">Program</button>
       <button data-mode="live" title="Live: the show running - what plays, what comes next, the hits (F3)">Live</button>
     </div>
-    <button class="tb-btn ws-btn" id="ws-btn" aria-haspopup="menu" aria-label="Layout" title="Layout: the panels, other layouts, save your own">
+    <!-- (the layout menu is gone from the top bar: Set up / Program / Live is
+         the switch, panels move by their titles; Alt+1..9 still switch) -->
+    <button class="tb-btn ws-btn" id="ws-btn" hidden aria-haspopup="menu" aria-label="Layout" title="Layout">
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M5.5 2.5v8M10.5 2.5v8M1.5 10.5h13"/></svg>
       <span id="ws-name"></span>
     </button>

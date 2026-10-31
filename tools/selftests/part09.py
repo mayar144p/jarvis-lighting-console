@@ -10415,8 +10415,11 @@ def test_dock_and_desk_fit() -> None:
     check("group faders: a finger's width each, full names, a strip that scrolls and fades where more wait",
           ".grp-masters > .master.grp { flex: none; width:" in css and 'h("span.m-name", g.name)' in pb
           and "function scrollHints()" in pb and ".grp-masters.more-r" in css, "")
-    check("empty playback slots slim, the ones with cues get the room; a card never taller than the dock",
-          '"minmax(calc(44px * var(--ctl)), 0.4fr)"' in pb and "grid-template-rows: minmax(0, 1fr)" in css, "")
+    check("only the playbacks in use show, and one + after them; a card never taller than the dock",
+          "const shown = new Set(page.filter((pb) => (pb.stack || []).length || pb.n === plus)" in pb
+          and "grid-template-rows: minmax(0, 1fr)" in css, "")
+    check("a playback's options are buttons on its card (+ Cue, Cues, Loop, Auto)",
+          'const opts = h("div.pb-opts"' in pb and ".pb-opt.on {" in css, "")
     check("the head chips sit in the programmer's title row", 'id="prog-heads"' in html and '$("#prog-heads")' in pj, "")
     check("desk view keys: whole names, windows sized within limits", '"Line up": "lineup"' in dv and "const SIZE = {" in dv
           and ".dv-keywin .dv-key span { white-space: nowrap;" in css, "")

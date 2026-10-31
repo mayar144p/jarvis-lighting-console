@@ -727,11 +727,11 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
 /* executors: ten slots, always in their place */
 .pb {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  display: grid; grid-template-columns: calc(36px * var(--ctl)) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: calc(36px * var(--ctl)) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 4px calc(12px * var(--ctl)); padding: 6px; min-width: 0; position: relative;
 }
 /* the playback fader: a finger's width (it was 20 px) - 44 px in Gig mode */
-.pb .vfader { width: calc(36px * var(--ctl)); grid-row: 1 / 4; height: auto; margin-bottom: calc(16px * var(--ctl)); }
+.pb .vfader { width: calc(36px * var(--ctl)); grid-row: 1 / 5; height: auto; margin-bottom: calc(16px * var(--ctl)); }
 body.gig .pb { grid-template-columns: calc(44px * var(--ctl)) minmax(0, 1fr); }
 body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 .pb-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -779,6 +779,15 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .pb-rec { grid-column: 1 / -1; grid-row: 1 / -1; background: none; border: 0; border-radius: var(--radius-sm); color: var(--muted);
   font-size: var(--fs-xs); font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
 .pb-rec b { font: 700 var(--fs-m) var(--mono); color: var(--text-2); }
+.pb-rec .pb-plus { font: 300 var(--fs-2xl) / 1 var(--font); transform: scale(1.4); color: var(--muted); }
+.pb-rec:hover .pb-plus { color: var(--accent); }
+.pb.empty { border: 1px dashed var(--border-2); }
+/* a playback's options, as buttons on its card */
+.pb-opts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; min-width: 0; }
+.pb-opt { height: calc(20px * var(--ctl)); padding: 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface);
+  color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.pb-opt:hover { color: var(--text); border-color: var(--accent); }
+.pb-opt.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
 .pb-rec:hover { color: var(--text); background: var(--accent-bg); }
 /* the masters: group masters, the grand master, BLACKOUT - always at the right */
 .masters { display: flex; gap: 6px; padding: 8px; background: var(--bg-2); border-left: 1px solid var(--border); flex: 0 1 auto; min-width: 0; position: relative; z-index: 1; }
@@ -1372,6 +1381,24 @@ body.gig .pb-mode button { min-height: calc(44px * var(--ctl)); }
 .chan-table tr.dragging { opacity: .45; }
 .chan-table tr.drop td { box-shadow: inset 0 2px 0 var(--accent); }
 .cue-grip { color: var(--muted); white-space: nowrap; }
+.rec-holds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.rec-holds.empty { background: var(--blind-bg); border-color: color-mix(in srgb, var(--blind) 40%, transparent); color: var(--blind); font-size: var(--fs-s); }
+.rec-fades { display: flex; gap: 4px; margin-top: 4px; }
+.rec-fades .chip { padding: 1px 8px; font-size: var(--fs-xs); }
+/* the cue list: quiet rows, the cue that's playing lit, boxes that show
+   as boxes only when you go to change them */
+.cue-table td { vertical-align: middle; padding-top: 6px; padding-bottom: 6px; }
+.cue-table tbody tr { border-bottom: 1px solid var(--border); transition: background .12s; }
+.cue-table tbody tr:hover { background: color-mix(in srgb, var(--surface-3) 45%, transparent); }
+.cue-table tbody tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.cue-table tbody tr.sel .cue-grip { color: var(--accent); font-weight: 700; }
+.cue-table .cue-grip-h { display: inline-block; width: 1.2em; cursor: grab; }
+.cue-table input { background: transparent; border-color: transparent; }
+.cue-table tr:hover input, .cue-table input:focus { background: var(--bg); border-color: var(--border-2); }
+.cue-table input[type="text"] { font-weight: 600; }
+.cue-table th { vertical-align: middle; }
+.cue-table th svg { width: 13px; height: 13px; vertical-align: -2px; }
 .qbtn { --tint: #9a9aa6;
   position: relative; border: 1px solid color-mix(in srgb, var(--tint) 45%, transparent); border-radius: 8px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 16%, #0e131b), #0b0f15);
@@ -1401,6 +1428,10 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 .chip.flashing, .dv-tile.flashing { background: #fff; color: var(--bg); box-shadow: 0 0 14px rgba(255,255,255,.6); }
 .cue-fx { font-size: var(--fs-xs); color: var(--accent); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .cue-parts { margin-left: 4px; font-size: var(--fs-xs); padding: 2px 6px; }
+/* the fade box and its chips on one line, centred (the fan chip sat high) */
+.cue-fadecell { display: flex; align-items: center; gap: 4px; }
+.cue-fadecell .cue-parts { margin-left: 0; display: inline-flex; align-items: center; gap: 4px; height: calc(26px * var(--ctl)); }
+.cue-fadecell .cue-parts svg { width: 13px; height: 13px; }
 .ct-list { max-height: 50vh; overflow: auto; margin-top: 10px; display: grid; gap: 8px; }
 .ct-item { padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 8px; display: grid; gap: 6px; }
 .ready { display: grid; gap: 8px; min-width: min(520px, 90vw); }
@@ -2075,6 +2106,7 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 
 /* ------------------------------------------------- workspaces (workspaces.js) */
 .ws-btn { gap: 6px; }
+.ws-btn[hidden] { display: none !important; }
 .ws-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; }
 #ws-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ws-name:empty { display: none; }

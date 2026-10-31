@@ -46,14 +46,27 @@ function build() {
     const cue = h("div.pb-cue");
     const prog = h("div.pb-prog", h("i"));
     const flash = h("button.flash", { title: "Flash: full while held" }, "Flash");
-    const rec = h("button.pb-rec", { title: "Record what the programmer holds as this playback's first cue (Shift+click: straight away, no questions)",
-      onclick: (e) => quickRecord(e, n) }, h("b", String(n)), h("span", "Record here"));
+    // an empty playback is a "+" after the last one used: it records the
+    // programmer's look as a new playback (the next "+" then sits beside it)
+    const rec = h("button.pb-rec", { title: "A new playback: record what the programmer holds as its first cue (Shift+click: straight away, no questions)",
+      "aria-label": `New playback (${n})`, onclick: (e) => quickRecord(e, n) }, h("b.pb-plus", "+"));
+    // its options as buttons on the card (they were hidden in the ⋯ menu)
+    const opt = (label, title, fn) => h("button.pb-opt", { type: "button", title, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
+    const pbNow = () => allPbs().find((p) => p.n === n) || {};
+    const loopB = opt("Loop", "Loop the cue list (back to the first after the last)", () => run("follow_set", { playback: n, loop: !(pbNow().follow || {}).loop }, { toast: true }));
+    const autoB = opt("Auto", "Auto-follow: run the cue list by itself", () => run("follow_set", { playback: n, on: !(pbNow().follow || {}).on }, { toast: true }));
+    const swopB = opt("Swop", "Flash works as Swop: this playback alone while held", () => { const b = pbNow().bind || {}; run("playback_bind", { playback: n, ...b, swop: !b.swop }, { toast: true }); });
+    const opts = h("div.pb-opts",
+      opt("+ Cue", "Record the programmer as a new cue at the end of this list", () => openCueDialog(n)),
+      opt("Cues", "Open the cue list", () => openCueList(n)),
+      loopB, autoB);
     const card = h("div.pb", { dataset: { pb: n } },
       fader,
       lvl,
       h("div.pb-top", h("span.n", String(n)), name,
         h("button.btn.ghost.small.icon", { title: "Playback options", onclick: (e) => pbMenu(e.currentTarget, n) }, "⋯")),
       h("div.pb-mid", cue, keys, prog),
+      opts,
       h("div.pb-btns",
         h("button.go", { title: "GO: next cue", onclick: () => { setFocus(n); run("cue_go", { playback: n }); } }, "GO"),
         flash,
@@ -65,7 +78,7 @@ function build() {
     card.addEventListener("pointerdown", () => setFocus(n));
     const send = throttle((level) => run("playback_level", { playback: n, level }, { silentError: true }), 60);
     const fd = vfader(fader, { min: 0, max: 100, onInput: send });
-    cards.set(n, { card, fd, name, cue, prog, lvl, keys, flash });
+    cards.set(n, { card, fd, name, cue, prog, lvl, keys, flash, loopB, autoB, swopB });
     strip.append(card);
   }
   setFocus(focusPb);
@@ -236,13 +249,18 @@ function renderPages(pbs) {
     $("#pb-relall-n").textContent = running ? String(running) : "";
     rel.title = running ? `Release the ${running} running playback${running === 1 ? "" : "s"}, on every page` : "No playback is running";
   }
-  for (const [n, c] of cards) c.card.hidden = Math.ceil(n / PER_PAGE) !== pbPage;
-  // a slot with cues gets a full column, an empty one a slim one - all in
-  // their places
+  // the playbacks in use, in their places, and one "+" after the last one
+  // used (no row of empty numbered slots); a page with none: just the "+"
+  const page = pbs.slice((pbPage - 1) * PER_PAGE, pbPage * PER_PAGE);
+  const lastUsed = page.reduce((m, pb) => ((pb.stack || []).length ? Math.max(m, pb.n) : m), 0);
+  const plus = (page.find((pb) => pb.n > lastUsed && !(pb.stack || []).length)
+    || page.find((pb) => !(pb.stack || []).length) || {}).n;
+  const shown = new Set(page.filter((pb) => (pb.stack || []).length || pb.n === plus).map((pb) => pb.n));
+  for (const [n, c] of cards) c.card.hidden = !shown.has(n);
   const strip = $("#pb-strip");
   if (strip) {
-    const cols = pbs.slice((pbPage - 1) * PER_PAGE, pbPage * PER_PAGE)
-      .map((pb) => ((pb.stack || []).length ? "minmax(0, 1fr)" : "minmax(calc(44px * var(--ctl)), 0.4fr)")).join(" ");
+    const cols = page.filter((pb) => shown.has(pb.n))
+      .map((pb) => ((pb.stack || []).length ? "minmax(0, calc(260px * var(--ctl)))" : "calc(64px * var(--ctl))")).join(" ");
     if (strip.style.gridTemplateColumns !== cols) strip.style.gridTemplateColumns = cols;
   }
 }
@@ -288,6 +306,9 @@ function render() {
     c.keys.hidden = !bt;
     c.keys.textContent = bt;
     const swop = !!(pb.bind && pb.bind.swop);
+    c.loopB.classList.toggle("on", !!f.loop);
+    c.autoB.classList.toggle("on", !!f.on);
+    c.swopB.classList.toggle("on", swop);
     c.flash.textContent = swop ? "Swop" : "Flash";
     c.flash.title = swop ? "Swop: this playback alone, at full, while held" : "Flash: full while held";
   }
