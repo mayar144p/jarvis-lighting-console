@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
+from app import (artnet, autoshow, showkit, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape, streamdeck)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -1016,9 +1016,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.refine(
                     eng, str(body["refine"]), offline=bool(body.get("offline"))))
             if body.get("apply") and isinstance(body.get("design"), dict):
-                return self._console_result(eng, autoshow.build(eng, body["design"], playback))
-            return self._console_result(eng, autoshow.design(
-                eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+                built = autoshow.build(eng, body["design"], playback)
+                if body.get("buttons", True):
+                    # and the buttons to play it live (a profile of its own)
+                    try:
+                        kit = showkit.build(eng, body["design"], playback)
+                        built["summary"] += "; " + kit["summary"]
+                        built["kit"] = kit
+                    except ValueError as exc:
+                        built["summary"] += f" (the buttons couldn't be made: {exc})"
+                return self._console_result(eng, built)
+            # (designing a whole show is the AI's: never the desk's rules alone)
+            return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", ""))))
         if route == "/api/console/sound":
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.

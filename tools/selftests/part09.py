@@ -10626,3 +10626,77 @@ def test_renamed_haze() -> None:
             and "data" not in f.parts and not any(x.startswith(".") for x in f.relative_to(ROOT).parts)]
     check("no file or folder carries the old name", not left, left[:3])
 
+
+def test_showkit_room() -> None:
+    """A designed show comes with the buttons to play it live, by the room's rules."""
+    import os
+    import tempfile
+    from app import autoshow, llm, roomsense, showkit
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=6)
+            plan = roomsense.plan(e)
+            kinds = {z["id"]: z["kind"] for z in plan["zones"]}
+            share = {kinds[k]: len(v) for k, v in plan["movers"].items()}
+            check("3 movers: 2 on the dance floor, 1 on the VIP", share.get("dancefloor") == 2 and share.get("vip") == 1, str(share))
+            check("lights never roam the bar or the DJ", not e.act("roam", zones=["bar"], heads=[1]).get("ok")
+                  and not e.act("roam", zones=["dj"], heads=[1]).get("ok"), "")
+            avail = llm.available
+            llm.available = lambda: False
+            try:
+                check("a whole show without the AI is refused (no random shows)",
+                      not _raises_ok(lambda: autoshow.design(e, "halloween")), "")
+            finally:
+                llm.available = avail
+            a = autoshow.analyse(e)
+            d = autoshow.validate(autoshow.fallback_design(a, "halloween"), a)
+            d["name"] = "Halloween"
+            autoshow.build(e, d)
+            vip = [k for k, g in a["groups"].items() if g.get("duty") == "gentle"]
+            check("the VIP's lights get no hits", all(h["group"] not in vip for s in d["sections"] for h in s["hits"]), "")
+            r = showkit.build(e, d)
+            check("the show's buttons: a profile named after it, five pages",
+                  r["profile"] == "Halloween" and r["pages"] == ["Default", "Show", "Colours", "Intensity", "Shoutout"], str(r))
+            pages = {}
+            for b in e.quick:
+                pages.setdefault(b["page"], []).append(b)
+            check("Default: each group's home look and its movements",
+                  any(b["kind"] == "custom" for b in pages[1]) and any(b["kind"] == "fx" for b in pages[1]), "")
+            check("Show: flash, strobe and blackout per group, GO",
+                  {"flash", "strobe", "kill", "go"} <= {b["kind"] for b in pages[2]}, "")
+            check("Colours: a row of colours per group", sum(b["kind"] == "colour" for b in pages[3]) >= 11, "")
+            check("Intensity: speed and strobe-speed faders", sum(b["kind"] == "fader" for b in pages[4]) >= 2, "")
+            check("every page has buttons to the others", all(sum(b["kind"] == "page" for b in pages[p]) >= 3 for p in pages), "")
+            vip_heads = {n for k in vip for n in a["groups"][k]["heads"]}
+            strobes = [b for b in pages[2] if b["kind"] == "strobe" and b["target"].get("heads")]
+            check("nothing on the Show page strobes the VIP's own lights",
+                  all(not (set(b["target"]["heads"]) & vip_heads) for b in strobes), "")
+        finally:
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+
+
+def test_web_inspiration() -> None:
+    """The AI can look things up on the internet (no key), and says so when it can't."""
+    from app import assistant, websearch
+    page = ('<div><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fxmas">'
+            'Christmas <b>lighting</b> colours</a><a class="result__snippet" href="x">Red, green and <b>gold</b></a></div>'
+            '<div><a class="result__a" href="https://example.org/two">Second</a></div>')
+    rows = websearch.parse(page)
+    check("search results are read: title, the real link, the snippet",
+          rows and rows[0]["url"] == "https://example.com/xmas" and rows[0]["title"] == "Christmas lighting colours"
+          and "gold" in rows[0]["snippet"] and rows[1]["url"] == "https://example.org/two", str(rows))
+    check("only web pages are read (no files, no other schemes)", not websearch.read("file:///etc/passwd")["ok"], "")
+    names = {t["function"]["name"] for t in assistant.TOOLS}
+    check("the AI has search_web, read_web, design_show and restyle_show",
+          {"search_web", "read_web", "design_show", "restyle_show"} <= names, str(sorted(names)))
+

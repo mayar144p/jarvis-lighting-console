@@ -718,7 +718,9 @@ class QuickMixin:
         """The profiles for a show file / undo (the one in use is self.quick)."""
         p = self._profiles()
         return {"active": p["active"], "order": list(p["order"]),
-                "sets": json.loads(json.dumps(p["sets"], default=str))}
+                "sets": json.loads(json.dumps(p["sets"], default=str)),
+                # the show each AI-made profile plays (app/showkit.py): its design
+                "shows": json.loads(json.dumps(p.get("shows") or {}, default=str))}
 
     def _profiles_load(self, raw) -> dict:
         """Profiles from a show file: tidied, the active one's buttons are
@@ -751,7 +753,9 @@ class QuickMixin:
         for name in order:                 # a profile with nothing saved yet: empty
             if name != active and name not in sets:
                 sets[name] = {"quick": [], "quick_names": {}, "quick_layout": {}}
-        return {"active": active, "order": order, "sets": sets}
+        shows = {str(k)[:24]: v for k, v in (raw.get("shows") or {}).items()
+                 if str(k)[:24] in order and isinstance(v, dict) and isinstance(v.get("design"), dict)}
+        return {"active": active, "order": order, "sets": sets, "shows": shows}
 
     def _profile_take(self, name: str) -> None:
         """Put profile `name`'s buttons on the desk; the one in use is kept."""

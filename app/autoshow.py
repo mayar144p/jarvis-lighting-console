@@ -481,11 +481,18 @@ def validate(raw, a: dict) -> dict:
     return out
 
 
+NEEDS_AI = "Designing a whole show needs the AI: Settings -> AI (a key, or the offline AI)"
+
+
 def design(eng, brief: str = "", offline: bool = False) -> dict:
     """Analyse the rig and design a show for it: {design, analysis, source}."""
     a = analyse(eng)
     if not a["groups"]:
         raise ValueError("patch some lights first - there is nothing to design for")
+    # a whole show is designed by the AI (the desk's own rules alone made the
+    # same show every time); offline=True is for the desk's own templates
+    if not offline and not llm.available():
+        raise ValueError(NEEDS_AI)
     note = None
     if not offline and llm.available():
         try:
@@ -496,7 +503,7 @@ def design(eng, brief: str = "", offline: bool = False) -> dict:
                 DESIGN_SCHEMA, temperature=0.7)
             return {"design": validate({**raw, "brief": brief}, a), "analysis": _public(a), "source": "llm"}
         except (llm.LLMError, ValueError) as exc:
-            note = f"designed offline (AI: {str(exc)[:160]})"
+            raise ValueError(f"the AI couldn't design the show this time ({str(exc)[:160]}) - try again") from None
     out = {"design": validate({**fallback_design(a, brief), "brief": brief}, a), "analysis": _public(a),
            "source": "offline"}
     if note:
