@@ -10864,3 +10864,12 @@ def test_design_night() -> None:
             else:
                 os.environ["CONSOLE_DATA_DIR"] = old
 
+
+def test_rig_from_photo() -> None:
+    """A photo of the rig: the copilot is told how to turn it into lights in the room."""
+    from app import assistant
+    sysp = assistant.SYSTEM
+    check("a photo of a rig: kinds, counts, where, then find / add / place",
+          "A PHOTO OF A RIG" in sysp and "place_lights" in sysp and "find_fixtures" in sysp, "")
+    check("the copilot can take a photo with the message", "image" in assistant.run_turn.__code__.co_varnames, "")
+
