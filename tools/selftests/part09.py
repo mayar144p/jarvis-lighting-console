@@ -11382,3 +11382,71 @@ def test_two_screens() -> None:
     check("the room counts as one thing", "the room" in editors.note("venue_update", {}, "tablet"), "")
     check("two screens are working the desk", editors.screens() == 2, str(editors.screens()))
     editors.reset()
+
+
+def test_chauvet_lights() -> None:
+    """The real Chauvet lights match the desk: the Spot 260's strobe channel (216-255 is open, not a
+    strobe), the Wave 360's colour macros (they override the RGB mix) and its mixed colours."""
+    from pathlib import Path
+    from app import config, fixtures, profiles
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        profiles.install(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            with fixtures.db(db) as c:
+                fid = c.execute("SELECT id FROM fixtures WHERE model='Intimidator Spot 260' AND source=?",
+                                (profiles.SOURCE,)).fetchone()["id"]
+            for mode in ("8ch", "14ch"):
+                for hh in list(e.patch):
+                    e.act("remove_heads", heads=[hh["head_no"]], confirm=True)
+                e.act("add_heads", fixture_id=fid, qty=1, mode=mode)
+                h = e.patch[0]
+                role = e._shutter_role(h)
+                check(f"Spot 260 {mode}: 216-255 on its strobe channel is open in the 3D, as on the real light",
+                      all(e._strobe_hz(h, {role: v}, None) == 0 for v in (4, 216, 230, 247, 255)), "")
+                check("...8-215 strobes (strobe, pulse, random)", all(e._strobe_hz(h, {role: v}, None) > 0 for v in (40, 120, 200)), "")
+                steps = e.strobe_steps(h, role)
+                check("...and the desk's strobe buttons land in its real strobe range",
+                      all(8 <= steps[k] <= 76 for k in ("slow", "medium", "fast")), str(steps))
+            with fixtures.db(db) as c:                       # a desk installed before this fix
+                c.execute("UPDATE modes SET detail='[]' WHERE fixture_id=?", (fid,))
+            check("a desk installed before gets the details on its next start", profiles.install(db)["details"] == 2, "")
+            check("...and keeps them (not written again)", profiles.install(db)["details"] == 0, "")
+            # Wave 360 IRC (the QLC+ file)
+            src = ROOT / "tools" / "selftests" / "fixturefiles" / "Chauvet-Intimidator-Wave-360-IRC.qxf"
+            wid = fixtures.import_file(db, src)["imported"][0]["fixture_id"]
+            for hh in list(e.patch):
+                e.act("remove_heads", heads=[hh["head_no"]], confirm=True)
+            e.act("add_heads", fixture_id=wid, qty=1, mode="33 ch.")
+            h = e.patch[0]
+            n = h["head_no"]
+            e.act("select_heads", heads=[n])
+            e.act("set_intensity", level=100)
+            e.act("set_attribute", attribute="wheel", value=60)          # "Color 7" left on by a cue / effect
+            look = lambda: next(x for x in e._looks() if x["n"] == n).get("hex")  # noqa: E731
+            e.act("set_attribute", attribute="red", value=255)
+            check("Wave 360: a colour macro left on shows in the 3D (it overrides the mix on the real light)",
+                  look() != "#ff0000", look())
+            e.act("set_colour", hex="#ff7a00")
+            check("...picking a colour switches the macro off, so the mix shows - on the light and in the 3D",
+                  e.programmer[n].get("wheel") == 0 and look() == "#ff7a00", str(e.programmer[n]))
+
+            def rgb():
+                b = e.build_frames()[h["universe"]]
+                a = h["address"] - 1
+                return [b[a + i] for i, r in enumerate(h["map"]) if r in ("red", "green", "blue")][:3]
+            before = rgb()
+            e.act("colour_cal", head=n, screen=True)
+            after = rgb()
+            check("'Real colours like the screen': orange's green comes down so it isn't yellowish",
+                  before == [255, 122, 0] and after[0] == 255 and 40 <= after[1] <= 60 and after[2] == 0, f"{before} -> {after}")
+            check("...remembered for the model", e.act("colour_cal_get", head=n)["screen"], "")
+            e.act("colour_cal", head=n, reset=True)
+            check("...and reset puts it back", rgb() == before, str(rgb()))
+        finally:
+            e.shutdown()
+            config.DATA = old

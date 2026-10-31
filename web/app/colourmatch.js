@@ -36,9 +36,14 @@ export async function openColourMatch() {
     h("button.chip", { title: `Every selected light on ${name.toLowerCase()} - put a reference light on it too`, onclick: () => run("set_colour", { hex }) },
       h("i.slot-dot", { style: { background: hex } }), name)));
   const same = selectionHeads().filter((x) => x.model === first.model && x.mode === first.mode).length;
+  // mixed colours (orange, purple, pink, warm white) came out yellowish or
+  // pale on LEDs: the screen's colours are gamma-coded, an LED's light isn't
+  const screenBox = h("input", { type: "checkbox", checked: !!r.screen,
+    onchange: () => run("colour_cal", { head: first.head_no, screen: screenBox.checked }, { toast: true }) });
+  const screenRow = h("label.check", screenBox, " Real colours like the screen (mixed colours - orange, purple, pink - come out as you see them here, not paler or yellower)");
   const body = h("div.colour-match",
     h("p.muted.small", `${first.model} (${first.mode}) - applies to every light of this model. Put a light of another brand on the same colour next to it, then take each colour down until the two look the same. Start with white.`),
-    tests, ...rows,
+    screenRow, tests, ...rows,
     h("p.muted.small", `${same} of the selected light(s) are this model. The 3D view keeps showing the colour you ask for; the real lights get the matched one.`));
   const close = modal({
     title: "Match colours", body,

@@ -766,12 +766,16 @@ class LooksMixin:
         roles, lime_green, rgb_roles, leds, emits, cmy_roles = self._hex_roles(head)
         r = g = b = 0.0
         lit = False
-        if rgb_roles and any(k in values for k in ("red", "green", "blue")):
+        # a colour macro on (the Wave 360's "Color 7", a rainbow fade)
+        # overrides the RGB mix on the real light: the 3D shows the macro
+        macro_on = rgb_roles and "wheel" in roles and "wheel" in values \
+            and hasattr(self, "_macro_active") and self._macro_active(head, values.get("wheel"))
+        if rgb_roles and not macro_on and any(k in values for k in ("red", "green", "blue")):
             r, g, b = (float(values.get(k, 0)) for k in ("red", "green", "blue"))
             if lime_green:
                 g = float(values.get("lime", 0))
             lit = True
-        if leds and any(values.get(k) for k in ("cyan", "magenta", "yellow")):
+        if leds and not macro_on and any(values.get(k) for k in ("cyan", "magenta", "yellow")):
             # cyan / magenta / yellow LEDs beside RGB: the light is built so
             # that all of them at full make white, so the mix is balanced
             # against that (or a white Locate would look cyan)
@@ -789,7 +793,7 @@ class LooksMixin:
             peak = max(bal) or 1.0
             r, g, b = (c * min(255.0, top) / peak for c in bal)
             lit = True
-        for role, rgb in emits:
+        for role, rgb in (() if macro_on else emits):
             v = values.get(role)
             if v:
                 k = float(v) / 255.0

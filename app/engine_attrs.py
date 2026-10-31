@@ -580,6 +580,38 @@ class AttrMixin:
                 best, best_d = s, d
         return best
 
+    _MACRO_IDLE = re.compile(r"^\s*(no\s*function|none|off|open|clear|white\s*\(?open|rgbw?\s*(mix|control)|manual)\b", re.I)
+
+    def _macro_idle(self, head: dict) -> int | None:
+        """A light that mixes red / green / blue AND has a colour-macro
+        channel (the Intimidator Wave 360's "Colors": Color 1-15, rainbow
+        fades): the macro channel's value that leaves the mix alone ("No
+        function").  Any other value OVERRIDES the mix on the real light -
+        so a colour picked on the desk must put the macro channel there,
+        or a macro left on by a cue or an effect shows instead.  None: no
+        such channel."""
+        roles = set(head.get("map") or [])
+        if "wheel" not in roles or not roles & {"red", "green", "blue"}:
+            return None
+        slots = self._wheel_slots(head, "wheel")
+        idle = next((s for s in slots if self._MACRO_IDLE.match(str(s.get("name") or ""))), None)
+        if idle is not None:
+            return int(idle.get("from", idle.get("value", 0)))
+        return 0
+
+    def _macro_active(self, head: dict, value) -> bool:
+        """Is this macro-channel value one that overrides the RGB mix?"""
+        idle = self._macro_idle(head)
+        if idle is None or value is None:
+            return False
+        v = int(value)
+        slots = self._wheel_slots(head, "wheel")
+        slot = next((s for s in slots if s.get("from", s.get("value", 0)) <= v <= s.get("to", 255)), None)
+        if slot is None:
+            return v != idle and v > 7
+        return not self._MACRO_IDLE.match(str(slot.get("name") or "")) and \
+            not re.match(r"^\s*(stop|no\s*function)\b", str(slot.get("name") or ""), re.I)
+
     def _colour_values(self, head: dict, hexcol: str) -> dict:
         r, g, b = _parse_hex(hexcol)
         roles = set(head["map"])
@@ -588,6 +620,9 @@ class AttrMixin:
             for role, v in (("red", r), ("green", g), ("blue", b)):
                 if role in roles:
                     out[role] = v
+            idle = self._macro_idle(head)
+            if idle is not None:
+                out["wheel"] = idle          # (a colour macro would override the mix)
             # A picked colour is the WHOLE colour: an RGBWA(UV) PAR's white
             # and amber LEDs left where Full / a white look put them turned
             # every saturated pick pastel ("pink with whiteness").  The white
