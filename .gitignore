@@ -126,3 +126,4 @@ Jarvis.lnk
 
 # the screen check's report and screenshots (node tools/uicheck.mjs screencheck)
 screencheck/
+uicheck-out/
