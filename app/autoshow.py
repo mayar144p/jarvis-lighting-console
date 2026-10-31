@@ -669,6 +669,30 @@ def _show_palettes(d: dict, a: dict, eng, calls: list[dict]) -> tuple[dict, dict
     return col, pos
 
 
+HITS_PAGE = "Hits"
+
+
+def _hits_page(eng) -> int:
+    """The page for a built show's hit buttons in the profile in use: the
+    "Hits" page an earlier build made, else the first page with nothing on
+    it after the operator's own (AUTO_PAGE on an empty desk)."""
+    names = {str(k): str(v) for k, v in (getattr(eng, "quick_names", {}) or {}).items()}
+    for k, v in names.items():
+        if v == HITS_PAGE and str(k).isdigit():
+            return int(k)
+    used = {int(b["page"]) for b in eng.quick} | {int(k) for k in names if str(k).isdigit()}
+    if AUTO_PAGE not in used and all(p < AUTO_PAGE for p in used):
+        return AUTO_PAGE
+    top = getattr(eng, "QUICK_PAGES", 32)
+    for p in range(max(used or {0}) + 1, top + 1):
+        if p not in used:
+            return p
+    for p in range(1, top + 1):
+        if p not in used:
+            return p
+    return top
+
+
 def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict], dict]:
     """The design as engine calls (applied together, one undo step)."""
     groups, targets = a["groups"], a["targets"]
@@ -718,7 +742,14 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
             "playback": playback, "name": s["name"], "fade": s["fade"], "hold": 0, "follow": 0}})
     calls.append({"action": "clear_programmer", "params": {}})
     calls.append({"action": "clear_selection", "params": {}})
-    # quick buttons for the hits, on the auto page
+    # quick buttons for the hits, on a page of their own ("Hits"): the one
+    # an earlier build made, else the first empty page after the operator's
+    # - never on top of their buttons (it used to be page 4 whatever was
+    # there: a show's Intensity page, overwritten when the next show was made)
+    hits_page = _hits_page(eng)
+    if any(s["hits"] for s in d["sections"]):
+        calls.append({"action": "quick_page", "params": {"page": hits_page, "delete": True}})
+        calls.append({"action": "quick_page", "params": {"page": hits_page, "name": HITS_PAGE}})
     hit_btn: dict[tuple, str] = {}
     slot = 0
     for s in d["sections"]:
@@ -727,13 +758,13 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
             if key in hit_btn or slot >= 24:
                 continue
             slot += 1
-            hit_btn[key] = f"q{AUTO_PAGE}-{slot}"
+            hit_btn[key] = f"q{hits_page}-{slot}"
             g = groups[hit["group"]]
             button = {"kind": hit["kind"], "label": f"{hit['kind'].title()} {g['name']}"[:24],
                       "mode": "hold", "target": {"heads": g["heads"]}}
             if hit["kind"] == "strobe":
                 button["hz"] = 12
-            calls.append({"action": "quick_set", "params": {"page": AUTO_PAGE, "slot": slot, "button": button}})
+            calls.append({"action": "quick_set", "params": {"page": hits_page, "slot": slot, "button": button}})
     # the timeline: keep the user's own tracks, replace the auto ones
     doc = copy.deepcopy(eng.timeline)
     doc["tracks"] = [t for t in doc.get("tracks") or [] if not str(t.get("name", "")).startswith(AUTO_PREFIX)]

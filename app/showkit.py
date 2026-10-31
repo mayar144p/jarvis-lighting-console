@@ -18,6 +18,8 @@ the room (roomsense): the VIP's lights stay gentle, nothing strobes the bar.
 """
 from __future__ import annotations
 
+import re
+
 from . import autoshow, fixture_kind, roomsense
 
 COLS = 12
@@ -286,7 +288,11 @@ def changes(eng) -> list[dict]:
 
         def add(was, text, sig):
             out.append({"show": profile, "page": _page_name(eng, profile, was.get("page")), "text": text, "sig": sig})
+        hits = {str(k) for k, v in ((p["sets"].get(profile) or {}).get("quick_names") or {}).items() if v == "Hits"} \
+            if profile != p["active"] else {str(k) for k, v in (getattr(eng, "quick_names", {}) or {}).items() if v == "Hits"}
         for bid, was in built.items():
+            if str(was.get("page")) in hits:
+                continue                 # (the hit buttons are remade with each build: not an edit)
             got = cur.get(bid)
             lab = was["label"]
             if got is None:
@@ -313,7 +319,7 @@ def changes(eng) -> list[dict]:
             if got.get("mode") != was.get("mode"):
                 t = f"“{lab}” works as {got.get('mode')} instead of {was.get('mode')}"
                 add(was, t, t)
-        for b in [b for bid, b in cur.items() if bid not in built][:4]:
+        for b in [b for bid, b in cur.items() if bid not in built and str(b.get("page")) not in hits][:4]:
             t = f"added “{b['label']}” ({b['kind']})"
             add(b, t, t)
     return out
@@ -329,13 +335,60 @@ def learning(eng) -> dict:
     shows - do it that way from now on) and one-offs (one show's own - keep
     them to that show, or a show on the same theme, and ask before carrying
     them anywhere else)."""
+    from app import ailearn
     by_sig: dict[str, set] = {}
-    for c in changes(eng):
+    all_changes = changes(eng)
+    for c in all_changes:
         by_sig.setdefault(c["sig"], set()).add(c["show"])
-    habits = [{"text": sig, "shows": sorted(shows_)} for sig, shows_ in by_sig.items() if len(shows_) >= 2]
-    common = {h["text"] for h in habits}
-    one_off = [c for c in changes(eng) if c["sig"] not in common]
+    edited = {c["show"] for c in all_changes}
+    # a habit the operator said to forget stays forgotten (it isn't one)
+    gone = ailearn.dismissed_habits()
+    habits = []
+    for sig, shows_ in by_sig.items():
+        if len(shows_) < 2 or sig in gone:
+            continue
+        # the other way: a show they went through (edited something) that
+        # had the same button and left it as it was - "took off Strobe" in
+        # two shows but kept it in two others is no habit
+        against = sorted(s for s in _had(eng, sig) if s not in shows_ and s in edited)
+        if len(shows_) > len(against):
+            habits.append({"text": sig, "shows": sorted(shows_), "against": against,
+                           "strength": f"{len(shows_)} of {len(shows_) + len(against)} shows"})
+    common = {sig for sig, shows_ in by_sig.items() if len(shows_) >= 2}
+    one_off = [c for c in all_changes if c["sig"] not in common]
     return {"habits": habits, "one_off": one_off}
+
+
+def _had(eng, sig: str) -> set[str]:
+    """The AI's shows that were built with the button a change names (its
+    label and kind, "took off “Strobe” (strobe)")."""
+    m = re.search(r"“([^”]+)”(?:\s*\((\w+)\))?", sig)
+    if not m:
+        return set()
+    label, kind = m.group(1), m.group(2)
+    p = eng._profiles()
+    return {name for name, s in (p.get("shows") or {}).items() if name in p["order"]
+            and any(b.get("label") == label and (kind is None or b.get("kind") == kind) for b in (s.get("built") or {}).values())}
+
+
+def same_theme(eng, text: str) -> list[dict]:
+    """The AI's earlier shows on the theme of this request ("Christmas" ->
+    last Christmas's show), each with the changes the operator made to it:
+    [{show, brief, changes}].  (Offered in the plan - never just applied.)"""
+    from app import websearch
+    t = str(text or "").lower()
+    themes = [w for w in websearch.THEMES if w in t]
+    if not themes:
+        return []
+    by = {}
+    for c in changes(eng):
+        by.setdefault(c["show"], []).append(c["text"])
+    out = []
+    for s in shows(eng):
+        hay = f"{s['profile']} {s['brief']} {s['name']}".lower()
+        if any(th in hay for th in themes):
+            out.append({"show": s["profile"], "brief": s["brief"][:80], "changes": by.get(s["profile"], [])[:8]})
+    return out
 
 
 def shows(eng) -> list[dict]:
@@ -397,11 +450,9 @@ def restyle(eng, source: str, name: str, colours: list[str], cues: bool = True, 
     d = {**d, "name": str(name or "Show")[:40], "palette": pal_new,
          "brief": f"{d0.get('brief', '')} - the {src} show's programming in new colours"[:300]}
     out = {"name": d["name"]}
-    pb = None
-    if cues:
-        pb = next((pl["n"] for pl in eng.playbacks if not pl.get("stack")), None) or old.get("playback") or 1
-        built = autoshow.build(eng, d, pb)
-        out["cues"] = built["summary"]
+    # the buttons first: the cues' hit buttons then land in the NEW show's
+    # profile (built first, they went into the old show's and overwrote it)
+    pb = next((pl["n"] for pl in eng.playbacks if not pl.get("stack")), None) or old.get("playback") or 1 if cues else None
     if buttons:
         profile = _free_name(eng, d["name"])
         with eng.lock:
@@ -422,6 +473,9 @@ def restyle(eng, source: str, name: str, colours: list[str], cues: bool = True, 
                 eng.quick[i] = nb
             _remember(eng, profile, d, pb or old.get("playback"))
         out["profile"] = profile
+    if cues:
+        built = autoshow.build(eng, d, pb)
+        out["cues"] = built["summary"]
     out["summary"] = (f"“{d['name']}”: the {src} show's programming in new colours"
                       + (f" - cues on playback {pb}" if pb else "")
                       + (f", buttons in the “{out['profile']}” profile" if buttons else ""))

@@ -132,9 +132,14 @@ export function aiPanel() {
 // Teaching the offline AI: the good examples kept from the copilot (Keep /
 // 👍), counted, and saved as the training file tools/finetune/ takes.
 export function trainingBlock() {
+  const learnBtn = h("button.btn", { onclick: () => import("./ailearning.js").then((m) => m.openLearning()) }, "What the AI has learned…");
   const box = h("div.ai-train", h("h3", "Teaching the offline AI"), h("p.muted.small", "Counting…"));
-  const paint = (e) => box.replaceChildren(h("h3", "Teaching the offline AI"),
-    h("p.muted.small", "Every copilot request is written down on this computer. The ones you Keep (or mark 👍) are good examples; "
+  const paint = (e) => box.replaceChildren(
+    h("h3", "What the AI has learned"),
+    h("p.muted.small", "Notes it remembers (the ones it only noticed wait for your OK), habits from your edits to its shows, the requests you kept and undid - see, keep, forget or pause."),
+    h("div.row-btns", learnBtn),
+    h("h3", "Teaching the offline AI"),
+    h("p.muted.small", "Every copilot request is written down on this computer. Only the ones you Keep (or mark 👍) go into training - "
       + "a few hundred of them can teach the offline AI your way of working (tools/finetune/README.md, on a PC with an NVIDIA card)."),
     h("p", h("b", `${e.usable} good example${e.usable === 1 ? "" : "s"}`), h("span.muted.small", ` · ${e.kept} kept · ${e.answers} answers · ${e.thrown} thrown away${e.undone ? ` (${e.undone} undone with Ctrl+Z)` : ""} · ${e.all} in all`)),
     h("div.row-btns", h("button.btn", { disabled: !e.usable, onclick: async () => {

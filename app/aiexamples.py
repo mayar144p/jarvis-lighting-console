@@ -57,12 +57,14 @@ def record(msgs: list[dict], message: str, final: str, steps: list[dict], change
     return rid
 
 
-def verdict(rid: str, good: bool) -> bool:
+def verdict(rid: str, good: bool | None) -> bool:
+    """Kept (good), thrown away (bad), or None: neither any more (a Keep
+    tapped by mistake, taken back)."""
     if not rid:
         return False
     try:
         with _lock, _path().open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"id": str(rid)[:20], "verdict": "good" if good else "bad"}) + "\n")
+            f.write(json.dumps({"id": str(rid)[:20], "verdict": "none" if good is None else "good" if good else "bad"}) + "\n")
         return True
     except OSError:
         return False
@@ -73,6 +75,9 @@ def undone(rid: str) -> bool:
     example, and one the AI is told about next time ("not like that")."""
     if not rid:
         return False
+    from . import ailearn
+    if ailearn.paused():
+        return False                    # (learning paused: an undo teaches nothing)
     try:
         with _lock, _path().open("a", encoding="utf-8") as f:
             f.write(json.dumps({"id": str(rid)[:20], "verdict": "bad", "undone": True}) + "\n")
@@ -81,9 +86,28 @@ def undone(rid: str) -> bool:
         return False
 
 
-def recently_undone(k: int = 5) -> list[dict]:
+UNDO_DAYS = 30
+
+
+def recently_undone(k: int = 5, message: str | None = None) -> list[dict]:
     """The last few requests whose result the operator undid, newest first:
-    [{prompt, how}] (for the AI: don't do it that way again)."""
+    [{id, prompt, how, at}] (for the AI: don't do it that way again).  With
+    `message`, only the ones like it - a Ctrl+Z of "dim the bar" says nothing
+    about "design a Halloween show"; older than a month or forgotten by the
+    operator (app/ailearn): left out."""
+    rows = _undone_all(max(k, 20))
+    from . import ailearn
+    gone = ailearn.dismissed_undos()
+    cut = time.time() - UNDO_DAYS * 86400
+    rows = [r for r in rows if r["id"] not in gone and r.get("t", 0) >= cut]
+    if message is not None:
+        want = _words(message)
+        rows = [r for r in rows if want and _words(r["prompt"])
+                and len(want & _words(r["prompt"])) / len(want | _words(r["prompt"])) >= 0.34]
+    return rows[:k]
+
+
+def _undone_all(k: int) -> list[dict]:
     try:
         st = _path().stat()
         key = (st.st_mtime_ns, st.st_size, k)
@@ -110,7 +134,11 @@ def recently_undone(k: int = 5) -> list[dict]:
         r = rows.get(rid)
         if r and rid not in seen:
             seen.add(rid)
-            out.append({"prompt": r.get("prompt", "")[:200], "how": _how(r)[:8]})
+            try:
+                t = time.mktime(time.strptime(str(r.get("at") or ""), "%Y-%m-%dT%H:%M:%S"))
+            except (ValueError, OverflowError):
+                t = 0.0
+            out.append({"id": rid, "prompt": r.get("prompt", "")[:200], "how": _how(r)[:8], "at": r.get("at"), "t": t})
         if len(out) >= k:
             break
     _undone_cache.update(key=key, rows=out)
@@ -146,20 +174,38 @@ def _rows() -> list[dict]:
     return list(rows.values())
 
 
+def kept_list(k: int = 30) -> list[dict]:
+    """The latest kept examples (the ones the AI is shown with a request
+    like them): [{id, prompt, how, at}], newest first."""
+    rows = [r for r in _rows() if r.get("verdict") == "good" and r.get("prompt")]
+    return [{"id": r["id"], "prompt": r["prompt"][:200], "how": _how(r)[:6], "at": r.get("at")} for r in rows[::-1][:k]]
+
+
 def stats() -> dict:
     rows = _rows()
     good = sum(1 for r in rows if r.get("verdict") == "good")
     bad = sum(1 for r in rows if r.get("verdict") == "bad")
     answers = sum(1 for r in rows if not r.get("verdict") and not r.get("changed"))
-    return {"all": len(rows), "kept": good, "thrown": bad, "answers": answers, "usable": good + answers,
+    return {"all": len(rows), "kept": good, "thrown": bad, "answers": answers, "usable": good,
             "undone": sum(1 for r in rows if r.get("undone"))}
 
 
 def export(dest=None, tools: list[dict] | None = None) -> dict:
-    """The good examples as a training file: kept ones, and answers that
-    changed nothing (questions answered) unless marked bad.  One JSON per
-    line: {messages, tools} - the chat format the kit trains on."""
-    rows = [r for r in _rows() if r.get("verdict") == "good" or (not r.get("verdict") and not r.get("changed"))]
+    """The good examples as a training file: only the ones the operator kept
+    (an answer nobody checked could teach the offline AI a wrong thing -
+    and training bakes it in for good).  One JSON per line: {messages,
+    tools} - the chat format the kit trains on; the same request kept twice
+    goes in once."""
+    seen: set = set()
+    rows = []
+    for r in _rows():
+        if r.get("verdict") != "good":
+            continue
+        key = " ".join(str(r.get("prompt") or "").lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(r)
     dest = dest or (config.DATA / "ai_training.jsonl")
     with open(dest, "w", encoding="utf-8") as f:
         for r in rows:

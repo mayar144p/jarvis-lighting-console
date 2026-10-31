@@ -21,6 +21,7 @@ the lock and calibration it never touches.
 from __future__ import annotations
 
 import json
+import re
 import os
 import threading
 import time
@@ -225,7 +226,9 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "remember",
         "description": "Keep a short note about how this operator likes things (\"warm white for "
-                       "speeches\", \"never strobe the bar\"), or forget one by its number.",
+                       "speeches\", \"never strobe the bar\"), or forget one by its number (only when they ask). "
+                       "A note they asked for is kept; one you only noticed is shown to them to OK first - "
+                       "suggest one only when you're sure it's a lasting preference, not this one show.",
         "parameters": {"type": "object", "properties": {
             "note": {"type": "string"}, "forget": {"type": "integer"}}}}},
 ]
@@ -352,17 +355,10 @@ def _mem_path():
 
 
 def notes() -> list[str]:
-    try:
-        data = json.loads(_mem_path().read_text(encoding="utf-8"))
-        return [str(n)[:200] for n in data.get("notes") or []][:MAX_NOTES]
-    except (OSError, ValueError, AttributeError):
-        return []
-
-
-def _save_notes(lst: list[str]) -> None:
-    path = _mem_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"notes": lst[-MAX_NOTES:]}, indent=1), encoding="utf-8")
+    """The notes the AI goes by: only kept ones (app/ailearn.py - a note the
+    AI only noticed waits for the operator's OK first)."""
+    from . import ailearn
+    return ailearn.kept_texts()
 
 
 # ---------------------------------------------------------------------------
@@ -584,17 +580,11 @@ def learn_from_corrections(eng) -> list[str]:
     two or more shows) to follow from now on; a ONE-OFF kept to its own
     show - never carried to other shows by itself (ice blue for one
     Christmas is not every show's colour)."""
+    # (worked out live from the shows as they are - never written down, so
+    # undoing an edit or deleting a show unlearns it; app/ailearn.py)
     lr = showkit.learning(eng)
-    want = [f"Habit (in {', '.join(h['shows'])}): {h['text']}" for h in lr["habits"][:6]]
-    want += [f"For the {c['show']} show only: {c['text']}" for c in lr["one_off"][:8]]
-    if not want:
-        return []
-    with _mem_lock:
-        lst = notes()
-        new = [x for x in want if x not in lst]
-        if new:
-            _save_notes(lst + new)
-    return new
+    return [f"Habit (in {', '.join(h['shows'])}): {h['text']}" for h in lr["habits"][:6]] + \
+        [f"For the {c['show']} show only: {c['text']}" for c in lr["one_off"][:8]]
 
 
 def design_night(eng, brief: str, which="new", buttons: bool = True, name: str = "") -> dict:
@@ -727,8 +717,19 @@ def _system(eng, message: str = "") -> str:
     lr = showkit.learning(eng)
     if lr["habits"]:
         text += ("\n\nTHE OPERATOR'S HABITS (the same change in several of your shows) - do it this way in new "
-                 "shows unless they ask otherwise:\n" + "\n".join(
-                     f"  - {h['text']} (in {', '.join(h['shows'])})" for h in lr["habits"][:8]))
+                 "shows unless they ask otherwise, and SAY which habit you followed in one short line (in the "
+                 "plan, or the answer) so they can say no:\n" + "\n".join(
+                     f"  - {h['text']} ({h.get('strength') or len(h['shows'])}: {', '.join(h['shows'])}"
+                     + (f"; kept as it was in {', '.join(h['against'])}" if h.get("against") else "") + ")"
+                     for h in lr["habits"][:8]))
+    if "build" in route(message):
+        before = showkit.same_theme(eng, message)
+        if before:
+            text += ("\n\nTHIS THEME BEFORE (your earlier shows on it, and what the operator changed in them) - "
+                     "OFFER those changes in your plan (\"Last Christmas you went ice blue and white - again?\"); "
+                     "never just apply them:\n" + "\n".join(
+                         f"  - {b['show']} ({b['brief']}): " + ("; ".join(b["changes"]) or "used as you made it")
+                         for b in before[:4]))
     if lr["one_off"]:
         text += ("\n\nCHANGES THE OPERATOR MADE TO ONE SHOW ONLY - that show's own choices: keep them in that "
                  "show (and its copies). Don't carry them into other shows by yourself; for a show on the same "
@@ -742,14 +743,18 @@ def _system(eng, message: str = "") -> str:
     like = aiexamples.describe_similar(message)
     if like:
         text += "\n\n" + like
-    undone = aiexamples.recently_undone()
+    undone = aiexamples.recently_undone(message=message)
     if undone:
         text += ("\n\nRECENTLY UNDONE BY THE OPERATOR (Ctrl+Z on your work - they didn't want it that way; "
                  "for a request like these, do it differently or ask):\n" + "\n".join(
                      f'  - "{u["prompt"]}" - you did: ' + " -> ".join(u["how"][:5]) for u in undone))
-    mem = notes()
+    from . import ailearn
+    mem = ailearn.kept()
     if mem:
-        text += "\nWhat this operator likes (your notes):\n" + "\n".join(f"  {i + 1}. {n}" for i, n in enumerate(mem))
+        text += ("\nWhat this operator likes (kept notes - they asked for these, or OK'd them):\n"
+                 + "\n".join(f"  {i + 1}. {n['text']}" for i, n in enumerate(mem)))
+    if ailearn.paused():
+        text += "\n(Learning is paused by the operator: don't use remember.)"
     caps = aitools.capabilities(eng)["models"]
     if caps:
         text += "\n\nWHAT EACH LIGHT CAN DO (from the desk):\n" + "\n".join(
@@ -1057,12 +1062,16 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             pb = None
                             said = []
                             if what in ("all", "cues"):
-                                pb = int(args.get("playback") or 0) or next(
-                                    (pl["n"] for pl in eng.playbacks if not pl.get("stack")), 1)
-                                said.append(autoshow.build(eng, d, max(1, min(64, pb)))["summary"])
+                                pb = max(1, min(64, int(args.get("playback") or 0) or next(
+                                    (pl["n"] for pl in eng.playbacks if not pl.get("stack")), 1)))
                             kit = None
+                            # its live buttons first (a profile of its own), so the
+                            # cues' hit buttons land in it - not in the show before
                             if what in ("all", "buttons"):
-                                kit = showkit.build(eng, d, pb)       # its live buttons (a profile of its own)
+                                kit = showkit.build(eng, d, pb)
+                            if what in ("all", "cues"):
+                                said.append(autoshow.build(eng, d, pb)["summary"])
+                            if kit:
                                 said.append(kit["summary"])
                             result = {"ok": True, "summary": "; ".join(said), "name": d["name"], "palette": d["palette"],
                                       "buttons": {"profile": kit["profile"], "pages": kit["pages"]} if kit else None,
@@ -1161,18 +1170,27 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                     result = {"asked": True}
                     stop = True
                 elif name == "remember":
-                    with _mem_lock:
-                        lst = notes()
-                        if args.get("forget"):
-                            k = int(args["forget"]) - 1
-                            if 0 <= k < len(lst):
-                                lst.pop(k)
-                        if args.get("note"):
-                            lst.append(str(args["note"]).strip()[:200])
-                        _save_notes(lst)
-                    result = {"notes": len(lst)}
+                    # what the operator ASKED to be remembered is kept; what the
+                    # AI only noticed waits for their OK (app/ailearn.py)
+                    from . import ailearn
+                    asked = bool(ailearn.ASKED.search(st["message"])) and not st.get("guard")
+                    result = {"ok": False, "error": "nothing to remember"}
+                    if args.get("forget"):
+                        if re.search(r"\b(forget|drop|delete|remove|stop)\b", st["message"], re.I):
+                            result = ailearn.forget_text(int(args["forget"]))
+                        else:
+                            result = {"ok": False, "error": "only forget a note when the operator asks"}
+                    if args.get("note"):
+                        result = ailearn.add(str(args["note"]), asked)
+                        if result.get("ok") and result.get("status") in ("kept", "pending"):
+                            st.setdefault("learned", []).append({k: result.get(k) for k in ("id", "note", "status", "replaces")})
+                            if result["status"] == "pending":
+                                result["said"] = "waiting for the operator's OK - say you'd like to remember it, don't assume it"
                     steps.append({"action": "remember", "params": {"note": args.get("note"), "forget": args.get("forget")},
-                                  "ok": True, "summary": "noted" if args.get("note") else "forgot a note"})
+                                  "ok": bool(result.get("ok")),
+                                  "summary": (("Noted: " if result.get("status") == "kept" else "Suggested a note (waiting for your OK): ")
+                                              + str(args.get("note"))[:80]) if args.get("note") and result.get("ok")
+                                  else ("Forgot a note" if result.get("ok") else str(result.get("error")))})
                 else:
                     result = {"error": f"no tool {name!r}"}
                 msgs.append({"role": "tool", "tool_call_id": call.get("id") or name, "name": name,
@@ -1212,7 +1230,9 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
     hist.append({"role": "assistant", "content": (reply or question or "")[:1500]})
     del hist[:-MAX_HISTORY * 2]
     # written down as an example (marked good / bad when kept / thrown away)
-    example = aiexamples.record(msgs, st["message"], reply or question or "", steps, st["changed"])
+    from . import ailearn
+    # (learning paused: nothing new is written down to learn from)
+    example = "" if ailearn.paused() else aiexamples.record(msgs, st["message"], reply or question or "", steps, st["changed"])
     if example and st["changed"]:
         # the undo step remembers which request made it: a Ctrl+Z of it is
         # the operator saying "not that" (aiexamples.undone)
@@ -1220,7 +1240,7 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
             if eng._undo and eng._undo[-1].get("action") == "assistant":
                 eng._undo[-1]["example"] = example
     return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps, "example": example,
-            "stopped": bool(st.get("stopped")), "plan": st.get("plan"),
+            "stopped": bool(st.get("stopped")), "plan": st.get("plan"), "learned": st.get("learned") or [],
             "confirm": st.get("waiting") or [],
             "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],
             "seconds": round(time.monotonic() - st["t0"], 1)}

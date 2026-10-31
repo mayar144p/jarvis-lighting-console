@@ -207,7 +207,16 @@ async function assist(text) {
     if (r.ai_note) toast(r.ai_note, "", 6000);          // "Gemini limit reached - using the offline AI"
     if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
     if (r.stopped) toast("Stopped", "", 3000);
+    // notes it would like to remember: only kept when you say so
+    const asks = (r.learned || []).filter((n) => n.status === "pending");
     const extra = h("div");
+    for (const n of asks) {
+      const box = h("div.ai-q", h("b", `Remember this? “${n.note}”`), n.replaces ? h("div.muted.small", `Replaces: “${n.replaces}”`) : null);
+      const answer = (keep) => post("/api/console/assistant", { learning: true, op: keep ? "keep" : "drop", id: n.id })
+        .then(() => box.replaceChildren(h("span.muted.small", keep ? "Remembered." : "Not remembered.")));
+      box.append(h("div.chip-row", h("button.chip", { onclick: () => answer(true) }, "Keep"), h("button.chip", { onclick: () => answer(false) }, "No")));
+      extra.append(box);
+    }
     if (r.steps && r.steps.length) {
       extra.append(h("details.ai-steps", h("summary", `What I did (${r.steps.length})`),
         ...r.steps.map((s) => h("div.plan-step" + (s.ok ? ".ok" : ".bad"), h("span.n", s.ok ? "✓" : "✕"), s.summary || s.action))));
@@ -282,19 +291,9 @@ async function assist(text) {
   }
 }
 
-async function showMemory() {
-  const r = await post("/api/console/assistant", { notes: true });
-  const box = h("div");
-  // forgetting renumbers the notes, so the list is redrawn from the answer
-  const draw = (list) => box.replaceChildren(...list.map((n, i) => h("div.ai-note", h("span", `${i + 1}. ${n}`),
-    h("button.x", { title: "Forget this", "aria-label": "Forget this", onclick: async () => {
-      const r2 = await post("/api/console/assistant", { notes: true, forget: i });
-      draw(r2.notes || []);
-    } }, "×"))));
-  const list = r.notes || [];
-  draw(list);
-  say("bot", list.length ? "What I remember about how you like things:" : "I haven't noted anything yet - tell me how you like things and I'll remember.",
-    list.length ? box : null);
+// what the AI has learnt, and your say over it (keep / forget / pause)
+function showMemory() {
+  import("./ailearning.js").then((m) => m.openLearning());
 }
 
 async function plan(text) {

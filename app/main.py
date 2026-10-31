@@ -1049,15 +1049,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.refine(
                     eng, str(body["refine"]), offline=bool(body.get("offline"))))
             if body.get("apply") and isinstance(body.get("design"), dict):
-                built = autoshow.build(eng, body["design"], playback)
+                # the buttons to play it live first (a profile of its own), so
+                # the cues' hit buttons land in it - not in the show before
+                kit, note = None, ""
                 if body.get("buttons", True):
-                    # and the buttons to play it live (a profile of its own)
                     try:
                         kit = showkit.build(eng, body["design"], playback)
-                        built["summary"] += "; " + kit["summary"]
-                        built["kit"] = kit
                     except ValueError as exc:
-                        built["summary"] += f" (the buttons couldn't be made: {exc})"
+                        note = f" (the buttons couldn't be made: {exc})"
+                built = autoshow.build(eng, body["design"], playback)
+                if kit:
+                    built["summary"] += "; " + kit["summary"]
+                    built["kit"] = kit
+                built["summary"] += note
                 return self._console_result(eng, built)
             # (designing a whole show is the AI's: never the desk's rules alone)
             return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", "")),
@@ -1112,15 +1116,38 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("export"):
                     return self._json({"ok": True, **aiexamples.export(tools=assistant.TOOLS)})
                 if body.get("example"):
-                    aiexamples.verdict(str(body["example"]), body.get("good") is not False)
+                    aiexamples.verdict(str(body["example"]), None if body.get("unkeep") else body.get("good") is not False)
                 return self._json({"ok": True, "examples": aiexamples.stats()})
-            if body.get("notes") is not None:
-                if isinstance(body.get("forget"), int):
-                    lst = assistant.notes()
-                    if 0 <= body["forget"] < len(lst):
-                        lst.pop(body["forget"])
-                        assistant._save_notes(lst)
-                return self._json({"ok": True, "notes": assistant.notes()})
+            if body.get("notes") is not None or body.get("learning") is not None:
+                # everything the AI has learnt, and the operator's say over it
+                # (app/ailearn.py): keep / forget a note, forget a habit or an
+                # undo, take back a Keep, pause learning, start again
+                from app import aiexamples, ailearn
+                op = str(body.get("op") or "")
+                if op in ("keep", "drop"):
+                    ailearn.decide(str(body.get("id") or ""), op == "keep")
+                elif op == "add":
+                    r = ailearn.add(str(body.get("text") or ""), True, typed=True)
+                    if not r.get("ok"):
+                        return self._json(r)
+                elif op == "forget_habit":
+                    ailearn.dismiss_habit(str(body.get("id") or ""))
+                elif op == "forget_undo":
+                    ailearn.dismiss_undo(str(body.get("id") or ""))
+                elif op == "unkeep":
+                    aiexamples.verdict(str(body.get("id") or ""), None)
+                elif op == "pause":
+                    ailearn.set_paused(bool(body.get("on")))
+                elif op == "forget_all":
+                    ailearn.forget_all()
+                st = ailearn.state()
+                lr = showkit.learning(eng)
+                return self._json({
+                    "ok": True, "paused": st["paused"],
+                    "notes": [n for n in st["notes"] if n["status"] == "kept"],
+                    "pending": [n for n in st["notes"] if n["status"] == "pending"],
+                    "habits": lr["habits"], "one_off": lr["one_off"][:20],
+                    "examples": aiexamples.kept_list(), "undone": aiexamples.recently_undone(k=10)})
             if body.get("operator"):
                 # the AI running the lights live: start / stop / status
                 from app import ai_operator

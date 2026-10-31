@@ -2073,7 +2073,12 @@ def test_ai_assistant() -> None:
                   and e.build_frames(time.monotonic())[1][e.patch[2]["address"] - 1] == 0)
             check("everything it did is one undo step", len(e._undo) == undo_before + 1
                   and e._undo[-1]["label"].startswith("AI:"), str([u.get("label") or u["action"] for u in e._undo[-3:]]))
-            check("it remembered a preference", assistant.notes() == ["likes warm sunsets"])
+            sug = [n for n in r.get("learned") or [] if n["note"] == "likes warm sunsets"]
+            check("a preference it only noticed is suggested, not kept yet", sug and sug[0]["status"] == "pending"
+                  and assistant.notes() == [], str(r.get("learned")))
+            from app import ailearn
+            ailearn.decide(sug[0]["id"], True)
+            check("...and once OK'd, it remembers it", assistant.notes() == ["likes warm sunsets"])
             e.act("blind", state=False, keep=True)
             check("kept: the rig has it", e.build_frames(time.monotonic())[1][e.patch[2]["address"] - 1] > 0)
             e.act("undo")
@@ -10904,8 +10909,8 @@ def test_learn_from_corrections() -> None:
             e.act("quick_profile_use", name="Default")
             check("...even with another profile in use", len(showkit.corrections(e)) == len(got), "")
             new = assistant.learn_from_corrections(e)
-            check("they become notes the AI keeps (once)", new and assistant.learn_from_corrections(e) == []
-                  and all(n in assistant.notes() for n in new), str(new))
+            check("they're worked out live from the shows (never written down, so undoing an edit unlearns it)",
+                  new and assistant.learn_from_corrections(e) == new and not any(n in assistant.notes() for n in new), str(new))
             check("the AI reads them (one show's own changes, kept to that show)", "ONE SHOW ONLY" in assistant._system(e), "")
             e.act("quick_profile_use", name="Halloween")
             d2 = dict(d)
@@ -10986,11 +10991,11 @@ def test_ai_training() -> None:
             aiexamples.verdict(c, False)
             st = aiexamples.stats()
             check("requests are written down and marked kept / thrown away",
-                  st["all"] == 3 and st["kept"] == 1 and st["thrown"] == 1 and st["usable"] == 2, str(st))
+                  st["all"] == 3 and st["kept"] == 1 and st["thrown"] == 1 and st["usable"] == 1, str(st))
             out = aiexamples.export(Path(td) / "t.jsonl", tools=[{"x": 1}])
             lines = [json.loads(x) for x in (Path(td) / "t.jsonl").read_text(encoding="utf-8").splitlines()]
-            check("the training file holds the good ones, with the tools, pictures left out",
-                  out["examples"] == 2 and all(r["tools"] == [{"x": 1}] for r in lines)
+            check("the training file holds only the kept ones (an unchecked answer could teach it wrong), with the tools, pictures left out",
+                  out["examples"] == 1 and all(r["tools"] == [{"x": 1}] for r in lines)
                   and "[a picture]" in lines[0]["messages"][1]["content"] and "data:x" not in json.dumps(lines), str(out))
             del b
         finally:
@@ -11256,7 +11261,8 @@ def test_ai_control() -> None:
             und = aiexamples.recently_undone()
             check("a Ctrl+Z of it is written down", und and und[0]["prompt"] == "dim the pars to seventy"
                   and aiexamples.stats()["undone"] == 1, str(und))
-            check("...and the AI is told next time", "RECENTLY UNDONE" in assistant._system(e, "dim them"), "")
+            check("...and the AI is told next time (for a request like it)", "RECENTLY UNDONE" in assistant._system(e, "dim the pars to sixty")
+                  and "RECENTLY UNDONE" not in assistant._system(e, "design a halloween show"), "")
             # DJ requests: data, not instructions; the room's rules hold
             real_plan = roomsense.plan
             roomsense.plan = lambda _e: {"zones": [{"id": "v"}, {"id": "d"}], "no_hits": ["v"], "movers": {},
@@ -11447,6 +11453,145 @@ def test_chauvet_lights() -> None:
             check("...remembered for the model", e.act("colour_cal_get", head=n)["screen"], "")
             e.act("colour_cal", head=n, reset=True)
             check("...and reset puts it back", rgb() == before, str(rgb()))
+        finally:
+            e.shutdown()
+            config.DATA = old
+
+
+def test_ai_learning_safe() -> None:
+    """The AI can't learn the wrong thing quietly: what it only noticed waits for an OK, a similar note
+    replaces the old one, learnt habits are live (undo the edit and they go) and can be forgotten,
+    undos only count for similar requests, a Keep can be taken back, learning can be paused."""
+    import json
+    from pathlib import Path
+    from app import aiexamples, ailearn, assistant, config
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            # the old notes file: plain lines, auto-learnt ones mixed in
+            (Path(td) / "assistant_memory.json").write_text(json.dumps({"notes": [
+                "warm white for speeches", "Habit (in Halloween, Xmas): took off “Blind”", "For the Xmas show only: ice blue"]}), encoding="utf-8")
+            check("an old notes file opens: your notes kept, the old auto-learnt lines dropped (worked out live now)",
+                  ailearn.kept_texts() == ["warm white for speeches"], str(ailearn.kept_texts()))
+            r = ailearn.add("the operator seems to like slow movement", asked=False)
+            check("what the AI only noticed waits for an OK - and isn't used yet",
+                  r["status"] == "pending" and "slow movement" not in " ".join(assistant.notes()), str(r))
+            ailearn.decide(r["id"], True)
+            check("...kept once OK'd", any("slow movement" in t for t in assistant.notes()), "")
+            r = ailearn.add("strobes on the drops only", asked=True)
+            r2 = ailearn.add("no strobes on the drops", asked=True)
+            check("a note much like an older one replaces it (they don't both stand)",
+                  r2.get("replaces") == "strobes on the drops only" and "strobes on the drops only" not in ailearn.kept_texts(), str(r2))
+            check("the same note twice is kept once", ailearn.add("no strobes on the drops", asked=True)["status"] == "already", "")
+            for i in range(60):
+                ailearn.add(f"suggestion number {i} about colour {i * 7}", asked=False)
+            st = ailearn.state()
+            check("suggestions never pile up or push your notes out", len([n for n in st["notes"] if n["status"] == "pending"]) <= 10
+                  and "warm white for speeches" in ailearn.kept_texts(), "")
+            ailearn.set_paused(True)
+            check("paused: nothing new is learnt", not ailearn.add("x y z remember this", asked=True)["ok"], "")
+            check("...an undo teaches nothing", not aiexamples.undone("abc"), "")
+            ailearn.set_paused(False)
+            # the remember tool: asked or only noticed
+            e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+            try:
+                def one(note):
+                    seq = iter([{"role": "assistant", "content": "", "tool_calls": [{"id": "1", "type": "function", "function": {
+                        "name": "remember", "arguments": json.dumps({"note": note})}}]}, {"role": "assistant", "content": "ok"}])
+                    return lambda m, tools=None, **_: next(seq)
+                r = assistant.run_turn(e, "from now on always use amber for the VIP", session="m1", chat=one("amber for the VIP"))
+                check("asked to remember: kept at once", r["learned"][0]["status"] == "kept", str(r["learned"]))
+                r = assistant.run_turn(e, "make the floor blue", session="m2", chat=one("likes blue on the floor"))
+                check("only noticed: shown for an OK", r["learned"][0]["status"] == "pending" and r["learned"][0]["id"], str(r["learned"]))
+                seq = iter([{"role": "assistant", "content": "", "tool_calls": [{"id": "1", "type": "function", "function": {
+                    "name": "remember", "arguments": json.dumps({"forget": 1})}}]}, {"role": "assistant", "content": "ok"}])
+                n0 = len(ailearn.kept())
+                assistant.run_turn(e, "make it warmer", session="m3", chat=lambda m, tools=None, **_: next(seq))
+                check("the AI can't forget a note unless asked", len(ailearn.kept()) == n0, "")
+            finally:
+                e.shutdown()
+            # undos only for similar requests; a forgotten undo is gone
+            msgs = [{"role": "user", "content": "x"}]
+            rid = aiexamples.record(msgs, "dim the bar lights to twenty", "done", [{"action": "set_intensity", "ok": True}], True)
+            aiexamples.undone(rid)
+            check("an undo counts for a request like it", aiexamples.recently_undone(message="dim the bar lights please"), "")
+            check("...not for a different one", not aiexamples.recently_undone(message="design a halloween show"), "")
+            ailearn.dismiss_undo(rid)
+            check("...and a forgotten undo is gone", not aiexamples.recently_undone(message="dim the bar lights please"), "")
+            # a Keep taken back
+            k = aiexamples.record(msgs, "warm wash on the vip", "done", [{"action": "set_colour", "ok": True}], True)
+            aiexamples.verdict(k, True)
+            check("a kept example is listed", any(x["id"] == k for x in aiexamples.kept_list()), "")
+            aiexamples.verdict(k, None)
+            check("...and un-kept, it's no example (nor in training)", not any(x["id"] == k for x in aiexamples.kept_list())
+                  and aiexamples.export(Path(td) / "t.jsonl")["examples"] == 0, "")
+            ailearn.forget_all()
+            check("start again: every note gone", not ailearn.kept() and not ailearn.pending(), "")
+        finally:
+            config.DATA = old
+
+
+def test_learning_story() -> None:
+    """The operator's own example, start to end: Halloween, Christmas from its programming, New
+    Year, Techno - the AI learns only what was really done, a habit needs more shows for it than
+    against, and a theme's earlier changes are offered, not applied."""
+    from pathlib import Path
+    from app import assistant, autoshow, config, showkit
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=4)
+
+            def show(name, theme, cues=False):
+                a = autoshow.analyse(e)
+                d = autoshow.validate(autoshow.fallback_design(a, theme), a)
+                d["name"], d["brief"] = name, f"{theme} party"
+                kit = showkit.build(e, d, 1 if cues else None)
+                if cues:
+                    autoshow.build(e, d, 1)
+                return kit
+
+            def take_off(label):
+                b = next(b for b in e.quick if b["label"] == label)
+                e.act("quick_set", page=b["page"], slot=b["slot"], clear=True)
+            show("Halloween", "halloween", cues=True)
+            names = dict(e.quick_names)
+            check("a show's hit buttons get a page of their own, after its pages", "Hits" in names.values()
+                  and all(v != "Hits" for k, v in names.items() if int(k) <= 5), str(names))
+            take_off("Strobe")
+            hall = [dict(b) for b in e.quick]
+            showkit.restyle(e, "Halloween", "Christmas", ["#ff0000", "#00aa44", "#ffffff"])
+            p = e._profiles()
+            after = (p["sets"].get("Halloween") or {}).get("quick") or []
+            check("making Christmas from Halloween leaves Halloween's buttons exactly as they were",
+                  sorted((b["id"], b["label"], b["kind"]) for b in after) == sorted((b["id"], b["label"], b["kind"]) for b in hall), "")
+            lr = showkit.learning(e)
+            check("...and only what you really did is learnt (Strobe off, in Halloween)",
+                  [c["text"] for c in lr["one_off"]] == ["took off “Strobe” (strobe)"], str(lr["one_off"]))
+            show("New Year", "new year")
+            take_off("Strobe")
+            check("the same change in two shows is a habit", [h["text"] for h in showkit.learning(e)["habits"]] == ["took off “Strobe” (strobe)"], "")
+            show("Techno", "techno")
+            take_off("Circle")
+            show("Disco", "disco")
+            take_off("Figure 8")
+            check("...but not when you kept it in as many shows you went through (2 for, 2 against)",
+                  not showkit.learning(e)["habits"], str(showkit.learning(e)["habits"]))
+            b = next(b for b in e.quick if b["label"] == "Red")
+            e.act("quick_profile_use", name="Christmas")
+            b = next(b for b in e.quick if b["label"] == "Red")
+            e.act("quick_set", page=b["page"], slot=b["slot"], button={**{k: v for k, v in b.items() if k not in ("id", "page", "slot")}, "colour": "#bfe6ff"})
+            s = assistant._system(e, "design me a christmas show for this year")
+            check("next Christmas: last Christmas's changes are offered in the plan, not just applied",
+                  "THIS THEME BEFORE" in s and "#bfe6ff" in s[s.find("THIS THEME BEFORE"):], "")
+            check("...and only for that theme", "THIS THEME BEFORE" not in assistant._system(e, "design me a wedding show"), "")
         finally:
             e.shutdown()
             config.DATA = old

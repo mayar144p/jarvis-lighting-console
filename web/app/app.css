@@ -3002,3 +3002,11 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .ai-plan { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
 .ai-plan ol { margin: 4px 0 0; padding-left: 20px; }
 .ai-suggest .ai-can { flex-basis: 100%; margin-bottom: 2px; }
+/* What the AI has learned */
+.ai-learn { display: grid; gap: 14px; max-width: 900px; }
+.ai-learn-sec h4 { margin: 0 0 2px; }
+.ai-learn-sec > p { margin: 0 0 6px; }
+.ai-learn-list { display: grid; gap: 4px; }
+.ai-learn-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.ai-learn-row .grow { flex: 1; min-width: 0; }
+.ai-learn .row-btns .input { flex: 1; min-width: 0; }
