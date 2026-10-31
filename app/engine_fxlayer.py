@@ -192,11 +192,10 @@ class FxLayerMixin:
 
     def _a_fx_arm(self, state=True, minutes=None, **_):
         """ARM (or disarm) special effects and lasers.  Fire and laser
-        output only work while armed; it switches itself off after
-        `minutes` (10 by default), or never with minutes="until" - then
-        only a disarm or KILL FX ends it (a laser stays on for the set)."""
+        output only work while armed: until a disarm or KILL FX (a laser
+        stays on for the set), or for `minutes` when that's given."""
         if _truthy(state):
-            if str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
+            if minutes in (None, "") or str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
                 # armed for the whole set: only a disarm or KILL FX ends it
                 self.fx_armed_until = math.inf
                 return {"armed": True, "summary": "effects ARMED until you disarm"}

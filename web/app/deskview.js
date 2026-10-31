@@ -145,6 +145,7 @@ function goboOf(p) {
   return null;
 }
 
+export { swatch as paletteSwatch };
 function swatch(kind, p) {
   if (kind === "beam") {
     const ref = goboOf(p);

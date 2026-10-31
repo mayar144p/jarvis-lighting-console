@@ -268,14 +268,14 @@ function spotsBlock() {
 // its own path, aimed from where it hangs) - "hover round the dance floor
 // and the DJ booth".  Several zones share the lights out.
 const roamPick = new Set(["dancefloor"]);
-let roamSpeed = 1;
-// how fast they wander: a slider, any speed from a crawl to a race
-const roamWord = (v) => (v < 0.4 ? "Crawl" : v < 0.8 ? "Slow" : v < 1.5 ? "Medium" : v < 2.5 ? "Fast" : "Very fast");
+let roamPct = 25;               // % of the fastest these lights can follow
+// how fast they wander: a % of the fastest the selected lights can follow
+const roamWord = (p) => `${p}%`;
 function roamSlider() {
-  const out = h("span.mv-roam-v", roamWord(roamSpeed));
-  const input = h("input.mv-roam-speed", { type: "range", min: 0.1, max: 4, step: 0.05, value: roamSpeed,
-    title: "How fast the lights wander (Start roaming again to use a new speed)", "aria-label": "Roam speed",
-    oninput: (e) => { roamSpeed = +e.target.value; out.textContent = roamWord(roamSpeed); } });
+  const out = h("span.mv-roam-v", roamWord(roamPct));
+  const input = h("input.mv-roam-speed", { type: "range", min: 5, max: 100, step: 5, value: roamPct,
+    title: "How fast they wander, as a share of the fastest these lights can follow (100% = their motors at full speed). Start roaming again to use a new speed.", "aria-label": "Roam speed",
+    oninput: (e) => { roamPct = +e.target.value; out.textContent = roamWord(roamPct); } });
   return h("label.mv-roam-sp", h("span.muted.small", "Speed"), input, out);
 }
 function roamBlock() {
@@ -295,7 +295,7 @@ function roamBlock() {
     }, name))),
     roamSlider(),
     h("button.btn.small.primary", { title: "The selected moving lights wander inside these zones",
-      onclick: () => run("roam", { zones: [...roamPick], speed: roamSpeed }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
+      onclick: () => run("roam", { zones: [...roamPick], percent: roamPct }, { toast: true }) }, roaming.length ? "Roam (again)" : "Start roaming"),
     roaming.length ? h("button.btn.small", { title: "A button that plays this roam (these zones, this speed) on these lights only, or their group", onclick: () => import("./programmer.js").then((m) => m.makeHoldButton()) }, "Make a button…") : null,
     roaming.length ? h("button.btn.small.ghost", { onclick: () => Promise.all(roaming.map((f) => run("stop_fx", { id: f.id }))) }, "Stop") : null);
 }

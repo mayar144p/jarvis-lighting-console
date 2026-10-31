@@ -655,12 +655,17 @@ let sideKey = "";
 const sideFaders = new Map();
 // where the full-screen sliders sit, which way they run and how long they
 // are - set from their own ⚙, remembered on this computer
-const STRIP_DEFAULT = { place: "bottom", dir: "h", size: "m" };
+const STRIP_DEFAULT = { place: "bottom", dir: "v", size: "m" };
 function stripLook() {
-  try { return { ...STRIP_DEFAULT, ...JSON.parse(localStorage.getItem("haze.qbStrip") || "{}") }; } catch { return { ...STRIP_DEFAULT }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem("haze.qbStrip") || "{}");
+    // horizontal was the standard before: a strip still on it turns upright once
+    if (saved.dir === "h" && !saved.v2) { saved.dir = "v"; saved.v2 = 1; localStorage.setItem("haze.qbStrip", JSON.stringify(saved)); }
+    return { ...STRIP_DEFAULT, ...saved };
+  } catch { return { ...STRIP_DEFAULT }; }
 }
 function setStripLook(k, v) {
-  const cur = { ...stripLook(), [k]: v };
+  const cur = { ...stripLook(), [k]: v, v2: 1 };
   try { localStorage.setItem("haze.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
   applyStripLook();
 }

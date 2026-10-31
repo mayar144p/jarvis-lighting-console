@@ -1378,7 +1378,7 @@ def test_arm_for_set() -> None:
         finally:
             e.shutdown()
     js = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
-    check("the ARM dialog offers 10 min / 1 hour / until I disarm", "Until I disarm" in js and 'minutes: armFor' in js, "")
+    check("ARM stays armed until a disarm (no timer to pick)", 'minutes: "until"' in js and "until you disarm" in js, "")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("tab dots use the same kinds as the programmer bar", "GROUP_OF[r.replace" in pj, "")
     check("a light with no dimmer gets big On / Off, not a fader that does nothing",

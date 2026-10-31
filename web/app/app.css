@@ -1355,6 +1355,10 @@ body.gig .pb-mode button { min-height: calc(44px * var(--ctl)); }
 .clash-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; } .clash-row span { flex: 1 1 140px; }
 .prog-cells { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 10px 8px; }
 .prog-cells[hidden] { display: none; }
+.head-bar { position: relative; }
+.head-bar-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  width: max-content; max-width: min(90vw, 760px); padding: 8px 12px; border: 1px solid var(--border-2); border-radius: var(--radius);
+  background: var(--surface-2); box-shadow: var(--shadow); }
 .prog-cells .chip.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
 .fx-across { grid-column: 1 / -1; justify-self: start; }
 .fx-across.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
@@ -1669,6 +1673,8 @@ input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc
 .qb-strip-gear { align-self: flex-start; }
 /* up and down: a column each, the slider as long as set; the name above it */
 .qb.qb-full .qb-faders[data-dir="v"] { align-items: flex-end; }
+/* across: a grid, so a second row sits exactly under the first */
+.qb.qb-full .qb-faders[data-dir="h"]:not([data-place="left"]):not([data-place="right"]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--fl), 1fr)); align-items: end; }
 .qb.qb-full .qb-faders[data-dir="v"][data-place="left"], .qb.qb-full .qb-faders[data-dir="v"][data-place="right"] { flex-direction: row; flex-wrap: wrap; align-content: flex-start; max-width: 50vw; }
 .qb-faders[data-dir="v"] .qb-side { width: calc(72px * var(--ctl)); align-items: center; }
 .qb-faders[data-dir="v"] .qb-side-top { flex-direction: column; align-items: center; gap: 0; max-width: 72px; }
@@ -2929,3 +2935,6 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .cp-row { display: flex; gap: 8px; align-items: center; }
 .cp-row .input { flex: 1; min-width: 0; height: calc(36px * var(--ctl)); }
 .cp-card .row-btns { display: flex; gap: 10px; align-items: center; margin: 0; }
+/* a beam palette tile shows its gobo, as the light throws it */
+.pal-item i.gobo-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; }
+.palette-strip .pal-item:has(.gobo-ic) { align-items: center; gap: 7px; }

@@ -70,7 +70,24 @@ class RoamMixin:
         return [{"id": z["id"], "name": z.get("name") or z["kind"], "points": [list(p) for p in z["points"]],
                  "y": float(z.get("y") or 0)} for z in out]
 
-    def _a_roam(self, zones=None, heads=None, group=None, speed=1.0, size=1.0, beats=None, **_):
+    def _roam_top(self, movers: list[dict], zs: list[dict]) -> float:
+        """The fastest the slowest of these lights can carry its beam over
+        the floor (m/s): its motor's turn rate (measured, or by type) at its
+        distance to the zone, kept to a quarter of it so a path stays smooth."""
+        import math
+        cx = sum(venue_mod.zone_centroid({"points": z["points"]})[0] for z in zs) / len(zs)
+        cz = sum(venue_mod.zone_centroid({"points": z["points"]})[1] for z in zs) / len(zs)
+        top = None
+        for h in movers:
+            pan_s, tilt_s = self._move_travel(h)
+            pan_deg, tilt_deg = self._move_span(h)
+            rate = min(pan_deg / max(0.2, pan_s), tilt_deg / max(0.2, tilt_s))       # degrees a second
+            d = math.dist((float(h.get("x") or 0), float(h.get("y") or 0), float(h.get("z") or 0)), (cx, 0.0, cz))
+            v = math.radians(rate) * max(1.0, d) * 0.25
+            top = v if top is None else min(top, v)
+        return round(max(0.2, min(6.0, top or 1.0)), 2)
+
+    def _a_roam(self, zones=None, heads=None, group=None, speed=1.0, size=1.0, beats=None, percent=None, **_):
         """Moving lights wander inside zones ("dancefloor", "dj", a zone's
         name or id; several share the lights out).  `speed` about metres a
         second, `size` how much of the zone each path covers (0.2-1).
@@ -89,6 +106,10 @@ class RoamMixin:
         movers = [h for h in rows if "pan" in h["map"] and "tilt" in h["map"]]
         if not movers:
             raise ValueError("none of those lights can pan and tilt")
+        top = self._roam_top(movers, zs)
+        if percent not in (None, ""):
+            # (as a share of what these lights can do: 100% is as fast as the slowest can follow)
+            speed = top * _fclamp(percent, 1, 100) / 100.0
         p = {"speed": _fclamp(speed, 0.05, 8), "size": _fclamp(size, 0.2, 1.0)}
         if beats:
             p["beats"] = float(beats)
@@ -103,8 +124,9 @@ class RoamMixin:
         self.fx.append({"id": self._fx_seq, "lib": "roam", "roam": zs, "params": p, "heads": nums,
                         "t0": time.monotonic(), "duration": None})
         where = " and ".join(z["name"] for z in zs)
-        return {"id": self._fx_seq, "heads": nums,
-                "summary": f"{len(nums)} light(s) roam the {where}"}
+        return {"id": self._fx_seq, "heads": nums, "top": top,
+                "summary": f"{len(nums)} light(s) roam the {where}"
+                + (f" at {round(float(percent))}% of their top speed" if percent not in (None, "") else "")}
 
     def _roam_values(self, row: dict, t: float, out: dict) -> None:
         by_no = {h["head_no"]: h for h in self.patch}

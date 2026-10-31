@@ -3,7 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
-import { paletteOn, paletteFits } from "./deskview.js";
+import { paletteOn, paletteFits, paletteSwatch } from "./deskview.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
@@ -967,7 +967,8 @@ function headBar(heads, n) {
   return h("details.head-bar", { title: "Tilt each head (degrees from straight out)", open,
     ontoggle: (e) => { try { localStorage.setItem("haze.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
     h("summary.muted.small", `Tilt per head (${tilts})`),
-    ...Array.from({ length: tilts }, (_, i) => {
+    // (it opens over the programmer, never pushing it down)
+    h("div.head-bar-pop", ...Array.from({ length: tilts }, (_, i) => {
       const v = vals[`tilt@${i + 1}`] ?? 128;
       const out = h("small", deg(v));
       const input = h("input", { type: "range", min: 0, max: 255, value: v, "aria-label": `Head ${i + 1} tilt`,
@@ -976,7 +977,7 @@ function headBar(heads, n) {
     }),
     h("button.chip", { title: "A tilt wave through the heads (Move tab for the angles and speed)",
       onclick: () => run("run_fx", { name: "range", heads: heads.map((x) => x.head_no), across: true,
-        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave"));
+        params: { tilt_a: -40, tilt_b: 40, pan_a: 0, pan_b: 0, speed: 0.25, spread: 360 } }, { toast: true }) }, "Wave")));
 }
 
 // ------------------------------------------------------ in the programmer
@@ -1498,8 +1499,10 @@ async function saveLook() {
 // for these lights).  Right-click / long-press: update, rename, delete.
 function palButton(kind, p) {
   const v = p.values || {};
+  // a colour's swatch; a beam palette's gobo, as the light throws it
   const sw = kind === "colour" && ("red" in v || "green" in v || "blue" in v)
-    ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } }) : null;
+    ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } })
+    : kind === "beam" ? paletteSwatch("beam", p) : null;
   const lit = paletteOn(kind, p);
   const opts = (e) => {
     e.preventDefault();

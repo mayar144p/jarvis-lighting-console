@@ -2007,7 +2007,7 @@ class QuickMixin:
             what.append(", ".join(sorted(beam)[:4]))
         return what
 
-    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, keep=None, **_):
+    def _a_quick_from_programmer(self, label="", page=1, heads=None, group=None, on=True, keep=None, slot=None, **_):
         """Make a button of what the selected lights do now - position,
         colour, gobo..., and the movement or effects running on them - and
         turn it on: it holds those lights (the programmer lets go of them)
@@ -2024,7 +2024,7 @@ class QuickMixin:
         raw = self._quick_capture({"label": str(label or "My look")[:24], "kind": "custom", "mode": "latch",
                                    "target": target, "hold": True, **({"keep": want} if want else {})},
                                   live=True)
-        res = self._a_quick_set(page=page, slot="free", button=raw)
+        res = self._a_quick_set(page=page, slot=slot if slot not in (None, "") else "free", button=raw)
         key = res.get("id") or next((b["id"] for b in reversed(self.quick) if b["label"] == raw["label"]), None)
         # the programmer lets go of what the button has now (of a colour-only
         # button, only the colour: the movement stays in the programmer)
