@@ -7859,7 +7859,7 @@ def test_b4_movement() -> None:
           '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "jarvis.moveKnobs" in mv and "loadKnobs(sel)" in mv and "const act = running().filter((f) => f.heads.some((n) => mine.has(n)))" in mv and '(f.from || "programmer") === "programmer");' in mv and "they will play the new one too" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
-          "Copy 1 to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
+          "Copy head 1's colour to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
 
 
 def test_b5_room() -> None:
@@ -10385,3 +10385,36 @@ def test_pages_and_venue_reset() -> None:
           "export async function resetVenue" in vp and "Clear the venue to start again…" in vp
           and "resetVenue" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
           and "resetVenue" in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+
+
+def test_dock_and_desk_fit() -> None:
+    """The dock and the desk view fit what is in them: a fader's cap never
+    leaves its track; the group faders keep a finger's width each and
+    scroll; empty playback slots are slim; a card never runs past the dock;
+    the head chips sit in the programmer's title row (nothing moves); desk
+    view keys say their whole name and a window can't be sized past
+    usable; the usual-palettes tile shows only when the rig can do it, and
+    can be put away."""
+    print("The dock and the desk view fit: faders, group strip, slots, head chips, keys")
+    web = ROOT / "web" / "app"
+    ui = (web / "ui.js").read_text(encoding="utf-8")
+    css = (web / "app.css").read_text(encoding="utf-8")
+    pb = (web / "playbacks.js").read_text(encoding="utf-8")
+    pj = (web / "programmer.js").read_text(encoding="utf-8")
+    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("a fader's cap travels inside its track", "cap.style.bottom = `calc((100% - var(--cap-h)) * ${pct})`" in ui and "--cap-h:" in css, "")
+    check("group faders: a finger's width each, full names, a strip that scrolls and fades where more wait",
+          ".grp-masters > .master.grp { flex: none; width:" in css and 'h("span.m-name", g.name)' in pb
+          and "function scrollHints()" in pb and ".grp-masters.more-r" in css, "")
+    check("empty playback slots slim, the ones with cues get the room; a card never taller than the dock",
+          '"minmax(calc(44px * var(--ctl)), 0.4fr)"' in pb and "grid-template-rows: minmax(0, 1fr)" in css, "")
+    check("the head chips sit in the programmer's title row", 'id="prog-heads"' in html and '$("#prog-heads")' in pj, "")
+    check("desk view keys: whole names, windows sized within limits", '"Line up": "lineup"' in dv and "const SIZE = {" in dv
+          and ".dv-keywin .dv-key span { white-space: nowrap;" in css, "")
+    check("the usual-palettes tile only when the rig can do it, and it can be put away",
+          "canMake(kind) && !noOffer().includes(kind)" in dv and '"jarvis.dvNoOffer"' in dv, "")
+    check("the keypad says what it is for", '"1 THRU 4 @ FULL, ENTER"' in dv, "")
+    check("Settings keeps one size whichever page is open; a long page scrolls inside",
+          ".modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh);" in css
+          and ".settings > .set-pane { overflow-y: auto;" in css, "")

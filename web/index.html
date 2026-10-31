@@ -213,6 +213,7 @@
     <section class="panel programmer" id="programmer" aria-label="Programmer">
       <div class="panel-head">
         <h2>Programmer</h2>
+        <div class="prog-heads" id="prog-heads" hidden></div>
         <span class="prog-sel" id="prog-sel">Select fixtures</span>
       </div>
       <div class="prog-in" id="prog-in" hidden></div>
@@ -494,7 +495,7 @@
         <div class="grp-masters" id="grp-masters"></div>
         <div class="master">
           <div class="vfader" id="gm-fader" data-min="0" data-max="100" aria-label="Grand master"></div>
-          <span class="m-label">GM <output id="gm-num">100</output></span>
+          <span class="m-label m-num"><output id="gm-num">100</output></span><span class="m-name">GM</span>
         </div>
         <div class="bo-col">
           <button class="pb-relall" id="pb-relall" disabled title="Release every running playback, on every page"><span>RELEASE<br>PLAYBACKS</span><b id="pb-relall-n"></b></button>

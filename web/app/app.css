@@ -476,6 +476,14 @@ body.stage-full .workspace { grid-template-columns: 0 1fr 0; grid-template-rows:
 body.stage-full .fixtures, body.stage-full .programmer, body.stage-full .playbacks { display: none; }
 
 /* ------------------------------------------------------------- programmer */
+/* a light with heads: its head chips in the title row - no new row, so
+   nothing below moves; many heads scroll sideways */
+.prog-heads { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+.prog-heads[hidden] { display: none; }
+.prog-heads .chip { height: calc(22px * var(--ctl)); padding: 0 8px; flex: none; }
+.prog-heads-k { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; flex: none; }
+.programmer .panel-head:has(.prog-heads:not([hidden])) h2 { flex: none; }
+.programmer .panel-head:has(.prog-heads:not([hidden])) .prog-sel { margin-left: auto; }
 .prog-sel { font-size: var(--fs-s); color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prog-sel.has { color: var(--accent); font-weight: 600; }
 .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
@@ -717,7 +725,7 @@ body[data-bottom="timeline"] .workspace { --pb-h: clamp(250px, 38vh, 420px); }
   gap: 4px 6px; padding: 6px; min-width: 0; position: relative;
 }
 /* the playback fader: a finger's width (it was 20 px) - 44 px in Gig mode */
-.pb .vfader { width: calc(36px * var(--ctl)); grid-row: 1 / 4; height: auto; }
+.pb .vfader { width: calc(36px * var(--ctl)); grid-row: 1 / 4; height: auto; margin-bottom: calc(16px * var(--ctl)); }
 body.gig .pb { grid-template-columns: calc(44px * var(--ctl)) minmax(0, 1fr); }
 body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 .pb-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -726,8 +734,9 @@ body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 .pb:hover .pb-top .btn.icon, .pb-top .btn.icon:focus-visible { opacity: 1; }
 .pb-top .n { font: 700 var(--fs-xs) var(--mono); color: var(--muted); flex: none; }
 /* the fader's level, written on the fader's foot */
-.pb .pb-lvl { position: absolute; left: 6px; bottom: 10px; width: calc(36px * var(--ctl)); text-align: center; pointer-events: none; z-index: 1;
-  font: 700 var(--fs-xs) var(--mono); color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+.pb .pb-lvl { position: absolute; left: 6px; bottom: 5px; width: calc(36px * var(--ctl)); text-align: center; pointer-events: none;
+  font: 700 var(--fs-xs) var(--mono); color: var(--text-2); line-height: calc(14px * var(--ctl)); }
+.pb.active .pb-lvl { color: var(--text); }
 body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .pb-mid .pb-keys { display: inline-block; font: 600 var(--fs-xs) var(--mono); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-mid .pb-keys[hidden] { display: none; }
@@ -737,6 +746,8 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .pb-top .name:hover { color: var(--accent); }
 .pb-mid { min-height: 0; overflow: hidden; }
 .pb-cue { font-size: var(--fs-s); color: var(--muted); line-height: 1.35; overflow: hidden; }
+.pb-cue .pb-then { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); opacity: .75; }
+.pb-cue .pb-then:first-of-type { opacity: 1; }
 .pb-cue b { display: block; color: var(--text-2); font-weight: 600; font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-cue .next { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-prog { height: 3px; background: var(--border-2); border-radius: 2px; overflow: hidden; margin-top: 4px; }
@@ -753,7 +764,10 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .pb.focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .pb.active.focus { border-color: color-mix(in srgb, var(--ok) 70%, var(--accent)); }
 /* an empty executor: one quiet "Record here" in its place */
-.pb.empty { background: transparent; border-style: dashed; border-color: var(--border-2); padding: 0; }
+/* an empty slot keeps its place but not the room: slim and quiet, the
+   playbacks with cues get the width (playbacks.js sets the columns) */
+.pb.empty { background: color-mix(in srgb, var(--surface-2) 40%, transparent); border-color: transparent; padding: 0; }
+.pb.empty:hover { border-color: var(--border-2); }
 .pb.empty > :not(.pb-rec) { display: none; }
 .pb:not(.empty) > .pb-rec { display: none; }
 .pb-rec { grid-column: 1 / -1; grid-row: 1 / -1; background: none; border: 0; border-radius: var(--radius-sm); color: var(--muted);
@@ -761,7 +775,14 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .pb-rec b { font: 700 var(--fs-m) var(--mono); color: var(--text-2); }
 .pb-rec:hover { color: var(--text); background: var(--accent-bg); }
 /* the masters: group masters, the grand master, BLACKOUT - always at the right */
-.masters { display: flex; gap: 6px; padding: 8px; background: var(--bg-2); border-left: 1px solid var(--border); flex: none; position: relative; z-index: 1; }
+.masters { display: flex; gap: 6px; padding: 8px; background: var(--bg-2); border-left: 1px solid var(--border); flex: 0 1 auto; min-width: 0; position: relative; z-index: 1; }
+.masters > :not(.grp-masters) { flex: none; }
+/* the playbacks keep room for their faders whatever the group faders take */
+.playbacks > .pb-strip { min-width: min(620px, 46vw); grid-template-rows: minmax(0, 1fr); }
+/* a card is the dock's height, never taller: the cue list gives way, the
+   GO / Flash / Back / Stop row is always whole */
+.pb-strip > .pb { min-height: 0; overflow: hidden; }
+.pb-strip > .pb .pb-btns { min-height: 0; }
 .master { background: transparent; padding: 0 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .master .vfader { flex: 1; height: auto; }
 .m-label { font: 700 var(--fs-xs) var(--mono); color: var(--text-2); }
@@ -772,10 +793,12 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .blackout:hover { background: #2c1012; }
 .bo-col { display: flex; flex-direction: column; gap: 6px; }
 .bo-col .blackout { flex: 1; }
-.pb-relall { width: calc(88px * var(--ctl)); min-height: calc(40px * var(--ctl)); border-radius: var(--radius-sm); border: 1px solid var(--border-2, var(--border)); background: var(--surface-2); color: var(--text-2); font: 700 var(--fs-xs) var(--font, inherit); letter-spacing: .05em; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.pb-relall { width: calc(88px * var(--ctl)); min-height: calc(44px * var(--ctl)); padding: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border-2, var(--border)); background: var(--surface-2); color: var(--text-2); font: 700 var(--fs-xs) var(--font, inherit); letter-spacing: .02em; line-height: 1.15;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; overflow: hidden; }
 .pb-relall:not(:disabled) { color: var(--text); border-color: var(--live); }
 .pb-relall:disabled { opacity: .45; }
-.pb-relall b { min-width: 1.4em; padding: 1px 4px; border-radius: 9px; background: var(--live); color: #fff; font: 700 var(--fs-xs) var(--mono); }
+.pb-relall b { padding: 0 6px; border-radius: 8px; background: var(--live); color: #fff; font: 700 var(--fs-xs) var(--mono); line-height: 16px; }
+.pb-relall b::after { content: " running"; font-family: var(--font, inherit); font-weight: 600; }
 .pb-relall b:empty { display: none; }
 .blackout.on { background: var(--live); color: #fff; animation: pulse 1s ease-in-out infinite; }
 
@@ -879,6 +902,14 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .modal-head h2 { flex: 1; color: var(--text); font-size: var(--fs-l); font-weight: 600; }
 /* Settings: one section at a time, the sections down the side */
 .settings { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 20px; min-height: min(520px, 64vh); }
+/* Settings keeps one size whichever page is open (a short page used to
+   shrink the window and a long one grow it - the eye had to find it
+   again on every click); a long page scrolls inside */
+.modal:has(> .modal-body > .settings), .modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh); display: flex; flex-direction: column; }
+.modal-body:has(> .settings) { flex: 1; min-height: 0; overflow: hidden; }
+.modal-body > .settings { height: 100%; min-height: 0; }
+.settings > .set-nav { overflow-y: auto; }
+.settings > .set-pane { overflow-y: auto; min-height: 0; padding-right: 6px; scrollbar-gutter: stable; }
 .set-nav { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border); padding-right: 12px; }
 .set-nav button { text-align: left; height: calc(36px * var(--ctl)); padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: transparent;
   color: var(--text-2); font-weight: 500; }
@@ -1464,7 +1495,9 @@ body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8
 #hl-btn.on { background: #fde68a; color: #1f1400; border-color: #fbbf24; }
 .grp-masters { display: flex; gap: 1px; min-width: 0; overflow-x: auto; }
 .grp-masters:empty { display: none; }
-.master.grp .m-label { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* every master: the level, then the name on two lines - GM lines up with the groups */
+.master .m-name { width: 100%; font-size: var(--fs-xs); font-weight: 600; line-height: 1.15; color: var(--text-2); text-align: center;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; min-height: 2.3em; }
 tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 800; font-size: var(--fs-xs); }
 
 /* Move tab: aim (follow me + floor map), pan/tilt with nudge beside it */
@@ -2196,7 +2229,13 @@ body.ws-cues:not([data-bottom="faders"]) .pb-cues { display: none; }
 /* masters on the left of the dock (right-click / hold the grip) */
 body.masters-left .pb-mode { order: -2; }
 body.masters-left .masters { order: -1; flex-direction: row-reverse; border-left: 0; border-right: 1px solid var(--border); }
-.grp-masters { max-width: min(40vw, 640px); overflow-x: auto; overscroll-behavior: contain; flex: none; }
+/* the group faders: one finger-wide column each, never squeezed - more
+   than fit scroll, with a fade at the side where more are waiting */
+.grp-masters { flex: 0 1 auto; min-width: 0; max-width: none; gap: calc(6px * var(--ctl)); padding: 0 4px 6px;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+.grp-masters.more-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+.grp-masters.more-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
+.grp-masters.more-l.more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 .grp-masters.folded { display: none; }
 /* panels never squeeze below what they can show */
 .fixtures, .programmer, .modehub { min-width: 220px; }
@@ -2251,7 +2290,9 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: va
 .pb-pages button.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
 .pb-pages button.unused:not(.on) { opacity: .55; }
 body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc(44px * var(--ctl)); }
-.pb-pages button .pg-run { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--live); color: #fff; font: 700 var(--fs-xs) var(--mono); line-height: 16px; }
+/* how many run on that page: a small pill under the page's name */
+.pb-pages button:has(.pg-run) { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 4px; padding-bottom: 4px; }
+.pb-pages button .pg-run { display: block; min-width: 16px; padding: 0 4px; border-radius: 7px; background: var(--live); color: #fff; font: 700 var(--fs-xs) var(--mono); line-height: 14px; pointer-events: none; }
 .pb[hidden] { display: none; }
 /* ---- the desk view (Programmer -> Palettes): a pro desk's palette windows,
    in the desk's own colours ---- */
@@ -2271,6 +2312,8 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 .dv-tile .dv-sw { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
 .dv-tile .dv-per { font-size: var(--fs-xs); color: var(--text-2); }
 .dv-tile.dv-add { border-style: dashed; color: var(--text-2); background: transparent; }
+.dv-tile .dv-tile-x { position: absolute; top: 2px; right: 4px; width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); line-height: calc(20px * var(--ctl)); border-radius: 50%; color: var(--muted); font-size: var(--fs-m); }
+.dv-tile .dv-tile-x:hover { color: var(--text); background: var(--surface-3); }
 .dv-strip { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: auto; }
 .dv-sec { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px; }
 .dv-sec > .k { grid-column: 1 / -1; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); font-weight: 600; }
@@ -2456,13 +2499,16 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
   background: linear-gradient(135deg, transparent 55%, var(--border-2) 55% 62%, transparent 62% 72%, var(--border-2) 72% 79%, transparent 79%); }
 .dv-resize:hover { background: linear-gradient(135deg, transparent 55%, var(--accent) 55% 62%, transparent 62% 72%, var(--accent) 72% 79%, transparent 79%); }
 /* a key window: its keys reflow to its width and scroll when it is short */
+/* the key columns fit the longest name ("Highlight", "Line up") beside
+   its icon; a narrower window gets fewer columns, never cut-off names */
 .dv-keywin .dv-sec { border: 0; border-radius: 0; background: transparent; flex: 1; min-height: 0; overflow: auto;
-  grid-template-columns: repeat(auto-fill, minmax(calc(64px * var(--ctl)), 1fr)); align-content: start; }
+  grid-template-columns: repeat(auto-fill, minmax(calc(92px * var(--ctl)), 1fr)); align-content: start; }
 .dv-keywin .dv-pad { display: flex; flex-direction: column; gap: 6px; }
 .dv-keywin .dv-keys { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* keys in a window: the icon beside its name, compact; the keypad's keys
    share out the window's height */
-.dv-keywin .dv-key { flex-direction: row; gap: 6px; min-height: calc(34px * var(--ctl)); padding: 0 6px; }
+.dv-keywin .dv-key { flex-direction: row; justify-content: flex-start; gap: 6px; min-height: calc(34px * var(--ctl)); max-height: calc(44px * var(--ctl)); padding: 0 8px; min-width: 0; }
+.dv-keywin .dv-key span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .dv-padwin .dv-pad { overflow: hidden; }
 .dv-padwin .dv-keys { flex: 1; grid-auto-rows: minmax(calc(30px * var(--ctl)), 1fr); }
 .dv-padwin .dv-keys .dv-key { min-height: 0; }
@@ -2480,13 +2526,15 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 .vfader { border-radius: 10px; background: linear-gradient(90deg, #0c0c0f, #16161b 50%, #0c0c0f); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), inset 0 2px 6px rgba(0, 0, 0, .6); border: 0; }
 .vfader .fill { left: 4px; right: 4px; bottom: 4px; border-radius: 7px;
   background: linear-gradient(to top, color-mix(in srgb, var(--accent) 80%, transparent), color-mix(in srgb, var(--accent) 35%, transparent)); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent); }
-.vfader .cap { left: -5px; right: -5px; height: calc(18px * var(--ctl)); margin-bottom: calc(-9px * var(--ctl)); border-radius: 5px;
+.vfader { --cap-h: calc(18px * var(--ctl)); }
+.vfader .cap { left: -3px; right: -3px; height: var(--cap-h); margin-bottom: 0; border-radius: 5px;
   background: linear-gradient(#f4f4f7, #b9b9c4); box-shadow: 0 3px 8px rgba(0, 0, 0, .65); }
 .vfader .cap::after { left: 5px; right: 5px; top: 50%; margin-top: -1px; }
 .master .vfader { width: calc(42px * var(--ctl)); }
 .m-label { font-size: var(--fs-s); }
 /* widened, the group faders spread out to use the room */
-.grp-masters > .master.grp { flex: 1 1 0; min-width: calc(52px * var(--ctl)); }
+.grp-masters > .master.grp { flex: none; width: calc(60px * var(--ctl)); padding: 0; }
+.master .m-num { font: 700 var(--fs-xs) var(--mono); color: var(--text); }
 
 /* Record cue: three tidy rows, labels on one line, units beside the numbers */
 .rec-cue { display: flex; flex-direction: column; gap: 12px; width: min(520px, 80vw); }

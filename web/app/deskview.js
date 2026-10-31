@@ -20,7 +20,8 @@ const progVals = () => ((snap().programmer || {}).values) || {};
 function selLabel() {
   const sel = selected();
   if (!sel.length) return "nothing selected";
-  if (sel.length <= 6) return sel.join(", ");
+  if (sel.length === 1) return `light ${sel[0]}`;
+  if (sel.length <= 6) return `lights ${sel.join(", ")}`;
   return `${sel.slice(0, 5).join(", ")} … ${sel.length} lights`;
 }
 
@@ -135,6 +136,12 @@ function swatch(kind, p) {
   return hex ? h("i.dv-sw", { style: { background: hex } }) : null;
 }
 
+const OFFER_ATTRS = { colour: ["red", "wheel", "cyan", "colour_macro"], beam: ["zoom"], position: ["pan"] };
+const canMake = (kind) => patch().some((x) => (x.map || []).some((r) => (OFFER_ATTRS[kind] || []).includes(r))
+  && (kind !== "position" || (x.map || []).includes("tilt")));
+const noOffer = () => { try { return JSON.parse(localStorage.getItem("jarvis.dvNoOffer") || "[]"); } catch (e) { return []; } };
+const setNoOffer = (v) => { try { localStorage.setItem("jarvis.dvNoOffer", JSON.stringify(v)); } catch (e) { /* private window */ } };
+
 function paletteWindow(kind, title, letter) {
   const pals = (snap().palettes || {})[kind] || [];
   const tiles = pals.map((p) => tile(paletteOn(kind, p) ? ".on" : "", [h("small", `${letter}${p.n}`), swatch(kind, p), h("b", p.name),
@@ -147,9 +154,14 @@ function paletteWindow(kind, title, letter) {
     const name = await promptBox(`Record ${kind} palette`, "Name", "", { ok: "Record" });
     if (name) run("record_palette", { kind, name }, { toast: true });
   }));
-  if (!pals.length) {
-    tiles.push(tile(".dv-add", [h("b", DEFAULTS_LABEL[kind])], "For this rig, each light its own values",
-      () => run("palette_defaults", { kind }, { toast: true })));
+  // the usual palettes, offered only when a light here can do them (no
+  // "Narrow / Mid / Wide" for a rig with no zoom) - and the × puts it away
+  if (!pals.length && canMake(kind) && !noOffer().includes(kind)) {
+    const t = tile(".dv-add.dv-offer", [h("b", DEFAULTS_LABEL[kind])], "For this rig, each light its own values",
+      () => run("palette_defaults", { kind }, { toast: true }));
+    t.append(h("span.dv-tile-x", { role: "button", title: "Don't offer this here", "aria-label": "Don't offer this",
+      onclick: (e) => { e.stopPropagation(); setNoOffer([...noOffer(), kind]); t.remove(); } }, "×"));
+    tiles.push(t);
   }
   return win(title, tiles);
 }
@@ -175,7 +187,7 @@ function win(title, tiles) {
 // ---- the command strip --------------------------------------------------
 // a key: its icon over its name, as on a pro desk's keys
 const KEY_ICON = { "◀ Prev": "prev", "Next ▶": "next", All: "all", Odd: "odd", Even: "even", Highlight: "highlight", None: "none",
-  Flip: "flip", Mirror: "mirror", Locate: "locate", "Line up…": "lineup", Clear: "clear", Undo: "undo", "Record…": "rec",
+  Flip: "flip", Mirror: "mirror", Locate: "locate", "Line up": "lineup", Clear: "clear", Undo: "undo", "Record…": "rec",
   Update: "update", Plot: "plot", Cues: "cues", Patch: "patch", Outputs: "outputs", Macros: "macros", Setup: "setup",
   Help: "help", "⌫": "rubout", ENTER: "enter" };
 function key(label, title, fn, cls = "") {
@@ -212,7 +224,7 @@ function strip() {
       key("Flip", "Same spot, from the other end of the travel", () => run("flip", {}, { toast: true })),
       key("Mirror", "Pan reversed: left becomes right", () => run("mirror_pan", {}, { toast: true })),
       key("Locate", "Open white, centred: find the lights", () => run("locate", {}, { toast: true })),
-      key("Line up…", "Line up with the real lights; invert one that turns the wrong way", async () => (await import("./lineup.js")).openLineUp())),
+      key("Line up", "Line up with the real lights; invert one that turns the wrong way", async () => (await import("./lineup.js")).openLineUp())),
     kw("progkeys", "Programmer",
       key("Clear", "Clear the programmer", () => run("clear_programmer"), ".warn"),
       key("Undo", "Undo the last change", () => run("undo", {}, { toast: true })),
@@ -230,7 +242,8 @@ function strip() {
       key("Outputs", "What goes out to the nodes", async () => (await import("./monitors.js")).openNodeMonitor()),
       key("Setup", "Settings", async () => (await import("./settings.js")).openSettings()),
       key("Help", "Help and keys", async () => (await import("./dialogs.js")).openHelp())),
-    ["keypad", h("section.dv-win.dv-keywin.dv-padwin", h("header", h("b", "KEYPAD")), h("div.dv-sec.dv-pad", shown, h("div.dv-keys", ...pad,
+    ["keypad", h("section.dv-win.dv-keywin.dv-padwin", h("header", { title: "The command line by touch: tap 1 THRU 4 @ FULL then ENTER to bring lights 1 to 4 to full - the same as typing it. With a keyboard you can hide this window (×)." },
+      h("b", "KEYPAD"), h("span", "1 THRU 4 @ FULL, ENTER")), h("div.dv-sec.dv-pad", shown, h("div.dv-keys", ...pad,
       key("⌫", "Rub out", () => { line = line.trimEnd().split(" ").slice(0, -1).join(" "); line = line ? line + " " : ""; shown.textContent = line || " "; }),
       key("CLR", "Clear the line", () => { line = ""; shown.textContent = " "; }),
       key("ENTER", "Run the line", enter, ".enter"))))],
@@ -250,8 +263,8 @@ const LAYOUT_KEY = "jarvis.dvLayout";
 const DEFAULT_LAYOUT = {
   group: { x: 0, y: 0, w: 7, h: 6 }, position: { x: 7, y: 0, w: 7, h: 6 },
   colour: { x: 0, y: 6, w: 7, h: 6 }, beam: { x: 7, y: 6, w: 7, h: 6 },
-  select: { x: 14, y: 0, w: 5, h: 3 }, poskeys: { x: 14, y: 3, w: 5, h: 2 }, progkeys: { x: 14, y: 5, w: 5, h: 2 },
-  windows: { x: 14, y: 7, w: 5, h: 3 }, keypad: { x: 19, y: 0, w: 5, h: 8 },
+  select: { x: 14, y: 0, w: 5, h: 3 }, poskeys: { x: 14, y: 3, w: 5, h: 3 }, progkeys: { x: 14, y: 6, w: 5, h: 3 },
+  windows: { x: 14, y: 9, w: 5, h: 3 }, keypad: { x: 19, y: 0, w: 5, h: 8 },
 };
 let layout = (() => {
   try { return { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {}) }; } catch (e) { return { ...DEFAULT_LAYOUT }; }
@@ -259,15 +272,26 @@ let layout = (() => {
 const saveLayout = () => { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { /* private window */ } };
 let board = null, shownKey = "", zTop = 1;
 
+// how small and how big a window may be sized (in board cells): small
+// enough to tuck away, never so small its keys can't be read, never so big
+// its keys float in empty space
+const SIZE = {
+  select: { w: [3, 8], h: [3, 6] }, poskeys: { w: [3, 8], h: [3, 5] }, progkeys: { w: [3, 8], h: [3, 5] },
+  windows: { w: [3, 8], h: [3, 6] }, keypad: { w: [4, 9], h: [5, 12] },
+};
+const sizeOf = (id) => SIZE[id] || { w: [3, 24], h: [2, 12] };
+
 const NAMES = { group: "Group", position: "Position palettes", colour: "Colour palettes", beam: "Beam palettes",
   select: "Select keys", poskeys: "Position keys", progkeys: "Programmer keys", windows: "Window keys", keypad: "Keypad" };
 const hidden = () => (layout._hidden || []);
 
 function place(el, id) {
   el.hidden = hidden().includes(id);
-  const r = layout[id] || DEFAULT_LAYOUT[id];
-  el.style.gridColumn = `${r.x + 1} / span ${r.w}`;
-  el.style.gridRow = `${r.y + 1} / span ${r.h}`;
+  const r0 = layout[id] || DEFAULT_LAYOUT[id], sz = sizeOf(id);
+  // a layout saved before the limits: shown within them
+  const r = { ...r0, w: Math.max(sz.w[0], Math.min(sz.w[1], r0.w)), h: Math.max(sz.h[0], Math.min(sz.h[1], r0.h)) };
+  el.style.gridColumn = `${r.x + 1} / span ${Math.min(r.w, COLS - r.x)}`;
+  el.style.gridRow = `${r.y + 1} / span ${Math.min(r.h, ROWS - r.y)}`;
 }
 
 // a window's title moves it, its corner sizes it (a finger or the mouse)
@@ -288,7 +312,11 @@ function movable(el, id) {
     const move = (ev) => {
       const dx = Math.round((ev.clientX - sx) / cw), dy = Math.round((ev.clientY - sy) / ch);
       const r = { ...start };
-      if (resize) { r.w = Math.max(2, Math.min(COLS - r.x, start.w + dx)); r.h = Math.max(1, Math.min(ROWS - r.y, start.h + dy)); }
+      const sz = sizeOf(id);
+      if (resize) {
+        r.w = Math.max(sz.w[0], Math.min(COLS - r.x, sz.w[1], start.w + dx));
+        r.h = Math.max(sz.h[0], Math.min(ROWS - r.y, sz.h[1], start.h + dy));
+      }
       else { r.x = Math.max(0, Math.min(COLS - r.w, start.x + dx)); r.y = Math.max(0, Math.min(ROWS - r.h, start.y + dy)); }
       layout[id] = r;
       place(el, id);

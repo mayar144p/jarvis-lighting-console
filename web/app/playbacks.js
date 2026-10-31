@@ -237,6 +237,14 @@ function renderPages(pbs) {
     rel.title = running ? `Release the ${running} running playback${running === 1 ? "" : "s"}, on every page` : "No playback is running";
   }
   for (const [n, c] of cards) c.card.hidden = Math.ceil(n / PER_PAGE) !== pbPage;
+  // a slot with cues gets a full column, an empty one a slim one - all in
+  // their places
+  const strip = $("#pb-strip");
+  if (strip) {
+    const cols = pbs.slice((pbPage - 1) * PER_PAGE, pbPage * PER_PAGE)
+      .map((pb) => ((pb.stack || []).length ? "minmax(0, 1fr)" : "minmax(calc(44px * var(--ctl)), 0.4fr)")).join(" ");
+    if (strip.style.gridTemplateColumns !== cols) strip.style.gridTemplateColumns = cols;
+  }
 }
 
 function render() {
@@ -256,9 +264,14 @@ function render() {
     c.name.textContent = pb.name || (stack.length ? (stack.length === 1 ? cueLabel(stack[0]) : `${stack.length} cues`) : "Empty");
     c.card.title = stack.length ? "" : `Playback ${pb.n}: empty`;
     if (stack.length) {
+      // what is on, then what comes: as many next cues as the card has room
+      // for (its middle was empty space)
+      const ahead = [];
+      for (let k = 1; k <= 4 && pb.index + k < stack.length; k++) ahead.push(stack[pb.index + k]);
+      if (!ahead.length && next) ahead.push(next);
       c.cue.replaceChildren(
         h("b", cur ? `${pb.index + 1}/${stack.length}  ${cueLabel(cur)}` : "ready"),
-        h("span.next", next ? `next: ${cueLabel(next)}` : "end of list"));
+        ...(ahead.length ? ahead.map((x, k) => h("span.pb-then", (k ? "then " : "next: ") + cueLabel(x))) : [h("span.pb-then", "end of list")]));
     }
     const f = pb.follow || {};
     const bar = c.prog.firstChild;
@@ -379,8 +392,10 @@ function renderGroupMasters() {
         run("group_master", { group: g.n, level: v }, { silentError: true });
       }, 60) });
       grpFaders.set(g.n, { f, num });
-      return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label", g.name.slice(0, 8), " ", num));
+      // the level under the fader, the whole name under that (two lines)
+      return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label.m-num", num), h("span.m-name", g.name));
     }));
+    scrollHints();
   }
   const live = (state.lite && state.lite.group_masters) || {};
   for (const g of groups) {
@@ -388,6 +403,16 @@ function renderGroupMasters() {
     const v = live[g.n] ?? g.master ?? 100;            // the live feed first: it is always current
     if (it) { it.f.set(v); it.num.textContent = v; }
   }
+}
+
+// More group faders than fit: the strip scrolls (wheel, finger, its
+// scrollbar) and fades at the side where more are waiting
+function scrollHints() {
+  const box = $("#grp-masters");
+  if (!box) return;
+  const l = box.scrollLeft > 2, r = box.scrollLeft + box.clientWidth < box.scrollWidth - 2;
+  box.classList.toggle("more-l", l);
+  box.classList.toggle("more-r", r);
 }
 
 // The bottom dock's height: drag its top edge (double-click: back to the
@@ -543,12 +568,20 @@ export function initPlaybacks() {
     const dx = (e.clientX - drag.x) * (document.body.classList.contains("masters-left") ? 1 : -1);
     if (Math.abs(dx) > 4) { drag.moved = true; clearTimeout(holdT); }
     if (!drag.moved) return;
-    const w = Math.max(0, Math.min(Math.min(window.innerWidth * 0.4, 640), drag.w + dx));
+    // as wide as you like, up to what leaves the playbacks their room (app.css)
+    const w = Math.max(0, Math.min(window.innerWidth * 0.75, drag.w + dx));
     if (w < 40) { setFold(true); return; }
     setFold(false);
     setWidth(w);
   });
   const end = () => { clearTimeout(holdT); drag = null; fold.classList.remove("on"); window.dispatchEvent(new Event("resize")); };
+  // a mouse wheel over the strip (not on a fader) scrolls it sideways
+  grp.addEventListener("wheel", (e) => {
+    if (e.target.closest(".vfader") || grp.scrollWidth <= grp.clientWidth) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { grp.scrollLeft += e.deltaY; e.preventDefault(); }
+  }, { passive: false });
+  grp.addEventListener("scroll", scrollHints, { passive: true });
+  window.addEventListener("resize", scrollHints);
   fold.addEventListener("pointerup", end);
   fold.addEventListener("pointercancel", end);
   fold.addEventListener("dblclick", () => setFold(!grp.classList.contains("folded")));

@@ -904,8 +904,13 @@ function renderProgCells() {
   const key = JSON.stringify([n, state.cells || [], dots, tab === "position"]);
   if (key === cellsKey) return;
   cellsKey = key;
-  box.hidden = n < 2;
-  if (n < 2) { state.cells = []; return; }
+  // the head chips sit in the programmer's title row (they used to be a
+  // row of their own that pushed everything down when a light with heads
+  // was picked); only the per-head tilt bar, on Position, is a row
+  const row = $("#prog-heads");
+  row.hidden = n < 2;
+  box.hidden = true;
+  if (n < 2) { state.cells = []; row.replaceChildren(); return; }
   const cur = new Set(state.cells || []);
   const set = (list) => {
     state.cells = list.length === n ? [] : [...new Set(list)].sort((a, b) => a - b);
@@ -924,7 +929,13 @@ function renderProgCells() {
   const same = (list) => list.length === cur.size && list.every((k) => cur.has(k));
   const odd = Array.from({ length: n }, (_, i) => i + 1).filter((k) => k % 2);
   const even = Array.from({ length: n }, (_, i) => i + 1).filter((k) => !(k % 2));
-  box.replaceChildren(...[h("span.muted.small", "Heads:"),
+  const more = (e) => menu(e.currentTarget, [
+    { label: "Copy head 1's colour to all", disabled: !dots[0], run: () => run("set_colour", { hex: dots[0] }) },
+    { label: "Spread a gradient", hint: `from head 1's colour to head ${n}'s`, disabled: !(dots[0] && dots[n - 1] && dots[0] !== dots[n - 1]),
+      run: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } },
+  ]);
+  row.title = cur.size ? `Changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "Tap a head to colour it on its own (Ctrl/Shift + tap adds heads)";
+  row.replaceChildren(...[h("span.prog-heads-k", "Heads"),
     h("button.chip" + (!cur.size ? ".on" : ""), { title: "Every head of the light", onclick: () => pick(0) }, "All"),
     ...Array.from({ length: n }, (_, i) => h("button.chip.cell-chip" + (cur.has(i + 1) ? ".on" : ""), {
       title: `Head ${i + 1} on its own - Ctrl or Shift + tap to add it to the heads already picked`,
@@ -932,11 +943,11 @@ function renderProgCells() {
       dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
     n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
     n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
-    h("span.muted.small", cur.size ? `changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "tap a head to colour it on its own"),
-    dots[0] ? h("button.chip", { title: "Every head takes head 1's colour", onclick: () => run("set_colour", { hex: dots[0] }) }, "Copy 1 to all") : null,
-    dots[0] && dots[n - 1] && dots[0] !== dots[n - 1] ? h("button.chip", { title: `A gradient from head 1's colour to head ${n}'s`,
-      onclick: async () => { for (let k = 1; k <= n; k++) await run("set_colour", { hex: mixHex(dots[0], dots[n - 1], (k - 1) / (n - 1)), cell: [k] }, { silentError: true }); } }, "Spread a gradient") : null,
-    tab === "position" ? headBar(heads, n) : null].filter(Boolean));
+    dots[0] ? h("button.chip.icon", { title: "Copy a head's colour to all, spread a gradient", "aria-label": "More for the heads", onclick: more }, "⋯") : null,
+  ].filter(Boolean));
+  const bar = tab === "position" ? headBar(heads, n) : null;
+  box.hidden = !bar;
+  if (bar) box.replaceChildren(bar);
 }
 
 const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
