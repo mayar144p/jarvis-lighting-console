@@ -10829,3 +10829,38 @@ def test_dj_requests() -> None:
     html = (ROOT / "web" / "requests.html").read_text(encoding="utf-8")
     check("the phone page sends with the request code only", '"X-Haze-Request": code' in html and "X-Haze-Token" not in html, "")
 
+
+def test_design_night() -> None:
+    """A show for every song of the night, kept in each song, one set of buttons."""
+    import os
+    import tempfile
+    from app import assistant, autoshow
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        real = autoshow.design
+        autoshow.design = lambda eng, brief="", offline=False: real(eng, brief, offline=True)
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=4)
+            mk = [{"name": "Intro", "t": 0}, {"name": "Build", "t": 30}, {"name": "Drop", "t": 45}, {"name": "Outro", "t": 90}]
+            e.act("songs_import", tracks=[{"name": "Song A", "bpm": 124, "length": 120, "markers": mk},
+                                          {"name": "Song B", "bpm": 128, "length": 120, "markers": mk}])
+            r = assistant.design_night(e, "halloween club night", name="Halloween night")
+            check("every song gets its show, kept in the song", r["ok"] and r["songs"] == ["Song A", "Song B"]
+                  and all(s["timeline"].get("tracks") for s in e._songs()), str(r))
+            check("one set of buttons for the night", r.get("buttons") == "Halloween night"
+                  and sum(1 for p in e._profiles()["order"] if p.startswith("Halloween")) == 1, str(r))
+            r2 = assistant.design_night(e, "again")
+            check("songs that have a show are left alone unless asked", not r2["ok"] and "already" in r2["error"], str(r2))
+        finally:
+            autoshow.design = real
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+
