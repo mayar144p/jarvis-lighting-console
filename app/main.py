@@ -835,7 +835,15 @@ class Handler(BaseHTTPRequestHandler):
             if eng.__dict__.get("ai_operator"):
                 from app import ai_operator
                 ai_operator.take_over(eng, action)
-            return self._console_result(eng, eng.act(action, **params))
+            res = eng.act(action, **params)
+            if res.get("ok"):
+                # two people editing at once: a heads-up when another screen
+                # just changed the same cue / button / palette / room
+                from app import editors
+                warn = editors.note(action, params, self.headers.get("X-Haze-Client") or "")
+                if warn:
+                    res = {**res, "warning": warn}
+            return self._console_result(eng, res)
         if route == "/api/console/underlay":
             return self._json(save_underlay(body))
         if route == "/api/console/audio":
@@ -1280,6 +1288,8 @@ class Handler(BaseHTTPRequestHandler):
                 status["console"]["live"] = engine_mod.ENGINE.live
                 status["console"]["patched"] = len(engine_mod.ENGINE.patch)
                 status["console"]["selected"] = len(engine_mod.ENGINE.selected)
+            from app import editors
+            status["screens"] = editors.screens()     # people working the desk now
             status["dmx_input"] = dmxin.snapshot()   # observable input state
             status["midi"] = midi.status()           # devices / open / errors
             return self._json(status)

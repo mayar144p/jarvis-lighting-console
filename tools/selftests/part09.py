@@ -11365,3 +11365,20 @@ def test_ai_show_craft() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_two_screens() -> None:
+    """Two people editing at once: a heads-up when another screen just changed the same thing."""
+    from app import editors
+    editors.reset()
+    check("the first edit says nothing", editors.note("record_cue", {"playback": 1, "cue": 3}, "laptop") == "", "")
+    check("the same screen again says nothing", editors.note("edit_cue", {"playback": 1, "cue": 3}, "laptop") == "", "")
+    w = editors.note("rename_cue", {"playback": 1, "cue": 3}, "tablet")
+    check("another screen on the same cue is told", "Another screen changed this cue" in w, w)
+    check("...not on a different cue", editors.note("edit_cue", {"playback": 1, "cue": 4}, "laptop") == "", "")
+    check("...nor for playing the show (GO, a button press)", editors.note("cue_go", {"playback": 1}, "tablet") == ""
+          and editors.note("quick_press", {"id": "q1"}, "laptop") == "", "")
+    editors.note("venue_add", {}, "laptop")
+    check("the room counts as one thing", "the room" in editors.note("venue_update", {}, "tablet"), "")
+    check("two screens are working the desk", editors.screens() == 2, str(editors.screens()))
+    editors.reset()

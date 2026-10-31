@@ -36,6 +36,7 @@ export async function run(action, params = {}, opts = {}) {
   }
   emit("action", { action, params, res });
   if (res.internal) noteError(`${action}: ${res.error}`);     // a bug in the desk, not "can't do that"
+  if (res.warning) toast(res.warning, "", 7000);                // another screen just changed the same thing
   if (!res.ok && !opts.silentError) toast(res.error || `${action} failed`, "bad");
   else if (res.ok && opts.toast) toast(typeof opts.toast === "string" ? opts.toast : (res.summary || "Done"), "ok");
   return res;

@@ -39,9 +39,15 @@ function setToken(t) {
   } catch (e) { /* storage blocked: we will ask again */ }
 }
 
+// this screen's own id: another screen editing the same cue / button at
+// the same time gets a heads-up (app/editors.py)
+let clientId = "";
+try { clientId = sessionStorage.getItem("haze.client") || ""; if (!clientId) { clientId = Math.random().toString(36).slice(2, 12); sessionStorage.setItem("haze.client", clientId); } } catch (e) { clientId = Math.random().toString(36).slice(2, 12); }
+
 function headers(json) {
   const h = {};
   if (json) h["Content-Type"] = "application/json";
+  h["X-Haze-Client"] = clientId;
   const t = token();
   if (t) h["X-Haze-Token"] = t;
   return h;
