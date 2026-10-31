@@ -223,6 +223,10 @@ How you work:
   real lights do what you meant - beams on the right zone, the right colour, nothing
   dark that should be lit - and fix what isn't right.  When you have see_3d, look at the
   3D view once at the end too, and fix what looks wrong.
+* Every `do` answer says what really happened: `now` (what those lights do now),
+  `check` (a problem it noticed), `cant` (what the light can't do), `ignored`
+  (settings it doesn't take).  Read it and put it right; never send the same failed
+  call again unchanged.
 * Be quick: put ALL the `do` calls for a step in ONE round (several tool calls at
   once), check once at the end, and stop.  Each round costs time.
 * Aim at a zone by its name: aim_at {{"zone": "Dance floor"}}; marks with "mark".
@@ -476,7 +480,39 @@ def _do(eng, action: str, params: dict, waiting: list | None = None) -> dict:
             out[k] = r[k]
     if dropped:
         out["ignored"] = dropped
+    _verify(eng, action, out)
     return out
+
+
+# actions that change how the selected lights look: after one, the AI is
+# told what those lights now actually do (so it checks its own work without
+# another round, and sees at once when the light can't - no colour, no move)
+LOOK_ACTIONS = frozenset({"set_colour", "set_intensity", "set_attribute", "set_position", "aim_at", "aim_spot",
+                          "run_fx", "run_gradient", "run_shape", "chase_colours", "fan", "include_palette",
+                          "include_preset", "beam_spot", "clear_attrs", "highlight", "mirror", "flip", "nudge",
+                          "stop_fx", "fx_tweak", "roam", "set_attr_range", "align", "distribute"})
+
+
+def _verify(eng, action: str, out: dict) -> None:
+    """What the action really did to the lights it worked on: `now` (up to
+    eight lights), and a warning when nothing it should have lit is lit."""
+    if not out.get("ok") or action not in LOOK_ACTIONS:
+        return
+    sel = [int(n) for n in (getattr(eng, "selected", None) or [])][:8]
+    if not sel:
+        out["check"] = "no lights are selected - it may not have touched anything; select lights first"
+        return
+    try:
+        now = check_lights(eng, sel)["lights"]
+    except Exception:  # noqa: BLE001 - a check never fails the action
+        return
+    out["now"] = [{k: v for k, v in x.items() if k != "name"} for x in now]
+    if action in ("set_colour", "set_intensity", "aim_at", "run_fx") and not any(x["level"] > 0 for x in now) \
+            and not eng.blackout:
+        out["check"] = ("the selected lights are all dark - give them a level (set_intensity) if they should show"
+                        if action != "set_intensity" else "the selected lights are still dark")
+    elif eng.blackout:
+        out["check"] = "the desk is in BLACKOUT - nothing shows until it's released"
 
 
 def find_fixtures(eng, query: str, limit: int = 8) -> dict:
@@ -687,6 +723,8 @@ def _system(eng, message: str = "") -> str:
         text += "\n\nWHAT EACH LIGHT CAN DO (from the desk):\n" + "\n".join(
             f"  {m['model']} (heads {', '.join(map(str, m['heads'][:24]))}): can {', '.join(m['can'])}"
             + (f"; can't {', '.join(m['cannot'])}" if m["cannot"] else "") for m in caps)
+    if not websearch.allowed():
+        text += "\n\nLooking things up online is switched OFF by the operator: don't use search_web or read_web."
     return text + "\n\nTHE RIG NOW:\n" + console_ai.rig_context(eng)
 
 
@@ -763,7 +801,9 @@ def _go(eng, st: dict, chat) -> dict:
     try:
         while st["rounds"] < MAX_ROUNDS:
             st["rounds"] += 1
-            msg = chat(msgs, tools=tools)
+            # a quick look: think little (quick); a show: think it through
+            with llm.thinking("medium" if "build" in route(st["message"]) else "low"):
+                msg = chat(msgs, tools=tools)
             calls = msg.get("tool_calls") or []
             if not calls:
                 reply = str(msg.get("content") or "").strip()
@@ -801,9 +841,26 @@ def _go(eng, st: dict, chat) -> dict:
                         # some models put the arguments next to "action" instead of in "params"
                         params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
                             else {k: v for k, v in args.items() if k not in ("action", "params")}
-                        result = _do(eng, args.get("action"), params, st["waiting"])
+                        # the same call again with nothing changed in between: never
+                        # blindly - say what came of it last time (a call that failed
+                        # fails again; one that worked is already done)
+                        sig = json.dumps([args.get("action"), params], sort_keys=True, default=str)
+                        seen = st.setdefault("seen", {})
+                        prev = seen.get(sig)
+                        if prev is not None and not prev.get("ok"):
+                            result = {"ok": False, "error": f"you tried exactly this already and it failed: "
+                                      f"{prev.get('error')} - change the action or its settings, or ask the operator"}
+                        elif prev is not None and args.get("action") not in ("quick_press", "cue_go", "cue_back",
+                                                                             "tempo_tap", "nudge", "cue_forward"):
+                            result = {"ok": True, "summary": "already done (the same call just before) - not repeated",
+                                      "repeat": True}
+                        else:
+                            result = _do(eng, args.get("action"), params, st["waiting"])
+                            if result["ok"]:
+                                seen.clear()           # the desk changed: earlier calls may work now
+                            seen[sig] = {"ok": result["ok"], "error": result.get("error")}
                         steps.append({"action": args.get("action"), "params": params,
-                                      "ok": result["ok"], "summary": result.get("summary")})
+                                      "ok": result["ok"], "summary": result.get("summary") or result.get("error")})
                         st["changed"] = st["changed"] or (result["ok"] and not held)
                 elif name == "room_plan":
                     p = roomsense.plan(eng)
@@ -854,8 +911,17 @@ def _go(eng, st: dict, chat) -> dict:
                     st["changed"] = st["changed"] or bool(result.get("ok"))
                 elif name == "search_web":
                     result = websearch.search(args.get("query"))
+                    srcs = [r["url"] for r in result.get("results") or []][:4]
+                    steps.append({"action": "search_web", "params": {"query": args.get("query")}, "ok": bool(result.get("ok")),
+                                  "summary": (f"Looked up \u201c{str(args.get('query') or '')[:80]}\u201d on {result.get('via', 'the web')}"
+                                              if result.get("ok") else f"Couldn't look it up: {result.get('error')}"),
+                                  "sources": srcs})
                 elif name == "read_web":
                     result = websearch.read(args.get("url"))
+                    steps.append({"action": "read_web", "params": {"url": args.get("url")}, "ok": bool(result.get("ok")),
+                                  "summary": (f"Read \u201c{result.get('title') or args.get('url')}\u201d" if result.get("ok")
+                                              else f"Couldn't read {str(args.get('url'))[:80]}"),
+                                  "sources": [str(args.get("url"))[:300]] if result.get("ok") else []})
                 elif name == "restyle_show":
                     if st["preview"] and not st["was_blind"] and not st["blind_started"]:
                         eng.act("blind", state=True)

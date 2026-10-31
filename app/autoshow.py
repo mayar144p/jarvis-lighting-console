@@ -23,7 +23,7 @@ import copy
 import json
 import re
 
-from app import fixture_kind, fxlib, llm, roomsense
+from app import fixture_kind, fxlib, llm, roomsense, websearch
 from app import venue as venue_mod
 
 ROLE_NAME = {"spot": "Movers", "beam": "Beams", "wash": "Washes", "par": "PARs",
@@ -500,12 +500,15 @@ def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> di
     if not offline and not llm.available():
         raise ValueError(NEEDS_AI)
     note = None
+    # a theme, an event or a genre: what the web says about lighting it
+    web = websearch.inspiration(brief) if not offline and llm.available() else ""
+    sysmsg = SYSTEM + "\n\n" + describe(a) + ("\n\n" + web if web else "")
     if not offline and llm.available() and int(variants or 1) > 1:
         designs = []
         for title, how in TAKES[:max(2, min(3, int(variants)))]:
             try:
                 raw = llm.structured(
-                    [{"role": "system", "content": SYSTEM + "\n\n" + describe(a)},
+                    [{"role": "system", "content": sysmsg},
                      {"role": "user", "content": f"{brief or 'A high-energy club night.'}\n\nThis take: {title} - {how}. "
                                                  f"Name the show after the brief, then '- {title}'."}],
                     "show_design", "The whole show for this rig, section by section.", DESIGN_SCHEMA, temperature=0.9)
@@ -514,22 +517,67 @@ def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> di
                 continue
         if not designs:
             raise ValueError("the AI couldn't design the show this time - try again")
-        return {"design": designs[0], "designs": designs, "analysis": _public(a), "source": "llm"}
+        return {"design": designs[0], "designs": designs, "analysis": _public(a), "source": "llm", "web": bool(web)}
     if not offline and llm.available():
         try:
             raw = llm.structured(
-                [{"role": "system", "content": SYSTEM + "\n\n" + describe(a)},
+                [{"role": "system", "content": sysmsg},
                  {"role": "user", "content": brief or "A high-energy club night."}],
                 "show_design", "The whole show for this rig, section by section.",
                 DESIGN_SCHEMA, temperature=0.7)
-            return {"design": validate({**raw, "brief": brief}, a), "analysis": _public(a), "source": "llm"}
+            d = validate({**raw, "brief": brief}, a)
         except (llm.LLMError, ValueError) as exc:
             raise ValueError(f"the AI couldn't design the show this time ({str(exc)[:160]}) - try again") from None
+        d, fixed = critique(d, a, brief, sysmsg)
+        out = {"design": d, "analysis": _public(a), "source": "llm", "web": bool(web)}
+        if fixed:
+            out["reviewed"] = fixed
+        return out
     out = {"design": validate({**fallback_design(a, brief), "brief": brief}, a), "analysis": _public(a),
            "source": "offline"}
     if note:
         out["note"] = note
     return out
+
+
+CRITIC = """You are a senior lighting designer checking a junior's show design before it is
+built.  Check it against the brief, the room's rules and good design:
+- does it answer the brief (theme, colours, mood, what to avoid)?
+- contrast: calm parts really calmer (dimmer, slower, fewer lights) than the drops?
+- 2-3 colours per look, one leading; not a rainbow on everything;
+- strobes / flashes only on drops and the ends of builds, only over the dance floor;
+- gentle zones (VIP, seating) stay gentle; nothing moving or strobing at the DJ, the bar or the stage.
+List the real problems (at most 5, short).  If there are any, return the WHOLE design
+with them fixed (keep everything that was right exactly as it was).  If it's good,
+return no problems and the design unchanged."""
+
+CRITIC_SCHEMA = {"type": "object", "properties": {
+    "problems": {"type": "array", "items": {"type": "string"}},
+    "design": DESIGN_SCHEMA}, "required": ["problems"]}
+
+
+def critique(d: dict, a: dict, brief: str, sysmsg: str) -> tuple[dict, list[str]]:
+    """A second look at a design by the AI, as a senior designer would:
+    (the design - fixed where it found problems -, what it fixed).  Any
+    trouble: the first design stands."""
+    try:
+        with llm.thinking("low"):
+            raw = llm.structured(
+                [{"role": "system", "content": sysmsg + "\n\n" + CRITIC},
+                 {"role": "user", "content": "The brief: " + (brief or "a high-energy club night") + "\n\nThe design:\n"
+                  + json.dumps({k: v for k, v in d.items() if k != "brief"}, default=str)[:24000]}],
+                "review", "The problems found, and the design with them fixed.", CRITIC_SCHEMA, temperature=0.2)
+    except (llm.LLMError, ValueError):
+        return d, []
+    problems = [str(p)[:200] for p in raw.get("problems") or [] if str(p).strip()][:5]
+    if not problems or not isinstance(raw.get("design"), dict) or not raw["design"].get("sections"):
+        return d, []
+    try:
+        fixed = validate({**raw["design"], "brief": brief}, a)
+    except ValueError:
+        return d, []
+    fixed["name"] = d.get("name") or fixed.get("name")
+    return fixed, problems
 
 
 def _public(a: dict) -> dict:

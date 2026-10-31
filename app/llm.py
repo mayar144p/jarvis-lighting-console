@@ -89,10 +89,21 @@ def settings() -> dict:
     mode = got.get("mode") if got.get("mode") in MODES else ("auto" if key else "local")
     return {"mode": mode, "key": key, "model": str(got.get("model") or config.LLM_MODEL),
             "local_url": str(got.get("local_url") or LOCAL_URL).rstrip("/"),
-            "local_model": str(got.get("local_model") or "")}
+            "local_model": str(got.get("local_model") or ""),
+            "web": got.get("web") is not False}
 
 
-def save_settings(mode=None, key=None, model=None, local_url=None, local_model=None) -> dict:
+def google() -> dict | None:
+    """The online AI's key and model when it is Google's Gemini (it can
+    search Google itself), else None."""
+    st = settings()
+    if not st["key"] or "generativelanguage.googleapis.com" not in config.LLM_BASE_URL:
+        return None
+    return {"key": st["key"], "model": st["model"],
+            "base": config.LLM_BASE_URL.split("/v1beta")[0] + "/v1beta"}
+
+
+def save_settings(mode=None, key=None, model=None, local_url=None, local_model=None, web=None) -> dict:
     """Change what was given; the key is kept, never shown back."""
     try:
         cur = json.loads(_settings_file().read_text(encoding="utf-8"))
@@ -105,6 +116,8 @@ def save_settings(mode=None, key=None, model=None, local_url=None, local_model=N
     for name, val in (("key", key), ("model", model), ("local_model", local_model)):
         if val is not None:
             cur[name] = str(val).strip()
+    if web is not None:
+        cur["web"] = bool(web)
     if local_url is not None:
         url = str(local_url).strip().rstrip("/")
         if url and not re.match(r"^https?://[\w.\-]+(:\d+)?(/[\w.\-/]*)?$", url):
@@ -196,7 +209,8 @@ def public(wait: bool = True) -> dict:
     return {"mode": st["mode"], "has_key": bool(st["key"]), "model": st["model"],
             "local_url": st["local_url"], "local_model": st["local_model"],
             "local_running": bool(models), "local_models": models or [],
-            "available": available(), "last_used": last_used, "last_note": last_note}
+            "available": available(), "last_used": last_used, "last_note": last_note,
+            "web": st["web"], "google_search": google() is not None}
 
 
 def transcribe(audio_b64: str, fmt: str = "wav") -> str:
@@ -212,6 +226,37 @@ def transcribe(audio_b64: str, fmt: str = "wav") -> str:
         {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}}]}],
         None, None, 0.0)
     return str(msg.get("content") or "").strip().strip('"')
+
+
+# How hard the online AI thinks before it answers: a quick look needs
+# little, a whole show more.  Set around a piece of work with
+# `with llm.thinking("high"):`; only Gemini's thinking models take it (others
+# never see it).  Thinking costs time, so the default is low.
+_think = threading.local()
+EFFORTS = ("none", "low", "medium", "high")
+_no_effort: set[str] = set()          # models that refused it (asked again without)
+
+
+class thinking:
+    def __init__(self, level: str):
+        self.level = level if level in EFFORTS else "low"
+
+    def __enter__(self):
+        self.prev = getattr(_think, "level", None)
+        _think.level = self.level
+        return self
+
+    def __exit__(self, *_):
+        _think.level = self.prev
+
+
+def _effort(ai: dict) -> str | None:
+    level = getattr(_think, "level", None)
+    if not level or ai.get("name") != "online" or ai.get("model") in _no_effort:
+        return None
+    if "generativelanguage.googleapis.com" not in str(ai.get("url")) or not re.search(r"gemini-(2\.5|[3-9])", str(ai.get("model"))):
+        return None
+    return level
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None,
@@ -264,6 +309,9 @@ def _chat(ai: dict, messages: list[dict], tools, tool_choice, temperature: float
     if tools:
         body["tools"] = tools
         body["tool_choice"] = tool_choice or "auto"
+    effort = _effort(ai)
+    if effort:
+        body["reasoning_effort"] = effort
     data = json.dumps(body).encode("utf-8")
     last = None
     for attempt in range(4):
@@ -293,6 +341,11 @@ def _chat(ai: dict, messages: list[dict], tools, tool_choice, temperature: float
                                 + (f" - try again in {int(wait)} s" if wait else "") + ".")
                 raise last from exc
             last = LLMError(f"AI service HTTP {exc.code}: {detail}")
+            if exc.code == 400 and "reasoning" in full.lower() and "reasoning_effort" in body:
+                _no_effort.add(ai["model"])           # this model doesn't think: ask again plainly
+                body.pop("reasoning_effort", None)
+                data = json.dumps(body).encode("utf-8")
+                continue
             if exc.code in _RETRY_STATUS and attempt == 0:
                 time.sleep(1.5)
                 continue
@@ -325,12 +378,15 @@ def extract_json(text: str) -> dict:
 
 
 def structured(messages: list[dict], name: str, description: str,
-               schema: dict, temperature: float = 0.3) -> dict:
+               schema: dict, temperature: float = 0.3, think: str = "medium") -> dict:
     """Ask for one object matching `schema`, via a forced tool call.
 
     Endpoints that ignore tools answer in text; that text is parsed as JSON
     instead, so the caller always gets a dict or an exception.
     """
+    if getattr(_think, "level", None) is None:      # (a design: think it through)
+        with thinking(think):
+            return structured(messages, name, description, schema, temperature, think)
     tool = {"type": "function", "function": {
         "name": name, "description": description, "parameters": schema}}
     try:

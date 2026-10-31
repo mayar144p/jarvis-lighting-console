@@ -176,6 +176,14 @@ async function assist(text) {
     if (r.steps && r.steps.length) {
       extra.append(h("details.ai-steps", h("summary", `What I did (${r.steps.length})`),
         ...r.steps.map((s) => h("div.plan-step" + (s.ok ? ".ok" : ".bad"), h("span.n", s.ok ? "✓" : "✕"), s.summary || s.action))));
+      // what it looked up online, and where it read it
+      const web = r.steps.filter((s) => s.ok && (s.action === "search_web" || s.action === "read_web"));
+      const links = [...new Set(web.flatMap((s) => s.sources || []))].slice(0, 6);
+      if (web.length) {
+        extra.append(h("div.ai-web.muted.small", "🔎 " + web.filter((s) => s.action === "search_web").length + " look-up(s) online",
+          ...links.map((u) => { let host = u; try { host = new URL(u).hostname.replace(/^www\./, ""); } catch (e) { /* as is */ }
+            return h("a", { href: u, target: "_blank", rel: "noopener noreferrer", title: u, style: { marginLeft: "8px" } }, host); })));
+      }
     }
     if (r.question) {
       extra.append(h("div.ai-q", h("b", r.question),

@@ -687,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the AI switch and the online key; the key is never sent back
                 try:
                     return self._json(llm.save_settings(**{k: body[k] for k in (
-                        "mode", "key", "model", "local_url", "local_model") if k in body}))
+                        "mode", "key", "model", "local_url", "local_model", "web") if k in body}))
                 except ValueError as exc:
                     return self._json({"error": str(exc)}, 400)
             if route == "/api/ai/local":

@@ -192,7 +192,13 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
             except Exception as exc:  # noqa: BLE001 - a crash is a failed case, the exam goes on
                 r = {"ok": False, "error": f"crashed: {exc}"}
             failed = judge(eng, r, c.get("expect") or {}, before) if r.get("ok") else [r.get("error") or "no answer"]
+            st = r.get("steps") or []
+            okf = [bool(s.get("ok")) for s in st if s.get("action")]
             results.append({"id": c["id"], "ask": c["ask"], "passed": not failed, "failed": failed,
+                            "actions": len(okf), "actions_ok": sum(okf),
+                            # a failed step put right later in the same request
+                            "recovered": any(not okf[i] and any(okf[i + 1:]) for i in range(len(okf))),
+                            "searched": sum(1 for s in st if s.get("action") == "search_web"),
                             "reply": (r.get("reply") or r.get("question") or "")[:600],
                             "steps": [s.get("summary") or s.get("action") for s in r.get("steps") or []][:30],
                             "seconds": round(time.monotonic() - t, 1)})
@@ -201,7 +207,16 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
         finally:
             eng.shutdown()
     passed = sum(r["passed"] for r in results)
+    acts = sum(r.get("actions", 0) for r in results)
+    fails = [r for r in results if r.get("actions", 0) > r.get("actions_ok", 0)]
+    secs = sorted(r["seconds"] for r in results) or [0]
+    metrics = {
+        "action_accuracy": round(100 * sum(r.get("actions_ok", 0) for r in results) / acts) if acts else None,
+        "recovery": round(100 * sum(1 for r in fails if r.get("recovered")) / len(fails)) if fails else None,
+        "median_seconds": secs[len(secs) // 2], "slowest_seconds": secs[-1],
+        "searches": sum(r.get("searched", 0) for r in results)}
     report = {"at": time.strftime("%Y-%m-%d %H:%M"), "ai": "stand-in" if fake else llm.public().get("model"),
+              "metrics": metrics,
               "passed": passed, "total": len(results), "score": round(100 * passed / max(1, len(results))),
               "seconds": round(time.monotonic() - t0), "cases": results}
     if out is None and not fake:
@@ -210,6 +225,10 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"\n{passed} of {len(results)} passed ({report['score']}%)" + (f" - report: {out}" if out else ""))
+    pc = lambda v: "-" if v is None else f"{v}%"  # noqa: E731
+    print(f"actions that worked: {pc(metrics["action_accuracy"])} | put right after a failure: {pc(metrics["recovery"])} | "
+          f"answer time: {metrics['median_seconds']} s typical, {metrics['slowest_seconds']} s slowest | "
+          f"look-ups online: {metrics['searches']}")
     return report
 
 

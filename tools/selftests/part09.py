@@ -11097,3 +11097,106 @@ def test_ai_routing() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_ai_web_and_checks() -> None:
+    """The AI looks things up (Google through Gemini, else DuckDuckGo / Bing), can be told not to,
+    thinks harder for shows, sees what each action really did, never repeats a failed call,
+    and a designed show gets a second look."""
+    import json
+    from pathlib import Path
+    from app import assistant, autoshow, config, llm, websearch
+    from app import engine as eng_mod
+    g = websearch.parse_google({"candidates": [{"content": {"parts": [{"text": "Orange, purple and green; fog."}]},
+                                                "groundingMetadata": {"webSearchQueries": ["halloween lighting"],
+                                                                      "groundingChunks": [{"web": {"uri": "https://a.example/x", "title": "A"}}]}}]})
+    check("Google's answer and its pages are read", g["answer"].startswith("Orange") and g["results"][0]["url"] == "https://a.example/x"
+          and g["via"] == "Google", str(g))
+    b = websearch.parse_bing('<li class="b_algo"><h2><a href="https://b.example/y">Xmas &amp; lights</a></h2><p>Warm white and red.</p></li>')
+    check("Bing's results are read", b and b[0]["title"] == "Xmas & lights" and "Warm white" in b[0]["snippet"], str(b))
+    old = config.DATA
+    saved = (websearch.google, websearch.duck, websearch.bing)
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            calls = []
+
+            def fake_duck(q, limit=6):
+                calls.append(q)
+                raise OSError("blocked")
+
+            def fake_bing(q, limit=6):
+                calls.append(q)
+                return {"results": [{"title": "T", "url": "https://c.example", "snippet": "Deep purple and orange."}], "via": "Bing"}
+            websearch.google, websearch.duck, websearch.bing = (lambda q, limit=6: None), fake_duck, fake_bing
+            websearch._cache.clear()
+            r = websearch.search("halloween party lighting")
+            check("when one search fails the next one answers", r["ok"] and r["via"] == "Bing" and len(calls) == 2, str(r))
+            websearch.search("halloween party lighting")
+            check("the same question again is answered from memory", len(calls) == 2, str(calls))
+            text = websearch.inspiration("design me a spooky Halloween show")
+            check("a themed show brief is looked up for ideas", "INSPIRATION FROM THE WEB" in text and "purple" in text, text[:120])
+            check("a brief with no theme isn't", websearch.inspiration("make it nice") == "", "")
+            llm.save_settings(web=False)
+            websearch._cache.clear()
+            check("switched off: no look-ups at all", not websearch.search("x")["ok"] and not websearch.read("https://x")["ok"]
+                  and websearch.inspiration("halloween") == "", "")
+            llm.save_settings(web=True)
+            # thinking: only Gemini's thinking models get it, and only when asked for
+            ai = {"name": "online", "url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-2.5-flash"}
+            with llm.thinking("high"):
+                check("a show: the online AI is asked to think it through", llm._effort(ai) == "high"
+                      and llm._effort({**ai, "name": "local"}) is None
+                      and llm._effort({**ai, "url": "https://api.openai.com/v1"}) is None, "")
+            check("...and not when nobody asked", llm._effort(ai) is None, "")
+            # every action says what it really did
+            e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+            try:
+                e.act("venue_template", name="lounge")
+                e.act("add_heads", query="LED PAR", qty=2)
+                e.act("select_heads", heads=[1, 2])
+                r = assistant._do(e, "set_intensity", {"level": 0})
+                check("after an action: what the lights now do, and that they're dark", r["ok"] and len(r.get("now") or []) == 2
+                      and "dark" in r.get("check", ""), json.dumps(r)[:300])
+                r = assistant._do(e, "set_colour", {"colour": "red"})
+                check("...a colour on dark lights is said to be dark", r["ok"] and "dark" in r.get("check", ""), str(r)[:300])
+                r = assistant._do(e, "set_intensity", {"level": 100})
+                check("...and once lit, the colour shows and no warning", r["ok"] and all(x["level"] > 0 and x["colour"] for x in r["now"])
+                      and "check" not in r, str(r)[:300])
+                seq = iter([
+                    {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "type": "function", "function": {
+                        "name": "do", "arguments": json.dumps({"action": "set_intensity", "params": {"lvl": 5}})}}]},
+                    {"role": "assistant", "content": "", "tool_calls": [{"id": "2", "type": "function", "function": {
+                        "name": "do", "arguments": json.dumps({"action": "set_intensity", "params": {"lvl": 5}})}}]},
+                    {"role": "assistant", "content": "Done."}])
+                out = assistant.run_turn(e, "dim them", session="t-repeat", preview=False, chat=lambda m, tools=None, **_: next(seq))
+                errs = [s.get("summary") or "" for s in out["steps"]]
+                check("the same failed call twice: the second is refused with why", len(errs) == 2 and "already" in errs[1], str(errs))
+            finally:
+                e.shutdown()
+            # a second look at a designed show
+            d0 = {"name": "Halloween", "palette": ["#ff6600"], "sections": [{"name": "Intro"}]}
+            orig = llm.structured
+            try:
+                llm.structured = lambda *a, **k: {"problems": ["the intro is as bright as the drop"],
+                                                  "design": {"name": "x", "palette": ["#ff6600"], "sections": [{"name": "Intro", "level": 40}]}}
+                old_validate = autoshow.validate
+                autoshow.validate = lambda d, a: d
+                d, fixed = autoshow.critique(d0, {}, "halloween", "sys")
+                check("the review finds a problem and fixes it, keeping the name",
+                      fixed == ["the intro is as bright as the drop"] and d["name"] == "Halloween" and d["sections"][0].get("level") == 40, str(d))
+                llm.structured = lambda *a, **k: {"problems": []}
+                d, fixed = autoshow.critique(d0, {}, "halloween", "sys")
+                check("...and a good design is left as it was", d is d0 and not fixed, "")
+
+                def boom(*a, **k):
+                    raise llm.LLMError("limit")
+                llm.structured = boom
+                check("...and if the review can't run, the design stands", autoshow.critique(d0, {}, "", "")[0] is d0, "")
+            finally:
+                llm.structured = orig
+                autoshow.validate = old_validate
+        finally:
+            websearch.google, websearch.duck, websearch.bing = saved
+            websearch._cache.clear()
+            config.DATA = old

@@ -80,6 +80,12 @@ export function aiPanel() {
       h("h3", "Which AI"), seg,
       h("p.muted.small", (MODES.find((m) => m[0] === d.mode) || [, , ""])[2]
         + (d.last_note ? ` · last time: ${d.last_note}` : "")),
+      h("h3", "Looking things up online"),
+      h("label.check", h("input", { type: "checkbox", checked: d.web !== false, onchange: (e) => save({ web: e.target.checked }) }),
+        " Let the AI look things up online for ideas (a theme's colours, a genre's style, a light's real abilities)"),
+      h("p.muted.small", d.web === false ? "Off: the AI uses what it already knows."
+        : d.google_search ? "With your Gemini key it searches Google; it shows what it looked up and where it read it."
+          : "It searches DuckDuckGo / Bing (no key needed); it shows what it looked up and where it read it."),
       h("h3", "Online (Gemini)"),
       h("div.form-grid",
         h("label.field", h("span", "API key"), key),
