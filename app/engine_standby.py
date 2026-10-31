@@ -103,7 +103,7 @@ class StandbyMixin:
 
     def _standby_fetch(self, host: str, code: str, have: str) -> dict:
         req = urllib.request.Request(f"http://{host}/api/console/standby_feed?have={have}",
-                                     headers={"X-Jarvis-Token": code} if code else {})
+                                     headers={"X-Haze-Token": code} if code else {})
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
                 return json.loads(r.read().decode("utf-8"))
@@ -140,7 +140,7 @@ class StandbyMixin:
             st["last_ok"] = time.monotonic()
             stop = threading.Event()
             st["stop"] = stop
-        threading.Thread(target=self._standby_loop, args=(stop,), name="jarvis-standby", daemon=True).start()
+        threading.Thread(target=self._standby_loop, args=(stop,), name="haze-standby", daemon=True).start()
         return {"standby": self.standby_public(),
                 "summary": f"following the main desk at {h}: this desk's output is off until it takes over"}
 

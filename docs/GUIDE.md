@@ -1,4 +1,4 @@
-# Jarvis — user guide
+# Haze — user guide
 
 How to use the desk. Getting it running is in the [README](../README.md)'s quick start.
 
@@ -325,7 +325,7 @@ made before this version has no design kept with it: make it once more
 **A laptop DJ** (Serato, Traktor, rekordbox on a laptop) sends no track
 over the network, so songs don't start by themselves. Start one with
 **Play**, or from a Stream Deck / Companion key with the OSC message
-`/jarvis/song <name>`; run the autopilot for the rest.
+`/haze/song <name>`; run the autopilot for the rest.
 
 ### Turned trusses and the room map
 
@@ -732,7 +732,7 @@ venue. Open **Settings → Output**:
    own node back. It changes live, with no restart.
 
    `DMX_HOST` and `DMX_TRANSPORT` in `.env` still set the default that
-   **Auto** uses. Universe 1 in Jarvis is Art-Net universe 0, which is
+   **Auto** uses. Universe 1 in Haze is Art-Net universe 0, which is
    port A on most nodes. The OS firewall must allow Python on private
    networks.
 5. Press **GO LIVE**.
@@ -870,9 +870,9 @@ show.
 
 **Settings → MIDI & OSC → OSC out**: the address and port of the other
 program (QLab listens on 53000, Resolume on 7000). **Test** sends
-`/jarvis/hello`. Tick *Tell it what the desk does* and it gets
-`/jarvis/go <list> <cue>`, `/jarvis/master 0-1`, `/jarvis/blackout 0|1` and
-`/jarvis/button <id>` as they happen. A cue sends its own: Cue list → ⋯ →
+`/haze/hello`. Tick *Tell it what the desk does* and it gets
+`/haze/go <list> <cue>`, `/haze/master 0-1`, `/haze/blackout 0|1` and
+`/haze/button <id>` as they happen. A cue sends its own: Cue list → ⋯ →
 **Actions…** → **Send OSC** (e.g. `/go`, or
 `/composition/layers/1/clips/2/connect 1`). Saved with the show, since each
 venue has its own video computer.
@@ -900,8 +900,8 @@ their MIDI note (Edit → a button → MIDI).
 ### Stream Deck
 
 **Settings → MIDI & OSC → Get the Stream Deck plugin** saves
-`com.jarvis.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
-(6.4 or newer) adds a *Jarvis* group:
+`com.haze.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
+(6.4 or newer) adds a *Haze* group:
 
 | Key / dial | What it does | Its settings |
 |---|---|---|
@@ -953,7 +953,7 @@ also has separate tabs:
   (MIT) and the [QLC+](https://www.qlcplus.org) fixture definitions
   (Apache 2.0). Together that's about 2,400 lights, including budget DJ
   fixtures that aren't on GDTF Share (for example the Chauvet Intimidator
-  Wave 360). Both ship with Jarvis, so they're searchable offline at a
+  Wave 360). Both ship with Haze, so they're searchable offline at a
   venue. **Install and add** puts the fixture in your library and patches
   it.
 * **GDTF Share:** [GDTF Share](https://gdtf-share.com), the manufacturers'
@@ -985,22 +985,22 @@ their names and colours. Community libraries are sometimes wrong, so check
 an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
-**Test this light.** A fixture file can be wrong in ways Jarvis can't see: a
+**Test this light.** A fixture file can be wrong in ways Haze can't see: a
 shutter whose open value it never states, or a channel order that doesn't match
 the light's mode. If a new light misbehaves, run the 30-second test: right-click
 it → **Test this light…** (also on the Level tab's warning, and offered when you
 add a model the desk hasn't seen pass the test). Go live first, then:
 
-0. Jarvis asks whether the light's own display (or DIP switches) shows the mode
+0. Haze asks whether the light's own display (or DIP switches) shows the mode
    and address the desk expects. Most "some heads don't move / wrong colours"
    is a light set to another mode. **It shows another mode** lists the model's
    modes: pick the one on the display and every light of that model switches to
    it, keeping its number, place, groups and cues. If one has to move to a new
-   address because the mode is bigger, Jarvis says which, so you can set it on
+   address because the mode is bigger, Haze says which, so you can set it on
    the light.
-1. Jarvis lights it at full, white and centred, and asks whether the real light
+1. Haze lights it at full, white and centred, and asks whether the real light
    is on.
-2. If it's dark, Jarvis tries the shutter's likely open values one at a time. Press
+2. If it's dark, Haze tries the shutter's likely open values one at a time. Press
    **It's on!** when the light comes on. If none work, it tries each of the light's
    other channels the same way.
    If it's still dark, or you'd rather skip ahead, **Set channels by hand** gives
@@ -1017,7 +1017,7 @@ add a model the desk hasn't seen pass the test). Go live first, then:
 3. It then moves pan and tilt, shows red, green and blue, and strobes fast then
    slow, asking each time whether the real light did the same (on a multi-head
    light: all of its heads). A wrong answer usually means the light's
-   DMX mode doesn't match the one you added, and Jarvis tells you which mode to set.
+   DMX mode doesn't match the one you added, and Haze tells you which mode to set.
 
 What works is saved for that model, so every head of it lights on **Full** from
 then on, even after a re-download. A model that passed isn't asked about again.
@@ -1038,16 +1038,16 @@ licences and the exact upstream commits.
 ## Lasers and special effects
 
 Confetti, CO₂, flame, sparks, fog, haze and lasers are **effects**, not
-lights, and Jarvis treats them that way.
+lights, and Haze treats them that way.
 
-**How effects are recognised.** Every fixture Jarvis stores is sorted into
+**How effects are recognised.** Every fixture Haze stores is sorted into
 light, laser or SFX, whatever its source. An effect's channels get their
 own jobs: *fire*, *arm*, *fog output*, *laser output*, *pattern* and so on.
 The "fire", "armed" and "on" values come from the fixture's own chart and
 are never guessed. For example, a MagicFX Psyco2Jet's safety channel is
 armed at 100–155, and 156–255 is its **test mode**.
 
-**Beam bars** (like the Laserworld BeamBar 10B MK3, in the Jarvis library) get
+**Beam bars** (like the Laserworld BeamBar 10B MK3, in the Haze library) get
 one control per beam. On the **Laser** tab:
 
 - Tap beams on and off, or lay a pattern across the bar: All, Odd, Even, Left,

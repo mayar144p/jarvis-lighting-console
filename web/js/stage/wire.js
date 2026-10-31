@@ -6,7 +6,7 @@ import * as THREE from "three";
 
 export const WIRE = new THREE.LineBasicMaterial({ color: 0xf2f2f5, toneMapped: false });
 export const WIRE_ROOM = new THREE.LineBasicMaterial({ color: 0x9a9aa4, toneMapped: false });
-export const WIRE_SEL = new THREE.LineBasicMaterial({ color: 0x8b8dff, toneMapped: false });
+export const WIRE_SEL = new THREE.LineBasicMaterial({ color: 0x2fd6f5, toneMapped: false });
 // fills nothing, but still hides the lines behind it (pushed back a hair so
 // its own edges are never hidden by it)
 const HIDE = new THREE.MeshBasicMaterial({ colorWrite: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });

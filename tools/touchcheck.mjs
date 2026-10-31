@@ -20,7 +20,7 @@ let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
 
 const srv = spawn(process.platform === "win32" ? "python" : "python3", ["-m", "app.main"], { stdio: "ignore",
-  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-touch-")),
+  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-touch-")),
     CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
 const done = (c) => { try { srv.kill(); } catch {} process.exit(c); };
 for (let i = 0; ; i++) { try { if ((await fetch(BASE)).ok) break; } catch {} if (i > 200) { console.log("the desk didn't start"); done(2); } await sleep(250); }
@@ -41,7 +41,7 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, h
 const p = await ctx.newPage();
 const errs = [];
 p.on("pageerror", (e) => errs.push(e.message));
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); } catch {} });
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch {} });
 await p.goto(BASE);
 await sleep(3500);
 await p.evaluate(() => import("/app/workspaces.js").then((m) => m.useWorkspace("live", { quiet: true })));

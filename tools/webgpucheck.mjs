@@ -17,7 +17,7 @@ try { ({ _electron, chromium } = await import("playwright")); } catch {
 }
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DESK = join(ROOT, "desktop");
-const OUT = process.argv[2] || mkdtempSync(join(tmpdir(), "jarvis-webgpu-"));
+const OUT = process.argv[2] || mkdtempSync(join(tmpdir(), "haze-webgpu-"));
 const exe = join(DESK, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
@@ -41,8 +41,8 @@ async function scene(mode) {
     headers: { "content-type": "application/json" }, body: JSON.stringify({ action: a, params }) })).json()).result, [a, params]);
   const install = (src, key) => win.evaluate(async ([src, key]) => (await (await fetch("/api/fixtures/library/install", { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify({ src, key }) })).json()).fixture.id, [src, key]);
-  await win.evaluate((m) => { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "high"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1");
-    localStorage.setItem("jarvis.people", "0"); localStorage.setItem("jarvis.3d", "on"); if (m === "webgl") localStorage.setItem("jarvis.renderer", "webgl"); else localStorage.removeItem("jarvis.renderer"); }, mode);
+  await win.evaluate((m) => { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "high"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1");
+    localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.3d", "on"); if (m === "webgl") localStorage.setItem("haze.renderer", "webgl"); else localStorage.removeItem("haze.renderer"); }, mode);
   await act("venue_template", { name: "club" });
   const spots = (await act("add_heads", { fixture_id: await install("qlc", "Robe/Robe-Pointe.qxf"), qty: 2 })).heads;
   await act("set_place", { head: spots[0], x: -1.5, y: 6, z: 7 });
@@ -55,10 +55,10 @@ async function scene(mode) {
   await act("clear_selection").catch(() => {});
   await win.reload();
   errs.length = 0;
-  for (let i = 0; i < 60; i++) { if (await win.evaluate(() => window.jarvisStage && window.jarvisStage.ready)) break; await sleep(500); }
-  await win.evaluate(() => window.jarvisStage.setOptions({ dance: false }));
+  for (let i = 0; i < 60; i++) { if (await win.evaluate(() => window.hazeStage && window.hazeStage.ready)) break; await sleep(500); }
+  await win.evaluate(() => window.hazeStage.setOptions({ dance: false }));
   await sleep(6000);
-  const backend = await win.evaluate(() => window.jarvisStage.backend);
+  const backend = await win.evaluate(() => window.hazeStage.backend);
   const shot = join(OUT, `scene-${mode}.png`);
   await win.locator("#stage-wrap").screenshot({ path: shot });
   await app.evaluate(({ app: a }) => a.quit());

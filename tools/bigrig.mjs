@@ -20,7 +20,7 @@ const FULL = [
   ["qlc", "Chauvet/Chauvet-Swarm-Wash-FX.qxf", "Swarm Wash FX", 4],
   ["qlc", "Chauvet/Chauvet-Freedom-Par-Hex-4.qxf", "Freedom Par Hex 4", 8],
   ["qlc", "Laserworld/Laserworld-RS400G.qxf", "RS400G", 1],
-  ["jarvis", "laserworld/beambar-10b-mk3", "BeamBar 10B", 1],
+  ["haze", "laserworld/beambar-10b-mk3", "BeamBar 10B", 1],
   ["qlc", "Stairville/Stairville-AF-180-LED-Fogger-Co2-FX.qxf", "AF-180", 1],
   ["qlc", "Chauvet/Chauvet-Hurricane-1800-Flex.qxf", "Hurricane 1800", 1],
 ];

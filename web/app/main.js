@@ -1,4 +1,4 @@
-// Jarvis: boot the desk.
+// Haze: boot the desk.
 import { get, openStream } from "./api.js";
 import { state, emit, setSnapshot, applySnapDiff, setLite, setLooks } from "./store.js";
 import { $, toast } from "./ui.js";
@@ -31,13 +31,13 @@ import { upgradeGlyphs } from "./icons.js";
 function wireGig() {
   // gig mode (big buttons and text for a laptop at a gig): saved per computer
   let gig = null;
-  try { gig = localStorage.getItem("jarvis.gig"); } catch (e) { /* ignore */ }
+  try { gig = localStorage.getItem("haze.gig"); } catch (e) { /* ignore */ }
   if (gig === "1") document.body.classList.add("gig");
   // a touch-only screen (no mouse) gets the big controls by itself, once,
   // saying so - the choice is kept either way (Settings -> Screen & 3D)
   else if (gig === null && matchMedia("(pointer: coarse) and (hover: none)").matches) {
     document.body.classList.add("gig");
-    try { localStorage.setItem("jarvis.gig", "1"); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("haze.gig", "1"); } catch (e) { /* ignore */ }
     setTimeout(() => toast("Touch screen: Gig mode is on - big buttons and faders. Settings → Screen & 3D to change."), 2500);
   }
 }
@@ -46,9 +46,9 @@ function wireGig() {
 // A setting changed in one (Settings is in the programmer's) reaches the
 // others at once - the 3D's quality, the look, Gig mode.
 window.addEventListener("storage", (e) => {
-  if (e.key === "jarvis.theme") applyTheme();
-  else if (e.key === "jarvis.gig") document.body.classList.toggle("gig", e.newValue === "1");
-  else if (e.key === "jarvis.quality" && HAS_3D) {
+  if (e.key === "haze.theme") applyTheme();
+  else if (e.key === "haze.gig") document.body.classList.toggle("gig", e.newValue === "1");
+  else if (e.key === "haze.quality" && HAS_3D) {
     stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: e.newValue || "high" }); }).catch(() => {});
   }
 });
@@ -64,9 +64,9 @@ initTheme();                              // before anything draws: no bright fl
 // standard (Medium, the old default) goes back to High once; a choice made
 // in Settings after this is kept.
 try {
-  if (localStorage.getItem("jarvis.qualityV") !== "2") {
-    localStorage.setItem("jarvis.quality", "high");
-    localStorage.setItem("jarvis.qualityV", "2");
+  if (localStorage.getItem("haze.qualityV") !== "2") {
+    localStorage.setItem("haze.quality", "high");
+    localStorage.setItem("haze.qualityV", "2");
   }
 } catch (e) { /* private window: High anyway */ }
 initDeskBridge();                         // the desktop app's questions show in the desk's own boxes

@@ -1,14 +1,14 @@
-"""Bring Jarvis up to date before it starts (the desktop app calls this).
+"""Bring Haze up to date before it starts (the desktop app calls this).
 
 Safe by construction: it only ever FAST-FORWARDS the branch you are on to
 its upstream, so it never merges, never rewrites anything and never
 touches your data (data/, .env, show files and fixtures are not tracked).
-It stands aside, and Jarvis starts on the version you have, when:
+It stands aside, and Haze starts on the version you have, when:
 
   * AUTO_UPDATE=false is in .env,
   * this is not a git checkout, or git is not installed,
   * there is no network (a venue with no internet is normal),
-  * you have edited Jarvis's own files, or have commits of your own.
+  * you have edited Haze's own files, or have commits of your own.
 
 It always exits 0: an update problem must never stop the desk starting.
 """
@@ -72,7 +72,7 @@ def update(root: Path = ROOT) -> str:
         code, dirty = _git("status", "--porcelain", "--untracked-files=no")
     if code == 0 and dirty:
         files = [line.split(None, 1)[-1].strip('"') for line in dirty.splitlines() if line.strip()]
-        return ("Jarvis's own files have local edits - not updating (your data is safe): "
+        return ("Haze's own files have local edits - not updating (your data is safe): "
                 + ", ".join(files[:3]) + (f" and {len(files) - 3} more" if len(files) > 3 else ""))
     code, out = _git("fetch", "--quiet", timeout=FETCH_TIMEOUT)
     if code:

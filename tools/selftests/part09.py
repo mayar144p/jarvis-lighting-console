@@ -770,10 +770,10 @@ def test_osc() -> None:
     from app import engine as eng
     from app import osc
 
-    m = osc.build("/jarvis/cue", 1, 3)
-    check("a message round-trips", osc.parse(m) == [("/jarvis/cue", [1, 3])], str(osc.parse(m)))
-    b = fakes.bundle(osc.build("/jarvis/master", 0.5), osc.build("/jarvis/cmd", "1-4 red"))
-    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/jarvis/master", "/jarvis/cmd"], "")
+    m = osc.build("/haze/cue", 1, 3)
+    check("a message round-trips", osc.parse(m) == [("/haze/cue", [1, 3])], str(osc.parse(m)))
+    b = fakes.bundle(osc.build("/haze/master", 0.5), osc.build("/haze/cmd", "1-4 red"))
+    check("a bundle holds several", [a for a, _ in osc.parse(b)] == ["/haze/master", "/haze/cmd"], "")
     check("junk is nothing", osc.parse(b"hello") == [] and osc.parse(b"") == [], "")
 
     port = _free_port()
@@ -792,18 +792,18 @@ def test_osc() -> None:
             check("OSC listens", r.get("ok") and e.osc_public()["on"], str(r))
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(2)
-            s.sendto(osc.build("/jarvis/master", 0.5), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/master", 0.5), ("127.0.0.1", port))
             reply = osc.parse(s.recvfrom(1024)[0])
-            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/jarvis/ok", str(reply))
-            s.sendto(osc.build("/jarvis/go", 1), ("127.0.0.1", port))
+            check("master 0.5 -> 50%, and it answers", e.master == 50 and reply[0][0] == "/haze/ok", str(reply))
+            s.sendto(osc.build("/haze/go", 1), ("127.0.0.1", port))
             s.recvfrom(1024)
             check("GO", e.playbacks[0]["active"] and e.playbacks[0]["index"] == 0, "")
-            s.sendto(osc.build("/jarvis/cmd", "1-2 red"), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/cmd", "1-2 red"), ("127.0.0.1", port))
             s.recvfrom(1024)
             check("a command line", e.programmer.get(1, {}).get("red") == 255, str(e.programmer))
-            s.sendto(osc.build("/jarvis/patch_clear"), ("127.0.0.1", port))
+            s.sendto(osc.build("/haze/patch_clear"), ("127.0.0.1", port))
             reply = osc.parse(s.recvfrom(1024)[0])
-            check("anything else is refused, with a reason", reply[0][0] == "/jarvis/error" and len(e.patch) == 4, str(reply))
+            check("anything else is refused, with a reason", reply[0][0] == "/haze/error" and len(e.patch) == 4, str(reply))
             s.close()
             e.act("osc", state=False)
             check("OSC off", not e.osc_public()["on"], "")
@@ -1296,7 +1296,7 @@ def test_review_fixes_oct() -> None:
     from app import fixlib, osc
     from app.engine_base import UNDO_LIMIT
 
-    for junk in (b"/jarvis/go", b"/jarvis/go\x00\x00,i\x00\x00", b"/a\x00\x00,s\x00\x00abc"):
+    for junk in (b"/haze/go", b"/haze/go\x00\x00\x00\x00,i\x00\x00", b"/a\x00\x00,s\x00\x00abc"):
         check(f"a malformed OSC packet is nothing ({junk[:12]!r})", osc.parse(junk) == [], "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -2309,7 +2309,7 @@ def test_screen_media() -> None:
 
         def send(data: bytes):
             req = urllib.request.Request(base, data=data, method="POST",
-                                         headers={"Content-Type": "application/x-jarvis-upload"})
+                                         headers={"Content-Type": "application/x-haze-upload"})
             try:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     return r.status, json.loads(r.read())
@@ -3809,7 +3809,7 @@ def test_bug_report() -> None:
                   q2.get("template") == ["bug.yml"] and not any(f["name"] == "show.json" for f in r2["files"]), str(q2))
             check("a saved report comes back by its name, nothing else does",
                   bugreport.read_saved(r["zip"]) == z.read_bytes() and bugreport.read_saved("../../.env") is None
-                  and bugreport.read_saved("jarvis-report-x/../../a.zip") is None, "")
+                  and bugreport.read_saved("haze-report-x/../../a.zip") is None, "")
         finally:
             e.shutdown()
             cfg.DATA, cfg.LLM_API_KEY = saved
@@ -4924,7 +4924,7 @@ console.log(JSON.stringify({
   none: V.pickFormat(() => false), throws: V.pickFormat((m) => { if (m.includes("avc1")) throw new Error("x"); return m === "video/mp4"; }).ext,
   tl: V.plannedSeconds("timeline", 30, 161.2), live: [V.plannedSeconds("live", 2), V.plannedSeconds("live", 9999), V.plannedSeconds("live", "x")],
   name: V.fileName("shows/Club night.json", new Date(2026, 9, 8, 21, 5).getTime(), "mp4"),
-  odd: V.fileName('a<>:"/\\\\|?*b', 0, "webm").includes("<"), blank: V.fileName("", 0, "mp4").startsWith("jarvis-"),
+  odd: V.fileName('a<>:"/\\\\|?*b', 0, "webm").includes("<"), blank: V.fileName("", 0, "mp4").startsWith("haze-"),
   clock: V.clock(125) }));
 """
     r = subprocess.run([node, "--input-type=module", "-e", js, (web / "app" / "videoplan.js").as_uri()],
@@ -4938,7 +4938,7 @@ console.log(JSON.stringify({
     check("playing the timeline records its whole length (+1 s)", got["tl"] == 163, str(got["tl"]))
     check("recording by hand: 5 s to 10 min", got["live"] == [5, 600, 30], str(got["live"]))
     check("the file is named after the show and the time", got["name"] == "Club night-2026-10-08-21-05.mp4", got["name"])
-    check("no characters a disk refuses; no name: jarvis-...", not got["odd"] and got["blank"])
+    check("no characters a disk refuses; no name: haze-...", not got["odd"] and got["blank"])
     check("the clock reads m:ss", got["clock"] == "2:05")
 
 
@@ -5029,7 +5029,7 @@ def test_nothing_waits_forever() -> None:
     took = time.monotonic() - t
     check("a program whose helper keeps its output open is stopped on time", r.timed_out and took < 5, f"{took:.1f} s")
     check("...and what it printed is kept", "started" in r.stdout, r.stdout)
-    check("a program that isn't there: an answer, not a crash", procs.run(["no-such-program-jarvis"], 1).returncode == 127)
+    check("a program that isn't there: an answer, not a crash", procs.run(["no-such-program-haze"], 1).returncode == 127)
     api = (ROOT / "web" / "app" / "api.js").read_text(encoding="utf-8")
     check("every request from the screen has a time limit", "DEFAULT_WAIT_MS" in api and "AbortController" in api)
 
@@ -5555,7 +5555,7 @@ def test_report_relay() -> None:
             Relay.answer = (200, {"issue_url": "https://evil.example/x"})
             out = bugreport.report(e, None, "again", [], False, b"", [], send=True)
             check("an answer that isn't this repo's issue is not shown as sent", "send_error" in out and "sent" not in out, str(out))
-            big = tmp / "bug_reports" / "jarvis-report-big.zip"
+            big = tmp / "bug_reports" / "haze-report-big.zip"
             big.write_bytes(b"PK" + b"\0" * (bugreport.RELAY_MAX + 10))
             try:
                 bugreport.relay_send(big, None, "x", [])
@@ -5584,7 +5584,7 @@ const zip = Buffer.from("PK\x03\x04hello").toString("base64");
 const rep = (extra = {}, head = {}) => new Request("https://relay.example/", { method: "POST",
   headers: { "X-Relay-Key": "rk", "CF-Connecting-IP": "1.2.3.4", ...head },
   body: JSON.stringify({ template: "light-bug.yml", title: "[Light] Acme Beam: dark", labels: ["light-bug", "brand:Acme", "admin", "x\ny"],
-    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "jarvis-report-1-acme.zip", zip, ...extra }) });
+    fields: { light: "Acme Beam", what: "dark, cc @everyone" }, zip_name: "haze-report-1-acme.zip", zip, ...extra }) });
 const out = {};
 let r = await W.fetch(rep(), env);
 out.ok = [r.status, await r.json()];
@@ -5613,7 +5613,7 @@ console.log(JSON.stringify(out));
           got["gh"]["url"] == "https://api.github.com/repos/o/r/issues" and got["gh"]["labels"] == ["light-bug", "brand:Acme"]
           and not got["gh"]["mention"], str(got["gh"]))
     check("...the zip kept, linked from the issue, downloadable only with the maintainers' key",
-          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "jarvis-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
+          got["gh"]["link"] and got["dlNoKey"] == 403 and got["dl"][0] == 200 and "haze-report-1-acme.zip" in (got["dl"][1] or ""), str(got))
     check("the wrong relay key, an unknown form, a file that isn't a zip: refused",
           got["wrongKey"] == 403 and got["badForm"] == 400 and got["notZip"] == 400, str(got))
     check("at most 6 reports an hour from one address", got["rate"] == [200] * 6, str(got["rate"]))
@@ -5806,10 +5806,10 @@ def test_sweep3_adds() -> None:
                 e.act("cue_set", playback=1, cue=1, actions=[{"action": "osc_send", "args": {"address": "/cue/5/start"}}])
                 e.act("cue_go", playback=1, cue=1)
                 got = [osc.parse(rx.recvfrom(2048)[0])[0] for _ in range(2)]
-                check("a cue's Send OSC action goes out, and GO is reported (/jarvis/go list cue)",
-                      ("/cue/5/start", []) in got and any(a == "/jarvis/go" and args[:1] == [1] for a, args in got), str(got))
+                check("a cue's Send OSC action goes out, and GO is reported (/haze/go list cue)",
+                      ("/cue/5/start", []) in got and any(a == "/haze/go" and args[:1] == [1] for a, args in got), str(got))
                 e.act("master", level=50)
-                check("the master is reported 0-1", osc.parse(rx.recvfrom(2048)[0]) == [("/jarvis/master", [0.5])])
+                check("the master is reported 0-1", osc.parse(rx.recvfrom(2048)[0]) == [("/haze/master", [0.5])])
                 saved_show = _json.loads(e._autosave_payload())
                 check("OSC out is saved with the show", (saved_show.get("osc_out") or {}).get("port") == port, str(saved_show.get("osc_out")))
             finally:
@@ -6173,7 +6173,7 @@ def test_remote_desk() -> None:
 
 def test_desk_popups() -> None:
     """Every box the desk shows is in its own look: the pairing-code box, the
-    drop-down lists, and the desktop app's own questions (Close Jarvis?,
+    drop-down lists, and the desktop app's own questions (Close Haze?,
     Other computers…), which used to be the system's grey boxes."""
     print("Pop-ups in the desk's own look")
     import re as _re
@@ -6191,11 +6191,11 @@ def test_desk_popups() -> None:
     pre = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
     pkg = (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
     check("the desktop app asks through the page (preload bridge, shipped in the build)",
-          'preload: path.join(__dirname, "preload.js")' in mj and "exposeInMainWorld(\"jarvisDesk\"" in pre and '"preload.js"' in pkg)
+          'preload: path.join(__dirname, "preload.js")' in mj and "exposeInMainWorld(\"hazeDesk\"" in pre and '"preload.js"' in pkg)
     check("...the window stays isolated and sandboxed", "contextIsolation: true, sandbox: true" in mj)
     body = mj[mj.index("async function phonesDialog"):]
     body = body[:body.index("\n}\n")]
-    check("Close Jarvis? and Other computers… use the desk's boxes; the system box is only the fallback",
+    check("Close Haze? and Other computers… use the desk's boxes; the system box is only the fallback",
           "showMessageBox" not in body and "showMessageBoxSync" not in mj and mj.count("dialog.showMessageBox(") == 1)
     check("...a question waits for a reloaded page instead of going to the old one",
           "pageUp.delete(w.webContents)" in mj and '"did-start-loading"' in mj)
@@ -6262,8 +6262,8 @@ def test_desktop_launch_quiet() -> None:
           bat.index('call npm install') < bat.index('call node "node_modules\\electron\\install.js"') < bat.index(":ready")
           and "Electron could not be downloaded" in bat and "set ELECTRON_SKIP_BINARY_DOWNLOAD=" in bat
           and "install.js" in (ROOT / "run-desktop.sh").read_text(encoding="utf-8"), "")
-    check("...and leaves a Jarvis shortcut that opens with no window at all (kept out of git)",
-          "Jarvis.lnk" in bat and "CreateShortcut" in bat and "Jarvis.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
+    check("...and leaves a Haze shortcut that opens with no window at all (kept out of git)",
+          "Haze.lnk" in bat and "CreateShortcut" in bat and "Haze.lnk" in (ROOT / ".gitignore").read_text(encoding="utf-8"))
     check("the desktop app is the only way in (run.bat and run.sh are gone)",
           not (ROOT / "run.bat").exists() and not (ROOT / "run.sh").exists())
     st = (ROOT / "desktop" / "stage.mjs").read_text(encoding="utf-8")
@@ -6387,16 +6387,16 @@ def test_show_backup() -> None:
                   not e.act("backup", folder=str(tmp / "nope")).get("ok"))
             check("...and a relative path too", not e.act("backup", folder="usb").get("ok"))
             r = e.act("backup", folder=str(stick))
-            check("a USB stick / cloud folder is taken", r.get("ok") and r["on"] and r["where"].endswith("Jarvis shows"), str(r))
+            check("a USB stick / cloud folder is taken", r.get("ok") and r["on"] and r["where"].endswith("Haze shows"), str(r))
             e.act("add_heads", query="PAR", qty=2)
             r = e.act("save_show", name="gig")
             check("saving says it is backed up", r.get("backed_up") and "backed up" in r.get("summary", ""), str(r.get("summary")))
             _time.sleep(0.3)
-            check("...and the show is in the backup folder", (stick / "Jarvis shows" / "gig.json").is_file())
+            check("...and the show is in the backup folder", (stick / "Haze shows" / "gig.json").is_file())
             e.act("add_heads", query="PAR", qty=1)
             e.act("save_show", name="gig")
             _time.sleep(0.3)
-            check("...with its earlier versions", len(list((stick / "Jarvis shows" / "versions" / "gig").glob("*.json"))) >= 1)
+            check("...with its earlier versions", len(list((stick / "Haze shows" / "versions" / "gig").glob("*.json"))) >= 1)
             check("backing up never holds up the save (a thread of its own)", "copy_later" in
                   (ROOT / "app" / "engine_shows.py").read_text(encoding="utf-8"))
         finally:
@@ -6468,7 +6468,7 @@ def test_streamdeck_plugin() -> None:
 
     z = zipfile.ZipFile(io.BytesIO(streamdeck.plugin_zip()))
     names = set(z.namelist())
-    root = "com.jarvis.desk.sdPlugin/"
+    root = "com.haze.desk.sdPlugin/"
     man = json.loads(z.read(root + "manifest.json"))
     check("the download is the plugin folder, manifest at its root", streamdeck.FILE_NAME.endswith(".streamDeckPlugin")
           and all(n.startswith(root) for n in names), sorted(names)[:3])
@@ -6478,7 +6478,7 @@ def test_streamdeck_plugin() -> None:
         want |= {s["Image"] + ".png" for s in a["States"]} | {s["Image"] + "@2x.png" for s in a["States"]}
     missing = sorted(w for w in want if root + w not in names)
     check("every file the manifest names is in it (pictures at 1x and 2x, settings pages)", not missing, missing)
-    check("every action is one of ours", all(a["UUID"].startswith("com.jarvis.desk.") for a in man["Actions"]), "")
+    check("every action is one of ours", all(a["UUID"].startswith("com.haze.desk.") for a in man["Actions"]), "")
     bo = next(a for a in man["Actions"] if a["UUID"].endswith(".blackout"))
     check("blackout has two states, and the plugin flips them (not the app)",
           len(bo["States"]) == 2 and bo.get("DisableAutomaticStates") is True, bo)
@@ -6492,26 +6492,26 @@ def test_streamdeck_plugin() -> None:
     from app import osc
     probe = (f"const p=require({json.dumps(str(plugin))});"
              "const m=(a,e,s,st)=>p.messagesFor(a,e,s,st).map(b=>b.toString('hex'));"
-             "console.log(JSON.stringify({go:m('com.jarvis.desk.go','keyDown',{playback:'2'}),"
-             "goSel:m('com.jarvis.desk.go','keyDown',{}),up:m('com.jarvis.desk.go','keyUp',{}),"
-             "btn:m('com.jarvis.desk.button','keyDown',{page:'2',slot:'5'}),"
-             "rel:m('com.jarvis.desk.button','keyUp',{slot:'5'}),"
-             "bad:m('com.jarvis.desk.button','keyDown',{button:'../x'}),"
-             "mac:m('com.jarvis.desk.macro','keyDown',{macro:'Walk-in'}),"
-             "one:m('com.jarvis.desk.master','dial',{},{level:1}),"
-             "fad:m('com.jarvis.desk.fader','dial',{playback:'3'},{level:50})}))")
+             "console.log(JSON.stringify({go:m('com.haze.desk.go','keyDown',{playback:'2'}),"
+             "goSel:m('com.haze.desk.go','keyDown',{}),up:m('com.haze.desk.go','keyUp',{}),"
+             "btn:m('com.haze.desk.button','keyDown',{page:'2',slot:'5'}),"
+             "rel:m('com.haze.desk.button','keyUp',{slot:'5'}),"
+             "bad:m('com.haze.desk.button','keyDown',{button:'../x'}),"
+             "mac:m('com.haze.desk.macro','keyDown',{macro:'Walk-in'}),"
+             "one:m('com.haze.desk.master','dial',{},{level:1}),"
+             "fad:m('com.haze.desk.fader','dial',{playback:'3'},{level:50})}))")
     out = json.loads(subprocess.run([node, "-e", probe], capture_output=True, text=True, timeout=30).stdout)
     dec = {k: [osc.parse(bytes.fromhex(x))[0] for x in v] for k, v in out.items()}
-    check("GO on playback 2 is /jarvis/go 2, as the desk reads it", dec["go"] == [("/jarvis/go", [2])], dec["go"])
+    check("GO on playback 2 is /haze/go 2, as the desk reads it", dec["go"] == [("/haze/go", [2])], dec["go"])
     check("GO with no playback: the selected one; a key's release sends nothing",
-          dec["goSel"] == [("/jarvis/go", [])] and dec["up"] == [], dec)
+          dec["goSel"] == [("/haze/go", [])] and dec["up"] == [], dec)
     check("a desk button by page and number: down 1, up 0",
-          dec["btn"] == [("/jarvis/button/q2-5", [1])] and dec["rel"] == [("/jarvis/button/q1-5", [0])], dec)
+          dec["btn"] == [("/haze/button/q2-5", [1])] and dec["rel"] == [("/haze/button/q1-5", [0])], dec)
     check("a made-up button id sends nothing", dec["bad"] == [], dec["bad"])
-    check("a macro by name", dec["mac"] == [("/jarvis/macro", ["Walk-in"])], dec["mac"])
+    check("a macro by name", dec["mac"] == [("/haze/macro", ["Walk-in"])], dec["mac"])
     lv = dec["one"][0][1][0]
     check("a dial at 1% sends 0.01 (never '1', which the desk reads as full)", abs(lv - 0.01) < 1e-6, dec["one"])
-    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/jarvis/playback/3/level"
+    check("a fader dial sends its playback's level", dec["fad"][0][0] == "/haze/playback/3/level"
           and abs(dec["fad"][0][1][0] - 0.5) < 1e-6, dec["fad"])
 
     # The whole way: a fake Stream Deck app starts the plugin, presses keys
@@ -6556,33 +6556,33 @@ def test_streamdeck_plugin() -> None:
                     time.sleep(0.02)
                 return cond()
 
-            send({"event": "willAppear", "action": "com.jarvis.desk.blackout", "context": "K1",
+            send({"event": "willAppear", "action": "com.haze.desk.blackout", "context": "K1",
                   "payload": {"settings": {}, "state": 0}})
-            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            send({"event": "keyDown", "action": "com.haze.desk.blackout", "context": "K1", "payload": {"settings": {}}})
             check("the Blackout key blacks the desk out", wait(lambda: e.blackout is True), e.blackout)
             st = _ws_read(conn)
             check("... and lights its key (state 1)", st == {"event": "setState", "context": "K1", "payload": {"state": 1}}, st)
-            send({"event": "keyDown", "action": "com.jarvis.desk.blackout", "context": "K1", "payload": {"settings": {}}})
+            send({"event": "keyDown", "action": "com.haze.desk.blackout", "context": "K1", "payload": {"settings": {}}})
             check("a second press brings the lights back", wait(lambda: e.blackout is False), e.blackout)
             _ws_read(conn)
-            send({"event": "willAppear", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "willAppear", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "controller": "Encoder"}})
             fb = _ws_read(conn)
             check("the master dial shows its name and level", fb.get("event") == "setFeedback"
                   and fb["payload"]["value"] == "100%", fb)
-            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "dialRotate", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "ticks": -10}})
             check("ten clicks left: the grand master at 70%", wait(lambda: e.master == 70), e.master)
             fb = _ws_read(conn)
             check("... and the dial says so", fb["payload"]["value"] == "70%", fb)
-            send({"event": "dialRotate", "action": "com.jarvis.desk.master", "context": "D1",
+            send({"event": "dialRotate", "action": "com.haze.desk.master", "context": "D1",
                   "payload": {"settings": {}, "ticks": -23}})
             check("a dial at 1% puts the master at 1%, not full", wait(lambda: e.master == 1), e.master)
             _ws_read(conn)
-            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            send({"event": "dialDown", "action": "com.haze.desk.master", "context": "D1", "payload": {"settings": {}}})
             check("pressing the dial: out", wait(lambda: e.master == 0), e.master)
             _ws_read(conn)
-            send({"event": "dialDown", "action": "com.jarvis.desk.master", "context": "D1", "payload": {"settings": {}}})
+            send({"event": "dialDown", "action": "com.haze.desk.master", "context": "D1", "payload": {"settings": {}}})
             check("pressing again: full", wait(lambda: e.master == 100), e.master)
             conn.close()
             conn = None
@@ -6607,7 +6607,7 @@ def test_streamdeck_plugin() -> None:
 
 class _FakeHue:
     """A Hue bridge on 127.0.0.1: its pairing button, its lamps, and every
-    lamp change Jarvis sent."""
+    lamp change Haze sent."""
 
     def __init__(self) -> None:
         import http.server
@@ -6911,10 +6911,10 @@ def test_songs() -> None:
             check("a tied track again: the autopilot hands back (fades out), the song fades in",
                   not e.autopilot_public()["on"] and pb3["level"] == 0 and pb1["level"] == 100 and pb1.get("xfade")
                   and e.songs_public()["following"] == sid["Track A"], (pb3["level"], pb1["level"]))
-            ok, said = e.osc_handle("/jarvis/song", ["track b"])
-            check("a laptop DJ (no Pro DJ Link): /jarvis/song <name> from a Stream Deck key plays it",
+            ok, said = e.osc_handle("/haze/song", ["track b"])
+            check("a laptop DJ (no Pro DJ Link): /haze/song <name> from a Stream Deck key plays it",
                   ok and e.__dict__.get("song_current") == sid["Track B"] and e.tl["playing"], said)
-            ok, said = e.osc_handle("/jarvis/song", ["nope"])
+            ok, said = e.osc_handle("/haze/song", ["nope"])
             check("... a song that isn't there is refused", not ok and "no song" in said, said)
             deck(track=4711, beat=41, playing=True)
             e.act("song_follow", state=None, between="hold")
@@ -6977,7 +6977,7 @@ def test_backup_desk() -> None:
         def main(action, **params):
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/console", method="POST",
                                          data=json.dumps({"action": action, "params": params}).encode(),
-                                         headers={"Content-Type": "application/json", "X-Jarvis-Token": code})
+                                         headers={"Content-Type": "application/json", "X-Haze-Token": code})
             with urllib.request.urlopen(req, timeout=15) as r:
                 return json.loads(r.read().decode()).get("result") or {}
 
@@ -7475,7 +7475,7 @@ def test_b1_real_lights() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"
-        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("jarvis", "chauvet-dj/funfetti-shot"),
+        for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("haze", "chauvet-dj/funfetti-shot"),
                          ("qlc", "Chauvet/Chauvet-Intimidator-Wave-360-IRC.qxf")):
             fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
@@ -7856,7 +7856,7 @@ def test_b4_movement() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the Move tab: A -> B in degrees, whole travel, bounce / loop / once, per head, the live degrees",
-          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "jarvis.moveKnobs" in mv and "loadKnobs(sel)" in mv and "const act = running().filter((f) => f.heads.some((n) => mine.has(n)))" in mv and '(f.from || "programmer") === "programmer");' in mv and "they will play the new one too" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
+          '"range"' in mv and "tilt_speed" in mv and "pan_speed" in mv and '"Move speed"' in mv and "knobs.mult" in mv and "replace: true" in mv and "reapplying" in mv and "haze.moveKnobs" in mv and "loadKnobs(sel)" in mv and "const act = running().filter((f) => f.heads.some((n) => mine.has(n)))" in mv and '(f.from || "programmer") === "programmer");' in mv and "they will play the new one too" in mv and "whole pan" in mv and "once" in mv and "Per head" in mv and "nowText" in mv
           and "degIn(knobs.arc" in mv and "degIn(knobs.spread" in mv, "")
     check("the head strip: copy to all, a gradient, tilt per head as a bar and a wave",
           "Copy head 1's colour to all" in pj and "Spread a gradient" in pj and "function headBar" in pj, "")
@@ -8260,7 +8260,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "renderSideFaders" in qb and "stripMenu" in qb and "jarvis.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "renderSideFaders" in qb and "stripMenu" in qb and "haze.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("a fader tile shows its name: on the value's line, two lines when tall, one line in S rows",
@@ -8282,7 +8282,7 @@ def test_programmer_subtabs() -> None:
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
-    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "jarvis.sub." in pj
+    check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "haze.sub." in pj
           and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
     check("each sub-tab hides the others' parts",
           all(f'.tab-pane[data-sub="{k}"] [data-in]:not([data-in="{k}"])' in css for ks in subs.values() for k in ks), "")
@@ -8668,7 +8668,7 @@ def test_blackout_buttons_lasers() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "l.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=1)
@@ -8751,7 +8751,7 @@ def test_show_pack() -> None:
             z = zipfile.ZipFile(__import__("io").BytesIO(data))
             names = z.namelist()
             check("the file: the show, its fixtures and settings, the files it points at",
-                  name == "gig.jarvis" and {"manifest.json", "show.json", "fixtures.json"} <= set(names)
+                  name == "gig.haze" and {"manifest.json", "show.json", "fixtures.json"} <= set(names)
                   and "files/audio/packcheck0123456789.mp3" in names, str(names))
         finally:
             e.shutdown()
@@ -8784,14 +8784,14 @@ def test_show_pack() -> None:
                 bad = "accepted"
             except ValueError as exc:
                 bad = str(exc)
-            check("a file that isn't one is refused", "not a Jarvis show file" in bad, bad)
+            check("a file that isn't one is refused", "not a Haze show file" in bad, bad)
         finally:
             e2.shutdown()
             (audio / "packcheck0123456789.mp3").unlink(missing_ok=True)
     dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the Show menu: Save everything to a file (asks where) / Open everything from a file",
-          "Save everything to a file" in dj and "Open everything from a file" in dj and "jarvisDesk.saveAs" in dj
+          "Save everything to a file" in dj and "Open everything from a file" in dj and "hazeDesk.saveAs" in dj
           and "/api/console/unpack" in dj and '"desk:saveAs"' in mj and "showSaveDialog" in mj, "")
 
 
@@ -9148,8 +9148,8 @@ def test_vis_toolbar() -> None:
                                 "setMouseMode(", "cellAt(", "this.fps", "onElement", "isOrthographicCamera")), "")
     check("the toolbar is wired: views, mouse, fit, Pers/Orth, FPS; a head picked in 3D reaches the programmer",
           all(k in sp for k in ("stage.setProjection(", "stage.setMouseMode(", "stage.fitRoom()", '"Pers" : "Orth"', "FPS: ",
-                                'BroadcastChannel("jarvis.cells")'))
-          and 'BroadcastChannel("jarvis.cells")' in pg and "state.pendingCells" in pg, "")
+                                'BroadcastChannel("haze.cells")'))
+          and 'BroadcastChannel("haze.cells")' in pg and "state.pendingCells" in pg, "")
     # the line drawing itself, run for real: a box becomes its 12 edges and back
     wire = (ROOT / "web" / "js" / "stage" / "wire.js").as_uri()
     got = _node_three(
@@ -9743,7 +9743,7 @@ def test_mvr_curves_hangs() -> None:
             xml = zipfile.ZipFile(io.BytesIO(out)).read("GeneralSceneDescription.xml").decode()
             pieces = len([x for x in e.venue["rigging"] if x.get("group") == a["group"]])
             check("out: the curve as short straight trusses in a group (other programs see its shape), and the curve itself in UserData",
-                  "<GroupObject" in xml and xml.count("<Truss") > pieces * 2 and 'provider="Jarvis"' in xml and '"bend"' in xml, "")
+                  "<GroupObject" in xml and xml.count("<Truss") > pieces * 2 and 'provider="Haze"' in xml and '"bend"' in xml, "")
             back = mvr.read(out)
             byb = {lt["name"]: lt for lt in back["lights"]}
             check("read back: the curve whole (its pieces and bends), its little straight bits skipped",
@@ -9815,7 +9815,7 @@ def test_touch_surface() -> None:
 
 
 def test_old_show_files() -> None:
-    """A show made before this round of changes (a .jarvis file and the
+    """A show made before this round of changes (a .haze file and the
     autosave, saved by the desk as it was in October 2026, kept in
     tools/selftests/oldshows) opens on this desk exactly as it was - the same
     lights, groups, palettes, cues, buttons, pages and room - and puts out
@@ -9843,8 +9843,8 @@ def test_old_show_files() -> None:
         fixtures.seed_generics(tmp / "lib.db")
         e = eng.Engine(db_path=tmp / "lib.db", dry_run=True, show_dir=tmp / "shows")
         try:
-            r = showpack.restore(e, (data / "oldshow-2026-10.jarvis").read_bytes())
-            check("the old .jarvis opens", r.get("show") == "oldshow", str(r))
+            r = showpack.restore(e, (data / "oldshow-2026-10.haze").read_bytes())
+            check("the old .haze opens", r.get("show") == "oldshow", str(r))
             st = want["state"]
             check("its lights, groups, palettes and cues", [list(x) for x in [(h["head_no"], h.get("model"), h.get("universe"), h.get("address"), h.get("orient")) for h in e.patch]] == st["lights"]
                   and [g["name"] for g in e.groups] == st["groups"]
@@ -9965,7 +9965,7 @@ def test_desktop_frame() -> None:
           and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     check("a setting changed in one window reaches the others (3D quality, look, Gig mode)",
-          'window.addEventListener("storage"' in mn and 'e.key === "jarvis.quality"' in mn and 'e.key === "jarvis.theme"' in mn, "")
+          'window.addEventListener("storage"' in mn and 'e.key === "haze.quality"' in mn and 'e.key === "haze.theme"' in mn, "")
 
     ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
     dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
@@ -10024,8 +10024,8 @@ def test_council_fixes() -> None:
 
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
-          'localStorage.getItem("jarvis.qualityV") !== "2"' in mn and 'localStorage.setItem("jarvis.quality", "high");' in mn
-          and 'localStorage.setItem("jarvis.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+          'localStorage.getItem("haze.qualityV") !== "2"' in mn and 'localStorage.setItem("haze.quality", "high");' in mn
+          and 'localStorage.setItem("haze.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
 
 
 
@@ -10138,7 +10138,7 @@ def test_room_by_pointing() -> None:
     dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("the desk view's windows move (by the title) and size (by the corner), snapped and remembered, with Reset",
-          "function movable(el, id)" in dv and '"jarvis.dvLayout"' in dv and "export function resetDeskLayout" in dv
+          "function movable(el, id)" in dv and '"haze.dvLayout"' in dv and "export function resetDeskLayout" in dv
           and ".dv-resize {" in css, "")
     check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
           "function firstFit()" in dv and "if (!layout._own && board.clientHeight" in dv and ".dv-board {" in css, "")
@@ -10155,7 +10155,7 @@ def test_room_by_pointing() -> None:
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
           'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-          and '"jarvis.grpW"' in pb and '"jarvis.mastersSide"' in pb and "body.masters-left .masters" in css, "")
+          and '"haze.grpW"' in pb and '"haze.mastersSide"' in pb and "body.masters-left .masters" in css, "")
 
     from app import engine as eng
     with tempfile.TemporaryDirectory() as td:
@@ -10259,7 +10259,7 @@ def test_show_safety_speed() -> None:
           '{ F1: "setup", F2: "program", F3: "live" }' in keys and 'k === "[" || k === "]"' in keys, "")
     check("the patch deletes say how many lights, in red, last on the menu",
           "Remove ${lights(sel.length)} from the patch" in fx and "Remove all ${lights(n)}" in fx, "")
-    check("going Live offers the lock once a session (Don't ask again kept)", "async function offerLock()" in ws and '"jarvis.noLockAsk"' in ws, "")
+    check("going Live offers the lock once a session (Don't ask again kept)", "async function offerLock()" in ws and '"haze.noLockAsk"' in ws, "")
 
 
 def test_clarity() -> None:
@@ -10412,7 +10412,7 @@ def test_dock_and_desk_fit() -> None:
     check("desk view keys: whole names, windows sized within limits", '"Line up": "lineup"' in dv and "const SIZE = {" in dv
           and ".dv-keywin .dv-key span { white-space: nowrap;" in css, "")
     check("the usual-palettes tile only when the rig can do it, and it can be put away",
-          "canMake(kind) && !noOffer().includes(kind)" in dv and '"jarvis.dvNoOffer"' in dv, "")
+          "canMake(kind) && !noOffer().includes(kind)" in dv and '"haze.dvNoOffer"' in dv, "")
     check("the keypad says what it is for", '"1 THRU 4 @ FULL, ENTER"' in dv, "")
     check("Settings keeps one size whichever page is open; a long page scrolls inside",
           ".modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh);" in css
@@ -10477,7 +10477,7 @@ def test_programmer_overhaul() -> None:
     check("Roam's speed is a slider (any speed, named as it moves)", "function roamSlider()" in mp and '"Roam speed"' in mp, "")
     pj2 = (web / "programmer.js").read_text(encoding="utf-8")
     check("a colour effect (and Breathe) goes through the colours you pick, in order",
-          "function colourPicker(fx, params, mine)" in pj2 and '"jarvis.fxColours"' in pj2, "")
+          "function colourPicker(fx, params, mine)" in pj2 and '"haze.fxColours"' in pj2, "")
     check("Set up and Live grow with their panel (bigger text, two columns on a wide one)",
           "container: hub / inline-size" in css and "@container hub (min-width: 1000px)" in css, "")
     check("Settings opens without waiting on the local AI", "ai = llm.public(wait=False)" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")
@@ -10527,7 +10527,7 @@ def test_freeze_watchdog() -> None:
             reports = list((config.DATA / "freeze_reports").glob("freeze-*.txt"))
             text = reports[0].read_text(encoding="utf-8") if reports else ""
             check("a held-up output is noticed and a report written", stall.get("report", "").startswith("freeze-") and reports, str(stall))
-            check("...the report shows the thread that held it (and the DMX thread waiting)", "a-stuck-job" in text and "jarvis-dmx" in text, text[:200])
+            check("...the report shows the thread that held it (and the DMX thread waiting)", "a-stuck-job" in text and "haze-dmx" in text, text[:200])
             _time.sleep(1.5)
             check("...once frames flow again it is marked over", not e.output.get("stall") and (e.output.get("last_stall") or {}).get("over"), str(e.output.get("last_stall")))
         finally:
@@ -10591,3 +10591,29 @@ def test_fx_own_colours() -> None:
           f.clean_colours("ff0000, nope, #0f0") == ["#ff0000", "#00ff00"] and len(f.clean_colours(["#fff"] * 20)) == 8, "")
     w = f.apply("colour_chase", {}, ["white", "amber"], {"colours": cols})
     check("a light that can't mix keeps its own colours", "white" in w, w)
+
+
+def test_renamed_haze() -> None:
+    """The desk is called Haze; what was saved under the old name still works."""
+    import tempfile
+    from pathlib import Path
+    from app import fixlib, showbackup, showpack, config
+    old = "jar" + "vis"
+    check("the desk is called Haze", config.APP_NAME == "HAZE" or config.APP_NAME.upper() != old.upper(), config.APP_NAME)
+    check("a show file from before the rename is still a show file", f"{old}-pack" in showpack.OLD_KINDS, "")
+    check("fixtures stored under the old library key still load",
+          fixlib._src(old) == "haze" and len(fixlib.index(old)) == len(fixlib.index("haze")) > 0, "")
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / f"{old.capitalize()} shows").mkdir()
+        (Path(d) / f"{old.capitalize()} shows" / "gig.json").write_text("{}", encoding="utf-8")
+        dest = showbackup._dest(d)
+        check("the old backup folder is renamed to 'Haze shows', its shows with it",
+              dest.name == "Haze shows" and (dest / "gig.json").is_file(), str(dest))
+    osc = (ROOT / "app" / "engine_osc.py").read_text(encoding="utf-8")
+    check("OSC controllers set up with the old address keep working", f'parts[0] not in ("haze", "{old}")' in osc, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("settings saved under the old name move to the new one", f'o="{old}."' in html and '"haze."+k.slice' in html, "")
+    left = [str(f) for f in ROOT.rglob("*") if old in f.name.lower() and "node_modules" not in f.parts
+            and "data" not in f.parts and not any(x.startswith(".") for x in f.relative_to(ROOT).parts)]
+    check("no file or folder carries the old name", not left, left[:3])
+

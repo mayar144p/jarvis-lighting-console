@@ -3,7 +3,7 @@
 // gets nothing else from Electron.
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("jarvisDesk", {
+contextBridge.exposeInMainWorld("hazeDesk", {
   ready: () => ipcRenderer.send("desk:ready"),
   onAsk: (fn) => ipcRenderer.on("desk:ask", (_e, q) => fn(q)),
   answer: (id, index) => ipcRenderer.send("desk:answer", id, index),

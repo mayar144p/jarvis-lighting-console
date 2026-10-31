@@ -1,4 +1,4 @@
-"""Jarvis self-test - run this first after changing anything.
+"""Haze self-test - run this first after changing anything.
 
     python tools/selftest.py
 
@@ -247,6 +247,7 @@ from tools.selftests.part09 import (  # noqa: E402
     test_freeze_watchdog,
     test_shapes_drawn_palettes_fit,
     test_fx_own_colours,
+    test_renamed_haze,
     test_vis_toolbar,
     test_vis_source,
     test_curved_rigging,
@@ -516,6 +517,7 @@ def _standalone_suites():
     ("The freeze watchdog", test_freeze_watchdog),
     ("Shapes drawn; palettes that fit", test_shapes_drawn_palettes_fit),
     ("Effects in your own colours", test_fx_own_colours),
+    ("Renamed to Haze", test_renamed_haze),
     ("3D toolbar: mouse modes, the views, line drawings, Pers/Orth, FPS", test_vis_toolbar),
     ("3D source: output, programmer only, next GO - the DMX untouched", test_vis_source),
     ("Curved rigging: arc, spiral, S curve; lights along the curve", test_curved_rigging),

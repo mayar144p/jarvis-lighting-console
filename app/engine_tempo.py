@@ -200,7 +200,7 @@ class TempoMixin:
                         pass
             sock.close()
 
-        th = threading.Thread(target=loop, name="jarvis-prodj", daemon=True)
+        th = threading.Thread(target=loop, name="haze-prodj", daemon=True)
         self._prodj_thread, self._prodj_stopper, self._prodj_sock = th, stop, sock
         th.start()
         # the players' status (who's master) on 50002 - if the port is free
@@ -233,7 +233,7 @@ class TempoMixin:
                         pass
             ss.close()
         if ss is not None:
-            threading.Thread(target=status_loop, name="jarvis-prodj-status", daemon=True).start()
+            threading.Thread(target=status_loop, name="haze-prodj-status", daemon=True).start()
         return None
 
     def _prodj_stop(self) -> None:
@@ -326,7 +326,7 @@ class TempoMixin:
             disc.close()
             meas.close()
 
-        th = threading.Thread(target=loop, name="jarvis-link", daemon=True)
+        th = threading.Thread(target=loop, name="haze-link", daemon=True)
         self._link_thread, self._link_stopper = th, stop
         th.start()
         return None
@@ -425,5 +425,5 @@ class TempoMixin:
                         self._a_timeline_pause()
                         self._tc_started = False
 
-        self._tc_thread = threading.Thread(target=loop, name="jarvis-mtc", daemon=True)
+        self._tc_thread = threading.Thread(target=loop, name="haze-mtc", daemon=True)
         self._tc_thread.start()

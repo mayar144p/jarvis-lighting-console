@@ -1,1 +1,1 @@
-"""Jarvis application package."""
+"""Haze application package."""

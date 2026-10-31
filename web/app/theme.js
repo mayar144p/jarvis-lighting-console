@@ -3,9 +3,9 @@
 //               (the 3D view keeps its true colours: it shows the lights);
 //   accent    - the highlight colour;
 //   panels    - their brightness (the 3D has its own House slider).
-const KEY = "jarvis.theme";
+const KEY = "haze.theme";
 export const ACCENTS = {
-  violet: ["#8b8dff", "#7577f5"], blue: ["#4ea1ff", "#2f86ef"], cyan: ["#22d3ee", "#06b6d4"], green: ["#3dd68c", "#25b873"],
+  haze: ["#2fd6f5", "#14bfe0"], violet: ["#8b8dff", "#7577f5"], blue: ["#4ea1ff", "#2f86ef"], cyan: ["#22d3ee", "#06b6d4"], green: ["#3dd68c", "#25b873"],
   amber: ["#f5a524", "#dd8f10"], red: ["#ff6b6b", "#ef4444"], pink: ["#f472b6", "#e2559c"], white: ["#e4e4ea", "#c9c9d2"],
 };
 export const DENSITIES = { compact: "Compact", standard: "Standard", roomy: "Roomy" };
@@ -23,12 +23,15 @@ function shade(hex, k = 0.12) {
 export function themeNow() {
   let t = {};
   try { t = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { t = {}; }
+  // violet was the standard before the desk was called Haze: a desk still on
+  // it moves to Haze's cyan once (a colour picked on purpose stays)
+  if (t.accent === "violet" && !t.v2) { t.accent = "haze"; t.v2 = 1; try { localStorage.setItem(KEY, JSON.stringify(t)); } catch (e) { /* fine */ } }
   return { mode: t.mode === "showdark" ? "showdark" : "normal",
-    accent: ACCENTS[t.accent] || HEX.test(String(t.accent)) ? t.accent : "violet",
+    accent: ACCENTS[t.accent] || HEX.test(String(t.accent)) ? t.accent : "haze",
     bright: Math.max(0.3, Math.min(1, +t.bright || 1)),
     density: DENSITIES[t.density] ? t.density : "standard",
     text: TEXT_SCALE[t.text] ? t.text : "standard",
-    motion: t.motion === "reduced" ? "reduced" : "full" };
+    motion: t.motion === "reduced" ? "reduced" : "full", v2: 1 };
 }
 
 export function applyTheme(t = themeNow()) {
@@ -37,7 +40,7 @@ export function applyTheme(t = themeNow()) {
   root.dataset.density = t.density;
   root.dataset.textsize = t.text;
   root.dataset.motion = t.motion;
-  const [a, a2] = ACCENTS[t.accent] || (HEX.test(String(t.accent)) ? [t.accent, shade(t.accent)] : ACCENTS.violet);
+  const [a, a2] = ACCENTS[t.accent] || (HEX.test(String(t.accent)) ? [t.accent, shade(t.accent)] : ACCENTS.haze);
   root.style.setProperty("--accent", a);
   root.style.setProperty("--accent-2", a2);
   root.style.setProperty("--accent-bg", a + "24");

@@ -2,7 +2,7 @@
 computer: Show menu -> Save everything to a file... / Open everything
 from a file...
 
-The file (<show>.jarvis) is a zip:
+The file (<show>.haze) is a zip:
 
     manifest.json   what it is, which show, when
     show.json       the saved show (patch, groups, cues, buttons, pages,
@@ -31,7 +31,8 @@ from pathlib import Path
 
 from app import config, fixtures
 
-KIND = "jarvis-pack"
+KIND = "haze-pack"
+OLD_KINDS = ("jarvis-pack",)                    # files from before the desk was called Haze
 VERSION = 1
 # the data folders whose files a show (or a fixture) points at by name
 FOLDERS = ("audio", "underlays", "screens", "gobos")
@@ -109,7 +110,7 @@ def build(eng, name: str) -> tuple[str, bytes]:
         z.writestr("fixtures.json", lib_text)
         for folder, p in files:
             z.write(p, f"files/{folder}/{p.name}")
-    return f"{label}.jarvis", buf.getvalue()
+    return f"{label}.haze", buf.getvalue()
 
 
 def _store_library(db_path: Path, lib: dict) -> int:
@@ -157,11 +158,11 @@ def restore(eng, data: bytes) -> dict:
         show_text = z.read("show.json").decode("utf-8")
         lib = json.loads(z.read("fixtures.json"))
     except (zipfile.BadZipFile, KeyError, ValueError, UnicodeDecodeError) as exc:
-        raise ValueError(f"this is not a Jarvis show file ({exc})") from None
-    if manifest.get("kind") != KIND:
-        raise ValueError("this is not a Jarvis show file")
+        raise ValueError(f"this is not a Haze show file ({exc})") from None
+    if manifest.get("kind") != KIND and manifest.get("kind") not in OLD_KINDS:
+        raise ValueError("this is not a Haze show file")
     if int(manifest.get("version") or 0) > VERSION:
-        raise ValueError("this file was made by a newer Jarvis - update this one first")
+        raise ValueError("this file was made by a newer Haze - update this one first")
     try:
         json.loads(show_text)
     except ValueError as exc:

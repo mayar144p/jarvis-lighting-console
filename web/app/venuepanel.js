@@ -517,7 +517,7 @@ async function uploadScreenFile(file) {
   toast(`Sending ${file.name}…`, "", 1600);
   const r = await fetch("/api/console/screen_media", {
     method: "POST", body: file,
-    headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+    headers: { "Content-Type": "application/x-haze-upload", ...(t ? { "X-Haze-Token": t } : {}) },
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.id) throw new Error(d.error || `upload failed (${r.status})`);
@@ -766,8 +766,8 @@ function venuePicker() {
   const list = venues();
   if (!list.length || (s.patch || []).length || s.show_file || anyModal()) return false;
   try {
-    if (sessionStorage.getItem("jarvis.venuepick")) return true;
-    sessionStorage.setItem("jarvis.venuepick", "1");
+    if (sessionStorage.getItem("haze.venuepick")) return true;
+    sessionStorage.setItem("haze.venuepick", "1");
   } catch (e) { /* ask anyway */ }
   const close = modal({
     title: "Where are you playing tonight?",
@@ -817,7 +817,7 @@ export function initVenuePanel(theStage) {
       box.textContent = base + (typed ? `  ·  length: ${typed}▏ (Enter)` : len ? `  ·  ${len.toFixed(2)} m` : "");
     },
   });
-  window.jarvisEditor = editor;
+  window.hazeEditor = editor;
 
   $("#arrange-btn").addEventListener("click", () => setArranging(!arranging));
   $("#vt-move").addEventListener("click", () => { editor.setMode("translate"); modeButtons(); });

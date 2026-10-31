@@ -18,7 +18,7 @@ const FIELDS = [["light", "Which light?"], ["mode", "DMX mode"], ["where", "Patc
   ["what", "What happened, and what should have happened?"], ["manual", "Manual / DMX chart"], ["files", "Files"],
   ["version", "Desk version / computer"]];
 const LABEL = /^(bug|light-bug|fixture-request|(brand|model):[^,\n]{1,60})$/;
-const ZIP_NAME = /^jarvis-report-[\w-]{1,120}\.zip$/;
+const ZIP_NAME = /^haze-report-[\w-]{1,120}\.zip$/;
 const recent = new Map();                       // address -> times (best effort, per worker instance)
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
@@ -53,7 +53,7 @@ async function file(env, title, body, labels) {
   const post = (lbls) => fetch(`https://api.github.com/repos/${env.REPO}/issues`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json",
-      "User-Agent": "jarvis-report-relay", "Content-Type": "application/json" },
+      "User-Agent": "haze-report-relay", "Content-Type": "application/json" },
     body: JSON.stringify({ title, body, ...(lbls.length ? { labels: lbls } : {}) }),
   });
   let r = await post(labels);
@@ -104,7 +104,7 @@ export default {
     const url = new URL(req.url);
     if (req.method === "POST" && url.pathname === "/") return report(req, env, url);
     if (req.method === "GET" && url.pathname.startsWith("/r/")) return download(env, url);
-    if (req.method === "GET" && url.pathname === "/") return json({ ok: true, relay: "jarvis reports" });
+    if (req.method === "GET" && url.pathname === "/") return json({ ok: true, relay: "haze reports" });
     return json({ error: "not here" }, 404);
   },
 };

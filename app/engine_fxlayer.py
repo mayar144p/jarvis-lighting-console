@@ -536,7 +536,7 @@ class FxLayerMixin:
         return {"motion": vals, "summary": f"{h.get('model')}: full " + ", ".join(parts)}
 
     def _open_known(self, head: dict, role: str) -> bool:
-        """Does Jarvis KNOW which value opens this shutter (file, profile
+        """Does Haze KNOW which value opens this shutter (file, profile
         or the operator), rather than assuming 0?"""
         rng = self.head_ranges(head).get(role) or {}
         return (rng.get("open_from") is not None

@@ -25,7 +25,7 @@ from pathlib import Path
 RATE = 10                 # lamp changes a second, the bridge's comfortable limit
 TICK_S = 0.1
 TIMEOUT_S = 2.0
-DEVICE = "jarvis#desk"
+DEVICE = "haze#desk"
 
 
 class HueError(ValueError):
@@ -99,7 +99,7 @@ class Bridge:
         try:
             self.user = str(reply[0]["success"]["username"])
         except (KeyError, IndexError, TypeError):
-            raise HueError("the bridge gave an answer Jarvis doesn't understand") from None
+            raise HueError("the bridge gave an answer Haze doesn't understand") from None
         return self.user
 
     def lights(self) -> list[dict]:
@@ -109,7 +109,7 @@ class Bridge:
             raise HueError("the bridge doesn't know this computer any more: pair again"
                            if errs[0].get("type") == 1 else f"the bridge said: {errs[0].get('description')}")
         if not isinstance(reply, dict):
-            raise HueError("the bridge gave an answer Jarvis doesn't understand")
+            raise HueError("the bridge gave an answer Haze doesn't understand")
         out = []
         for lid, raw in reply.items():
             st = (raw or {}).get("state") or {}
@@ -224,7 +224,7 @@ class HueLink:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="jarvis-hue", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="haze-hue", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:

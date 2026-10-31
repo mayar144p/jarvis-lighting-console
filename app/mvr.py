@@ -237,7 +237,7 @@ def pose_from_rows(rot) -> tuple[str, float]:
 
 
 # -- our own curves, in the file's UserData ------------------------------------------
-PROVIDER = "Jarvis"
+PROVIDER = "Haze"
 
 
 def _our_data(root) -> dict:
@@ -412,7 +412,7 @@ def _matrix(x: float, y: float, z: float, standing: bool = False, yaw: float = 0
 
 
 def _uuid(seed: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, "jarvis-mvr:" + seed)).upper()
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "haze-mvr:" + seed)).upper()
 
 
 def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], show: str = "show",
@@ -422,7 +422,7 @@ def write(patch: list[dict], rigging: list[dict], gdtf_files: dict[str, Path], s
     import json
 
     from . import venue as venue_mod
-    root = ET.Element("GeneralSceneDescription", verMajor="1", verMinor="6", provider="Jarvis", providerVersion="1")
+    root = ET.Element("GeneralSceneDescription", verMajor="1", verMinor="6", provider="Haze", providerVersion="1")
     userdata = ET.SubElement(root, "UserData")
     scene = ET.SubElement(root, "Scene")
     layers = ET.SubElement(scene, "Layers")

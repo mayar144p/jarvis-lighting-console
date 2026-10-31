@@ -40,7 +40,7 @@ function renderBar() {
 }
 
 // how long ARM lasts: remembered for the next time
-let armFor = (() => { try { return localStorage.getItem("jarvis.armfor") || "10"; } catch { return "10"; } })();
+let armFor = (() => { try { return localStorage.getItem("haze.armfor") || "10"; } catch { return "10"; } })();
 
 export function toggleArm() {
   const st = sfxState();
@@ -64,7 +64,7 @@ export function toggleArm() {
     foot: [
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.danger", { onclick: () => {
-        try { localStorage.setItem("jarvis.armfor", armFor); } catch { /* ignore */ }
+        try { localStorage.setItem("haze.armfor", armFor); } catch { /* ignore */ }
         run("fx_arm", { state: true, minutes: armFor }, { toast: true });
         close();
       } }, "ARM"),

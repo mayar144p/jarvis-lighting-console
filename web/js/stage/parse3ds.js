@@ -3,7 +3,7 @@
 // three.js's TDSLoader walks the chunk tree and trusts every length; the
 // 3DS files inside real GDTF archives (and our own test files) send it into
 // an endless loop.  This scanner reads by SELF-VALIDATION instead, the way
-// the previous Jarvis twin did, and was measured against real files:
+// the previous Haze twin did, and was measured against real files:
 //
 //   * a VERTICES chunk (0x4110) is accepted only when its length is exactly
 //     8 + count * 12;

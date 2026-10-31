@@ -120,8 +120,8 @@ function foldRow(c) {
 // selects them all, hovering it points them out in the 3D view.  Lights in
 // no group stay in the list under the folders.
 let openFolders = new Set();
-try { openFolders = new Set(JSON.parse(localStorage.getItem("jarvis.openFolders") || "[]")); } catch (e) { /* private window */ }
-const keepFolders = () => { try { localStorage.setItem("jarvis.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
+try { openFolders = new Set(JSON.parse(localStorage.getItem("haze.openFolders") || "[]")); } catch (e) { /* private window */ }
+const keepFolders = () => { try { localStorage.setItem("haze.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
 const userGroups = () => (state.snap && state.snap.groups) || [];
 
 function folderIcon(open) {
@@ -406,7 +406,7 @@ export function rowMenu(btn, head) {
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Make a colour row of buttons…", hint: "one button per colour, one at a time", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(sameSelection(head))) },
     ...groupItems(head),
-    { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
+    { label: "Frame on stage", run: () => window.hazeStage && window.hazeStage.frame([head]) },
     { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },
     "-",
     { label: "Remove from patch", danger: true, run: async () => {
@@ -440,7 +440,7 @@ function foldMenu(anchor, heads) {
     } },
     ...groups.slice(0, 8).map((g) => ({ label: `Add them to “${g.name}”`, run: () => run("group_edit", { group: g.n, add: heads }, { toast: true }) })),
     { label: "Make a colour row of buttons…", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(heads)) },
-    { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame(heads) },
+    { label: "Frame on stage", run: () => window.hazeStage && window.hazeStage.frame(heads) },
     "-",
     { label: `Remove ${n} from the patch`, danger: true, run: async () => {
       if (await confirmBox("Remove from the patch", `Remove ${n} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${n}`, danger: true })) run("remove_heads", { heads }, { toast: true });
@@ -641,7 +641,7 @@ export async function scanRig() {
 // a group - its folder in the list or its chip - to put it in.  Dragged out
 // of a group's folder: onto the list outside the folders takes it out,
 // onto another group moves it (Alt copies).  "＋ New group" while dragging.
-const DRAG = "application/x-jarvis-heads";
+const DRAG = "application/x-haze-heads";
 let dragging = null;                     // {heads, from}
 function dragStart(e) {
   const tr = e.target.closest && e.target.closest("tr[data-head]");
@@ -736,15 +736,15 @@ export function initFixtures() {
   });
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");
-    if (!tr || !window.jarvisStage) return;
-    window.jarvisStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
+    if (!tr || !window.hazeStage) return;
+    window.hazeStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
   });
   // a folder under the pointer: its lights pointed out in the 3D view
   let peeking = null;
   const peek = (tr) => {
     if (tr === peeking) return;
     peeking = tr;
-    if (window.jarvisStage && window.jarvisStage.setPeek) window.jarvisStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
+    if (window.hazeStage && window.hazeStage.setPeek) window.hazeStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
   };
   $("#fx-rows").addEventListener("pointerover", (e) => peek(e.target.closest("tr.folder")));
   $("#fx-rows").addEventListener("pointerleave", () => peek(null));

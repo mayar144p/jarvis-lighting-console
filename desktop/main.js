@@ -1,4 +1,4 @@
-// Jarvis as a desktop app (docs/BACKLOG.md A9 step 1).
+// Haze as a desktop app (docs/BACKLOG.md A9 step 1).
 //
 // Nothing is rewritten: this starts the same Python engine, hidden, on a
 // free port that only this computer can reach, with a private key shared
@@ -22,6 +22,18 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 
+// The desk's own folder (shows, settings, saved windows) was named "Jarvis"
+// before the desk was called Haze: it moves to "Haze" once, before anything
+// reads it; if it can't be moved (in use), the desk keeps using it there.
+(function moveOldFolder() {
+  try {
+    const appData = app.getPath("appData");
+    const neu = path.join(appData, "Haze"), old = path.join(appData, "Jarvis");
+    if (fs.existsSync(neu) || !fs.existsSync(old)) return;
+    try { fs.renameSync(old, neu); } catch { app.setPath("userData", old); }
+  } catch { /* the default folder */ }
+})();
+
 // Installed: the engine's files and a Python of its own sit in the app's
 // resources (see .github/workflows/desktop.yml).  From the repo: the repo.
 const PACKED = app.isPackaged;
@@ -31,10 +43,10 @@ const STATE_FILE = () => path.join(app.getPath("userData"), "windows.json");
 
 // the parts of the desk a window can show (?window=... in web/app/main.js)
 const PARTS = {
-  main: { q: "", title: "Jarvis" },
-  stage: { q: "stage", title: "Jarvis - 3D view" },
-  desk: { q: "desk", title: "Jarvis - Programmer" },
-  playbacks: { q: "playbacks", title: "Jarvis - Playbacks" },
+  main: { q: "", title: "Haze" },
+  stage: { q: "stage", title: "Haze - 3D view" },
+  desk: { q: "desk", title: "Haze - Programmer" },
+  playbacks: { q: "playbacks", title: "Haze - Playbacks" },
 };
 
 let engine = null, base = "", quitting = false, restarting = false, saved = {};
@@ -73,13 +85,13 @@ function freePort() {
 
 // The first Python that really runs.  Not just $PYTHON: on some computers
 // it names a folder (...\Python312\Scripts), and on Windows "python" can be
-// the Microsoft Store stand-in, which runs nothing.  JARVIS_PYTHON wins.
+// the Microsoft Store stand-in, which runs nothing.  HAZE_PYTHON wins.
 function findPython() {
   const win = process.platform === "win32";
   const tries = [];
   const own = path.join(process.resourcesPath, "python", win ? "python.exe" : "bin/python3");
   if (PACKED && fs.existsSync(own)) return [own, []];   // the installer's own Python
-  for (const v of [process.env.JARVIS_PYTHON, process.env.PYTHON]) {
+  for (const v of [process.env.HAZE_PYTHON, process.env.PYTHON]) {
     if (!v) continue;
     let p = v.replace(/^"|"$/g, "");
     try { if (fs.statSync(p).isDirectory()) p = path.join(p, win ? "python.exe" : "python3"); } catch { continue; }
@@ -94,7 +106,7 @@ function findPython() {
 }
 
 // Installed, the shows, fixtures, settings (.env) and inbox live in the
-// user's own folder (AppData\Roaming\Jarvis): they survive updates and a
+// user's own folder (AppData\Roaming\Haze): they survive updates and a
 // reinstall.  From the repo: the repo's data/ and .env (made from
 // .env.example the first time).
 function userFolders() {
@@ -156,7 +168,7 @@ const isTailscale = (a) => { const [x, y] = a.split(".").map(Number); return x =
 // isn't asked again - the page then just never loads on the other
 // computer.  One rule for the desk's port, from this network and Tailscale
 // only (never the open internet), added after Windows' admin prompt.
-const fwName = (port) => `Jarvis desk (port ${port})`;
+const fwName = (port) => `Haze desk (port ${port})`;
 function firewallHasRule(port) {
   if (process.platform !== "win32") return true;
   const r = spawnSync("netsh", ["advfirewall", "firewall", "show", "rule", `name=${fwName(port)}`], { windowsHide: true });
@@ -170,7 +182,7 @@ function firewallAllow(port) {
   return firewallHasRule(port);
 }
 
-// Jarvis from the repo brings itself up to date every time it opens, like
+// Haze from the repo brings itself up to date every time it opens, like
 // tools/update.py fast-forwards to the latest version (never with
 // local edits; your data is never touched).  If the update changed the app
 // itself, it opens again on the new version.  The installed app has no
@@ -181,12 +193,12 @@ async function selfUpdate() {
   if (/^(false|0|no|off)$/i.test(String(process.env.AUTO_UPDATE || "").trim())) return;
   const found = findPython();
   if (!found) return;
-  const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#0b0b0d", show: false });
+  const splash = new BrowserWindow({ width: 360, height: 120, frame: false, resizable: false, backgroundColor: "#070b10", show: false });
   // charset: without it Windows reads the "…" as "â€¦"
   splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
-    "<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0d;"
+    "<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;height:100vh;background:#070b10;"
     + "color:#c9cad3;font:14px system-ui;border:1px solid #303037;box-sizing:border-box'>"
-    + "<div style='text-align:center'><b style='color:#ececf0;letter-spacing:.08em'>JARVIS</b>"
+    + "<div style='text-align:center'><b style='color:#ececf0;letter-spacing:.08em'>HAZE</b>"
     + "<div style='margin-top:6px;color:#8e8e9a'>Checking for updates…</div></div></body>"));
   splash.once("ready-to-show", () => splash.show());
   const run = (cmd, args, opts = {}) => new Promise((resolve) => {
@@ -223,7 +235,7 @@ async function startEngine() {
   const port = remote ? await portOr(desk().port) : await localPort();
   key = remote ? desk().code : TOKEN;
   const found = findPython();
-  if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Jarvis again");
+  if (!found) throw new Error("Python 3 wasn't found. Install it from python.org (tick \"Add python.exe to PATH\"), then open Haze again");
   const [py, pre] = found;
   const log = fs.createWriteStream(path.join(app.getPath("userData"), "engine.log"), { flags: "w" });
   engine = spawn(py, [...pre, "app/main.py"], {
@@ -231,7 +243,7 @@ async function startEngine() {
     // HOST: this computer only (or the network, for phones).  CONSOLE_TOKEN:
     // the key.  The engine shuts down cleanly when our end of its stdin closes.
     env: { ...process.env, ...userFolders(), HOST: remote ? "0.0.0.0" : "127.0.0.1", PORT: String(port),
-      CONSOLE_TOKEN: key, JARVIS_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+      CONSOLE_TOKEN: key, HAZE_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);
@@ -239,12 +251,12 @@ async function startEngine() {
   engine.once("exit", (code) => {
     died = code;
     if (!quitting && !restarting) {
-      dialog.showErrorBox("Jarvis stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
+      dialog.showErrorBox("Haze stopped", `The desk's engine stopped (code ${code}). Its log is in:\n${app.getPath("userData")}\\engine.log`);
       app.exit(1);
     }
   });
   engine.once("error", (e) => {
-    dialog.showErrorBox("Jarvis can't start", `Python didn't start (${e.message}). Install Python 3 from python.org, then open Jarvis again.`);
+    dialog.showErrorBox("Haze can't start", `Python didn't start (${e.message}). Install Python 3 from python.org, then open Haze again.`);
     app.exit(1);
   });
   base = `http://127.0.0.1:${port}/`;
@@ -291,7 +303,7 @@ function openPart(part) {
   const mem = saved[part];
   const place = mem && onScreen(mem.bounds) ? mem : defaultPlace(part);
   const win = new BrowserWindow({
-    ...place.bounds, title: PARTS[part].title, backgroundColor: "#0b0b0d", show: false,
+    ...place.bounds, title: PARTS[part].title, backgroundColor: "#070b10", show: false,
     icon: path.join(__dirname, "res", "icon.png"), minWidth: 1024, minHeight: 600,
     // no system title bar: the desk's own top bar is the bar (drag it to move
     // the window; minimise, maximise and close at its right end).  A Mac
@@ -351,11 +363,11 @@ ipcMain.on("desk:ready", (e) => pageUp.add(e.sender));
 // stick, another drive) - not straight into Downloads like other saves
 ipcMain.handle("desk:saveAs", async (e, name, bytes) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  const safe = String(name || "show.jarvis").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) || "show.jarvis";
+  const safe = String(name || "show.haze").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) || "show.haze";
   const r = await dialog.showSaveDialog(win, {
     title: "Save the show and everything it needs",
     defaultPath: path.join(app.getPath("documents"), safe),
-    filters: [{ name: "Jarvis show (everything)", extensions: ["jarvis"] }],
+    filters: [{ name: "Haze show (everything)", extensions: ["haze"] }],
   });
   if (r.canceled || !r.filePath) return null;
   await fs.promises.writeFile(r.filePath, Buffer.from(bytes));
@@ -412,7 +424,7 @@ let quitAsk = null;
 function confirmQuit(win) {
   if (!quitAsk) {
     quitAsk = ask(win, {
-      title: "Close Jarvis?", type: "question", buttons: ["Keep the desk open", "Close Jarvis"], primary: 0, cancel: 0, danger: 1,
+      title: "Close Haze?", type: "question", buttons: ["Keep the desk open", "Close Haze"], primary: 0, cancel: 0, danger: 1,
       detail: "The show is saved. The lights stop getting DMX from this computer.",
     }).then((r) => { if (r === 1) quitting = true; return r === 1; })
       .finally(() => { quitAsk = null; });
@@ -718,7 +730,7 @@ function deskItems() {
         : { id: "swipes", label: "Lock touch swipes on this computer…", click: () => machineSwipes(true) },
     ] : []),
     { type: "separator" },
-    { id: "quit", label: "Close Jarvis", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
+    { id: "quit", label: "Close Haze", accelerator: "CmdOrCtrl+Q", click: async () => { if (await confirmQuit(BrowserWindow.getFocusedWindow())) app.quit(); } },
   ];
 }
 // the page's own window controls and Desk menu (preload.js)
@@ -755,7 +767,7 @@ function menu() {
 // every request the app's windows make to the engine carries its key
 function trustEngine() {
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [base + "*"] }, (d, cb) => {
-    d.requestHeaders["X-Jarvis-Token"] = key;
+    d.requestHeaders["X-Haze-Token"] = key;
     cb({ requestHeaders: d.requestHeaders });
   });
 }
@@ -767,13 +779,13 @@ function trustEngine() {
 function quietDownloads() {
   session.defaultSession.on("will-download", (_e, item) => {
     const dir = app.getPath("downloads");
-    const name = path.basename(item.getFilename() || "jarvis-download");
+    const name = path.basename(item.getFilename() || "haze-download");
     const ext = path.extname(name), stem = name.slice(0, name.length - ext.length);
     let file = path.join(dir, name);
     for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, `${stem} (${i})${ext}`);
     item.setSavePath(file);
     item.once("done", (_ev, state) => {
-      if (state === "completed" && /^jarvis-report-/.test(name)) shell.showItemInFolder(file);
+      if (state === "completed" && /^haze-report-/.test(name)) shell.showItemInFolder(file);
     });
   });
 }
@@ -826,7 +838,7 @@ async function phonesDialog() {
       title: "Windows Firewall", type: ok ? "info" : "warning", buttons: ["OK"],
       message: ok ? "Windows Firewall now lets the desk in" : "Windows Firewall wasn't changed",
       detail: ok ? `From this network and Tailscale only, on port ${port}. Load the page on the other device again.`
-        : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Jarvis (and Python) on private and public networks.",
+        : "The permission was declined, or Windows refused. In Windows Security → Firewall → Allow an app, allow Haze (and Python) on private and public networks.",
     });
     return phonesDialog();
   }
@@ -837,7 +849,7 @@ async function phonesDialog() {
 // not Electron's default, which would end it when the update splash closes
 app.on("window-all-closed", () => {});
 const FIRST = app.requestSingleInstanceLock();
-if (!FIRST) app.quit();                    // Jarvis is already open: that one comes forward
+if (!FIRST) app.quit();                    // Haze is already open: that one comes forward
 app.on("second-instance", () => { const w = [...open.values()][0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
 
 app.whenReady().then(async () => {
@@ -849,7 +861,7 @@ app.whenReady().then(async () => {
   try {
     await startEngine();
   } catch (e) {
-    dialog.showErrorBox("Jarvis can't start", `${e.message}. Its log is in:\n${app.getPath("userData")}`);
+    dialog.showErrorBox("Haze can't start", `${e.message}. Its log is in:\n${app.getPath("userData")}`);
     await stopEngine();
     app.exit(1);
     return;

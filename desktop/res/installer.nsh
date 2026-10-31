@@ -11,10 +11,10 @@ Var AiBox
 Var AiWant
 
 !macro customPageAfterChangeDir
-  Page custom JarvisAiPage JarvisAiPageLeave
+  Page custom HazeAiPage HazeAiPageLeave
 !macroend
 
-Function JarvisAiPage
+Function HazeAiPage
   ; (MUI's header macro isn't defined yet where electron-builder includes
   ; this file, so the page says it all in its own text)
   nsDialogs::Create 1018
@@ -22,7 +22,7 @@ Function JarvisAiPage
   ${If} $0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateLabel} 0 0 100% 72u "Offline AI - the copilot on this computer, with no internet and no daily limit.$\r$\n$\r$\nJarvis can download its offline AI (about 5 GB) in the background the first time it starts. Once it is done, the copilot works at a venue with no internet. It needs 16 GB of memory. You can also add it later in Settings -> AI."
+  ${NSD_CreateLabel} 0 0 100% 72u "Offline AI - the copilot on this computer, with no internet and no daily limit.$\r$\n$\r$\nHaze can download its offline AI (about 5 GB) in the background the first time it starts. Once it is done, the copilot works at a venue with no internet. It needs 16 GB of memory. You can also add it later in Settings -> AI."
   Pop $0
   ${NSD_CreateCheckbox} 0 80u 100% 12u "Include the offline AI (about 5 GB download)"
   Pop $AiBox
@@ -33,7 +33,7 @@ Function JarvisAiPage
   nsDialogs::Show
 FunctionEnd
 
-Function JarvisAiPageLeave
+Function HazeAiPageLeave
   ${NSD_GetState} $AiBox $AiWant
 FunctionEnd
 

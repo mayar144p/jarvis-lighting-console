@@ -851,7 +851,7 @@ class CueMixin:
             return
         self._follow_stop.clear()
         thread = threading.Thread(target=self._follow_loop,
-                                  name="jarvis-follow", daemon=True)
+                                  name="haze-follow", daemon=True)
         self._follow_thread = thread
         thread.start()
 

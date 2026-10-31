@@ -16,7 +16,7 @@ const ICONS = {
 };
 
 export async function openDeskMenu(anchor) {
-  const w = window.jarvisDesk && window.jarvisDesk.win;
+  const w = window.hazeDesk && window.hazeDesk.win;
   if (!w) return;
   const items = await w.menu();
   menu(anchor, items.map((x) => (x === "-" ? "-" : {
@@ -25,7 +25,7 @@ export async function openDeskMenu(anchor) {
 }
 
 export function initWinControls() {
-  const w = window.jarvisDesk && window.jarvisDesk.win;
+  const w = window.hazeDesk && window.hazeDesk.win;
   if (!w) return;
   const root = document.documentElement;
   root.classList.add("frameless");

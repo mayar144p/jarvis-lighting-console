@@ -7,14 +7,14 @@ import { toast } from "./ui.js";
 const q = new URLSearchParams(location.search);
 
 function saved() {
-  try { return localStorage.getItem("jarvis.3d") === "on"; } catch (e) { return false; }
+  try { return localStorage.getItem("haze.3d") === "on"; } catch (e) { return false; }
 }
 
 export const HAS_3D = q.get("window") === "stage" || q.get("3d") === "1" || (q.get("3d") !== "0" && saved());
 
 /** Turn the 3D view on or off in this window: the desk reloads. */
 export function set3d(on) {
-  try { localStorage.setItem("jarvis.3d", on ? "on" : "off"); } catch (e) { /* private window */ }
+  try { localStorage.setItem("haze.3d", on ? "on" : "off"); } catch (e) { /* private window */ }
   location.reload();
 }
 
@@ -34,8 +34,8 @@ export function needs3d(what) {
 /** Show the 3D visualiser: the desktop app's own 3D window (opened, or
  *  brought to the front); in a browser, the 3D page in a window of its own. */
 export function open3d() {
-  const w = window.jarvisDesk && window.jarvisDesk.win;
+  const w = window.hazeDesk && window.hazeDesk.win;
   if (w && w.pick) { w.pick("stage"); return; }
-  const tab = window.open(`${location.pathname}?window=stage`, "jarvis-3d");
+  const tab = window.open(`${location.pathname}?window=stage`, "haze-3d");
   if (tab) tab.focus();
 }

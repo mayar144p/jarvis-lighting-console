@@ -90,7 +90,7 @@ async function decodeMusic(tl) {
   const a = tl.audio;
   if (!a || !a.id) return null;
   const t = token();
-  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(a.id), { headers: t ? { "X-Jarvis-Token": t } : {} });
+  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(a.id), { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) return null;
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   try {

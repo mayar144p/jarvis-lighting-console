@@ -205,7 +205,7 @@ class ShowMixin:
         self._writer_path = self.autosave_path
         self._writer_stop.clear()
         self._writer = threading.Thread(target=self._autosave_writer,
-                                       name="jarvis-autosave", daemon=True)
+                                       name="haze-autosave", daemon=True)
         self._writer.start()
 
     def _stop_writer(self) -> None:

@@ -29,7 +29,7 @@ try { ({ chromium } = await import("playwright")); } catch {
 }
 const exe = process.env.CHROMIUM || (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 
-const data = mkdtempSync(join(tmpdir(), "jarvis-odd-"));
+const data = mkdtempSync(join(tmpdir(), "haze-odd-"));
 let server = null;
 function startServer() {
   server = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], {
@@ -89,7 +89,7 @@ const open = async (who) => {
   const p = await ctx.newPage();
   p.on("pageerror", (e) => errors[who].push(String(e.message || e)));
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource|net::ERR|stream/.test(m.text())) errors[who].push("console: " + m.text().slice(0, 200)); });
-  await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); } catch { /* fine */ } });
+  await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await sleep(1800);
   return p;

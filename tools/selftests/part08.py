@@ -82,11 +82,11 @@ def test_beam_bar() -> None:
               and [r["role"] for r in det[3:]] == [f"laser_beam{k}" for k in range(1, 11)],
               str([(r["role"], r.get("on_value")) for r in det[:4]]))
     hits = fixlib.search("laserworld beambar 10b")
-    check("the BeamBar 10B MK3 is in the Jarvis library", hits and hits[0]["model"] == "BeamBar 10B MK3", str(hits[:1]))
+    check("the BeamBar 10B MK3 is in the Haze library", hits and hits[0]["model"] == "BeamBar 10B MK3", str(hits[:1]))
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "b.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
@@ -477,7 +477,7 @@ def test_fx_safety() -> None:
         db = tmp / "fx.db"
         for src, key in (("ofl", "chauvet-dj/intimidator-spot-260.json"), ("qlc", "MagicFX/MagicFX-Psyco2Jet.qxf"),
                          ("ofl", "american-dj/galaxian-3d.json"), ("ofl", "chauvet-dj/geyser-rgb.json"),
-                         ("jarvis", "chauvet-dj/funfetti-shot")):
+                         ("haze", "chauvet-dj/funfetti-shot")):
             fixtures.store_parsed(db, fixlib.load(src, key), f"{src}:{key}")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:

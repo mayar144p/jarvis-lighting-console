@@ -576,7 +576,7 @@ function renderBeamQuick() {
   }
   // A shutter whose "open" value nobody knows sits at 0 - closed on many
   // movers - so the light tilts but never lights.  Find it on the real
-  // light, once, and Jarvis remembers it for every head of that model.
+  // light, once, and Haze remembers it for every head of that model.
   if (strobe) {
     const first = selectionHeads()[0];
     const openV = strobe.open ?? 0;
@@ -963,9 +963,9 @@ function headBar(heads, n) {
   const send = throttle((k, v) => run("set_attribute", { attribute: "tilt", value: v, cell: [k] }, { silentError: true }), 60);
   // folded by default: it is a lot of sliders above every tab (remembered)
   let open = false;
-  try { open = localStorage.getItem("jarvis.headBar") === "1"; } catch { /* private window */ }
+  try { open = localStorage.getItem("haze.headBar") === "1"; } catch { /* private window */ }
   return h("details.head-bar", { title: "Tilt each head (degrees from straight out)", open,
-    ontoggle: (e) => { try { localStorage.setItem("jarvis.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
+    ontoggle: (e) => { try { localStorage.setItem("haze.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
     h("summary.muted.small", `Tilt per head (${tilts})`),
     ...Array.from({ length: tilts }, (_, i) => {
       const v = vals[`tilt@${i + 1}`] ?? 128;
@@ -1245,7 +1245,7 @@ let fxAcross = false;
 const COLOUR_FX = new Set(["rainbow", "colour_chase", "alternate", "fan", "breathe"]);
 const FX_SWATCHES = [["#ff0000", "Red"], ["#ff6a00", "Orange"], ["#ffd000", "Yellow"], ["#00ff00", "Green"], ["#00ffff", "Cyan"],
   ["#0040ff", "Blue"], ["#7a00ff", "Purple"], ["#ff00ff", "Magenta"], ["#ff4fa0", "Pink"], ["#ffffff", "White"]];
-const FX_COLS_KEY = "jarvis.fxColours";
+const FX_COLS_KEY = "haze.fxColours";
 function fxColours(name) {
   try { return (JSON.parse(localStorage.getItem(FX_COLS_KEY) || "{}")[name] || []).slice(0, 8); } catch { return []; }
 }
@@ -1583,7 +1583,7 @@ function showTab(name) {
     loadAttributes();
     import("./fxpanel.js").then((m) => m.renderFxPane(name, attrState));
   }
-  try { localStorage.setItem("jarvis.progtab", name); } catch (e) { /* ignore */ }
+  try { localStorage.setItem("haze.progtab", name); } catch (e) { /* ignore */ }
 }
 
 function wireActs() {
@@ -1620,13 +1620,13 @@ function initSubTabs() {
     const el = $(`.tab-pane[data-pane="${pane}"]`);
     if (!el) continue;
     let cur = subs[0][0];
-    try { cur = localStorage.getItem("jarvis.sub." + pane) || cur; } catch { /* private window */ }
+    try { cur = localStorage.getItem("haze.sub." + pane) || cur; } catch { /* private window */ }
     if (!subs.some(([k]) => k === cur)) cur = subs[0][0];
     const nav = h("nav.sub-tabs", { role: "tablist", "aria-label": `${pane} parts` });
     const pick = (k) => {
       el.dataset.sub = k;
       for (const b of nav.children) b.setAttribute("aria-selected", String(b.dataset.sub === k));
-      try { localStorage.setItem("jarvis.sub." + pane, k); } catch { /* private window */ }
+      try { localStorage.setItem("haze.sub." + pane, k); } catch { /* private window */ }
     };
     nav.append(...subs.map(([k, label, title]) => h("button", { role: "tab", type: "button", dataset: { sub: k }, title, onclick: () => pick(k) },
       label, h("span.sub-count", { hidden: true }))));
@@ -1739,7 +1739,7 @@ export function initProgrammer() {
     renderProgCells();
   };
   on("cells", cellsPicked);
-  try { new BroadcastChannel("jarvis.cells").onmessage = (ev) => cellsPicked(ev.data); } catch (e) { /* an old browser */ }
+  try { new BroadcastChannel("haze.cells").onmessage = (ev) => cellsPicked(ev.data); } catch (e) { /* an old browser */ }
   on("selection", () => loadPadInfo());
   on("snapshot", () => loadPadInfo());
   void patch; void select;

@@ -1,4 +1,4 @@
-"""Jarvis engine - our own lighting console.
+"""Haze engine - our own lighting console.
 
 Patch management (add/remove/re-address heads, groups), programmer,
 palettes, cue stacks, playbacks with real fades, frame building with
@@ -93,7 +93,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
         self.db_path = Path(db_path or config.DB_PATH)
         self.dry_run = bool(dry_run)
         # The engine is the console; there is no second control path.
-        self.mode = "jarvis"
+        self.mode = "haze"
         self.show_dir = Path(show_dir or config.CONSOLE_SHOW_DIR)
         self._sender = sender
         # A sender handed in (tests, tools) is used as given, never rebuilt.
@@ -583,7 +583,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, PixelsMix
 
     def _result(self, action, ok: bool, error) -> dict:
         return {"ok": bool(ok), "action": str(action),
-                "simulated": self.dry_run, "engine": "jarvis",
+                "simulated": self.dry_run, "engine": "haze",
                 "error": error}
 
     def _log(self, action, ok: bool, error=None, detail=None) -> None:

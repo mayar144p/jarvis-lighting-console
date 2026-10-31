@@ -80,7 +80,7 @@ function syncRig() {
 async function loadUnderlay(id) {
   const t = token();
   const r = await fetch("/api/console/underlay?id=" + encodeURIComponent(id),
-    { headers: t ? { "X-Jarvis-Token": t } : {} });
+    { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) throw new Error("floor plan " + r.status);
   return r.blob();
 }
@@ -88,7 +88,7 @@ async function loadUnderlay(id) {
 async function loadGobo(ref) {
   const t = token();
   const r = await fetch("/api/console/gobo?ref=" + encodeURIComponent(ref),
-    { headers: t ? { "X-Jarvis-Token": t } : {} });
+    { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) throw new Error("gobo " + r.status);
   return r.blob();
 }
@@ -96,7 +96,7 @@ async function loadGobo(ref) {
 async function loadScreenMedia(id) {
   const t = token();
   const r = await fetch("/api/console/screen_media?id=" + encodeURIComponent(id),
-    { headers: t ? { "X-Jarvis-Token": t } : {} });
+    { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) throw new Error("screen clip " + r.status);
   return r.blob();
 }
@@ -130,7 +130,7 @@ export function initStage() {
     loadGobo,
   });
   setScreenMediaLoader(loadScreenMedia);
-  window.jarvisStage = stage;          // for the browser console and tests
+  window.hazeStage = stage;          // for the browser console and tests
   initVenuePanel(stage);
 
   on("snapshot", syncRig);
@@ -143,14 +143,14 @@ export function initStage() {
 
   initVisBar();
   const haze = $("#haze");
-  try { haze.value = localStorage.getItem("jarvis.haze") ?? haze.value; } catch (e) { /* ignore */ }
+  try { haze.value = localStorage.getItem("haze.haze") ?? haze.value; } catch (e) { /* ignore */ }
   stage.setOptions({ haze: +haze.value });
   haze.addEventListener("input", () => {
     stage.setOptions({ haze: +haze.value });
-    try { localStorage.setItem("jarvis.haze", haze.value); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("haze.haze", haze.value); } catch (e) { /* ignore */ }
   });
-  const pref = (key, fallback) => { try { return localStorage.getItem("jarvis." + key) ?? fallback; } catch (e) { return fallback; } };
-  const keep = (key, value) => { try { localStorage.setItem("jarvis." + key, value); } catch (e) { /* ignore */ } };
+  const pref = (key, fallback) => { try { return localStorage.getItem("haze." + key) ?? fallback; } catch (e) { return fallback; } };
+  const keep = (key, value) => { try { localStorage.setItem("haze." + key, value); } catch (e) { /* ignore */ } };
   const house = $("#house");
   house.value = pref("house", house.value);
   stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
@@ -178,10 +178,10 @@ export function initStage() {
   stage.setOptions({ people: pref("people", "0") === "1", dance, shadows: pref("shadows", "1") === "1" });
   // the mouse hint shows until the 3D view has been used once (empty and
   // arrange hints always show)
-  try { if (localStorage.getItem("jarvis.stagehint")) document.body.classList.add("hint-seen"); } catch (e) { /* private */ }
+  try { if (localStorage.getItem("haze.stagehint")) document.body.classList.add("hint-seen"); } catch (e) { /* private */ }
   $("#stage").addEventListener("pointerdown", () => {
     document.body.classList.add("hint-seen");
-    try { localStorage.setItem("jarvis.stagehint", "1"); } catch (e) { /* private */ }
+    try { localStorage.setItem("haze.stagehint", "1"); } catch (e) { /* private */ }
   }, { once: true });
   $("#people-btn").classList.toggle("on", stage.options.people);
   $("#people-btn").addEventListener("click", (e) => crowdMenu(e.currentTarget, keep));
@@ -274,8 +274,8 @@ function initVisBar() {
   const fit = () => wrap.style.setProperty("--vis-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
   new ResizeObserver(fit).observe(bar);
   fit();
-  const keep = (k, v) => { try { localStorage.setItem("jarvis." + k, v); } catch (e) { /* private */ } };
-  const pref = (k, d) => { try { return localStorage.getItem("jarvis." + k) || d; } catch (e) { return d; } };
+  const keep = (k, v) => { try { localStorage.setItem("haze." + k, v); } catch (e) { /* private */ } };
+  const pref = (k, d) => { try { return localStorage.getItem("haze." + k) || d; } catch (e) { return d; } };
   const mouse = (mode) => {
     stage.setMouseMode(mode);
     $$("#vis-mouse button").forEach((b) => b.classList.toggle("on", b.dataset.mouse === stage.mouseMode));
@@ -344,7 +344,7 @@ function pickElement(head, cell, mods) {
   state.cells = cells;
   stage.setCells(head, cells);
   emit("cells", { head, cells });
-  try { new BroadcastChannel("jarvis.cells").postMessage({ head, cells }); } catch (e) { /* an old browser */ }
+  try { new BroadcastChannel("haze.cells").postMessage({ head, cells }); } catch (e) { /* an old browser */ }
   toast(`#${head}: head${cells.length > 1 ? "s" : ""} ${cells.join(", ")} picked - colour and settings go to ${cells.length > 1 ? "them" : "it"} only`, "", 3500);
 }
 
@@ -370,7 +370,7 @@ function viewsMenu(btn) {
       const url = stage.photo(3840);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `jarvis-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+      a.download = `haze-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
       a.click();
       toast("Photo saved", "ok");
     } },

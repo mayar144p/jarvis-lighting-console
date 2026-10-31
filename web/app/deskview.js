@@ -160,8 +160,8 @@ function swatch(kind, p) {
 const OFFER_ATTRS = { colour: ["red", "wheel", "cyan", "colour_macro"], beam: ["zoom"], position: ["pan"] };
 const canMake = (kind) => patch().some((x) => (x.map || []).some((r) => (OFFER_ATTRS[kind] || []).includes(r))
   && (kind !== "position" || (x.map || []).includes("tilt")));
-const noOffer = () => { try { return JSON.parse(localStorage.getItem("jarvis.dvNoOffer") || "[]"); } catch (e) { return []; } };
-const setNoOffer = (v) => { try { localStorage.setItem("jarvis.dvNoOffer", JSON.stringify(v)); } catch (e) { /* private window */ } };
+const noOffer = () => { try { return JSON.parse(localStorage.getItem("haze.dvNoOffer") || "[]"); } catch (e) { return []; } };
+const setNoOffer = (v) => { try { localStorage.setItem("haze.dvNoOffer", JSON.stringify(v)); } catch (e) { /* private window */ } };
 
 function paletteWindow(kind, title, letter) {
   const pals = (snap().palettes || {})[kind] || [];
@@ -295,7 +295,7 @@ function strip() {
 // show changes (groups, palettes, the selection, its values).
 const COLS = 24, ROWS = 12;
 const STACK_BELOW = 880;          // px: a narrower board stacks its windows
-const LAYOUT_KEY = "jarvis.dvLayout";
+const LAYOUT_KEY = "haze.dvLayout";
 const DEFAULT_LAYOUT = {
   group: { x: 0, y: 0, w: 7, h: 6 }, position: { x: 7, y: 0, w: 7, h: 6 },
   colour: { x: 0, y: 6, w: 7, h: 6 }, beam: { x: 7, y: 6, w: 7, h: 6 },

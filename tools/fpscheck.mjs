@@ -25,7 +25,7 @@ const PORT = +(process.env.FPSCHECK_PORT || 8818), BASE = `http://127.0.0.1:${PO
 const SECONDS = +(process.env.FPS_SECONDS || 12);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const srv = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], { cwd: ROOT, stdio: "ignore",
-  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-fps-")), CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
+  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-fps-")), CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
 const done = (code) => { try { srv.kill(); } catch { /* gone */ } process.exit(code); };
 for (let i = 0; ; i++) {
   try { if ((await fetch(BASE)).ok) break; } catch { /* not yet */ }
@@ -38,7 +38,7 @@ const act = (a, params = {}) => post("api/console", { action: a, params }).then(
 await act("venue_template", { name: "club" });
 let n = 0;
 for (const [src, key, query, qty] of RIG) {
-  if (src !== "jarvis") await post("api/fixtures/library/install", { src, key });
+  if (src !== "haze") await post("api/fixtures/library/install", { src, key });
   const r = await act("add_heads", { query, qty });
   if (r.ok) n += r.heads.length;
 }
@@ -55,14 +55,14 @@ const rows = [];
 const ONLY = (process.env.FPS_ONLY || "").toLowerCase();       // e.g. FPS_ONLY=low
 for (const [label, q] of [["High", "high"], ["Medium", "auto"], ["Low", "fast"]].filter(([l]) => !ONLY || l.toLowerCase() === ONLY)) {
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
-  await p.addInitScript((quality) => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", quality); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); } catch { /* fine */ } }, q);
+  await p.addInitScript((quality) => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", quality); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } }, q);
   await p.goto(BASE + "?window=stage");                // the 3D on its own, as in Show mode
-  for (let i = 0; i < 60; i++) { if (await p.evaluate(() => window.jarvisStage && window.jarvisStage.fixtures.size > 100)) break; await sleep(500); }
+  for (let i = 0; i < 60; i++) { if (await p.evaluate(() => window.hazeStage && window.hazeStage.fixtures.size > 100)) break; await sleep(500); }
   await sleep(4000);                                    // models and gobos loaded
   // FPS_SETUP: options to try, e.g. FPS_SETUP='{"haze":0}' (stage.setOptions)
-  if (process.env.FPS_SETUP) { await p.evaluate((o) => window.jarvisStage.setOptions(JSON.parse(o)), process.env.FPS_SETUP); await sleep(1500); }
+  if (process.env.FPS_SETUP) { await p.evaluate((o) => window.hazeStage.setOptions(JSON.parse(o)), process.env.FPS_SETUP); await sleep(1500); }
   const r = await p.evaluate(async (secs) => {
-    const st = window.jarvisStage, gaps = [];
+    const st = window.hazeStage, gaps = [];
     let last = st.lastRender;
     const t0 = performance.now();
     await new Promise((res) => {

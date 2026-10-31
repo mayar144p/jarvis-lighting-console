@@ -75,7 +75,7 @@ const ONE_SHOT = new Set(["go", "release", "preset", "arm", "fxkill", "fader", "
 // tiles that are a control, not a button (drawn live, see controlTile)
 const CONTROL = new Set(["fader", "xy", "tempo", "cuelist"]);
 let locked = false;
-try { locked = localStorage.getItem("jarvis.qb.locked") === "1"; } catch { /* private window */ }
+try { locked = localStorage.getItem("haze.qb.locked") === "1"; } catch { /* private window */ }
 // Icons a tile can carry: 24x24 stroke paths (the engine keeps the same names).
 const ICONS = {
   bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
@@ -657,11 +657,11 @@ const sideFaders = new Map();
 // are - set from their own ⚙, remembered on this computer
 const STRIP_DEFAULT = { place: "bottom", dir: "h", size: "m" };
 function stripLook() {
-  try { return { ...STRIP_DEFAULT, ...JSON.parse(localStorage.getItem("jarvis.qbStrip") || "{}") }; } catch { return { ...STRIP_DEFAULT }; }
+  try { return { ...STRIP_DEFAULT, ...JSON.parse(localStorage.getItem("haze.qbStrip") || "{}") }; } catch { return { ...STRIP_DEFAULT }; }
 }
 function setStripLook(k, v) {
   const cur = { ...stripLook(), [k]: v };
-  try { localStorage.setItem("jarvis.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
+  try { localStorage.setItem("haze.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
   applyStripLook();
 }
 function applyStripLook() {
@@ -1456,7 +1456,7 @@ export function initQuickButtons() {
   $("#qb-lock").addEventListener("click", () => {
     locked = !locked;
     if (locked) editing = false;
-    try { localStorage.setItem("jarvis.qb.locked", locked ? "1" : "0"); } catch { /* private window */ }
+    try { localStorage.setItem("haze.qb.locked", locked ? "1" : "0"); } catch { /* private window */ }
     toast(locked ? "Layout locked on this device - buttons play, nothing can be moved or edited" : "Layout unlocked", "ok");
     render(true);
   });

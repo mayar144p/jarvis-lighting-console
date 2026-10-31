@@ -153,7 +153,7 @@ for the other tools (`gigcheck`, `libsweep`, `vischeck`, `brands.py`...).
     test, strobe), `engine_looks` (the 3D feed), `engine_rig` (venue,
     locks), `engine_select` (groups), `engine_program`, `engine_desk`;
   - `app/merge.py` is the HTP / LTP merge and the overrides;
-  - fixture files come from `app/fixlib` (OFL, QLC and jarvis libraries).
+  - fixture files come from `app/fixlib` (OFL, QLC and haze libraries).
 - **Server:** `app/main.py`.
 - **Screen:** `web/app/*.js` (programmer, fxpanel, quickbuttons,
   venuepanel, lightdialogs...), the 3D in `web/js/stage/`, styles in

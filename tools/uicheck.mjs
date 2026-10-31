@@ -46,7 +46,7 @@ try { ({ chromium } = await import("playwright")); } catch {
 const exe = process.env.CHROMIUM || (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 
 // ------------------------------------------------------------- the server
-const scratch = mkdtempSync(join(tmpdir(), "jarvis-ui-"));
+const scratch = mkdtempSync(join(tmpdir(), "haze-ui-"));
 const server = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], {
   cwd: ROOT, stdio: ["ignore", "ignore", "pipe"],
   env: { ...process.env, PORT: String(PORT), CONSOLE_AUTORESTORE: "false", CONSOLE_AUTOSAVE: "false",
@@ -386,7 +386,7 @@ for (const [width, tall] of SIZES) {
   // (and with Max the standard 3D quality now, at every size)
   const fast = BIG || !GPU;
   await p.addInitScript((fast) => {
-    try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.removeItem("jarvis.bottom"); if (fast) localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); } catch { /* fine */ }
+    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); if (fast) localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
   }, fast);
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);

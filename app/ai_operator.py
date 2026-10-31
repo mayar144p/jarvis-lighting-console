@@ -256,5 +256,5 @@ def _spawn(eng, chat=None) -> None:
                 tick(eng, chat=chat)
             except Exception as exc:            # noqa: BLE001 - never die silently
                 _st(eng)["error"] = f"{exc}"
-    th = eng._op_thread = threading.Thread(target=loop, name="jarvis-ai-operator", daemon=True)
+    th = eng._op_thread = threading.Thread(target=loop, name="haze-ai-operator", daemon=True)
     th.start()

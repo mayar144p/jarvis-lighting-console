@@ -43,7 +43,7 @@ export function plannedSeconds(mode, asked, timelineLength) {
 
 /** "Club night-2026-10-08-21-30.mp4": the show's name, no characters a disk refuses. */
 export function fileName(show, when, ext) {
-  const base = String(show || "").replace(/\.json$/i, "").replace(/^.*[\\/]/, "").replace(/[^\w .-]+/g, "").trim().slice(0, 60) || "jarvis";
+  const base = String(show || "").replace(/\.json$/i, "").replace(/^.*[\\/]/, "").replace(/[^\w .-]+/g, "").trim().slice(0, 60) || "haze";
   const d = new Date(when);
   const p = (n) => String(n).padStart(2, "0");
   return `${base}-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}-${p(d.getMinutes())}.${ext}`;

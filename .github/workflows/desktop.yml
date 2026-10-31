@@ -1,7 +1,7 @@
 name: Desktop app (installers)
 
 # Builds the desktop app with the engine, a Python of its own and the
-# offline AI's engine (llama.cpp) inside (nothing to install first) - Jarvis Setup.exe for Windows, Jarvis.dmg for
+# offline AI's engine (llama.cpp) inside (nothing to install first) - Haze Setup.exe for Windows, Haze.dmg for
 # Mac - then runs the app check on each built app.  The installer is kept as this run's artifact (Actions -> this
 # run -> Artifacts), private to the repo.  Run it by hand (Actions -> this
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
@@ -64,11 +64,11 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: |
           npm install --no-save --no-audit --no-fund playwright
-          $env:DESKTOP_EXE = (Resolve-Path desktop/dist/win-unpacked/Jarvis.exe).Path
+          $env:DESKTOP_EXE = (Resolve-Path desktop/dist/win-unpacked/Haze.exe).Path
           node tools/desktopcheck.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: Jarvis-Windows-installer
+          name: Haze-Windows-installer
           path: desktop/dist/*.exe
           retention-days: 14
 
@@ -118,9 +118,9 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: |
           npm install --no-save --no-audit --no-fund playwright
-          DESKTOP_EXE="$(ls -d desktop/dist/mac*/Jarvis.app)/Contents/MacOS/Jarvis" node tools/desktopcheck.mjs
+          DESKTOP_EXE="$(ls -d desktop/dist/mac*/Haze.app)/Contents/MacOS/Haze" node tools/desktopcheck.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: Jarvis-Mac-installer
+          name: Haze-Mac-installer
           path: desktop/dist/*.dmg
           retention-days: 14

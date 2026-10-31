@@ -22,7 +22,7 @@ let aimNow = null;                      // {x, z}: where the desk has the beams 
 // the map turned: "audience" (the stage at the top), "dj" (the way the DJ
 // faces at the top, the DJ's left on the left) or a turn in degrees;
 // remembered on this computer
-let mapTurn = (() => { try { return localStorage.getItem("jarvis.mapTurn") || "audience"; } catch (e) { return "audience"; } })();
+let mapTurn = (() => { try { return localStorage.getItem("haze.mapTurn") || "audience"; } catch (e) { return "audience"; } })();
 let setting = "";                       // "booth" / "centre" / "front": the next tap on the map sets it
 const orient = () => (state.snap && state.snap.venue_orient) || { booth: [0, 1.7, 0], centre: [0, 6], front: 0 };
 const turnDeg = () => (mapTurn === "audience" ? 0 : mapTurn === "dj" ? 180 + orient().front : +mapTurn || 0) % 360;
@@ -301,7 +301,7 @@ export function aimBlock(...after) {
 
 function turnMap(v) {
   mapTurn = v;
-  try { localStorage.setItem("jarvis.mapTurn", v); } catch (e) { /* private window */ }
+  try { localStorage.setItem("haze.mapTurn", v); } catch (e) { /* private window */ }
   for (const box of document.querySelectorAll(".aim-map")) box.replaceChildren(floorMap());
   queueMicrotask(drawTarget);
   for (const c of document.querySelectorAll(".am-turn")) c.classList.toggle("on", c.dataset.turn === v);

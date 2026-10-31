@@ -21,7 +21,7 @@ let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
 
 const srv = spawn(process.platform === "win32" ? "python" : "python3", ["-m", "app.main"], { stdio: "ignore",
-  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-safety-")),
+  env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-safety-")),
     // real output (not simulated) so Live / Hold to stop are real - to this
     // computer only (127.0.0.1): nothing leaves it
     CONSOLE_AUTOSAVE: "false", CONSOLE_DRY_RUN: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
@@ -40,7 +40,7 @@ const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: p
 const p = await (await browser.newContext({ viewport: { width: 1366, height: 768 } })).newPage();
 const errs = [];
 p.on("pageerror", (e) => errs.push(e.message));
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); } catch {} });
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch {} });
 await p.goto(BASE);
 await sleep(3000);
 const ws = (w) => p.evaluate((w) => import("/app/workspaces.js").then((m) => m.useWorkspace(w, { quiet: true })), w);
@@ -122,7 +122,7 @@ await act("set_output", { state: 0 });
 // a touch screen: the options buttons that show on hover are there
 const touch = await browser.newContext({ viewport: { width: 1366, height: 768 }, hasTouch: true, isMobile: false });
 const tp = await touch.newPage();
-await tp.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.quality", "fast"); localStorage.setItem("jarvis.qualityV", "2"); localStorage.setItem("jarvis.noLockAsk", "1"); localStorage.setItem("jarvis.gig", "0"); } catch {} });
+await tp.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); localStorage.setItem("haze.gig", "0"); } catch {} });
 await tp.emulateMedia({ });
 await tp.goto(BASE);
 await sleep(3000);

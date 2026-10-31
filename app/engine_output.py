@@ -121,13 +121,13 @@ class OutputMixin:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
-        thread = threading.Thread(target=self._run, name="jarvis-dmx",
+        thread = threading.Thread(target=self._run, name="haze-dmx",
                                   daemon=True)
         self._thread = thread
         thread.start()
         dog = self.__dict__.get("_watchdog")
         if dog is None or not dog.is_alive():
-            dog = threading.Thread(target=self._watch, name="jarvis-watchdog", daemon=True)
+            dog = threading.Thread(target=self._watch, name="haze-watchdog", daemon=True)
             self.__dict__["_watchdog"] = dog
             dog.start()
 
@@ -361,7 +361,7 @@ class OutputMixin:
         if now - self._auto_host_at > self.AUTO_HOST_TTL and not self._auto_host_busy:
             self._auto_host_busy = True
             threading.Thread(target=self._refresh_auto_host, daemon=True,
-                             name="jarvis-netif").start()
+                             name="haze-netif").start()
         if self._auto_host:
             return self._auto_host
         host = config.DMX_HOST if config.DMX_TRANSPORT == "artnet" else ""

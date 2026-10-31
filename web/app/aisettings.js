@@ -44,7 +44,7 @@ export function aiPanel() {
       const x = new XMLHttpRequest();
       x.open("POST", "/api/ai/pack?name=" + encodeURIComponent(f.name));
       const t = token();
-      if (t) x.setRequestHeader("X-Jarvis-Token", t);
+      if (t) x.setRequestHeader("X-Haze-Token", t);
       x.upload.onprogress = (e) => { if (e.lengthComputable) packNote.textContent = `Copying ${f.name}: ${Math.round(e.loaded * 100 / e.total)} %`; };
       x.onload = () => {
         let r = {};

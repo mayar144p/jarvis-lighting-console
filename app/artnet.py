@@ -14,7 +14,7 @@ Packet layout follows the Art-Net 4 specification (ArtDmx message):
   18      512   Data      DMX channel values 0-255
 
 Port-Address = Net<<8 | SubUni, composed of Net (7 bits), Sub-Net (4) and
-Universe (4).  Jarvis patches universes 1-based while Art-Net is 0-based:
+Universe (4).  Haze patches universes 1-based while Art-Net is 0-based:
 patch universe 1 -> Port-Address 0 -> SubUni 0.  DMX_NET shifts the whole
 patch up by Net; universes beyond 256 carry into the next Net.
 

@@ -1,4 +1,4 @@
-"""Jarvis desktop server - stdlib only.
+"""Haze desktop server - stdlib only.
 
 Run:  python app/main.py   (or run-desktop.bat / run-desktop.sh for the app)
 Then: http://localhost:8787
@@ -179,7 +179,7 @@ def audio_path(ident: str) -> Path | None:
 SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 SCREEN_MAX = 500 * 1024 * 1024
-UPLOAD_TYPE = "application/x-jarvis-upload"
+UPLOAD_TYPE = "application/x-haze-upload"
 RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import", "/api/console/unpack"})
 
 
@@ -276,7 +276,7 @@ def underlay_path(ident: str) -> Path | None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Jarvis/0.1"
+    server_version = "Haze/0.1"
     protocol_version = "HTTP/1.1"
 
     def handle(self) -> None:
@@ -411,7 +411,7 @@ class Handler(BaseHTTPRequestHandler):
         token = config.CONSOLE_TOKEN
         if not token:
             return not config.requires_token()
-        return hmac.compare_digest(self.headers.get("X-Jarvis-Token") or "", token)
+        return hmac.compare_digest(self.headers.get("X-Haze-Token") or "", token)
 
     # Everything under /api/ needs the token unless it is listed here: a new
     # endpoint is private until deliberately made public.  These two are
@@ -1597,7 +1597,7 @@ def main() -> None:
         print("* midi: " + (f"open ({midi_info.get('device')})"
                             if midi_info.get("open")
                             else (midi_info.get("error") or "idle")))
-    if os.environ.get("JARVIS_DESKTOP") == "1":
+    if os.environ.get("HAZE_DESKTOP") == "1":
         # started by the desktop app: when it closes (or crashes) its end of
         # our stdin closes, and the desk shuts down cleanly - the show saved,
         # the outputs stopped - instead of being killed mid-write

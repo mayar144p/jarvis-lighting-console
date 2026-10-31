@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Jarvis as a desktop app - Mac/Linux (run-desktop.bat is the Windows one).
+# Haze as a desktop app - Mac/Linux (run-desktop.bat is the Windows one).
 # The first time it fetches Electron (about 100 MB).
 cd "$(dirname "$0")/desktop" || exit 1
 if [ ! -d node_modules/electron ]; then

@@ -1,4 +1,4 @@
-# Jarvis — secrets, generated data, and machine noise.
+# Haze — secrets, generated data, and machine noise.
 #
 # The one rule this file exists to enforce: **`.env` never gets committed.**
 # It holds a live LLM_API_KEY and a GDTF Share account and password, in
@@ -122,7 +122,7 @@ docs/backup/
 node_modules/
 
 # the desktop shortcut run-desktop.bat makes (points at this computer's copy)
-Jarvis.lnk
+Haze.lnk
 
 # the screen check's report and screenshots (node tools/uicheck.mjs screencheck)
 screencheck/

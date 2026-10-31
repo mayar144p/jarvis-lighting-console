@@ -100,10 +100,10 @@ function planView(plan, onApply) {
 // With an AI key: a loop of tools on the desk (it looks, acts, checks the
 // real lights, asks, remembers).  Without one: the plan-first copilot below.
 let session = "";
-try { session = sessionStorage.getItem("jarvis.ai.session") || ""; } catch (e) { /* ignore */ }
+try { session = sessionStorage.getItem("haze.ai.session") || ""; } catch (e) { /* ignore */ }
 if (!session) {
   session = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  try { sessionStorage.setItem("jarvis.ai.session", session); } catch (e) { /* ignore */ }
+  try { sessionStorage.setItem("haze.ai.session", session); } catch (e) { /* ignore */ }
 }
 let attached = null;           // a photo to match (data URL), for the next message
 
@@ -156,7 +156,7 @@ async function assist(text) {
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
-    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.jarvisStage && !window.jarvisStage.failed) });
+    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed) });
     // the AI asked to see its changes: let the 3D draw them, then send a picture
     while (r.ok && r.need_view) {
       thinking.firstChild.textContent = "Looking at the 3D…";
@@ -432,9 +432,9 @@ export const copilotOpen = () => !$("#copilot").classList.contains("hidden");
 // its left edge sizes it (kept on this computer); double-click: back to normal
 function wireCopilotWidth() {
   const box = $("#copilot");
-  const keep = (w) => { try { if (w) localStorage.setItem("jarvis.copilotW", String(w)); else localStorage.removeItem("jarvis.copilotW"); } catch (e) { /* private window */ } };
+  const keep = (w) => { try { if (w) localStorage.setItem("haze.copilotW", String(w)); else localStorage.removeItem("haze.copilotW"); } catch (e) { /* private window */ } };
   const set = (w) => { if (w) box.style.setProperty("--copilot-w", `${w}px`); else box.style.removeProperty("--copilot-w"); };
-  try { set(+localStorage.getItem("jarvis.copilotW") || 0); } catch (e) { /* private window */ }
+  try { set(+localStorage.getItem("haze.copilotW") || 0); } catch (e) { /* private window */ }
   const grip = h("div.copilot-grip", { title: "Drag to make the Copilot wider or narrower (double-click: back to normal)" });
   box.append(grip);
   let x0 = 0, w0 = 0, on = false;

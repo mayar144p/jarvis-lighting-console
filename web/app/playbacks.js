@@ -15,7 +15,7 @@ let gm = null;
 let focusPb = 1;
 const PER_PAGE = 10;
 let pbPage = 1;
-try { pbPage = Math.max(1, parseInt(localStorage.getItem("jarvis.pbpage") || "1", 10) || 1); } catch (e) { /* private window */ }
+try { pbPage = Math.max(1, parseInt(localStorage.getItem("haze.pbpage") || "1", 10) || 1); } catch (e) { /* private window */ }
 
 export const focusedPlayback = () => focusPb;
 
@@ -24,7 +24,7 @@ export const focusedPlayback = () => focusPb;
 function quickRecord(e, n) {
   if (!e.shiftKey) return openCueDialog(n);
   let keep = true;
-  try { keep = localStorage.getItem("jarvis.clearAfterRecord") !== "1"; } catch (err) { /* fine */ }
+  try { keep = localStorage.getItem("haze.clearAfterRecord") !== "1"; } catch (err) { /* fine */ }
   return run("record_cue", { playback: n, keep }, { toast: true });
 }
 
@@ -226,7 +226,7 @@ function renderPages(pbs) {
     const used = on.some((pb) => (pb.stack || []).length);
     return h("button" + (p === pbPage ? ".on" : "") + (live ? ".live" : "") + (used ? "" : ".unused"), {
       title: `Playbacks ${i * PER_PAGE + 1}-${p * PER_PAGE}` + (live ? ` (${live} running)` : ""),
-      onclick: () => { pbPage = p; try { localStorage.setItem("jarvis.pbpage", String(p)); } catch (e) { /* ignore */ } render(); },
+      onclick: () => { pbPage = p; try { localStorage.setItem("haze.pbpage", String(p)); } catch (e) { /* ignore */ } render(); },
     }, `P${p}`, live ? h("span.pg-run", String(live)) : null);
   }));
   const running = pbs.filter((pb) => pb.active).length;
@@ -421,7 +421,7 @@ const DOCK_MIN = 140;
 function dockHeight(mode, px) {
   const ws = document.querySelector(".workspace");
   if (!ws) return;
-  const key = "jarvis.dockh." + mode;
+  const key = "haze.dockh." + mode;
   if (px === undefined) {
     try { px = +localStorage.getItem(key) || 0; } catch (e) { px = 0; }
   } else {
@@ -467,13 +467,13 @@ function wireModes() {
     $("#tl").hidden = mode !== "timeline";
     setTimelineVisible(mode === "timeline");
     document.body.dataset.bottom = mode;
-    try { localStorage.setItem("jarvis.bottom", mode); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("haze.bottom", mode); } catch (e) { /* ignore */ }
     dockHeight(mode);
     window.dispatchEvent(new Event("resize"));
   };
   modes.forEach((b) => b.addEventListener("click", () => set(b.dataset.mode)));
   let saved = "faders";
-  try { saved = localStorage.getItem("jarvis.bottom") || saved; } catch (e) { /* ignore */ }
+  try { saved = localStorage.getItem("haze.bottom") || saved; } catch (e) { /* ignore */ }
   set(modes.some((b) => b.dataset.mode === saved) ? saved : "faders");
 }
 
@@ -538,16 +538,16 @@ export function initPlaybacks() {
   const setFold = (folded) => {
     grp.classList.toggle("folded", folded);
     fold.setAttribute("aria-expanded", String(!folded));
-    keep("jarvis.grpFold", folded ? "1" : "");
+    keep("haze.grpFold", folded ? "1" : "");
   };
   const setWidth = (w) => {
     if (w) grp.style.width = `${Math.round(w)}px`; else grp.style.removeProperty("width");
-    keep("jarvis.grpW", w ? String(Math.round(w)) : "");
+    keep("haze.grpW", w ? String(Math.round(w)) : "");
   };
-  const setSide = (left) => { document.body.classList.toggle("masters-left", left); keep("jarvis.mastersSide", left ? "left" : ""); };
-  setFold(read("jarvis.grpFold") === "1");
-  if (+read("jarvis.grpW")) grp.style.width = `${+read("jarvis.grpW")}px`;
-  setSide(read("jarvis.mastersSide") === "left");
+  const setSide = (left) => { document.body.classList.toggle("masters-left", left); keep("haze.mastersSide", left ? "left" : ""); };
+  setFold(read("haze.grpFold") === "1");
+  if (+read("haze.grpW")) grp.style.width = `${+read("haze.grpW")}px`;
+  setSide(read("haze.mastersSide") === "left");
   let drag = null, holdT = 0;
   const sideMenu = (anchor) => menu(anchor, [
     { label: document.body.classList.contains("masters-left") ? "Masters on the right" : "Masters on the left", run: () => setSide(!document.body.classList.contains("masters-left")) },

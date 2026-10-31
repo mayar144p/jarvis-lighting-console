@@ -133,7 +133,7 @@ def test_button_midi() -> None:
     check("the editor learns a note from the MIDI input", "learnMidi" in qb and "last_note" in qb, "")
     wm = (ROOT / "web" / "app" / "webmidi.js").read_text(encoding="utf-8")
     check("a controller on this computer plays buttons too (Web MIDI, off until switched on)",
-          "requestMIDIAccess" in wm and "onNote(" in qb and "jarvis.webmidi" in wm, "")
+          "requestMIDIAccess" in wm and "onNote(" in qb and "haze.webmidi" in wm, "")
     check("speed by touch: the tile's speed badge opens the menu", 'closest(".qrate")' in qb, "")
 
 
@@ -148,7 +148,7 @@ def test_group_flash_laser_button() -> None:
         tmp = Path(td)
         db = tmp / "f.db"
         fixtures.store_parsed(db, fixlib.load("qlc", "Eurolite/Eurolite-LED-PARty-RGBW.qxf"), "qlc")
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="LED PARty RGBW", qty=2, universe=1, address=1)
@@ -587,7 +587,7 @@ def test_room_fit() -> None:
             e.shutdown()
     vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
     check("an empty desk asks which venue at start-up", "Where are you playing tonight?" in vp
-          and "jarvis.venuepick" in vp, "")
+          and "haze.venuepick" in vp, "")
 
 
 def test_look_types() -> None:
@@ -1072,7 +1072,7 @@ def test_dmx_clashes() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "d.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=2)
@@ -1160,7 +1160,7 @@ def test_my_venues() -> None:
 
 
 def test_big_rig_groups() -> None:
-    """With 20+ lights, groups Jarvis makes by itself (by kind of light and
+    """With 20+ lights, groups Haze makes by itself (by kind of light and
     by the truss they hang on), odd / even / left / right splits of any
     selection, buttons aimed at those groups, a folded list and a box
     select on the stage."""
@@ -1218,7 +1218,7 @@ def test_big_rig_groups() -> None:
     check("gig mode: 44 px controls, a switch in Settings; on by itself only on a touch-only screen with no choice saved",
           "body.gig .btn" in css and "min-height: calc(44px * var(--ctl))" in css
           and 'gig === null && matchMedia("(pointer: coarse) and (hover: none)").matches' in mj
-          and "jarvis.gig" in dialogs_js(), "")
+          and "haze.gig" in dialogs_js(), "")
     del html
 
 
@@ -1357,7 +1357,7 @@ def test_arm_for_set() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "a.db"
-        fixtures.store_parsed(db, fixlib.load("jarvis", "laserworld/beambar-10b-mk3"), "jarvis:laserworld/beambar-10b-mk3")
+        fixtures.store_parsed(db, fixlib.load("haze", "laserworld/beambar-10b-mk3"), "haze:laserworld/beambar-10b-mk3")
         e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
         try:
             e.act("add_heads", query="BeamBar 10B MK3", qty=1, universe=1, address=25)
@@ -1460,7 +1460,7 @@ def test_aux_channels() -> None:
     check("heads on/off, auto programs and program speed are controllable",
           all(det[n]["role"].startswith("aux") for n in (28, 29, 30)), "")
     check("the maintenance channel (settings) stays untouched", det[33]["role"] == "unused", det[33]["role"])
-    laser = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("jarvis", "laserworld/beambar-10b-mk3")[0]))
+    laser = fixlib.apply_aux(fixlib.apply_fx(fixlib.load("haze", "laserworld/beambar-10b-mk3")[0]))
     check("effects and lasers are left to their own roles",
           not any(d["role"].startswith("aux") for d in laser["modes"][0]["detail"]), "")
     with tempfile.TemporaryDirectory() as td:
@@ -1482,7 +1482,7 @@ def test_aux_channels() -> None:
             check("and records into a cue", "aux1" in json.dumps(e.playbacks[0]["stack"]), "")
         finally:
             e.shutdown()
-        # a Wave stored by an older Jarvis, its original file gone (a GDTF
+        # a Wave stored by an older Haze, its original file gone (a GDTF
         # Share download no longer cached): upgraded in the database on start
         old = tmp / "old.db"
         from app import fixlib as _fl

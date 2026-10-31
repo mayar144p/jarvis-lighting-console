@@ -5,7 +5,7 @@
 //
 //   cd desktop && npm install && cd .. && node tools/desktopcheck.mjs
 //   (Linux with no screen: xvfb-run -a node tools/desktopcheck.mjs)
-//   DESKTOP_EXE=path/to/Jarvis.exe node tools/desktopcheck.mjs   (a built app)
+//   DESKTOP_EXE=path/to/Haze.exe node tools/desktopcheck.mjs   (a built app)
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, networkInterfaces } from "node:os";
@@ -18,21 +18,21 @@ try { ({ _electron } = await import("playwright")); } catch {
 }
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DESK = join(ROOT, "desktop");
-// DESKTOP_EXE: check an installed / built app (Jarvis.exe) instead of the repo's
+// DESKTOP_EXE: check an installed / built app (Haze.exe) instead of the repo's
 const PACKED = process.env.DESKTOP_EXE || "";
 const exe = PACKED || join(DESK, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
 const check = (name, ok, extra = "") => { console.log((ok ? "  ok   " : "  FAIL ") + name + (ok ? "" : "  " + extra)); if (!ok) fails++; };
 
-const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "jarvis-desk-")), CONSOLE_AUTOSAVE: "false",
+const env = { ...process.env, CONSOLE_DATA_DIR: mkdtempSync(join(tmpdir(), "haze-desk-")), CONSOLE_AUTOSAVE: "false",
   DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false", ELECTRON_USER_DATA: "",
   // as on an operator's PC: PYTHON names a folder with no Python in it - the app must find the real one
-  PYTHON: mkdtempSync(join(tmpdir(), "jarvis-not-python-")) };
+  PYTHON: mkdtempSync(join(tmpdir(), "haze-not-python-")) };
 // CHECKS_GPU=1: the computer's graphics card; otherwise software drawing
 // (servers / cloud with no GPU), like the other browser checks
 const GPU = process.env.CHECKS_GPU === "1";
-const UD = mkdtempSync(join(tmpdir(), "jarvis-desk-ud-"));
+const UD = mkdtempSync(join(tmpdir(), "haze-desk-ud-"));
 const args = [...(process.platform === "linux" ? ["--no-sandbox"] : []),
   ...(GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
   `--user-data-dir=${UD}`, ...(PACKED ? [] : [DESK])];
@@ -66,16 +66,16 @@ if (process.platform === "win32") {
 }
 
 // a save (photo, export, bug report) lands in Downloads - no Save As box in the middle of the desk
-const DL = mkdtempSync(join(tmpdir(), "jarvis-dl-"));
+const DL = mkdtempSync(join(tmpdir(), "haze-dl-"));
 await app.evaluate(({ app: a }, dir) => a.setPath("downloads", dir), DL);
 await win.evaluate(() => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["hello"], { type: "text/plain" }));
-  a.download = "jarvis-save-check.txt";
+  a.download = "haze-save-check.txt";
   a.click();
 });
 let saved = false;
-for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "jarvis-save-check.txt")); if (!saved) await sleep(250); }
+for (let i = 0; i < 20 && !saved; i++) { saved = existsSync(join(DL, "haze-save-check.txt")); if (!saved) await sleep(250); }
 check("a save goes straight into Downloads (no Save As box)", saved, DL);
 
 // no system title bar: the desk's own bar has minimise / maximise / close and
@@ -101,7 +101,7 @@ await win.click(".topbar .brand");
 await sleep(600);
 const deskMenu = await win.evaluate(() => document.body.innerText);
 check("the logo opens the Desk menu (Show mode, the 3D window, keep it on top, close)",
-  /Show mode/.test(deskMenu) && /3D view \(its own window\)/.test(deskMenu) && /Keep the 3D view on top/.test(deskMenu) && /Close Jarvis/.test(deskMenu), deskMenu.slice(0, 300));
+  /Show mode/.test(deskMenu) && /3D view \(its own window\)/.test(deskMenu) && /Keep the 3D view on top/.test(deskMenu) && /Close Haze/.test(deskMenu), deskMenu.slice(0, 300));
 await win.keyboard.press("Escape");
 
 // Show mode from the menu: the 3D, the programmer and the playbacks each in a window
@@ -187,7 +187,7 @@ await win2.waitForSelector("#app", { timeout: 60000 });
 const lan = Object.values(networkInterfaces()).flat().find((i) => i && i.family === "IPv4" && !i.internal);
 const where = `http://${lan ? lan.address : "127.0.0.1"}:${PORT}/`;
 check("phones on: the desk answers the network on its fixed port", new URL(win2.url()).port === String(PORT), win2.url());
-const st = async (k) => fetch(where + "api/console", { headers: k ? { "X-Jarvis-Token": k } : {} })
+const st = async (k) => fetch(where + "api/console", { headers: k ? { "X-Haze-Token": k } : {} })
   .then((r) => r.status).catch((e) => String(e));
 check("from the network, no code is refused", (await st("")) === 401, String(await st("")));
 check("from the network, the pairing code gets in", (await st(CODE)) === 200, String(await st(CODE)));

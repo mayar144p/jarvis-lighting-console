@@ -34,13 +34,13 @@ const knobs = { direction: 1, arc: 360, size: 20, secs: 8, spread: 0, lock: 0, a
 const KNOB_DEFAULTS = JSON.parse(JSON.stringify(knobs));
 const PER_LIGHT = ["direction", "arc", "size", "secs", "spread", "lock", "across", "panA", "panB", "tiltA", "tiltB",
   "mode", "fullPan", "fullTilt", "cells", "tiltSecs", "panSecs", "mult"];
-let perLight = (() => { try { return JSON.parse(localStorage.getItem("jarvis.moveKnobs") || "{}"); } catch { return {}; } })();
+let perLight = (() => { try { return JSON.parse(localStorage.getItem("haze.moveKnobs") || "{}"); } catch { return {}; } })();
 let knobsFor = "";
 function rememberKnobs() {
   const saved = {};
   for (const k of PER_LIGHT) saved[k] = JSON.parse(JSON.stringify(knobs[k]));
   for (const x of movers()) perLight[x.head_no] = saved;
-  try { localStorage.setItem("jarvis.moveKnobs", JSON.stringify(perLight)); } catch { /* private window */ }
+  try { localStorage.setItem("haze.moveKnobs", JSON.stringify(perLight)); } catch { /* private window */ }
 }
 function loadKnobs(sel) {
   const first = sel[0];
@@ -66,7 +66,7 @@ let own = { key: "", attrs: [] };         // the selection's own motor channels 
 // A light's own motor channels (a Wave 360's continuous pan rotation, its
 // built-in tilt programs, their speeds) arrive as ranges like "1-127
 // counter-clockwise with decreasing speed".  Here they become ↺ ■ ↻ and a
-// slow-to-fast slider; Jarvis works out the value inside the right range.
+// slow-to-fast slider; Haze works out the value inside the right range.
 const OWN_RE = /rotat|spin|auto ?tilt|built.?in|program|macro|movement|moves?\b/i;
 const slowFirst = (text) => !/decreas|fast\s*(to|->|→|-)\s*slow/i.test(text || "");
 

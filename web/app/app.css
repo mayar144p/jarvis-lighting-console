@@ -1,49 +1,49 @@
-/* One design system for the whole desk ("graphite console").
+/* One design system for the whole desk (Haze: "midnight").
  *
  * Dark by necessity (it runs in a dark room), dense by design (a rig has
  * hundreds of heads), and loud only where it matters: the output state,
- * GO and BLACKOUT.  Neutral greys with no tint, so the light colours on
- * screen are the only strong colours.  Everything is a token, and a colour
- * means one thing everywhere:
- *   indigo = selection / focus / the main action
+ * GO and BLACKOUT.  Blue-black panels with only a faint tint, so the light
+ * colours on screen stay the strongest colours.  Everything is a token, and
+ * a colour means one thing everywhere:
+ *   cyan   = selection / focus / the main action (Haze's own colour)
  *   red    = live output / danger        amber = blind / careful
- *   green  = go / running / ok           rose  = the AI
+ *   green  = go / running / ok           lavender = the AI
  * and, as on a pro console, each attribute family has its own colour on
  * its tab, its palettes and wherever the programmer shows it:
- *   dimmer = yellow   position = blue   colour = a rainbow   beam = teal
+ *   dimmer = yellow   position = blue   colour = a rainbow   beam = green
  *   effects = violet
  * Every text colour is at least 4.5:1 on every surface it sits on.
  */
 :root {
-  --bg: #0b0b0d;
-  --bg-2: #101013;
-  --surface: #141417;
-  --surface-2: #1b1b1f;
-  --surface-3: #24242a;
-  --border: #232328;
-  --border-2: #303037;
-  --text: #ececf0;
-  --text-2: #b8b8c2;
-  --muted: #8e8e9a;
-  --accent: #8b8dff;
-  --accent-2: #7577f5;
-  --on-accent: #0e0e1a;
-  --accent-bg: rgba(139, 141, 255, 0.14);
-  --live: #ff5c5c;
-  --live-strong: #dc3c42;
-  --live-bg: rgba(255, 92, 92, 0.13);
-  --blind: #f5a524;
-  --blind-bg: rgba(245, 165, 36, 0.12);
-  --ok: #3dd68c;
-  --ok-bg: rgba(61, 214, 140, 0.12);
-  --ai: #f472b6;
-  --ai-bg: rgba(244, 114, 182, 0.13);
+  --bg: #070b10;
+  --bg-2: #0a0f16;
+  --surface: #0d131b;
+  --surface-2: #131b25;
+  --surface-3: #1b2531;
+  --border: #1a2430;
+  --border-2: #26333f;
+  --text: #e6f1fa;
+  --text-2: #b0c2d3;
+  --muted: #8196a9;
+  --accent: #2fd6f5;
+  --accent-2: #14bfe0;
+  --on-accent: #021318;
+  --accent-bg: rgba(47, 214, 245, 0.14);
+  --live: #ff5c6c;
+  --live-strong: #e03c4e;
+  --live-bg: rgba(255, 92, 108, 0.13);
+  --blind: #ffb341;
+  --blind-bg: rgba(255, 179, 65, 0.12);
+  --ok: #45e0a0;
+  --ok-bg: rgba(69, 224, 160, 0.12);
+  --ai: #c79bff;
+  --ai-bg: rgba(199, 155, 255, 0.13);
   /* attribute families */
   --f-dim: #f2c94c;
   --f-pos: #4ea1ff;
   --f-col: linear-gradient(90deg, #ff4d4d, #ffd24d, #4dff88, #4dd2ff, #9a4dff, #ff4dd2);
   --f-col-solid: #ff6ad5;
-  --f-beam: #2dd4bf;
+  --f-beam: #3ddc84;
   --f-fx: #b18cff;
   --warn: var(--blind);
   --bad: var(--live);
@@ -233,7 +233,8 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 }
 .brand { display: flex; align-items: center; gap: 8px; padding-right: 4px; }
 .brand svg { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); fill: var(--accent); }
-.brand svg .beam { opacity: .45; }
+.brand svg .side { opacity: .55; }
+.brand svg .src { fill: var(--text); }
 .brand-name { font-weight: 700; letter-spacing: .04em; font-size: var(--fs-m); color: var(--text); }
 .tb-sep { width: 1px; height: calc(22px * var(--ctl)); background: var(--border-2); margin: 0 4px; }
 .tb-btn {
@@ -2469,7 +2470,7 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 .pl-svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
 .pl-svg.designing .pl-head { cursor: move; }
 .pl-room { fill: none; stroke: #3b3d46; stroke-width: 0.04; }
-.pl-stage { fill: rgba(139, 141, 255, .07); stroke: #4a4c58; stroke-width: 0.03; }
+.pl-stage { fill: color-mix(in srgb, var(--accent) 7%, transparent); stroke: #4a4c58; stroke-width: 0.03; }
 .pl-zone { fill: rgba(255, 255, 255, .03); stroke: #33353d; stroke-width: 0.02; stroke-dasharray: 0.15 0.1; }
 .pl-zone.keepout { fill: rgba(255, 45, 45, .18); stroke: #ff5a5a; stroke-dasharray: none; }
 .pl-obj { fill: rgba(255, 255, 255, .06); stroke: #6b6f7c; stroke-width: 0.03; }
@@ -2480,7 +2481,7 @@ body.gig .pb-pages button { min-width: calc(44px * var(--ctl)); min-height: calc
 .pl-head text { fill: #fff; text-anchor: middle; font-weight: 700; font-family: inherit; paint-order: stroke; stroke: #000; stroke-width: 0.04; pointer-events: none; }
 .pl-head { cursor: pointer; }
 .pl-head.on rect, .pl-head.on circle { fill: var(--accent); stroke: #fff; }
-.pl-rect { fill: rgba(139, 141, 255, .12); stroke: var(--accent); stroke-width: 0.03; }
+.pl-rect { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 0.03; }
 /* ---- the 3D's toolbar (a pro visualiser's): mouse mode, fit, the views,
    what is drawn, Pers / Orth and the frame rate - in the desk's colours ---- */
 .vis-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px;
@@ -2588,7 +2589,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { box-shadow: 
 .teach-left { display: flex; flex-direction: column; gap: 8px; }
 .teach-plan { width: 100%; height: calc(220px * var(--ctl)); background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .tp-room { fill: rgba(255, 255, 255, .03); stroke: #6b6f7c; stroke-width: .06; }
-.tp-zone { fill: rgba(139, 141, 255, .10); stroke: rgba(139, 141, 255, .6); stroke-width: .05; }
+.tp-zone { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: color-mix(in srgb, var(--accent) 60%, transparent); stroke-width: .05; }
 .tp-zone.keepout { fill: rgba(255, 45, 45, .22); stroke: #ff5a5a; }
 .tp-new { fill: rgba(61, 214, 140, .15); stroke: var(--ok); stroke-width: .07; stroke-dasharray: .25 .15; }
 .tp-corner { fill: var(--ok); }
@@ -2695,7 +2696,7 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
 /* Line up: tap a spot on a plan of the room */
 .lu-plan { width: 100%; max-width: 360px; height: auto; max-height: 260px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: crosshair; display: block; }
 .lu-room { fill: rgba(255, 255, 255, .03); stroke: #6b6f7c; stroke-width: .06; }
-.lu-zone { fill: rgba(139, 141, 255, .10); stroke: rgba(139, 141, 255, .5); stroke-width: .05; }
+.lu-zone { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: color-mix(in srgb, var(--accent) 50%, transparent); stroke-width: .05; }
 .lu-stage { fill: rgba(255, 255, 255, .08); stroke: #6b6f7c; stroke-width: .05; }
 .lu-txt { fill: var(--muted); font-size: .7px; text-anchor: middle; }
 .lu-planbox { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

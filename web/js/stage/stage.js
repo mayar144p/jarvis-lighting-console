@@ -1,4 +1,4 @@
-// The Jarvis stage: a live 3D view of the rig.
+// The Haze stage: a live 3D view of the rig.
 //
 // It never computes DMX.  The engine decides what every head is doing and
 // sends it on the light feed ({hex, a, pan, tilt, deg, beam}); this module
@@ -28,7 +28,7 @@ function sideLabels(R, orient, outline) {
     const c = document.createElement("canvas");
     c.width = 1024; c.height = 128;
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "rgba(139, 141, 255, 0.85)";
+    ctx.fillStyle = "rgba(47, 214, 245, 0.85)";
     ctx.font = "bold 72px system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(text, 512, 66);
@@ -1046,7 +1046,7 @@ export class Stage {
     if (!this._cellMarks) this._cellMarks = [];
     while (this._cellMarks.length < want.length) {
       const m = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.075, 24), new THREE.MeshBasicMaterial({
-        color: 0x8b8dff, toneMapped: false, depthTest: false, transparent: true, side: THREE.DoubleSide }));
+        color: 0x2fd6f5, toneMapped: false, depthTest: false, transparent: true, side: THREE.DoubleSide }));
       m.renderOrder = 998;
       this.scene.add(m);
       this._cellMarks.push(m);

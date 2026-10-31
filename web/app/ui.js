@@ -99,7 +99,7 @@ export function confirmBox(title, text, { ok = "OK", danger = false } = {}) {
   });
 }
 
-// A question with its own buttons (the desktop app's "Close Jarvis?" and
+// A question with its own buttons (the desktop app's "Close Haze?" and
 // "Other computers…" boxes come here instead of the system's grey box).
 // Resolves with the index of the pressed button; closing it is `cancel`.
 export function choiceBox(title, { message = "", detail = "", buttons = ["OK"], primary = 0, cancel = 0, danger = -1 } = {}) {

@@ -371,7 +371,7 @@ async function loadAudio(meta) {
   if (audio && audio.id === meta.id) return;
   if (audio) audio.el.pause();
   const t = token();
-  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(meta.id), { headers: t ? { "X-Jarvis-Token": t } : {} });
+  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(meta.id), { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) { toast("Could not load the timeline audio", "bad"); return; }
   const buf = await r.arrayBuffer();
   const url = URL.createObjectURL(new Blob([buf]));

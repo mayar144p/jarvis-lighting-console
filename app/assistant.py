@@ -153,7 +153,7 @@ TOOLS = [
             "note": {"type": "string"}, "forget": {"type": "integer"}}}}},
 ]
 
-SYSTEM = """You are Jarvis, the lighting operator's assistant inside a lighting desk.
+SYSTEM = """You are Haze, the lighting operator's assistant inside a lighting desk.
 You work the desk yourself through tools, like a skilled operator next to them.
 
 How you work:

@@ -28,7 +28,7 @@ function picture(ref) {
   if (!made.has(ref)) {
     made.set(ref, (async () => {
       const t = token();
-      const r = await fetch("/api/console/gobo?ref=" + encodeURIComponent(ref), { headers: t ? { "X-Jarvis-Token": t } : {} });
+      const r = await fetch("/api/console/gobo?ref=" + encodeURIComponent(ref), { headers: t ? { "X-Haze-Token": t } : {} });
       if (!r.ok) return null;
       const url = URL.createObjectURL(await r.blob());
       try {

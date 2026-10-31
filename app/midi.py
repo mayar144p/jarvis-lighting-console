@@ -382,7 +382,7 @@ class MidiManager:
             return False                        # no device: idle, no crash
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop,
-                                        name="jarvis-midi", daemon=True)
+                                        name="haze-midi", daemon=True)
         self._thread.start()
         return True
 

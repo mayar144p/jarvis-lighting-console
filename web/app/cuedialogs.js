@@ -41,7 +41,7 @@ export function openCueDialog(playback) {
   // Records what the programmer holds (over a cue, its name and times stay
   // unless new ones are typed); clearing after is the operator's choice
   const clearBox = h("input", { type: "checkbox" });
-  try { clearBox.checked = localStorage.getItem("jarvis.clearAfterRecord") === "1"; } catch (e) { /* fine */ }
+  try { clearBox.checked = localStorage.getItem("haze.clearAfterRecord") === "1"; } catch (e) { /* fine */ }
   const close = modal({
     title: "Record cue",
     // three tidy rows: where it goes, its name, its times - then what
@@ -64,7 +64,7 @@ export function openCueDialog(playback) {
           if (fade.value !== "") params.fade = +fade.value || 0;
           if (hold.value !== "") params.hold = +hold.value;
           params.keep = !clearBox.checked;
-          try { localStorage.setItem("jarvis.clearAfterRecord", clearBox.checked ? "1" : "0"); } catch (e) { /* fine */ }
+          try { localStorage.setItem("haze.clearAfterRecord", clearBox.checked ? "1" : "0"); } catch (e) { /* fine */ }
           const r = await run("record_cue", params, { toast: true });
           if (r.ok) close();
         },

@@ -375,7 +375,7 @@ class TimelineMixin:
         if self._tl_thread is not None and self._tl_thread.is_alive():
             return
         self._tl_stop.clear()
-        thread = threading.Thread(target=self._tl_loop, name="jarvis-timeline",
+        thread = threading.Thread(target=self._tl_loop, name="haze-timeline",
                                   daemon=True)
         self._tl_thread = thread
         thread.start()

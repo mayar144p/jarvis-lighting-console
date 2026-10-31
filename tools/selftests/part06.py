@@ -835,7 +835,7 @@ def test_auto_update() -> None:
         git(dev, "commit", "-qam", "v3"); git(dev, "push", "-q", "origin", "HEAD:main")
         (user / "app.txt").write_text("my edit\n")
         msg = upd.update(user)
-        check("local edits to Jarvis's files are never overwritten",
+        check("local edits to Haze's files are never overwritten",
               "local edits" in msg and (user / "app.txt").read_text() == "my edit\n", msg)
         check("...and it says which file", "app.txt" in msg, msg)
         git(user, "checkout", "-q", "--", "app.txt")
@@ -904,7 +904,7 @@ def test_auto_update() -> None:
 
 
 def test_open_libraries() -> None:
-    """The Open Fixture Library and QLC+ ship with Jarvis and install
+    """The Open Fixture Library and QLC+ ship with Haze and install
     through the same path as a GDTF file."""
     print("open fixture libraries (OFL + QLC+, bundled offline)")
     import json as _json
@@ -919,11 +919,11 @@ def test_open_libraries() -> None:
           all((fixlib.BUNDLE_DIR / f).is_file()
               for f in ("LICENSE-OFL.txt", "LICENSE-QLCPLUS.txt", "NOTICE.md")), "")
     bad = []
-    for row in fixlib.index("jarvis"):          # the Jarvis library is plain JSON
+    for row in fixlib.index("haze"):          # the Haze library is plain JSON
         try:
-            fixlib.apply_fx(fixlib.load("jarvis", row["key"])[0])
+            fixlib.apply_fx(fixlib.load("haze", row["key"])[0])
         except Exception as exc:                 # noqa: BLE001 - collected
-            bad.append(f"jarvis {row['key']}: {exc}")
+            bad.append(f"haze {row['key']}: {exc}")
     for src in ("ofl", "qlc"):
         with zipfile.ZipFile(fixlib.BUNDLE_DIR / fixlib.SOURCES[src]["file"]) as zf:
             for row in fixlib.index(src):

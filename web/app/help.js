@@ -4,7 +4,7 @@
 // Screen & 3D.  The control's title stays its title (it's only borrowed
 // while the pointer is on it), so screen readers and the checks still read it.
 
-const KEY = "jarvis.tips";
+const KEY = "haze.tips";
 // controls that had no explanation of their own
 const HELP = {
   "out-arm": "Go live: the real lights get the desk. Until then BLIND - nothing leaves this computer.",

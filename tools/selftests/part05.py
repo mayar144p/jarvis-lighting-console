@@ -841,7 +841,7 @@ def test_api_auth() -> None:
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Content-Type", "application/json")
         if token is not None:
-            req.add_header("X-Jarvis-Token", token)
+            req.add_header("X-Haze-Token", token)
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return resp.status, resp.read().decode()
@@ -987,7 +987,7 @@ def test_api_auth() -> None:
                           if not ln.lstrip().startswith("#"))
     check("the token comparison is hmac.compare_digest, not ==",
           "hmac.compare_digest(" in code_only
-          and 'X-Jarvis-Token") == token' not in code_only, "")
+          and 'X-Haze-Token") == token' not in code_only, "")
     check("and the docstring no longer CLAIMS constant time over a `==` - a "
           "comment that lies about a security property is a trap",
           "The token is compared in constant time" not in src, "")

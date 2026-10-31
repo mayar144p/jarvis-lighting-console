@@ -4,7 +4,7 @@ import { act } from "./api.js";
 // desk's own MIDI input (app/midi.py) is separate; this one is off until
 // switched on in Settings, so one controller heard by both never plays a
 // button twice.  Remembered per device.
-const KEY = "jarvis.webmidi";
+const KEY = "haze.webmidi";
 const listeners = new Set();
 let access = null;
 let error = "";

@@ -97,7 +97,7 @@ def pick(brand: str | None = None, product: str | None = None) -> list[dict]:
     if product:
         words = re.sub(r"[^a-z0-9 ]", " ", product.lower()).split()
         found, seen = [], set()
-        for src in ("jarvis", "qlc", "ofl"):
+        for src in ("haze", "qlc", "ofl"):
             for r in fixlib.index(src):
                 name = f"{r['manufacturer']} {r['model']}"
                 flat = re.sub(r"[^a-z0-9 ]", " ", name.lower())
@@ -109,7 +109,7 @@ def pick(brand: str | None = None, product: str | None = None) -> list[dict]:
     rows = defaultdict(list)
     alias = {a: b for b, names in brands for a in names}
     seen = set()
-    for src in ("jarvis", "qlc", "ofl"):            # the curated library first
+    for src in ("haze", "qlc", "ofl"):            # the curated library first
         for r in fixlib.index(src):
             brand = alias.get(r["manufacturer"].strip().lower())
             if not brand:

@@ -30,7 +30,7 @@ async function updateCue(replace = false) {
 
 // digits start a command line (12 THRU 16 @ 70, 3 GO), as on a pro desk -
 // or, set in Settings -> Screen & 3D, pick heads 1-9 directly (the old way)
-const digitsSelect = () => { try { return localStorage.getItem("jarvis.digitsSelect") === "1"; } catch (e) { return false; } };
+const digitsSelect = () => { try { return localStorage.getItem("haze.digitsSelect") === "1"; } catch (e) { return false; } };
 
 async function deleteCue() {
   const { pb, cue } = currentCue();

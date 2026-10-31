@@ -10,7 +10,7 @@ import { renderHub } from "./modehub.js";
 import { state, on } from "./store.js";
 import { HAS_3D } from "./view3d.js";
 
-const KEY = "jarvis.workspaces";
+const KEY = "haze.workspaces";
 
 let saved = { active: "programming", list: [], lastByMode: {} };
 let applying = false;
@@ -83,8 +83,8 @@ function apply(w) {
     if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
     // the dock's height lives per mode (playbacks.js reads it when the mode is picked)
     try {
-      if (w.dock) localStorage.setItem("jarvis.dockh." + w.bottom, String(w.dock));
-      else localStorage.removeItem("jarvis.dockh." + w.bottom);
+      if (w.dock) localStorage.setItem("haze.dockh." + w.bottom, String(w.dock));
+      else localStorage.removeItem("haze.dockh." + w.bottom);
     } catch (e) { /* private window */ }
     const mode = $(`#pb-mode button[data-mode="${w.bottom}"]`);
     if (mode) mode.click();
@@ -164,14 +164,14 @@ let lockAsked = false;
 async function offerLock() {
   const s = state.snap || {};
   if (lockAsked || (s.lock || "design") !== "design" || document.documentElement.dataset.window === "stage") return;
-  try { if (localStorage.getItem("jarvis.noLockAsk") === "1") return; } catch (e) { /* private window */ }
+  try { if (localStorage.getItem("haze.noLockAsk") === "1") return; } catch (e) { /* private window */ }
   lockAsked = true;
   const i = await choiceBox("Lock the show for tonight?", {
     message: "Live: the show can still be edited. Lock it so a stray tap can't change a cue, a palette or the patch?",
     detail: "Operate: play and busk with the programmer. Playing only: GO, faders, buttons and blackout. The lock button at the top unlocks it.",
     buttons: ["Not now", "Don't ask again", "Playing only", "Operate"], primary: 3, cancel: 0,
   });
-  if (i === 1) { try { localStorage.setItem("jarvis.noLockAsk", "1"); } catch (e) { /* private window */ } }
+  if (i === 1) { try { localStorage.setItem("haze.noLockAsk", "1"); } catch (e) { /* private window */ } }
   if (i === 2 || i === 3) {
     const { run } = await import("./actions.js");
     run("set_lock", { state: i === 3 ? "operate" : "locked" }, { toast: true });
