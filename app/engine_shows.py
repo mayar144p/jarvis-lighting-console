@@ -597,6 +597,14 @@ class ShowMixin:
                 "Settings → Output", "output")
         if not self.show_file:
             add("warn", "The show has never been saved.", "Show ▾ → Save", "save")
+        # the design judged by the room's rules (app/showreview.py)
+        from app import showreview
+        try:
+            for it in showreview.items(self):
+                items.append({"level": it["level"], "text": it["text"], "fix": "Fix" if it.get("act") else "",
+                              **({"act": it["act"]} if it.get("act") else {}), **({"do": it["do"]} if it.get("do") else {})})
+        except Exception as exc:          # noqa: BLE001 - the check never stops the ready check
+            items.append({"level": "info", "text": f"(the show's design couldn't be checked: {exc})", "fix": ""})
         if not items or all(i["level"] == "info" for i in items):
             add("ok", "Ready: nothing to fix.")
         worst = next((lv for lv in ("bad", "warn") if any(i["level"] == lv for i in items)), "ok")

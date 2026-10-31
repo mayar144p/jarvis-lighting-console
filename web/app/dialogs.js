@@ -581,6 +581,11 @@ export async function openReadyCheck() {
   };
   let close = () => {};
   const fixBtn = (i) => {
+    // a one-tap fix the desk worked out (take the button off, disarm...)
+    if (i.act) return h("button.btn.small", { title: "Put it right", onclick: async () => {
+      const res = await run(i.act.action, i.act.params || {}, { toast: true });
+      if (res.ok) { close(); openReadyCheck(); }
+    } }, "Fix");
     const d = i.do && DO[i.do];
     if (!d) return i.fix ? h("small.muted", "→ " + i.fix) : null;
     return h("button.btn.small", { title: i.fix, onclick: () => { const keep = i.do === "floor_safe"; if (!keep) close(); d[1](i); } }, d[0]);

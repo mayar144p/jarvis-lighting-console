@@ -10747,3 +10747,41 @@ def test_busker() -> None:
             else:
                 os.environ["CONSOLE_DATA_DIR"] = old
 
+
+def test_show_review() -> None:
+    """Before doors, the ready check judges the design by the room's rules."""
+    import os
+    import tempfile
+    from app import engine as E
+    old = os.environ.get("CONSOLE_DATA_DIR")
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["CONSOLE_DATA_DIR"] = td
+        e = E.Engine()
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=2)
+            for zone, name in (("Bar", "bar look"), ("Dance floor", "floor")):
+                e.act("clear_programmer")
+                e.act("select_heads", heads=[1, 2])
+                e.act("set_intensity", level=100)
+                e.act("aim_at", zone=zone)
+                e.act("record_cue", playback=1, name=name)
+            e.act("quick_set", page=1, slot=1, button={"kind": "go", "label": "GO 5", "playback": 5})
+            e.act("quick_set", page=1, slot=2, button={"kind": "flash", "label": "Flash", "target": {"heads": [99]}})
+            texts = [i["text"] for i in e.act("ready_check")["items"]]
+            check("a cue with beams on the bar is caught", any("bar look" in t and "Bar" in t for t in texts), str(texts))
+            check("...and the dance-floor cue is not (no false alarm)", not any("(floor)" in t for t in texts), str(texts))
+            items = e.act("ready_check")["items"]
+            gone = next((i for i in items if "no longer patched" in i["text"]), None)
+            check("a button on lights that are gone, with a one-tap fix",
+                  gone and gone.get("act", {}).get("action") == "quick_set", str(gone))
+            check("a GO with no cues behind it", any("which has no cues" in t for t in texts), "")
+            e.act(gone["act"]["action"], **gone["act"]["params"])
+            check("the fix takes the button off", not any(b["slot"] == 2 and b["page"] == 1 for b in e.quick), "")
+        finally:
+            e.shutdown()
+            if old is None:
+                os.environ.pop("CONSOLE_DATA_DIR", None)
+            else:
+                os.environ["CONSOLE_DATA_DIR"] = old
+
