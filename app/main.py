@@ -1087,6 +1087,15 @@ class Handler(BaseHTTPRequestHandler):
                 # the operator's tap on something the AI prepared (A13)
                 from app import aitools
                 return self._json(aitools.confirm(eng, str(body.get("confirm")), body.get("yes") is not False))
+            if body.get("example") is not None:
+                # the operator's verdict on a request (kept / thrown away),
+                # and the examples' counts / export for the fine-tuning kit
+                from app import aiexamples
+                if body.get("export"):
+                    return self._json({"ok": True, **aiexamples.export(tools=assistant.TOOLS)})
+                if body.get("example"):
+                    aiexamples.verdict(str(body["example"]), body.get("good") is not False)
+                return self._json({"ok": True, "examples": aiexamples.stats()})
             if body.get("notes") is not None:
                 if isinstance(body.get("forget"), int):
                     lst = assistant.notes()

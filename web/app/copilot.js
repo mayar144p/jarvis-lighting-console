@@ -198,9 +198,17 @@ async function assist(text) {
       const drop = h("button.btn.small", "Throw away");
       const bar = h("div.plan-actions", h("span.small.plan-previewing", "Previewing in 3D only - the real lights haven't changed."), keep, drop);
       const done = (t) => bar.replaceChildren(h("span.muted.small", t));
-      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
-      drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); done("Thrown away - the rig never saw it."); });
+      // (kept = a good example for teaching the offline AI, thrown away = a bad one)
+      const verdict = (good) => r.example && post("/api/console/assistant", { example: r.example, good }).catch(() => {});
+      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); verdict(true); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
+      drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); verdict(false); done("Thrown away - the rig never saw it."); });
       extra.append(bar);
+    } else if (r.example && !r.changed) {
+      // an answer: was it right? (teaches the offline AI)
+      const rate = (good) => (e) => { post("/api/console/assistant", { example: r.example, good }).catch(() => {});
+        e.currentTarget.parentElement.replaceChildren(h("span.muted.small", good ? "Thanks - noted as a good answer." : "Noted - it'll learn from it.")); };
+      extra.append(h("div.ai-rate", h("button.btn.small.ghost", { title: "A good answer", onclick: rate(true) }, "👍"),
+        h("button.btn.small.ghost", { title: "Not right", onclick: rate(false) }, "👎")));
     } else if (r.changed) {
       extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
     }

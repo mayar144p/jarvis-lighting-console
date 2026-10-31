@@ -1,7 +1,7 @@
 // Settings: output, the venue, MIDI and OSC, controllers, the theme, AI.
 
 import { get, post, token } from "./api.js";
-import { aiPanel } from "./aisettings.js";
+import { aiPanel, trainingBlock } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
 import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES, TEXT_SCALE } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
@@ -308,7 +308,7 @@ export async function openSettings() {
     ["backup", "Show backups", [backupPanel()]],
     ["hue", "Philips Hue", [huePanel()]],
     ["standby", "Spare desk", [standbyPanel()]],
-    ["ai", "AI", [aiPanel()]],
+    ["ai", "AI", [aiPanel(), trainingBlock()]],
   ];
   let last = "output";
   try { last = localStorage.getItem("haze.settingsTab") || last; } catch (e) { /* fine */ }

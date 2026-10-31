@@ -10950,3 +10950,43 @@ def test_three_takes() -> None:
             else:
                 os.environ["CONSOLE_DATA_DIR"] = old
 
+
+def test_ai_training() -> None:
+    """Examples are written down and marked; the practice exam runs; the kit is there."""
+    import json
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+    from app import aiexamples, config
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": [{"type": "text", "text": "warm"},
+                                                                                      {"type": "image_url", "image_url": {"url": "data:x"}}]}]
+            a = aiexamples.record(msgs, "warm wash", "done", [{"action": "set_colour", "ok": True}], True)
+            b = aiexamples.record(msgs, "what's on?", "nothing", [], False)
+            c = aiexamples.record(msgs, "bad one", "oops", [{"action": "x", "ok": True}], True)
+            aiexamples.verdict(a, True)
+            aiexamples.verdict(c, False)
+            st = aiexamples.stats()
+            check("requests are written down and marked kept / thrown away",
+                  st["all"] == 3 and st["kept"] == 1 and st["thrown"] == 1 and st["usable"] == 2, str(st))
+            out = aiexamples.export(Path(td) / "t.jsonl", tools=[{"x": 1}])
+            lines = [json.loads(x) for x in (Path(td) / "t.jsonl").read_text(encoding="utf-8").splitlines()]
+            check("the training file holds the good ones, with the tools, pictures left out",
+                  out["examples"] == 2 and all(r["tools"] == [{"x": 1}] for r in lines)
+                  and "[a picture]" in lines[0]["messages"][1]["content"] and "data:x" not in json.dumps(lines), str(out))
+            del b
+        finally:
+            config.DATA = old
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "aiexam.py"), "--fake", "--only", "offtopic"],
+                       capture_output=True, text=True, timeout=300, encoding="utf-8", errors="replace")
+    check("the practice exam runs end to end (with a stand-in AI)", r.returncode == 0 and "1 of 1 passed" in r.stdout,
+          (r.stdout + r.stderr)[-300:])
+    cases = json.loads((ROOT / "tools" / "aiexam" / "cases.json").read_text(encoding="utf-8"))
+    check("the exam has its cases, each with what a good answer does", len(cases) >= 40 and all(c.get("expect") for c in cases), "")
+    check("the fine-tuning kit is there", (ROOT / "tools" / "finetune" / "train.py").is_file()
+          and (ROOT / "tools" / "finetune" / "README.md").is_file(), "")
+

@@ -122,3 +122,20 @@ export function aiPanel() {
   refresh();
   return root;
 }
+
+// Teaching the offline AI: the good examples kept from the copilot (Keep /
+// 👍), counted, and saved as the training file tools/finetune/ takes.
+export function trainingBlock() {
+  const box = h("div.ai-train", h("h3", "Teaching the offline AI"), h("p.muted.small", "Counting…"));
+  const paint = (e) => box.replaceChildren(h("h3", "Teaching the offline AI"),
+    h("p.muted.small", "Every copilot request is written down on this computer. The ones you Keep (or mark 👍) are good examples; "
+      + "a few hundred of them can teach the offline AI your way of working (tools/finetune/README.md, on a PC with an NVIDIA card)."),
+    h("p", h("b", `${e.usable} good example${e.usable === 1 ? "" : "s"}`), h("span.muted.small", ` · ${e.kept} kept · ${e.answers} answers · ${e.thrown} thrown away · ${e.all} in all`)),
+    h("div.row-btns", h("button.btn", { disabled: !e.usable, onclick: async () => {
+      const r = await post("/api/console/assistant", { example: "", export: true });
+      if (r.ok) toast(`${r.examples} examples saved: ${r.file}`, "ok", 8000); else toast(r.error || "couldn't save", "bad");
+    } }, "Save the training file")));
+  post("/api/console/assistant", { example: "" }).then((r) => paint(r.examples || { usable: 0, kept: 0, answers: 0, thrown: 0, all: 0 }))
+    .catch(() => box.replaceChildren(h("p.muted.small", "The examples couldn't be counted.")));
+  return box;
+}

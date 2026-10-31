@@ -25,7 +25,7 @@ import os
 import threading
 import time
 
-from . import aitools, autoshow, config, console_ai, llm, roomsense, showdesign, showkit, websearch
+from . import aiexamples, aitools, autoshow, config, console_ai, llm, roomsense, showdesign, showkit, websearch
 from . import venue as venue_mod
 from .engine import ACTIONS as ENGINE_ACTIONS
 from .engine import Engine
@@ -890,7 +890,9 @@ def _go(eng, st: dict, chat) -> dict:
     hist.append({"role": "user", "content": st["message"]})
     hist.append({"role": "assistant", "content": (reply or question or "")[:1500]})
     del hist[:-MAX_HISTORY * 2]
-    return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps,
+    # written down as an example (marked good / bad when kept / thrown away)
+    example = aiexamples.record(msgs, st["message"], reply or question or "", steps, st["changed"])
+    return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps, "example": example,
             "confirm": st.get("waiting") or [],
             "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],
             "seconds": round(time.monotonic() - st["t0"], 1)}
