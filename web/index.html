@@ -548,7 +548,7 @@
     <div class="ai-log" id="ai-log"></div>
     <div class="ai-suggest" id="ai-suggest"></div>
     <form class="ai-input" id="ai-form">
-      <textarea id="ai-text" rows="2" placeholder="Describe the look… e.g. slow blue wash, movers circle the drummer" spellcheck="false"></textarea>
+      <textarea id="ai-text" rows="3" placeholder="Describe the look you want…" spellcheck="false"></textarea>
       <button class="btn primary" id="ai-send">Plan</button>
     </form>
     <div class="ai-tools" id="ai-tools">
@@ -564,33 +564,39 @@
     <label class="check small"><input type="checkbox" id="ai-offline"> Offline compiler (no AI service)</label>
   </div>
   <div class="ctab" data-cpane="design" hidden>
-    <section class="autoshow">
+    <section class="autoshow cp-card">
       <h4>Build the whole show</h4>
       <p class="muted small">It reads your rig in the 3D view - what each light is, where it hangs, what it can do - and the song on the timeline, then programs every section: a cue per section, effects, strobe hits on the beat and master fades, on the timeline. You preview it first; building it is one Ctrl+Z.</p>
-      <textarea id="auto-text" rows="2" placeholder="Dark techno in a warehouse, red and white, hard drops" spellcheck="false"></textarea>
+      <textarea id="auto-text" rows="3" placeholder="The style, the colours, how hard it hits…" spellcheck="false"></textarea>
       <div class="chip-row" id="auto-styles"></div>
       <div class="row-btns">
         <button class="btn primary" id="auto-btn">Design the show</button>
         <label class="field inline small"><span>Playback</span><input type="number" id="auto-pb" min="1" max="10" value="1"></label>
       </div>
       <div class="auto-plan" id="auto-plan"></div>
+    </section>
+    <section class="cp-card">
       <h4>Change part of it</h4>
-      <p class="muted small">Say what to change in the show on the timeline - the rest stays as it is: “make the second drop harder”, “the breakdown in blue and white”, “no strobes in the intro”, “movers on the crowd in drop 2”. You preview the change first.</p>
-      <form class="row-btns" id="auto-ask-form">
-        <input class="input" id="auto-ask" placeholder="make the second drop harder" spellcheck="false" style="flex:1;min-width:0">
+      <p class="muted small">Say what to change in the show on the timeline - the rest stays as it is. You preview the change first.</p>
+      <form class="cp-row" id="auto-ask-form">
+        <input class="input" id="auto-ask" placeholder="What to change…" spellcheck="false">
         <button class="btn" id="auto-ask-btn" type="submit">Change it</button>
       </form>
     </section>
-    <hr>
-    <h4>Or: concepts for one playback</h4>
-    <p class="muted small">Describe the event. You get two or three different concepts - palettes, cues and timings - staged on your own rig. Nothing plays until you load one and press GO.</p>
-    <textarea id="design-text" rows="3" placeholder="A winter wedding, slow and elegant, warm whites, avoid red" spellcheck="false"></textarea>
-    <button class="btn" id="design-btn">Design concepts</button>
-    <div class="concepts" id="concepts"></div>
+    <section class="cp-card">
+      <h4>Concepts for one playback</h4>
+      <p class="muted small">Describe the event. You get two or three different concepts - palettes, cues and timings - staged on your own rig. Nothing plays until you load one and press GO.</p>
+      <textarea id="design-text" rows="3" placeholder="The event, the mood, what to avoid…" spellcheck="false"></textarea>
+      <div class="cp-row"><span class="grow"></span><button class="btn" id="design-btn">Design concepts</button></div>
+      <div class="concepts" id="concepts"></div>
+    </section>
   </div>
   <div class="ctab" data-cpane="doctor" hidden>
-    <p class="muted small">Checks the rig and the show for problems a tech would look for: addressing overlaps, cues pointing at missing fixtures, output that cannot reach the rig.</p>
-    <button class="btn primary" id="doctor-btn">Run checks</button>
+    <section class="cp-card">
+      <h4>Check the rig and the show</h4>
+      <p class="muted small">Looks for what a tech would: addressing overlaps, cues pointing at missing fixtures, output that cannot reach the rig.</p>
+      <div class="cp-row"><span class="grow"></span><button class="btn primary" id="doctor-btn">Run checks</button></div>
+    </section>
     <div class="doctor" id="doctor"></div>
   </div>
 </aside>

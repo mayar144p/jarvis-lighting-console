@@ -266,20 +266,9 @@ export function askCopilot(text) {
   plan(text);
 }
 
-function suggestions() {
-  const p = (state.snap && state.snap.patch) || [];
-  const movers = p.some((x) => x.body && x.body.moving);
-  const colour = p.some((x) => (x.map || []).includes("red"));
-  const out = [];
-  if (!p.length) return ["Add 6 LED pars", "Add 4 moving head spots"];
-  if (colour) out.push("Warm amber wash, everything at 70%", "Slow rainbow across the rig");
-  if (movers) out.push("Movers circle slowly", "Point the movers at centre stage");
-  out.push("Everything to 50% over 3 seconds", "Blackout");
-  return out.slice(0, 5);
-}
-
+// (the example chips are gone - the box says what to type)
 function renderSuggest() {
-  $("#ai-suggest").replaceChildren(...suggestions().map((s) => h("button.chip", { onclick: () => { say("user", s); plan(s); } }, s)));
+  $("#ai-suggest").replaceChildren();
 }
 
 // ---------------------------------------------------------- show design
@@ -316,7 +305,6 @@ async function design() {
 }
 
 // ------------------------------------------------------------ whole show
-const STYLES = ["Techno warehouse", "House party", "EDM festival drop", "Hip hop club", "Chill lounge", "Wedding dance", "Latin night"];
 let autoDesign = null;
 
 function sectionBar(sections) {
@@ -441,7 +429,25 @@ export function closeCopilot() {
 
 export const copilotOpen = () => !$("#copilot").classList.contains("hidden");
 
+// its left edge sizes it (kept on this computer); double-click: back to normal
+function wireCopilotWidth() {
+  const box = $("#copilot");
+  const keep = (w) => { try { if (w) localStorage.setItem("jarvis.copilotW", String(w)); else localStorage.removeItem("jarvis.copilotW"); } catch (e) { /* private window */ } };
+  const set = (w) => { if (w) box.style.setProperty("--copilot-w", `${w}px`); else box.style.removeProperty("--copilot-w"); };
+  try { set(+localStorage.getItem("jarvis.copilotW") || 0); } catch (e) { /* private window */ }
+  const grip = h("div.copilot-grip", { title: "Drag to make the Copilot wider or narrower (double-click: back to normal)" });
+  box.append(grip);
+  let x0 = 0, w0 = 0, on = false;
+  grip.addEventListener("pointerdown", (e) => { on = true; x0 = e.clientX; w0 = box.getBoundingClientRect().width; grip.setPointerCapture(e.pointerId); grip.classList.add("on"); });
+  grip.addEventListener("pointermove", (e) => { if (on) set(Math.round(Math.max(360, Math.min(window.innerWidth * 0.8, w0 + (x0 - e.clientX))))); });
+  const end = () => { if (!on) return; on = false; grip.classList.remove("on"); keep(Math.round(box.getBoundingClientRect().width)); };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { set(0); keep(0); });
+}
+
 export function initCopilot() {
+  wireCopilotWidth();
   $("#ai-btn").addEventListener("click", () => (copilotOpen() ? closeCopilot() : openCopilot()));
   $("#copilot-close").addEventListener("click", closeCopilot);
   $$("#copilot-tabs button").forEach((b) => b.addEventListener("click", () => openCopilot(b.dataset.ctab)));
@@ -482,7 +488,7 @@ export function initCopilot() {
   $("#design-btn").addEventListener("click", design);
   $("#auto-btn").addEventListener("click", autoshow);
   $("#auto-ask-form").addEventListener("submit", (e) => { e.preventDefault(); changeShow(); });
-  $("#auto-styles").replaceChildren(...STYLES.map((st) => h("button.chip", { onclick: () => { $("#auto-text").value = st; autoshow(); } }, st)));
+  $("#auto-styles").replaceChildren();
   $("#doctor-btn").addEventListener("click", diagnose);
   on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
   const st = state.status;

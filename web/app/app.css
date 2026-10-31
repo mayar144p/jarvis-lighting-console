@@ -2825,3 +2825,29 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .ww-dj { fill: var(--accent); }
 .ww-djt { fill: var(--accent); text-anchor: middle; font-weight: 700; }
 .ww-face { stroke: var(--accent); stroke-linecap: round; }
+
+/* the Copilot: wide enough to read and type in (its left edge sizes it),
+   each part a card, no example chips */
+.drawer.copilot { width: var(--copilot-w, clamp(440px, 32vw, 720px)); }
+.copilot-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; touch-action: none; z-index: 2; }
+.copilot-grip:hover, .copilot-grip.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.copilot .drawer-head { padding: 14px 18px; }
+.copilot .drawer-head h2 { font-size: var(--fs-l); }
+#copilot-tabs { display: flex; gap: 4px; margin: 10px 18px 0; padding: 3px; background: var(--bg-2); border: 1px solid var(--border); border-radius: calc(var(--radius-sm) + 3px); }
+#copilot-tabs button { flex: 1; min-height: calc(34px * var(--ctl)); border-radius: var(--radius-sm); font-size: var(--fs-m); font-weight: 600; color: var(--text-2); border: 1px solid transparent; }
+#copilot-tabs button[aria-selected="true"] { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
+.copilot .ctab { padding: 16px 18px; gap: 14px; }
+.copilot .msg { font-size: var(--fs-m); max-width: 88%; }
+.copilot .ai-suggest:empty, .copilot #auto-styles:empty { display: none; }
+.copilot .ai-input { background: var(--bg-2); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px; gap: 10px; }
+.copilot .ai-input:focus-within { border-color: var(--accent); }
+.copilot .ai-input textarea { border: 0; background: transparent; font-size: var(--fs-m); min-height: calc(64px * var(--ctl)); resize: none; box-shadow: none; outline: none; }
+.copilot .ai-input .btn { min-height: calc(40px * var(--ctl)); padding: 0 18px; }
+.copilot .ai-tools { margin: 0; gap: 8px; }
+.cp-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.cp-card h4 { margin: 0; font-size: var(--fs-l); }
+.cp-card p { margin: 0; line-height: 1.45; }
+.cp-card textarea, .cp-card .input { width: 100%; box-sizing: border-box; font-size: var(--fs-m); }
+.cp-row { display: flex; gap: 8px; align-items: center; }
+.cp-row .input { flex: 1; min-width: 0; height: calc(36px * var(--ctl)); }
+.cp-card .row-btns { display: flex; gap: 10px; align-items: center; margin: 0; }

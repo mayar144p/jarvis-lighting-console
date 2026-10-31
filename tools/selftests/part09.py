@@ -10555,3 +10555,7 @@ def test_shapes_drawn_palettes_fit() -> None:
           "setSides(orient)" in st and "const reach = (u) =>" in st and "stage.setSides(stage.djView)" in (web / "stagepanel.js").read_text(encoding="utf-8"), "")
     check("Which way round: the DJ at a side of the plan, or tapped, or worked out", "export function openWhichWay()" in vp
           and 'id="vt-orient"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8") and '"venue_orient", { booth: b, front: "centre" }' in vp, "")
+    cp = (web / "copilot.js").read_text(encoding="utf-8")
+    check("the Copilot: wider (its edge sizes it), each part a card, no example chips",
+          "function wireCopilotWidth()" in cp and "Techno warehouse" not in cp and ".drawer.copilot { width: var(--copilot-w," in css
+          and 'class="autoshow cp-card"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
