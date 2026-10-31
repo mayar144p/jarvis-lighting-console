@@ -942,10 +942,11 @@ function renderProgCells() {
     n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
     n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
     dots[0] ? h("button.chip.icon", { title: "Copy a head's colour to all, spread a gradient", "aria-label": "More for the heads", onclick: more }, "⋯") : null,
+    // tilt per head: a chip in this row, its sliders floating under it -
+    // never a row of its own pushing the programmer down
+    tab === "position" ? headBar(heads, n) : null,
   ].filter(Boolean));
-  const bar = tab === "position" ? headBar(heads, n) : null;
-  box.hidden = !bar;
-  if (bar) box.replaceChildren(bar);
+  box.hidden = true;
 }
 
 const mixHex = (a, b, f) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - f) + parseInt(b.slice(i, i + 2), 16) * f)
@@ -966,7 +967,7 @@ function headBar(heads, n) {
   try { open = localStorage.getItem("haze.headBar") === "1"; } catch { /* private window */ }
   return h("details.head-bar", { title: "Tilt each head (degrees from straight out)", open,
     ontoggle: (e) => { try { localStorage.setItem("haze.headBar", e.currentTarget.open ? "1" : ""); } catch { /* private window */ } } },
-    h("summary.muted.small", `Tilt per head (${tilts})`),
+    h("summary.chip", `Tilt ▾`),
     // (it opens over the programmer, never pushing it down)
     h("div.head-bar-pop", ...Array.from({ length: tilts }, (_, i) => {
       const v = vals[`tilt@${i + 1}`] ?? 128;

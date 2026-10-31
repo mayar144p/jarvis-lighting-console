@@ -307,13 +307,17 @@ function openMenu(anchor) {
   // a layout change keeps the menu open (drawn again with its new ticks);
   // picking a workspace or saving closes it
   const again = () => openMenu(anchor);
+  // (Set up / Program / Live are the mode switch beside this button: only
+  // the other layouts are listed here, not the same three again)
+  const MODES = new Set(["setup", "live", "programming"]);
+  const others = saved.list.map((w, i) => [w, i]).filter(([w]) => !MODES.has(w.id));
   menu(anchor, [
-    ...saved.list.map((w, i) => ({
+    ...others.map(([w, i]) => ({
       label: (w.id === cur.id ? "✓ " : "") + w.name,
       hint: i < 9 ? `Alt+${i + 1}` : "",
       run: () => useWorkspace(w.id),
     })),
-    "-",
+    others.length ? "-" : null,
     { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", keep: again, run: () => toggle("fix") },
     { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", keep: again, run: () => toggle("prog") },
     { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", keep: again, run: () => toggle("cues") },
@@ -346,8 +350,10 @@ function paintButton() {
   const b = $("#ws-btn");
   if (!b) return;
   const w = activeWorkspace();
-  $("#ws-name").textContent = w ? w.name : "";
-  b.title = `Workspace: ${w ? w.name : ""} - the screen arranged for the job (Alt+1..9 to switch)`;
+  // the mode's own name is on the mode switch: this says only a layout of its own
+  const MODES = new Set(["setup", "live", "programming"]);
+  $("#ws-name").textContent = w && !MODES.has(w.id) ? w.name : "";
+  b.title = `Layout${w ? `: ${w.name}` : ""} - the panels, other layouts, save your own (Alt+1..9)`;
 }
 
 // Drag a side panel's inner edge to make it wider or narrower; double-click
