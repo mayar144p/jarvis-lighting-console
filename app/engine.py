@@ -397,6 +397,13 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
             return {"undone": False, "label": "",
                     "summary": "nothing to undo"}
         entry = self._undo.pop()
+        if entry.get("example"):
+            # an AI request undone: the AI learns "not like that"
+            try:
+                from app import aiexamples
+                aiexamples.undone(entry["example"])
+            except Exception:  # noqa: BLE001 - learning never stops an undo
+                pass
         self._redo.append({"action": entry["action"],
                            "label": entry.get("label") or entry["action"],
                            "state": self._undo_state(), "at": self._clock()})

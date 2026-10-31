@@ -68,8 +68,61 @@ def verdict(rid: str, good: bool) -> bool:
         return False
 
 
+def undone(rid: str) -> bool:
+    """The operator pressed Ctrl+Z on what this request did: a thrown-away
+    example, and one the AI is told about next time ("not like that")."""
+    if not rid:
+        return False
+    try:
+        with _lock, _path().open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"id": str(rid)[:20], "verdict": "bad", "undone": True}) + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def recently_undone(k: int = 5) -> list[dict]:
+    """The last few requests whose result the operator undid, newest first:
+    [{prompt, how}] (for the AI: don't do it that way again)."""
+    try:
+        st = _path().stat()
+        key = (st.st_mtime_ns, st.st_size, k)
+    except OSError:
+        return []
+    if _undone_cache.get("key") == key:
+        return _undone_cache["rows"]
+    rows, undone_ids = {}, []
+    try:
+        with _path().open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("undone"):
+                    undone_ids.append(r.get("id"))
+                elif r.get("id") and "messages" in r:
+                    rows[r["id"]] = r
+    except OSError:
+        return []
+    out, seen = [], set()
+    for rid in reversed(undone_ids):
+        r = rows.get(rid)
+        if r and rid not in seen:
+            seen.add(rid)
+            out.append({"prompt": r.get("prompt", "")[:200], "how": _how(r)[:8]})
+        if len(out) >= k:
+            break
+    _undone_cache.update(key=key, rows=out)
+    return out
+
+
+_undone_cache: dict = {}
+
+
 def _rows() -> list[dict]:
     rows, verdicts = {}, {}
+    undone: set = set()
     try:
         with _path().open(encoding="utf-8") as f:
             for line in f:
@@ -79,6 +132,8 @@ def _rows() -> list[dict]:
                     continue
                 if "verdict" in r and "messages" not in r:
                     verdicts[r["id"]] = r["verdict"]
+                    if r.get("undone"):
+                        undone.add(r["id"])
                 elif r.get("id"):
                     rows[r["id"]] = r
     except OSError:
@@ -86,6 +141,8 @@ def _rows() -> list[dict]:
     for k, v in verdicts.items():
         if k in rows:
             rows[k]["verdict"] = v
+            if k in undone:
+                rows[k]["undone"] = True
     return list(rows.values())
 
 
@@ -94,7 +151,8 @@ def stats() -> dict:
     good = sum(1 for r in rows if r.get("verdict") == "good")
     bad = sum(1 for r in rows if r.get("verdict") == "bad")
     answers = sum(1 for r in rows if not r.get("verdict") and not r.get("changed"))
-    return {"all": len(rows), "kept": good, "thrown": bad, "answers": answers, "usable": good + answers}
+    return {"all": len(rows), "kept": good, "thrown": bad, "answers": answers, "usable": good + answers,
+            "undone": sum(1 for r in rows if r.get("undone"))}
 
 
 def export(dest=None, tools: list[dict] | None = None) -> dict:

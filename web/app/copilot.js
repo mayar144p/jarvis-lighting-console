@@ -35,6 +35,8 @@ function say(kind, text, extra) {
   if (extra) box.append(extra);
   log.append(box);
   log.scrollTop = log.scrollHeight;
+  const sug = $("#ai-suggest");
+  if (sug) sug.replaceChildren();              // (the conversation has started)
   return box;
 }
 
@@ -155,7 +157,22 @@ async function assist(text) {
   btn.textContent = "…";
   const t0 = performance.now();
   const thinking = say("bot", "Working…");
-  const tick = setInterval(() => { thinking.firstChild.textContent = `Working… ${Math.round((performance.now() - t0) / 1000)} s`; }, 1000);
+  // live: what it's doing now, the steps done so far, and Stop
+  const live = h("div.ai-live");
+  const stopBtn = h("button.btn.small.danger", { type: "button", title: "Stop: it ends at its next step; what it did so far stays in the preview",
+    onclick: async () => { stopBtn.disabled = true; stopBtn.textContent = "Stopping…"; await post("/api/console/assistant", { stop: true, session }).catch(() => {}); } }, "■ Stop");
+  thinking.append(live, stopBtn);
+  let polling = false;
+  const tick = setInterval(async () => {
+    const s = Math.round((performance.now() - t0) / 1000);
+    if (polling) return;
+    polling = true;
+    const p = await post("/api/console/assistant", { progress: true, session }).catch(() => null);
+    polling = false;
+    if (!thinking.isConnected) return;
+    thinking.firstChild.textContent = `${(p && p.running && p.now) || "Working"}… ${s} s`;
+    if (p && p.steps) live.replaceChildren(...p.steps.slice(-6).map((x) => h("div.plan-step" + (x.ok ? ".ok" : ".bad"), h("span.n", x.ok ? "✓" : "✕"), x.summary || "")));
+  }, 800);
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
@@ -172,6 +189,7 @@ async function assist(text) {
     if (r.no_key) { noKey = true; say("bot", r.error); plan(text); return; }
     if (r.ai_note) toast(r.ai_note, "", 6000);          // "Gemini limit reached - using the offline AI"
     if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
+    if (r.stopped) toast("Stopped", "", 3000);
     const extra = h("div");
     if (r.steps && r.steps.length) {
       extra.append(h("details.ai-steps", h("summary", `What I did (${r.steps.length})`),
@@ -185,9 +203,19 @@ async function assist(text) {
             return h("a", { href: u, target: "_blank", rel: "noopener noreferrer", title: u, style: { marginLeft: "8px" } }, host); })));
       }
     }
+    if (r.plan) {
+      // the plan for a big job, before anything is changed
+      extra.append(h("div.ai-plan",
+        h("b", r.plan.summary || "The plan"),
+        (r.plan.colours || []).length ? h("div.sw", ...r.plan.colours.map((c) => h("i", { title: c, style: { background: c } }))) : null,
+        h("ol", ...(r.plan.steps || []).map((s) => h("li", s)))));
+    }
     if (r.question) {
       extra.append(h("div.ai-q", h("b", r.question),
-        h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => { say("user", o); assist(o); } }, o)))));
+        h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => {
+          if (r.plan && o === "Change something") { $("#ai-text").focus(); $("#ai-text").placeholder = "What should be different?"; return; }
+          say("user", o); assist(r.plan && o === "Go ahead" ? "Go ahead with the plan, exactly as shown." : o);
+        } }, o)))));
     }
     // what the AI prepared but only the operator may do: going live, ARM,
     // firing effects, saving / opening, deleting - one tap each
@@ -230,6 +258,8 @@ async function assist(text) {
     thinking.remove();
     say("bot", "Could not reach the AI: " + err.message);
   } finally {
+    clearInterval(tick);
+    thinking.remove();
     btn.disabled = false;
     btn.textContent = "Send";
   }
@@ -286,8 +316,29 @@ export function askCopilot(text) {
 }
 
 // (the example chips are gone - the box says what to type)
+// What it can do, and what to ask next - for this desk as it is now (no
+// lights yet: add some; no room: draw it; no show: design one...).  Shown
+// until the conversation starts; a tap puts the words in the box.
 function renderSuggest() {
-  $("#ai-suggest").replaceChildren();
+  const box = $("#ai-suggest");
+  if (!box) return;
+  if ($("#ai-log") && $("#ai-log").children.length) { box.replaceChildren(); return; }
+  const s = state.snap || {};
+  const lights = (s.patch || []).length;
+  const zones = ((s.venue || {}).zones || []).length;
+  const shows = (s.playbacks || []).some((p) => (p.stack || []).length) || (s.quick || []).length > 12;
+  const asks = [];
+  if (!lights) asks.push("Add 4 moving heads and 8 LED PARs on the truss", "Here's a photo of my rig - set it up");
+  if (lights && !zones) asks.push("Draw the dance floor, the VIP, the bar and the DJ booth");
+  if (lights && !shows) asks.push("Design me a Halloween show", "Only buttons for tonight, no cues or timeline");
+  if (shows) asks.push("Run the show to the music", "Christmas with the same programming as this show", "Check the show before doors");
+  if (lights) asks.push("Warm wash on the VIP, slow movement on the dance floor", "The drop needs to hit harder", "Calm and warm for the speeches");
+  asks.push("What can you do?");
+  const pick = (t) => { const ta = $("#ai-text"); ta.value = t; ta.focus(); };
+  box.replaceChildren(
+    h("div.ai-can.muted.small", "I can run the whole desk: design shows and buttons, set up the rig and the room, aim, colour and move lights, "
+      + "look things up online, check the show before doors - and I ask when something's unclear. Big jobs: I show the plan first."),
+    ...asks.slice(0, 6).map((t) => h("button.chip", { type: "button", onclick: () => pick(t) }, t)));
 }
 
 // ---------------------------------------------------------- show design
@@ -536,7 +587,7 @@ export function initCopilot() {
   $("#ai-new").addEventListener("click", async () => {
     await post("/api/console/assistant", { reset: true, session });
     $("#ai-log").replaceChildren();
-    say("bot", "New conversation. What would you like?");
+    renderSuggest();
   });
   $("#ai-memory").addEventListener("click", showMemory);
   $("#ai-operator").addEventListener("click", () => import("./aioperator.js").then((m) => m.openOperator()));

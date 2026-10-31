@@ -1087,6 +1087,12 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("reset"):
                 assistant.forget_session(session)
                 return self._json({"ok": True})
+            if body.get("progress"):
+                # what the running request is doing now, step by step
+                return self._json(assistant.progress(session))
+            if body.get("stop"):
+                # the operator's Stop: it ends at its next step
+                return self._json(assistant.stop(session))
             if body.get("confirm"):
                 # the operator's tap on something the AI prepared (A13)
                 from app import aitools
@@ -1126,6 +1132,12 @@ class Handler(BaseHTTPRequestHandler):
             if not llm.available():
                 return self._json({"ok": False, "no_key": True,
                                    "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
+            if body.get("dj_request") is not None:
+                # Do it on a DJ / host request: live, within the room's rules
+                try:
+                    return self._json(_ai_noted(assistant.do_request(eng, int(body["dj_request"]))))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False, "error": "which request?"})
             if body.get("resume"):
                 # the screen's picture of the 3D view the AI asked to see
                 return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))

@@ -45,8 +45,9 @@ async function doIt(r, card) {
     return;
   }
   try {
-    const res = await post("/api/console/assistant", { session: "dj-requests", preview: false,
-      message: `The ${r.who} asks: "${r.text}". Do it now, live, in one go, within the room's rules; if it can't or shouldn't be done, do the sensible version and say why in a few words.` });
+    // the desk words it (their text is data, not instructions) and holds the
+    // AI to the lights as they are, within the room's rules
+    const res = await post("/api/console/assistant", { dj_request: r.id });
     const said = (res.reply || res.error || "").slice(0, 160);
     await answer(r.id, !!res.ok, said);
     toast(res.ok ? `Done: ${r.text}` : (res.error || "it didn't work"), res.ok ? "ok" : "bad", 5000);

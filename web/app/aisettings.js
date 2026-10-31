@@ -136,7 +136,7 @@ export function trainingBlock() {
   const paint = (e) => box.replaceChildren(h("h3", "Teaching the offline AI"),
     h("p.muted.small", "Every copilot request is written down on this computer. The ones you Keep (or mark 👍) are good examples; "
       + "a few hundred of them can teach the offline AI your way of working (tools/finetune/README.md, on a PC with an NVIDIA card)."),
-    h("p", h("b", `${e.usable} good example${e.usable === 1 ? "" : "s"}`), h("span.muted.small", ` · ${e.kept} kept · ${e.answers} answers · ${e.thrown} thrown away · ${e.all} in all`)),
+    h("p", h("b", `${e.usable} good example${e.usable === 1 ? "" : "s"}`), h("span.muted.small", ` · ${e.kept} kept · ${e.answers} answers · ${e.thrown} thrown away${e.undone ? ` (${e.undone} undone with Ctrl+Z)` : ""} · ${e.all} in all`)),
     h("div.row-btns", h("button.btn", { disabled: !e.usable, onclick: async () => {
       const r = await post("/api/console/assistant", { example: "", export: true });
       if (r.ok) toast(`${r.examples} examples saved: ${r.file}`, "ok", 8000); else toast(r.error || "couldn't save", "bad");

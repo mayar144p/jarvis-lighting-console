@@ -894,8 +894,8 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .concepts { display: flex; flex-direction: column; gap: 10px; }
 .concept { border: 1px solid var(--border-2); border-radius: var(--radius); padding: 12px; background: var(--bg-2); }
 .concept h4 { margin: 0 0 4px; font-size: var(--fs-l); }
-.concept .sw { display: flex; gap: 4px; margin: 8px 0; }
-.concept .sw i { flex: 1; height: calc(18px * var(--ctl)); border-radius: 4px; }
+.concept .sw, .ai-plan .sw { display: flex; gap: 4px; margin: 8px 0; }
+.concept .sw i, .ai-plan .sw i { flex: 1; height: calc(18px * var(--ctl)); border-radius: 4px; }
 .concept ol { margin: 6px 0 10px; padding-left: 20px; color: var(--text-2); font-size: var(--fs-s); }
 .doctor { display: flex; flex-direction: column; gap: 8px; }
 .finding { border-radius: var(--radius); padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--border-2); }
@@ -2996,3 +2996,9 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 /* a beam palette tile shows its gobo, as the light throws it */
 .pal-item i.gobo-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; }
 .palette-strip .pal-item:has(.gobo-ic) { align-items: center; gap: 7px; }
+/* the copilot at work: its steps as they happen, and Stop */
+.msg .ai-live { display: grid; gap: 2px; margin: 6px 0; font-size: var(--fs-sm, 12px); }
+.msg .ai-live:empty { display: none; }
+.ai-plan { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.ai-plan ol { margin: 4px 0 0; padding-left: 20px; }
+.ai-suggest .ai-can { flex-basis: 100%; margin-bottom: 2px; }

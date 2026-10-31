@@ -165,6 +165,37 @@ def judge(eng, r: dict, exp: dict, before: dict) -> list[str]:
     return bad
 
 
+# -- a second AI judges the show it made (rules can't say "does it look good") --
+JUDGE = """You judge a lighting show design made by an AI for a club, as a senior lighting
+designer would.  Score each 1-5 (5 = excellent) and say the one thing most worth fixing:
+  brief    - does it do what was asked (theme, colours, mood, what to avoid)?
+  contrast - calm parts calmer than peaks; builds build; drops hit
+  colour   - 2-3 colours a look, one leading, coherent; not a rainbow on everything
+  room     - the room's rules kept (gentle VIP, nothing at the DJ / bar / stage, strobes only on the floor)
+  rig      - uses what the lights can do (movers move, washes wash), shares them between zones"""
+JUDGE_SCHEMA = {"type": "object", "properties": {
+    **{k: {"type": "integer", "minimum": 1, "maximum": 5} for k in ("brief", "contrast", "colour", "room", "rig")},
+    "fix": {"type": "string"}}, "required": ["brief", "contrast", "colour", "room", "rig"]}
+
+
+def judge_show(eng, ask: str) -> dict | None:
+    """Scores for the show this request made (None: no show, or no AI)."""
+    d = (eng.timeline or {}).get("design")
+    if not isinstance(d, dict) or not d.get("sections"):
+        return None
+    try:
+        r = llm.structured([{"role": "system", "content": JUDGE + "\n\n" + roomsense.describe(roomsense.plan(eng))},
+                            {"role": "user", "content": f"The request: {ask}\n\nThe design:\n"
+                                                        + json.dumps(d, default=str)[:20000]}],
+                           "scores", "The scores and the one fix.", JUDGE_SCHEMA, temperature=0.0)
+    except (llm.LLMError, ValueError):
+        return None
+    out = {k: max(1, min(5, int(r.get(k) or 1))) for k in ("brief", "contrast", "colour", "room", "rig")}
+    out["overall"] = round(sum(out.values()) / 5, 1)
+    out["fix"] = str(r.get("fix") or "")[:200]
+    return out
+
+
 # -- a stand-in AI, for the selftest -----------------------------------------
 def fake_chat(messages, tools=None, **_):
     """Looks once, then answers: enough to run the runner end to end."""
@@ -189,16 +220,23 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
             try:
                 r = assistant.run_turn(eng, c["ask"], session=f"exam-{c['id']}", preview=False,
                                        chat=fake_chat if fake else None)
+                if r.get("plan"):          # a big job: the plan first - the exam says go ahead
+                    steps0 = r.get("steps") or []
+                    r = assistant.run_turn(eng, "Go ahead with the plan, exactly as shown.", session=f"exam-{c['id']}",
+                                           preview=False, chat=fake_chat if fake else None)
+                    r["steps"] = steps0 + (r.get("steps") or [])
             except Exception as exc:  # noqa: BLE001 - a crash is a failed case, the exam goes on
                 r = {"ok": False, "error": f"crashed: {exc}"}
             failed = judge(eng, r, c.get("expect") or {}, before) if r.get("ok") else [r.get("error") or "no answer"]
             st = r.get("steps") or []
+            graded = judge_show(eng, c["ask"]) if not fake and r.get("ok") else None
             okf = [bool(s.get("ok")) for s in st if s.get("action")]
             results.append({"id": c["id"], "ask": c["ask"], "passed": not failed, "failed": failed,
                             "actions": len(okf), "actions_ok": sum(okf),
                             # a failed step put right later in the same request
                             "recovered": any(not okf[i] and any(okf[i + 1:]) for i in range(len(okf))),
                             "searched": sum(1 for s in st if s.get("action") == "search_web"),
+                            **({"show_score": graded} if graded else {}),
                             "reply": (r.get("reply") or r.get("question") or "")[:600],
                             "steps": [s.get("summary") or s.get("action") for s in r.get("steps") or []][:30],
                             "seconds": round(time.monotonic() - t, 1)})
@@ -214,7 +252,10 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
         "action_accuracy": round(100 * sum(r.get("actions_ok", 0) for r in results) / acts) if acts else None,
         "recovery": round(100 * sum(1 for r in fails if r.get("recovered")) / len(fails)) if fails else None,
         "median_seconds": secs[len(secs) // 2], "slowest_seconds": secs[-1],
-        "searches": sum(r.get("searched", 0) for r in results)}
+        "searches": sum(r.get("searched", 0) for r in results),
+        "show_quality": (round(sum(r["show_score"]["overall"] for r in results if r.get("show_score"))
+                               / max(1, sum(1 for r in results if r.get("show_score"))), 1)
+                         if any(r.get("show_score") for r in results) else None)}
     report = {"at": time.strftime("%Y-%m-%d %H:%M"), "ai": "stand-in" if fake else llm.public().get("model"),
               "metrics": metrics,
               "passed": passed, "total": len(results), "score": round(100 * passed / max(1, len(results))),
@@ -228,7 +269,8 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
     pc = lambda v: "-" if v is None else f"{v}%"  # noqa: E731
     print(f"actions that worked: {pc(metrics["action_accuracy"])} | put right after a failure: {pc(metrics["recovery"])} | "
           f"answer time: {metrics['median_seconds']} s typical, {metrics['slowest_seconds']} s slowest | "
-          f"look-ups online: {metrics['searches']}")
+          f"look-ups online: {metrics['searches']}"
+          + (f" | show quality (judged): {metrics['show_quality']} of 5" if metrics["show_quality"] else ""))
     return report
 
 
