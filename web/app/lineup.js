@@ -27,7 +27,11 @@ const movers = (nums) => nums.map((n) => patch().find((x) => x.head_no === n))
 // the room's marks (Arrange's marks, zones, the DJ...), and the two furthest
 // apart: two marks spread over the floor make a sure line-up
 const roomSpots = () => ((state.snap && state.snap.move_spots) || []).filter((s) => !String(s.key).startsWith("cell"));
+// (never two spots at the same place - "the DJ" and "the DJ booth" made the
+// second mark look like the first, and the box seemed not to move on)
 function farPair(list) {
+  const apart = list.filter((s, k) => list.findIndex((o) => Math.hypot(o.x - s.x, o.z - s.z) < 1.5) === k);
+  list = apart;
   let best = list.slice(0, 2), far = -1;
   for (let a = 0; a < list.length; a++) {
     for (let b = a + 1; b < list.length; b++) {
@@ -54,6 +58,9 @@ export function openLineUp(heads = null) {
   const mark = () => marks[step] || null;
 
   const chips = h("div.lineup-chips");
+  // where you are: Mark 1 (DJ) -> Mark 2 (Bar) -> Lined up, the one now lit
+  const steps = h("div.lineup-steps");
+  const said = h("p.small.lineup-said");             // what just happened (or went wrong), in the box itself
   const title = h("h3.lineup-title");
   const hint = h("p.muted.small.lineup-hint");
   const main = h("div.lineup-main");
@@ -81,16 +88,36 @@ export function openLineUp(heads = null) {
     if (step < 2) point();
     paint();
   };
-  const go = (k) => { i = (k + order.length) % order.length; spread = 0; marks = farPair(roomSpots()); enter(); };
+  // the desk picks this light's two marks: spots it can really reach, where it
+  // plays (the dance floor, the DJ, your taped marks) - not the bar in
+  // another room - as far apart as those go
+  const pickMarks = async () => {
+    const r = await run("line_up_marks", { head: head() }, { silentError: true, quiet: true });
+    marks = r.ok && (r.marks || []).length ? r.marks.slice() : farPair(roomSpots());
+  };
+  const go = async (k) => { i = (k + order.length) % order.length; spread = 0; await pickMarks(); enter(); };
 
-  const onMark = async () => {
+  const tell = (text, bad = false) => { said.textContent = text; said.classList.toggle("bad", bad); };
+  let busy = false;
+  const onMark = async (e) => {
     const m = mark();
-    if (!m) return;
-    const r = await run("line_up", { head: head(), x: m.x, z: m.z });
-    if (!r.ok) return;
-    if (step === 0) { step = 1; point(); paint(); return; }
-    const s = await run("line_up", { head: head(), solve: true });
-    if (s.ok) { spread = +s.spread || 0; step = 2; paint(); }
+    if (!m || busy) return;
+    busy = true;
+    if (e && e.currentTarget) { e.currentTarget.disabled = true; e.currentTarget.textContent = "Keeping it…"; }
+    try {
+      const r = await run("line_up", { head: head(), x: m.x, z: m.z }, { silentError: true });
+      if (!r.ok) { tell(`That mark wasn't kept: ${r.error || "the desk didn't answer"}`, true); paint(); return; }
+      if (step === 0) {
+        step = 1; point();
+        const next = mark();
+        tell(next ? `✓ Mark 1 kept (${m.label}). Now the second one: ${next.label} - the light has moved there.`
+          : `✓ Mark 1 kept (${m.label}). Now pick a second spot, away from the first.`);
+        paint(); return;
+      }
+      const s = await run("line_up", { head: head(), solve: true }, { silentError: true });
+      if (!s.ok) { tell(`It couldn't be worked out: ${s.error || "the desk didn't answer"}`, true); paint(); return; }
+      spread = +s.spread || 0; step = 2; tell(""); paint();
+    } finally { busy = false; }
   };
 
   // small links: which way it turns, another spot, forget
@@ -156,6 +183,9 @@ export function openLineUp(heads = null) {
         (hd.align ? "✓ " : "") + nameOf(hd));
     }));
     const last = i === order.length - 1;
+    // the two marks and the result, the one now in hand lit
+    steps.replaceChildren(...[0, 1, 2].map((k) => h("span.lineup-step" + (k === step ? ".on" : k < step ? ".done" : ""),
+      k < 2 ? `${k < step ? "✓" : k + 1} ${(marks[k] || {}).label || "a second spot"}` : `${step === 2 ? "✓" : "3"} Lined up`)));
     if (step === 2) {
       const a = l.align || { pan: 0, tilt: 0 };
       title.textContent = `✓ ${nameOf(l)} is lined up`;
@@ -165,7 +195,7 @@ export function openLineUp(heads = null) {
       hint.classList.toggle("warn", spread > 3);
       main.replaceChildren(h("div.lineup-big",
         h("button.btn.primary.lineup-go", { onclick: () => (last ? close() : go(i + 1)) }, last ? "Done" : "Next light ▶"),
-        h("button.btn.ghost", { onclick: () => { step = 0; marks = farPair(roomSpots()); point(); paint(); } }, "Do it again")));
+        h("button.btn.ghost", { onclick: async () => { step = 0; await pickMarks(); point(); paint(); } }, "Do it again")));
       more.replaceChildren(link("Forget this light's line-up", h("button.btn.small.danger", {
         onclick: async () => { await run("line_up", { head: head(), clear: true }, { toast: true }); step = 0; point(); paint(); } }, "Forget it")));
       return;
@@ -182,6 +212,8 @@ export function openLineUp(heads = null) {
     title.textContent = `Point the real ${nameOf(l)} at ${m.label}`;
     hint.textContent = `Mark ${step + 1} of 2. It's on now, alone, and aimed there - use the arrows until the REAL beam is on ${m.label}.`;
     main.replaceChildren(pad, h("div.lineup-big", h("button.btn.primary.lineup-go", { onclick: onMark }, `It's on ${m.label} ✓`)));
+    if (step === 0) tell("Two spots, far apart: the desk knows where this light hangs and where they are in the room, so the "
+      + "two tell it how far the real light is turned - pan and tilt - and check each other.");
     more.replaceChildren(
       link("The arrows move it the wrong way?", flips()),
       link("Use a different spot", otherSpot()),
@@ -196,7 +228,7 @@ export function openLineUp(heads = null) {
   const off = on("snapshot", paintOnce);
   const close = modal({
     title: "Line up with the real lights",
-    body: h("div.lineup", chips, title, hint, main, more),
+    body: h("div.lineup", chips, steps, title, hint, said, main, more),
     foot: [h("span.muted.small.grow", "One light at a time: two marks each."),
       h("button.btn", { onclick: () => close() }, "Close")],
     onClose: () => { if (typeof off === "function") off(); run("highlight", { state: false }, { silentError: true }); },

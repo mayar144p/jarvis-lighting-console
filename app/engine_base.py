@@ -90,7 +90,7 @@ UNDO_LIMIT = 60
 UNDO_COALESCE_S = 1.2
 # Actions that are an event rather than an edit: never undone.
 UNDO_EXCLUDED = frozenset({
-    "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates", "beam_spot",
+    "line_up_marks", "status", "undo", "redo", "cue_go", "cue_back", "cue_forward", "quick_fader", "show_templates", "beam_spot",
     # quick buttons are played, not edited: a flash is not an undo step
     "quick_press", "quick_release_all", "quick_rate", "group_flash", "quick_profile_use",
     "ready_check", "show_versions", "show_export", "show_files", "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_pair", "hue_lights", "hue_flash", "song_follow", "standby", "standby_take", "standby_stop", "show_rename", "show_copy", "show_delete", "notice_seen", "osc_send", "timecode_ltc", "rdm_compare", "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get", "pad_info", "venue_info",
@@ -137,7 +137,7 @@ UNDO_EXCLUDED = frozenset({
 READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
-_READ_ONLY = frozenset({"show_templates", "status", "timecode_ltc", "fx_available", "get_limits", "cue_info", "pad_info",
+_READ_ONLY = frozenset({"show_templates", "status", "line_up_marks", "timecode_ltc", "fx_available", "get_limits", "cue_info", "pad_info",
                         "export_patch", "venue_info", "motion_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "show_files", "rdm_compare",
                         "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_lights", "hue_flash",
@@ -665,7 +665,7 @@ def _new_playback(n: int) -> dict:
 
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
-    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit",
+    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit", "line_up_marks",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset", "rename_preset",
