@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Playback</title>
+<html><head><meta charset="utf-8"><title>Macro</title>
 <style>
   body { font: 12px/1.4 -apple-system, "Segoe UI", sans-serif; color: #ddd; background: #2d2d2d; margin: 0; padding: 8px 12px; }
   label { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
@@ -8,13 +8,11 @@
   .hint { color: #999; margin: 2px 0 8px 104px; }
   hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
 </style></head><body>
-<label>Playback <input data-key="playback" type="number" min="1" max="99" placeholder="selected"></label>
-<p class="hint">Empty: the selected playback (GO / Back only).</p>
-<label>Step per click <input data-key="step" type="number" min="1" max="10" placeholder="3"></label>
-<p class="hint">Dials only: how far one click moves the fader, in %.</p>
+<label>Macro name <input data-key="macro" placeholder="e.g. Intro look"></label>
+<p class="hint">The macro's name as the desk's Macros list shows it.</p>
 <hr>
 <label>Desk computer <input data-global="host" placeholder="127.0.0.1"></label>
 <label>OSC port <input data-global="port" type="number" min="1" max="65535" placeholder="8000"></label>
-<p class="hint">Turn on Settings → MIDI &amp; OSC → OSC in on the desk. These two are shared by every Jarvis key.</p>
+<p class="hint">Turn on Settings → MIDI &amp; OSC → OSC in on the desk. These two are shared by every Haze key.</p>
 <script src="pi.js"></script>
 </body></html>

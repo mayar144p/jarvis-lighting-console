@@ -4,6 +4,7 @@
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { h, modal, promptBox, menu } from "./ui.js";
+import { icon } from "./icons.js";
 
 // ================================================================ cues
 export function openCueDialog(playback) {
@@ -37,14 +38,37 @@ export function openCueDialog(playback) {
   pbSel.addEventListener("change", drawWhere);
   where.addEventListener("change", drawMode);
   drawWhere();
+  // Records what the programmer holds (over a cue, its name and times stay
+  // unless new ones are typed); clearing after is the operator's choice
+  // what goes into it: the programmer, at a glance
+  const vals = ((state.snap && state.snap.programmer) || {}).values || {};
+  const lights = Object.keys(vals).length;
+  const FAM = [["Dimmer", /^(dimmer|zone_dimmer|shutter|strobe)$/], ["Colour", /^(red|green|blue|white|amber|uv|cyan|magenta|yellow|wheel)/],
+    ["Position", /^(pan|tilt)/], ["Beam", /^(gobo|zoom|focus|prism|iris|frost)/]];
+  const fams = FAM.filter(([, re]) => Object.values(vals).some((v) => Object.keys(v || {}).some((k) => re.test(k)))).map(([n]) => n);
+  const holds = h("div.rec-holds" + (lights ? "" : ".empty"),
+    lights ? [h("b", `${lights} light${lights === 1 ? "" : "s"}`), ...fams.map((x) => h("span.chip", x))]
+      : "The programmer is empty: set a look first (or record an empty cue to fill later).");
+  // a fade in one tap
+  const fadeChips = h("div.rec-fades", ...[0, 1, 2, 5, 10].map((v) => h("button.chip", { type: "button",
+    onclick: () => { fade.value = String(v); fadeChips.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.textContent === `${v}s`)); } }, `${v}s`)));
+  const clearBox = h("input", { type: "checkbox" });
+  try { clearBox.checked = localStorage.getItem("haze.clearAfterRecord") === "1"; } catch (e) { /* fine */ }
   const close = modal({
     title: "Record cue",
-    body: h("div.form-grid",
-      h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where),
-      h("div.field", h("span", " "), modeBox),
+    // three tidy rows: where it goes, its name, its times - then what
+    // happens to the programmer
+    body: h("div.rec-cue",
+      holds,
+      h("div.rec-row.two", h("label.field", h("span", "Playback"), pbSel), h("label.field", h("span", "Where"), where)),
+      h("div.rec-mode", modeBox),
       h("label.field", h("span", "Name"), name),
-      h("label.field", h("span", "Fade (s)"), fade), h("label.field", h("span", "Hold before auto-follow (s)"), hold)),
-    foot: [h("span.muted.small.grow", "Records what the programmer holds, then clears it. Over a cue, its name and times are kept unless you type new ones."),
+      h("div.rec-row.two",
+        h("label.field", h("span", icon("fadein"), "Fade in"), h("div.rec-unit", fade, h("i", "s")), fadeChips),
+        h("label.field", { title: "With auto-follow on, how long it holds before the next cue starts by itself" },
+          h("span", icon("delay"), "Then next cue after"), h("div.rec-unit", hold, h("i", "s")))),
+      h("label.check.rec-clear", clearBox, h("span", "Clear the programmer after recording", h("small.muted", " - off: build the next cue from this one")))),
+    foot: [h("span.grow"),
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.primary", {
         onclick: async () => {
@@ -52,6 +76,8 @@ export function openCueDialog(playback) {
           if (where.value !== "") { params.cue = +where.value; params.mode = mode; }
           if (fade.value !== "") params.fade = +fade.value || 0;
           if (hold.value !== "") params.hold = +hold.value;
+          params.keep = !clearBox.checked;
+          try { localStorage.setItem("haze.clearAfterRecord", clearBox.checked ? "1" : "0"); } catch (e) { /* fine */ }
           const r = await run("record_cue", params, { toast: true });
           if (r.ok) close();
         },
@@ -121,6 +147,30 @@ function partTimes(n, c, refresh) {
   }, set ? `${set} part${set > 1 ? "s" : ""}` : "parts");
 }
 
+// A cue's delay (it waits before fading) and fan (the lights start one
+// after another, across the stage) - as on a pro desk
+const FAN_DIRS = [["left", "Left to right"], ["right", "Right to left"], ["centre", "Middle out"], ["edges", "Edges in"]];
+function delayFan(n, c, refresh) {
+  const on = (+c.delay_s || 0) > 0 || (+c.fan_s || 0) > 0;
+  const dir = (FAN_DIRS.find(([k]) => k === c.fan_dir) || FAN_DIRS[0])[1];
+  return h("button.chip.cue-parts" + (on ? ".on" : ""), {
+    title: on ? `Delay ${c.delay_s || 0} s · fan ${c.fan_s || 0} s, ${dir.toLowerCase()}` : "Wait before it fades, or start the lights one after another",
+    onclick: (e) => menu(e.currentTarget, [
+      { label: `Delay: ${c.delay_s || 0} s`, hint: "it waits this long after GO", run: async () => {
+        const v = await promptBox("Delay", "Seconds it waits after GO before fading", String(c.delay_s || 0), { ok: "Set" });
+        if (v !== null) run("edit_cue", { playback: n, cue: c.n, delay: +v || 0 }).then(refresh);
+      } },
+      { label: `Fan: ${c.fan_s || 0} s`, hint: "the last light starts this much after the first", run: async () => {
+        const v = await promptBox("Fan", "Seconds between the first light starting and the last (0 = all together)", String(c.fan_s || 0), { ok: "Set" });
+        if (v !== null) run("edit_cue", { playback: n, cue: c.n, fan: +v || 0 }).then(refresh);
+      } },
+      "-",
+      ...FAN_DIRS.map(([k, l]) => ({ label: (k === (c.fan_dir || "left") ? "✓ " : "  ") + l,
+        run: () => run("edit_cue", { playback: n, cue: c.n, fan_dir: k }).then(refresh) })),
+    ]),
+  }, icon(c.fan_s && !c.delay_s ? "fan" : "delay"), on ? `${c.delay_s ? `wait ${c.delay_s}s ` : ""}${c.fan_s ? `fan ${c.fan_s}s` : ""}`.trim() : "delay / fan");
+}
+
 const CUE_ACTS = [
   ["quick_press", "Press a button", "id", "button id or name"],
   ["macro_run", "Run a macro", "id", "macro name"],
@@ -184,11 +234,12 @@ export function openCueList(n) {
       fd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, fade: +fd.value }).then(refresh));
       hd.addEventListener("change", () => run("edit_cue", { playback: n, cue: c.n, hold: +hd.value }).then(refresh));
       const tr = h("tr" + (i === pb.index ? ".sel" : ""), { draggable: "true", title: "Drag to reorder" },
-        h("td.mono.cue-grip", "⋮⋮ ", c.n, c.block ? h("span.chip", { title: "Block: starts afresh" }, "B") : null,
+        h("td.mono.cue-grip", { title: i === pb.index ? "Playing now - drag to reorder" : "Drag to reorder" },
+          h("span.cue-grip-h", i === pb.index ? "▶" : "⋮⋮"), " ", c.n, c.block ? h("span.chip", { title: "Block: starts afresh" }, "B") : null,
           (c.actions || []).length ? h("span.chip", { title: c.actions.map((a) => a.action).join(", ") }, "▶" + c.actions.length) : null), h("td", nm, cueTimeline(c, longest),
           (c.fx || []).length ? h("div.cue-fx", { title: "Effects this cue runs (they stop at the next cue or on release)" },
             "⚡ " + c.fx.join(", ")) : null),
-        h("td", fd, partTimes(n, c, () => refresh())), h("td", hd),
+        h("td", h("div.cue-fadecell", fd, partTimes(n, c, () => refresh()), delayFan(n, c, () => refresh()))), h("td", hd),
         h("td", followCell(n, c, () => refresh())),
         h("td", h("div.row-btns",
           h("button.btn.small", { title: "Go to this cue", onclick: () => run("cue_go", { playback: n, cue: c.n }) }, "Go"),
@@ -227,7 +278,7 @@ export function openCueList(n) {
       h("div.row-btns",
         h("button.btn.small" + (pb.tracking ? ".on" : ".ghost"), { title: "Tracking: a cue holds only what it changes, the rest carries on from the cues before. Off: each cue is the whole look.", onclick: () => run("playback_mode", { playback: n, tracking: !pb.tracking }, { toast: true }).then(refresh) }, pb.tracking ? "Tracking" : "Cue only"),
         h("button.btn.small" + (pb.mib ? ".on" : ".ghost"), { title: "Move in black: lights that are dark now and on in the next cue move there while dark", onclick: () => run("playback_mode", { playback: n, mib: !pb.mib }, { toast: true }).then(refresh) }, "Move in black")),
-      h("table.chan-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", "Fade s"), h("th", "Hold s"),
+      h("table.chan-table.cue-table", h("thead", h("tr", h("th", "#"), h("th", "Name"), h("th", icon("fadein"), " Fade s"), h("th", icon("delay"), " Hold s"),
         h("th", { title: "Stack inherits the playback's auto-follow; Wait holds for GO; Auto runs the next cue by itself" }, "Then"), h("th", ""))),
         h("tbody", ...(rows.length ? rows : [h("tr", h("td", { colspan: 6, class: "muted" }, "No cues yet - set a look and record one."))]))),
       h("p.muted.small", "Then: ", h("b", "Stack"), ` follows the playback's auto-follow${delay ? ` (${delay}s)` : ""}, `,

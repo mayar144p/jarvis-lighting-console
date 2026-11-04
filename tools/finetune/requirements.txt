@@ -1,0 +1,4 @@
+# for tools/finetune/train.py (an NVIDIA card, Linux or WSL2)
+unsloth
+trl
+datasets

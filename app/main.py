@@ -1,4 +1,4 @@
-"""Jarvis desktop server - stdlib only.
+"""Haze desktop server - stdlib only.
 
 Run:  python app/main.py   (or run-desktop.bat / run-desktop.sh for the app)
 Then: http://localhost:8787
@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 # Works both as `python app/main.py` and `python -m app.main`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import (artnet, autoshow, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
+from app import (artnet, autoshow, showkit, rekordbox, bugreport, config, console_ai, dmxin, doctor, fixlib, localai, manual,  # noqa: E402
                  fixture_kind, fixtures, gdtf_geom, gdtfshare, llm, midi, mvr, profiles, rdm, roomshape, streamdeck)
 from app import engine as engine_mod  # noqa: E402
 from app.engine_support import channel_role  # noqa: E402
@@ -179,7 +179,7 @@ def audio_path(ident: str) -> Path | None:
 SCREEN_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 SCREEN_MAX = 500 * 1024 * 1024
-UPLOAD_TYPE = "application/x-jarvis-upload"
+UPLOAD_TYPE = "application/x-haze-upload"
 RAW_UPLOAD_ROUTES = frozenset({"/api/console/screen_media", "/api/mvr/import", "/api/console/unpack"})
 
 
@@ -276,7 +276,7 @@ def underlay_path(ident: str) -> Path | None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Jarvis/0.1"
+    server_version = "Haze/0.1"
     protocol_version = "HTTP/1.1"
 
     def handle(self) -> None:
@@ -411,7 +411,7 @@ class Handler(BaseHTTPRequestHandler):
         token = config.CONSOLE_TOKEN
         if not token:
             return not config.requires_token()
-        return hmac.compare_digest(self.headers.get("X-Jarvis-Token") or "", token)
+        return hmac.compare_digest(self.headers.get("X-Haze-Token") or "", token)
 
     # Everything under /api/ needs the token unless it is listed here: a new
     # endpoint is private until deliberately made public.  These two are
@@ -421,6 +421,8 @@ class Handler(BaseHTTPRequestHandler):
     def _needs_auth(self, route: str, method: str) -> bool:
         if not route.startswith("/api/"):
             return False        # a static file; reads nothing sensitive
+        if route == "/api/request":
+            return False        # (the requests page: its own code, checked there - it can only ask)
         if method == "GET" and route in self.PUBLIC_API_GET:
             return False
         return True
@@ -512,6 +514,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": refused}, 403)
         if self._needs_auth(route, "POST") and not self._authorised():
             return self._deny()
+        if route == "/api/request":
+            # a DJ / host asking from a phone (web/requests.html): only with
+            # the requests code (or the desk's own token)
+            from app import djrequests
+            eng = engine_mod.ENGINE
+            try:
+                body = self._read_body()
+            except (ValueError, json.JSONDecodeError):
+                body = {}
+            if eng is None or not (djrequests.allowed(eng, self.headers.get("X-Haze-Request") or "") or self._authorised()):
+                return self._json({"ok": False, "error": "the request code isn't right - ask the operator for the link"}, 403)
+            client = str(body.get("client") or "")[:40]
+            if body.get("text"):
+                try:
+                    djrequests.add(eng, body["text"], body.get("who") or "", client)
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            return self._json({"ok": True, "mine": djrequests.mine(eng, client)})
         if route == "/api/console/screen_media":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -667,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the AI switch and the online key; the key is never sent back
                 try:
                     return self._json(llm.save_settings(**{k: body[k] for k in (
-                        "mode", "key", "model", "local_url", "local_model") if k in body}))
+                        "mode", "key", "model", "local_url", "local_model", "web") if k in body}))
                 except ValueError as exc:
                     return self._json({"error": str(exc)}, 400)
             if route == "/api/ai/local":
@@ -777,8 +797,13 @@ class Handler(BaseHTTPRequestHandler):
                          "/api/console/underlay", "/api/console/audio",
                          "/api/console/autoshow", "/api/console/rdm", "/api/console/rekordbox",
                          "/api/console/look", "/api/console/room", "/api/console/sound",
-                         "/api/console/media_frame", "/api/console/assistant"):
+                         "/api/console/media_frame", "/api/console/assistant", "/api/console/transcribe",
+                         "/api/console/requests"):
                 return self._console_post(route, body, query)
+        except ValueError as exc:
+            # "can't do that" said back (a show needs the AI, nothing patched):
+            # the screen shows it where it was asked - not a desk problem
+            return self._json({"error": str(exc)}, 400)
         except Exception as exc:  # noqa: BLE001 - surface to the UI
             bugreport.note_error(route, exc)
             return self._json({"error": str(exc)}, 500)
@@ -810,7 +835,15 @@ class Handler(BaseHTTPRequestHandler):
             if eng.__dict__.get("ai_operator"):
                 from app import ai_operator
                 ai_operator.take_over(eng, action)
-            return self._console_result(eng, eng.act(action, **params))
+            res = eng.act(action, **params)
+            if res.get("ok"):
+                # two people editing at once: a heads-up when another screen
+                # just changed the same cue / button / palette / room
+                from app import editors
+                warn = editors.note(action, params, self.headers.get("X-Haze-Client") or "")
+                if warn:
+                    res = {**res, "warning": warn}
+            return self._console_result(eng, res)
         if route == "/api/console/underlay":
             return self._json(save_underlay(body))
         if route == "/api/console/audio":
@@ -1016,13 +1049,51 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console_result(eng, autoshow.refine(
                     eng, str(body["refine"]), offline=bool(body.get("offline"))))
             if body.get("apply") and isinstance(body.get("design"), dict):
-                return self._console_result(eng, autoshow.build(eng, body["design"], playback))
-            return self._console_result(eng, autoshow.design(
-                eng, str(body.get("prompt", "")), offline=bool(body.get("offline"))))
+                # the buttons to play it live first (a profile of its own), so
+                # the cues' hit buttons land in it - not in the show before
+                kit, note = None, ""
+                design = dict(body["design"])
+                if body.get("buttons", True):
+                    try:
+                        kit = showkit.build(eng, design, playback)
+                        # (named "Halloween 2": its palettes too, or the first
+                        # Halloween's cues would follow the new palettes)
+                        design["name"] = kit["profile"]
+                    except ValueError as exc:
+                        note = f" (the buttons couldn't be made: {exc})"
+                built = autoshow.build(eng, design, playback)
+                if kit:
+                    built["summary"] += "; " + kit["summary"]
+                    built["kit"] = kit
+                built["summary"] += note
+                return self._console_result(eng, built)
+            # (designing a whole show is the AI's: never the desk's rules alone)
+            return self._console_result(eng, autoshow.design(eng, str(body.get("prompt", "")),
+                                                             variants=int(body.get("variants") or 1)))
         if route == "/api/console/sound":
             # The browser's listening, ~25 a second: not an action (no undo,
             # no reload of every screen), the engine keeps the latest.
             return self._json(eng.sound_feed(body, str(body.get("device") or self.client_address[0])))
+        if route == "/api/console/requests":
+            # the operator's side of the DJ requests: the code, an answer
+            from app import djrequests
+            if body.get("new_code"):
+                djrequests.new_code(eng)
+            if body.get("answer") is not None:
+                try:
+                    djrequests.answer(eng, int(body["answer"]), body.get("yes") is not False, str(body.get("note") or ""))
+                except (ValueError, TypeError) as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            return self._json({"ok": True, "code": djrequests.code(eng), "pending": djrequests.pending(eng)})
+        if route == "/api/console/transcribe":
+            # the copilot's hold-to-talk, when the browser can't do it itself
+            audio = str(body.get("audio") or "")
+            if not audio or len(audio) > 4_000_000:
+                return self._json({"ok": False, "error": "a recording of up to about a minute"})
+            try:
+                return self._json({"ok": True, "text": llm.transcribe(audio, str(body.get("format") or "wav"))})
+            except llm.LLMError as exc:
+                return self._json({"ok": False, "error": str(exc)})
         if route == "/api/console/assistant":
             # The AI assistant: a loop of tool calls (look, act, check, ask)
             # off the engine lock; everything it does is one undo step and,
@@ -1032,27 +1103,63 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("reset"):
                 assistant.forget_session(session)
                 return self._json({"ok": True})
+            if body.get("progress"):
+                # what the running request is doing now, step by step
+                return self._json(assistant.progress(session))
+            if body.get("stop"):
+                # the operator's Stop: it ends at its next step
+                return self._json(assistant.stop(session))
             if body.get("confirm"):
                 # the operator's tap on something the AI prepared (A13)
                 from app import aitools
                 return self._json(aitools.confirm(eng, str(body.get("confirm")), body.get("yes") is not False))
-            if body.get("notes") is not None:
-                if isinstance(body.get("forget"), int):
-                    lst = assistant.notes()
-                    if 0 <= body["forget"] < len(lst):
-                        lst.pop(body["forget"])
-                        assistant._save_notes(lst)
-                return self._json({"ok": True, "notes": assistant.notes()})
-            if not llm.available():
-                return self._json({"ok": False, "no_key": True,
-                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
+            if body.get("example") is not None:
+                # the operator's verdict on a request (kept / thrown away),
+                # and the examples' counts / export for the fine-tuning kit
+                from app import aiexamples
+                if body.get("export"):
+                    return self._json({"ok": True, **aiexamples.export(tools=assistant.TOOLS)})
+                if body.get("example"):
+                    aiexamples.verdict(str(body["example"]), None if body.get("unkeep") else body.get("good") is not False)
+                return self._json({"ok": True, "examples": aiexamples.stats()})
+            if body.get("notes") is not None or body.get("learning") is not None:
+                # everything the AI has learnt, and the operator's say over it
+                # (app/ailearn.py): keep / forget a note, forget a habit or an
+                # undo, take back a Keep, pause learning, start again
+                from app import aiexamples, ailearn
+                op = str(body.get("op") or "")
+                if op in ("keep", "drop"):
+                    ailearn.decide(str(body.get("id") or ""), op == "keep")
+                elif op == "add":
+                    r = ailearn.add(str(body.get("text") or ""), True, typed=True)
+                    if not r.get("ok"):
+                        return self._json(r)
+                elif op == "forget_habit":
+                    ailearn.dismiss_habit(str(body.get("id") or ""))
+                elif op == "forget_undo":
+                    ailearn.dismiss_undo(str(body.get("id") or ""))
+                elif op == "unkeep":
+                    aiexamples.verdict(str(body.get("id") or ""), None)
+                elif op == "pause":
+                    ailearn.set_paused(bool(body.get("on")))
+                elif op == "forget_all":
+                    ailearn.forget_all()
+                st = ailearn.state()
+                lr = showkit.learning(eng)
+                return self._json({
+                    "ok": True, "paused": st["paused"],
+                    "notes": [n for n in st["notes"] if n["status"] == "kept"],
+                    "pending": [n for n in st["notes"] if n["status"] == "pending"],
+                    "habits": lr["habits"], "one_off": lr["one_off"][:20],
+                    "examples": aiexamples.kept_list(), "undone": aiexamples.recently_undone(k=10)})
             if body.get("operator"):
                 # the AI running the lights live: start / stop / status
                 from app import ai_operator
                 what = str(body.get("operator"))
                 if what == "start":
-                    if not llm.available():
-                        return self._json({"ok": False, "no_key": True, "error": "no AI yet - add a key or the offline AI in Settings -> AI"})
+                    # with no AI it still busks the show's buttons (the desk's own rules)
+                    if not llm.available() and not ai_operator.show_buttons(eng):
+                        return self._json({"ok": False, "no_key": True, "error": "no AI yet (Settings -> AI) and no show buttons to play - design a show first"})
                     try:
                         return self._json({"ok": True, "operator": ai_operator.start(
                             eng, body.get("brief") or "", int(body.get("bars") or 16), body.get("drops") is not False)})
@@ -1061,12 +1168,21 @@ class Handler(BaseHTTPRequestHandler):
                 if what == "stop":
                     return self._json({"ok": True, "operator": ai_operator.stop(eng, "you took over")})
                 return self._json({"ok": True, "operator": ai_operator.status(eng)})
+            if not llm.available():
+                return self._json({"ok": False, "no_key": True,
+                                   "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
+            if body.get("dj_request") is not None:
+                # Do it on a DJ / host request: live, within the room's rules
+                try:
+                    return self._json(_ai_noted(assistant.do_request(eng, int(body["dj_request"]))))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False, "error": "which request?"})
             if body.get("resume"):
                 # the screen's picture of the 3D view the AI asked to see
                 return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))
             return self._json(_ai_noted(assistant.run_turn(eng, str(body.get("message") or ""), session,
                                                  image=body.get("image"), preview=body.get("preview") is not False,
-                                                 can_see=bool(body.get("can_see")))))
+                                                 can_see=bool(body.get("can_see")), screen=body.get("screen"))))
         if route == "/api/console/media_frame":
             # A video playing in a browser, ~25 frames a second, shrunk to
             # at most 96 x 96: not an action, the engine keeps the latest.
@@ -1101,11 +1217,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._console_result(eng, result)
         if route == "/api/console/generate":
             # Brief -> 2-3 concepts; the engine is only touched when the
-            # operator confirms via /api/console/import_show.
+            # operator confirms via /api/console/import_show.  Designing is
+            # the AI's (the desk's templates alone gave the same few looks)
+            if not llm.available():
+                return self._json({"error": "Designing concepts needs the AI: choose it in the list at the top "
+                                            "of the Copilot (Settings -> AI)"}, 400)
             result = console_ai.generate(
                 str(body.get("prompt", "")),
                 variant=int(body.get("variant", 0) or 0),
-                offline=bool(body.get("offline")), eng=eng)
+                offline=False, eng=eng)
             return self._console_result(eng, result)
 
     def _stream(self) -> None:
@@ -1187,7 +1307,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/status":
             status = config.status()
             # the AI switch (Settings -> AI): online, local or auto
-            ai = llm.public()
+            ai = llm.public(wait=False)        # (never waits on the local AI)
             status.update(llm_configured=ai["available"], ai=ai,
                           model=ai["model"] if ai["mode"] != "local" or not ai["local_running"]
                           else (ai["local_model"] or (ai["local_models"] or ["local AI"])[0]))
@@ -1199,6 +1319,8 @@ class Handler(BaseHTTPRequestHandler):
                 status["console"]["live"] = engine_mod.ENGINE.live
                 status["console"]["patched"] = len(engine_mod.ENGINE.patch)
                 status["console"]["selected"] = len(engine_mod.ENGINE.selected)
+            from app import editors
+            status["screens"] = editors.screens()     # people working the desk now
             status["dmx_input"] = dmxin.snapshot()   # observable input state
             status["midi"] = midi.status()           # devices / open / errors
             return self._json(status)
@@ -1597,7 +1719,7 @@ def main() -> None:
         print("* midi: " + (f"open ({midi_info.get('device')})"
                             if midi_info.get("open")
                             else (midi_info.get("error") or "idle")))
-    if os.environ.get("JARVIS_DESKTOP") == "1":
+    if os.environ.get("HAZE_DESKTOP") == "1":
         # started by the desktop app: when it closes (or crashes) its end of
         # our stdin closes, and the desk shuts down cleanly - the show saved,
         # the outputs stopped - instead of being killed mid-write

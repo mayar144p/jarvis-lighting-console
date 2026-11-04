@@ -148,7 +148,7 @@ class SelectMixin:
         return {"selected": merged, "total": len(merged)}
 
     def _auto_groups(self) -> list[dict]:
-        """Groups Jarvis makes by itself: one per kind of light ("Moving
+        """Groups Haze makes by itself: one per kind of light ("Moving
         spots · 6") and one per truss / pole / pipe the lights hang on
         ("Front truss · 8"), plus the floor.  Worked out from the patch and
         the venue, never stored, so they follow the rig as it changes."""

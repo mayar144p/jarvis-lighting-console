@@ -8,7 +8,7 @@ import { doorFrom, balconyFrom, pillarAt } from "./drafting.js";
 import { post, token } from "./api.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, h, menu, toast, promptBox, confirmBox, typingInField, anyModal, modal } from "./ui.js";
+import { $, h, menu, toast, promptBox, confirmBox, choiceBox, typingInField, anyModal, modal } from "./ui.js";
 
 let stage = null;
 let editor = null;
@@ -27,10 +27,28 @@ const OBJECT_ADD = [
   ["dj_booth", "DJ booth"], ["bar", "Bar"], ["speaker", "Speaker"], ["sub", "Sub"],
   ["pillar", "Pillar"], ["screen", "LED screen"], ["riser", "Riser"], ["table", "Table"],
   ["balcony", "Balcony"], ["wall", "Wall"], ["mark", "Performer mark"],
+  ["drape", "Drape (pleated curtain)"], ["panels", "LED panels (a grid)"],
+  "-",                                              // club furniture
+  ["bar_curve", "Half-round bar"], ["high_table", "High table (poseur)"], ["half_table", "Half-round table"],
+  ["couch", "VIP couch"], ["vip_booth", "VIP booth (curved, with its table)"], ["armchair", "Armchair"],
+  ["stool", "Bar stool"], ["rope", "VIP rope and posts"], ["plant", "Plant"],
+];
+const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
+// a pro desk's hang types: [value, name, what it means]
+const HANG_TYPES = [
+  ["hung", "Hung", "Upside down under a bar (normal for a light on a truss)."],
+  ["standing", "Standing", "On the floor or on top of a truss, its base down."],
+  ["bottom_front", "Bottom front", "On its back on an upright, its head towards the audience, the display at the bottom."],
+  ["top_front", "Top front", "On its back on an upright, its head towards the audience, the display at the top."],
+  ["bottom_rear", "Bottom rear", "On its back, its head towards the back of the stage, the display at the bottom."],
+  ["top_rear", "Top rear", "On its back, its head towards the back of the stage, the display at the top."],
+  ["boom_left", "Boom left", "On its side on a boom, its head to the left as the audience sees it: at rest it points sideways."],
+  ["boom_right", "Boom right", "On its side on a boom, its head to the right as the audience sees it: at rest it points sideways."],
 ];
 export const ZONE_KINDS = [
   ["dancefloor", "Dance floor"], ["standing", "Standing"], ["seating", "Seating"], ["bar", "Bar"],
   ["vip", "VIP"], ["dj", "DJ / stage area"], ["foh", "FOH / tech"], ["backstage", "Backstage"],
+  ["keepout", "Keep out (no beams)"],
 ];
 
 // the engine's venue as soon as a snapshot brings it (the 3D rebuilds a
@@ -67,6 +85,17 @@ function defaults(kind) {
     case "balcony": return { x, z, w: 6, d: 2, h: 0.25, y: 3 };
     case "wall": return { x, z, w: 4, d: 0.15, h: Math.min(3, H) };
     case "mark": return { x, z: Math.max(0.5, (stage.stageFront || 2) - 1.5), w: 0.5, d: 0.5, h: 0.02, y: 0 };
+    case "drape": return { x, z: z - 2, w: 8, d: 0.25, h: Math.min(6, H - 0.5), fold: 0.45, colour: "#6e7076" };
+    case "panels": return { x, z: z - 2, w: 6, d: 0.1, h: 3, y: 1, tile: 0.5, gap: 0.5 };
+    case "bar_curve": return { x, z: z + 3, w: 6, d: 0.8, h: 1.1, arc: 180 };
+    case "high_table": return { x, z, w: 0.7, d: 0.7, h: 1.1 };
+    case "half_table": return { x, z, w: 1.2, d: 0.6, h: 0.75, arc: 180 };
+    case "couch": return { x, z, w: 2.2, d: 0.9, h: 0.8 };
+    case "vip_booth": return { x, z, w: 2.6, d: 0.6, h: 0.95, arc: 180 };
+    case "armchair": return { x, z, w: 0.9, d: 0.85, h: 0.8 };
+    case "stool": return { x, z, w: 0.4, d: 0.4, h: 0.75 };
+    case "rope": return { x, z, w: 5, d: 0.3, h: 1.0 };
+    case "plant": return { x, z, w: 0.6, d: 0.6, h: 1.6 };
     default: return { x, z };
   }
 }
@@ -336,6 +365,12 @@ function renderInspector(sel) {
       ...["hang", "stand"].map((k) => h("button" + ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === k ? ".on" : ""), {
         onclick: () => run("set_place", { head: s.head, stance: k, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }),
       }, k === "hang" ? "Hang" : "Stand")));
+    // how it is mounted, as on a pro desk (the aim and the 3D turn it so)
+    const cur = hd.hang || ((hd.stance || (hd.kind === "truss" ? "hang" : "stand")) === "hang" ? "hung" : "standing");
+    const hangSel = h("select.select", { title: "How the light is mounted: which way its base faces" },
+      ...HANG_TYPES.map(([k, l]) => h("option", { value: k, selected: k === cur }, l)));
+    hangSel.addEventListener("change", () => run("set_place", { head: s.head, hang: hangSel.value, ...(mount.rig ? { rig: mount.rig, t: mount.t } : {}) }));
+    const hangHint = h("p.muted.small", (HANG_TYPES.find((x) => x[0] === cur) || [])[2] || "");
     body.push(h("div.vi-title", `#${hd.head_no} ${hd.name || hd.model}`),
       h("div.vi-sub", (hd.body && hd.body.label) || hd.model),
       h("div.vi-row", field("X", num(hd.x, (v) => run("set_place", { head: s.head, x: v }))),
@@ -343,7 +378,8 @@ function renderInspector(sel) {
         field("Z", num(hd.z, (v) => run("set_place", { head: s.head, z: v })))),
       field("On", rigSel),
       field("Along", along),
-      field("Mount", stance));
+      field("Mount", stance),
+      field("Hang", hangSel), hangHint);
     if (!moving) {
       const rot = hd.rot || null;
       body.push(h("div.vi-row",
@@ -362,16 +398,22 @@ function renderInspector(sel) {
     const found = (venue().rigging || []).find((r) => r.id === s.id);
     if (!found) { box.hidden = true; return; }
     const upd = (changes) => run("venue_update", { id: s.id, changes }).then((r) => { askTurned(r); return r; });
-    const len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    let len = Math.hypot(found.b[0] - found.a[0], found.b[1] - found.a[1], found.b[2] - found.a[2]);
+    if (found.bend) {                          // along the curve (as the desk measures it)
+      const th = Math.abs(found.bend) * Math.PI / 180, chord = Math.hypot(found.b[0] - found.a[0], found.b[2] - found.a[2]);
+      len = Math.hypot(chord * (th / 2) / Math.sin(th / 2), found.b[1] - found.a[1]);
+    }
     const riders = (state.snap.patch || []).filter((x) => (x.mount || {}).rig === s.id).length;
     const name = h("input", { type: "text", value: found.name || "", placeholder: found.kind });
     name.addEventListener("change", () => upd({ name: name.value }));
     const midY = (found.a[1] + found.b[1]) / 2;
     const sel = (state.snap && state.snap.selected) || [];
+    const bent = !!found.bend;                // a piece of a curve: the whole shape turns and grows
     body.push(h("div.vi-title", found.name || found.kind), h("div.vi-sub", `${found.kind} · ${len.toFixed(2)} m · ${riders} light${riders === 1 ? "" : "s"}`),
       field("Name", name),
-      h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
-      h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
+      bent ? h("p.muted.small", "A piece of a curve: Turn, Length and Trim change the whole shape, so the curve stays a curve.") : null,
+      bent ? null : h("div.vi-row", h("span.vi-k", "End A"), ...[0, 1, 2].map((i) => num(found.a[i], (v) => { const a = [...found.a]; a[i] = v; upd({ a }); }))),
+      bent ? null : h("div.vi-row", h("span.vi-k", "End B"), ...[0, 1, 2].map((i) => num(found.b[i], (v) => { const b = [...found.b]; b[i] = v; upd({ b }); }))),
       field("Height", num(r2(midY), (v) => {
         const d = v - midY;
         upd({ a: [found.a[0], r2(found.a[1] + d), found.a[2]], b: [found.b[0], r2(found.b[1] + d), found.b[2]] });
@@ -389,7 +431,7 @@ function renderInspector(sel) {
       h("div.row-btns",
         h("button.btn.small", { title: "Turn it a quarter turn about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 90 }, { toast: true }) }, "Turn 90°"),
         h("button.btn.small", { title: "Turn it 45° about its middle", onclick: () => run("venue_rig", { id: s.id, turn: 45 }, { toast: true }) }, "Turn 45°"),
-        Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
+        bent ? null : Math.abs(found.a[1] - found.b[1]) > Math.max(Math.abs(found.a[0] - found.b[0]), Math.abs(found.a[2] - found.b[2]))
           ? h("button.btn.small", { onclick: () => run("venue_rig", { id: s.id, orient: "horizontal" }, { toast: true }) }, "Lay it flat")
           : h("button.btn.small", { title: "Stand it up as a pole / tower on the floor", onclick: () => run("venue_rig", { id: s.id, orient: "vertical" }, { toast: true }) }, "Stand it up"),
         h("button.btn.small", { title: "Hang it just under the ceiling", onclick: () => run("venue_rig", { id: s.id, ceiling: true }, { toast: true }) }, "Hang from ceiling"),
@@ -399,7 +441,9 @@ function renderInspector(sel) {
         } }, "Trim…"),
         h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
-      h("p.muted.small", "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
+      h("p.muted.small", found.bend
+        ? "Drag the arrows to move the whole curve, or press E and drag the ring to turn it. Shift+click other rigging to line them up."
+        : "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
@@ -415,6 +459,13 @@ function renderInspector(sel) {
       h("div.vi-row", field("X", num(o.x, (v) => upd({ x: v }))), field("Z", num(o.z, (v) => upd({ z: v }))), field("Up", num(o.y, (v) => upd({ y: v }), { min: 0 }))),
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
+      CURVED.has(o.kind) ? field("Curve°", num(o.arc || 180, (v) => upd({ arc: v }), { min: 60, max: 300, step: 15 })) : null,
+      o.kind === "screen" || o.kind === "panels" || o.kind === "mark" ? null : field("Colour", (() => {
+        const c = h("input", { type: "color", value: o.colour || "#4a2a55", title: "Its colour (a couch's fabric, a bar's wood)" });
+        c.addEventListener("change", () => upd({ colour: c.value }));
+        return c;
+      })()),
+      CURVED.has(o.kind) ? h("p.muted.small", "W is across its straight side; D how deep the counter or seat is.") : null,
       o.kind === "screen" ? screenContent(o, upd) : null,
       h("p.muted.small", "Shift+click other objects or rigging to line them up."),
       h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
@@ -466,7 +517,7 @@ async function uploadScreenFile(file) {
   toast(`Sending ${file.name}…`, "", 1600);
   const r = await fetch("/api/console/screen_media", {
     method: "POST", body: file,
-    headers: { "Content-Type": "application/x-jarvis-upload", ...(t ? { "X-Jarvis-Token": t } : {}) },
+    headers: { "Content-Type": "application/x-haze-upload", ...(t ? { "X-Haze-Token": t } : {}) },
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.id) throw new Error(d.error || `upload failed (${r.status})`);
@@ -535,8 +586,9 @@ function openAdd(btn) {
   menu(btn, [
     ...RIG_ADD.map(([k, l, hint]) => ({ label: l, hint, run: () => addItem(k, l) })),
     "-",
-    ...OBJECT_ADD.map(([k, l]) => ({ label: l, run: () => addItem(k, l) })),
+    ...OBJECT_ADD.map((x) => (x === "-" ? x : { label: x[1], run: () => addItem(x[0], x[1]) })),
     "-",
+    { label: "Mark out by pointing a light…", hint: "a zone's corners, or Not here", run: () => import("./roomteach.js").then((m) => m.openRoomTeach()) },
     { label: "Draw a door…", hint: "two clicks along a wall", run: () => drawDraft("door") },
     { label: "Draw pillars…", hint: "click where each one stands", run: () => drawDraft("pillar") },
     { label: "Draw a balcony…", hint: "two corners", run: () => drawDraft("balcony") },
@@ -544,6 +596,20 @@ function openAdd(btn) {
     ...((venue().room || {}).areas || []).map((ar) => ({ label: `${ar.name} · ${ar.height} m…`, hint: "change its height, or take it away", run: () => editArea(ar) })),
     "-",
     { label: "Stage deck", disabled: !!venue().stage, run: () => run("venue_stage", { x: 0, z: 0, width: 8, depth: 4, height: 0.6 }, { toast: true }) },
+  ]);
+}
+
+// + Truss: a straight one here and now, or a curve from the rigging library
+const rigDialog = (shape) => import("./rigdialog.js").then((m) => m.openRigDialog("add", shape));
+function openTruss(btn) {
+  menu(btn, [
+    { label: "Straight truss", hint: "A 6 m box truss, flown", run: () => addItem("truss", "Truss") },
+    "-",
+    { label: "Circle…", hint: "a ring of truss", run: () => rigDialog("circle") },
+    { label: "Arc…", hint: "part of a circle: radius, from and to", run: () => rigDialog("arc") },
+    { label: "Spiral…", hint: "winds up and round: turns and rise", run: () => rigDialog("spiral") },
+    { label: "S curve…", hint: "two bends, one each way", run: () => rigDialog("scurve") },
+    { label: "Corner, frame, goal post…", hint: "the rigging library", run: () => rigDialog("frame") },
   ]);
 }
 
@@ -571,6 +637,7 @@ function openVenues(btn) {
   const list = venues();
   menu(btn, [
     { label: "Save this venue…", hint: "room, rigging, zones and the lights", run: saveVenue },
+    { label: "Clear the venue to start again…", hint: "the stage, trusses, objects and zones go; the lights stay", danger: true, run: resetVenue },
     ...(list.length ? ["-"] : []),
     ...list.map((v) => ({
       label: `Open ${v.name}`,
@@ -583,6 +650,87 @@ function openVenues(btn) {
       }
     } }))] : []),
   ]);
+}
+
+// Clear the venue to design it again (an old show's room, say): the
+// walls can stay or go; the lights stay where they hang.  One Ctrl+Z.
+export async function resetVenue() {
+  const v = venue();
+  const n = (v.rigging || []).length + (v.objects || []).length + (v.zones || []).length + (v.stage ? 1 : 0);
+  const i = await choiceBox("Clear the venue", {
+    message: `Take everything out of the room to design it again: ${n} thing${n === 1 ? "" : "s"} - the stage, trusses, poles, furniture and zones.`,
+    detail: "Your lights stay where they are (unhooked from the trusses that go), and the show, cues and buttons are not touched. Ctrl+Z brings it all back.",
+    buttons: ["Cancel", "Clear the room too", "Clear, keep the walls"], primary: 2, cancel: 0, danger: 1,
+  });
+  if (i === 1 || i === 2) run("venue_reset", { keep_room: i === 2 }, { toast: true });
+}
+
+// Which way round: after the room is modelled, say where the DJ is - a
+// side of the plan, or a tap where the DJ stands - and the desk turns
+// everything that goes by it: the floor's DJ / back / left / right, the
+// Move tab's map and spots, "left" and "right" in Line up.
+export function openWhichWay() {
+  const v = venue();
+  const pts = outlineOf(v.room ? v : { room: { width: 16, depth: 20, back: -1 } });
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const W = x1 - x0, D = z1 - z0, pad = Math.max(W, D) * 0.08;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const [k, val] of Object.entries(a)) e.setAttribute(k, val); return e; };
+  const svg = el("svg", { viewBox: `${x0 - pad} ${z0 - pad} ${W + pad * 2} ${D + pad * 2}`, class: "ww-plan" });
+  const or = () => (state.snap && state.snap.venue_orient) || null;
+  let mode = "booth";
+  const draw = () => {
+    const o = or();
+    svg.replaceChildren(el("polygon", { points: pts.map((p) => p.join(",")).join(" "), class: "ww-room" }));
+    for (const z of v.zones || []) if (z.points && z.points.length > 2) {
+      svg.append(el("polygon", { points: z.points.map((p) => p.join(",")).join(" "), class: "ww-zone" }));
+      const [cx, cz] = [z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length];
+      const t = el("text", { x: cx, y: cz, class: "ww-zt", "font-size": Math.max(W, D) / 30 });
+      t.textContent = z.name || z.kind;
+      svg.append(t);
+    }
+    if (o) {
+      const [bx, , bz] = o.booth, f = (o.front * Math.PI) / 180, L = Math.max(W, D) / 6;
+      svg.append(el("line", { x1: bx, y1: bz, x2: bx + Math.sin(f) * L, y2: bz + Math.cos(f) * L, class: "ww-face", "stroke-width": Math.max(W, D) / 120 }),
+        el("circle", { cx: bx, cy: bz, r: Math.max(W, D) / 40, class: "ww-dj" }));
+      const t = el("text", { x: bx, y: bz - Math.max(W, D) / 25, class: "ww-djt", "font-size": Math.max(W, D) / 26 });
+      t.textContent = "DJ";
+      svg.append(t);
+    }
+  };
+  const at = (ev) => { const m = svg.getScreenCTM().inverse(); const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m); return [+p.x.toFixed(2), +p.y.toFixed(2)]; };
+  svg.addEventListener("click", async (ev) => {
+    const [x, z] = at(ev);
+    if (mode === "booth") await run("venue_orient", { booth: [x, z], front: "centre" }, { toast: true });
+    else {
+      const o = or();
+      if (o) await run("venue_orient", { front: (Math.atan2(x - o.booth[0], z - o.booth[2]) * 180 / Math.PI + 360) % 360 }, { toast: true });
+    }
+    draw();
+  });
+  // a side of the plan: the DJ at the middle of that wall, facing the room
+  const side = async (k) => {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const b = { top: [cx, z0 + D * 0.08], bottom: [cx, z1 - D * 0.08], left: [x0 + W * 0.08, cz], right: [x1 - W * 0.08, cz] }[k];
+    await run("venue_orient", { booth: b, front: "centre" }, { toast: true });
+    draw();
+  };
+  const modeRow = h("div.chip-row", ...[["booth", "Tap where the DJ stands"], ["front", "Tap the way the DJ faces"]].map(([k, l]) =>
+    h("button.chip" + (mode === k ? ".on" : ""), { onclick: (e) => { mode = k; for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget); } }, l)));
+  draw();
+  const close = modal({
+    title: "Which way round is the room?",
+    body: h("div.ww",
+      h("div.ww-left", svg, h("p.muted.small", "The room from above. The dot is the DJ, the line the way the DJ faces (towards the crowd).")),
+      h("div.ww-right",
+        h("p.small", "Where is the DJ? Everything that goes by it turns with it: the 3D floor's DJ / back / left / right, the Move tab's map and spots, left and right in Line up."),
+        h("div.field", h("span", "The DJ is at the"), h("div.chip-row", ...[["top", "Top"], ["right", "Right"], ["bottom", "Bottom"], ["left", "Left"]]
+          .map(([k, l]) => h("button.chip", { onclick: () => side(k) }, `${l} of the plan`)))),
+        h("div.field", h("span", "Or on the plan"), modeRow),
+        h("button.btn.small.ghost", { title: "From the DJ booth, a DJ zone or the stage, and the dance floor", onclick: async () => { await run("venue_orient", { clear: "all" }, { toast: true }); draw(); } }, "Back to what the desk works out"))),
+    foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")],
+  });
 }
 
 async function saveVenue() {
@@ -618,8 +766,8 @@ function venuePicker() {
   const list = venues();
   if (!list.length || (s.patch || []).length || s.show_file || anyModal()) return false;
   try {
-    if (sessionStorage.getItem("jarvis.venuepick")) return true;
-    sessionStorage.setItem("jarvis.venuepick", "1");
+    if (sessionStorage.getItem("haze.venuepick")) return true;
+    sessionStorage.setItem("haze.venuepick", "1");
   } catch (e) { /* ask anyway */ }
   const close = modal({
     title: "Where are you playing tonight?",
@@ -669,18 +817,19 @@ export function initVenuePanel(theStage) {
       box.textContent = base + (typed ? `  ·  length: ${typed}▏ (Enter)` : len ? `  ·  ${len.toFixed(2)} m` : "");
     },
   });
-  window.jarvisEditor = editor;
+  window.hazeEditor = editor;
 
   $("#arrange-btn").addEventListener("click", () => setArranging(!arranging));
   $("#vt-move").addEventListener("click", () => { editor.setMode("translate"); modeButtons(); });
   $("#vt-rotate").addEventListener("click", () => { editor.setMode("rotate"); modeButtons(); });
   $("#vt-add").addEventListener("click", (e) => openAdd(e.currentTarget));
-  $("#vt-truss").addEventListener("click", () => addItem("truss", "Truss"));
+  $("#vt-truss").addEventListener("click", (e) => openTruss(e.currentTarget));
   $("#vt-pole").addEventListener("click", () => addItem("pole", "Pole"));
   $("#vt-pipe").addEventListener("click", () => addItem("pipe", "Pipe"));
   $("#vt-rigging").addEventListener("click", () => import("./rigdialog.js").then((m) => m.openRigDialog()));
   $("#vt-venues").addEventListener("click", (e) => openVenues(e.currentTarget));
   $("#vt-room").addEventListener("click", () => openRoomDialog());
+  $("#vt-orient").addEventListener("click", () => openWhichWay());
   $("#vt-zone").addEventListener("click", (e) => openZones(e.currentTarget));
   $("#vt-plan").addEventListener("click", (e) => openPlan(e.currentTarget));
   $("#vt-done").addEventListener("click", () => setArranging(false));

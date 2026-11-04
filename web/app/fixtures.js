@@ -120,8 +120,8 @@ function foldRow(c) {
 // selects them all, hovering it points them out in the 3D view.  Lights in
 // no group stay in the list under the folders.
 let openFolders = new Set();
-try { openFolders = new Set(JSON.parse(localStorage.getItem("jarvis.openFolders") || "[]")); } catch (e) { /* private window */ }
-const keepFolders = () => { try { localStorage.setItem("jarvis.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
+try { openFolders = new Set(JSON.parse(localStorage.getItem("haze.openFolders") || "[]")); } catch (e) { /* private window */ }
+const keepFolders = () => { try { localStorage.setItem("haze.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
 const userGroups = () => (state.snap && state.snap.groups) || [];
 
 function folderIcon(open) {
@@ -238,86 +238,6 @@ function paintLamps() {
   });
 }
 
-// Hold a group chip to flash that group (tap still selects it).
-function holdToFlash(el, params) {
-  let timer = 0, flashing = false;
-  el.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || e.target.classList.contains("x")) return;
-    timer = setTimeout(() => {
-      flashing = true;
-      el.classList.add("flashing");
-      run("group_flash", { ...params, down: true }, { silentError: true });
-    }, 350);
-  });
-  // swallows the click that follows a hold; armed only while that click
-  // can still come, so a later real tap is never eaten
-  const swallow = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
-  const up = (e) => {
-    clearTimeout(timer);
-    if (!flashing) return;
-    el.classList.remove("flashing");
-    run("group_flash", { down: false }, { silentError: true });
-    // released over the chip: a click follows, and it is not a tap.
-    // Slid off or cancelled: no click comes, so nothing to swallow.
-    if (e.type === "pointerup") {
-      el.addEventListener("click", swallow, { capture: true, once: true });
-      setTimeout(() => el.removeEventListener("click", swallow, { capture: true }), 0);
-    }
-    flashing = false;
-  };
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointercancel", up);
-  el.addEventListener("pointerleave", up);
-  return el;
-}
-
-function renderGroups() {
-  const box = $("#group-chips");
-  const groups = (state.snap && state.snap.groups) || [];
-  const autos = patch().length >= 4 ? ((state.snap && state.snap.auto_groups) || []) : [];
-  const sel = new Set(selected());
-  const same = (heads) => heads.length && heads.length === sel.size && heads.every((x) => sel.has(x));
-  const key = JSON.stringify([groups, autos, [...sel]]);
-  if (box.dataset.key === key) return;
-  box.dataset.key = key;
-  box.replaceChildren(
-    ...autos.map((g) => holdToFlash(h("button.chip.auto" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · Shift adds to the selection · hold to flash`,
-      onclick: (e) => run("select_group", { key: g.key, add: e.shiftKey || e.ctrlKey || e.metaKey }),
-    }, g.kind === "rig" ? h("span.chip-ic", "⊢") : null, g.name, h("small", ` ${g.heads.length}`)), { auto: g.key })),
-    ...groups.map((g) => holdToFlash(h("button.chip" + (same(g.heads) ? ".on" : ""), {
-      title: `Select ${g.name} (${g.heads.length}) · hold to flash · drop lights here to add them`, dataset: { group: g.n },
-      onclick: (e) => {
-        if (e.target.classList.contains("x")) return;
-        select(g.heads, { add: e.shiftKey || e.ctrlKey || e.metaKey });
-      },
-      oncontextmenu: (e) => { e.preventDefault(); groupMenu(atPointer(e), g); },
-    }, g.name, h("small", ` ${g.heads.length}`), h("span.x", {
-      title: "Change this group: add or take out lights, rename, delete",
-      "aria-label": `Change the group ${g.name}`,
-      onclick: (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); },
-    }, "⋯")), { group: g.n })),
-    // shown only while lights are dragged: drop them here for a new group
-    h("button.chip.new-group-drop", { title: "Drop lights here to make a new group of them", dataset: { newgroup: "1" } }, "＋ New group"),
-    ...(autoCopies().length ? [h("button.chip.tidy", {
-      title: "Earlier auto shows made copies of groups (“Auto · …”). Shows select their lights directly now; your own groups stay.",
-      onclick: async () => {
-        const n = autoCopies().length;
-        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
-          run("group_delete", { auto: true }, { toast: true });
-        }
-      },
-    }, `Tidy ${autoCopies().length} auto copies`)] : []));
-  moreBelow();
-}
-
-// More group tiles than fit: the bottom edge fades (a row cut in half
-// read as broken), until you scroll to the end.
-function moreBelow() {
-  const box = $("#group-chips");
-  box.classList.toggle("more-below", box.scrollHeight - box.scrollTop - box.clientHeight > 4);
-}
-
 const autoCopies = () => userGroups().filter((g) => /^auto\s*·/i.test(g.name || ""));
 
 // One group's menu (its chip's ⋯, a right-click on the chip or its folder):
@@ -336,7 +256,7 @@ export function groupMenu(anchor, g) {
     { label: `Make it exactly the selection${sel.length ? ` (${sel.length})` : ""}`, disabled: !sel.length || same,
       run: () => run("group_edit", { group: g.n, heads: sel }, { toast: true }) },
     { label: "Select its lights", run: () => select(g.heads) },
-    { label: "Faders on the buttons page", hint: "pulse, effect speed, strobe, strobe speed",
+    { label: "Faders on the buttons page", hint: "effect speed, strobe, strobe speed",
       run: () => import("./quickbuttons.js").then((m) => run("quick_group_controls", { group: g.n, page: m.currentPage() }, { toast: true })) },
     { label: "Rename…", run: async () => {
       const name = await promptBox("Rename group", "Name", g.name, { ok: "Rename" });
@@ -479,17 +399,51 @@ export function rowMenu(btn, head) {
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
     { label: "Change fixture type…", run: () => openChangeType(sameSelection(head)) },
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
-      ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) }] : []),
+      ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) },
+        { label: "Line up with the real light…", hint: hd.align ? "lined up" : "point it at floor marks", run: () => import("./lineup.js").then((m) => m.openLineUp(sameSelection(head))) },
+        { label: ((hd.orient || {}).invert_pan ? "✓ " : "") + "Invert pan", hint: "it pans the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_pan: !(hd.orient || {}).invert_pan }, { toast: true }) },
+        { label: ((hd.orient || {}).invert_tilt ? "✓ " : "") + "Invert tilt", hint: "it tilts the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_tilt: !(hd.orient || {}).invert_tilt }, { toast: true }) }] : []),
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Make a colour row of buttons…", hint: "one button per colour, one at a time", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(sameSelection(head))) },
     ...groupItems(head),
-    { label: "Frame on stage", run: () => window.jarvisStage && window.jarvisStage.frame([head]) },
+    { label: "Frame on stage", run: () => window.hazeStage && window.hazeStage.frame([head]) },
     { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },
     "-",
     { label: "Remove from patch", danger: true, run: async () => {
       if (await confirmBox("Remove fixture", `Remove #${head} ${hd.name || hd.model} from the patch?\nCtrl+Z brings it back.`, { ok: "Remove", danger: true })) {
         run("remove_heads", { heads: [head] });
       }
+    } },
+  ]);
+}
+
+// A folded row (8 movers shown as one): the same tools, for all of them
+function foldMenu(anchor, heads) {
+  const first = patch().find((x) => x.head_no === heads[0]);
+  if (!first) return;
+  const moving = (first.map || []).some((r) => r === "pan" || r === "tilt");
+  const o = first.orient || {};
+  const n = lights(heads.length);
+  const groups = userGroups();
+  menu(anchor, [
+    { label: `Select these ${n}`, run: () => select(heads) },
+    { label: "Test them…", run: () => openLightTest(first) },
+    { label: "Show their DMX channels", run: () => openChannels(heads) },
+    { label: "Change their fixture type…", run: () => openChangeType(heads) },
+    ...(moving ? [
+      { label: "Line up with the real lights…", run: () => import("./lineup.js").then((m) => m.openLineUp(heads)) },
+      { label: (o.invert_pan ? "✓ " : "") + "Invert pan, all of them", run: () => run("set_orient", { heads, invert_pan: !o.invert_pan }, { toast: true }) },
+      { label: (o.invert_tilt ? "✓ " : "") + "Invert tilt, all of them", run: () => run("set_orient", { heads, invert_tilt: !o.invert_tilt }, { toast: true }) }] : []),
+    { label: "Make a group of them…", run: async () => {
+      const name = await promptBox("New group", "Name", `${first.body && first.body.label ? first.body.label : first.model} ×${heads.length}`, { ok: "Make group" });
+      if (name && name.trim()) run("group_create", { name: name.trim(), heads }, { toast: true });
+    } },
+    ...groups.slice(0, 8).map((g) => ({ label: `Add them to “${g.name}”`, run: () => run("group_edit", { group: g.n, add: heads }, { toast: true }) })),
+    { label: "Make a colour row of buttons…", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(heads)) },
+    { label: "Frame on stage", run: () => window.hazeStage && window.hazeStage.frame(heads) },
+    "-",
+    { label: `Remove ${n} from the patch`, danger: true, run: async () => {
+      if (await confirmBox("Remove from the patch", `Remove ${n} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${n}`, danger: true })) run("remove_heads", { heads }, { toast: true });
     } },
   ]);
 }
@@ -605,14 +559,22 @@ export async function openRdm() {
 }
 
 const parked = () => (state.snap && state.snap.parked) || [];
+const lights = (n) => `${n} light${n === 1 ? "" : "s"}`;
 
 function toolsMenu(btn) {
   const sel = selected();
   menu(btn, [
-    { label: "Add fixtures…", hint: "A", run: () => openAddDialog() },
+    { label: "Add lights…", run: () => openAddDialog() },
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
-    { label: "Scan the network for nodes", run: () => scanRig() },
+    { label: "Find nodes", hint: "the DMX nodes on the network", run: () => scanRig() },
     { label: "Ask the lights (RDM)…", hint: "model, mode and address from each light", run: () => openRdm() },
+    ...(autoCopies().length ? [{ label: `Tidy ${autoCopies().length} auto group copies`,
+      hint: "old “Auto ·” copies the show builder made", run: async () => {
+        const n = autoCopies().length;
+        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
+          run("group_delete", { auto: true }, { toast: true });
+        }
+      } }] : []),
     { label: "Auto-address the patch", run: async () => {
       if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
     } },
@@ -628,17 +590,20 @@ function toolsMenu(btn) {
     { label: "Clear the selection's values", hint: "the rest of the programmer stays", disabled: !sel.length, run: () => run("clear_heads", { heads: sel }, { toast: true }) },
     "-",
     // arranging the selected lights in the room (one Ctrl+Z each)
-    { label: "Line up in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
-    { label: "Line up at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
-    { label: "Space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
-    { label: "Space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
-    { label: "Flip the selection left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
+    { label: "Arrange: in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Arrange: all at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
+    { label: "Arrange: space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
+    { label: "Arrange: space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
+    { label: "Arrange: flip left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
     "-",
-    { label: "Remove selected fixtures", danger: true, disabled: !sel.length, run: async () => {
-      if (await confirmBox("Remove fixtures", `Remove ${sel.length} fixture(s) from the patch? Ctrl+Z brings them back.`, { ok: "Remove", danger: true })) run("remove_heads", { heads: sel });
+    // the two that take lights out of the show: last, in red, the count said
+    // on the menu and again on the button that does it
+    { label: sel.length ? `Remove ${lights(sel.length)} from the patch` : "Remove the selection from the patch", danger: true, disabled: !sel.length, run: async () => {
+      if (await confirmBox("Remove from the patch", `Remove ${lights(sel.length)} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${lights(sel.length)}`, danger: true })) run("remove_heads", { heads: sel }, { toast: true });
     } },
-    { label: "Clear the whole patch", danger: true, run: async () => {
-      if (await confirmBox("Clear patch", "Remove every fixture from the patch?\nCtrl+Z brings them back.", { ok: "Clear patch", danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared"));
+    { label: `Clear the whole patch${patch().length ? ` (${lights(patch().length)})` : ""}`, danger: true, disabled: !patch().length, run: async () => {
+      const n = patch().length;
+      if (await confirmBox("Clear the whole patch", `Remove all ${lights(n)} from the patch? Every cue and palette loses them. Ctrl+Z brings them back.`, { ok: `Remove all ${lights(n)}`, danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared - Ctrl+Z brings it back"));
     } },
   ]);
 }
@@ -676,7 +641,7 @@ export async function scanRig() {
 // a group - its folder in the list or its chip - to put it in.  Dragged out
 // of a group's folder: onto the list outside the folders takes it out,
 // onto another group moves it (Alt copies).  "＋ New group" while dragging.
-const DRAG = "application/x-jarvis-heads";
+const DRAG = "application/x-haze-heads";
 let dragging = null;                     // {heads, from}
 function dragStart(e) {
   const tr = e.target.closest && e.target.closest("tr[data-head]");
@@ -696,12 +661,9 @@ function dragEnd() {
   document.body.classList.remove("dragging-heads");
   for (const el of document.querySelectorAll(".drop-on")) el.classList.remove("drop-on");
 }
-// where a drop would go: {to: group n} | {out: true} | {make: true} | null
+// where a drop would go: {to: group n} | {out: true} | null
 function dropTarget(el) {
   if (!dragging || !el || !el.closest) return null;
-  if (el.closest("[data-newgroup]")) return { el: el.closest("[data-newgroup]"), make: true };
-  const chip = el.closest("#group-chips .chip[data-group]");
-  if (chip) return { el: chip, to: +chip.dataset.group };
   const folder = el.closest("tr.folder");
   if (folder) return { el: folder, to: +folder.dataset.group };
   const row = el.closest("tr[data-head]");
@@ -728,11 +690,6 @@ async function drop(e) {
   e.preventDefault();
   const groupsNow = userGroups();
   const name = (n) => (groupsNow.find((g) => g.n === n) || {}).name || `group ${n}`;
-  if (t.make) {
-    const label = await promptBox("New group", `Name for these ${d.heads.length} light(s)`, "", { ok: "Create group", placeholder: "e.g. Back truss spots" });
-    if (label) run("group_create", { name: label, heads: d.heads }, { toast: true });
-    return;
-  }
   if (t.out) {
     run("group_edit", { group: d.from, remove: d.heads }, { toast: true });
     return;
@@ -746,7 +703,7 @@ async function drop(e) {
   }
 }
 function wireDrag() {
-  for (const box of [$("#fx-rows"), $("#group-chips"), $(".fx-table-wrap")]) {
+  for (const box of [$("#fx-rows"), $(".fx-table-wrap")]) {
     if (!box) continue;
     box.addEventListener("dragover", dragOver);
     box.addEventListener("drop", drop);
@@ -763,21 +720,6 @@ async function makeGroup() {
 }
 
 export function initFixtures() {
-  // the group tiles fold away for more fixture rows (on a small screen);
-  // remembered on this computer
-  const fold = $("#grp-fold");
-  const setFold = (folded) => {
-    $("#group-chips").classList.toggle("folded", folded);
-    fold.setAttribute("aria-expanded", String(!folded));
-    fold.textContent = (folded ? "▸" : "▾") + " Groups";
-    try { localStorage.setItem("jarvis.groupsFolded", folded ? "1" : ""); } catch { /* private window */ }
-  };
-  let folded = false;
-  try { folded = localStorage.getItem("jarvis.groupsFolded") === "1"; } catch { /* private window */ }
-  setFold(folded);
-  fold.addEventListener("click", () => setFold(!$("#group-chips").classList.contains("folded")));
-  $("#group-chips").addEventListener("scroll", moreBelow, { passive: true });
-  new ResizeObserver(moreBelow).observe($("#group-chips"));
   $("#fx-rows").addEventListener("click", rowClick);
   wireDrag();
   $("#fx-rows").addEventListener("contextmenu", (e) => {
@@ -787,21 +729,22 @@ export function initFixtures() {
       if (g) { e.preventDefault(); groupMenu(atPointer(e), g); }
       return;
     }
-    if (!tr || tr.dataset.fold) return;
+    if (!tr) return;
     e.preventDefault();
-    rowMenu(atPointer(e), +tr.dataset.head);
+    if (tr.dataset.fold) foldMenu(atPointer(e), tr.dataset.fold.split(",").map(Number));
+    else rowMenu(atPointer(e), +tr.dataset.head);
   });
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");
-    if (!tr || !window.jarvisStage) return;
-    window.jarvisStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
+    if (!tr || !window.hazeStage) return;
+    window.hazeStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
   });
   // a folder under the pointer: its lights pointed out in the 3D view
   let peeking = null;
   const peek = (tr) => {
     if (tr === peeking) return;
     peeking = tr;
-    if (window.jarvisStage && window.jarvisStage.setPeek) window.jarvisStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
+    if (window.hazeStage && window.hazeStage.setPeek) window.hazeStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
   };
   $("#fx-rows").addEventListener("pointerover", (e) => peek(e.target.closest("tr.folder")));
   $("#fx-rows").addEventListener("pointerleave", () => peek(null));
@@ -819,9 +762,9 @@ export function initFixtures() {
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }
-  on("snapshot", () => { modelDefs(); render(); renderGroups(); renderClashes(); });
+  on("snapshot", () => { modelDefs(); render(); renderClashes(); });
   on("models3d", render);
-  on("selection", () => { render(); renderGroups(); });
+  on("selection", () => { render(); });
   on("lite", render);
   on("looks", paintLamps);
   void get;

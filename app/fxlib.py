@@ -159,8 +159,68 @@ def _bright(have: set[str]) -> bool:
 #   (base, have, p, elapsed, index, count) -> None, mutating `base`.
 
 
+# Your own colours: an effect told which colours to go through (`colours`,
+# up to 8 "#rrggbb") uses those, in that order, instead of every colour the
+# light can make.  A light that mixes (RGB or CMY) shows them; a light with
+# only white / amber / UV keeps its own few.
+COLOUR_FX = ("rainbow", "colour_chase", "alternate", "fan", "breathe")
+
+
+def clean_colours(v) -> list[str]:
+    """A colour list as kept: up to 8 '#rrggbb', bad entries dropped."""
+    if isinstance(v, str):
+        v = [x for x in v.replace(";", ",").split(",")]
+    out = []
+    for x in (v if isinstance(v, (list, tuple)) else [])[:16]:
+        s = str(x).strip().lstrip("#").lower()
+        if len(s) == 3:
+            s = "".join(c * 2 for c in s)
+        if len(s) == 6 and all(c in "0123456789abcdef" for c in s):
+            out.append("#" + s)
+    return out[:8]
+
+
+def _rgb(hexs: str) -> tuple:
+    return (int(hexs[1:3], 16), int(hexs[3:5], 16), int(hexs[5:7], 16))
+
+
+def _mixes(have) -> bool:
+    return any(r in have for r in RGB) or any(r in have for r in _CMY)
+
+
+def _own(p, have) -> list | None:
+    """The colours to go through as (r, g, b), when chosen and showable."""
+    cols = p.get("colours")
+    return [_rgb(c) for c in cols] if cols and _mixes(have) else None
+
+
+def _write_rgb(base, have, rgb, level=100.0):
+    """Any colour on a light that mixes: RGB direct, CMY subtracted; its
+    white / amber / UV stay off (white only for a white chosen)."""
+    k = level / 100.0
+    mix = any(r in have for r in RGB)
+    for i, role in enumerate(("red", "green", "blue")):
+        if role in have:
+            base[role] = int(rgb[i] * k)
+    for i, role in enumerate(_CMY):
+        if role in have and not mix:
+            base[role] = int((255 - rgb[i]) * k) if level else 255
+    for role in _EMITTERS:
+        if role in have:
+            base[role] = int(255 * k) if role == "white" and min(rgb) > 230 else 0
+
+
 def _rainbow(base, have, p, elapsed, index, count):
     """Hue sweep.  Needs full colour, so a white-only fixture is skipped."""
+    own = _own(p, have)
+    if own and len(own) >= 2:               # a fade through your colours
+        n = len(own)
+        t = elapsed * p["speed"] + p["phase"] * 0.01 * index
+        t += p["spread"] / 360.0 * (index / max(1, count)) * n * max(p["rate"], 0.01)
+        pos = (t / max(p["rate"], 0.01)) % n
+        ca, cb, f = own[int(pos) % n], own[(int(pos) + 1) % n], pos - int(pos)
+        _write_rgb(base, have, tuple(ca[i] + (cb[i] - ca[i]) * f for i in range(3)))
+        return
     order = _palette(have)
     if len(order) < 2:
         return
@@ -180,6 +240,10 @@ def _rainbow(base, have, p, elapsed, index, count):
 
 def _colour_chase(base, have, p, elapsed, index, count):
     """Hard steps through the colour wheel, one colour per head."""
+    own = _own(p, have)
+    if own and len(own) >= 2:
+        _write_rgb(base, have, own[int((elapsed * p["speed"] * p["rate"]) + index) % len(own)])
+        return
     order = _palette(have)
     if len(order) < 2:
         return
@@ -188,7 +252,13 @@ def _colour_chase(base, have, p, elapsed, index, count):
 
 
 def _alternate(base, have, p, elapsed, index, count):
-    """Two colours, alternating by head and flipping over time."""
+    """Two colours, alternating by head and flipping over time (your own
+    colours: each head a step on through them)."""
+    own = _own(p, have)
+    if own and len(own) >= 2:
+        flip = int(elapsed * p["speed"] * p["rate"])
+        _write_rgb(base, have, own[(index + flip) % len(own)])
+        return
     order = _palette(have)
     if len(order) < 2:
         return
@@ -206,13 +276,20 @@ def _fan(base, have, p, elapsed, index, count):
     flip is the movement, and each side alternates independently - which is
     what "fan" does on a desk.
     """
-    order = _palette(have)
+    own = _own(p, have)
+    order = own if own and len(own) >= 2 else _palette(have)
     if len(order) < 2:
         return
     mid = (count - 1) / 2.0
     dist = abs(index - mid) / max(1.0, mid)
     flip = int(elapsed * p["speed"] * p["rate"]) % 2
     pair = [order[0], order[1 % len(order)]]
+    if own and len(own) >= 2:
+        # your colours fan out from the middle: the middle the first, each
+        # step out the next (flipping over time)
+        band = min(len(own) - 1, int(dist * len(own)))
+        _write_rgb(base, have, own[(band + flip) % len(own)])
+        return
     side = 0 if dist < 0.5 else 1
     _write_colour(base, have, pair[side ^ flip], 100.0)
 
@@ -241,6 +318,18 @@ def _breathe(base, have, p, elapsed, index, count):
     off = p["spread"] * (index / max(1, count)) / 360.0
     v = wave("sine", elapsed * p["speed"] + off)
     lvl = p["low"] + (p["high"] - p["low"]) * v
+    own = _own(p, have)
+    if own:
+        # a new colour each breath, changed while it is darkest
+        n = int(elapsed * p["speed"] + off + 0.5)
+        _write_rgb(base, have, own[n % len(own)])
+        if _satisfies(have, BRIGHTNESS):
+            _apply_brightness(base, have, lvl)
+        else:
+            for role in ("red", "green", "blue"):
+                if role in base:
+                    base[role] = int(base[role] * lvl / 100.0)
+        return
     _apply_brightness(base, have, lvl)
 
 
@@ -698,5 +787,7 @@ def apply(name: str, base: dict, roles, params: dict | None = None,
     p = defaults(name)
     p.update({k: float(v) for k, v in (params or {}).items()
               if k in p and v is not None})
+    if name in COLOUR_FX and (params or {}).get("colours"):
+        p["colours"] = clean_colours(params["colours"])
     spec["fn"](base, have, p, float(elapsed), int(index), max(1, int(count)))
     return base

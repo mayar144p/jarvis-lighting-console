@@ -202,10 +202,10 @@ def _cells(roles: list[str]) -> int:
 @lru_cache(maxsize=1)
 def _lib_types() -> dict:
     """{(maker, model): the library's own type} - "Scanner", "Flower",
-    "LED Bar (Pixels)" - for the bundled libraries (Jarvis, QLC+, OFL)."""
+    "LED Bar (Pixels)" - for the bundled libraries (Haze, QLC+, OFL)."""
     from .fixlib import index
     out: dict = {}
-    for src in ("jarvis", "qlc", "ofl"):
+    for src in ("haze", "qlc", "ofl"):
         try:
             for r in index(src):
                 out.setdefault((str(r["manufacturer"]).lower(), str(r["model"]).lower()), r.get("type") or "")

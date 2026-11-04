@@ -18,7 +18,7 @@ import time
 
 from app import artnet, rdm
 
-NAME = "Jarvis virtual node"
+NAME = "Haze virtual node"
 UID_MAN = 0x7FF1           # prototype / experimental manufacturer range
 
 
@@ -79,7 +79,7 @@ class VirtualNode:
         self.error = None
         self.started_at = time.monotonic()
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="jarvis-vnode", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="haze-vnode", daemon=True)
         self._thread.start()
         return True
 

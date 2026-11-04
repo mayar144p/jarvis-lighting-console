@@ -6,7 +6,7 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, modal, toast } from "./ui.js";
 
-const SEEN = "jarvis.welcomed";
+const SEEN = "haze.welcomed";
 // 24x24 stroke icons (as the buttons' icons), not emoji
 const ICON = {
   club: "M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
@@ -70,7 +70,7 @@ function welcome() {
   const go = async (fn) => { close(); await fn(); offerTour(); };
   templates().then((list) => {
     close = modal({
-      title: "Welcome to Jarvis", wide: true,
+      title: "Welcome to Haze", wide: true,
       body: h("div.tpl",
         h("div.tpl-hero",
           h("button.btn.primary.tpl-demo", { onclick: () => go(() => startFrom("club", true)) }, "▶ Show me the demo"),
@@ -85,7 +85,7 @@ function welcome() {
 }
 
 function offerTour() {
-  try { if (localStorage.getItem("jarvis.toured") === "1") return; } catch { return; }
+  try { if (localStorage.getItem("haze.toured") === "1") return; } catch { return; }
   toast("New here? Help (?) → Take the tour shows you round in a minute.", "", 6000);
 }
 
@@ -117,7 +117,7 @@ const STEPS = [
 /** A short tour of the mode on screen (Set up, Program or Live): a
  *  highlight round each part, Next / Back. */
 export function startTour(mode = document.body.dataset.mode) {
-  try { localStorage.setItem("jarvis.toured", "1"); localStorage.setItem("jarvis.toured." + mode, "1"); } catch { /* private */ }
+  try { localStorage.setItem("haze.toured", "1"); localStorage.setItem("haze.toured." + mode, "1"); } catch { /* private */ }
   const list = mode === "setup" ? SETUP_STEPS : mode === "live" ? LIVE_STEPS : STEPS;
   const steps = list.filter(([sel]) => { const el = $(sel); return el && el.getClientRects().length; });
   if (!steps.length) return;
@@ -158,8 +158,8 @@ export function startTour(mode = document.body.dataset.mode) {
 /** The first time in a mode (after the first visit): offer its tour, once. */
 export function offerModeTour(mode) {
   try {
-    if (localStorage.getItem("jarvis.toured") !== "1" || localStorage.getItem("jarvis.toured." + mode) === "1") return;
-    localStorage.setItem("jarvis.toured." + mode, "1");
+    if (localStorage.getItem("haze.toured") !== "1" || localStorage.getItem("haze.toured." + mode) === "1") return;
+    localStorage.setItem("haze.toured." + mode, "1");
   } catch { return; }
   if (navigator.webdriver) return;
   const name = { setup: "Set up", program: "Program", live: "Live" }[mode] || mode;

@@ -608,9 +608,9 @@ def test_autofollow(tmp: Path) -> None:
     check("shutdown stops the ticker",
           e._follow_thread is None
           and (thread is None or not thread.is_alive()))
-    check("no jarvis-follow threads left",
+    check("no haze-follow threads left",
           not [t for t in _threading.enumerate()
-               if t.name == "jarvis-follow" and t.is_alive()])
+               if t.name == "haze-follow" and t.is_alive()])
 
 
 def test_profiles(tmp: Path) -> None:

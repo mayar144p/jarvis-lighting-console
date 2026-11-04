@@ -1,4 +1,4 @@
-# Jarvis — user guide
+# Haze — user guide
 
 How to use the desk. Getting it running is in the [README](../README.md)'s quick start.
 
@@ -7,7 +7,7 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 | Region | What it does |
 |---|---|
 | **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
-| **Fixtures** (left) | the patch as a table; filter, group chips, add heads, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** its chip's ⋯ (or a right-click on the chip or its folder) adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder or chip to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
+| **Fixtures** (left) | the patch as a table; filter, add lights, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** a right-click on its folder adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
 | **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
 | **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits). The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves; direction / arc / lock under *More*), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **FX** - *Effects*, *Running* (with how many run) and *Step & paint* |
 | **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
@@ -144,8 +144,10 @@ physically is and who made it:
 * The fixture picker shows the same 3D model before you patch anything.
 * **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
   draw calls, and the crowd is lit per vertex. The view only redraws when
-  something changes. **Settings → 3D view → Quality: Auto** lowers the
-  resolution when frames run long and wins it back when there is headroom.
+  something changes. The 3D starts at **High** quality (sharpest, eight beams
+  cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
+  Medium** lowers the resolution when frames run long and wins it back when
+  there is headroom; **Low** drops the shadows.
 
 Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
 whole room), <kbd>F</kbd> to frame the selection.
@@ -323,7 +325,7 @@ made before this version has no design kept with it: make it once more
 **A laptop DJ** (Serato, Traktor, rekordbox on a laptop) sends no track
 over the network, so songs don't start by themselves. Start one with
 **Play**, or from a Stream Deck / Companion key with the OSC message
-`/jarvis/song <name>`; run the autopilot for the rest.
+`/haze/song <name>`; run the autopilot for the rest.
 
 ### Turned trusses and the room map
 
@@ -339,6 +341,63 @@ outline (L-shaped, round...), the stage, zones, the bar and other objects,
 the trusses at their real angle, and each light turned with its truss
 (selected lights in yellow). Drag on it and every selected light points at
 that spot. The pan/tilt dials still move each light's own pan and tilt.
+
+### Lining up a venue (the real lights match the desk)
+
+The desk aims a light from where it thinks the light hangs and which way it
+faces. In a real venue those are never exact, so line the rig up once per
+venue; it's saved with the show.
+
+1. **Build the room roughly.** Settings → Venue → a template (club,
+   concert...), then the room size. In **Arrange**, put the trusses at their
+   real height and position (measure from the middle of the back wall:
+   x across, z towards the audience, metres) and draw the dance floor zone.
+2. **Hang each light where it really is.** Drag it onto its truss, or type
+   its position; set its **Hang** (hung, standing, on a boom...). A light hung
+   the other way round to the rest: **Invert pan / Invert tilt** in
+   Programmer → Rig.
+3. **Mark the floor.** Two or three spots far apart: the middle of the dance
+   floor, its left and right, the DJ booth - the desk lists the room's own
+   spots - or tape a cross somewhere and keep it as a room mark.
+4. **Line up.** Set up → **Line up with the real lights…** (or a light's own
+   menu). One step at a time: the light comes on alone and the desk points it
+   at a mark by itself (the two marks furthest apart). Nudge the REAL light
+   onto it with the arrows (**Fine** for the last bit) and press **It's on
+   the mark ✓**; then the second mark. The desk works it out, says
+   **Lined up**, and **Next light ▶** goes on; a tick shows each light done.
+   If the arrows move it the wrong way, that link has Invert / Swap; another
+   spot is under **Use a different spot**.
+5. **Check.** Aim the whole rig at a spot (Position → room map, or a
+   palette like Fan out) and look at the floor. If the box said the marks
+   disagree by more than a few degrees, that light's height or position in
+   the room is off: fix it in Arrange and line it up again.
+
+The **Plot** (Windows → Plot) shows the rig flat with every light's number -
+handy to walk the room and tick lights off.
+
+### The room the lights know: teach it by pointing
+
+Once a light is lined up, the desk knows exactly where its beam lands on the
+floor - so the light itself can show the desk the room. **Set up → Teach the
+room by pointing…** (or the command bar, or Arrange → Add):
+
+- **Mark out a zone.** Pick the kind (Dance floor, Bar, VIP...), aim the light
+  at each corner with the arrows and press **Add this corner**; three corners
+  or more, in order round the edge, then **Make the zone**. A rectangle, a
+  square or any shape. Corners outside the room drawn mean the room is bigger
+  than the desk thinks: **Make the room fit**.
+- **Not here (keep out).** Aim at what a beam must never hit - a wall, a
+  mirror, the bar staff, the DJ's eyes - and press **Not here**. Pointed again
+  nearby, the area grows. Aimed past a wall, the whole wall is kept out.
+  Every light keeps off it, whatever it plays: cues, palettes, effects,
+  roams, the programmer. A beam that would cross it stops at its edge.
+- **Keep lights in a zone.** Pick lights and zones: those beams stay inside
+  (the floor spots on the dance floor, the bar wash on the bar), whatever
+  they play.
+
+Keep-out zones show red in the 3D and on the plot; the programmer keeps what
+you set (only what goes to the lights is held). **Position → Roam** makes
+lights wander inside the zones you picked.
 
 ### Follow me speed
 
@@ -506,16 +565,37 @@ or Live); the first time in each mode the desk offers it once.  A greyed
 to fix (Add lights, Show the clashes, Record a cue, Save, Output
 settings, Turn on Stay on the floor...) and *Check again*.
 
+### Touch screens
+
+The desk behaves like a control panel, not a web page: a swipe, a pinch or a
+stray palm doesn't scroll, zoom or go "back", and nothing gets text-selected.
+Every button, fader, pad and knob follows its own finger - hold BLACKOUT with
+one finger and tap Flash with another; a second finger landing on a fader
+already being moved is ignored. A finger held still on a button is a held
+button, never a menu (the mouse's right-click still opens its menu).
+
+Windows' own gestures (a swipe in from an edge for Task View, notifications or
+the taskbar; three or four fingers to switch apps or show the desktop) are
+locked by the desktop app **while a desk window is full screen** (Windows 10 and 11:
+the window's own edge lock, and Windows 11's own switches for the left and
+right edges and three/four fingers) - the
+buttons page's ⛶ Full screen, or a Show mode screen - and come back as they
+were when it leaves full screen (**Desk → Lock every touch gesture while full
+screen**, on by default). For a desk that never leaves the show, also use
+**Desk → Lock touch swipes on this computer…**: the same locks for the whole
+computer all the time (an administrator's OK once; it starts after you sign
+out and back in; **Unlock** puts them back).
+
 ### Keyboard
 
 | key | does | key | does |
 |---|---|---|---|
-| <kbd>Space</kbd> / <kbd>Enter</kbd> | GO on the focused playback | <kbd>B</kbd> | cue back |
-| <kbd>X</kbd> | toggle BLACKOUT | <kbd>C</kbd> | clear the programmer |
+| <kbd>Space</kbd> | GO on the focused playback (Enter never fires GO) | <kbd>B</kbd> | cue back |
+| <kbd>X</kbd> / <kbd>Shift</kbd>+<kbd>X</kbd> | BLACKOUT / lights back | <kbd>C</kbd> | clear the programmer |
 | <kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>A</kbd> | select all / none | <kbd>L</kbd> | locate |
-| <kbd>1</kbd>–<kbd>9</kbd> | select head (<kbd>Shift</kbd> adds) | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
+| <kbd>0</kbd>–<kbd>9</kbd> | start a command (`1 thru 4 @ 70`, `3 go`); Enter runs it | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
 | <kbd>R</kbd> | record a cue | <kbd>G</kbd> | group the selection |
-| <kbd>O</kbd> | overwrite the current cue | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
+| <kbd>O</kbd> / <kbd>Shift</kbd>+<kbd>O</kbd> | update the current cue (merge) / replace it | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
 | <kbd>F</kbd> | frame the selection | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | command bar |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | undo / redo | <kbd>Ctrl</kbd>+<kbd>S</kbd> | save show |
 | <kbd>?</kbd> | help | <kbd>Esc</kbd> | close the top panel |
@@ -652,7 +732,7 @@ venue. Open **Settings → Output**:
    own node back. It changes live, with no restart.
 
    `DMX_HOST` and `DMX_TRANSPORT` in `.env` still set the default that
-   **Auto** uses. Universe 1 in Jarvis is Art-Net universe 0, which is
+   **Auto** uses. Universe 1 in Haze is Art-Net universe 0, which is
    port A on most nodes. The OS firewall must allow Python on private
    networks.
 5. Press **GO LIVE**.
@@ -751,9 +831,13 @@ one Ctrl+Z, and that brings back the show that was open.
 - **Density:** *Compact* fits more on screen, *Roomy* gives every button
   and row more room; *Standard* sits between. (**Gig mode** above makes
   everything big for touch screens.)
-- **Size:** text and controls at 90-140%. A bigger size needs a wider
-  screen - the desk is laid out for 1280 px, so a 1440 px screen goes to
-  110% and a 1920 px one to 140%; sizes that don't fit are greyed.
+- **Size: Auto** (the standard) fits the desk to the screen. A 1080p
+  laptop, or a 4K laptop with Windows scaling at 250%, shows it at 100%. A
+  1440p monitor goes to about 133% and a 4K monitor at 100% scaling to 200%,
+  so text and buttons stay the same size to the eye, and the 3D stays sharp.
+  A small window (under 1280 x 720) shrinks it, down to 80%.
+- **Or pick a size:** 90-140%. A bigger size needs a wider screen (the
+  desk is laid out for 1280 px); sizes that don't fit are greyed.
 - **Accent:** eight colours or your own.
 - **Panel brightness**, and **Show dark:** the panels in dim red for a dark
   venue. Eyes stay used to the dark, and the 3D view keeps its true colours.
@@ -786,9 +870,9 @@ show.
 
 **Settings → MIDI & OSC → OSC out**: the address and port of the other
 program (QLab listens on 53000, Resolume on 7000). **Test** sends
-`/jarvis/hello`. Tick *Tell it what the desk does* and it gets
-`/jarvis/go <list> <cue>`, `/jarvis/master 0-1`, `/jarvis/blackout 0|1` and
-`/jarvis/button <id>` as they happen. A cue sends its own: Cue list → ⋯ →
+`/haze/hello`. Tick *Tell it what the desk does* and it gets
+`/haze/go <list> <cue>`, `/haze/master 0-1`, `/haze/blackout 0|1` and
+`/haze/button <id>` as they happen. A cue sends its own: Cue list → ⋯ →
 **Actions…** → **Send OSC** (e.g. `/go`, or
 `/composition/layers/1/clips/2/connect 1`). Saved with the show, since each
 venue has its own video computer.
@@ -816,8 +900,8 @@ their MIDI note (Edit → a button → MIDI).
 ### Stream Deck
 
 **Settings → MIDI & OSC → Get the Stream Deck plugin** saves
-`com.jarvis.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
-(6.4 or newer) adds a *Jarvis* group:
+`com.haze.desk.streamDeckPlugin`. Double-click it and the Stream Deck app
+(6.4 or newer) adds a *Haze* group:
 
 | Key / dial | What it does | Its settings |
 |---|---|---|
@@ -861,7 +945,7 @@ files the desk has for those lights, for other programs.
 
 ## Fixture library
 
-**Add fixtures** searches everything at once in the **All** tab, and
+**Add lights** searches everything at once in the **All** tab, and
 also has separate tabs:
 
 * **Installed:** everything already in your library.
@@ -869,7 +953,7 @@ also has separate tabs:
   (MIT) and the [QLC+](https://www.qlcplus.org) fixture definitions
   (Apache 2.0). Together that's about 2,400 lights, including budget DJ
   fixtures that aren't on GDTF Share (for example the Chauvet Intimidator
-  Wave 360). Both ship with Jarvis, so they're searchable offline at a
+  Wave 360). Both ship with Haze, so they're searchable offline at a
   venue. **Install and add** puts the fixture in your library and patches
   it.
 * **GDTF Share:** [GDTF Share](https://gdtf-share.com), the manufacturers'
@@ -901,22 +985,22 @@ their names and colours. Community libraries are sometimes wrong, so check
 an unfamiliar light's mode against its manual. Downloaded files stay on your
 machine and are never committed (`data/` and `*.gdtf` are git-ignored).
 
-**Test this light.** A fixture file can be wrong in ways Jarvis can't see: a
+**Test this light.** A fixture file can be wrong in ways Haze can't see: a
 shutter whose open value it never states, or a channel order that doesn't match
 the light's mode. If a new light misbehaves, run the 30-second test: right-click
 it → **Test this light…** (also on the Level tab's warning, and offered when you
 add a model the desk hasn't seen pass the test). Go live first, then:
 
-0. Jarvis asks whether the light's own display (or DIP switches) shows the mode
+0. Haze asks whether the light's own display (or DIP switches) shows the mode
    and address the desk expects. Most "some heads don't move / wrong colours"
    is a light set to another mode. **It shows another mode** lists the model's
    modes: pick the one on the display and every light of that model switches to
    it, keeping its number, place, groups and cues. If one has to move to a new
-   address because the mode is bigger, Jarvis says which, so you can set it on
+   address because the mode is bigger, Haze says which, so you can set it on
    the light.
-1. Jarvis lights it at full, white and centred, and asks whether the real light
+1. Haze lights it at full, white and centred, and asks whether the real light
    is on.
-2. If it's dark, Jarvis tries the shutter's likely open values one at a time. Press
+2. If it's dark, Haze tries the shutter's likely open values one at a time. Press
    **It's on!** when the light comes on. If none work, it tries each of the light's
    other channels the same way.
    If it's still dark, or you'd rather skip ahead, **Set channels by hand** gives
@@ -933,7 +1017,7 @@ add a model the desk hasn't seen pass the test). Go live first, then:
 3. It then moves pan and tilt, shows red, green and blue, and strobes fast then
    slow, asking each time whether the real light did the same (on a multi-head
    light: all of its heads). A wrong answer usually means the light's
-   DMX mode doesn't match the one you added, and Jarvis tells you which mode to set.
+   DMX mode doesn't match the one you added, and Haze tells you which mode to set.
 
 What works is saved for that model, so every head of it lights on **Full** from
 then on, even after a re-download. A model that passed isn't asked about again.
@@ -954,16 +1038,16 @@ licences and the exact upstream commits.
 ## Lasers and special effects
 
 Confetti, CO₂, flame, sparks, fog, haze and lasers are **effects**, not
-lights, and Jarvis treats them that way.
+lights, and Haze treats them that way.
 
-**How effects are recognised.** Every fixture Jarvis stores is sorted into
+**How effects are recognised.** Every fixture Haze stores is sorted into
 light, laser or SFX, whatever its source. An effect's channels get their
 own jobs: *fire*, *arm*, *fog output*, *laser output*, *pattern* and so on.
 The "fire", "armed" and "on" values come from the fixture's own chart and
 are never guessed. For example, a MagicFX Psyco2Jet's safety channel is
 armed at 100–155, and 156–255 is its **test mode**.
 
-**Beam bars** (like the Laserworld BeamBar 10B MK3, in the Jarvis library) get
+**Beam bars** (like the Laserworld BeamBar 10B MK3, in the Haze library) get
 one control per beam. On the **Laser** tab:
 
 - Tap beams on and off, or lay a pattern across the bar: All, Odd, Even, Left,
@@ -1007,7 +1091,7 @@ beams programmed, firing lights them all.
 - **3D view:** laser fans, confetti bursts, CO₂ plumes, flames, sparks and
   fog, exactly while the real machine is firing.
 
-**Adding a fixture that isn't in any library.** In **Add fixtures**, click
+**Adding a fixture that isn't in any library.** In **Add lights**, click
 **From its manual…**, then paste the DMX chart or drop the manual's PDF.
 With an AI key the copilot reads it; without one the offline reader
 handles the usual chart layouts, including multi-language manuals. You

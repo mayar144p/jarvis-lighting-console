@@ -5,10 +5,10 @@
 // this three.js uses (an older Chromium has WebGPU but rejects them).  The
 // device that passed is the one the views then use (a second one, or
 // destroying this one, can lose the GPU).  No device: the same renderer
-// runs on WebGL 2.  localStorage jarvis.renderer = "webgl" forces WebGL 2.
+// runs on WebGL 2.  localStorage haze.renderer = "webgl" forces WebGL 2.
 async function probeWebGPU() {
   try {
-    if (localStorage.getItem("jarvis.renderer") === "webgl") return null;
+    if (localStorage.getItem("haze.renderer") === "webgl") return null;
   } catch (e) { /* no storage */ }
   if (!navigator.gpu) return null;
   const timeout = new Promise((ok) => setTimeout(() => ok(null), 2500));

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -88,10 +89,21 @@ def settings() -> dict:
     mode = got.get("mode") if got.get("mode") in MODES else ("auto" if key else "local")
     return {"mode": mode, "key": key, "model": str(got.get("model") or config.LLM_MODEL),
             "local_url": str(got.get("local_url") or LOCAL_URL).rstrip("/"),
-            "local_model": str(got.get("local_model") or "")}
+            "local_model": str(got.get("local_model") or ""),
+            "web": got.get("web") is not False}
 
 
-def save_settings(mode=None, key=None, model=None, local_url=None, local_model=None) -> dict:
+def google() -> dict | None:
+    """The online AI's key and model when it is Google's Gemini (it can
+    search Google itself), else None."""
+    st = settings()
+    if not st["key"] or "generativelanguage.googleapis.com" not in config.LLM_BASE_URL:
+        return None
+    return {"key": st["key"], "model": st["model"],
+            "base": config.LLM_BASE_URL.split("/v1beta")[0] + "/v1beta"}
+
+
+def save_settings(mode=None, key=None, model=None, local_url=None, local_model=None, web=None) -> dict:
     """Change what was given; the key is kept, never shown back."""
     try:
         cur = json.loads(_settings_file().read_text(encoding="utf-8"))
@@ -104,6 +116,8 @@ def save_settings(mode=None, key=None, model=None, local_url=None, local_model=N
     for name, val in (("key", key), ("model", model), ("local_model", local_model)):
         if val is not None:
             cur[name] = str(val).strip()
+    if web is not None:
+        cur["web"] = bool(web)
     if local_url is not None:
         url = str(local_url).strip().rstrip("/")
         if url and not re.match(r"^https?://[\w.\-]+(:\d+)?(/[\w.\-/]*)?$", url):
@@ -121,13 +135,26 @@ def _online() -> dict | None:
         if st["key"] else None
 
 
-def local_models(force: bool = False) -> list[str] | None:
+def local_models(force: bool = False, wait: bool = True) -> list[str] | None:
     """The models the local AI offers, or None when none is running (asked
-    at most every 10 s: it is on the way of every request)."""
+    at most every 10 s: it is on the way of every request).  wait=False:
+    what was last seen, asked again in the background - on Windows a knock
+    on a port nobody listens on takes 1-2 s, and Settings waited for it."""
     st = settings()
     url = _local_url() or st["local_url"]
     if not force and _local_seen["url"] == url and time.monotonic() - _local_seen["t"] < 10:
         return _local_seen["models"]
+    if not wait and not force:
+        if not _local_seen.get("asking"):
+            _local_seen["asking"] = True
+
+            def ask():
+                try:
+                    local_models(force=True)
+                finally:
+                    _local_seen["asking"] = False
+            threading.Thread(target=ask, name="local-ai-ask", daemon=True).start()
+        return _local_seen["models"] if _local_seen["url"] == url else None
     models = None
     try:
         with urllib.request.urlopen(urllib.request.Request(f"{url}/models"), timeout=1.5) as resp:
@@ -175,14 +202,81 @@ def _can_start_local() -> bool:
         return False
 
 
-def public() -> dict:
+def public(wait: bool = True) -> dict:
     """What the screen may know: never the key itself."""
     st = settings()
-    models = local_models()
+    models = local_models(wait=wait)
     return {"mode": st["mode"], "has_key": bool(st["key"]), "model": st["model"],
             "local_url": st["local_url"], "local_model": st["local_model"],
             "local_running": bool(models), "local_models": models or [],
-            "available": available(), "last_used": last_used, "last_note": last_note}
+            "available": available(), "last_used": last_used, "last_note": last_note,
+            "web": st["web"], "google_search": google() is not None}
+
+
+def transcribe(audio_b64: str, fmt: str = "wav") -> str:
+    """What was said in a recording (the copilot's hold-to-talk), by the
+    online AI (it takes sound); the local AI can't hear."""
+    online = _online()
+    if online is None:
+        raise LLMError("voice needs the online AI (a key in Settings -> AI), or a browser with speech recognition")
+    msg = _chat(online, [{"role": "user", "content": [
+        {"type": "text", "text": "Write down exactly what is said in this recording - an operator talking to a "
+                                 "lighting desk (cues, playbacks, colours, movers, strobes). Reply with the words only, "
+                                 "nothing else; if nothing is said, reply with nothing."},
+        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}}]}],
+        None, None, 0.0)
+    return str(msg.get("content") or "").strip().strip('"')
+
+
+# How hard the online AI thinks before it answers: a quick look needs
+# little, a whole show more.  Set around a piece of work with
+# `with llm.thinking("high"):`; only Gemini's thinking models take it (others
+# never see it).  Thinking costs time, so the default is low.
+_think = threading.local()
+EFFORTS = ("none", "low", "medium", "high")
+_no_effort: set[str] = set()          # models that refused it (asked again without)
+
+
+class thinking:
+    def __init__(self, level: str):
+        self.level = level if level in EFFORTS else "low"
+
+    def __enter__(self):
+        self.prev = getattr(_think, "level", None)
+        _think.level = self.level
+        return self
+
+    def __exit__(self, *_):
+        _think.level = self.prev
+
+
+def _effort(ai: dict) -> str | None:
+    level = getattr(_think, "level", None)
+    if not level or ai.get("name") != "online" or ai.get("model") in _no_effort:
+        return None
+    if "generativelanguage.googleapis.com" not in str(ai.get("url")) or not re.search(r"gemini-(2\.5|[3-9])", str(ai.get("model"))):
+        return None
+    return level
+
+
+def hear(prompt: str, audio_b64: str, fmt: str, name: str, description: str, schema: dict) -> dict:
+    """The online AI listens to a recording and fills in `schema` (the
+    offline AI can't hear)."""
+    online = _online()
+    if online is None:
+        raise LLMError("listening to a song needs the online AI (a Gemini key in Settings -> AI)")
+    tool = {"type": "function", "function": {"name": name, "description": description, "parameters": schema}}
+    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt},
+                                         {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}}]}]
+    with thinking("low"):
+        msg = _chat(online, msgs, [tool], {"type": "function", "function": {"name": name}}, 0.1)
+    for call in msg.get("tool_calls") or []:
+        args = (call.get("function") or {}).get("arguments")
+        if isinstance(args, dict):
+            return args
+        if isinstance(args, str) and args.strip():
+            return json.loads(args)
+    return extract_json(str(msg.get("content") or ""))
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None,
@@ -235,6 +329,9 @@ def _chat(ai: dict, messages: list[dict], tools, tool_choice, temperature: float
     if tools:
         body["tools"] = tools
         body["tool_choice"] = tool_choice or "auto"
+    effort = _effort(ai)
+    if effort:
+        body["reasoning_effort"] = effort
     data = json.dumps(body).encode("utf-8")
     last = None
     for attempt in range(4):
@@ -264,6 +361,11 @@ def _chat(ai: dict, messages: list[dict], tools, tool_choice, temperature: float
                                 + (f" - try again in {int(wait)} s" if wait else "") + ".")
                 raise last from exc
             last = LLMError(f"AI service HTTP {exc.code}: {detail}")
+            if exc.code == 400 and "reasoning" in full.lower() and "reasoning_effort" in body:
+                _no_effort.add(ai["model"])           # this model doesn't think: ask again plainly
+                body.pop("reasoning_effort", None)
+                data = json.dumps(body).encode("utf-8")
+                continue
             if exc.code in _RETRY_STATUS and attempt == 0:
                 time.sleep(1.5)
                 continue
@@ -296,12 +398,15 @@ def extract_json(text: str) -> dict:
 
 
 def structured(messages: list[dict], name: str, description: str,
-               schema: dict, temperature: float = 0.3) -> dict:
+               schema: dict, temperature: float = 0.3, think: str = "medium") -> dict:
     """Ask for one object matching `schema`, via a forced tool call.
 
     Endpoints that ignore tools answer in text; that text is parsed as JSON
     instead, so the caller always gets a dict or an exception.
     """
+    if getattr(_think, "level", None) is None:      # (a design: think it through)
+        with thinking(think):
+            return structured(messages, name, description, schema, temperature, think)
     tool = {"type": "function", "function": {
         "name": name, "description": description, "parameters": schema}}
     try:

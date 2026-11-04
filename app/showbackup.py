@@ -3,7 +3,7 @@ the show with it.
 
 Every save copies the show (and its kept versions) into a folder the
 operator picks - a OneDrive / Dropbox / Google Drive folder (the cloud app
-syncs it), a USB stick, a network share - under "Jarvis shows".  Restore
+syncs it), a USB stick, a network share - under "Haze shows".  Restore
 brings one back.  The copy runs on a thread of its own: a slow stick or a
 sleeping network drive never holds up the desk.  The choice is kept in
 DATA/backup.json, not in a show.
@@ -20,7 +20,20 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-SUBDIR = "Jarvis shows"
+SUBDIR = "Haze shows"
+OLD_SUBDIR = "Jarvis shows"                     # the folder's name before the desk was called Haze
+
+
+def _dest(folder) -> Path:
+    """The backup's own folder; one made under the old name is renamed to
+    the new one the first time it's used (its shows and versions with it)."""
+    new, old = Path(folder) / SUBDIR, Path(folder) / OLD_SUBDIR
+    if not new.exists() and old.is_dir():
+        try:
+            old.rename(new)
+        except OSError:
+            return old                       # (in use, read-only): keep using it
+    return new
 
 
 class Backup:
@@ -50,7 +63,7 @@ class Backup:
             if not p.is_dir():
                 raise ValueError(f"{p} isn't a folder on this computer (is the stick plugged in?)")
             try:                                   # can we write there?
-                probe = p / ".jarvis-write-test"
+                probe = p / ".haze-write-test"
                 probe.write_text("ok", encoding="utf-8")
                 probe.unlink()
             except OSError as exc:
@@ -66,7 +79,7 @@ class Backup:
         with self._lock:
             return {"folder": self.folder, "on": bool(self.folder), "last": self.last,
                     "last_error": self.last_error, "busy": self.busy,
-                    "where": str(Path(self.folder) / SUBDIR) if self.folder else ""}
+                    "where": str(_dest(self.folder)) if self.folder else ""}
 
     def _save_cfg(self) -> None:
         try:
@@ -81,7 +94,7 @@ class Backup:
         if not self.folder:
             return False
         threading.Thread(target=self.copy_now, args=(Path(show_dir), label),
-                         name="jarvis-backup", daemon=True).start()
+                         name="haze-backup", daemon=True).start()
         return True
 
     def copy_now(self, show_dir: Path, label: str | None = None) -> dict:
@@ -94,7 +107,7 @@ class Backup:
         try:
             if not folder:
                 raise ValueError("no backup folder chosen (Settings -> Backup)")
-            dest = Path(folder) / SUBDIR
+            dest = _dest(folder)
             dest.mkdir(parents=True, exist_ok=True)
             names = [label] if label else sorted(p.stem for p in Path(show_dir).glob("*.json")
                                                  if not p.name.startswith("."))
@@ -126,7 +139,7 @@ class Backup:
 
     def shows(self) -> list[dict]:
         """The shows in the backup folder, newest first."""
-        dest = Path(self.folder) / SUBDIR if self.folder else None
+        dest = _dest(self.folder) if self.folder else None
         if not dest or not dest.is_dir():
             return []
         rows = []
@@ -146,11 +159,11 @@ class Backup:
     def fetch(self, name: str, show_dir: Path) -> Path:
         """Copy one show (and its versions) from the backup into the shows
         folder; the caller keeps the current file as a version first."""
-        src = Path(self.folder) / SUBDIR / f"{name}.json"
+        src = (_dest(self.folder) if self.folder else Path(".")) / f"{name}.json"
         if not self.folder or not src.is_file():
             raise ValueError(f"no {name!r} in the backup folder")
         json.loads(src.read_text(encoding="utf-8"))          # a readable show, or refuse
-        vsrc = Path(self.folder) / SUBDIR / "versions" / name
+        vsrc = _dest(self.folder) / "versions" / name
         if vsrc.is_dir():
             vdst = Path(show_dir) / "versions" / name
             vdst.mkdir(parents=True, exist_ok=True)

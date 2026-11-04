@@ -255,7 +255,7 @@ def suggest() -> dict:
 def _get(url: str, headers: dict | None = None):
     if transport:
         return transport(url, headers or {})
-    req = urllib.request.Request(url, headers={"User-Agent": "jarvis-console/1.0", **(headers or {})})
+    req = urllib.request.Request(url, headers={"User-Agent": "haze-console/1.0", **(headers or {})})
     resp = urllib.request.urlopen(req, timeout=30)
     return resp.status, dict(resp.headers), iter(lambda: resp.read(CHUNK), b"")
 

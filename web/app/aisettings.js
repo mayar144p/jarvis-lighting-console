@@ -44,7 +44,7 @@ export function aiPanel() {
       const x = new XMLHttpRequest();
       x.open("POST", "/api/ai/pack?name=" + encodeURIComponent(f.name));
       const t = token();
-      if (t) x.setRequestHeader("X-Jarvis-Token", t);
+      if (t) x.setRequestHeader("X-Haze-Token", t);
       x.upload.onprogress = (e) => { if (e.lengthComputable) packNote.textContent = `Copying ${f.name}: ${Math.round(e.loaded * 100 / e.total)} %`; };
       x.onload = () => {
         let r = {};
@@ -80,6 +80,12 @@ export function aiPanel() {
       h("h3", "Which AI"), seg,
       h("p.muted.small", (MODES.find((m) => m[0] === d.mode) || [, , ""])[2]
         + (d.last_note ? ` · last time: ${d.last_note}` : "")),
+      h("h3", "Looking things up online"),
+      h("label.check", h("input", { type: "checkbox", checked: d.web !== false, onchange: (e) => save({ web: e.target.checked }) }),
+        " Let the AI look things up online for ideas (a theme's colours, a genre's style, a light's real abilities)"),
+      h("p.muted.small", d.web === false ? "Off: the AI uses what it already knows."
+        : d.google_search ? "With your Gemini key it searches Google; it shows what it looked up and where it read it."
+          : "It searches DuckDuckGo / Bing (no key needed); it shows what it looked up and where it read it."),
       h("h3", "Online (Gemini)"),
       h("div.form-grid",
         h("label.field", h("span", "API key"), key),
@@ -121,4 +127,26 @@ export function aiPanel() {
     .catch((e) => root.replaceChildren(h("p.muted.small", e.message)));
   refresh();
   return root;
+}
+
+// Teaching the offline AI: the good examples kept from the copilot (Keep /
+// 👍), counted, and saved as the training file tools/finetune/ takes.
+export function trainingBlock() {
+  const learnBtn = h("button.btn", { onclick: () => import("./ailearning.js").then((m) => m.openLearning()) }, "What the AI has learned…");
+  const box = h("div.ai-train", h("h3", "Teaching the offline AI"), h("p.muted.small", "Counting…"));
+  const paint = (e) => box.replaceChildren(
+    h("h3", "What the AI has learned"),
+    h("p.muted.small", "Notes it remembers (the ones it only noticed wait for your OK), habits from your edits to its shows, the requests you kept and undid - see, keep, forget or pause."),
+    h("div.row-btns", learnBtn),
+    h("h3", "Teaching the offline AI"),
+    h("p.muted.small", "Every copilot request is written down on this computer. Only the ones you Keep (or mark 👍) go into training - "
+      + "a few hundred of them can teach the offline AI your way of working (tools/finetune/README.md, on a PC with an NVIDIA card)."),
+    h("p", h("b", `${e.usable} good example${e.usable === 1 ? "" : "s"}`), h("span.muted.small", ` · ${e.kept} kept · ${e.answers} answers · ${e.thrown} thrown away${e.undone ? ` (${e.undone} undone with Ctrl+Z)` : ""} · ${e.all} in all`)),
+    h("div.row-btns", h("button.btn", { disabled: !e.usable, onclick: async () => {
+      const r = await post("/api/console/assistant", { example: "", export: true });
+      if (r.ok) toast(`${r.examples} examples saved: ${r.file}`, "ok", 8000); else toast(r.error || "couldn't save", "bad");
+    } }, "Save the training file")));
+  post("/api/console/assistant", { example: "" }).then((r) => paint(r.examples || { usable: 0, kept: 0, answers: 0, thrown: 0, all: 0 }))
+    .catch(() => box.replaceChildren(h("p.muted.small", "The examples couldn't be counted.")));
+  return box;
 }

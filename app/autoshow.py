@@ -23,7 +23,7 @@ import copy
 import json
 import re
 
-from app import fixture_kind, fxlib, llm
+from app import fixture_kind, fxlib, llm, roomsense, websearch
 from app import venue as venue_mod
 
 ROLE_NAME = {"spot": "Movers", "beam": "Beams", "wash": "Washes", "par": "PARs",
@@ -72,15 +72,25 @@ def analyse(eng) -> dict:
     st = v.get("stage")
     front = (st["z"] + st["depth"]) if st else 4.0
     groups: dict[str, dict] = {}
+    # what each zone is for, and which lights serve it (roomsense): the movers
+    # shared out (2 on the dance floor, 1 on the VIP...), the static lights
+    # by the zone they light
+    room = roomsense.plan(eng)
+    zinfo = {z["id"]: z for z in room["zones"]}
+    serves = {n: zinfo[k] for k, ns in room["movers"].items() for n in ns}
+    serves.update({n: zinfo[k] for k, ns in room["statics"].items() for n in ns
+                   if zinfo[k]["duty"] != "show"})          # a PAR by the bar is the bar's
     for h in eng.patch:
         if fixture_kind.describe(h).get("class", "light") != "light":
             continue                    # lasers and SFX are never auto-designed
         role = fixture_kind.design_role(h)
-        where = _where(h, v, front)
+        zone = serves.get(h["head_no"])
+        where = zone["name"] if zone else _where(h, v, front)
         key = f"{role}@{_slug(where)}"
         g = groups.setdefault(key, {"name": f"{ROLE_NAME.get(role, role.title())} · {where}",
                                     "role": role, "where": where, "heads": [], "caps": None,
-                                    "fx": None, "x": 0.0})
+                                    "fx": None, "x": 0.0, "duty": zone["duty"] if zone else "show",
+                                    "zone": zone["id"] if zone else ""})
         g["heads"].append(h["head_no"])
         caps = _caps(h)
         if g["caps"] is None:
@@ -108,6 +118,7 @@ def analyse(eng) -> dict:
             parts = [g for g in groups.values() if g["role"] == role]
             groups[f"{role}@all"] = {
                 "name": f"All {ROLE_NAME.get(role, role).lower()}", "role": role, "where": "everywhere",
+                "duty": "all", "zone": "",
                 "heads": sorted(heads), "x": 0.0,
                 "caps": {k: _agree([p["caps"][k] for p in parts]) for k in parts[0]["caps"]},
                 "fx": sorted(set.intersection(*[set(p["fx"]) for p in parts]))}
@@ -115,11 +126,10 @@ def analyse(eng) -> dict:
     targets: dict[str, list[float]] = {}
     w, d, hgt = venue_mod.dims(v)
     b = venue_mod.bounds(v)
-    mark = next((o for o in v.get("objects") or [] if o.get("kind") == "mark"), None)
-    if mark:
-        targets["dj"] = [mark["x"], float(mark.get("y") or 0) + 1.3, mark["z"]]
-    elif st:
-        targets["dj"] = [st["x"], st["height"] + 1.3, st["z"] + st["depth"] * 0.4]
+    # (no "dj" target: a beam is never aimed at the DJ's face - roomsense)
+    for z in room["zones"]:
+        if z["kind"] not in roomsense.NO_ROAM:
+            targets[f"zone_{_slug(z['name'])}"] = [z["centre"][0], 0.0, z["centre"][1]]
     floor = next((z for z in v.get("zones") or [] if z["kind"] in ("dancefloor", "standing")), None)
     if floor:
         xs = [p[0] for p in floor["points"]]
@@ -128,10 +138,10 @@ def analyse(eng) -> dict:
         sx, sz = (max(xs) - min(xs)) / 2, (max(zs) - min(zs)) / 2
         targets.update({"floor": [cx, 0.0, cz], "floor_left": [cx - sx * 0.6, 0.0, cz],
                         "floor_right": [cx + sx * 0.6, 0.0, cz], "floor_front": [cx, 0.0, cz - sz * 0.6],
-                        "floor_back": [cx, 0.0, cz + sz * 0.6], "crowd": [cx, 1.6, cz]})
+                        "floor_back": [cx, 0.0, cz + sz * 0.6], "crowd": [cx, 0.4, cz]})
     else:
         targets["floor"] = [0.0, 0.0, front + 5]
-        targets["crowd"] = [0.0, 1.6, front + 5]
+        targets["crowd"] = [0.0, 0.4, front + 5]       # (below eye level: never into faces)
     if w and d:
         targets["back_wall"] = [b["x0"] + w / 2, (hgt or 6) * 0.6, b["z0"] + 0.3]
         targets["ceiling"] = [b["x0"] + w / 2, hgt or 6, (b["z0"] + b["z1"]) / 2]
@@ -143,7 +153,7 @@ def analyse(eng) -> dict:
         duration = float(tl.get("length") or 0)       # a song from rekordbox: parts and length, no music file
     return {"groups": groups, "targets": {k: [round(c, 2) for c in t] for k, t in targets.items()},
             "bpm": float(tl.get("bpm") or 120), "duration": duration,
-            "markers": marks, "notes": str(tl.get("notes") or ""),
+            "markers": marks, "notes": str(tl.get("notes") or ""), "room": roomsense.describe(room),
             "venue": v.get("name") or v.get("template") or ""}
 
 
@@ -162,9 +172,15 @@ def describe(a: dict) -> str:
         c = g["caps"]
         can = [x for x, ok in (("pan/tilt", c["pan_tilt"]), ("colour", c["colour"] == "mix"),
                                ("gobo", c["gobo"]), ("zoom", c["zoom"])) if ok]
+        duty = {"gentle": "GENTLE (VIP / seating)", "staff": "STAFF AREA (bar)", "protect": "DJ",
+                "performer": "STAGE", "work": "OPERATOR"}.get(g.get("duty", "show"), "")
         lines.append(f"- {key}: {g['name']}, {len(g['heads'])} lights, x≈{g['x']:+.1f} m; "
-                     f"can {', '.join(can) or 'intensity only'}; effects {', '.join(g['fx']) or 'none'}")
-    lines.append("AIM TARGETS (only for groups with pan/tilt): " + ", ".join(a["targets"]))
+                     f"can {', '.join(can) or 'intensity only'}; effects {', '.join(g['fx']) or 'none'}"
+                     + (f"; serves {duty}" if duty else ""))
+    lines.append("AIM TARGETS (only for groups with pan/tilt; a zone's group aims at its own zone_...): "
+                 + ", ".join(a["targets"]))
+    if a.get("room"):
+        lines.append(a["room"])
     return "\n".join(lines)
 
 
@@ -223,9 +239,14 @@ Rules:
   groups that can pan/tilt. Give colour only to groups that can colour.
 - Make sections contrast: calm sections dim and slow, drops full and
   fast. Keep a coherent palette of 2-5 colours.
-- Movers on a front truss suit aims at the crowd and the DJ; washes on a
-  rear truss suit the dance floor; floor PARs and bars suit uplighting
-  the back wall and chases; towers and blinders suit hits.
+- Every group has a job (THE ROOM, and "serves" on the group): a group
+  serving a zone aims at that zone's own zone_... target. Dance-floor
+  groups carry the show. GENTLE (VIP / seating) groups stay soft, warm,
+  slow: intensity 30-60, no strobes or hits, at most a slow breathe. STAFF
+  (bar), DJ and STAGE groups get a soft static warm wash or nothing: no
+  aims, no movement, no effects, no hits. Never aim a beam at the DJ.
+- Washes on a rear truss suit the dance floor; floor PARs and bars suit
+  uplighting the back wall and chases; towers and blinders suit hits.
 - Section bars should add up to roughly the song length.
 - When markers are given, make one section per marker, with the marker's
   name, so the looks change exactly where the song does.
@@ -234,7 +255,9 @@ Rules:
   mid-range lead (a voice or a melody) suits warmer, softer looks with the
   movers on the DJ or the stage; heavy bass suits the floor PARs and bars
   pumping; bright highs suit fast sparkle effects; "rising" suits climbing
-  intensity and hits in its last bars; "falling away" suits a fade down."""
+  intensity and hits in its last bars; "falling away" suits a fade down.
+
+""" + roomsense.DESIGN_KNOWLEDGE
 
 
 def _palette(brief: str) -> list[str]:
@@ -296,7 +319,9 @@ def fallback_design(a: dict, brief: str = "") -> dict:
     targets = a["targets"]
     hear = {m["name"].strip().lower(): m.get("hear") or "" for m in a.get("markers") or [] if m.get("name")}
     base = [k for k in groups if not k.endswith("@all")]
-    strobey = [k for k in base if groups[k]["role"] in ("par", "bar", "wash")] or base[:1]
+    show = [k for k in base if groups[k].get("duty", "show") == "show"]
+    strobey = [k for k in show if groups[k]["role"] in ("par", "bar", "wash")] or show[:1]
+    warm = "#ffb36b"
     out = []
     for i, (name, bars, energy) in enumerate(sections):
         looks = []
@@ -304,11 +329,32 @@ def fallback_design(a: dict, brief: str = "") -> dict:
             g = groups[key]
             c = g["caps"]
             role = g["role"]
+            duty = g.get("duty", "show")
+            if duty != "show":
+                # the VIP soft and warm, gently breathing in the calm parts;
+                # the bar, the DJ and the stage a low static warm wash
+                gentle = duty == "gentle"
+                look = {"group": key, "intensity": round((30 + 25 * energy) if gentle else 30)}
+                if c["colour"] == "mix":
+                    look["colour"] = warm if (not gentle or i % 2 == 0) else pal[i % len(pal)]
+                zt = f"zone_{_slug(g['where'])}"
+                if gentle and c["pan_tilt"] and zt in targets:
+                    look["aim"] = zt
+                    look["zoom"] = "wide"
+                if gentle and energy < 0.5 and "breathe" in g["fx"]:
+                    look["fx"] = "breathe"
+                looks.append(look)
+                continue
             colour = pal[(i + j) % len(pal)]
             look = {"group": key, "intensity": round(35 + 65 * energy)}
             if c["colour"] == "mix":
                 look["colour"] = colour
-            if c["pan_tilt"]:
+            own = f"zone_{_slug(g['where'])}" if g.get("zone") else ""
+            if c["pan_tilt"] and own in targets:
+                look["aim"] = own                 # its own zone (the dance floor's movers)
+                look["zoom"] = "narrow" if energy >= 0.6 else "wide"
+                look["gobo"] = bool(c["gobo"]) and 0.3 < energy < 0.9
+            elif c["pan_tilt"]:
                 if energy >= 0.9:
                     look["aim"] = "crowd" if "crowd" in targets else "floor"
                 elif energy >= 0.55:
@@ -316,7 +362,7 @@ def fallback_design(a: dict, brief: str = "") -> dict:
                 elif "back_wall" in targets and name.lower().startswith("break"):
                     look["aim"] = "back_wall"
                 else:
-                    look["aim"] = "dj" if "dj" in targets else "floor"
+                    look["aim"] = "floor"
                 look["zoom"] = "narrow" if energy >= 0.6 else "wide"
                 look["gobo"] = bool(c["gobo"]) and 0.3 < energy < 0.9
             fx_pref = {
@@ -333,10 +379,10 @@ def fallback_design(a: dict, brief: str = "") -> dict:
         hits = []
         heard = hear.get(name.strip().lower(), "")
         drums = "no kick" not in heard
-        if heard and "rising" in heard and drums and not name.lower().startswith(("build", "drop")):
+        if strobey and heard and "rising" in heard and drums and not name.lower().startswith(("build", "drop")):
             hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
-        if not drums:
-            pass                         # nothing to hit on: no strobes in a part with no kick
+        if not drums or not strobey:
+            pass                         # nothing to hit on (no kick), or nothing on the dance floor to hit
         elif name.lower().startswith("build"):
             hits.append({"kind": "strobe", "group": strobey[0], "every": "beat", "last_bars": 2})
         elif name.lower().startswith("drop"):
@@ -384,10 +430,23 @@ def validate(raw, a: dict) -> dict:
                 look["gobo"] = True
             if lk.get("fx") in g["fx"]:
                 look["fx"] = lk["fx"]
+            # the room's rules hold whatever the design says (roomsense): the
+            # VIP soft, the bar / DJ / stage a low static wash, no beam on the DJ
+            duty = g.get("duty", "show")
+            if duty == "gentle":
+                look["intensity"] = min(look["intensity"], 70)
+                if look.get("fx") not in (None, "breathe"):
+                    look.pop("fx")
+                look.pop("gobo", None)
+            elif duty not in ("show", "all"):
+                look["intensity"] = min(look["intensity"], 45)
+                for k in ("fx", "aim", "gobo", "zoom"):
+                    look.pop(k, None)
             looks.append(look)
         hits = []
         for hit in (s.get("hits") or [])[:6]:
-            if isinstance(hit, dict) and hit.get("group") in groups and hit.get("kind") in ("strobe", "flash"):
+            if isinstance(hit, dict) and hit.get("group") in groups and hit.get("kind") in ("strobe", "flash") \
+                    and groups[hit["group"]].get("duty", "show") in ("show", "all"):
                 hits.append({"kind": hit["kind"], "group": hit["group"],
                              "every": hit.get("every") if hit.get("every") in ("beat", "half", "bar") else "beat",
                              "last_bars": max(0, int(hit.get("last_bars") or 0))})
@@ -422,27 +481,114 @@ def validate(raw, a: dict) -> dict:
     return out
 
 
-def design(eng, brief: str = "", offline: bool = False) -> dict:
+NEEDS_AI = "Designing a whole show needs the AI: Settings -> AI (a key, or the offline AI)"
+
+
+# three takes on one brief, each with its own direction (variants=3)
+TAKES = (("Dark and minimal", "few colours, slow and moody, lots of contrast and darkness, strobes only at the very peaks"),
+         ("Bold and colourful", "rich saturated colours, busy movement, big hits on every drop"),
+         ("Classic club", "a balance: two-colour looks, steady movement on the beat, hits on the drops"))
+
+
+def design(eng, brief: str = "", offline: bool = False, variants: int = 1) -> dict:
     """Analyse the rig and design a show for it: {design, analysis, source}."""
+    heard = None
+    if not offline and llm.available() and llm.google() is not None \
+            and len((eng.timeline or {}).get("markers") or []) < 2:
+        # a song on the timeline with no parts marked: the AI listens first,
+        # so the hits land on the real drops (not the false builds)
+        from app import songear
+        if songear.audio_file(eng) is not None:
+            r = songear.listen(eng)
+            heard = r.get("summary") if r.get("ok") else None
     a = analyse(eng)
     if not a["groups"]:
         raise ValueError("patch some lights first - there is nothing to design for")
+    # a whole show is designed by the AI (the desk's own rules alone made the
+    # same show every time); offline=True is for the desk's own templates
+    if not offline and not llm.available():
+        raise ValueError(NEEDS_AI)
     note = None
+    # a theme, an event or a genre: what the web says about lighting it
+    web = websearch.inspiration(brief) if not offline and llm.available() else ""
+    sysmsg = SYSTEM + "\n\n" + describe(a) + ("\n\n" + web if web else "")
+    if not offline and llm.available() and int(variants or 1) > 1:
+        designs = []
+        for title, how in TAKES[:max(2, min(3, int(variants)))]:
+            try:
+                raw = llm.structured(
+                    [{"role": "system", "content": sysmsg},
+                     {"role": "user", "content": f"{brief or 'A high-energy club night.'}\n\nThis take: {title} - {how}. "
+                                                 f"Name the show after the brief, then '- {title}'."}],
+                    "show_design", "The whole show for this rig, section by section.", DESIGN_SCHEMA, temperature=0.9)
+                designs.append({**validate({**raw, "brief": brief}, a), "take": title})
+            except (llm.LLMError, ValueError):
+                continue
+        if not designs:
+            raise ValueError("the AI couldn't design the show this time - try again")
+        return {"design": designs[0], "designs": designs, "analysis": _public(a), "source": "llm", "web": bool(web)}
     if not offline and llm.available():
         try:
             raw = llm.structured(
-                [{"role": "system", "content": SYSTEM + "\n\n" + describe(a)},
+                [{"role": "system", "content": sysmsg},
                  {"role": "user", "content": brief or "A high-energy club night."}],
                 "show_design", "The whole show for this rig, section by section.",
                 DESIGN_SCHEMA, temperature=0.7)
-            return {"design": validate({**raw, "brief": brief}, a), "analysis": _public(a), "source": "llm"}
+            d = validate({**raw, "brief": brief}, a)
         except (llm.LLMError, ValueError) as exc:
-            note = f"designed offline (AI: {str(exc)[:160]})"
+            raise ValueError(f"the AI couldn't design the show this time ({str(exc)[:160]}) - try again") from None
+        d, fixed = critique(d, a, brief, sysmsg)
+        out = {"design": d, "analysis": _public(a), "source": "llm", "web": bool(web)}
+        if heard:
+            out["heard"] = heard
+        if fixed:
+            out["reviewed"] = fixed
+        return out
     out = {"design": validate({**fallback_design(a, brief), "brief": brief}, a), "analysis": _public(a),
            "source": "offline"}
     if note:
         out["note"] = note
     return out
+
+
+CRITIC = """You are a senior lighting designer checking a junior's show design before it is
+built.  Check it against the brief, the room's rules and good design:
+- does it answer the brief (theme, colours, mood, what to avoid)?
+- contrast: calm parts really calmer (dimmer, slower, fewer lights) than the drops?
+- 2-3 colours per look, one leading; not a rainbow on everything;
+- strobes / flashes only on drops and the ends of builds, only over the dance floor;
+- gentle zones (VIP, seating) stay gentle; nothing moving or strobing at the DJ, the bar or the stage.
+List the real problems (at most 5, short).  If there are any, return the WHOLE design
+with them fixed (keep everything that was right exactly as it was).  If it's good,
+return no problems and the design unchanged."""
+
+CRITIC_SCHEMA = {"type": "object", "properties": {
+    "problems": {"type": "array", "items": {"type": "string"}},
+    "design": DESIGN_SCHEMA}, "required": ["problems"]}
+
+
+def critique(d: dict, a: dict, brief: str, sysmsg: str) -> tuple[dict, list[str]]:
+    """A second look at a design by the AI, as a senior designer would:
+    (the design - fixed where it found problems -, what it fixed).  Any
+    trouble: the first design stands."""
+    try:
+        with llm.thinking("low"):
+            raw = llm.structured(
+                [{"role": "system", "content": sysmsg + "\n\n" + CRITIC},
+                 {"role": "user", "content": "The brief: " + (brief or "a high-energy club night") + "\n\nThe design:\n"
+                  + json.dumps({k: v for k, v in d.items() if k != "brief"}, default=str)[:24000]}],
+                "review", "The problems found, and the design with them fixed.", CRITIC_SCHEMA, temperature=0.2)
+    except (llm.LLMError, ValueError):
+        return d, []
+    problems = [str(p)[:200] for p in raw.get("problems") or [] if str(p).strip()][:5]
+    if not problems or not isinstance(raw.get("design"), dict) or not raw["design"].get("sections"):
+        return d, []
+    try:
+        fixed = validate({**raw["design"], "brief": brief}, a)
+    except ValueError:
+        return d, []
+    fixed["name"] = d.get("name") or fixed.get("name")
+    return fixed, problems
 
 
 def _public(a: dict) -> dict:
@@ -474,6 +620,87 @@ def _layout(sections: list[dict], a: dict) -> list[tuple[float, float]]:
     return times
 
 
+def _show_palettes(d: dict, a: dict, eng, calls: list[dict]) -> tuple[dict, dict]:
+    """Calls recording the show's colours and aims as palettes: ({hex:
+    palette n}, {(target, group): palette n}).  A palette of the same name
+    (the show built again) is recorded over, not added twice."""
+    from app import showdesign
+    groups, targets = a["groups"], a["targets"]
+    name = str(d.get("name") or "Show")[:28]
+    have = {k: {str(p.get("name") or ""): p["n"] for p in eng.palettes.get(k) or []} for k in ("colour", "position")}
+    nxt = {k: max([p["n"] for p in eng.palettes.get(k) or []] or [0]) + 1 for k in ("colour", "position")}
+
+    def number(kind: str, label: str) -> int:
+        if label in have[kind]:
+            return have[kind][label]
+        n = nxt[kind]
+        nxt[kind] += 1
+        have[kind][label] = n
+        return n
+    looks = [lk for s in d["sections"] for lk in s["looks"]]
+    col: dict[str, int] = {}
+    colour_heads = sorted({n for lk in looks if lk.get("colour") for n in groups[lk["group"]]["heads"]})
+    for hx in dict.fromkeys(lk["colour"].lower() for lk in looks if lk.get("colour")):
+        if not colour_heads:
+            break
+        label = f"{name} · {showdesign._name_of(hx)}"
+        if label in col.values():
+            label += f" {hx}"
+        n = number("colour", label)
+        calls += [{"action": "clear_programmer", "params": {}},
+                  {"action": "select_heads", "params": {"heads": colour_heads}},
+                  {"action": "set_colour", "params": {"hex": hx}},
+                  {"action": "record_palette", "params": {"kind": "colour", "name": label, "palette": n}}]
+        col[hx] = n
+    pos: dict[tuple, int] = {}
+    for tgt, grp in dict.fromkeys((lk["aim"], lk["group"]) for lk in looks if lk.get("aim")):
+        if tgt not in targets:
+            continue
+        x, y, z = targets[tgt]
+        where = re.sub(r"^zone[_ ]", "", str(tgt)).replace("_", " ")
+        gname = str(groups[grp]["name"])
+        label = f"{name} · {gname}" + ("" if where.lower() in gname.lower() else f" on {where}")
+        n = number("position", label)
+        calls += [{"action": "clear_programmer", "params": {}},
+                  {"action": "select_heads", "params": {"heads": groups[grp]["heads"]}},
+                  {"action": "aim_at", "params": {"x": x, "y": y, "z": z}},
+                  {"action": "record_palette", "params": {"kind": "position", "name": label, "palette": n}}]
+        pos[(tgt, grp)] = n
+    return col, pos
+
+
+HITS_PAGE = "Hits"
+HIT_KINDS = ("strobe", "flash", "blind", "blinder", "kill", "blackout")
+
+
+def _auto_hit(b: dict) -> bool:
+    """A hit button a build made ("Strobe Movers", "Flash PARs") - not one
+    the operator put there."""
+    k = str(b.get("kind") or "")
+    return k in HIT_KINDS and str(b.get("label") or "").startswith(k.title() + " ") and b.get("mode") == "hold"
+
+
+def _hits_page(eng) -> int:
+    """The page for a built show's hit buttons in the profile in use: the
+    "Hits" page an earlier build made, else the first page with nothing on
+    it after the operator's own (AUTO_PAGE on an empty desk)."""
+    names = {str(k): str(v) for k, v in (getattr(eng, "quick_names", {}) or {}).items()}
+    for k, v in names.items():
+        if v == HITS_PAGE and str(k).isdigit():
+            return int(k)
+    used = {int(b["page"]) for b in eng.quick} | {int(k) for k in names if str(k).isdigit()}
+    if AUTO_PAGE not in used and all(p < AUTO_PAGE for p in used):
+        return AUTO_PAGE
+    top = getattr(eng, "QUICK_PAGES", 32)
+    for p in range(max(used or {0}) + 1, top + 1):
+        if p not in used:
+            return p
+    for p in range(1, top + 1):
+        if p not in used:
+            return p
+    return top
+
+
 def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict], dict]:
     """The design as engine calls (applied together, one undo step)."""
     groups, targets = a["groups"], a["targets"]
@@ -486,6 +713,10 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
     # operator's groups keep their names in the analysis, see analyse)
     used = sorted({lk["group"] for s in d["sections"] for lk in s["looks"]})
     times = _layout(d["sections"], a)
+    # the show's colours and aims as palettes first (named after the show):
+    # every cue takes them from there, so changing one palette changes the
+    # whole show ("make the purple red everywhere") - as on a pro desk
+    pal_col, pal_pos = _show_palettes(d, a, eng, calls)
     # one cue per section
     for s, _span in zip(d["sections"], times):
         calls.append({"action": "clear_programmer", "params": {}})
@@ -500,10 +731,16 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
                 value = eng._open_value(gated[0], role) if lk["intensity"] > 0 else 0
                 calls.append({"action": "set_attribute", "params": {"attribute": role, "value": value}})
             if lk.get("colour"):
-                calls.append({"action": "set_colour", "params": {"hex": lk["colour"]}})
+                if lk["colour"].lower() in pal_col:
+                    calls.append({"action": "include_palette", "params": {"kind": "colour", "palette": pal_col[lk["colour"].lower()]}})
+                else:
+                    calls.append({"action": "set_colour", "params": {"hex": lk["colour"]}})
             if lk.get("aim"):
-                x, y, z = targets[lk["aim"]]
-                calls.append({"action": "aim_at", "params": {"x": x, "y": y, "z": z}})
+                if (lk["aim"], lk["group"]) in pal_pos:
+                    calls.append({"action": "include_palette", "params": {"kind": "position", "palette": pal_pos[(lk["aim"], lk["group"])]}})
+                else:
+                    x, y, z = targets[lk["aim"]]
+                    calls.append({"action": "aim_at", "params": {"x": x, "y": y, "z": z}})
             if lk.get("zoom"):
                 calls.append({"action": "set_attribute", "params": {
                     "attribute": "zoom", "value": 40 if lk["zoom"] == "narrow" else 215}})
@@ -513,22 +750,39 @@ def compile_calls(d: dict, a: dict, eng, playback: int = 1) -> tuple[list[dict],
             "playback": playback, "name": s["name"], "fade": s["fade"], "hold": 0, "follow": 0}})
     calls.append({"action": "clear_programmer", "params": {}})
     calls.append({"action": "clear_selection", "params": {}})
-    # quick buttons for the hits, on the auto page
+    # quick buttons for the hits, on a page of their own ("Hits"): the one
+    # an earlier build made, else the first empty page after the operator's
+    # - never on top of their buttons (it used to be page 4 whatever was
+    # there: a show's Intensity page, overwritten when the next show was made)
+    hits_page = _hits_page(eng)
+    # the hit buttons an earlier build made there go; a button the operator
+    # put on the Hits page themselves stays where it is (the new hits go
+    # round it)
+    on_page = {int(b["slot"]): b for b in eng.quick if int(b["page"]) == hits_page}
+    mine = {n for n, b in on_page.items() if not _auto_hit(b)}
+    if any(s["hits"] for s in d["sections"]):
+        for n in sorted(set(on_page) - mine):
+            calls.append({"action": "quick_set", "params": {"page": hits_page, "slot": n, "clear": True}})
+        calls.append({"action": "quick_page", "params": {"page": hits_page, "name": HITS_PAGE}})
     hit_btn: dict[tuple, str] = {}
     slot = 0
     for s in d["sections"]:
         for hit in s["hits"]:
             key = (hit["kind"], hit["group"])
-            if key in hit_btn or slot >= 24:
+            if key in hit_btn:
                 continue
             slot += 1
-            hit_btn[key] = f"q{AUTO_PAGE}-{slot}"
+            while slot in mine:
+                slot += 1
+            if slot > 24:
+                break
+            hit_btn[key] = f"q{hits_page}-{slot}"
             g = groups[hit["group"]]
             button = {"kind": hit["kind"], "label": f"{hit['kind'].title()} {g['name']}"[:24],
                       "mode": "hold", "target": {"heads": g["heads"]}}
             if hit["kind"] == "strobe":
                 button["hz"] = 12
-            calls.append({"action": "quick_set", "params": {"page": AUTO_PAGE, "slot": slot, "button": button}})
+            calls.append({"action": "quick_set", "params": {"page": hits_page, "slot": slot, "button": button}})
     # the timeline: keep the user's own tracks, replace the auto ones
     doc = copy.deepcopy(eng.timeline)
     doc["tracks"] = [t for t in doc.get("tracks") or [] if not str(t.get("name", "")).startswith(AUTO_PREFIX)]

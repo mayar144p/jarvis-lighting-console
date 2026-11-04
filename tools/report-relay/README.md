@@ -16,17 +16,17 @@ It is a small Cloudflare Worker (`worker.mjs`, free plan is plenty).
    ```
    copy wrangler.toml.example wrangler.toml        (Mac/Linux: cp)
    npx wrangler login
-   npx wrangler r2 bucket create jarvis-reports
+   npx wrangler r2 bucket create haze-reports
    npx wrangler secret put GITHUB_TOKEN             (paste the token)
    npx wrangler secret put DOWNLOAD_KEY             (any long random text: maintainers use it to download zips)
    npx wrangler secret put RELAY_KEY                (optional: a key every desk must send)
    npx wrangler deploy
    ```
-   It prints the relay's address, e.g. `https://jarvis-report-relay.<you>.workers.dev`.
+   It prints the relay's address, e.g. `https://haze-report-relay.<you>.workers.dev`.
 3. **The desks** - in each desk's `.env` (or the desktop app's settings
    folder):
    ```
-   REPORT_RELAY=https://jarvis-report-relay.<you>.workers.dev
+   REPORT_RELAY=https://haze-report-relay.<you>.workers.dev
    REPORT_RELAY_KEY=...                             (only if you set RELAY_KEY)
    ```
    Restart the desk: the report window now has **Send report**.

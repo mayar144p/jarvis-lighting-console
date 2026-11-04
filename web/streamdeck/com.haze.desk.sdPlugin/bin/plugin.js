@@ -1,4 +1,4 @@
-// Jarvis on a Stream Deck: keys and dials send OSC to the desk (Settings ->
+// Haze on a Stream Deck: keys and dials send OSC to the desk (Settings ->
 // MIDI & OSC -> OSC in, port 8000 by default).  No packages: the Stream
 // Deck app talks to plugins over a WebSocket, and this file carries the
 // small client it needs, plus the OSC encoder.
@@ -34,25 +34,25 @@ function messagesFor(action, event, settings, state = {}) {
   const pb = parseInt(settings.playback, 10);
   const withPb = (addr) => (pb > 0 ? oscMessage(addr, pb) : oscMessage(addr));
   switch (action) {
-    case "com.jarvis.desk.go": return event === "keyDown" ? [withPb("/jarvis/go")] : [];
-    case "com.jarvis.desk.back": return event === "keyDown" ? [withPb("/jarvis/back")] : [];
-    case "com.jarvis.desk.blackout": return event === "keyDown" ? [oscMessage("/jarvis/blackout", state.on ? 1 : 0)] : [];
-    case "com.jarvis.desk.tap": return event === "keyDown" ? [oscMessage("/jarvis/tap")] : [];
-    case "com.jarvis.desk.macro":
-      return event === "keyDown" && settings.macro ? [oscMessage("/jarvis/macro", String(settings.macro))] : [];
-    case "com.jarvis.desk.button": {
+    case "com.haze.desk.go": return event === "keyDown" ? [withPb("/haze/go")] : [];
+    case "com.haze.desk.back": return event === "keyDown" ? [withPb("/haze/back")] : [];
+    case "com.haze.desk.blackout": return event === "keyDown" ? [oscMessage("/haze/blackout", state.on ? 1 : 0)] : [];
+    case "com.haze.desk.tap": return event === "keyDown" ? [oscMessage("/haze/tap")] : [];
+    case "com.haze.desk.macro":
+      return event === "keyDown" && settings.macro ? [oscMessage("/haze/macro", String(settings.macro))] : [];
+    case "com.haze.desk.button": {
       const page = parseInt(settings.page, 10) || 1, slot = parseInt(settings.slot, 10);
       const id = String(settings.button || (slot > 0 ? `q${page}-${slot}` : "")).trim();
       if (!/^[\w-]{1,24}$/.test(id)) return [];
-      if (event === "keyDown") return [oscMessage(`/jarvis/button/${id}`, 1)];
-      if (event === "keyUp") return [oscMessage(`/jarvis/button/${id}`, 0)];
+      if (event === "keyDown") return [oscMessage(`/haze/button/${id}`, 1)];
+      if (event === "keyUp") return [oscMessage(`/haze/button/${id}`, 0)];
       return [];
     }
     // levels go as 0..1: the desk reads a value of 1 or less as a fraction,
     // so a dial at 1% sent as "1" would be full
-    case "com.jarvis.desk.master": return "level" in state ? [oscMessage("/jarvis/master", state.level / 100)] : [];
-    case "com.jarvis.desk.fader":
-      return "level" in state && pb > 0 ? [oscMessage(`/jarvis/playback/${pb}/level`, state.level / 100)] : [];
+    case "com.haze.desk.master": return "level" in state ? [oscMessage("/haze/master", state.level / 100)] : [];
+    case "com.haze.desk.fader":
+      return "level" in state && pb > 0 ? [oscMessage(`/haze/playback/${pb}/level`, state.level / 100)] : [];
     default: return [];
   }
 }
@@ -83,7 +83,7 @@ class Plugin {
       return;
     }
     let state = {};
-    if (action === "com.jarvis.desk.blackout" && event === "keyDown") {
+    if (action === "com.haze.desk.blackout" && event === "keyDown") {
       c.on = !c.on;
       this.send({ event: "setState", context, payload: { state: c.on ? 1 : 0 } });
       state = { on: c.on };
@@ -101,12 +101,12 @@ class Plugin {
   }
 
   paint(context, c) {
-    if (c.action === "com.jarvis.desk.master" || c.action === "com.jarvis.desk.fader") {
-      const name = c.action === "com.jarvis.desk.master" ? "Grand master" : `Playback ${c.settings.playback || "?"}`;
+    if (c.action === "com.haze.desk.master" || c.action === "com.haze.desk.fader") {
+      const name = c.action === "com.haze.desk.master" ? "Grand master" : `Playback ${c.settings.playback || "?"}`;
       this.send({ event: "setFeedback", context, payload: { title: name, value: `${c.level}%`, indicator: { value: c.level } } });
-    } else if (c.action === "com.jarvis.desk.button" && c.settings.label) {
+    } else if (c.action === "com.haze.desk.button" && c.settings.label) {
       this.send({ event: "setTitle", context, payload: { title: String(c.settings.label) } });
-    } else if (c.action === "com.jarvis.desk.macro" && c.settings.macro) {
+    } else if (c.action === "com.haze.desk.macro" && c.settings.macro) {
       this.send({ event: "setTitle", context, payload: { title: String(c.settings.macro) } });
     }
   }

@@ -58,7 +58,7 @@ function attach(mediaStream) {
 
 // which input: the microphone the browser picks, or one chosen here (a
 // line in from the DJ mixer, an audio interface) - kept on this computer
-const INPUT_KEY = "jarvis.input";
+const INPUT_KEY = "haze.input";
 export function chosenInput() {
   try { return localStorage.getItem(INPUT_KEY) || ""; } catch (e) { return ""; }
 }
@@ -87,7 +87,7 @@ export async function startListening() {
     media = await navigator.mediaDevices.getUserMedia({ audio: RAW });   // that input is unplugged: the default
   }
   attach(media);
-  try { localStorage.setItem("jarvis.listen", "1"); } catch (e) { /* ignore */ }
+  try { localStorage.setItem("haze.listen", "1"); } catch (e) { /* ignore */ }
   return true;
 }
 
@@ -109,6 +109,6 @@ export function stopListening() {
   if (ctx) ctx.close().catch(() => {});
   stream = ctx = analyser = null;
   reading = EMPTY;
-  try { localStorage.setItem("jarvis.listen", "0"); } catch (e) { /* ignore */ }
+  try { localStorage.setItem("haze.listen", "0"); } catch (e) { /* ignore */ }
 }
 

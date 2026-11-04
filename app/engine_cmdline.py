@@ -307,6 +307,11 @@ class CommandMixin:
             plan.append(("cue_go", params_cue))
             return self._cmd_finish(line, plan, note_lines, dry)
         if tok in ("go", "back"):
+            # nothing may follow: "go live" is NOT a GO with a word dropped
+            # (it fired a cue) - going live is the Go live button
+            if i + 1 < len(tokens):
+                raise ValueError(f"`{tok}` takes nothing after it: `{tok}` alone fires the focused playback"
+                                 + (" (to send to the lights, use Go live)" if tokens[i + 1].lower() in ("live", "out", "online") else ""))
             plan.append(("cue_go" if tok == "go" else "cue_back", {}))
             return self._cmd_finish(line, plan, note_lines, dry)
 

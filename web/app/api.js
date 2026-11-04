@@ -7,7 +7,7 @@
 
 import { promptBox } from "./ui.js";
 
-const TOKEN_KEY = "jarvis.token";
+const TOKEN_KEY = "haze.token";
 let asking = null;
 let snoozeUntil = 0;
 
@@ -22,7 +22,7 @@ const clean = (t) => {
 try {
   const u = new URL(location.href);
   if (u.searchParams.get("code")) {
-    sessionStorage.setItem("jarvis.token", clean(u.searchParams.get("code")));
+    sessionStorage.setItem("haze.token", clean(u.searchParams.get("code")));
     u.searchParams.delete("code");
     history.replaceState(null, "", u.pathname + u.search + u.hash);
   }
@@ -39,11 +39,17 @@ function setToken(t) {
   } catch (e) { /* storage blocked: we will ask again */ }
 }
 
+// this screen's own id: another screen editing the same cue / button at
+// the same time gets a heads-up (app/editors.py)
+let clientId = "";
+try { clientId = sessionStorage.getItem("haze.client") || ""; if (!clientId) { clientId = Math.random().toString(36).slice(2, 12); sessionStorage.setItem("haze.client", clientId); } } catch (e) { clientId = Math.random().toString(36).slice(2, 12); }
+
 function headers(json) {
   const h = {};
   if (json) h["Content-Type"] = "application/json";
+  h["X-Haze-Client"] = clientId;
   const t = token();
-  if (t) h["X-Jarvis-Token"] = t;
+  if (t) h["X-Haze-Token"] = t;
   return h;
 }
 

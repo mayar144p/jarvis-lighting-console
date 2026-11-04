@@ -1,7 +1,7 @@
 """sACN (E1.31) output - pure stdlib.
 
 sACN is the streaming transport counterpart to Art-Net: both carry the
-same 512-slot DMX frame, so Jarvis keeps ONE output abstraction - a
+same 512-slot DMX frame, so Haze keeps ONE output abstraction - a
 sender exposes send(universe, data) / stats() / close() / dry_run and
 the engine never cares which wire protocol is underneath (see
 ArtNetSender in app/artnet.py; this module mirrors its interface).
@@ -64,7 +64,7 @@ HEADER_SIZE = 126                    # bytes before the DMX slot data
 UNIVERSE_MIN, UNIVERSE_MAX = 1, 63999
 PRIORITY_MIN, PRIORITY_MAX = 0, 200
 DEFAULT_PRIORITY = 100
-DEFAULT_SOURCE_NAME = "JARVIS"
+DEFAULT_SOURCE_NAME = "HAZE"
 # flags nibble 0x7 = "sync address follows length field" per E1.31
 _LENGTH_FLAGS = 0x7000
 
@@ -106,7 +106,7 @@ def default_cid() -> bytes:
     storing state.
     """
     return uuid.uuid5(uuid.NAMESPACE_URL,
-                      f"jarvis-sacn://{socket.gethostname()}").bytes
+                      f"haze-sacn://{socket.gethostname()}").bytes
 
 
 def _cid_bytes(cid) -> bytes:

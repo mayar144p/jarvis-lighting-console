@@ -170,7 +170,7 @@ class GdtfShare:
     # -- transport --------------------------------------------------------
     def _request(self, method: str, url: str, *, body: bytes | None = None,
                  extra: dict | None = None, authed: bool = True) -> tuple[int, dict, bytes]:
-        headers = {"User-Agent": "jarvis-console/1.0",
+        headers = {"User-Agent": "haze-console/1.0",
                    "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"

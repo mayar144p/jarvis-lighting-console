@@ -95,6 +95,7 @@ class ShowMixin:
             "strobe_fader_hz": 30,
             "quick_names": dict(getattr(self, "quick_names", {}) or {}),
             "quick_layout": self.__dict__.get("quick_layout") or {},
+            "quick_profiles": self._profiles_saved(),
             "sound": self._sound_cfg(),
             "step_fx": self._steps(),
             "parked": self.__dict__.get("parked") or {},
@@ -204,7 +205,7 @@ class ShowMixin:
         self._writer_path = self.autosave_path
         self._writer_stop.clear()
         self._writer = threading.Thread(target=self._autosave_writer,
-                                       name="jarvis-autosave", daemon=True)
+                                       name="haze-autosave", daemon=True)
         self._writer.start()
 
     def _stop_writer(self) -> None:
@@ -353,14 +354,19 @@ class ShowMixin:
         self._osc_out_load(payload.get("osc_out"))
         self._hue_load(payload.get("hue"))
         self._songs_load(payload.get("songs"))
-        for b in payload.get("quick") or []:
-            try:
-                self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
-            except (KeyError, TypeError, ValueError):
-                continue
+        boot_venue = venue_mod.normalise(payload["venue"]) if isinstance(payload.get("venue"), dict) else None
+        with self._zones_from(boot_venue):
+            for b in payload.get("quick") or []:
+                try:
+                    self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
         if isinstance(payload.get("quick_names"), dict):
             self.quick_names = {str(k): str(v)[:16] for k, v in payload["quick_names"].items()}
-        self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+        self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
+                                                 self.quick, getattr(self, "quick_names", {}) or {})
+        with self._zones_from(boot_venue):
+            self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
         venue = payload.get("venue")
         if isinstance(venue, dict):
             try:
@@ -378,7 +384,7 @@ class ShowMixin:
             "patch": [], "programmer": {}, "selected": [], "groups": [],
             "palettes": {k: [] for k in self.palettes}, "presets": [],
             "playbacks": [_new_playback(i + 1) for i in range(PLAYBACK_COUNT)],
-            "venue": venue_mod.empty(), "quick": [], "quick_names": {}, "quick_layout": {}, "quick_quant": 0.0,
+            "venue": venue_mod.empty(), "quick": [], "quick_names": {}, "quick_layout": {}, "quick_quant": 0.0, "quick_profiles": None,
             "media": {}, "shapes": [], "step_fx": [], "macros": [], "parked": {}, "moves": [],
             "timeline": tl_mod.empty(), "prog_fx": [], "patch_extra": {}})
         self.quick_active = {}
@@ -429,6 +435,7 @@ class ShowMixin:
                 "quick_names": dict(getattr(self, "quick_names", {}) or {}),
                 "quick_layout": json.loads(json.dumps(self.__dict__.get("quick_layout") or {})),
                 "quick_quant": float(self.__dict__.get("quick_quant", 0.0)),
+                "quick_profiles": self._profiles_saved(),
                 "media": json.loads(json.dumps(self._media(), default=str)),
                 "shapes": json.loads(json.dumps(self._shapes(), default=str)),
                 "sound": json.loads(json.dumps(self._sound_cfg(), default=str)),
@@ -593,6 +600,14 @@ class ShowMixin:
                 "Settings → Output", "output")
         if not self.show_file:
             add("warn", "The show has never been saved.", "Show ▾ → Save", "save")
+        # the design judged by the room's rules (app/showreview.py)
+        from app import showreview
+        try:
+            for it in showreview.items(self):
+                items.append({"level": it["level"], "text": it["text"], "fix": "Fix" if it.get("act") else "",
+                              **({"act": it["act"]} if it.get("act") else {}), **({"do": it["do"]} if it.get("do") else {})})
+        except Exception as exc:          # noqa: BLE001 - the check never stops the ready check
+            items.append({"level": "info", "text": f"(the show's design couldn't be checked: {exc})", "fix": ""})
         if not items or all(i["level"] == "info" for i in items):
             add("ok", "Ready: nothing to fix.")
         worst = next((lv for lv in ("bad", "warn") if any(i["level"] == lv for i in items)), "ok")
@@ -805,6 +820,8 @@ class ShowMixin:
                     continue
                 row = dict(entry)
                 row["values"] = _palette_values(entry.get("values"))
+                if isinstance(entry.get("per"), dict):
+                    row["per"] = {str(h): _palette_values(v) for h, v in entry["per"].items() if isinstance(v, dict)}
                 fixed.append(row)
             out[str(key)] = fixed
         return out
@@ -842,7 +859,8 @@ class ShowMixin:
                             if pb.get("xfade") else None),
                 "follow": {"on": f["on"], "delay": f["delay"],
                            "paused": f["paused"], "loop": f["loop"]},
-                "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib"))}
+                "tracking": bool(pb.get("tracking")), "mib": bool(pb.get("mib")),
+                "bind": dict(pb.get("bind") or {})}
 
     @staticmethod
     def _stale_heads(heads: list[dict], playbacks: list[dict]) -> list[int]:
@@ -908,11 +926,12 @@ class ShowMixin:
         venue = (venue_mod.normalise(payload["venue"])
                  if isinstance(payload.get("venue"), dict) else None)
         quick = []
-        for b in payload.get("quick") or []:
-            try:
-                quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
-            except (KeyError, TypeError, ValueError):
-                continue
+        with self._zones_from(venue):
+            for b in payload.get("quick") or []:
+                try:
+                    quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
 
         # Commit phase: swap the whole show in under the lock.  A bad patch
         # raises from _replace_patch, which rolls the patch back, and the
@@ -932,7 +951,10 @@ class ShowMixin:
             self.quick_names = {str(k): str(v)[:16] for k, v in
                                 (payload.get("quick_names") or {}).items()} \
                 if isinstance(payload.get("quick_names"), dict) else {}
-            self.quick_layout = self._quick_layout_load(payload.get("quick_layout"))
+            self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
+                                                     self.quick, self.quick_names)
+            with self._zones_from(venue):
+                self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
             try:
                 qq = float(payload.get("quick_quant") or 0.0)
             except (TypeError, ValueError):

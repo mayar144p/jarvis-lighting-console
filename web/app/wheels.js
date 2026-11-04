@@ -11,6 +11,7 @@ const WHEELS = {
   intensity: [["dimmer", "Dimmer"]],
   colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]],
   position: [["pan", "Pan"], ["tilt", "Tilt"]],
+
   beam: [["zoom", "Zoom"], ["focus", "Focus"], ["iris", "Iris"], ["frost", "Frost"], ["gobo_rot", "Gobo spin"], ["prism_rot", "Prism spin"]],
 };
 const COARSE = 0.01, FINE = 0.001;                 // a share of the travel per notch
@@ -41,16 +42,25 @@ function wheel(attr, label) {
     "aria-valuetext": "relative" }, h("i"));
   let angle = 0;
   const spin = (n) => { angle += n * 12; knob.style.setProperty("--a", `${angle}deg`); turn(attr, n); };
+  let finger = null;                             // one finger turns it
   knob.addEventListener("pointerdown", (e) => {
+    if (finger !== null) return;
+    finger = e.pointerId;
     knob.setPointerCapture(e.pointerId);
     let last = e.clientY;
     const move = (ev) => {
+      if (ev.pointerId !== finger) return;
       const n = Math.trunc((last - ev.clientY) / 4);          // 4 px a notch, up = more
       if (n) { last -= n * 4; const was = fine; if (ev.shiftKey) fine = true; spin(n); fine = was; }
     };
-    const up = () => { knob.removeEventListener("pointermove", move); knob.removeEventListener("pointerup", up); };
+    const up = (ev) => {
+      if (ev.pointerId !== finger) return;
+      finger = null;
+      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.removeEventListener(t, up);
+      knob.removeEventListener("pointermove", move);
+    };
     knob.addEventListener("pointermove", move);
-    knob.addEventListener("pointerup", up);
+    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.addEventListener(t, up);
   });
   knob.addEventListener("wheel", (e) => { e.preventDefault(); const was = fine; if (e.shiftKey) fine = true; spin(e.deltaY < 0 ? 1 : -1); fine = was; }, { passive: false });
   knob.addEventListener("keydown", (e) => {
@@ -67,24 +77,58 @@ export function renderWheels(name = tab) {
   const box = $("#prog-wheels");
   if (!box) return;
   const roles = rolesOfSelection();
-  const list = (WHEELS[name] || []).filter(([a]) => roles.has(a));
-  // the row keeps its place on a tab with wheels (selecting lights never
-  // shifts the page under the pointer); only a tab change shows / hides it
+  // every wheel of the tab is always in its place; one the selected lights
+  // don't have (Tilt on a light that only pans) is greyed, not taken away
+  // - the row never shifts under the pointer
+  const list = WHEELS[name] || [];
   box.hidden = !WHEELS[name];
-  const sig = name + list.map(([a]) => a).join();
-  if (!list.length) {
-    if (box.dataset.sig !== sig) box.replaceChildren(h("span.muted.small", "Select lights to get wheels for them here."));
-    box.dataset.sig = sig;
-    return;
-  }
+  const sig = name + list.map(([a]) => (roles.has(a) ? a : "-")).join();
   if (box.dataset.sig === sig) return;              // the same wheels: keep them (a drag in progress)
   box.dataset.sig = sig;
   const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
     title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; fineBtn.classList.toggle("on", fine); fineBtn.setAttribute("aria-pressed", String(fine)); } }, "FINE");
-  box.replaceChildren(...list.map(([a, l]) => wheel(a, l)), fineBtn);
+  box.replaceChildren(...list.map(([a, l]) => {
+    const el = wheel(a, l);
+    if (!roles.has(a)) {
+      el.classList.add("off");
+      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
+      el.querySelector(".wheel-knob").tabIndex = -1;
+    }
+    return el;
+  }), fineBtn);
+}
+
+// Other places with wheels of their own (the palette view's Knobs window):
+// [box, [[attr, label]...]] - kept up to date with the selection like the strip
+const extra = new Set();
+export function mountWheels(box, list) {
+  extra.add([box, list]);
+  fill(box, list);
+}
+function fill(box, list) {
+  const roles = rolesOfSelection();
+  const sig = list.map(([a]) => (roles.has(a) ? a : "-")).join() + fine;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
+    title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; refreshExtra(); renderWheels(); } }, "FINE");
+  box.replaceChildren(...list.map(([a, l]) => {
+    const el = wheel(a, l);
+    if (!roles.has(a)) {
+      el.classList.add("off");
+      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
+      el.querySelector(".wheel-knob").tabIndex = -1;
+    }
+    return el;
+  }), fineBtn);
+}
+function refreshExtra() {
+  for (const it of [...extra]) { if (!it[0].isConnected) { extra.delete(it); continue; } fill(it[0], it[1]); }
 }
 
 export function initWheels() {
+  on("snapshot", refreshExtra);
+  on("lite", refreshExtra);
   on("snapshot", () => renderWheels());
   on("lite", () => renderWheels());
 }

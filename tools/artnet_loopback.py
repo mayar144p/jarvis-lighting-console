@@ -2,7 +2,7 @@
 
     python tools/artnet_loopback.py [--seconds 2] [--port 6454] [--host 127.0.0.1]
 
-Binds a local UDP receiver, drives the Jarvis engine for a couple of
+Binds a local UDP receiver, drives the Haze engine for a couple of
 seconds and then verifies everything the Art-Net spec requires:
 
   * header, OpCode (little-endian 0x5000), protocol version, length
@@ -72,7 +72,7 @@ def main() -> int:
     # holds only what the GDTF Share brought in.  A diagnostic must not
     # mutate the thing it is diagnosing.
     import tempfile
-    scratch = Path(tempfile.mkdtemp(prefix="jarvis-loopback-"))
+    scratch = Path(tempfile.mkdtemp(prefix="haze-loopback-"))
     fixtures.seed_generics(scratch / "fixtures.db")
     print(f"       scratch library: {scratch / 'fixtures.db'}")
     sender = artnet.ArtNetSender(args.host, args.port, config.DMX_NET,

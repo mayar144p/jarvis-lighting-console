@@ -51,7 +51,7 @@ try { ({ chromium } = await import("playwright")); } catch {
 const exe = process.env.CHROMIUM || (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const data = mkdtempSync(join(tmpdir(), "jarvis-vis-"));
+const data = mkdtempSync(join(tmpdir(), "haze-vis-"));
 const server = spawn(process.env.PYTHON || "python3", ["-m", "app.main"], {
   cwd: ROOT, stdio: ["ignore", "ignore", "pipe"],
   env: { ...process.env, PORT: String(PORT), CONSOLE_DATA_DIR: data, CONSOLE_AUTOSAVE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" },
@@ -98,7 +98,7 @@ const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e.message || e)));
 p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) errors.push("console: " + m.text().slice(0, 200)); });
-await p.addInitScript(() => { try { sessionStorage.setItem("jarvis.venuepick", "1"); localStorage.setItem("jarvis.people", "0"); localStorage.setItem("jarvis.quality", "fast"); } catch { /* fine */ } });
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
 let patch = [];
 let tag = "";                       // the brand, in front of every finding
 
@@ -116,7 +116,7 @@ async function build(rig) {
     const r = fid ? await act("add_heads", { fixture_id: fid, qty }) : { error: inst.error || "not installed" };
     check(r.ok && (r.heads || []).length === qty, `${tag}${qty} x ${it.name} patched`, r.error || "");
   }
-  await p.goto(BASE);
+  await p.goto(BASE + "?3d=1");
   patch = [];
   for (let i = 0; i < 40 && !patch.length; i++) {
     await sleep(500);
@@ -128,19 +128,19 @@ async function build(rig) {
   console.log(`  ${patch.length} lights`);
   if (!BRANDS) check(patch.length >= (process.env.BIG_RIG ? 120 : 20), "the whole test rig is patched", String(patch.length));
   for (let i = 0; i < 60; i++) {
-    const n = await p.evaluate(() => (window.jarvisStage && window.jarvisStage.fixtures ? window.jarvisStage.fixtures.size : 0));
+    const n = await p.evaluate(() => (window.hazeStage && window.hazeStage.fixtures ? window.hazeStage.fixtures.size : 0));
     if (n >= patch.length) break;
     await sleep(500);
   }
-  check(await p.evaluate(() => window.jarvisStage.fixtures.size) === patch.length, `${tag}every light is in the 3D view`,
-    `${await p.evaluate(() => window.jarvisStage.fixtures.size)} of ${patch.length}`);
+  check(await p.evaluate(() => window.hazeStage.fixtures.size) === patch.length, `${tag}every light is in the 3D view`,
+    `${await p.evaluate(() => window.hazeStage.fixtures.size)} of ${patch.length}`);
 }
 
 // what each layer says, per light
 const feed = async () => Object.fromEntries(((await getj("api/console/look")).heads || []).map((r) => [r.n, r]));
 const view = () => p.evaluate(() => {
   const out = {};
-  for (const [head, inst] of window.jarvisStage.fixtures) {
+  for (const [head, inst] of window.hazeStage.fixtures) {
     const L = inst.cur || {}, T = inst.to || {}, sk = inst.sk || {}, m = inst.motor, body = inst.data.body || {};
     const lens = (sk.lenses || [])[0];
     out[head] = {
@@ -151,8 +151,8 @@ const view = () => p.evaluate(() => {
       beams: (inst.beams || []).length, lit: (inst.beams || []).some((b) => b.glow.visible),
       moving: !!body.moving, cls: body.class || "light", type: body.type || "", prog: !!L.prog, hz: L.hz || 0,
       fx: L.fx || null,
-      fan: !!(window.jarvisStage.sfx.lasers.get(head) && window.jarvisStage.sfx.lasers.get(head).lines.visible),
-      puffs: (window.jarvisStage.sfx.pools.get(head) || {}).alive || 0,
+      fan: !!(window.hazeStage.sfx.lasers.get(head) && window.hazeStage.sfx.lasers.get(head).lines.visible),
+      puffs: (window.hazeStage.sfx.pools.get(head) || {}).alive || 0,
     };
   }
   return out;
@@ -252,7 +252,7 @@ async function fit(rig) {
       // is coloured on its own in the 3D
       const reds = hd.map.filter((r) => r === "red").length;
       const cells = await p.evaluate((n) => {
-        const i = window.jarvisStage.fixtures.get(n);
+        const i = window.hazeStage.fixtures.get(n);
         if (!i) return -1;
         const sk = i.sk;
         return Math.max(sk.pixels ? sk.pixels.count : 0, (sk.cells || []).length,
@@ -379,7 +379,7 @@ async function steps() {
   const movers = Object.entries(V).filter(([, v]) => v.moving).map(([h]) => +h);
   if (movers.length || !BRANDS) {
   await click('.sel-actions [data-act="clear_selection"]', "None");
-  await clickText("#group-chips .chip", "Moving");
+  await p.evaluate((hs) => import("/app/actions.js").then((m) => m.select(hs)), movers);
   await click('#prog-tabs [data-tab="position"]', "Move tab");
   const pan0 = Object.fromEntries(movers.map((h) => [h, F[h] && F[h].pan]));
   await clickText(".mv-spot", "Dance floor");
@@ -405,12 +405,12 @@ async function steps() {
   const liveBad = await p.evaluate(async () => {
     const looks = (await import("/app/store.js")).state.looks || {};
     const bad = [];
-    for (const [head, inst] of window.jarvisStage.fixtures) {
+    for (const [head, inst] of window.hazeStage.fixtures) {
       const row = looks[head];
       const a = row ? +row.a || 0 : 0;
       if (Math.abs((inst.to.a || 0) - a) > 0.001) bad.push(`#${head} level ${inst.to.a} vs ${a}`);
       if (row && row.hex) {
-        const c = window.jarvisStage._c.clone().set(row.hex);
+        const c = window.hazeStage._c.clone().set(row.hex);
         if (Math.abs(c.r - inst.to.r) + Math.abs(c.g - inst.to.g) + Math.abs(c.b - inst.to.b) > 0.01) bad.push(`#${head} colour`);
       }
     }

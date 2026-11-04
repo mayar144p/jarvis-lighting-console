@@ -171,7 +171,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
      service end to end in the browser, and against Gemini itself (free
      plan) on a club rig: sunset on the dance floor, "the drop needs to hit
      harder", "why is head 2 dark?".  What that taught:
-     - the free plan allows 15 requests a minute: Jarvis now paces its
+     - the free plan allows 15 requests a minute: Haze now paces its
        requests, and on "too many" waits the time the service names (up
        to 70 s) and tries again, else says plainly when to try again;
      - aim_at takes a zone ("Dance floor"), not only a mark;
@@ -192,9 +192,9 @@ whoever picks it up starts from the diagnosis, not from scratch.
      not selecting or the venue) or "I've got it" hands the lights back at
      once, and a change it was still thinking about is dropped.  It never
      arms or fires effects.  Tried with Gemini end to end.
-   * Later, separate (not planned yet): the AI changing Jarvis's own code
+   * Later, separate (not planned yet): the AI changing Haze's own code
      on request - a branch + PR made by a coding agent, tests run, you
-     review and merge, Jarvis updates itself (never patching the running
+     review and merge, Haze updates itself (never patching the running
      app).
 10. **(DONE) Venue / 3D:**
    * Arrange -> + More: **Draw a door** (two clicks along a wall: it goes in
@@ -389,10 +389,10 @@ loopback port with a private key, clean stop on close, Show mode (3D /
 programmer + fixtures / playbacks, each remembering its monitor), safe
 keys, close asks, screens stay awake, the desk runs without 3D on a
 computer whose graphics can't.  **The installer: DONE** - the
-"Desktop app (installers)" workflow builds `Jarvis Setup.exe` with
+"Desktop app (installers)" workflow builds `Haze Setup.exe` with
 Windows' embeddable Python inside (the engine is stdlib-only, so no
 PyInstaller), checks the built app with desktopcheck, and keeps it as a
-private artifact; installed, data / `.env` / inbox live in `%APPDATA%\Jarvis`.
+private artifact; installed, data / `.env` / inbox live in `%APPDATA%\Haze`.
 **Then DONE:** phones / tablets (Desk -> Phones and tablets: network on a
 fixed port, a 10-character pairing code, "New code" signs phones out),
 USB DMX (Enttec USB Pro protocol, Settings -> Output; `app/usbdmx.py`,
@@ -400,7 +400,7 @@ stdlib serial), MIDI permitted in the app (nothing else), the app icon, a
 Mac build (python-build-standalone, unsigned dmg).  **Waiting on a
 decision:** the app updating itself needs a place to publish installers
 (a public releases repo or a download page); the operator chose to wait
-until Jarvis leaves testing.
+until Haze leaves testing.
 
 Nothing is rewritten: the Python engine and the screens stay as they are,
 wrapped in a program with its own icon.  The engine still listens on
@@ -451,7 +451,7 @@ haze and gobo shafts) is rewritten in TSL, bloom is a RenderPipeline, fog /
 CO2 / flame / confetti are sprites (soft round puffs).  A browser whose
 WebGPU can't run it (none, or an older Chromium that rejects this
 three.js's texture options) gets the same renderer on WebGL 2;
-`localStorage jarvis.renderer = "webgl"` forces that.  `tools/
+`localStorage haze.renderer = "webgl"` forces that.  `tools/
 webgpucheck.mjs` runs the 3D on real WebGPU in the desktop app and checks
 it draws the same picture as WebGL 2.
 
@@ -615,7 +615,7 @@ Suggested order: the operator's top picks first (1-4), then the rest.
 Report a problem with this light; Help -> Report a bug.  The form: what's
 wrong, where (DMX / 3D / programmer / effects / cues / crash), "attach the
 whole show" (ticked), and the list of files before anything is saved.  The
-desk saves `DATA/bug_reports/jarvis-report-....zip` (app/bugreport.py: the
+desk saves `DATA/bug_reports/haze-report-....zip` (app/bugreport.py: the
 light's file and how it was read, its DMX, its light-feed row, a 3D
 picture, version, computer, recent server and page errors, the show),
 blanks every secret (AI key, desk token, GDTF login, anything shaped like
@@ -680,7 +680,7 @@ GitHub page in the browser (PR #96).
 ## A14. Ideas from similar apps (research 2026-10-16)
 
 Compared with grandMA3, ChamSys MagicQ, Obsidian ONYX, QLC+, Lightkey,
-SoundSwitch, Capture and the mobile-DJ forums.  Jarvis already has what
+SoundSwitch, Capture and the mobile-DJ forums.  Haze already has what
 most of them sell as their headline (3D in the app, timeline + timecode,
 Pro DJ Link / Ableton Link / MIDI clock, sound-to-light, autopilot,
 GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
@@ -714,7 +714,7 @@ GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
    (99 USD/year); then the build signs and notarises in CI with the
    account's secrets.
 4. **ADJ Encore FR150z** is read as a generic light (no strobe model): a
-   profile of its own in app/fixlib/jarvis.json (fog volume, its LEDs).
+   profile of its own in app/fixlib/haze.json (fog volume, its LEDs).
 5. **Gobo pictures for the last 248 lights.**  Neither bundled library
    has pictures for them (226 have no twin in the other library, the rest
    a twin without pictures or with a different count).  They come from the
@@ -1001,7 +1001,7 @@ page scrolls below that).  Also fixed while there: multi-head lights
 (Wave 360) now follow per head - the heads picked alone, or fanned out.
 
 
-Jarvis runs on a desktop / laptop screen only.  Remove what exists for
+Haze runs on a desktop / laptop screen only.  Remove what exists for
 phones and tablets:
 - web/app/tablet.js (screen wake lock, "Install as an app", the iOS
   add-to-home-screen hint) and its Settings rows (Keep this screen awake,
@@ -1671,7 +1671,7 @@ Replaces movement spread over Position / FX / Tools with ONE "Move" tab.
   - one Speed control per movement (very slow ~30 s per turn ... fast) with
     1/2x / 1x / 2x;
   - a light's own spin/programs as plain controls: Spin CCW / stop / CW +
-    spin speed slow->fast (Jarvis maps into ranges like "1-127 CCW fast->slow"),
+    spin speed slow->fast (Haze maps into ranges like "1-127 CCW fast->slow"),
     built-in tilt speed and program speed as slow->fast sliders;
   - a Speed master fader next to GM: slows/speeds everything that moves
     (effects and lights' own spins), 1/2x, 2x, Tap tempo; also caps each head

@@ -89,7 +89,8 @@ def step_row(st: dict, head: int, roles: list[str], palettes: dict) -> dict:
     """What one step asks of one light."""
     if "palette" in st:
         pal = next((p for p in palettes.get(st["palette"]["kind"]) or [] if p.get("n") == st["palette"]["n"]), None)
-        vals = (pal or {}).get("values") or {}
+        # a palette that keeps each light's own values (a fan, an X)
+        vals = ((pal or {}).get("per") or {}).get(str(head)) or (pal or {}).get("values") or {}
         return {r: v for r, v in vals.items() if r in roles and isinstance(v, (int, float))}
     return dict((st.get("values") or {}).get(str(head)) or {})
 

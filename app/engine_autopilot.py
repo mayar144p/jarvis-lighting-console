@@ -148,7 +148,7 @@ class AutopilotMixin:
                 except Exception as exc:            # noqa: BLE001 - never die silently
                     self.output["last_error"] = f"autopilot: {exc}"
 
-        th = self._ap_thread = threading.Thread(target=loop, name="jarvis-autopilot", daemon=True)
+        th = self._ap_thread = threading.Thread(target=loop, name="haze-autopilot", daemon=True)
         th.start()
 
     def _ap_shutdown(self) -> None:

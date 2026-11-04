@@ -1,12 +1,12 @@
-"""Jarvis configuration.
+"""Haze configuration.
 
-Reads jarvis/.env (simple KEY=VALUE file) and applies defaults.
+Reads haze/.env (simple KEY=VALUE file) and applies defaults.
 No third-party dependencies.
 """
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent      # jarvis/
+ROOT = Path(__file__).resolve().parent.parent      # haze/
 WEB = ROOT / "web"
 # CONSOLE_DATA_DIR moves the whole data folder (tests run on a scratch one)
 DATA = Path(os.environ["CONSOLE_DATA_DIR"]) if os.environ.get("CONSOLE_DATA_DIR") else ROOT / "data"
@@ -130,7 +130,9 @@ LOCAL_IP = _lan_ip()
 
 
 # --- Branding / server -------------------------------------------------
-APP_NAME = _get("APP_NAME", "JARVIS")
+APP_NAME = _get("APP_NAME", "HAZE")
+if APP_NAME.strip().upper() == "JARVIS":          # a .env from before the desk was called Haze
+    APP_NAME = "HAZE"
 APP_SUBTITLE = _get("APP_SUBTITLE", "Lighting Assistant")
 APP_LOGO = _get("APP_LOGO", "dog.svg")
 HOST = _get("HOST", "127.0.0.1")
@@ -144,13 +146,13 @@ LLM_BASE_URL = _get("LLM_BASE_URL",
 LLM_MODEL = _get("LLM_MODEL", "gemini-3.5-flash-lite")
 LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "45"))
 
-# --- Jarvis console engine ---------------------------------------------
-# The Jarvis engine is the console: patch, programmer, cues and direct
+# --- Haze console engine ---------------------------------------------
+# The Haze engine is the console: patch, programmer, cues and direct
 # Art-Net/sACN output.  There is no second engine and no remote-control
 # bridge - the app IS the lighting desk.
 # Dry run = frames are built and counted but never reach the network.
 CONSOLE_DRY_RUN = _bool("CONSOLE_DRY_RUN", "true")
-# Wire protocol for the Jarvis engine.  Both transports carry the same
+# Wire protocol for the Haze engine.  Both transports carry the same
 # 512-slot frame through the SAME sender interface (app/artnet.py
 # ArtNetSender / app/sacn.py SacnSender) - fixture, patch, merge and FX
 # logic never know which one is underneath.
@@ -229,7 +231,7 @@ MIDI_ENABLED = _bool("MIDI_ENABLED", "true")
 MIDI_DEVICE = _get("MIDI_DEVICE", "")             # name substring or index
 MIDI_MAP = _get("MIDI_MAP", "")                   # empty = data/midi_map.json if present
 CONSOLE_SHOW_DIR = Path(_get("CONSOLE_SHOW_DIR", str(DATA / "shows")))
-if not CONSOLE_SHOW_DIR.is_absolute():          # anchor to jarvis/, not the CWD
+if not CONSOLE_SHOW_DIR.is_absolute():          # anchor to haze/, not the CWD
     # "data/shows" means the data folder in use: with CONSOLE_DATA_DIR (tests,
     # check tools) the shows go to the scratch folder too, never to data/
     parts = CONSOLE_SHOW_DIR.parts
@@ -290,7 +292,7 @@ DATA.mkdir(parents=True, exist_ok=True)
 
 
 def logo_path() -> Path | None:
-    """Find APP_LOGO in web/, jarvis/ or the project folder above jarvis/."""
+    """Find APP_LOGO in web/, haze/ or the project folder above haze/."""
     for folder in (WEB, ROOT, ROOT.parent):
         candidate = folder / APP_LOGO
         if candidate.is_file():

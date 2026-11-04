@@ -24,6 +24,7 @@ Verified against open-fixture-library.org JSON exports (2019-2022 data).
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,6 +81,13 @@ PROFILES: list[dict] = [
     {
         "manufacturer": "CHAUVET DJ",
         "model": "Intimidator Spot 260",
+        # what each channel's values DO (the Strobe channel: 0-3 closed,
+        # 4-7 open, 8-215 strobe / pulse / random, 216-255 open; the
+        # colour and gobo wheels' slots), from its published definition -
+        # without it the 3D took 216-247 for a fast strobe while the real
+        # light sat open (the Open Fixture Library, MIT licence)
+        "file": "chauvet-dj-intimidator-spot-260.json",
+        "file_modes": {"14ch": "14-channel", "8ch": "8-channel"},
         "notes": "75W LED moving head spot; 12-17 deg beam; 540 deg pan / "
                  "270 deg tilt; fixed colour wheel, 7-gobo wheel, 3-facet "
                  "prism, motorised zoom.  Source: OFL 2019.",
@@ -281,7 +289,7 @@ def install(db_path: Path) -> dict:
     """
     from app import fixtures as fixdb          # local import: fixtures is
     # also the schema owner, and profiles must not be imported by it.
-    added = modes_added = skipped = 0
+    added = modes_added = skipped = details_added = 0
     now = datetime.now(timezone.utc).isoformat()
     with fixdb.db(db_path) as conn:
         for profile in PROFILES:
@@ -304,6 +312,7 @@ def install(db_path: Path) -> dict:
                 "SELECT COUNT(*) AS n FROM modes WHERE fixture_id=?",
                 (fid,)).fetchone()["n"]
             if have:
+                details_added += _fill_detail(conn, fid, profile)
                 skipped += 1
                 continue
             for mode in profile.get("modes") or []:
@@ -314,5 +323,54 @@ def install(db_path: Path) -> dict:
                     " VALUES (?,?,?,?)",
                     (fid, mode["name"], len(labels), json.dumps(labels)))
                 modes_added += 1
+            details_added += _fill_detail(conn, fid, profile)
     return {"fixtures": added, "modes": modes_added, "skipped": skipped,
-            "library": len(PROFILES)}
+            "details": details_added, "library": len(PROFILES)}
+
+
+FILES = Path(__file__).resolve().parent / "profile_files"
+DETAIL_LABELS = re.compile(r"strobe|shutter|colou?r\s*wheel|gobo|prism", re.I)
+
+
+def _fill_detail(conn, fid: int, profile: dict) -> int:
+    """A built-in profile with a published definition beside it: each of its
+    modes gets what the channels' values do (strobe ranges, wheel slots...),
+    when the mode has none yet and the channel count agrees.  Runs on every
+    start, so a desk installed before keeps its fixture and gains them."""
+    name = profile.get("file")
+    if not name:
+        return 0
+    try:
+        from app import fixlib
+        parsed = fixlib.parse_file(FILES / name)
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+    item = parsed[0] if isinstance(parsed, list) and parsed else None
+    if not isinstance(item, dict):
+        return 0
+    theirs = {m["name"]: m for m in item.get("modes") or []}
+    done = 0
+    for mode in profile.get("modes") or []:
+        src = theirs.get((profile.get("file_modes") or {}).get(mode["name"], mode["name"]))
+        if not src or not src.get("detail"):
+            continue
+        row = conn.execute("SELECT id, channel_count, detail FROM modes WHERE fixture_id=? AND name=?",
+                           (fid, mode["name"])).fetchone()
+        if row is None or int(row["channel_count"]) != int(src["channel_count"]):
+            continue
+        try:
+            cur = json.loads(row["detail"] or "[]")
+        except ValueError:
+            cur = []
+        if any(isinstance(d, dict) and d for d in cur):
+            continue                      # (already has its details: never overwritten)
+        # only what the channels' VALUES do (strobe ranges, wheel slots,
+        # prism); pan / tilt stay as the profile had them - their real
+        # degrees would change how every saved position reads
+        keep = [d if isinstance(d, dict) and DETAIL_LABELS.search(str(lbl)) else {}
+                for d, lbl in zip(src["detail"], src.get("channels") or [])]
+        if not any(keep):
+            continue
+        conn.execute("UPDATE modes SET detail=? WHERE id=?", (json.dumps(keep), row["id"]))
+        done += 1
+    return done

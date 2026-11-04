@@ -3,10 +3,10 @@
 import { choiceBox } from "./ui.js";
 
 export function initDeskBridge() {
-  const desk = window.jarvisDesk;
+  const desk = window.hazeDesk;
   if (!desk) return;
   desk.onAsk(async (q) => {
-    const i = await choiceBox(q.title || "Jarvis", q);
+    const i = await choiceBox(q.title || "Haze", q);
     desk.answer(q.id, i);
   });
   desk.ready();

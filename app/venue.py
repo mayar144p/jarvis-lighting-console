@@ -21,9 +21,27 @@ VERSION = 2
 
 RIG_KINDS = ("truss", "pipe", "tower", "ladder", "stand", "base")
 OBJECT_KINDS = ("dj_booth", "bar", "speaker", "sub", "pillar", "screen",
-                "riser", "balcony", "wall", "table", "door", "mark")
+                "riser", "balcony", "wall", "table", "door", "mark",
+                "drape", "panels",
+                # club furniture: a half-round bar, tables, VIP seating
+                "bar_curve", "high_table", "half_table", "couch", "vip_booth",
+                "armchair", "stool", "rope", "plant")
+# half-round pieces: `w` across their straight side, `d` how far the
+# counter / seat reaches in from the curve; at rot 0 the curve is on the
+# far side (+z), the open side towards the stage (a booth's seats face it)
+CURVED = ("bar_curve", "vip_booth", "half_table")
+# a sensible size (w, d, h m) for a piece added without one
+OBJECT_SIZE = {"mark": (0.4, 0.4, 0.02), "bar_curve": (6.0, 0.8, 1.1), "high_table": (0.7, 0.7, 1.1),
+               "half_table": (1.2, 0.6, 0.75), "couch": (2.2, 0.9, 0.8), "vip_booth": (2.6, 0.6, 0.95),
+               "armchair": (0.9, 0.85, 0.8), "stool": (0.4, 0.4, 0.75), "rope": (5.0, 0.3, 1.0),
+               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1)}
+DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
+DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
-              "vip", "backstage", "stage")
+              "vip", "backstage", "stage",
+              # no beams there, ever (a wall, the bar staff, the DJ's eyes):
+              # app/engine_zones.py holds every light off it
+              "keepout")
 CEILINGS = ("flat", "open", "none")
 CROWD_STYLES = ("simple", "varied")
 
@@ -178,7 +196,7 @@ def _clean_stage(raw) -> dict | None:
     return {"x": round(_num(raw.get("x")), 3), "z": round(_num(raw.get("z")), 3),
             "width": round(w, 3), "depth": round(d, 3),
             "height": round(_num(raw.get("height"), 0.6, 0, 10), 3),
-            "colour": _colour(raw.get("colour"), "#26272c")}
+            "colour": _colour(raw.get("colour"), DECK_GREY)}
 
 
 def _clean_item(raw: dict, v: dict, kinds: tuple, prefix: str,
@@ -209,6 +227,12 @@ def _clean_rig(raw: dict, v: dict) -> dict | None:
         val = _text(raw.get(key), "", 24)
         if val:
             item[key] = val
+    # a curved piece: how far it turns from end to end, degrees round the
+    # vertical (an arc of a circle, a spiral, an S): drawn as a smooth
+    # curve, its lights placed along the curve
+    bend = round(_num(raw.get("bend"), 0.0, -179.0, 179.0), 3)
+    if bend and kind in ("truss", "pipe", "ladder"):
+        item["bend"] = bend
     return item
 
 
@@ -227,10 +251,21 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     })
     if not item["colour"]:
         del item["colour"]
-    if item["kind"] == "screen":
+    if item["kind"] in ("screen", "panels"):
         # what the LED screen shows: the rig's colours, nothing, or a clip
         c = _text(raw.get("content"), "rig", 300)
         item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:")) else "rig"
+    if item["kind"] == "drape":
+        # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
+        item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)
+    if item["kind"] in CURVED:
+        # how much of a circle: 180 a half-round, up to 300 nearly closed
+        item["arc"] = round(_num(raw.get("arc"), 180, 60, 300), 1)
+        item["d"] = round(min(item["d"], item["w"] / 2), 3)
+    if item["kind"] == "panels":
+        # LED panels in a grid over w x h: each `tile` m square, `gap` m apart
+        item["tile"] = round(_num(raw.get("tile"), 0.5, 0.2, 3.0), 3)
+        item["gap"] = round(_num(raw.get("gap"), 0.15, 0.0, 3.0), 3)
     return item
 
 
@@ -244,6 +279,14 @@ def _clean_zone(raw: dict, v: dict) -> dict | None:
     item.update({"points": pts,
                  "y": round(_num(raw.get("y"), 0, 0, 60), 3),
                  "density": round(_num(raw.get("density"), -1, -1, 1), 3)})
+    if item["kind"] == "keepout":
+        # a keep-out has no crowd; made by pointing (it grows when pointed
+        # again nearby) or a whole wall
+        item["density"] = 0.0
+        if raw.get("pointed"):
+            item["pointed"] = True
+        if raw.get("wall") in ("left", "right", "back", "front"):
+            item["wall"] = raw["wall"]
     return item
 
 
@@ -446,19 +489,122 @@ def rig(v: dict, ident: str) -> dict | None:
     return None
 
 
+# How a light is mounted (a pro desk's hang types): which way its base
+# faces, as the turn from a light standing on the floor (its base down, its
+# front - the display - to the audience) to how it is mounted, before it is
+# turned to face along its truss.  Rows of a 3 x 3 matrix (x across, y up,
+# z towards the audience); the 3D has the same table (web/js/stage/look.js).
+HANGS = ("hung", "standing", "bottom_front", "top_front", "bottom_rear", "top_rear", "boom_left", "boom_right")
+HANG_BASE = {
+    "standing": ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    "hung": ((-1, 0, 0), (0, -1, 0), (0, 0, 1)),            # upside down under a bar
+    "bottom_front": ((1, 0, 0), (0, 0, -1), (0, 1, 0)),      # on its back, its head towards the audience
+    "top_front": ((-1, 0, 0), (0, 0, 1), (0, 1, 0)),         # ...the same, turned over (display up)
+    "top_rear": ((1, 0, 0), (0, 0, 1), (0, -1, 0)),          # its head towards the back of the stage
+    "bottom_rear": ((-1, 0, 0), (0, 0, -1), (0, -1, 0)),
+    "boom_left": ((0, -1, 0), (1, 0, 0), (0, 0, 1)),         # on its side, its head to the left
+    "boom_right": ((0, 1, 0), (-1, 0, 0), (0, 0, 1)),        # ...to the right (as the audience sees it)
+}
+
+
+HANG_LABEL = {"hung": "Hung", "standing": "Standing", "bottom_front": "Bottom front", "top_front": "Top front",
+              "bottom_rear": "Bottom rear", "top_rear": "Top rear", "boom_left": "Boom left", "boom_right": "Boom right"}
+
+
+def hang_of(h: dict) -> str:
+    """How a light is mounted: one of HANGS (its stance when it is simply
+    hung or standing)."""
+    special = h.get("hang")
+    if special in HANG_BASE and special not in ("hung", "standing"):
+        return special
+    hung = (h.get("stance") == "hang") if h.get("stance") else h.get("kind") == "truss"
+    return "hung" if hung else "standing"
+
+
+def hang_turn(name: str, v) -> tuple[float, float, float]:
+    """A direction in the light's own frame, turned as it is mounted."""
+    m = HANG_BASE.get(name) or HANG_BASE["standing"]
+    return tuple(m[i][0] * v[0] + m[i][1] * v[1] + m[i][2] * v[2] for i in range(3))
+
+
+def hang_unturn(name: str, v) -> tuple[float, float, float]:
+    """A direction in the room (before the truss turn) in the light's own frame."""
+    m = HANG_BASE.get(name) or HANG_BASE["standing"]
+    return tuple(m[0][i] * v[0] + m[1][i] * v[1] + m[2][i] * v[2] for i in range(3))
+
+
+def bend_of(r: dict) -> float:
+    """How far a curved piece turns, degrees (0: straight)."""
+    try:
+        return float(r.get("bend") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def curve_point(r: dict, t: float) -> list[float]:
+    """The point `t` (0..1) of the way along a piece.  A curved one is an
+    arc in plan through both ends, turning `bend` degrees (positive: the
+    heading atan2(dz, dx) grows), its height going evenly from end to end -
+    the same sum as the 3D (web/js/stage/venue.js curvePoint)."""
+    a, b = r["a"], r["b"]
+    t = max(0.0, min(1.0, float(t)))
+    y = a[1] + (b[1] - a[1]) * t
+    dx, dz = b[0] - a[0], b[2] - a[2]
+    chord = math.hypot(dx, dz)
+    th = math.radians(bend_of(r))
+    if abs(th) < 1e-6 or chord < 1e-9:
+        return [a[0] + dx * t, y, a[2] + dz * t]
+    rad = chord / (2.0 * math.sin(th / 2.0))
+    phi0 = math.atan2(dz, dx) - th / 2.0
+    return [a[0] + rad * (math.sin(phi0 + th * t) - math.sin(phi0)), y,
+            a[2] + rad * (math.cos(phi0) - math.cos(phi0 + th * t))]
+
+
+def curve_nearest(r: dict, p) -> tuple[float, list[float]]:
+    """The point of a piece nearest `p` (along its curve when it is curved):
+    (t, point).  The 3D's editor finds it the same way."""
+    a, b = r["a"], r["b"]
+    if not bend_of(r):
+        ab = [b[i] - a[i] for i in range(3)]
+        den = sum(c * c for c in ab)
+        t = 0.0 if den < 1e-9 else max(0.0, min(1.0, sum((p[i] - a[i]) * ab[i] for i in range(3)) / den))
+        return t, [a[i] + ab[i] * t for i in range(3)]
+    n = 48
+    best = min(range(n + 1), key=lambda k: math.dist(curve_point(r, k / n), p))
+    lo, hi = max(0.0, (best - 1) / n), min(1.0, (best + 1) / n)
+    for _ in range(30):                          # narrow it down (the distance has one dip here)
+        m1, m2 = lo + (hi - lo) / 3, hi - (hi - lo) / 3
+        if math.dist(curve_point(r, m1), p) <= math.dist(curve_point(r, m2), p):
+            hi = m2
+        else:
+            lo = m1
+    t = (lo + hi) / 2
+    return t, curve_point(r, t)
+
+
+def curve_heading(r: dict, t: float) -> float:
+    """Which way a piece runs at `t`, radians of atan2(dz, dx)."""
+    dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
+    th = math.radians(bend_of(r))
+    return math.atan2(dz, dx) - th / 2.0 + th * max(0.0, min(1.0, float(t)))
+
+
 def is_vertical(r: dict) -> bool:
     a, b = r["a"], r["b"]
     return abs(b[1] - a[1]) > max(abs(b[0] - a[0]), abs(b[2] - a[2]))
 
 
-def rig_angle(r: dict) -> float | None:
+def rig_angle(r: dict, t: float | None = None) -> float | None:
     """Which way a horizontal rig runs, in degrees round the vertical (0 =
-    along +x, as the 3D turns a light's holder): None for a tower or pole."""
+    along +x, as the 3D turns a light's holder): None for a tower or pole.
+    A curved piece runs a different way at each point: `t` says where."""
     if is_vertical(r):
         return None
     dx, dz = r["b"][0] - r["a"][0], r["b"][2] - r["a"][2]
     if math.hypot(dx, dz) < 1e-6:
         return None
+    if t is not None and bend_of(r):
+        return math.degrees(-curve_heading(r, t))
     return math.degrees(math.atan2(-dz, dx))
 
 
@@ -470,8 +616,14 @@ def fold90(a: float) -> float:
 
 
 def length(r: dict) -> float:
+    """How long a piece is (along its curve, when it is curved)."""
     a, b = r["a"], r["b"]
-    return math.dist(a, b)
+    th = math.radians(bend_of(r))
+    if abs(th) < 1e-6:
+        return math.dist(a, b)
+    chord = math.hypot(b[0] - a[0], b[2] - a[2])
+    flat = chord * (th / 2.0) / math.sin(th / 2.0)
+    return math.hypot(flat, b[1] - a[1])
 
 
 def default_orient(r: dict) -> str:
@@ -484,8 +636,8 @@ def default_orient(r: dict) -> str:
 def mount_position(r: dict, t: float, orient: str | None = None) -> dict:
     """Where a head on rig `r` at `t` sits, and which way up."""
     t = max(0.0, min(1.0, float(t)))
-    a, b = r["a"], r["b"]
-    p = [a[i] + (b[i] - a[i]) * t for i in range(3)]
+    a = r["a"]
+    p = curve_point(r, t)
     if not orient and is_vertical(r):
         # clamped to a tower or pole: hung (yoke up) once it is up high -
         # standing upright at 4 m it couldn't tilt down to the floor
@@ -513,12 +665,7 @@ def nearest_rig(v: dict, x: float, y: float, z: float,
     best = None
     p = (x, y, z)
     for r in (v or {}).get("rigging") or []:
-        a, b = r["a"], r["b"]
-        ab = [b[i] - a[i] for i in range(3)]
-        denom = sum(c * c for c in ab)
-        t = 0.0 if denom < 1e-9 else max(0.0, min(1.0, sum(
-            (p[i] - a[i]) * ab[i] for i in range(3)) / denom))
-        q = [a[i] + ab[i] * t for i in range(3)]
+        t, q = curve_nearest(r, p)                  # on its curve, when it is curved
         dist = math.dist(p, q)
         if dist <= reach + r["size"] / 2 and (best is None or dist < best[2]):
             best = (r, t, dist)
@@ -696,6 +843,47 @@ def _fit_rig(r: dict, inside, pull, box, top) -> int:
     return 1
 
 
+def shape_transform(v: dict, r: dict, turn: float | None = None, new_length: float | None = None,
+                    ceiling: bool = False) -> list[tuple[str, dict]]:
+    """A curved shape changed as a whole (one of its pieces can't be turned
+    or resized on its own without breaking the curve): turned about its
+    middle, scaled so that piece is `new_length` long, or hung just under the
+    ceiling.  [(id, {a, b})] for every piece."""
+    members = [m for m in (v.get("rigging") or []) if r.get("group") and m.get("group") == r["group"]] or [r]
+    pts = [m[k] for m in members for k in ("a", "b")]
+    cx = sum(q[0] for q in pts) / len(pts)
+    cz = sum(q[2] for q in pts) / len(pts)
+    now = length(r)
+    k = float(new_length) / now if new_length and now > 1e-6 else 1.0
+    c, sn = (math.cos(math.radians(turn)), math.sin(math.radians(turn))) if turn else (1.0, 0.0)
+    dy = 0.0
+    if ceiling:
+        top = max(max(m["a"][1], m["b"][1]) for m in members)
+        h = ceiling_over(v, pts) if dims(v)[2] else 6.0
+        dy = h - float(r.get("size") or 0.3) / 2 - 0.05 - top
+
+    def move(q):
+        x, z = (q[0] - cx) * k, (q[2] - cz) * k
+        return [round(cx + x * c - z * sn, 3), round(max(0.0, q[1] + dy), 3), round(cz + x * sn + z * c, 3)]
+    out = [(m["id"], {"a": move(m["a"]), "b": move(m["b"])}) for m in members]
+    # the whole shape slid inside the room as one (a piece pushed in on its
+    # own would break the curve)
+    fns = _room_fns(v)
+    if fns:
+        lo_x, hi_x, lo_z, hi_z = fns[2]
+        xs = [p[0] for _i, ch in out for p in (ch["a"], ch["b"])]
+        zs = [p[2] for _i, ch in out for p in (ch["a"], ch["b"])]
+        if max(xs) - min(xs) > hi_x - lo_x or max(zs) - min(zs) > hi_z - lo_z:
+            raise ValueError("the shape would be bigger than the room")
+        sx = (lo_x - min(xs)) if min(xs) < lo_x else (hi_x - max(xs)) if max(xs) > hi_x else 0.0
+        sz = (lo_z - min(zs)) if min(zs) < lo_z else (hi_z - max(zs)) if max(zs) > hi_z else 0.0
+        if sx or sz:
+            for _i, ch in out:
+                for p in (ch["a"], ch["b"]):
+                    p[0], p[2] = round(p[0] + sx, 3), round(p[2] + sz, 3)
+    return out
+
+
 def rig_transform(v: dict, r: dict, turn: float | None = None, length: float | None = None,
                   orient: str | None = None, ceiling: bool = False) -> dict:
     """A rig turned about its middle (degrees, seen from above), resized,
@@ -848,6 +1036,52 @@ def _small_club(v, W, D, H):
     return rigs, objs, zones
 
 
+def _lounge(v, W, D, H):
+    """A club with a VIP lounge: the DJ at the back, the dance floor ringed
+    by high tables, a half-round bar in the middle of the room, VIP booths
+    and couches along the walls behind a rope."""
+    v["room"].update({"width": W, "depth": D, "height": H, "back": -1.0,
+                      "ceiling": "flat", "floor": "wood"})
+    sw, sd = min(6.0, W * 0.4), 3.0
+    v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 0.6,
+                  "colour": "#1f2026"}
+    top = H - 0.5
+    rigs = [_truss(v, "DJ truss", -sw / 2, sw / 2, top - 0.3, 0.6),
+            _truss(v, "Floor truss front", -W * 0.36, W * 0.36, top, sd + 1.5),
+            _truss(v, "Floor truss back", -W * 0.36, W * 0.36, top, sd + D * 0.3),
+            *(_clean_rig({"kind": "pipe", "name": f"VIP pipe {s}", "a": [x, top + 0.2, sd + 2.0],
+                          "b": [x, top + 0.2, sd + 10.0]}, v) for s, x in (("L", -W / 2 + 1.2), ("R", W / 2 - 1.2)))]
+    floor_z0, floor_z1 = sd + 0.8, sd + D * 0.38
+    objs = [_obj(v, "dj_booth", "DJ booth", 0, sd * 0.5, 2.6, 0.9, 1.05, y=0.6),
+            _obj(v, "speaker", "Speaker L", -sw / 2 - 0.7, sd - 0.4, 0.8, 0.7, 1.8),
+            _obj(v, "speaker", "Speaker R", sw / 2 + 0.7, sd - 0.4, 0.8, 0.7, 1.8),
+            _obj(v, "mark", "DJ", 0, sd * 0.25, 0.5, 0.5, 0.02, y=0.6),
+            # its curve towards the dance floor
+            _obj(v, "bar_curve", "Round bar", 0, D * 0.68, 6.0, 0.8, 1.1, rot=180)]
+    # high tables at the back corners of the dance floor, clear of the bar
+    for i, (x, z) in enumerate(((-4.4, floor_z1 - 1.2), (-4.4, floor_z1 + 1.0), (4.4, floor_z1 - 1.2), (4.4, floor_z1 + 1.0))):
+        objs.append(_obj(v, "high_table", f"High table {i + 1}", x, z, 0.7, 0.7, 1.1))
+    # VIP booths and couches down both walls, behind a rope
+    for side, sx in (("L", -1), ("R", 1)):
+        wall_x = sx * (W / 2 - 1.3)
+        for i, z in enumerate((sd + 3.0, sd + 6.0)):
+            objs.append(_obj(v, "vip_booth", f"VIP booth {side}{i + 1}", wall_x, z, 2.6, 0.6, 0.95, rot=-90 * sx))
+        objs.append(_obj(v, "couch", f"VIP couch {side}", sx * (W / 2 - 0.55), sd + 9.0, 2.2, 0.9, 0.8, rot=-90 * sx))
+        objs.append(_obj(v, "half_table", f"Half table {side}", sx * (W / 2 - 1.5), sd + 9.0, 1.2, 0.6, 0.45, rot=90 * sx))
+        objs.append(_obj(v, "rope", f"VIP rope {side}", sx * (W / 2 - 3.2), sd + 6.0, 8.0, 0.3, 1.0, rot=90))
+        objs.append(_obj(v, "plant", f"Plant {side}", sx * (W / 2 - 0.5), sd + 1.2, 0.6, 0.6, 1.6))
+    # stools round the bar's curve, on the room's side
+    for i, a in enumerate((-60, -30, 0, 30, 60)):
+        objs.append(_obj(v, "stool", f"Bar stool {i + 1}", 3.45 * math.sin(math.radians(a)),
+                         D * 0.68 - 3.45 * math.cos(math.radians(a)), 0.4, 0.4, 0.75))
+    zones = [_zone(v, "dj", "DJ", -sw / 2, 0, sw / 2, sd),
+             _zone(v, "dancefloor", "Dance floor", -W * 0.32, floor_z0, W * 0.32, floor_z1, 0.75),
+             _zone(v, "vip", "VIP left", -W / 2 + 0.2, sd + 1.5, -W / 2 + 3.0, sd + 10.5, 0.3),
+             _zone(v, "vip", "VIP right", W / 2 - 3.0, sd + 1.5, W / 2 - 0.2, sd + 10.5, 0.3),
+             _zone(v, "bar", "Bar", -4.5, D * 0.6, 4.5, D * 0.86, 0.4)]
+    return rigs, objs, zones
+
+
 def _warehouse(v, W, D, H):
     v["room"].update({"width": W, "depth": D, "height": H, "back": -2.0,
                       "ceiling": "open", "floor": "concrete"})
@@ -886,7 +1120,7 @@ def _concert(v, W, D, H):
                       "ceiling": "open", "floor": "concrete"})
     sw, sd = min(14.0, W * 0.6), 10.0
     v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 1.5,
-                  "colour": "#1b1c21"}
+                  "colour": DECK_GREY}
     top = H - 1.2
     rigs = [_truss(v, "Front truss", -sw / 2, sw / 2, top, sd - 0.8),
             _truss(v, "Mid truss", -sw / 2, sw / 2, top, sd * 0.55),
@@ -896,7 +1130,9 @@ def _concert(v, W, D, H):
             _truss(v, "FOH truss", -sw * 0.35, sw * 0.35, top - 1, sd + 8)]
     objs = [_obj(v, "riser", "Drum riser", 0, 3.5, 3.0, 2.5, 0.6, y=1.5),
             _obj(v, "riser", "FOH", 0, D * 0.65, 5.0, 3.0, 0.4),
-            _obj(v, "mark", "Lead", 0, sd - 2.2, 0.5, 0.5, 0.02, y=1.5)]
+            _obj(v, "mark", "Lead", 0, sd - 2.2, 0.5, 0.5, 0.02, y=1.5),
+            # the back of the stage: a grey pleated drape, floor to the grid
+            {**_obj(v, "drape", "Back drape", 0, 0.3, sw + 2.0, 0.25, H - 1.2), "colour": DRAPE_GREY, "fold": 0.45}]
     zones = [_zone(v, "stage", "Stage", -sw / 2, 0, sw / 2, sd),
              _zone(v, "standing", "Standing", -W * 0.45, sd + 1.5, W * 0.45, D * 0.6, 0.75),
              _zone(v, "foh", "FOH", -2.5, D * 0.65 - 1.5, 2.5, D * 0.65 + 1.5)]
@@ -910,6 +1146,7 @@ def _theatre(v, W, D, H):
     v["stage"] = {"x": 0.0, "z": 0.0, "width": sw, "depth": sd, "height": 1.0,
                   "colour": "#2b2320"}
     top = H - 1.5
+    drape = {**_obj(v, "drape", "Back drape", 0, 0.3, sw, 0.2, top - 1.0), "colour": "#26272c", "fold": 0.35}
     rigs = [_truss(v, f"LX {i + 1}", -sw / 2, sw / 2, top, z, "pipe")
             for i, z in enumerate((1.5, 3.5, 5.5, 7.2))]
     rigs.append(_truss(v, "FOH bar", -sw * 0.45, sw * 0.45, top - 1.0, sd + 5.0))
@@ -917,7 +1154,7 @@ def _theatre(v, W, D, H):
         rigs.append(_tower(v, f"Boom {s}", x, sd * 0.5, 3.0, "stand"))
     zones = [_zone(v, "stage", "Stage", -sw / 2, 0, sw / 2, sd),
              _zone(v, "seating", "Stalls", -W * 0.42, sd + 2.0, W * 0.42, D - 2.0, 0.6)]
-    return rigs, [_obj(v, "mark", "Centre", 0, sd * 0.6, 0.5, 0.5, 0.02, y=1.0)], zones
+    return rigs, [_obj(v, "mark", "Centre", 0, sd * 0.6, 0.5, 0.5, 0.02, y=1.0), drape], zones
 
 
 def _ballroom(v, W, D, H):
@@ -956,6 +1193,7 @@ def _outdoor(v, W, D, H):
 TEMPLATES = {
     "club": ("Club", (16.0, 22.0, 5.5), _club),
     "small_club": ("Small club / bar", (10.0, 14.0, 3.6), _small_club),
+    "lounge": ("Club with VIP lounge", (18.0, 24.0, 5.0), _lounge),
     "warehouse": ("Warehouse rave", (30.0, 40.0, 9.0), _warehouse),
     "concert": ("Concert stage", (24.0, 32.0, 11.0), _concert),
     "theatre": ("Theatre", (16.0, 26.0, 9.0), _theatre),

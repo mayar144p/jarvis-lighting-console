@@ -51,7 +51,9 @@ export async function openOperator() {
   const off = on("lite", (l) => { if (l.ai_operator && l.ai_operator.on !== cur.on) refresh(); });
   const body = h("div.ap",
     h("p.muted.small", "The AI runs the lights live with the music: every phrase (on the beat clock - tap it, MIDI clock, the CDJs or the room) "
-      + "and on a drop, it makes one change that suits the moment. Touch the desk - a cue, a button, a fader, the programmer - or press "
+      + "and on a drop, it makes one change that suits the moment - with a show's buttons, it plays them: colours on the phrase, "
+      + "a new movement now and then, a strobe hit on the drop. With no AI set up, the desk busks the buttons by its own rules. "
+      + "Touch the desk - a cue, a button, a fader, the programmer - or press "
       + "“I've got it”, and you have them back at once. It never arms or fires effects."),
     h("label.field", h("span", "What kind of night (optional)"), brief),
     h("div.form-grid", h("label.field", h("span", "A change"), bars)),

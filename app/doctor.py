@@ -13,7 +13,7 @@ from . import config, fixture_kind
 
 
 def _finding(level: str, title: str, detail: str = "", fix: dict | None = None) -> dict:
-    out = {"level": level, "title": title, "detail": detail}
+    out: dict = {"level": level, "title": title, "detail": detail}
     if fix:
         out["fix"] = fix
     return out

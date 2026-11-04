@@ -239,6 +239,8 @@ class DeskMixin:
     def _a_macro_save(self, macro=None, id=None, **_):
         """Save a macro: a name and command lines (as typed in the command
         bar: `1-4 red`, `cue 3 go`, `master 60` ...)."""
+        if macro is not None and not isinstance(macro, dict):
+            raise ValueError("macro is {name, lines: [...]}")
         lst = self._macros()
         ident = str(id or (macro or {}).get("id") or "")
         if not ident:
@@ -309,12 +311,28 @@ class DeskMixin:
             return cache[1]
         out = {}
         for h in self.patch:
-            cal = (self.head_ranges(h).get("_model") or {}).get("colour_cal") or {}
+            model = self.head_ranges(h).get("_model") or {}
+            cal = model.get("colour_cal") or {}
             gains = {r: float(g) for r, g in cal.items() if r in self.CAL_ROLES and 0 <= float(g) < 0.999}
+            if model.get("screen_colours"):
+                # "real colours like the screen": the screen's colour values
+                # are gamma-coded, an LED's light is not - orange / purple /
+                # pink came out yellowish / pale on the real light
+                gains["_curve"] = self.SCREEN_GAMMA
             if gains:
                 out[h["head_no"]] = gains
         self._cal_cache = (key, out)
         return out
+
+    SCREEN_GAMMA = 2.2
+    _GAMMA_LUT: dict = {}
+
+    @classmethod
+    def _gamma(cls, v: int, gamma: float) -> int:
+        lut = cls._GAMMA_LUT.get(gamma)
+        if lut is None:
+            lut = cls._GAMMA_LUT[gamma] = [int(round(255 * (i / 255.0) ** gamma)) for i in range(256)]
+        return lut[v]
 
     def _write_colour_cal(self, frames: dict) -> None:
         cal = self._colour_cal()
@@ -327,9 +345,12 @@ class DeskMixin:
                 continue
             roles = h["map"]
             base = h["address"] - 1
+            curve = gains.get("_curve")
             for i, role in enumerate(roles):
                 g = gains.get(role)
                 pos = base + i
+                if curve and role in self.CAL_ROLES and 0 <= pos < len(buf):
+                    buf[pos] = self._gamma(buf[pos], curve)
                 if g is None or not 0 <= pos < len(buf):
                     continue
                 if i + 1 < len(roles) and roles[i + 1] == role + "_fine" and pos + 1 < len(buf):
@@ -338,7 +359,7 @@ class DeskMixin:
                 else:
                     buf[pos] = int(buf[pos] * g)
 
-    def _a_colour_cal(self, head=None, reset=False, **gains):
+    def _a_colour_cal(self, head=None, reset=False, screen=None, **gains):
         """Match this model's colours to the rest of the rig: a gain per
         emitter, 0-100 (red=88 takes its red down to 88%).  Saved with the
         fixture for every light of that model and mode; reset=true forgets it."""
@@ -359,14 +380,20 @@ class DeskMixin:
         from app import fixtures
         fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
                               "_model", "colour_cal", cur or None)
+        if screen is not None or _truthy(reset):
+            on = _truthy(screen) and not _truthy(reset)
+            fixtures.set_override(self.db_path, h.get("manufacturer"), h.get("model"), h.get("mode"),
+                                  "_model", "screen_colours", True if on else None)
         fixtures.invalidate_cache()
         self._drop_fixture_caches()
         self._cal_rev = self.__dict__.get("_cal_rev", 0) + 1
         same = sum(1 for x in self.patch if (x.get("manufacturer"), x.get("model"), x.get("mode"))
                    == (h.get("manufacturer"), h.get("model"), h.get("mode")))
         said = ", ".join(f"{r} {round(g * 100)}%" for r, g in cur.items()) or "as it comes"
+        screen_on = bool((self.head_ranges(h).get("_model") or {}).get("screen_colours"))
         return {"head": h["head_no"], "emitters": have, "cal": {r: round(cur.get(r, 1.0) * 100) for r in have},
-                "summary": f"{h.get('model')} ({same} light(s)): {said}"}
+                "screen": screen_on,
+                "summary": f"{h.get('model')} ({same} light(s)): {said}" + ("; colours like the screen" if screen_on else "")}
 
     def _a_colour_cal_get(self, head=None, **_):
         """A model's colour matching (percent per emitter)."""
@@ -376,7 +403,8 @@ class DeskMixin:
         have = [r for r in self.CAL_ROLES if r in h["map"]]
         cur = (self.head_ranges(h).get("_model") or {}).get("colour_cal") or {}
         return {"head": h["head_no"], "model": h.get("model"), "emitters": have,
-                "cal": {r: round(float(cur.get(r, 1.0)) * 100) for r in have}}
+                "cal": {r: round(float(cur.get(r, 1.0)) * 100) for r in have},
+                "screen": bool((self.head_ranges(h).get("_model") or {}).get("screen_colours"))}
 
     # -- teach a wheel ------------------------------------------------------
     TEACH_ROLES = ("wheel", "wheel2", "gobo", "gobo2", "prism")

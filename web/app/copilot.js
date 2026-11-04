@@ -5,6 +5,24 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
+import { stagePanel } from "./view3d.js";
+import { currentPage, lastButton } from "./quickbuttons.js";
+
+// What the operator is looking at, for "this button", "this page", "here":
+// the screen, the tab, the buttons page, the last button touched, open windows
+function screenContext() {
+  const tab = document.querySelector("#prog-tabs button[aria-selected='true']");
+  const names = (state.snap && state.snap.quick && state.snap.quick.names) || {};
+  const pg = currentPage();
+  const wins = [...document.querySelectorAll(".modal[aria-label]")].map((m) => m.getAttribute("aria-label")).filter(Boolean).slice(0, 3);
+  const out = { screen: { setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program" };
+  if (tab) out.programmer_tab = tab.textContent.trim();
+  out.buttons_page = pg + (names[pg] || names[String(pg)] ? ` (${names[pg] || names[String(pg)]})` : "");
+  const b = lastButton();
+  if (b) out.last_button = b;
+  if (wins.length) out.open_windows = wins;
+  return out;
+}
 
 const history = [];            // [{role, content}] for follow-ups ("warmer")
 
@@ -34,6 +52,8 @@ function say(kind, text, extra) {
   if (extra) box.append(extra);
   log.append(box);
   log.scrollTop = log.scrollHeight;
+  const sug = $("#ai-suggest");
+  if (sug) sug.replaceChildren();              // (the conversation has started)
   return box;
 }
 
@@ -99,10 +119,10 @@ function planView(plan, onApply) {
 // With an AI key: a loop of tools on the desk (it looks, acts, checks the
 // real lights, asks, remembers).  Without one: the plan-first copilot below.
 let session = "";
-try { session = sessionStorage.getItem("jarvis.ai.session") || ""; } catch (e) { /* ignore */ }
+try { session = sessionStorage.getItem("haze.ai.session") || ""; } catch (e) { /* ignore */ }
 if (!session) {
   session = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  try { sessionStorage.setItem("jarvis.ai.session", session); } catch (e) { /* ignore */ }
+  try { sessionStorage.setItem("haze.ai.session", session); } catch (e) { /* ignore */ }
 }
 let attached = null;           // a photo to match (data URL), for the next message
 
@@ -112,7 +132,10 @@ function showAi(st) {
   $("#ai-status").textContent = st && st.llm_configured ? `${st.model}${mode ? " · " + mode : ""} ▾` : "offline compiler ▾";
 }
 
-const assistantOn = () => !!(state.status && state.status.llm_configured) && !$("#ai-offline").checked;
+// no AI set up (or the key was refused): the desk's own offline planner
+// answers; the AI is chosen in the list above (Online / Local / Auto)
+let noKey = false;
+const assistantOn = () => !!(state.status && state.status.llm_configured) && !noKey;
 
 // a small JPEG: the 3D view, or a photo, shrunk to at most `side` pixels
 function shrink(url, side = 768) {
@@ -132,8 +155,8 @@ function shrink(url, side = 768) {
 
 async function viewShot() {
   try {
-    const m = await import("./stagepanel.js");
-    const st = m.getStage && m.getStage();
+    const m = await stagePanel();
+    const st = m && m.getStage();
     return st ? await shrink(st.photo(1024)) : null;
   } catch (e) { return null; }
 }
@@ -151,11 +174,26 @@ async function assist(text) {
   btn.textContent = "…";
   const t0 = performance.now();
   const thinking = say("bot", "Working…");
-  const tick = setInterval(() => { thinking.firstChild.textContent = `Working… ${Math.round((performance.now() - t0) / 1000)} s`; }, 1000);
+  // live: what it's doing now, the steps done so far, and Stop
+  const live = h("div.ai-live");
+  const stopBtn = h("button.btn.small.danger", { type: "button", title: "Stop: it ends at its next step; what it did so far stays in the preview",
+    onclick: async () => { stopBtn.disabled = true; stopBtn.textContent = "Stopping…"; await post("/api/console/assistant", { stop: true, session }).catch(() => {}); } }, "■ Stop");
+  thinking.append(live, stopBtn);
+  let polling = false;
+  const tick = setInterval(async () => {
+    const s = Math.round((performance.now() - t0) / 1000);
+    if (polling) return;
+    polling = true;
+    const p = await post("/api/console/assistant", { progress: true, session }).catch(() => null);
+    polling = false;
+    if (!thinking.isConnected) return;
+    thinking.firstChild.textContent = `${(p && p.running && p.now) || "Working"}… ${s} s`;
+    if (p && p.steps) live.replaceChildren(...p.steps.slice(-6).map((x) => h("div.plan-step" + (x.ok ? ".ok" : ".bad"), h("span.n", x.ok ? "✓" : "✕"), x.summary || "")));
+  }, 800);
   try {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
-    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.jarvisStage && !window.jarvisStage.failed) });
+    let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed), screen: screenContext() });
     // the AI asked to see its changes: let the 3D draw them, then send a picture
     while (r.ok && r.need_view) {
       thinking.firstChild.textContent = "Looking at the 3D…";
@@ -165,17 +203,45 @@ async function assist(text) {
     }
     clearInterval(tick);
     thinking.remove();
-    if (r.no_key) { $("#ai-offline").checked = true; say("bot", r.error); plan(text); return; }
+    if (r.no_key) { noKey = true; say("bot", r.error); plan(text); return; }
     if (r.ai_note) toast(r.ai_note, "", 6000);          // "Gemini limit reached - using the offline AI"
     if (!r.ok) { say("bot", "The AI couldn't do that: " + (r.error || "no answer")); return; }
+    if (r.stopped) toast("Stopped", "", 3000);
+    // notes it would like to remember: only kept when you say so
+    const asks = (r.learned || []).filter((n) => n.status === "pending");
     const extra = h("div");
+    for (const n of asks) {
+      const box = h("div.ai-q", h("b", `Remember this? “${n.note}”`), n.replaces ? h("div.muted.small", `Replaces: “${n.replaces}”`) : null);
+      const answer = (keep) => post("/api/console/assistant", { learning: true, op: keep ? "keep" : "drop", id: n.id })
+        .then(() => box.replaceChildren(h("span.muted.small", keep ? "Remembered." : "Not remembered.")));
+      box.append(h("div.chip-row", h("button.chip", { onclick: () => answer(true) }, "Keep"), h("button.chip", { onclick: () => answer(false) }, "No")));
+      extra.append(box);
+    }
     if (r.steps && r.steps.length) {
       extra.append(h("details.ai-steps", h("summary", `What I did (${r.steps.length})`),
         ...r.steps.map((s) => h("div.plan-step" + (s.ok ? ".ok" : ".bad"), h("span.n", s.ok ? "✓" : "✕"), s.summary || s.action))));
+      // what it looked up online, and where it read it
+      const web = r.steps.filter((s) => s.ok && (s.action === "search_web" || s.action === "read_web"));
+      const links = [...new Set(web.flatMap((s) => s.sources || []))].slice(0, 6);
+      if (web.length) {
+        extra.append(h("div.ai-web.muted.small", "🔎 " + web.filter((s) => s.action === "search_web").length + " look-up(s) online",
+          ...links.map((u) => { let host = u; try { host = new URL(u).hostname.replace(/^www\./, ""); } catch (e) { /* as is */ }
+            return h("a", { href: u, target: "_blank", rel: "noopener noreferrer", title: u, style: { marginLeft: "8px" } }, host); })));
+      }
+    }
+    if (r.plan) {
+      // the plan for a big job, before anything is changed
+      extra.append(h("div.ai-plan",
+        h("b", r.plan.summary || "The plan"),
+        (r.plan.colours || []).length ? h("div.sw", ...r.plan.colours.map((c) => h("i", { title: c, style: { background: c } }))) : null,
+        h("ol", ...(r.plan.steps || []).map((s) => h("li", s)))));
     }
     if (r.question) {
       extra.append(h("div.ai-q", h("b", r.question),
-        h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => { say("user", o); assist(o); } }, o)))));
+        h("div.chip-row", ...(r.options || []).map((o) => h("button.chip", { onclick: () => {
+          if (r.plan && o === "Change something") { $("#ai-text").focus(); $("#ai-text").placeholder = "What should be different?"; return; }
+          say("user", o); assist(r.plan && o === "Go ahead" ? "Go ahead with the plan, exactly as shown." : o);
+        } }, o)))));
     }
     // what the AI prepared but only the operator may do: going live, ARM,
     // firing effects, saving / opening, deleting - one tap each
@@ -197,9 +263,17 @@ async function assist(text) {
       const drop = h("button.btn.small", "Throw away");
       const bar = h("div.plan-actions", h("span.small.plan-previewing", "Previewing in 3D only - the real lights haven't changed."), keep, drop);
       const done = (t) => bar.replaceChildren(h("span.muted.small", t));
-      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
-      drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); done("Thrown away - the rig never saw it."); });
+      // (kept = a good example for teaching the offline AI, thrown away = a bad one)
+      const verdict = (good) => r.example && post("/api/console/assistant", { example: r.example, good }).catch(() => {});
+      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); verdict(true); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
+      drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); verdict(false); done("Thrown away - the rig never saw it."); });
       extra.append(bar);
+    } else if (r.example && !r.changed) {
+      // an answer: was it right? (teaches the offline AI)
+      const rate = (good) => (e) => { post("/api/console/assistant", { example: r.example, good }).catch(() => {});
+        e.currentTarget.parentElement.replaceChildren(h("span.muted.small", good ? "Thanks - noted as a good answer." : "Noted - it'll learn from it.")); };
+      extra.append(h("div.ai-rate", h("button.btn.small.ghost", { title: "A good answer", onclick: rate(true) }, "👍"),
+        h("button.btn.small.ghost", { title: "Not right", onclick: rate(false) }, "👎")));
     } else if (r.changed) {
       extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
     }
@@ -210,28 +284,20 @@ async function assist(text) {
     thinking.remove();
     say("bot", "Could not reach the AI: " + err.message);
   } finally {
+    clearInterval(tick);
+    thinking.remove();
     btn.disabled = false;
     btn.textContent = "Send";
   }
 }
 
-async function showMemory() {
-  const r = await post("/api/console/assistant", { notes: true });
-  const box = h("div");
-  // forgetting renumbers the notes, so the list is redrawn from the answer
-  const draw = (list) => box.replaceChildren(...list.map((n, i) => h("div.ai-note", h("span", `${i + 1}. ${n}`),
-    h("button.x", { title: "Forget this", "aria-label": "Forget this", onclick: async () => {
-      const r2 = await post("/api/console/assistant", { notes: true, forget: i });
-      draw(r2.notes || []);
-    } }, "×"))));
-  const list = r.notes || [];
-  draw(list);
-  say("bot", list.length ? "What I remember about how you like things:" : "I haven't noted anything yet - tell me how you like things and I'll remember.",
-    list.length ? box : null);
+// what the AI has learnt, and your say over it (keep / forget / pause)
+function showMemory() {
+  import("./ailearning.js").then((m) => m.openLearning());
 }
 
 async function plan(text) {
-  const offline = $("#ai-offline").checked;
+  const offline = !assistantOn();
   const btn = $("#ai-send");
   btn.disabled = true;
   btn.textContent = "…";
@@ -265,20 +331,30 @@ export function askCopilot(text) {
   plan(text);
 }
 
-function suggestions() {
-  const p = (state.snap && state.snap.patch) || [];
-  const movers = p.some((x) => x.body && x.body.moving);
-  const colour = p.some((x) => (x.map || []).includes("red"));
-  const out = [];
-  if (!p.length) return ["Add 6 LED pars", "Add 4 moving head spots"];
-  if (colour) out.push("Warm amber wash, everything at 70%", "Slow rainbow across the rig");
-  if (movers) out.push("Movers circle slowly", "Point the movers at centre stage");
-  out.push("Everything to 50% over 3 seconds", "Blackout");
-  return out.slice(0, 5);
-}
-
+// (the example chips are gone - the box says what to type)
+// What it can do, and what to ask next - for this desk as it is now (no
+// lights yet: add some; no room: draw it; no show: design one...).  Shown
+// until the conversation starts; a tap puts the words in the box.
 function renderSuggest() {
-  $("#ai-suggest").replaceChildren(...suggestions().map((s) => h("button.chip", { onclick: () => { say("user", s); plan(s); } }, s)));
+  const box = $("#ai-suggest");
+  if (!box) return;
+  if ($("#ai-log") && $("#ai-log").children.length) { box.replaceChildren(); return; }
+  const s = state.snap || {};
+  const lights = (s.patch || []).length;
+  const zones = ((s.venue || {}).zones || []).length;
+  const shows = (s.playbacks || []).some((p) => (p.stack || []).length) || ((s.quick || {}).buttons || []).length > 12;
+  const asks = [];
+  if (!lights) asks.push("Add 4 moving heads and 8 LED PARs on the truss", "Here's a photo of my rig - set it up");
+  if (lights && !zones) asks.push("Draw the dance floor, the VIP, the bar and the DJ booth");
+  if (lights && !shows) asks.push("Design me a Halloween show", "Only buttons for tonight, no cues or timeline");
+  if (shows) asks.push("Run the show to the music", "Christmas with the same programming as this show", "Check the show before doors");
+  if (lights) asks.push("Warm wash on the VIP, slow movement on the dance floor", "The drop needs to hit harder", "Calm and warm for the speeches");
+  asks.push("What can you do?");
+  const pick = (t) => { const ta = $("#ai-text"); ta.value = t; ta.focus(); };
+  box.replaceChildren(
+    h("div.ai-can.muted.small", "I can run the whole desk: design shows and buttons, set up the rig and the room, aim, colour and move lights, "
+      + "look things up online, check the show before doors - and I ask when something's unclear. Big jobs: I show the plan first."),
+    ...asks.slice(0, 6).map((t) => h("button.chip", { type: "button", onclick: () => pick(t) }, t)));
 }
 
 // ---------------------------------------------------------- show design
@@ -288,7 +364,7 @@ async function design() {
   const box = $("#concepts");
   box.replaceChildren(h("p.muted", "Designing…"));
   try {
-    const d = await post("/api/console/generate", { prompt: text, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/generate", { prompt: text, offline: !assistantOn() });
     const r = d.result || {};
     const concepts = (r.design && r.design.concepts) || [];
     box.replaceChildren(...concepts.map((c) => h("div.concept",
@@ -315,8 +391,24 @@ async function design() {
 }
 
 // ------------------------------------------------------------ whole show
-const STYLES = ["Techno warehouse", "House party", "EDM festival drop", "Hip hop club", "Chill lounge", "Wedding dance", "Latin night"];
 let autoDesign = null;
+
+// "Put its cues on": each playback (a GO fader on the Live page), and
+// whether it's empty or what would be replaced
+function fillPlaybacks() {
+  const sel = $("#auto-pb");
+  if (!sel) return;
+  const pbs = (state.snap && state.snap.playbacks) || [];
+  const keep = sel.value;
+  const list = pbs.length ? pbs : Array.from({ length: 10 }, (_, i) => ({ n: i + 1 }));
+  sel.replaceChildren(...list.map((p) => {
+    const n = (p.stack || p.cues || []).length || p.count || 0;
+    const name = p.name && !/^(PB|Playback) ?\d+$/i.test(p.name) ? ` "${p.name}"` : "";
+    return h("option", { value: String(p.n) }, `Fader ${p.n}${name} - ${n ? `${n} cue${n > 1 ? "s" : ""}, replaced` : "empty"}`);
+  }));
+  const firstEmpty = list.find((p) => !((p.stack || p.cues || []).length || p.count));
+  sel.value = keep && list.some((p) => String(p.n) === keep) ? keep : String((firstEmpty || list[0]).n);
+}
 
 function sectionBar(sections) {
   return h("div.auto-bar", ...sections.map((s) => {
@@ -333,10 +425,28 @@ async function autoshow() {
   box.replaceChildren(h("p.muted", "Reading the rig and designing…"));
   let r;
   try {
-    const d = await post("/api/console/autoshow", { prompt: text, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/autoshow", { prompt: text, variants: 3 });
     r = d.result || {};
   } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
-  showPlan(r);
+  if ((r.designs || []).length > 1) showTakes(r); else showPlan(r);
+}
+
+// Three takes on the brief: each a card (its colours, its parts by energy);
+// open one to see it whole and build it
+function showTakes(r) {
+  const box = $("#auto-plan");
+  const bpm = (r.analysis && r.analysis.bpm) || 120;
+  box.replaceChildren(h("p.muted.small", "Three takes on it - open one to see it whole, then build it."),
+    h("div.auto-takes", ...r.designs.map((d, i) => {
+      let t = 0;
+      const rough = d.sections.map((s) => { const start = t; t += s.bars * 240 / bpm; return { name: s.name, start, end: t, energy: s.energy }; });
+      return h("div.auto-take",
+        h("div.auto-take-head", h("b", String.fromCharCode(65 + i)), h("span", d.take || d.name)),
+        h("div.sw", ...(d.palette || []).map((c) => h("i", { style: { background: c }, title: c }))),
+        sectionBar(rough),
+        h("span.muted.small", `${d.sections.length} parts · ${d.sections.reduce((n, s) => n + s.hits.length, 0)} hits`),
+        h("button.btn.small.primary", { onclick: () => showPlan({ ...r, design: d, designs: null }) }, "Open this one"));
+    })));
 }
 
 /** Change part of the show on the timeline, as asked: previewed like a new one. */
@@ -347,7 +457,7 @@ async function changeShow() {
   box.replaceChildren(h("p.muted", `Changing: “${ask}”…`));
   let r;
   try {
-    const d = await post("/api/console/autoshow", { refine: ask, offline: $("#ai-offline").checked });
+    const d = await post("/api/console/autoshow", { refine: ask, offline: !assistantOn() });
     r = d.result || {};
   } catch (err) { box.replaceChildren(h("p.muted", err.message)); return; }
   showPlan(r, ask);
@@ -384,7 +494,9 @@ function showPlan(r, ask = "") {
       h("button.btn.primary", { onclick: async () => {
         const pb = ask ? (autoDesign.playback || +$("#auto-pb").value || 1) : (+$("#auto-pb").value || 1);
         if (!(await confirmBox(ask ? "Build the change" : "Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
-        const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb }).catch((e) => ({ error: e.message }));
+        // a change to the show rebuilds its cues and timeline; its buttons stay
+        // (it used to make a new button profile - "Halloween 2" - every time)
+        const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb, buttons: !ask }).catch((e) => ({ error: e.message }));
         const rr = res.result || {};
         if (res.error || rr.error || !rr.built) { toast(res.error || rr.error || "failed", "bad"); return; }
         toast(rr.summary || "Show built", "ok", 6000);
@@ -440,7 +552,25 @@ export function closeCopilot() {
 
 export const copilotOpen = () => !$("#copilot").classList.contains("hidden");
 
+// its left edge sizes it (kept on this computer); double-click: back to normal
+function wireCopilotWidth() {
+  const box = $("#copilot");
+  const keep = (w) => { try { if (w) localStorage.setItem("haze.copilotW", String(w)); else localStorage.removeItem("haze.copilotW"); } catch (e) { /* private window */ } };
+  const set = (w) => { if (w) box.style.setProperty("--copilot-w", `${w}px`); else box.style.removeProperty("--copilot-w"); };
+  try { set(+localStorage.getItem("haze.copilotW") || 0); } catch (e) { /* private window */ }
+  const grip = h("div.copilot-grip", { title: "Drag to make the Copilot wider or narrower (double-click: back to normal)" });
+  box.append(grip);
+  let x0 = 0, w0 = 0, on = false;
+  grip.addEventListener("pointerdown", (e) => { on = true; x0 = e.clientX; w0 = box.getBoundingClientRect().width; grip.setPointerCapture(e.pointerId); grip.classList.add("on"); });
+  grip.addEventListener("pointermove", (e) => { if (on) set(Math.round(Math.max(360, Math.min(window.innerWidth * 0.8, w0 + (x0 - e.clientX))))); });
+  const end = () => { if (!on) return; on = false; grip.classList.remove("on"); keep(Math.round(box.getBoundingClientRect().width)); };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { set(0); keep(0); });
+}
+
 export function initCopilot() {
+  wireCopilotWidth();
   $("#ai-btn").addEventListener("click", () => (copilotOpen() ? closeCopilot() : openCopilot()));
   $("#copilot-close").addEventListener("click", closeCopilot);
   $$("#copilot-tabs button").forEach((b) => b.addEventListener("click", () => openCopilot(b.dataset.ctab)));
@@ -453,6 +583,12 @@ export function initCopilot() {
     if (assistantOn()) assist(text); else plan(text);
   });
   $("#ai-attach").addEventListener("click", () => $("#ai-photo").click());
+  $("#ai-requests").addEventListener("click", () => import("./djreq.js").then((m) => m.openRequestsLink()));
+  // hold to talk: the words go in as if typed, and are sent
+  import("./voice.js").then((m) => m.wireMic($("#ai-mic"), (text) => {
+    say("user", text);
+    if (assistantOn()) assist(text); else plan(text);
+  }));
   $("#ai-photo").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     e.target.value = "";
@@ -469,24 +605,23 @@ export function initCopilot() {
   $("#ai-new").addEventListener("click", async () => {
     await post("/api/console/assistant", { reset: true, session });
     $("#ai-log").replaceChildren();
-    say("bot", "New conversation. What would you like?");
+    renderSuggest();
   });
   $("#ai-memory").addEventListener("click", showMemory);
   $("#ai-operator").addEventListener("click", () => import("./aioperator.js").then((m) => m.openOperator()));
   const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan"; };
-  $("#ai-offline").addEventListener("change", syncTools);
   $("#ai-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); }
   });
   $("#design-btn").addEventListener("click", design);
   $("#auto-btn").addEventListener("click", autoshow);
   $("#auto-ask-form").addEventListener("submit", (e) => { e.preventDefault(); changeShow(); });
-  $("#auto-styles").replaceChildren(...STYLES.map((st) => h("button.chip", { onclick: () => { $("#auto-text").value = st; autoshow(); } }, st)));
+  $("#auto-styles").replaceChildren();
   $("#doctor-btn").addEventListener("click", diagnose);
-  on("snapshot", () => { if (copilotOpen()) renderSuggest(); });
+  on("snapshot", () => { if (copilotOpen()) renderSuggest(); fillPlaybacks(); });
+  fillPlaybacks();
   const st = state.status;
   showAi(st);
-  if (!(st && st.llm_configured)) $("#ai-offline").checked = true;
   // the AI switch: Online / Local / Auto, and the AI's settings
   $("#ai-status").addEventListener("click", (e) => {
     const cur = (state.status && state.status.ai && state.status.ai.mode) || "";
@@ -496,13 +631,13 @@ export function initCopilot() {
         if (d && state.status) {
           state.status.ai = d;
           state.status.llm_configured = d.available;
-          if (d.available) $("#ai-offline").checked = false;
+          if (d.available) noKey = false;
           showAi(state.status);
           syncTools();
         }
       } })),
       "-",
-      { label: "AI settings…", run: () => import("./dialogs.js").then((m) => m.openSettingsAt("ai")) },
+      { label: "AI settings…", run: () => import("./settings.js").then((m) => m.openSettingsAt("ai")) },
     ]);
   });
   syncTools();

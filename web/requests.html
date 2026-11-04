@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Ask the lights</title>
+<style>
+  :root { --bg: #070b10; --surface: #0d131b; --surface-2: #131b25; --line: #26333f; --text: #e6f1fa; --muted: #8196a9; --accent: #2fd6f5; --ok: #45e0a0; --bad: #ff5c6c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+  main { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+  h1 { font-size: 22px; margin: 4px 0 0; }
+  p { margin: 0; color: var(--muted); font-size: 14px; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font: inherit; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+    min-height: 64px; padding: 10px; font-weight: 700; cursor: pointer; }
+  button:active { background: color-mix(in srgb, var(--accent) 25%, var(--surface-2)); }
+  .row { display: flex; gap: 8px; }
+  input, textarea { font: inherit; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  textarea { min-height: 70px; resize: vertical; }
+  .send { background: var(--accent); color: #021318; border-color: var(--accent); min-height: 52px; }
+  .mine { display: grid; gap: 6px; }
+  .req { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+  .state { font-weight: 700; white-space: nowrap; }
+  .waiting { color: var(--muted); } .done { color: var(--ok); } .declined { color: var(--bad); }
+  .err { color: var(--bad); font-size: 14px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ask the lights</h1>
+  <p>Tap what you'd like or write it. The operator sees it on the desk and decides.</p>
+  <label><p>Your name</p><input id="who" placeholder="DJ" maxlength="24"></label>
+  <div class="asks" id="asks"></div>
+  <div class="row"><textarea id="text" placeholder="e.g. blackout for 4 bars at the start of the next track, then everything at once" maxlength="200"></textarea></div>
+  <button class="send" id="send">Send to the operator</button>
+  <div class="err" id="err"></div>
+  <div class="mine" id="mine"></div>
+</main>
+<script>
+const ASKS = ["More energy", "Calmer", "Speech / MC now - warm and steady", "Back to the party",
+  "Blackout for the intro", "Big hit on the next drop", "Slower movement", "Warm light on the VIP"];
+const u = new URL(location.href);
+let code = u.searchParams.get("r") || "";
+try { if (code) sessionStorage.setItem("haze.req", code); else code = sessionStorage.getItem("haze.req") || ""; } catch (e) { /* fine */ }
+if (u.searchParams.get("r")) { u.searchParams.delete("r"); history.replaceState(null, "", u.pathname + u.search); }
+let client = "";
+try { client = localStorage.getItem("haze.reqClient") || ""; if (!client) { client = Math.random().toString(36).slice(2, 12); localStorage.setItem("haze.reqClient", client); } } catch (e) { client = "phone"; }
+const $ = (id) => document.getElementById(id);
+try { $("who").value = localStorage.getItem("haze.reqWho") || ""; } catch (e) { /* fine */ }
+const WORD = { waiting: "waiting…", done: "done ✓", declined: "not now" };
+function draw(list) {
+  $("mine").replaceChildren(...(list || []).map((r) => {
+    const el = document.createElement("div");
+    el.className = "req";
+    const t = document.createElement("span"); t.textContent = r.text + (r.note ? ` - ${r.note}` : "");
+    const s = document.createElement("span"); s.className = "state " + r.state; s.textContent = WORD[r.state] || r.state;
+    el.append(t, s);
+    return el;
+  }));
+}
+async function call(text) {
+  $("err").textContent = "";
+  try {
+    const r = await fetch("/api/request", { method: "POST", headers: { "Content-Type": "application/json", "X-Haze-Request": code },
+      body: JSON.stringify({ text, who: $("who").value.trim(), client }) });
+    const d = await r.json();
+    if (!d.ok) { $("err").textContent = d.error || "it didn't go through"; return; }
+    draw(d.mine);
+    if (text) $("text").value = "";
+  } catch (e) { $("err").textContent = "the desk can't be reached - same Wi-Fi as the desk?"; }
+}
+$("asks").replaceChildren(...ASKS.map((a) => { const b = document.createElement("button"); b.textContent = a; b.onclick = () => call(a); return b; }));
+$("send").onclick = () => { const t = $("text").value.trim(); if (t) call(t); };
+$("who").onchange = () => { try { localStorage.setItem("haze.reqWho", $("who").value.trim()); } catch (e) { /* fine */ } };
+if (!code) $("err").textContent = "This page needs the link from the operator (with its code).";
+call("");
+setInterval(() => call(""), 4000);
+</script>
+</body>
+</html>

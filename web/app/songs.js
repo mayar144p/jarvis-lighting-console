@@ -90,7 +90,7 @@ async function decodeMusic(tl) {
   const a = tl.audio;
   if (!a || !a.id) return null;
   const t = token();
-  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(a.id), { headers: t ? { "X-Jarvis-Token": t } : {} });
+  const r = await fetch("/api/console/audio?id=" + encodeURIComponent(a.id), { headers: t ? { "X-Haze-Token": t } : {} });
   if (!r.ok) return null;
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   try {
@@ -156,7 +156,8 @@ export function openSongShows() {
         .catch((e) => ({ error: e.message }));
       const dr = des.result || des;
       if (des.error || !dr.design) { say(`  no design: ${des.error || dr.error || "?"}`, ".out-bad"); continue; }
-      const built = await post("/api/console/autoshow", { apply: true, design: dr.design }).catch((e) => ({ error: e.message }));
+      // (one song's show: its cues and timeline - no button profile per song)
+      const built = await post("/api/console/autoshow", { apply: true, design: dr.design, buttons: false }).catch((e) => ({ error: e.message }));
       const br = built.result || built;
       if (built.error || br.ok === false) { say(`  couldn't build it: ${built.error || br.error}`, ".out-bad"); continue; }
       const kept = await run("song_save", { id }, { silentError: true });
@@ -186,7 +187,7 @@ async function changeSong(x, act) {
     toast(d.error || r.error || "no change came back", "bad", 7000);
     return;
   }
-  const b = await post("/api/console/autoshow", { apply: true, design: r.design, playback: r.design.playback || 1 }).catch((e) => ({ error: e.message }));
+  const b = await post("/api/console/autoshow", { apply: true, design: r.design, playback: r.design.playback || 1, buttons: false }).catch((e) => ({ error: e.message }));
   const br = b.result || b;
   if (b.error || br.ok === false || !br.built) { toast(b.error || br.error || "couldn't build it", "bad"); return; }
   await act("song_save", { id: x.id }, { silentError: true });

@@ -66,7 +66,8 @@ def run(cmd: list[str], timeout: float, cwd=None) -> Result:
             out, err = b"", b""            # something still holds the output: give up on it
             for f in (proc.stdout, proc.stderr):
                 try:
-                    f.close()
+                    if f is not None:
+                        f.close()
                 except OSError:
                     pass
         return Result(-1, (out or b"").decode(errors="replace"), (err or b"").decode(errors="replace"), True)

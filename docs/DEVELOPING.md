@@ -1,4 +1,4 @@
-# Jarvis — for developers
+# Haze — for developers
 
 Tests, the project layout and the visual checks. Getting it running is in the [README](../README.md).
 

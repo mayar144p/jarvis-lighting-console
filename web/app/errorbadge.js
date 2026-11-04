@@ -39,6 +39,34 @@ function showNotice(n) {
   });
 }
 
+// what a problem means, in words, and the one thing that puts it right
+const FIXES = [
+  [/needs the AI|no AI|AI is not set up|no key/i, "The AI isn't set up, so this can't be done yet.",
+    "Set up the AI", () => import("./settings.js").then((m) => m.openSettingsAt("ai"))],
+  [/no answer in \d+ s/i, "The desk took too long to answer. It may have been busy with something long - try again.", "", null],
+  [/patch some lights|nothing to design/i, "There are no lights patched yet - add them in Set up first.", "", null],
+];
+
+function explain(x) {
+  const text = String(x.text || "");
+  const m = text.match(/^(page: |\/api\/[\w/]+: |[a-z_]+: )?([\s\S]*)$/);
+  const what = m ? m[2] : text;
+  const where = m && m[1] ? m[1].replace(/: $/, "") : "";
+  const fix = FIXES.find(([re]) => re.test(text));
+  const close = modal({
+    title: "What happened",
+    body: h("div", { style: { maxWidth: "60ch", display: "grid", gap: "10px", lineHeight: 1.5 } },
+      fix ? h("p", { style: { margin: 0, fontWeight: 700 } }, fix[1]) : null,
+      h("p", { style: { margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, what),
+      h("p.muted.small", { style: { margin: 0 } }, `${new Date(x.t).toLocaleTimeString()}${where ? " · " + where : ""}`)),
+    foot: [
+      fix && fix[2] ? h("button.btn.primary", { onclick: () => { close(); fix[3](); } }, fix[2]) : null,
+      h("button.btn", { onclick: () => { close(); openBugReport(); } }, "Report it…"),
+      h("button.btn", { onclick: () => close() }, "Close"),
+    ].filter(Boolean),
+  });
+}
+
 export function initErrorBadge() {
   on("snapshot", (snap) => showNotice(snap && snap.notice));
   window.addEventListener("error", (e) => note(e.message, e.filename));
@@ -51,7 +79,7 @@ export function initErrorBadge() {
     menu(b, [
       ...list.map((x) => ({
         label: x.text.length > 70 ? x.text.slice(0, 70) + "…" : x.text,
-        hint: new Date(x.t).toLocaleTimeString(), disabled: true, run: () => {},
+        hint: new Date(x.t).toLocaleTimeString(), run: () => explain(x),
       })),
       "-",
       { label: "Report it…", hint: "these are attached", run: () => openBugReport() },

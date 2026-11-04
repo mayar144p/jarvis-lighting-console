@@ -580,6 +580,45 @@ class AttrMixin:
                 best, best_d = s, d
         return best
 
+    _MACRO_IDLE = re.compile(r"^\s*(no\s*function|none|off|open|clear|white\s*\(?open|rgbw?\s*(mix|control)|manual)\b", re.I)
+
+    _MACRO_SLOT = re.compile(r"^\s*(colou?r\s*\d+|macro\s*\d+|.*\b(rainbow|fade|snap|sound|auto)\b)", re.I)
+
+    def _macro_idle(self, head: dict) -> int | None:
+        """A light that mixes red / green / blue AND has a colour-macro
+        channel (the Intimidator Wave 360's "Colors": Color 1-15, rainbow
+        fades): the macro channel's value that leaves the mix alone ("No
+        function").  Any other value OVERRIDES the mix on the real light -
+        so a colour picked on the desk must put the macro channel there,
+        or a macro left on by a cue or an effect shows instead.  None: no
+        such channel."""
+        roles = set(head.get("map") or [])
+        if "wheel" not in roles or not roles & {"red", "green", "blue"}:
+            return None
+        slots = self._wheel_slots(head, "wheel")
+        # only a real colour-MACRO channel ("Color 1".."Color 15", rainbow /
+        # snap / sound fades) beside a "No function": the Wave 360's kind.
+        # Other RGB lights' colour channels are left as they were (taking
+        # them to 0 turned some of them grey - a "Blackout" or a colour slot)
+        if not any(self._MACRO_SLOT.match(str(s.get("name") or "")) for s in slots):
+            return None
+        idle = next((s for s in slots if self._MACRO_IDLE.match(str(s.get("name") or ""))), None)
+        if idle is not None:
+            return int(idle.get("from", idle.get("value", 0)))
+        # "No function" isn't listed as a slot: the first value no slot covers
+        lo = min((int(s.get("from", s.get("value", 0))) for s in slots), default=0)
+        return 0 if lo > 0 else None
+
+    def _macro_active(self, head: dict, value) -> bool:
+        """Is this macro-channel value one that overrides the RGB mix?"""
+        idle = self._macro_idle(head)
+        if idle is None or value is None:
+            return False
+        v = int(value)
+        slots = self._wheel_slots(head, "wheel")
+        slot = next((s for s in slots if s.get("from", s.get("value", 0)) <= v <= s.get("to", 255)), None)
+        return slot is not None and bool(self._MACRO_SLOT.match(str(slot.get("name") or "")))
+
     def _colour_values(self, head: dict, hexcol: str) -> dict:
         r, g, b = _parse_hex(hexcol)
         roles = set(head["map"])
@@ -588,6 +627,9 @@ class AttrMixin:
             for role, v in (("red", r), ("green", g), ("blue", b)):
                 if role in roles:
                     out[role] = v
+            idle = self._macro_idle(head)
+            if idle is not None:
+                out["wheel"] = idle          # (a colour macro would override the mix)
             # A picked colour is the WHOLE colour: an RGBWA(UV) PAR's white
             # and amber LEDs left where Full / a white look put them turned
             # every saturated pick pastel ("pink with whiteness").  The white
@@ -908,7 +950,7 @@ class AttrMixin:
 
     def _a_set_place(self, head=None, heads=None, x=None, y=None, z=None,
                      kind=None, rig=None, t=None, stance=None, snap=False,
-                     rot=None, **_):
+                     rot=None, hang=None, **_):
         """Put a head somewhere: free-standing at x/y/z, or on a rig.
 
         `rig` + `t` mounts it (t = 0..1 along the rig; when t is missing
@@ -916,7 +958,12 @@ class AttrMixin:
         `snap` mounts to the nearest rig within reach of the new position.
         `stance` is "hang" (under the bar) or "stand" (upright).  `rot` is
         [yaw, pitch] in degrees for a light with no pan/tilt, or null to
-        let the visualiser aim it.  Positions are clamped to the room (plus
+        let the visualiser aim it.  `hang` is how it is mounted, as on a pro
+        desk: hung, standing, bottom_front / top_front (on its back, its head
+        towards the audience), bottom_rear / top_rear (towards the back),
+        boom_left / boom_right (on its side, its head to that side as the
+        audience sees it) - the aim and the 3D both turn it so.
+        Positions are clamped to the room (plus
         a margin), because a drag far from the camera turns a small mouse
         move into a large jump and a light must never be lost off-screen.
         """
@@ -932,12 +979,23 @@ class AttrMixin:
         max_y = b["h"] + 4.0
         if stance not in (None, "hang", "stand"):
             raise ValueError("stance is hang or stand")
+        if hang is not None:
+            hang = str(hang).strip().lower().replace(" ", "_").replace("-", "_")
+            hang = {"normal": "hung", "hang": "hung", "stand": "standing"}.get(hang, hang)
+            if hang not in venue_mod.HANGS:
+                raise ValueError("hang is one of " + ", ".join(venue_mod.HANGS))
+            if hang in ("hung", "standing"):
+                stance = "hang" if hang == "hung" else "stand"
         clamped = False
         moved = []
         for n in targets:
             h = self._head(n)                   # raises if unpatched
             before = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
-                      h.get("stance"), json.dumps(h.get("rot")))
+                      h.get("stance"), json.dumps(h.get("rot")), h.get("hang"))
+            if hang is not None and hang not in ("hung", "standing"):
+                h["hang"] = hang                 # on its back, on a boom...
+            elif hang is not None or stance is not None:
+                h.pop("hang", None)              # simply hung or standing
             px = float(x) if x is not None else h["x"]
             py = float(y) if y is not None else h["y"]
             pz = float(z) if z is not None else h["z"]
@@ -1002,7 +1060,7 @@ class AttrMixin:
                 h["kind"] = ("truss" if side == "hang" else "floor") if side \
                     else ("truss" if h["y"] >= 2.0 else "floor")
             after = (h["x"], h["y"], h["z"], json.dumps(h.get("mount")),
-                     h.get("stance"), json.dumps(h.get("rot")))
+                     h.get("stance"), json.dumps(h.get("rot")), h.get("hang"))
             if after != before:
                 moved.append(h["head_no"])
         first = self._head(moved[0] if moved else targets[0])
@@ -1017,7 +1075,7 @@ class AttrMixin:
                 "moved_heads": moved, "clamped": clamped,
                 "x": first["x"], "y": first["y"], "z": first["z"],
                 "kind": first["kind"], "mount": first.get("mount"),
-                "stance": first.get("stance"),
+                "stance": first.get("stance"), "hang": venue_mod.hang_of(first),
                 "bounds": {"half_width_m": half_w, "min_depth_m": min_z,
                            "max_depth_m": max_z, "max_height_m": max_y},
                 "summary": f"moved {len(moved)} head(s) to "

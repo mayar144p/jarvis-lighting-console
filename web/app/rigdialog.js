@@ -1,5 +1,6 @@
 // Arrange -> Rigging…: the rigging library (a straight run, a corner, a
-// frame, a circle, a goal post, a pole or a stand, made of a real piece at
+// frame, a circle, an arc, a spiral, an S curve, a goal post, a pole or a
+// stand, made of a real piece at
 // its real size, hung at a trim height) and the rigging report (each piece,
 // the lights on it, the pick-up points and the load on each, a parts list).
 import { act } from "./api.js";
@@ -12,30 +13,42 @@ const SHAPES = [
   ["corner", "Corner", "┐", ["width", "depth"]],
   ["frame", "Frame", "▭", ["width", "depth"]],
   ["circle", "Circle", "◯", ["diameter"]],
+  ["arc", "Arc", "◠", ["radius", "start", "end"]],
+  ["spiral", "Spiral", "@", ["radius", "radius_end", "turns", "rise"]],
+  ["scurve", "S curve", "∿", ["radius", "sweep"]],
   ["goalpost", "Goal post", "╥", ["width", "height"]],
   ["pole", "Pole", "│", ["height"]],
   ["stand", "Stand", "┴", ["height"]],
 ];
-const LABEL = { length: "Length m", width: "Width m", depth: "Depth m", diameter: "Diameter m", height: "Height m" };
-const DEF = { length: 4, width: 6, depth: 4, diameter: 4, height: 3 };
+const LABEL = { length: "Length m", width: "Width m", depth: "Depth m", diameter: "Diameter m", height: "Height m",
+  radius: "Radius m", start: "From angle °", end: "To angle °", radius_end: "Radius at the top m", turns: "Turns",
+  rise: "Rise a turn m", sweep: "Each bend °" };
+const DEF = { length: 4, width: 6, depth: 4, diameter: 4, height: 3, radius: 4, start: 200, end: 340,
+  radius_end: 1.5, turns: 2.5, rise: 1.2, sweep: 90 };
+const STEP = { start: 15, end: 15, sweep: 15, turns: 0.25, rise: 0.1 };
+const HINT = {
+  arc: "Angles round its middle: 0° is to the right, 90° towards the audience, 180° to the left, 270° upstage.",
+  spiral: "It winds up from the trim height: Turns times round, rising Rise a turn each time (and narrowing to Radius at the top).",
+  scurve: "Two bends, one each way, the middle of the S at X / Z.",
+};
 
 function room() {
   const r = ((state.snap && state.snap.venue) || {}).room || {};
   return { h: +r.height || 6, cx: +r.cx || 0, back: r.back ?? -1, depth: +r.depth || 10 };
 }
 
-export async function openRigDialog(tab = "add") {
+export async function openRigDialog(tab = "add", shape = "straight") {
   const lib = await act("rig_pieces", {});
   if (!lib.ok) { toast(lib.error || "No rigging library", "bad"); return; }
   const R = room();
-  const pick = { shape: "straight", piece: "box30", ...DEF, trim: +(R.h - 0.8).toFixed(1), x: R.cx, z: +(R.back + R.depth * 0.35).toFixed(1), rot: 0 };
+  const pick = { shape: SHAPES.some((x) => x[0] === shape) ? shape : "straight", piece: "box30", ...DEF, trim: +(R.h - 0.8).toFixed(1), x: R.cx, z: +(R.back + R.depth * 0.35).toFixed(1), rot: 0 };
   const body = h("div.rigdlg");
   let close = null;
   const tabs = h("div.seg", ...[["add", "Add rigging"], ["report", "Rigging report"]].map(([k, l]) =>
     h("button" + (k === tab ? ".on" : ""), { onclick: () => { tab = k; draw(); } }, l)));
 
   const numIn = (key, attrs = {}) => {
-    const el = h("input", { type: "number", step: 0.5, value: pick[key], ...attrs });
+    const el = h("input", { type: "number", step: STEP[key] || 0.5, value: pick[key], ...attrs });
     el.addEventListener("change", () => { pick[key] = +el.value; });
     return h("label.field", h("span", LABEL[key] || key), el);
   };
@@ -55,9 +68,10 @@ export async function openRigDialog(tab = "add") {
         onclick: () => { pick.shape = k; draw(); },
       }, h("b", icon), h("span", l)))),
       h("label.field", h("span", "Piece"), sel),
-      h("div.form-grid", ...shape[3].map((k) => numIn(k, { min: 0.5 })),
+      h("div.form-grid", ...shape[3].map((k) => numIn(k, ["start", "end"].includes(k) ? {} : { min: k === "rise" ? 0 : k === "turns" ? 0.25 : 0.5 })),
         hung ? numIn("trim", { min: 0.3, max: R.h - 0.1, step: 0.1 }) : null),
       h("div.form-grid", numIn("x"), numIn("z"), numIn("rot", { step: 15 })),
+      HINT[pick.shape] ? h("p.muted.small", HINT[pick.shape]) : null,
       h("p.muted.small", hung
         ? `Trim: the height of its underside (the room is ${R.h} m). X / Z: where its middle goes. Ends near another piece's end join when you drag it.`
         : "It stands on the floor at X / Z."),
@@ -65,6 +79,7 @@ export async function openRigDialog(tab = "add") {
         onclick: async () => {
           const p = { preset: pick.shape, piece: pick.piece, x: pick.x, z: pick.z, rot: pick.rot };
           for (const k of shape[3]) p[k] = pick[k];
+          if (pick.shape === "scurve") { p.start = 0; p.end = pick.sweep; delete p.sweep; }
           if (hung) p.trim = pick.trim;
           const r = await run("rig_add", p, { toast: true });
           if (r.ok) close();
@@ -81,7 +96,7 @@ export async function openRigDialog(tab = "add") {
       h("td", h("b", x.name), x.pieces > 1 ? h("small.muted", ` ${x.pieces} pieces`) : null,
         x.warnings.length ? h("div.small.warn-text", "⚠ " + x.warnings.join(" · ")) : null),
       h("td.mono", x.length.toFixed(1)), h("td.mono", x.trim == null ? "–" : x.trim.toFixed(2)),
-      h("td.mono", x.self_kg), h("td.mono", { title: x.lights.map((l) => `#${l.head} ${l.kg} kg${l.guessed ? " (typical)" : ""}`).join("\n") }, `${x.lights.length} · ${x.light_kg}`),
+      h("td.mono", x.self_kg), h("td.mono", { title: x.lights.map((l) => `#${l.head} ${l.kg} kg${l.guessed ? " (typical)" : ""}${l.hang ? " · " + l.hang : ""}`).join("\n") }, `${x.lights.length} · ${x.light_kg}`),
       h("td.mono", h("b", x.total_kg)),
       h("td.mono", x.ground ? "ground" : `${x.points} × ${x.per_point_kg}`)));
     const dl = h("button.btn.small", {

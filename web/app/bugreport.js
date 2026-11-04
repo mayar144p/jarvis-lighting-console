@@ -73,7 +73,7 @@ export function openBugReport(head = null) {
     saveBtn.disabled = sendBtn.disabled = true;
     sending.textContent = viaRelay ? "Sending the report…" : "Saving the report…";
     let picture = "";
-    try { picture = window.jarvisStage ? window.jarvisStage.photo(1600) : ""; } catch { /* no 3D in this window */ }
+    try { picture = window.hazeStage ? window.hazeStage.photo(1600) : ""; } catch { /* no 3D in this window */ }
     const d = await ask(payload({ picture, send: viaRelay }));
     busy = false;
     saveBtn.disabled = sendBtn.disabled = false;
@@ -91,14 +91,14 @@ export function openBugReport(head = null) {
     }
     // the zip, saved where downloads go (fetched with the desk's key, then handed over)
     const t = token();
-    const r = await fetch("/api/console/bug_report?name=" + encodeURIComponent(d.zip), { headers: t ? { "X-Jarvis-Token": t } : {} });
+    const r = await fetch("/api/console/bug_report?name=" + encodeURIComponent(d.zip), { headers: t ? { "X-Haze-Token": t } : {} });
     if (r.ok) {
       const a = h("a", { href: URL.createObjectURL(await r.blob()), download: d.zip });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
     window.open(d.url, "_blank", "noopener");
-    toast(window.jarvisDesk
+    toast(window.hazeDesk
       ? `GitHub opened in your browser. ${d.zip} is in your Downloads folder (it just opened): drag it into the GitHub page, then Submit.`
       : `Report saved as ${d.zip} in your downloads. Drag it into the GitHub page that opened, then Submit.`, "ok", 12000);
     close();

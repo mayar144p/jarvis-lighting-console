@@ -40,32 +40,21 @@ function renderBar() {
 }
 
 // how long ARM lasts: remembered for the next time
-let armFor = (() => { try { return localStorage.getItem("jarvis.armfor") || "10"; } catch { return "10"; } })();
 
 export function toggleArm() {
   const st = sfxState();
   if (st.armed) { run("fx_arm", { state: false }, { toast: true }); return; }
-  const choices = [["10", "10 minutes"], ["60", "1 hour"], ["until", "Until I disarm"]];
-  const pick = h("div.chip-row", ...choices.map(([v, label]) => h("button.chip" + (armFor === v ? ".on" : ""), {
-    type: "button",
-    onclick: (e) => {
-      armFor = v;
-      pick.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === e.currentTarget));
-    },
-  }, label)));
   const close = modal({
     title: "Arm lasers and special effects",
     body: h("div",
       h("p", { style: { marginTop: 0 } }, "Fire, CO2, confetti, sparks and laser output can now be triggered from their FX buttons. "
         + "Check that the area in front of every effect is clear, and never aim lasers into the audience "
         + "unless the show is licensed for it."),
-      h("p.muted.small", "Stay armed for:"), pick,
-      h("p.muted.small", "A laser you switch on stays on while effects are armed. Disarm or KILL FX stops everything at once.")),
+      h("p.muted.small", "They stay armed until you disarm. A laser you switch on stays on while effects are armed; Disarm or KILL FX stops everything at once.")),
     foot: [
       h("button.btn", { onclick: () => close() }, "Cancel"),
       h("button.btn.danger", { onclick: () => {
-        try { localStorage.setItem("jarvis.armfor", armFor); } catch { /* ignore */ }
-        run("fx_arm", { state: true, minutes: armFor }, { toast: true });
+        run("fx_arm", { state: true, minutes: "until" }, { toast: true });
         close();
       } }, "ARM"),
     ],
@@ -410,7 +399,24 @@ function confettiButton(heads) {
   return h("div.fx-fire-row", el);
 }
 
+// While a slider here is held, a live update must not rebuild the pane: the
+// slider under the finger would be replaced and the drag would stop (it then
+// only went one way until grabbed again).
+let held = false;
+let owed = null;
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest && e.target.closest("#laser-pane input, #sfx-pane input")) held = true;
+}, true);
+const letGo = () => {
+  if (!held) return;
+  held = false;
+  if (owed) { const [t, s] = owed; owed = null; renderFxPane(t, s); }
+};
+document.addEventListener("pointerup", letGo, true);
+document.addEventListener("pointercancel", letGo, true);
+
 export function renderFxPane(tab, attrState) {
+  if (held) { owed = [tab, attrState]; return; }
   if (tab === "laser") renderLaser(attrState);
   else if (tab === "sfx") renderSfx(attrState);
 }

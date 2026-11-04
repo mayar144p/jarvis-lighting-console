@@ -99,7 +99,7 @@ export function confirmBox(title, text, { ok = "OK", danger = false } = {}) {
   });
 }
 
-// A question with its own buttons (the desktop app's "Close Jarvis?" and
+// A question with its own buttons (the desktop app's "Close Haze?" and
 // "Other computers…" boxes come here instead of the system's grey box).
 // Resolves with the index of the pressed button; closing it is `cancel`.
 export function choiceBox(title, { message = "", detail = "", buttons = ["OK"], primary = 0, cancel = 0, danger = -1 } = {}) {
@@ -148,10 +148,17 @@ export function menu(anchor, items) {
   for (const it of items) {
     if (it === "-") { box.append(h("hr")); continue; }
     if (!it) continue;
-    box.append(h("button" + (it.danger ? ".danger" : ""), {
+    // a short hint (a key, a count) sits at the right; a description goes
+    // under the item, where the eye already is
+    const long = it.hint && String(it.hint).length > 14;
+    box.append(h("button" + (it.danger ? ".danger" : "") + (long ? ".has-desc" : ""), {
       role: "menuitem", disabled: it.disabled,
-      onclick: () => { close(); it.run(); },
-    }, it.label, it.hint ? h("small", it.hint) : null));
+      onclick: () => {
+        if (it.keep) { it.run(); if (typeof it.keep === "function") it.keep(); return; }   // a toggle: the menu stays
+        close(); it.run();
+      },
+    }, long ? h("span.mi", h("span.mi-label", it.label), h("small.mi-desc", it.hint)) : it.label,
+    !long && it.hint ? h("small", it.hint) : null));
   }
   document.body.append(box);
   const r = anchor.getBoundingClientRect();
@@ -183,41 +190,47 @@ export function menu(anchor, items) {
 export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
   el.replaceChildren(h("div.fill"), h("div.cap"));
   const fill = el.firstChild, cap = el.lastChild;
-  let value = min, dragging = false;
+  let value = min, dragging = null;                // the finger (pointer) moving it
+  // the cap travels inside the track: its middle from half a cap above
+  // the foot to half a cap below the top - never out of the box
   const draw = (v) => {
     const t = (v - min) / (max - min);
     const pct = Math.max(0, Math.min(1, t));
-    fill.style.height = `calc(${pct * 100}% - ${pct * 6}px)`;
-    cap.style.bottom = `calc(${pct * 100}% - ${pct * 6}px + 3px)`;
+    cap.style.bottom = `calc((100% - var(--cap-h)) * ${pct})`;
+    fill.style.height = `max(0px, calc((100% - var(--cap-h)) * ${pct} + var(--cap-h) / 2 - 4px))`;
   };
   const fromY = (y) => {
     const r = el.getBoundingClientRect();
-    const t = 1 - (y - r.top - 3) / Math.max(1, r.height - 6);
+    const c = cap.offsetHeight || 18;
+    const t = 1 - (y - r.top - c / 2) / Math.max(1, r.height - c);
     return Math.round(min + Math.max(0, Math.min(1, t)) * (max - min));
   };
   el.addEventListener("pointerdown", (e) => {
-    dragging = true;
+    if (dragging !== null) return;                 // one finger per fader: a second one can't jump it
+    dragging = e.pointerId;
     el.setPointerCapture(e.pointerId);
     value = fromY(e.clientY);
     draw(value);
     if (onInput) onInput(value);
   });
   el.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
+    if (dragging !== e.pointerId) return;
     const v = fromY(e.clientY);
     if (v === value) return;
     value = v;
     draw(value);
     if (onInput) onInput(value);
   });
-  const end = () => {
-    if (!dragging) return;
-    dragging = false;
+  const end = (e) => {
+    if (dragging === null || dragging !== e.pointerId) return;
+    dragging = null;
     if (onChange) onChange(value);
   };
   el.addEventListener("pointerup", end);
   el.addEventListener("pointercancel", end);
+  el.addEventListener("lostpointercapture", end);
   el.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: the strip of faders scrolls
     e.preventDefault();
     value = Math.max(min, Math.min(max, value + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 10 : 2)));
     draw(value);
@@ -248,12 +261,12 @@ export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
     set(v, { mixed = false, idle = false } = {}) {
       el.classList.toggle("mixed", mixed);
       el.classList.toggle("idle", idle);
-      if (dragging) return;
+      if (dragging !== null) return;
       value = v;
       el.setAttribute("aria-valuenow", v);
       draw(v);
     },
-    get dragging() { return dragging; },
+    get dragging() { return dragging !== null; },
   };
 }
 
@@ -287,3 +300,12 @@ export function typingInField(e) {
 }
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Touch: Windows turns a finger held still into a right-click.  On a
+// lighting button held for a flash or a strobe that must not open a menu
+// mid-show; byTouch(e) tells a finger from the mouse.
+let lastTouch = -1e9;
+if (typeof addEventListener === "function") {
+  addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") lastTouch = performance.now(); }, true);
+}
+export const byTouch = (e) => (e && e.pointerType === "touch") || performance.now() - lastTouch < 1500;

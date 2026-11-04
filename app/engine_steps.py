@@ -173,6 +173,8 @@ class StepsMixin:
 
     def _a_step_fx_save(self, fx=None, id=None, **_):
         """Save a step effect (a new one without id)."""
+        if fx is not None and not isinstance(fx, dict):
+            raise ValueError("fx is the step effect: {name, steps: [...]}")
         lst = self._steps()
         ident = str(id or (fx or {}).get("id") or "")
         if not ident:

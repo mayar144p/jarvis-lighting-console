@@ -5,11 +5,13 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import time
 
 from app import fixture_kind, fixtures, merge
+from app import venue as venue_mod
 from app.merge import FX_OUTPUT_ROLES
 from app.engine_base import _LEVELS_CACHE, _OFFISH, _clamp, _truthy, attr_domain
 from app.engine_support import HTP_ROLES, LASER_ROLES
@@ -191,11 +193,10 @@ class FxLayerMixin:
 
     def _a_fx_arm(self, state=True, minutes=None, **_):
         """ARM (or disarm) special effects and lasers.  Fire and laser
-        output only work while armed; it switches itself off after
-        `minutes` (10 by default), or never with minutes="until" - then
-        only a disarm or KILL FX ends it (a laser stays on for the set)."""
+        output only work while armed: until a disarm or KILL FX (a laser
+        stays on for the set), or for `minutes` when that's given."""
         if _truthy(state):
-            if str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
+            if minutes in (None, "") or str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
                 # armed for the whole set: only a disarm or KILL FX ends it
                 self.fx_armed_until = math.inf
                 return {"armed": True, "summary": "effects ARMED until you disarm"}
@@ -481,12 +482,79 @@ class FxLayerMixin:
                 by = {h["head_no"]: h for h in self.patch}
             head = by.get(n)
             own = self._own_strobe(head) if head is not None else None
+            cap = float(self.__dict__.get("strobe_cap") or 0)
+            if cap:
+                hz = min(float(hz), cap)
             if own is None:
                 o["strobe"] = min(float(hz), self.DESK_STROBE_MAX_HZ)
                 continue
             o.setdefault("set", {})[own["role"]] = self._strobe_dmx(own, float(hz))
             o["strobe_shown"] = min(float(hz), own["hz_hi"])     # for the 3D view
             o.pop("strobe", None)
+
+    # -- the strobe safety limit ---------------------------------------------
+    # Flashing faster than about three times a second can bring on a seizure
+    # in people with photosensitive epilepsy; UK broadcast rules and venue
+    # guidance use 3 a second.  With the limit on, nothing the desk sends
+    # strobes faster: buttons and the desk strobe are slowed, and a light's
+    # own strobe channel set faster (in a cue, by hand) is turned down to it.
+    SAFE_STROBE_HZ = 3.0
+
+    def _strobe_cap_file(self):
+        from app import config as _config
+        return _config.DATA / "safety.json"
+
+    def _strobe_cap_load(self) -> float:
+        try:
+            return float(json.loads(self._strobe_cap_file().read_text(encoding="utf-8")).get("strobe_hz") or 0)
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 0.0
+
+    def _a_strobe_limit(self, hz=None, safe=None, **_):
+        """The strobe safety limit: safe=true (3 a second - photosensitive
+        safe), hz=N (2-20), or off (hz=0).  Kept for this desk, not the show."""
+        if safe is not None:
+            cap = self.SAFE_STROBE_HZ if _truthy(safe) else 0.0
+        elif hz is not None:
+            cap = float(hz)
+            if cap and not 2.0 <= cap <= 20.0:
+                raise ValueError("the strobe limit is 2 to 20 flashes a second (or 0: off)")
+        else:
+            raise ValueError("say safe=true, hz=N or hz=0")
+        self.strobe_cap = cap
+        try:
+            p = self._strobe_cap_file()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"strobe_hz": cap}), encoding="utf-8")
+        except OSError:
+            pass
+        return {"strobe_cap": cap, "summary": f"strobes at most {cap:g} a second" if cap else "strobe limit off"}
+
+    def _write_strobe_cap(self, frames: dict) -> None:
+        """A light's own strobe channel faster than the limit: turned down."""
+        cap = float(self.strobe_cap or 0)
+        for h in self.patch:
+            role = self._shutter_role(h)
+            buf = frames.get(h["universe"])
+            if role is None or buf is None or role not in h["map"]:
+                continue
+            pos = h["address"] - 1 + h["map"].index(role)
+            if not 0 <= pos < len(buf):
+                continue
+            v = buf[pos]
+            if self._strobe_hz(h, {role: v}, None) <= cap:
+                continue
+            band = next((b for b in self._strobe_bands(h, role) if b["lo"] <= v <= b["hi"]), None)
+            if band is not None:
+                buf[pos] = self._strobe_dmx(band, max(band["hz_lo"], min(cap, band["hz_hi"])))
+                if self._strobe_hz(h, {role: buf[pos]}, None) > cap + 0.5:
+                    buf[pos] = self._open_value(h, role)       # its slowest is still too fast: steady
+            else:
+                # no ranges in its file: the same guess _strobe_hz makes (1-20 a second)
+                opened = self._open_value(h, role)
+                buf[pos] = max(opened + 9, int(opened + (cap - 1) / 19 * (255 - opened)))
+                if self._strobe_hz(h, {role: buf[pos]}, None) > cap + 0.5:
+                    buf[pos] = opened
 
     def strobe_steps(self, head: dict, role: str) -> dict:
         """{off, slow, medium, fast}: DMX values for the programmer's strobe
@@ -535,7 +603,7 @@ class FxLayerMixin:
         return {"motion": vals, "summary": f"{h.get('model')}: full " + ", ".join(parts)}
 
     def _open_known(self, head: dict, role: str) -> bool:
-        """Does Jarvis KNOW which value opens this shutter (file, profile
+        """Does Haze KNOW which value opens this shutter (file, profile
         or the operator), rather than assuming 0?"""
         rng = self.head_ranges(head).get(role) or {}
         return (rng.get("open_from") is not None
@@ -913,6 +981,7 @@ class FxLayerMixin:
         return {"buttons": [dict(b) for b in self.quick],
                 "active": sorted(self.quick_active),
                 "names": dict(getattr(self, "quick_names", {}) or {}),
+                "profile": self._profiles()["active"], "profiles": list(self._profiles()["order"]),
                 "pages": self.QUICK_PAGES, "slots": self.QUICK_SLOTS,
                 "layout": self._quick_layouts(), "layout_default": dict(self.LAYOUT_DEFAULT),
                 "quant": float(self.__dict__.get("quick_quant", 0.0)),
@@ -935,8 +1004,9 @@ class FxLayerMixin:
         import math
         if "pan" not in h["map"] or "tilt" not in h["map"]:
             return None
-        hung = (h.get("stance") == "hang") if h.get("stance") else \
-            h.get("kind") == "truss"
+        # how it is mounted (hung, standing, on its back, on a boom...): the
+        # 3D turns its model by the same table (venue.HANG_BASE)
+        hang = venue_mod.hang_of(h)
         # the tilt axis, where the 3D model has it (measured off each model):
         # a spot's is higher than a wash's; a scanner's mirror sits low and
         # in front of its lamp housing
@@ -948,21 +1018,17 @@ class FxLayerMixin:
         # holder - so the DMX points the real light where the 3D shows
         yaw = math.radians(self._head_yaw(h))
         cy_, sy_ = math.cos(yaw), math.sin(yaw)
-        ox, oy, oz = h["x"] + ahead * sy_, h["y"] + (-pivot if hung else pivot), h["z"] + ahead * cy_
+        # the tilt axis (and a scanner's mirror), turned as it is mounted, then as its truss
+        bx, by, bz = venue_mod.hang_turn(hang, (0.0, pivot, ahead))
+        ox, oy, oz = h["x"] + bx * cy_ + bz * sy_, h["y"] + by, h["z"] - bx * sy_ + bz * cy_
         wx, dy, wz = tx - ox, ty - oy, tz - oz
         dx, dz = wx * cy_ - wz * sy_, wx * sy_ + wz * cy_
         n = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
         dx, dy, dz = dx / n, dy / n, dz / n
-        lx, ly, lz = (-dx, -dy, dz) if hung else (dx, dy, dz)
+        lx, ly, lz = venue_mod.hang_unturn(hang, (dx, dy, dz))
         t0 = math.degrees(math.acos(max(-1.0, min(1.0, ly))))
         p0 = math.degrees(math.atan2(lx, lz))
-        ranges = self.head_ranges(h)
-        pr = ranges.get("pan") or {}
-        tr = ranges.get("tilt") or {}
-        pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
-                      and pr.get("min") is not None else (-270.0, 270.0))
-        tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
-                      and tr.get("min") is not None else (-135.0, 135.0))
+        pmin, pmax, tmin, tmax = self._aim_span(h)
         if d["type"] == "scanner":
             # a mirror scanner throws its beam FORWARD (+z) at rest: pan
             # swings it sideways, tilt dips it (the 3D model's convention)
@@ -972,6 +1038,12 @@ class FxLayerMixin:
         else:
             cands = [(p0 + k * 360, t0) for k in (-1, 0, 1)]
             cands += [(p0 + 180 + k * 360, -t0) for k in (-2, -1, 0, 1)]
+        # lined up with the real light (Line up...): where ITS pan/tilt
+        # zero really is, so the DMX sent lands on the spot
+        off = h.get("align") or {}
+        op, ot = float(off.get("pan") or 0.0), float(off.get("tilt") or 0.0)
+        if op or ot:
+            cands = [(p - op, t - ot) for p, t in cands]
         fits = [(p, t) for p, t in cands
                 if pmin - 0.5 <= p <= pmax + 0.5 and tmin - 0.5 <= t <= tmax + 0.5]
         if not fits and closest:
@@ -988,18 +1060,87 @@ class FxLayerMixin:
             p, t = min(fits, key=lambda c: abs(c[0] - near[0]) + abs(c[1] - near[1]))
         else:
             p, t = min(fits, key=lambda c: abs(c[0]) + abs(c[1]) * 0.25)
+        # the programmer's (logical) values: the output flips an inverted or
+        # swapped light ONCE on the way out (merge.py).  Flipping here too
+        # cancelled it - the real light was sent the plain value and went
+        # the other way while the 3D showed it right
         fp = (p - pmin) / ((pmax - pmin) or 1)
         ft = (t - tmin) / ((tmax - tmin) or 1)
-        flags = h.get("orient") or {}
-        if flags.get("invert_pan"):
-            fp = 1 - fp
-        if flags.get("invert_tilt"):
-            ft = 1 - ft
-        if flags.get("swap"):
-            fp, ft = ft, fp
         if h_clamped:
             return fp, ft, p, t, "clamped"
         return fp, ft, p, t
+
+    def _aim_span(self, h: dict) -> tuple[float, float, float, float]:
+        """(pan lo, pan hi, tilt lo, tilt hi) in degrees: the light's own
+        travel, or the usual 540 / 270 when its file doesn't say."""
+        ranges = self.head_ranges(h)
+        pr = ranges.get("pan") or {}
+        tr = ranges.get("tilt") or {}
+        pmin, pmax = ((pr["min"], pr["max"]) if pr.get("unit") == "degree"
+                      and pr.get("min") is not None else (-270.0, 270.0))
+        tmin, tmax = ((tr["min"], tr["max"]) if tr.get("unit") == "degree"
+                      and tr.get("min") is not None else (-135.0, 135.0))
+        return float(pmin), float(pmax), float(tmin), float(tmax)
+
+    def _a_line_up(self, head=None, x=None, z=None, y=0.0, solve=False, clear=False, undo_mark=False, **_):
+        """Line a light up with the real one: point the REAL light at a mark
+        on the floor (the Position controls), say where the mark is (`x`
+        across, `z` from the back wall, metres) - repeat for 2-3 marks -
+        then `solve`: the desk learns where that light's pan and tilt zero
+        really are, and from then on every aim, spot, move and the 3D agree
+        with it.  `clear` forgets it; `undo_mark` drops the last mark."""
+        import math
+        rows = [self._head(int(head))] if head not in (None, "") else self._require_selection()[:1]
+        if not rows:
+            raise ValueError("select the light to line up")
+        h = rows[0]
+        if "pan" not in h["map"] or "tilt" not in h["map"]:
+            raise ValueError(f"{h.get('name') or h['head_no']} can't pan and tilt")
+        name = h.get("name") or f"light {h['head_no']}"
+        if _truthy(clear):
+            h.pop("align", None)
+            h.pop("align_marks", None)
+            return {"head": h["head_no"], "summary": f"{name}: line-up forgotten"}
+        marks = list(h.get("align_marks") or [])
+        if _truthy(undo_mark):
+            marks = marks[:-1]
+            h["align_marks"] = marks
+            return {"head": h["head_no"], "marks": len(marks), "summary": f"{name}: {len(marks)} mark(s)"}
+        if not _truthy(solve):
+            if x in (None, "") or z in (None, ""):
+                raise ValueError("say where the mark is: x (across) and z (from the back wall), in metres")
+            pmin, pmax, tmin, tmax = self._aim_span(h)
+            fp = self._move_now(h, "pan") / max(1, attr_domain(h, "pan"))
+            ft = self._move_now(h, "tilt") / max(1, attr_domain(h, "tilt"))
+            marks.append({"x": float(x), "y": float(y or 0.0), "z": float(z),
+                          "pan": round(pmin + fp * (pmax - pmin), 3), "tilt": round(tmin + ft * (tmax - tmin), 3)})
+            h["align_marks"] = marks[-6:]
+            n = len(h["align_marks"])
+            return {"head": h["head_no"], "marks": n,
+                    "summary": f"{name}: mark {n} kept" + (" - one more makes it surer" if n < 2 else "")}
+        if not marks:
+            raise ValueError("point the real light at a mark and keep it first")
+        bare = {k: v for k, v in h.items() if k not in ("align", "align_marks")}
+        dps, dts = [], []
+        for m in marks:
+            got = self._aim_solve(bare, m["x"], m["y"], m["z"], near=(m["pan"], m["tilt"]), closest=True)
+            if got is None:
+                continue
+            dps.append((got[2] - m["pan"] + 180.0) % 360.0 - 180.0)
+            dts.append(got[3] - m["tilt"])
+        if not dps:
+            raise ValueError("those marks can't be reached from where this light is placed - check its position")
+        op = round(sum(dps) / len(dps), 2) or 0.0          # (never "-0.0")
+        ot = round(sum(dts) / len(dts), 2) or 0.0
+        err = max(math.hypot(a - op, b - ot) for a, b in zip(dps, dts))
+        h["align"] = {"pan": round(op, 2), "tilt": round(ot, 2)}
+        h.pop("align_marks", None)
+        warn = ""
+        if len(dps) > 1 and err > 3.0:
+            warn = (f" - the marks disagree by up to {err:.1f} degrees: check where the light is placed "
+                    "(height, position) and which way up it hangs")
+        return {"head": h["head_no"], "align": dict(h["align"]), "spread": round(err, 2), "marks": len(dps),
+                "summary": f"{name} lined up: pan {op:+.1f} deg, tilt {ot:+.1f} deg from {len(dps)} mark(s)" + warn}
 
     def _aim_heads(self, h: dict, tx: float, ty: float, tz: float, near=None,
                    spread: float = 0.0, cells=None):

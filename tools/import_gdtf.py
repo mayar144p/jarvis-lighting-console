@@ -1,7 +1,7 @@
-"""Import GDTF fixture files into the Jarvis database.
+"""Import GDTF fixture files into the Haze database.
 
 Usage:
-    python tools/import_gdtf.py                 # imports jarvis/fixtures_inbox/
+    python tools/import_gdtf.py                 # imports haze/fixtures_inbox/
     python tools/import_gdtf.py path/to/files   # imports any folder
     python tools/import_gdtf.py file.gdtf       # imports a single file
 

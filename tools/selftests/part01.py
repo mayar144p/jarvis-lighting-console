@@ -650,7 +650,7 @@ def test_engine(tmp: Path) -> None:
 
     # --- live gate ---------------------------------------------------------
     check("engine is the console (single mode)",
-          e.mode == "jarvis" and not hasattr(e, "set_mode"), e.mode)
+          e.mode == "haze" and not hasattr(e, "set_mode"), e.mode)
     safe = artnet.ArtNetSender("127.0.0.1", 9, dry_run=True)
     e2 = eng.Engine(db_path=db, dry_run=False, sender=safe,
                     show_dir=tmp / "shows2")
@@ -1379,7 +1379,7 @@ def test_sacn(tmp: Path) -> None:
         flags = _struct.unpack_from(">H", pkt, off)[0]
         check(f"layer PDU length @{off} (flags 7 | {len(pkt) - off})",
               flags == 0x7000 | (len(pkt) - off), f"{flags:#06x}")
-    check("source name JARVIS", pkt[44:52].split(b"\0")[0] == b"JARVIS")
+    check("source name HAZE", pkt[44:52].split(b"\0")[0] == b"HAZE")
     check("priority default 100", pkt[108] == 100, str(pkt[108]))
     check("sequence 9", pkt[111] == 9, str(pkt[111]))
     check("options 0 (live stream)", pkt[112] == 0)
@@ -1435,7 +1435,7 @@ def test_sacn(tmp: Path) -> None:
           str({k: dec[k] for k in ("universe", "sequence", "priority")}))
     check("decode: payload round-trip", bytes(dec["data"]) == data)
     check("decode: source name + stable CID",
-          dec["source_name"] == "JARVIS" and len(dec["cid"]) == 32
+          dec["source_name"] == "HAZE" and len(dec["cid"]) == 32
           and sacn.default_cid() == sacn.default_cid(), dec["cid"])
     broken = {
         "too short": pkt[:100],

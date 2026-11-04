@@ -61,7 +61,7 @@ jobs:
   screen-check:
     # the real page in a real browser, the key screens clicked through
     # (tools/uicheck.mjs); the full 63 steps at three widths run nightly
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # (Playwright 1.56 can't install its browser on Ubuntu 26.04, ubuntu-latest since Nov 2026)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -78,6 +78,10 @@ jobs:
         run: >
           node tools/uicheck.mjs screencheck --widths 1440
           --only "^(02-select-all|03-level|04-colour|06-fx|10-move|17-buttons|19-timeline|21-show-menu|23-views-menu|33-settings|35-cmdbar|41-cue-dialog|47-light-test)$"
+      - name: Touch check (two fingers, a held finger, swipes and pinches)
+        run: node tools/touchcheck.mjs
+      - name: Show safety check (no stray GO, blackout or stop; Live keeps GO on screen)
+        run: node tools/safetycheck.mjs
       - name: Keep the screenshots when it fails
         if: failure()
         uses: actions/upload-artifact@v4
@@ -92,9 +96,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install ruff
+      - run: pip install ruff mypy
       - name: ruff (pyflakes rules)
         run: ruff check --select F app tools
+      - name: type check (the fully typed modules)
+        run: python tools/typecheck.py
       - name: No secrets committed
         run: |
           if git ls-files | grep -E '(^|/)\.env$'; then

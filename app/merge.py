@@ -297,6 +297,13 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
     # Order matters: limits first, then orientation.  A limit is a fact
     # about the value; orientation is a fact about the channel, and
     # clamping an inverted pan back to the limit would quietly undo it.
+    # The room's keep-out zones (and a light's stay-in zones): a beam that
+    # would land where it mustn't is re-aimed to just outside the edge
+    # (app/engine_zones.py builds this per head) - before the limits and
+    # the orientation, on the logical pan / tilt
+    confine = head.get("confine")
+    if confine is not None:
+        confine(resolved)
     limits = head.get("limits")
     if limits and reps:
         for key in [k for k in resolved if "@" in k]:

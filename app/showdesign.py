@@ -1,6 +1,6 @@
 """Show design studio: interview, alternative concepts, cue lists.
 
-Jarvis collects a short brief (structure, mood, colours, pace, event) and
+Haze collects a short brief (structure, mood, colours, pace, event) and
 this module deterministically turns it into 2-3 *different* show concepts -
 each with its own palette, cue list and fade times - plus the stage data
 the browser needs for the live preview (truss, fixtures, beams).
@@ -24,7 +24,7 @@ from . import fixture_kind
 # interview
 # ---------------------------------------------------------------------------
 
-# (key, question) - Jarvis asks the ones whose answer is still missing.
+# (key, question) - Haze asks the ones whose answer is still missing.
 QUESTIONS = [
     ("structure", "What structure will they hang/stand on - goalpost truss, "
                   "full box truss, proscenium theatre, ground-supported stands, "
