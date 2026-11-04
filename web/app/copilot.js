@@ -590,6 +590,29 @@ export function initCopilot() {
   });
   $("#ai-attach").addEventListener("click", () => $("#ai-photo").click());
   $("#ai-requests").addEventListener("click", () => import("./djreq.js").then((m) => m.openRequestsLink()));
+  // talk with it, live (online AI): it hears, answers out loud, and has the
+  // desk do what's asked; what was said goes in the conversation
+  let stopTalk = null;
+  const talkBtn = $("#ai-talk");
+  if (talkBtn) talkBtn.addEventListener("click", async () => {
+    if (stopTalk) { stopTalk(); stopTalk = null; talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; return; }
+    if (!assistantOn()) { toast("Talking needs the online AI (Settings -> AI)", "bad"); return; }
+    talkBtn.classList.add("on"); talkBtn.textContent = "■ Stop talking";
+    const status = say("bot", "Connecting…");
+    try {
+      const m = await import("./voicelive.js");
+      stopTalk = await m.startLive({
+        state: (t) => { if (t) status.firstChild.textContent = t; },
+        heard: (t) => say("user", t),
+        said: (t) => say("bot", t),
+        did: (t) => { if (t) say("bot", "✓ " + t); },
+        error: (t) => { say("bot", "The talk stopped: " + t); talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; stopTalk = null; },
+      });
+    } catch (e) {
+      status.firstChild.textContent = "Couldn't start talking: " + e.message + " - hold 🎙 to speak one request instead.";
+      talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; stopTalk = null;
+    }
+  });
   // hold to talk: the words go in as if typed, and are sent
   import("./voice.js").then((m) => m.wireMic($("#ai-mic"), (text) => {
     say("user", text);

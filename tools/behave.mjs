@@ -117,6 +117,46 @@ if (await strobe.count()) {
 await closeModals();
 check("a newer Haze shows by the name", /Haze 9\.9\.0 is out/.test(await p.locator(".update-pill").innerText().catch(() => "")), "");
 
+// -- talking with the copilot (Google's side stood in for) ----------------------
+console.log("Talking with the copilot");
+await p.route("**/api/console/assistant", async (route) => {
+  const b = JSON.parse(route.request().postData() || "{}");
+  if (b.live_voice) return route.fulfill({ json: { ok: true, ws: "wss://stand-in.invalid/live", setup: { setup: { model: "models/x" } } } });
+  if (b.session === "voice") return route.fulfill({ json: { ok: true, reply: "Amber on the VIP.", steps: [{ summary: "colour amber" }] } });
+  return route.continue();
+});
+await p.evaluate(() => {
+  window.__sent = [];
+  // the microphone: a quiet tone; Google: a stand-in that hears, asks the desk, answers
+  navigator.mediaDevices.getUserMedia = async () => { const c = new AudioContext(); const o = c.createOscillator(); const d = c.createMediaStreamDestination(); o.connect(d); o.start(); return d.stream; };
+  window.WebSocket = class {
+    constructor(url) { this.url = url; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen && this.onopen(); }, 50); }
+    send(x) {
+      const m = JSON.parse(x); window.__sent.push(Object.keys(m)[0]);
+      const say = (o) => setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify(o) }), 30);
+      if (m.setup) {
+        say({ setupComplete: {} });
+        say({ serverContent: { inputTranscription: { text: "warm on the VIP please" } } });
+        say({ toolCall: { functionCalls: [{ id: "c1", name: "do_on_desk", args: { request: "warm on the VIP please" } }] } });
+      }
+      if (m.toolResponse) { say({ serverContent: { outputTranscription: { text: "Done - amber on the VIP." } } }); say({ serverContent: { turnComplete: true } }); }
+    }
+    close() { this.readyState = 3; }
+  };
+  return import("/app/store.js").then((s) => { if (s.state.status) s.state.status.llm_configured = true; });
+});
+await p.evaluate(() => import("/app/copilot.js").then((m) => m.openCopilot()));
+await p.locator("#ai-talk").click(); await sleep(2500);
+const log = await p.locator("#ai-log").innerText();
+const sent = await p.evaluate(() => window.__sent);
+check("a talk: what you said, what the desk did, and its answer show in the conversation",
+  /warm on the VIP please/.test(log) && /Amber on the VIP/.test(log) && /Done - amber on the VIP/.test(log), log.slice(-300));
+check("...the voice got the desk's answer back, and the microphone is going out",
+  sent.includes("toolResponse") && sent.includes("realtimeInput"), sent.join(","));
+await p.locator("#ai-talk").click(); await sleep(300);
+check("...and Stop talking ends it", /Talk/.test(await p.locator("#ai-talk").innerText()) && !/Stop/.test(await p.locator("#ai-talk").innerText()), "");
+await p.unroute("**/api/console/assistant");
+
 check("no page errors", !errors.length, errors.join(" | "));
 await browser.close();
 console.log(fails ? `${fails} failed` : "all ok");

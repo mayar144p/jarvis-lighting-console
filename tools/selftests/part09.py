@@ -11841,3 +11841,58 @@ def test_update_check() -> None:
                     os.environ[k] = v
     wf = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
     check("a version tag publishes the installers as a release", 'tags: ["v*"]' in wf and "gh release create" in wf, "")
+
+
+def test_live_voice() -> None:
+    """Talking with the copilot: the desk asks Gemini for a pass for one talk (the browser never
+    sees the key); the voice model is told to hand every request to the desk's own copilot."""
+    import json
+    import urllib.request
+    from pathlib import Path
+    from app import config, llm
+    old_data, old_key, old_base = config.DATA, config.LLM_API_KEY, config.LLM_BASE_URL
+    real_open = urllib.request.urlopen
+    sent = {}
+
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def read(self, *a):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_open(req, timeout=None):
+        sent["url"], sent["headers"], sent["body"] = req.full_url, dict(req.header_items()), json.loads(req.data)
+        return Resp(json.dumps({"name": "auth_tokens/abc123"}).encode())
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            config.LLM_API_KEY = ""
+            try:
+                llm.live_token()
+                no_key = False
+            except llm.LLMError:
+                no_key = True
+            check("no key: talking says it needs the online AI", no_key, "")
+            config.LLM_API_KEY = "test-key-123"
+            config.LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+            urllib.request.urlopen = fake_open
+            r = llm.live_token()
+            check("a pass for one talk is asked for with the key, kept on the desk",
+                  sent["url"].endswith("/v1alpha/auth_tokens") and sent["body"]["uses"] == 1
+                  and any(v == "test-key-123" for v in sent["headers"].values()) and r["token"] == "auth_tokens/abc123"
+                  and "test-key-123" not in json.dumps(r), json.dumps(sent)[:300])
+            setup = r["setup"]["setup"]
+            check("the voice speaks, hears, and hands every request to the desk's copilot",
+                  setup["generationConfig"]["responseModalities"] == ["AUDIO"]
+                  and setup["tools"][0]["functionDeclarations"][0]["name"] == "do_on_desk"
+                  and "inputAudioTranscription" in setup and r["ws"].endswith("access_token=auth_tokens/abc123"), str(setup)[:300])
+        finally:
+            urllib.request.urlopen = real_open
+            config.DATA, config.LLM_API_KEY, config.LLM_BASE_URL = old_data, old_key, old_base

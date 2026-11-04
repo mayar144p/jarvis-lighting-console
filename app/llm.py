@@ -426,3 +426,56 @@ def structured(messages: list[dict], name: str, description: str,
         if isinstance(args, str) and args.strip():
             return json.loads(args)
     return extract_json(str(msg.get("content") or ""))
+
+
+# ---------------------------------------------------------------------------
+# talking with the copilot, live (web/app/voicelive.js)
+# ---------------------------------------------------------------------------
+LIVE_WS = ("wss://generativelanguage.googleapis.com/ws/"
+           "google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained")
+LIVE_SAYS = """You are the voice of Haze, a lighting desk, talking with its operator during a
+show. Keep every answer to one or two short spoken sentences. Whenever they ask
+for something to happen on the lights, the room or the show - or ask what is on -
+call do_on_desk with their request in their own words, then say in a few words what
+the desk did (from its answer). If they only chat, answer briefly. Never invent what
+the desk did; if it couldn't, say why in a few words."""
+LIVE_TOOL = {"functionDeclarations": [{
+    "name": "do_on_desk",
+    "description": "Have the desk's copilot do or answer the operator's request (lights, cues, buttons, room, show).",
+    "parameters": {"type": "object", "properties": {"request": {"type": "string",
+                   "description": "what the operator asked, in their words"}}, "required": ["request"]}}]}
+
+
+def live_token(minutes: int = 30) -> dict:
+    """A pass for one live talk, good for `minutes`: the browser talks to
+    Gemini with it and never sees the key.  {token, ws, model, setup} - or
+    raises LLMError (no key, the service refused)."""
+    import datetime
+    online = _online()
+    if online is None or "generativelanguage.googleapis.com" not in config.LLM_BASE_URL:
+        raise LLMError("talking with the copilot needs the online AI (a Gemini key in Settings -> AI)")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    body = {"uses": 1,
+            "expireTime": (now + datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "newSessionExpireTime": (now + datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    base = config.LLM_BASE_URL.split("/v1beta")[0]
+    req = urllib.request.Request(f"{base}/v1alpha/auth_tokens", data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json", "x-goog-api-key": online["key"]},
+                                 method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            got = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise LLMError(f"Gemini didn't give a pass for talking (HTTP {exc.code}): {exc.read().decode('utf-8', 'replace')[:200]}") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise LLMError(f"the AI service can't be reached for talking: {exc}") from exc
+    token = str(got.get("name") or "")
+    if not token:
+        raise LLMError("Gemini answered without a pass for talking")
+    model = config.LIVE_MODEL
+    setup = {"setup": {"model": model if model.startswith("models/") else f"models/{model}",
+                       "generationConfig": {"responseModalities": ["AUDIO"]},
+                       "systemInstruction": {"parts": [{"text": LIVE_SAYS}]},
+                       "tools": [LIVE_TOOL],
+                       "inputAudioTranscription": {}, "outputAudioTranscription": {}}}
+    return {"token": token, "ws": f"{LIVE_WS}?access_token={token}", "model": model, "setup": setup}

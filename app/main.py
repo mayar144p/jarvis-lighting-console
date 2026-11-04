@@ -1179,6 +1179,12 @@ class Handler(BaseHTTPRequestHandler):
             if not llm.available():
                 return self._json({"ok": False, "no_key": True,
                                    "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
+            if body.get("live_voice"):
+                # a pass for one live talk with the copilot (the key stays here)
+                try:
+                    return self._json({"ok": True, **llm.live_token()})
+                except llm.LLMError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
             if body.get("dj_request") is not None:
                 # Do it on a DJ / host request: live, within the room's rules
                 try:

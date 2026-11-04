@@ -144,6 +144,9 @@ LLM_API_KEY = _get("LLM_API_KEY", "")
 LLM_BASE_URL = _get("LLM_BASE_URL",
                     "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
 LLM_MODEL = _get("LLM_MODEL", "gemini-3.5-flash-lite")
+# talking with the copilot (app/llm.py live_token): Gemini's Live model -
+# the one that hears and speaks; the desk's own copilot still does the work
+LIVE_MODEL = _get("LIVE_MODEL", "gemini-2.5-flash-native-audio-preview-09-2025")
 LLM_TIMEOUT = int(_get("LLM_TIMEOUT", "45"))
 
 # --- Haze console engine ---------------------------------------------
