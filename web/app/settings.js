@@ -278,6 +278,7 @@ export async function openSettings() {
         return h("label.check", box, h("span", "Number keys pick lights 1-9 directly (the old way; normally they start a command: 1 THRU 4 @ 70)"));
       })(),
       themeRow(),
+      updateRow(),
       h("h3", "3D view"),
       window.hazeDesk && window.hazeDesk.win ? h("div.row-btns",
         h("button.btn.primary", { onclick: () => window.hazeDesk.win.pick("stage") }, "Open the 3D window"),
@@ -578,6 +579,15 @@ function oscOutRow() {
 // browser runs on plays the buttons given its notes.
 // How the screen looks on this computer: density, size, accent, panels'
 // brightness, Show dark, motion and hover help.  Kept per computer.
+// a newer Haze: told about it, or not (the installed app only)
+function updateRow() {
+  const u = (state.status && state.status.update) || {};
+  if (!u.installed) return null;
+  const box = h("input", { type: "checkbox", checked: !u.off,
+    onchange: () => post("/api/update", { off: !box.checked }).then(() => toast(box.checked ? "You'll hear when a new Haze is out" : "No more update checks", "ok")).catch(() => {}) });
+  return h("label.check", box, h("span", `Tell me when a newer Haze is out (you have ${u.version || "this version"}; it's never installed by itself)`));
+}
+
 function themeRow() {
   const box = h("div");
   const paint = () => {

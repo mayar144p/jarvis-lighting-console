@@ -683,6 +683,14 @@ class Handler(BaseHTTPRequestHandler):
                                    f"installed {first.get('manufacturer', '')} "
                                    f"{first.get('model', '')} from the "
                                    f"{fixlib.SOURCES[src]['name']}"})
+            if route == "/api/update":
+                # a newer Haze: "not now" for this version, or the check on / off
+                from app import updates
+                if body.get("dismiss"):
+                    return self._json(updates.dismiss())
+                if "off" in body:
+                    return self._json(updates.set_off(bool(body.get("off"))))
+                return self._json(updates.status())
             if route == "/api/ai":
                 # the AI switch and the online key; the key is never sent back
                 try:
@@ -1171,6 +1179,12 @@ class Handler(BaseHTTPRequestHandler):
             if not llm.available():
                 return self._json({"ok": False, "no_key": True,
                                    "error": "no AI yet - add a key or the offline AI in Settings -> AI (the offline copilot still works)"})
+            if body.get("live_voice"):
+                # a pass for one live talk with the copilot (the key stays here)
+                try:
+                    return self._json({"ok": True, **llm.live_token()})
+                except llm.LLMError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
             if body.get("dj_request") is not None:
                 # Do it on a DJ / host request: live, within the room's rules
                 try:
@@ -1319,8 +1333,9 @@ class Handler(BaseHTTPRequestHandler):
                 status["console"]["live"] = engine_mod.ENGINE.live
                 status["console"]["patched"] = len(engine_mod.ENGINE.patch)
                 status["console"]["selected"] = len(engine_mod.ENGINE.selected)
-            from app import editors
+            from app import editors, updates
             status["screens"] = editors.screens()     # people working the desk now
+            status["update"] = updates.status()       # a newer Haze out? (installed app only)
             status["dmx_input"] = dmxin.snapshot()   # observable input state
             status["midi"] = midi.status()           # devices / open / errors
             return self._json(status)

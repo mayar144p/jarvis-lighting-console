@@ -8949,10 +8949,8 @@ def test_line_up() -> None:
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("Line up, one step at a time: the light alone, aimed at the two marks furthest apart, one arrow pad, one button, worked out by itself",
-          '"line_up"' in pj and "function farPair" in pj and '"highlight", { state: true, solo: true }' in pj and '"aim_at"' in pj
-          and "`It's on ${m.label} ✓`" in pj and "solve: true" in pj and "Next light ▶" in pj and "lineup-pad" in pj
-          and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+    # (the line-up box itself - two marks, each step, lined up - is clicked
+    # through in a real browser: tools/behave.mjs)
     app_dir = ROOT / "web" / "app"
     check("Which way up (Invert pan / tilt, Swap) is a link in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
           and "Invert tilt" in pj and "Swap pan/tilt" in pj and "The arrows move it the wrong way?" in pj, "")
@@ -11759,6 +11757,142 @@ def test_lineup_marks() -> None:
         finally:
             e.shutdown()
             config.DATA = old
-    js = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("the box asks the desk for the marks, shows them as steps, and says what happened",
-          "line_up_marks" in js and "lineup-steps" in js and "Mark 1 kept" in js and "wasn't kept" in js, "")
+    # (the box showing them as steps, and what happened after each press, is
+    # clicked through in a real browser: tools/behave.mjs)
+
+
+def test_storm_leftovers() -> None:
+    """The storm's last two: Ctrl+Z leaves the timeline's own effects to the timeline (it put back
+    or left running effects of a show it had just taken back), and a show opened again keeps a
+    button whose zone has since gone from the room (it was silently dropped)."""
+    from pathlib import Path
+    from app import config
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("select_heads", heads=[1, 2])
+            r = e.act("run_fx", name="breathe")
+            fid = r.get("fx")
+            e.tl["spans"]["clip-x"] = {"fx": fid}           # (as a playing timeline clip owns it)
+            check("a timeline clip's effect is the timeline's, not the programmer's (undo leaves it alone)",
+                  fid not in {f["id"] for f in e._programmer_fx()}, "")
+            e.tl["spans"].pop("clip-x", None)
+            check("...a programmer effect is still the programmer's", fid in {f["id"] for f in e._programmer_fx()}, "")
+            e.act("quick_set", page=2, slot=1, button={"kind": "fx", "label": "Roam", "fx": "roam",
+                                                         "params": {"zones": ["Dance floor"]}, "target": {"heads": [1]}})
+            v = dict(e.venue)
+            v["zones"] = [z for z in v.get("zones") or [] if z.get("kind") != "dancefloor"]
+            e.act("set_venue", venue=v)
+            e.act("save_show", name="t")
+            e2 = eng_mod.Engine(dry_run=True, show_dir=e.show_dir)
+            try:
+                e2.act("load_show", name="t")
+                check("a button whose zone has gone from the room is kept when the show opens again",
+                      any(b.get("label") == "Roam" for b in e2.quick), str([b.get("label") for b in e2.quick]))
+            finally:
+                e2.shutdown()
+        finally:
+            e.shutdown()
+            config.DATA = old
+
+
+def test_update_check() -> None:
+    """A newer Haze: the installed app hears of it (once a day, in the background, never installed by
+    itself); 'Not now' hides that version; it can be switched off; a desk run from the code doesn't ask."""
+    import os
+    from pathlib import Path
+    from app import config, updates
+    check("versions compare as numbers", updates.newer("v0.10.0", "0.9.3") and not updates.newer("v0.2.0", "0.2.0")
+          and not updates.newer("0.1.9", "0.2"), "")
+    rel = {"tag_name": "v0.3.0", "html_url": "https://github.com/x/releases/v0.3.0", "body": "Better strobes",
+           "assets": [{"name": "Haze Setup 0.3.0.exe", "browser_download_url": "https://x/Haze.exe"},
+                      {"name": "Haze-0.3.0.dmg", "browser_download_url": "https://x/Haze.dmg"}]}
+    check("the installer for this computer", updates.pick_asset(rel["assets"], "win32").endswith(".exe")
+          and updates.pick_asset(rel["assets"], "darwin").endswith(".dmg"), "")
+    p = updates.parse(rel, "0.2.0")
+    check("a newer release is offered, with what's new", p["available"] and p["latest"] == "0.3.0" and p["notes"], str(p))
+    check("...a test version (pre-release) isn't", not updates.parse({**rel, "prerelease": True}, "0.2.0")["available"], "")
+    old = config.DATA
+    env = {k: os.environ.get(k) for k in ("HAZE_VERSION", "HAZE_PACKED")}
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            os.environ.pop("HAZE_PACKED", None)
+            check("a desk run from the code doesn't ask (it updates from git)", not updates.status()["installed"], "")
+            os.environ["HAZE_VERSION"], os.environ["HAZE_PACKED"] = "0.2.0", "1"
+            import time as _t
+            updates._save({**p, "checked": _t.time()})
+            s = updates.status()
+            check("the installed app shows it", s["installed"] and s["available"] and s["latest"] == "0.3.0" and not s["dismissed"], str(s))
+            check("'Not now' hides this version", updates.dismiss()["dismissed"], "")
+            check("...switched off, nothing is offered", not updates.set_off(True)["available"] and updates.status()["off"], "")
+            updates.set_off(False)
+        finally:
+            config.DATA = old
+            for k, v in env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    wf = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
+    check("a version tag publishes the installers as a release", 'tags: ["v*"]' in wf and "gh release create" in wf, "")
+
+
+def test_live_voice() -> None:
+    """Talking with the copilot: the desk asks Gemini for a pass for one talk (the browser never
+    sees the key); the voice model is told to hand every request to the desk's own copilot."""
+    import json
+    import urllib.request
+    from pathlib import Path
+    from app import config, llm
+    old_data, old_key, old_base = config.DATA, config.LLM_API_KEY, config.LLM_BASE_URL
+    real_open = urllib.request.urlopen
+    sent = {}
+
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def read(self, *a):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_open(req, timeout=None):
+        sent["url"], sent["headers"], sent["body"] = req.full_url, dict(req.header_items()), json.loads(req.data)
+        return Resp(json.dumps({"name": "auth_tokens/abc123"}).encode())
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            config.LLM_API_KEY = ""
+            try:
+                llm.live_token()
+                no_key = False
+            except llm.LLMError:
+                no_key = True
+            check("no key: talking says it needs the online AI", no_key, "")
+            config.LLM_API_KEY = "test-key-123"
+            config.LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+            urllib.request.urlopen = fake_open
+            r = llm.live_token()
+            check("a pass for one talk is asked for with the key, kept on the desk",
+                  sent["url"].endswith("/v1alpha/auth_tokens") and sent["body"]["uses"] == 1
+                  and any(v == "test-key-123" for v in sent["headers"].values()) and r["token"] == "auth_tokens/abc123"
+                  and "test-key-123" not in json.dumps(r), json.dumps(sent)[:300])
+            setup = r["setup"]["setup"]
+            check("the voice speaks, hears, and hands every request to the desk's copilot",
+                  setup["generationConfig"]["responseModalities"] == ["AUDIO"]
+                  and setup["tools"][0]["functionDeclarations"][0]["name"] == "do_on_desk"
+                  and "inputAudioTranscription" in setup and r["ws"].endswith("access_token=auth_tokens/abc123"), str(setup)[:300])
+        finally:
+            urllib.request.urlopen = real_open
+            config.DATA, config.LLM_API_KEY, config.LLM_BASE_URL = old_data, old_key, old_base

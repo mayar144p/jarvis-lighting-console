@@ -52,8 +52,11 @@ function say(kind, text, extra) {
   if (extra) box.append(extra);
   log.append(box);
   log.scrollTop = log.scrollHeight;
-  const sug = $("#ai-suggest");
-  if (sug) sug.replaceChildren();              // (the conversation has started)
+  if (kind === "user") {
+    talked = true;                              // (the conversation has started: the suggestions go)
+    const sug = $("#ai-suggest");
+    if (sug) sug.replaceChildren();
+  }
   return box;
 }
 
@@ -335,10 +338,13 @@ export function askCopilot(text) {
 // What it can do, and what to ask next - for this desk as it is now (no
 // lights yet: add some; no room: draw it; no show: design one...).  Shown
 // until the conversation starts; a tap puts the words in the box.
+// (the welcome line isn't the conversation: the suggestions stay until
+// something is asked - they used to vanish before they were ever seen)
+let talked = false;
 function renderSuggest() {
   const box = $("#ai-suggest");
   if (!box) return;
-  if ($("#ai-log") && $("#ai-log").children.length) { box.replaceChildren(); return; }
+  if (talked) { box.replaceChildren(); return; }
   const s = state.snap || {};
   const lights = (s.patch || []).length;
   const zones = ((s.venue || {}).zones || []).length;
@@ -584,6 +590,29 @@ export function initCopilot() {
   });
   $("#ai-attach").addEventListener("click", () => $("#ai-photo").click());
   $("#ai-requests").addEventListener("click", () => import("./djreq.js").then((m) => m.openRequestsLink()));
+  // talk with it, live (online AI): it hears, answers out loud, and has the
+  // desk do what's asked; what was said goes in the conversation
+  let stopTalk = null;
+  const talkBtn = $("#ai-talk");
+  if (talkBtn) talkBtn.addEventListener("click", async () => {
+    if (stopTalk) { stopTalk(); stopTalk = null; talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; return; }
+    if (!assistantOn()) { toast("Talking needs the online AI (Settings -> AI)", "bad"); return; }
+    talkBtn.classList.add("on"); talkBtn.textContent = "■ Stop talking";
+    const status = say("bot", "Connecting…");
+    try {
+      const m = await import("./voicelive.js");
+      stopTalk = await m.startLive({
+        state: (t) => { if (t) status.firstChild.textContent = t; },
+        heard: (t) => say("user", t),
+        said: (t) => say("bot", t),
+        did: (t) => { if (t) say("bot", "✓ " + t); },
+        error: (t) => { say("bot", "The talk stopped: " + t); talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; stopTalk = null; },
+      });
+    } catch (e) {
+      status.firstChild.textContent = "Couldn't start talking: " + e.message + " - hold 🎙 to speak one request instead.";
+      talkBtn.classList.remove("on"); talkBtn.textContent = "🗣 Talk"; stopTalk = null;
+    }
+  });
   // hold to talk: the words go in as if typed, and are sent
   import("./voice.js").then((m) => m.wireMic($("#ai-mic"), (text) => {
     say("user", text);
@@ -605,6 +634,7 @@ export function initCopilot() {
   $("#ai-new").addEventListener("click", async () => {
     await post("/api/console/assistant", { reset: true, session });
     $("#ai-log").replaceChildren();
+    talked = false;
     renderSuggest();
   });
   $("#ai-memory").addEventListener("click", showMemory);

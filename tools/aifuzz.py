@@ -181,11 +181,15 @@ def content(eng) -> dict:
     p = eng._profiles()
     sets = {n: (eng.quick if n == p["active"] else (p["sets"].get(n) or {}).get("quick") or []) for n in p["order"]}
     v = eng.venue or {}
+    # what the lights put out - only when nothing plays (a running cue, a held
+    # button, an effect, the timeline don't carry over into a show opened)
+    playing = bool(eng.fx or eng.quick_active or any(pb.get("active") for pb in eng.playbacks)
+                   or (eng._tl_transport() or {}).get("playing"))
     with eng.lock:
         prog = eng.programmer
         eng.programmer = {}
         try:
-            frames = {u: bytes(b) for u, b in eng.build_frames(time.monotonic()).items()}
+            frames = None if playing else {u: bytes(b) for u, b in eng.build_frames(time.monotonic()).items()}
         finally:
             eng.programmer = prog
     return {"lights": sorted((h["head_no"], h["universe"], h["address"], h.get("model")) for h in eng.patch),
@@ -364,10 +368,24 @@ def run(turns: int = 2000, seed: int = 1, out: Path | None = None, quiet: bool =
                 e2 = engine_mod.Engine(dry_run=True, show_dir=eng.show_dir)
                 e2.act("load_show", name=name)
                 a, b = content(eng), content(e2)
-                diff = [k for k in a if a[k] != b.get(k)]
+                diff = [k for k in a if a[k] != b.get(k) and not (k == "output" and a[k] is None)]
                 e2.shutdown()
                 if diff:
-                    problems.append(f"saved and opened again, not the same: {diff}")
+                    more = {}
+                    if "output" in diff:
+                        for u in set(a["output"]) | set(b["output"]):
+                            x, y = a["output"].get(u, b""), b["output"].get(u, b"")
+                            ch = [(k + 1, x[k], y[k]) for k in range(min(len(x), len(y))) if x[k] != y[k]]
+                            if ch:
+                                heads = [(hh["head_no"], hh.get("model"), hh["map"][c - hh["address"]]) for c, _x, _y in ch[:4]
+                                         for hh in eng.patch if hh["universe"] == u and hh["address"] <= c < hh["address"] + len(hh["map"])]
+                                more[f"u{u}"] = (ch[:4], heads[:4])
+                    if "buttons" in diff:
+                        for n in a["buttons"]:
+                            if a["buttons"][n] != b["buttons"].get(n):
+                                more[n] = ([x for x in a["buttons"][n] if x not in (b["buttons"].get(n) or [])][:3],
+                                           [x for x in (b["buttons"].get(n) or []) if x not in a["buttons"][n]][:3])
+                    problems.append(f"saved and opened again, not the same: {diff} {str(more)[:600]}")
             except Exception:  # noqa: BLE001
                 problems.append("save / open crashed: " + traceback.format_exc()[-600:])
         if problems:

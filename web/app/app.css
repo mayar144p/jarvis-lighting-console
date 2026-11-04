@@ -3018,3 +3018,7 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .lineup-said { margin: 0 0 10px; color: var(--text-2); }
 .lineup-said:empty { display: none; }
 .lineup-said.bad { color: #fecaca; }
+/* a newer Haze is out */
+.update-pill { margin-left: 8px; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent-bg); color: var(--text); font-size: var(--fs-s); cursor: pointer; white-space: nowrap; }
+.ai-talk.on { background: var(--live); border-color: var(--live); color: #fff; }

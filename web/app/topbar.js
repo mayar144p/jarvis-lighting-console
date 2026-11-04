@@ -221,7 +221,31 @@ function fitTopbar() {
   });
 }
 
+// A newer Haze is out (the installed app; app/updates.py): a quiet pill by
+// the name - Download opens its page in the browser; Not now hides it for
+// that version.  Never during a show's live work: it's only shown, not pushed.
+async function showUpdate() {
+  let u = (state.status && state.status.update) || {};
+  if (!u.installed) return;
+  if (!u.available && !u.off) {
+    // the first look of the day starts the check in the background: ask again in a while
+    await new Promise((ok) => setTimeout(ok, 20000));
+    try { u = (await post("/api/update", {})) || {}; } catch (e) { return; }
+  }
+  if (!u.available || u.dismissed) return;
+  const brand = document.querySelector(".topbar .brand");
+  if (!brand || document.querySelector(".update-pill")) return;
+  const pill = h("button.update-pill", { type: "button", title: `You have Haze ${u.version}. ${u.notes ? u.notes.slice(0, 200) : ""}`,
+    onclick: (e) => menu(e.currentTarget, [
+      { label: `Download Haze ${u.latest}`, hint: "opens its page - install it when there's no show on", run: () => window.open(u.url || u.page, "_blank", "noopener") },
+      u.page && u.page !== u.url ? { label: "What's new", run: () => window.open(u.page, "_blank", "noopener") } : null,
+      { label: "Not now", hint: "not for this version", run: async () => { await post("/api/update", { dismiss: true }).catch(() => {}); pill.remove(); } },
+    ].filter(Boolean)) }, `Haze ${u.latest} is out`);
+  brand.after(pill);
+}
+
 export function initTopbar() {
+  showUpdate().catch(() => {});
   addEventListener("resize", fitTopbar);
   new MutationObserver(fitTopbar).observe($(".topbar"), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
   fitTopbar();

@@ -292,6 +292,10 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
 
     def _programmer_fx(self) -> list[dict]:
         owned = {i for run in self.quick_active.values() for i in (run.get("fx_ids") or [])}
+        # a timeline clip's effect is the timeline's (it starts and stops it as
+        # the playhead moves): undo put it back or left it running beside the
+        # show it had just taken back
+        owned |= {s.get("fx") for s in ((self.__dict__.get("tl") or {}).get("spans") or {}).values() if s.get("fx")}
         return [f for f in self.fx if not f.get("cue_pb") and f["id"] not in owned]
 
     def _restore_state(self, state: dict) -> None:

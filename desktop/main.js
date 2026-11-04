@@ -243,7 +243,10 @@ async function startEngine() {
     // HOST: this computer only (or the network, for phones).  CONSOLE_TOKEN:
     // the key.  The engine shuts down cleanly when our end of its stdin closes.
     env: { ...process.env, ...userFolders(), HOST: remote ? "0.0.0.0" : "127.0.0.1", PORT: String(port),
-      CONSOLE_TOKEN: key, HAZE_DESKTOP: "1", PYTHONUNBUFFERED: "1" },
+      CONSOLE_TOKEN: key, HAZE_DESKTOP: "1", PYTHONUNBUFFERED: "1",
+      // this app's version, and that it's the installed one: the desk checks
+      // whether a newer Haze is out (app/updates.py)
+      HAZE_VERSION: app.getVersion(), HAZE_PACKED: PACKED ? "1" : "" },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);
