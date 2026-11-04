@@ -26,7 +26,7 @@ import os
 import threading
 import time
 
-from . import aiexamples, aitools, autoshow, config, console_ai, llm, roomsense, showdesign, showkit, websearch
+from . import aiexamples, aitools, autoshow, config, console_ai, howto, llm, roomsense, showdesign, showkit, websearch
 from . import venue as venue_mod
 from .engine import ACTIONS as ENGINE_ACTIONS
 from .engine import Engine
@@ -64,6 +64,14 @@ if _UNKNOWN:
     raise RuntimeError(f"assistant actions unknown to the engine: {_UNKNOWN}")
 
 TOOLS = [
+    {"type": "function", "function": {
+        "name": "how_to",
+        "description": "How to do something IN THIS APP, from its own guide: the real buttons, menus and "
+                       "steps. Use it for every 'how do I / where is / help me set up / what does X do' "
+                       "question before answering - never answer those from memory of other desks.",
+        "parameters": {"type": "object", "properties": {
+            "question": {"type": "string", "description": "the operator's question, in their words"}},
+            "required": ["question"]}}},
     {"type": "function", "function": {
         "name": "look_at_rig",
         "description": "The rig as it is: every light by type, groups, the selection, palettes, cues, "
@@ -311,6 +319,14 @@ How you work:
   gone, GO with no cues, effects armed). Explain each in one line and fix what you can
   (an item's `act` is its one-step fix); say what needs the operator.
 * Suggest a next idea when it would help, in one line.
+* HOW DO I...? ("help me align the lights", "where do I patch a light", "what does ARM do"):
+  a question about using the app.  how_to first, then answer with ITS steps and the
+  buttons by the names it gives (Set up -> Line up with the real lights...) - short,
+  numbered, the operator's words.  Never invent a button, menu or shortcut the guide
+  doesn't name; if it has nothing, say so and name the nearest topics.  Change nothing.
+  End by offering the part you can do for them ("Want me to add the dance-floor
+  marks?") - they say yes before you do it.  A request phrased politely ("can you make
+  it blue?") is a request, not a how-to.
 * A QUESTION ("why is head 7 dark?", "what's on the movers?") is answered, not
   acted on: check first (check_lights / look_at_rig), say what you found and why,
   and offer the fix - change nothing unless they asked for it.  Never guess.
@@ -816,6 +832,13 @@ def _system(eng, message: str = "") -> str:
                  "safety) - the desk slows anything faster. Don't promise faster strobes.")
     if not websearch.allowed():
         text += "\n\nLooking things up online is switched OFF by the operator: don't use search_web or read_web."
+    if howto.is_howto(message):
+        # a how-to question: the guide's best section up front, so even a
+        # small model answers from the real steps (how_to has the rest)
+        a = howto.answer(message, 1600)
+        if a["found"]:
+            text += (f"\n\nTHE GUIDE ON THIS QUESTION ({a['topic']}; also: {', '.join(a['also']) or '-'}) - "
+                     "answer from this, with these button names:\n" + a["steps"])
     return text + "\n\nTHE RIG NOW:\n" + console_ai.rig_context(eng)
 
 
@@ -978,7 +1001,7 @@ def _finish_pending(eng, session: str) -> None:
 # so far stays, previewed, one Ctrl+Z)
 _live: dict[str, dict] = {}
 _live_lock = threading.Lock()
-DOING = {"look_at_rig": "Looking at the rig", "check_lights": "Checking the lights", "music": "Listening to the music",
+DOING = {"how_to": "Looking it up in the guide", "look_at_rig": "Looking at the rig", "check_lights": "Checking the lights", "music": "Listening to the music",
          "find_fixtures": "Looking in the fixture library", "room_plan": "Reading the room",
          "design_show": "Designing the show", "design_night": "Designing the night", "restyle_show": "Restyling the show",
          "search_web": "Looking it up online", "read_web": "Reading a page", "see_3d": "Looking at the 3D view",
@@ -1092,6 +1115,9 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             see_id = call.get("id") or name           # answered when the picture comes
                             continue
                         result = {"error": "no more pictures this time - use check_lights"}
+                    elif name == "how_to":
+                        result = howto.answer(str(args.get("question") or st["message"]))
+                        st["guide"] = st.get("guide") or result.get("topic") or "nothing found"
                     elif name == "look_at_rig":
                         result = {"rig": console_ai.rig_context(eng)}
                     elif name == "check_lights":
@@ -1359,6 +1385,7 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
             if eng._undo and eng._undo[-1].get("action") == "assistant":
                 eng._undo[-1]["example"] = example
     return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps, "example": example,
+            "guide": st.get("guide") or "",
             "stopped": bool(st.get("stopped")), "plan": st.get("plan"), "learned": st.get("learned") or [],
             "confirm": st.get("waiting") or [],
             "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],

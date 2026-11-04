@@ -175,6 +175,18 @@ const fountain = (((rep.heads || [])[0] || {}).channels || []).find((c) => c.rol
 check("a quick shot after picking Height 10 fires at Height 10 (232-255), not the lowest", fountain.value >= 232, JSON.stringify(fountain));
 await act("fx_kill");
 
+// -- how do I...?  answered from the guide (no AI key here), nothing changed --
+console.log("How do I...?");
+const rigBefore = JSON.stringify(((await snap()).patch || []).map((x) => [x.head_no, x.x, x.y, x.z]));
+await p.evaluate(() => import("/app/copilot.js").then((m) => m.openCopilot())); await sleep(600);
+await p.locator("#ai-text").fill("help me align the lights");
+await p.locator("#ai-send").click(); await sleep(1500);
+const ans = await p.locator(".guide-answer").last().innerText().catch(() => "");
+check("'help me align the lights' gets the guide's line-up steps, with the real button names",
+  /Line up with the real lights/.test(ans) && /mark/i.test(ans) && !/\*\*/.test(ans), ans.slice(0, 200));
+check("...and nothing on the rig changed", JSON.stringify(((await snap()).patch || []).map((x) => [x.head_no, x.x, x.y, x.z])) === rigBefore, "");
+await p.evaluate(() => import("/app/copilot.js").then((m) => m.closeCopilot()));
+
 check("no page errors", !errors.length, errors.join(" | "));
 await browser.close();
 console.log(fails ? `${fails} failed` : "all ok");

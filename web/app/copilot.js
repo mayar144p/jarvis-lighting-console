@@ -46,6 +46,13 @@ function label(step) {
   }
 }
 
+// The guide's words as text: its lines kept, **names** in bold (no HTML from
+// the text itself)
+function guideText(text) {
+  return h("div.guide-answer", ...String(text).split("\n").map((line) => h("div",
+    ...line.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? h("b", part) : part.replace(/\*([^*]+)\*/g, "$1"))))));
+}
+
 function say(kind, text, extra) {
   const log = $("#ai-log");
   const box = h("div.msg." + kind, text);
@@ -310,6 +317,12 @@ async function plan(text) {
     const r = d.result || {};
     thinking.remove();
     history.push({ role: "user", content: text }, { role: "assistant", content: r.reply || "" });
+    if (r.source === "guide") {
+      // a how-to question: the guide's own steps, readable - nothing to apply
+      const box = say("bot", "", guideText(r.reply || ""));
+      box.prepend(h("span.src", "GUIDE"));
+      return;
+    }
     const src = h("span.src", r.source === "llm" ? "AI" : "OFFLINE");
     const view = planView(r, async () => {
       const a = await post("/api/console/ai", { steps: r.steps, reply: r.reply, apply: true });

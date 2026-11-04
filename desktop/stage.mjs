@@ -20,4 +20,7 @@ cpSync(join(ROOT, "app"), join(OUT, "app"), { recursive: true, filter: keep });
 cpSync(join(ROOT, "web"), join(OUT, "web"), { recursive: true, filter: keep });
 for (const f of ["__init__.py", "import_gdtf.py"]) cpSync(join(ROOT, "tools", f), join(OUT, "tools", f));
 cpSync(join(ROOT, ".env.example"), join(OUT, ".env.example"));
+// the user guide: the copilot answers "how do I...?" from it (app/howto.py)
+mkdirSync(join(OUT, "docs"), { recursive: true });
+cpSync(join(ROOT, "docs", "GUIDE.md"), join(OUT, "docs", "GUIDE.md"));
 console.log(`staged the engine in ${basename(HERE)}/build/engine`);

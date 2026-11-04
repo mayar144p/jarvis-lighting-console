@@ -12018,3 +12018,31 @@ def test_relay_built_in() -> None:
         check("...and without either, no relay (Save report, as before)", relay({}) == "", "")
     wf = (root / ".github" / "workflows" / "desktop.yml").read_text()
     check("both installers take the repo's REPORT_RELAY variable", wf.count("vars.REPORT_RELAY }}") == 2, "")
+
+
+def test_howto_questions() -> None:
+    """How do I...?  Questions about using the app are answered from its own guide (the real buttons),
+    by the AI copilot and the no-AI one, and change nothing - a storm of them, asked many ways."""
+    import json as _json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+    from app import assistant, console_ai, howto
+    root = Path(__file__).resolve().parents[2]
+    check("'help me align the lights' is a question; 'make it blue' is not",
+          howto.is_howto("help me align the lights") and not howto.is_howto("make it blue")
+          and not howto.is_howto("can you make it red"), "")
+    top = howto.find("help me align the lights", 1)
+    check("...and the guide's line-up steps answer it", bool(top) and "Lining up" in top[0]["title"], str(top[:1]))
+    r = console_ai.plan("how do I make the lights red", offline=True)
+    check("the no-AI copilot answers 'how do I make the lights red' from the guide - it doesn't turn them red",
+          not r["steps"] and r["reply"].startswith("From the guide"), str(r)[:200])
+    check("the AI copilot has the guide (how_to) and is told to use it",
+          any(t["function"]["name"] == "how_to" for t in assistant.TOOLS) and "how_to first" in assistant.SYSTEM, "")
+    check("the installer carries the guide", "GUIDE.md" in (root / "desktop" / "stage.mjs").read_text(encoding="utf-8"), "")
+    cases = _json.loads((root / "tools" / "aiexam" / "cases.json").read_text(encoding="utf-8"))
+    check("the real-AI exam asks how-to questions too", sum(1 for c in cases if c["id"].startswith("howto-")) >= 10, "")
+    out = subprocess.run([_sys.executable, str(root / "tools" / "howtofuzz.py"), "--turns", "400", "--seed", "1"],
+                         capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
+    check("400 random how-to questions: the right guide section, nothing changed, every button the guide names "
+          "is on a screen", out.returncode == 0, (out.stdout + out.stderr)[-600:])
