@@ -354,16 +354,19 @@ class ShowMixin:
         self._osc_out_load(payload.get("osc_out"))
         self._hue_load(payload.get("hue"))
         self._songs_load(payload.get("songs"))
-        for b in payload.get("quick") or []:
-            try:
-                self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
-            except (KeyError, TypeError, ValueError):
-                continue
+        boot_venue = venue_mod.normalise(payload["venue"]) if isinstance(payload.get("venue"), dict) else None
+        with self._zones_from(boot_venue):
+            for b in payload.get("quick") or []:
+                try:
+                    self.quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
         if isinstance(payload.get("quick_names"), dict):
             self.quick_names = {str(k): str(v)[:16] for k, v in payload["quick_names"].items()}
         self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
                                                  self.quick, getattr(self, "quick_names", {}) or {})
-        self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
+        with self._zones_from(boot_venue):
+            self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
         venue = payload.get("venue")
         if isinstance(venue, dict):
             try:
@@ -923,11 +926,12 @@ class ShowMixin:
         venue = (venue_mod.normalise(payload["venue"])
                  if isinstance(payload.get("venue"), dict) else None)
         quick = []
-        for b in payload.get("quick") or []:
-            try:
-                quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
-            except (KeyError, TypeError, ValueError):
-                continue
+        with self._zones_from(venue):
+            for b in payload.get("quick") or []:
+                try:
+                    quick.append(self._quick_clean(b, int(b["page"]), int(b["slot"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
 
         # Commit phase: swap the whole show in under the lock.  A bad patch
         # raises from _replace_patch, which rolls the patch back, and the
@@ -949,7 +953,8 @@ class ShowMixin:
                 if isinstance(payload.get("quick_names"), dict) else {}
             self.quick_layout = self._quick_phantoms(self._quick_layout_load(payload.get("quick_layout")),
                                                      self.quick, self.quick_names)
-            self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
+            with self._zones_from(venue):
+                self.quick_profiles = self._profiles_load(payload.get("quick_profiles"))
             try:
                 qq = float(payload.get("quick_quant") or 0.0)
             except (TypeError, ValueError):

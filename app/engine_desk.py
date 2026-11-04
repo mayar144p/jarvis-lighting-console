@@ -239,6 +239,8 @@ class DeskMixin:
     def _a_macro_save(self, macro=None, id=None, **_):
         """Save a macro: a name and command lines (as typed in the command
         bar: `1-4 red`, `cue 3 go`, `master 60` ...)."""
+        if macro is not None and not isinstance(macro, dict):
+            raise ValueError("macro is {name, lines: [...]}")
         lst = self._macros()
         ident = str(id or (macro or {}).get("id") or "")
         if not ident:

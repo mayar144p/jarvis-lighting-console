@@ -100,7 +100,14 @@ class QuickMixin:
         target = raw.get("target") if isinstance(raw.get("target"), dict) else {"all": True}
         clean_t: dict = {}
         if target.get("group") is not None:
-            clean_t["group"] = int(target["group"])
+            g = target["group"]
+            if isinstance(g, str) and not g.strip().isdigit():
+                # a group by its name ("My group") as well as its number
+                hit = next((x for x in self.groups if str(x.get("name") or "").lower() == g.strip().lower()), None)
+                if hit is None:
+                    raise ValueError(f"no group called {g!r}")
+                g = hit["n"]
+            clean_t["group"] = int(g)
         elif target.get("auto"):
             clean_t["auto"] = str(target["auto"])[:40]
         elif target.get("heads"):
@@ -289,7 +296,15 @@ class QuickMixin:
             zones = [str(z)[:40] for z in zones if z][:8]
             if not zones:
                 raise ValueError("a roam button needs its zones")
-            self._roam_zones(zones)                      # they must be in this room
+            found = self._roam_zones(zones)              # they must be in this room
+            from app import roomsense as _rs
+            from app.engine_roam import _ZONES_TL
+            if getattr(_ZONES_TL, "venue", None) is None:      # (a show being read in keeps what it had)
+                kinds = {z["id"]: z["kind"] for z in (_rs.zones(self.venue or {}))}
+                bad = [z["name"] for z in found if kinds.get(z["id"]) in _rs.NO_ROAM]
+                if bad:
+                    raise ValueError(f"a roam button can't go over the {', '.join(bad)} (the DJ's eyes, the bar staff, "
+                                     "the performers) - pick the dance floor or the crowd")
             p = {"zones": zones, "speed": _fclamp(rp.get("speed", 1.0), 0.05, 8),
                  "size": _fclamp(rp.get("size", 1.0), 0.2, 1.0)}
         elif name.startswith("shape:"):

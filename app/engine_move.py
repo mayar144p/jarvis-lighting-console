@@ -38,6 +38,8 @@ class MoveMixin:
         """Keep a movement shape: {name, points [[pan, tilt] -1..1, tilt up],
         smooth} - the heads go round the points, a curve through them or
         straight lines."""
+        if shape is not None and not isinstance(shape, dict):
+            raise ValueError("shape is {name, points: [[pan, tilt], ...]}")
         lst = self._shapes()
         ident = str(id or (shape or {}).get("id") or "")
         if not ident:

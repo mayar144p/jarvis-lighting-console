@@ -426,11 +426,38 @@ def _zone_at(eng, x: float, z: float) -> str | None:
     return None
 
 
+def _heads_list(v) -> list[int]:
+    """Light numbers however an AI sends them: [1, 2], "1,2", "1-4", 3."""
+    import re as _re
+    if v is None or isinstance(v, bool):
+        return []
+    if isinstance(v, (int, float)):
+        return [int(v)]
+    if isinstance(v, str):
+        out: list[int] = []
+        for a, b in _re.findall(r"(\d+)\s*(?:-|to|thru)\s*(\d+)|(\d+)", v) and \
+                [(m[0], m[1]) if m[0] else (m[2], m[2]) for m in _re.findall(r"(\d+)\s*(?:-|to|thru)\s*(\d+)|(\d+)", v)]:
+            out += list(range(int(a), min(int(b), int(a) + 512) + 1))
+        return out
+    if isinstance(v, (list, tuple)):
+        return [n for x in v for n in _heads_list(x)]
+    return []
+
+
+def _texts(v, n: int, k: int) -> list[str]:
+    """A list of short texts however it comes (a list, one string, nothing)."""
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, (list, tuple)):
+        return []
+    return [str(x)[:k] for x in v if x is not None and str(x).strip()][:n]
+
+
 def check_lights(eng, heads=None) -> dict:
     with eng.lock:
         rows = {r["n"]: r for r in eng._looks()}
         by = {h["head_no"]: h for h in eng.patch}
-        want = [int(n) for n in heads] if heads else sorted(by)
+        want = _heads_list(heads) or sorted(by)
         fx = eng._fx_public()
         out = []
         for n in want[:64]:
@@ -834,6 +861,33 @@ def _request_refuses(eng, action: str, params: dict) -> str:
     return ""
 
 
+def _shy_selected(eng) -> list[int]:
+    """The selected lights that light the VIP, the seating, the bar, the DJ
+    or the stage (no strobes or flashes there - roomsense.NO_HITS)."""
+    p = roomsense.plan(eng)
+    shy = {n for z in p["zones"] if z["id"] in p["no_hits"]
+           for n in p["movers"].get(z["id"], []) + p["statics"].get(z["id"], [])}
+    return sorted(set(getattr(eng, "selected", None) or []) & shy)
+
+
+def _rules_say(eng, action: str, params: dict, message: str) -> tuple[str, str]:
+    """(refuse, warn) for the operator's own requests: a strobe or flash on
+    the VIP's / bar's / DJ's / stage's lights the AI thought of by itself
+    is refused; one the operator asked for is done, with a word about it."""
+    words = json.dumps(params, default=str).lower()
+    flashy = action in ("desk_strobe", "group_flash") or any(w in words for w in STROBY)
+    if not flashy:
+        return "", ""
+    hit = _shy_selected(eng)
+    if not hit:
+        return "", ""
+    if re.search(r"\b(strobe|flash|blind|blinder|lightning)", str(message or ""), re.I):
+        return "", (f"(as asked - but lights {', '.join(map(str, hit[:8]))} light the VIP / bar / DJ / stage: "
+                    "say so to the operator in a few words)")
+    return (f"no strobes or flashes on the VIP's, the bar's, the DJ's or the stage's lights (lights "
+            f"{', '.join(map(str, hit[:8]))}) unless the operator asks - use the dance floor's"), ""
+
+
 def do_request(eng, rid: int, chat=None) -> dict:
     """The operator tapped Do it on a DJ / host request: the AI does it live,
     within the rules (REQUEST_TOOLS, _request_refuses)."""
@@ -969,6 +1023,16 @@ def _go(eng, st: dict, chat) -> dict:
         lv = _live[st["session"]] = {"steps": st["steps"], "now": "Thinking", "stop": False, "t0": st["t0"]}
     try:
         return _go_on(eng, st, chat, lv)
+    except Exception as exc:  # noqa: BLE001 - the operator must never be left in a half-done preview
+        from . import bugreport
+        bugreport.note_error("AI request", exc)
+        if st.get("blind_started"):
+            with eng.lock:
+                eng._restore_state(st["before"])
+            eng.act("blind", state=False)
+            _collapse(eng, st["top"], st["before"], None)
+        return {"ok": False, "error": f"something went wrong in that request ({type(exc).__name__}) - nothing was changed",
+                "steps": st.get("steps") or []}
     finally:
         lv["done"] = True
 
@@ -1019,221 +1083,235 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                     msgs.append({"role": "tool", "tool_call_id": call.get("id") or name, "name": name,
                                  "content": json.dumps(result)})
                     continue
-                if name == "see_3d":
-                    if st["can_see"] and st["views"] < MAX_VIEWS and see_id is None:
-                        see_id = call.get("id") or name           # answered when the picture comes
-                        continue
-                    result = {"error": "no more pictures this time - use check_lights"}
-                elif name == "look_at_rig":
-                    result = {"rig": console_ai.rig_context(eng)}
-                elif name == "check_lights":
-                    result = check_lights(eng, args.get("heads"))
-                elif name == "music":
-                    result = music(eng)
-                elif name == "do":
-                    if len(steps) >= MAX_ACTIONS:
-                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
-                    else:
-                        held = args.get("action") in CONFIRMABLE        # prepared only: nothing changes
-                        if st["preview"] and not st["was_blind"] and not st["blind_started"] and not held:
-                            eng.act("blind", state=True)           # 3D only until the operator keeps it
-                            st["blind_started"] = True
-                        # some models put the arguments next to "action" instead of in "params"
-                        params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
-                            else {k: v for k, v in args.items() if k not in ("action", "params")}
-                        # the same call again with nothing changed in between: never
-                        # blindly - say what came of it last time (a call that failed
-                        # fails again; one that worked is already done)
-                        sig = json.dumps([args.get("action"), params], sort_keys=True, default=str)
-                        seen = st.setdefault("seen", {})
-                        prev = seen.get(sig)
-                        why = _request_refuses(eng, str(args.get("action") or ""), params) if st.get("guard") else ""
-                        if why:
-                            result = {"ok": False, "error": why}
-                        elif prev is not None and not prev.get("ok"):
-                            result = {"ok": False, "error": f"you tried exactly this already and it failed: "
-                                      f"{prev.get('error')} - change the action or its settings, or ask the operator"}
-                        elif prev is not None and args.get("action") not in ("quick_press", "cue_go", "cue_back",
-                                                                             "tempo_tap", "nudge", "cue_forward"):
-                            result = {"ok": True, "summary": "already done (the same call just before) - not repeated",
-                                      "repeat": True}
+                # an AI's badly formed settings (a word where a list of lights
+                # goes, a number for the options) must never end the request:
+                # it hears what was wrong and carries on
+                try:
+                    if name == "see_3d":
+                        if st["can_see"] and st["views"] < MAX_VIEWS and see_id is None:
+                            see_id = call.get("id") or name           # answered when the picture comes
+                            continue
+                        result = {"error": "no more pictures this time - use check_lights"}
+                    elif name == "look_at_rig":
+                        result = {"rig": console_ai.rig_context(eng)}
+                    elif name == "check_lights":
+                        result = check_lights(eng, args.get("heads"))
+                    elif name == "music":
+                        result = music(eng)
+                    elif name == "do":
+                        if len(steps) >= MAX_ACTIONS:
+                            result = {"ok": False, "error": "that's enough steps for one request - finish up"}
                         else:
-                            result = _do(eng, args.get("action"), params, st["waiting"])
-                            if result["ok"]:
-                                seen.clear()           # the desk changed: earlier calls may work now
-                            seen[sig] = {"ok": result["ok"], "error": result.get("error")}
-                        steps.append({"action": args.get("action"), "params": params,
-                                      "ok": result["ok"], "summary": result.get("summary") or result.get("error")})
-                        st["changed"] = st["changed"] or (result["ok"] and not held)
-                elif name == "room_plan":
-                    p = roomsense.plan(eng)
-                    result = {"room": roomsense.describe(p), "zones": p["zones"], "movers": p["movers"],
-                              "statics": p["statics"]}
-                elif name == "design_show":
-                    if len(steps) >= MAX_ACTIONS:
-                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
-                    else:
+                            held = args.get("action") in CONFIRMABLE        # prepared only: nothing changes
+                            if st["preview"] and not st["was_blind"] and not st["blind_started"] and not held:
+                                eng.act("blind", state=True)           # 3D only until the operator keeps it
+                                st["blind_started"] = True
+                            # some models put the arguments next to "action" instead of in "params"
+                            params = args.get("params") if isinstance(args.get("params"), dict) and args.get("params") \
+                                else {k: v for k, v in args.items() if k not in ("action", "params")}
+                            # the same call again with nothing changed in between: never
+                            # blindly - say what came of it last time (a call that failed
+                            # fails again; one that worked is already done)
+                            sig = json.dumps([args.get("action"), params], sort_keys=True, default=str)
+                            seen = st.setdefault("seen", {})
+                            prev = seen.get(sig)
+                            why, warn = (_request_refuses(eng, str(args.get("action") or ""), params), "") if st.get("guard") \
+                            else _rules_say(eng, str(args.get("action") or ""), params, st["message"])
+                            if why:
+                                result = {"ok": False, "error": why}
+                            elif prev is not None and not prev.get("ok"):
+                                result = {"ok": False, "error": f"you tried exactly this already and it failed: "
+                                          f"{prev.get('error')} - change the action or its settings, or ask the operator"}
+                            elif prev is not None and args.get("action") not in ("quick_press", "cue_go", "cue_back",
+                                                                                 "tempo_tap", "nudge", "cue_forward"):
+                                result = {"ok": True, "summary": "already done (the same call just before) - not repeated",
+                                          "repeat": True}
+                            else:
+                                result = _do(eng, args.get("action"), params, st["waiting"])
+                                if result["ok"]:
+                                    seen.clear()           # the desk changed: earlier calls may work now
+                                    if warn:
+                                        result["summary"] = f"{result.get('summary') or ''} {warn}"
+                                seen[sig] = {"ok": result["ok"], "error": result.get("error")}
+                            steps.append({"action": args.get("action"), "params": params,
+                                          "ok": result["ok"], "summary": result.get("summary") or result.get("error")})
+                            st["changed"] = st["changed"] or (result["ok"] and not held)
+                    elif name == "room_plan":
+                        p = roomsense.plan(eng)
+                        result = {"room": roomsense.describe(p), "zones": p["zones"], "movers": p["movers"],
+                                  "statics": p["statics"]}
+                    elif name == "design_show":
+                        if len(steps) >= MAX_ACTIONS:
+                            result = {"ok": False, "error": "that's enough steps for one request - finish up"}
+                        else:
+                            if st["preview"] and not st["was_blind"] and not st["blind_started"]:
+                                eng.act("blind", state=True)
+                                st["blind_started"] = True
+                            learn_from_corrections(eng)
+                            try:
+                                made = autoshow.design(eng, str(args.get("brief") or ""))
+                                d = made["design"]
+                                if args.get("name"):
+                                    d["name"] = str(args["name"])[:40]
+                                what = str(args.get("make") or "all")
+                                pb = None
+                                said = []
+                                if what in ("all", "cues"):
+                                    # never over the operator's cues without asking: a
+                                    # playback with cues only when they said to replace
+                                    asked_pb = int(args.get("playback") or 0)
+                                    pb = asked_pb or free_playback(eng)
+                                    if pb is None:
+                                        raise ValueError("every playback has cues - ask the operator which to replace "
+                                                         "(or to free one); nothing was built")
+                                    pb = max(1, min(len(eng.playbacks), pb))
+                                    has = len(eng._playback(pb).get("stack") or [])
+                                    if asked_pb and has and not REPLACE_WORDS.search(st["message"]):
+                                        raise ValueError(f"playback {pb} has {has} cue(s) of the operator's - ask whether to "
+                                                         f"replace them or use playback {free_playback(eng) or '(none free)'}; "
+                                                         "nothing was built")
+                                kit = None
+                                # its live buttons first (a profile of its own), so the
+                                # cues' hit buttons land in it - not in the show before
+                                if what in ("all", "buttons"):
+                                    kit = showkit.build(eng, d, pb)
+                                    if kit["profile"].lower() != str(d["name"]).lower():
+                                        said.append(f"(a “{d['name']}” profile was there already - left as it was; "
+                                                    f"the new buttons are in “{kit['profile']}”)")
+                                        # its palettes take that name too: "Halloween · purple"
+                                        # recorded over would recolour the FIRST Halloween's cues
+                                        d["name"] = kit["profile"]
+                                if what in ("all", "cues"):
+                                    said.append(autoshow.build(eng, d, pb)["summary"])
+                                if kit:
+                                    said.append(kit["summary"])
+                                result = {"ok": True, "summary": "; ".join(said), "name": d["name"], "palette": d["palette"],
+                                          "buttons": {"profile": kit["profile"], "pages": kit["pages"]} if kit else None,
+                                          "sections": [{"name": s["name"], "bars": s["bars"], "energy": s["energy"],
+                                                        "looks": s["looks"], "hits": s["hits"]} for s in d["sections"]],
+                                          "groups": made["analysis"]["groups"]}
+                            except (ValueError, TypeError) as exc:
+                                result = {"ok": False, "error": str(exc)}
+                            steps.append({"action": "design_show", "params": {"brief": args.get("brief")},
+                                          "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
+                            st["changed"] = st["changed"] or bool(result.get("ok"))
+                    elif name == "design_night":
                         if st["preview"] and not st["was_blind"] and not st["blind_started"]:
                             eng.act("blind", state=True)
                             st["blind_started"] = True
-                        learn_from_corrections(eng)
+                        result = design_night(eng, str(args.get("brief") or ""), args.get("which") or "new",
+                                              args.get("buttons") is not False, str(args.get("name") or ""))
+                        steps.append({"action": "design_night", "params": {"brief": args.get("brief")}, "ok": result.get("ok"),
+                                      "summary": result.get("summary") or result.get("error")})
+                        st["changed"] = st["changed"] or bool(result.get("ok"))
+                    elif name == "search_web":
+                        result = websearch.search(args.get("query"))
+                        srcs = [r["url"] for r in result.get("results") or []][:4]
+                        steps.append({"action": "search_web", "params": {"query": args.get("query")}, "ok": bool(result.get("ok")),
+                                      "summary": (f"Looked up \u201c{str(args.get('query') or '')[:80]}\u201d on {result.get('via', 'the web')}"
+                                                  if result.get("ok") else f"Couldn't look it up: {result.get('error')}"),
+                                      "sources": srcs})
+                    elif name == "read_web":
+                        result = websearch.read(args.get("url"))
+                        steps.append({"action": "read_web", "params": {"url": args.get("url")}, "ok": bool(result.get("ok")),
+                                      "summary": (f"Read \u201c{result.get('title') or args.get('url')}\u201d" if result.get("ok")
+                                                  else f"Couldn't read {str(args.get('url'))[:80]}"),
+                                      "sources": [str(args.get("url"))[:300]] if result.get("ok") else []})
+                    elif name == "restyle_show":
+                        if st["preview"] and not st["was_blind"] and not st["blind_started"]:
+                            eng.act("blind", state=True)
+                            st["blind_started"] = True
                         try:
-                            made = autoshow.design(eng, str(args.get("brief") or ""))
-                            d = made["design"]
-                            if args.get("name"):
-                                d["name"] = str(args["name"])[:40]
                             what = str(args.get("make") or "all")
-                            pb = None
-                            said = []
-                            if what in ("all", "cues"):
-                                # never over the operator's cues without asking: a
-                                # playback with cues only when they said to replace
-                                asked_pb = int(args.get("playback") or 0)
-                                pb = asked_pb or free_playback(eng)
-                                if pb is None:
-                                    raise ValueError("every playback has cues - ask the operator which to replace "
-                                                     "(or to free one); nothing was built")
-                                pb = max(1, min(len(eng.playbacks), pb))
-                                has = len(eng._playback(pb).get("stack") or [])
-                                if asked_pb and has and not REPLACE_WORDS.search(st["message"]):
-                                    raise ValueError(f"playback {pb} has {has} cue(s) of the operator's - ask whether to "
-                                                     f"replace them or use playback {free_playback(eng) or '(none free)'}; "
-                                                     "nothing was built")
-                            kit = None
-                            # its live buttons first (a profile of its own), so the
-                            # cues' hit buttons land in it - not in the show before
-                            if what in ("all", "buttons"):
-                                kit = showkit.build(eng, d, pb)
-                                if kit["profile"].lower() != str(d["name"]).lower():
-                                    said.append(f"(a “{d['name']}” profile was there already - left as it was; "
-                                                f"the new buttons are in “{kit['profile']}”)")
-                                    # its palettes take that name too: "Halloween · purple"
-                                    # recorded over would recolour the FIRST Halloween's cues
-                                    d["name"] = kit["profile"]
-                            if what in ("all", "cues"):
-                                said.append(autoshow.build(eng, d, pb)["summary"])
-                            if kit:
-                                said.append(kit["summary"])
-                            result = {"ok": True, "summary": "; ".join(said), "name": d["name"], "palette": d["palette"],
-                                      "buttons": {"profile": kit["profile"], "pages": kit["pages"]} if kit else None,
-                                      "sections": [{"name": s["name"], "bars": s["bars"], "energy": s["energy"],
-                                                    "looks": s["looks"], "hits": s["hits"]} for s in d["sections"]],
-                                      "groups": made["analysis"]["groups"]}
+                            result = {"ok": True, **showkit.restyle(eng, str(args.get("from_show") or ""), str(args.get("name") or ""),
+                                                                     args.get("colours") or [], cues=what in ("all", "cues"),
+                                                                     buttons=what in ("all", "buttons"))}
                         except (ValueError, TypeError) as exc:
                             result = {"ok": False, "error": str(exc)}
-                        steps.append({"action": "design_show", "params": {"brief": args.get("brief")},
-                                      "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
+                        steps.append({"action": "restyle_show", "params": args, "ok": result.get("ok"),
+                                      "summary": result.get("summary") or result.get("error")})
                         st["changed"] = st["changed"] or bool(result.get("ok"))
-                elif name == "design_night":
-                    if st["preview"] and not st["was_blind"] and not st["blind_started"]:
-                        eng.act("blind", state=True)
-                        st["blind_started"] = True
-                    result = design_night(eng, str(args.get("brief") or ""), args.get("which") or "new",
-                                          args.get("buttons") is not False, str(args.get("name") or ""))
-                    steps.append({"action": "design_night", "params": {"brief": args.get("brief")}, "ok": result.get("ok"),
-                                  "summary": result.get("summary") or result.get("error")})
-                    st["changed"] = st["changed"] or bool(result.get("ok"))
-                elif name == "search_web":
-                    result = websearch.search(args.get("query"))
-                    srcs = [r["url"] for r in result.get("results") or []][:4]
-                    steps.append({"action": "search_web", "params": {"query": args.get("query")}, "ok": bool(result.get("ok")),
-                                  "summary": (f"Looked up \u201c{str(args.get('query') or '')[:80]}\u201d on {result.get('via', 'the web')}"
-                                              if result.get("ok") else f"Couldn't look it up: {result.get('error')}"),
-                                  "sources": srcs})
-                elif name == "read_web":
-                    result = websearch.read(args.get("url"))
-                    steps.append({"action": "read_web", "params": {"url": args.get("url")}, "ok": bool(result.get("ok")),
-                                  "summary": (f"Read \u201c{result.get('title') or args.get('url')}\u201d" if result.get("ok")
-                                              else f"Couldn't read {str(args.get('url'))[:80]}"),
-                                  "sources": [str(args.get("url"))[:300]] if result.get("ok") else []})
-                elif name == "restyle_show":
-                    if st["preview"] and not st["was_blind"] and not st["blind_started"]:
-                        eng.act("blind", state=True)
-                        st["blind_started"] = True
-                    try:
-                        what = str(args.get("make") or "all")
-                        result = {"ok": True, **showkit.restyle(eng, str(args.get("from_show") or ""), str(args.get("name") or ""),
-                                                                 args.get("colours") or [], cues=what in ("all", "cues"),
-                                                                 buttons=what in ("all", "buttons"))}
-                    except (ValueError, TypeError) as exc:
-                        result = {"ok": False, "error": str(exc)}
-                    steps.append({"action": "restyle_show", "params": args, "ok": result.get("ok"),
-                                  "summary": result.get("summary") or result.get("error")})
-                    st["changed"] = st["changed"] or bool(result.get("ok"))
-                elif name == "what_lights_can_do":
-                    result = aitools.capabilities(eng, args.get("heads"), args.get("group"))
-                elif name in ("place_lights", "add_to_room"):
-                    if len(steps) >= MAX_ACTIONS:
-                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
-                    else:
-                        try:
-                            if name == "place_lights":
-                                result = aitools.place_lights(eng, args.get("heads"), args.get("group"), args.get("on") or "",
-                                                              args.get("where") or "middle", args.get("height_m"))
-                            else:
-                                result = aitools.add_to_room(eng, args.get("kind") or "", args.get("name") or "",
-                                                             args.get("where") or "middle", args.get("length_m"),
-                                                             args.get("width_m"), args.get("depth_m"), args.get("height_m"),
-                                                             args.get("across") is not False)
-                        except (ValueError, TypeError) as exc:
-                            result = {"ok": False, "error": str(exc)}
-                        steps.append({"action": name, "params": args, "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
-                        st["changed"] = st["changed"] or bool(result.get("ok"))
-                elif name == "find_fixtures":
-                    result = find_fixtures(eng, args.get("query"))
-                elif name == "add_fixture":
-                    if len(steps) >= MAX_ACTIONS:
-                        result = {"ok": False, "error": "that's enough steps for one request - finish up"}
-                    else:
-                        result = add_fixture(eng, args.get("src"), args.get("key"), args.get("qty") or 1, args.get("mode"))
-                        steps.append({"action": "add_heads", "params": {"src": args.get("src"), "key": args.get("key"),
-                                      "qty": args.get("qty") or 1}, "ok": result["ok"], "summary": result.get("summary")})
-                        st["changed"] = st["changed"] or result["ok"]
-                elif name == "listen_to_song":
-                    from . import songear
-                    result = songear.listen(eng)
-                    steps.append({"action": "listen_to_song", "params": {}, "ok": bool(result.get("ok")),
-                                  "summary": ("Listened to the song: " + result["summary"]) if result.get("ok")
-                                  else f"Couldn't listen to the song: {result.get('error')}"})
-                    st["changed"] = st["changed"] or bool(result.get("ok"))
-                elif name == "propose_plan":
-                    st["plan"] = {"summary": str(args.get("summary") or "")[:200],
-                                  "steps": [str(x)[:160] for x in (args.get("steps") or []) if str(x).strip()][:8],
-                                  "colours": [c for c in (args.get("colours") or []) if isinstance(c, str)
-                                              and len(c) == 7 and c.startswith("#")][:6]}
-                    question = "Shall I go ahead?"
-                    options = ["Go ahead", "Change something"]
-                    result = {"shown": True}
-                    stop = True
-                elif name == "ask":
-                    question = str(args.get("question") or "").strip()[:300] or "Which one?"
-                    options = [str(o)[:60] for o in (args.get("options") or [])][:4]
-                    result = {"asked": True}
-                    stop = True
-                elif name == "remember":
-                    # what the operator ASKED to be remembered is kept; what the
-                    # AI only noticed waits for their OK (app/ailearn.py)
-                    from . import ailearn
-                    asked = bool(ailearn.ASKED.search(st["message"])) and not st.get("guard")
-                    result = {"ok": False, "error": "nothing to remember"}
-                    if args.get("forget"):
-                        if re.search(r"\b(forget|drop|delete|remove|stop)\b", st["message"], re.I):
-                            result = ailearn.forget_text(int(args["forget"]))
+                    elif name == "what_lights_can_do":
+                        result = aitools.capabilities(eng, args.get("heads"), args.get("group"))
+                    elif name in ("place_lights", "add_to_room"):
+                        if len(steps) >= MAX_ACTIONS:
+                            result = {"ok": False, "error": "that's enough steps for one request - finish up"}
                         else:
-                            result = {"ok": False, "error": "only forget a note when the operator asks"}
-                    if args.get("note"):
-                        result = ailearn.add(str(args["note"]), asked)
-                        if result.get("ok") and result.get("status") in ("kept", "pending"):
-                            st.setdefault("learned", []).append({k: result.get(k) for k in ("id", "note", "status", "replaces")})
-                            if result["status"] == "pending":
-                                result["said"] = "waiting for the operator's OK - say you'd like to remember it, don't assume it"
-                    steps.append({"action": "remember", "params": {"note": args.get("note"), "forget": args.get("forget")},
-                                  "ok": bool(result.get("ok")),
-                                  "summary": (("Noted: " if result.get("status") == "kept" else "Suggested a note (waiting for your OK): ")
-                                              + str(args.get("note"))[:80]) if args.get("note") and result.get("ok")
-                                  else ("Forgot a note" if result.get("ok") else str(result.get("error")))})
-                else:
-                    result = {"error": f"no tool {name!r}"}
+                            try:
+                                if name == "place_lights":
+                                    result = aitools.place_lights(eng, args.get("heads"), args.get("group"), args.get("on") or "",
+                                                                  args.get("where") or "middle", args.get("height_m"))
+                                else:
+                                    result = aitools.add_to_room(eng, args.get("kind") or "", args.get("name") or "",
+                                                                 args.get("where") or "middle", args.get("length_m"),
+                                                                 args.get("width_m"), args.get("depth_m"), args.get("height_m"),
+                                                                 args.get("across") is not False)
+                            except (ValueError, TypeError) as exc:
+                                result = {"ok": False, "error": str(exc)}
+                            steps.append({"action": name, "params": args, "ok": result.get("ok"), "summary": result.get("summary") or result.get("error")})
+                            st["changed"] = st["changed"] or bool(result.get("ok"))
+                    elif name == "find_fixtures":
+                        result = find_fixtures(eng, args.get("query"))
+                    elif name == "add_fixture":
+                        if len(steps) >= MAX_ACTIONS:
+                            result = {"ok": False, "error": "that's enough steps for one request - finish up"}
+                        else:
+                            result = add_fixture(eng, args.get("src"), args.get("key"), args.get("qty") or 1, args.get("mode"))
+                            steps.append({"action": "add_heads", "params": {"src": args.get("src"), "key": args.get("key"),
+                                          "qty": args.get("qty") or 1}, "ok": result["ok"], "summary": result.get("summary")})
+                            st["changed"] = st["changed"] or result["ok"]
+                    elif name == "listen_to_song":
+                        from . import songear
+                        result = songear.listen(eng)
+                        steps.append({"action": "listen_to_song", "params": {}, "ok": bool(result.get("ok")),
+                                      "summary": ("Listened to the song: " + result["summary"]) if result.get("ok")
+                                      else f"Couldn't listen to the song: {result.get('error')}"})
+                        st["changed"] = st["changed"] or bool(result.get("ok"))
+                    elif name == "propose_plan":
+                        st["plan"] = {"summary": str(args.get("summary") or "")[:200],
+                                      "steps": _texts(args.get("steps"), 8, 160),
+                                      "colours": [c for c in _texts(args.get("colours"), 6, 7) if isinstance(c, str)
+                                                  and len(c) == 7 and c.startswith("#")][:6]}
+                        question = "Shall I go ahead?"
+                        options = ["Go ahead", "Change something"]
+                        result = {"shown": True}
+                        stop = True
+                    elif name == "ask":
+                        question = str(args.get("question") or "").strip()[:300] or "Which one?"
+                        options = _texts(args.get("options"), 4, 60)
+                        result = {"asked": True}
+                        stop = True
+                    elif name == "remember":
+                        # what the operator ASKED to be remembered is kept; what the
+                        # AI only noticed waits for their OK (app/ailearn.py)
+                        from . import ailearn
+                        asked = bool(ailearn.ASKED.search(st["message"])) and not st.get("guard")
+                        result = {"ok": False, "error": "nothing to remember"}
+                        if args.get("forget"):
+                            if re.search(r"\b(forget|drop|delete|remove|stop)\b", st["message"], re.I):
+                                result = ailearn.forget_text(int(args["forget"]))
+                            else:
+                                result = {"ok": False, "error": "only forget a note when the operator asks"}
+                        if args.get("note"):
+                            result = ailearn.add(str(args["note"]), asked)
+                            if result.get("ok") and result.get("status") in ("kept", "pending"):
+                                st.setdefault("learned", []).append({k: result.get(k) for k in ("id", "note", "status", "replaces")})
+                                if result["status"] == "pending":
+                                    result["said"] = "waiting for the operator's OK - say you'd like to remember it, don't assume it"
+                        steps.append({"action": "remember", "params": {"note": args.get("note"), "forget": args.get("forget")},
+                                      "ok": bool(result.get("ok")),
+                                      "summary": (("Noted: " if result.get("status") == "kept" else "Suggested a note (waiting for your OK): ")
+                                                  + str(args.get("note"))[:80]) if args.get("note") and result.get("ok")
+                                      else ("Forgot a note" if result.get("ok") else str(result.get("error")))})
+                    else:
+                        result = {"error": f"no tool {name!r}"}
+                except llm.LLMError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - a tool call is the AI's input, not ours
+                    from . import bugreport
+                    bugreport.note_error(f"AI tool {name}", exc)
+                    result = {"ok": False, "error": f"that didn't work ({type(exc).__name__}: {str(exc)[:160]}) - "
+                                                    "check the settings you sent and try another way"}
                 msgs.append({"role": "tool", "tool_call_id": call.get("id") or name, "name": name,
                              "content": json.dumps(result, default=str)[:12000]})
             if see_id is not None and not stop:
@@ -1287,6 +1365,13 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
             "seconds": round(time.monotonic() - st["t0"], 1)}
 
 
+def _same_state(a: dict, b: dict) -> bool:
+    """Is the desk as it was (the selection aside - choosing lights is not an edit)?"""
+    keys = (set(a) | set(b)) - {"selected"}
+    return all(json.dumps(a.get(k), sort_keys=True, default=str) == json.dumps(b.get(k), sort_keys=True, default=str)
+               for k in keys)
+
+
 def _collapse(eng, top, before, label: str | None) -> None:
     """The turn's own undo steps become one (or none, if nothing changed)."""
     from .engine_base import UNDO_LIMIT
@@ -1294,7 +1379,10 @@ def _collapse(eng, top, before, label: str | None) -> None:
         k = next((i for i in range(len(eng._undo) - 1, -1, -1) if eng._undo[i] is top), -1) if top else -1
         added = len(eng._undo) - (k + 1)
         if not added:
-            return
+            # what it did was all "played", not edited (a playback's follow,
+            # a fader): still one Ctrl+Z back to how it was
+            if not label or _same_state(eng._undo_state(), before):
+                return
         del eng._undo[k + 1:]
         if label:
             eng._undo.append({"action": "assistant", "label": label, "state": before, "at": eng._clock()})

@@ -10,6 +10,8 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import threading
+
 import math
 
 from app import motion as motion_mod
@@ -40,13 +42,32 @@ def _pull_in(pts, cx, cz, x, z) -> tuple[float, float]:
     return cx + (x - cx) * lo, cz + (z - cz) * lo
 
 
+
+# the room a show being read in brings (see _zones_from)
+_ZONES_TL = threading.local()
+
 class RoamMixin:
     # an irrational-ish set of rates, so no two lights repeat each other
     _ROAM_W = ((0.61, 0.37, 0.53, 0.29), (0.47, 0.71, 0.33, 0.59), (0.83, 0.41, 0.67, 0.23),
                (0.39, 0.57, 0.77, 0.31), (0.73, 0.27, 0.43, 0.63))
 
+    def _zones_from(self, venue):
+        """While a show is read in, its buttons' roams are checked against
+        THAT show's room - not the room on the desk before (on a fresh start:
+        none, and every roam button was dropped)."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def ctx():
+            _ZONES_TL.venue = venue
+            try:
+                yield
+            finally:
+                _ZONES_TL.venue = None
+        return ctx()
+
     def _roam_zones(self, zones) -> list[dict]:
-        v = venue_mod.normalise(self.venue)
+        v = venue_mod.normalise(getattr(_ZONES_TL, "venue", None) or self.venue)
         all_z = v.get("zones") or []
         if not all_z:
             raise ValueError("draw a zone first (a dance floor, a DJ booth...) in the Venue tab")

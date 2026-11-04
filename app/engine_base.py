@@ -569,9 +569,16 @@ def _copy_playbacks(playbacks) -> list[dict]:
     would change under the undo's feet - which is the failure mode that
     makes a naive undo silently do nothing.
     """
+    import copy as _copy
     out = []
     for pb in playbacks or []:
         copy = dict(pb)
+        # every other nested value too (the follow / auto settings, keys,
+        # MIDI): shared with the live playback, a change to it changed the
+        # "before" picture as well, and undo couldn't put it back
+        for k, v in pb.items():
+            if k != "stack" and isinstance(v, (dict, list)):
+                copy[k] = _copy.deepcopy(v)
         copy["stack"] = [
             {**cue, "values": {int(h): dict(row)
                                for h, row in (cue.get("values") or {}).items()},

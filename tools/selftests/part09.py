@@ -11638,3 +11638,96 @@ def test_new_profile_not_overwrite() -> None:
             autoshow.design = real
             e.shutdown()
             config.DATA = old
+
+
+def test_ai_fuzz() -> None:
+    """A storm of operator requests answered by a stand-in AI calling every tool - sensibly and
+    sloppily: nothing crashes, nothing of the operator's goes without their tap, no roam over the
+    DJ / bar / stage, one Ctrl+Z puts each request back, the show saves and opens the same
+    (tools/aifuzz.py; a long run: python tools/aifuzz.py --turns 5000)."""
+    import subprocess
+    import sys
+    import json
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "r.json"
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "aifuzz.py"), "--turns", "160", "--seed", "11"],
+                           capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace",
+                           env={**__import__("os").environ, "AIFUZZ_OUT": str(out), "PYTHONIOENCODING": "utf-8"})
+        rep = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {"problems": -1, "fails": []}
+        check("160 random AI requests through every tool: no crash, nothing lost, one Ctrl+Z each",
+              r.returncode == 0 and rep["problems"] == 0,
+              (json.dumps(rep["fails"][:2], default=str) or r.stderr)[-600:])
+
+
+def test_ai_storm_fixes() -> None:
+    """What the storm of AI requests found, each kept fixed: a badly formed tool call never ends
+    the request, one Ctrl+Z puts back even a 'played' change, roam buttons survive the show being
+    opened again, a roam button over the DJ is refused, a group by name, and no strobe on the VIP's
+    lights unless the operator asked."""
+    import json
+    from pathlib import Path
+    from app import assistant, config, roomsense
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=3)
+            e.act("add_heads", query="LED PAR", qty=4)
+            e.act("select_heads", heads=[4, 5])
+            e.act("group_create", name="My group")
+            e.act("set_intensity", level=80)
+            e.act("record_cue", playback=2, name="My look")
+            e.act("clear_programmer")
+
+            def turn(calls, msg="x"):
+                seq = iter([{"role": "assistant", "content": "", "tool_calls": [
+                    {"id": f"c{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a) if not isinstance(a, str) else a}}
+                    for i, (n, a) in enumerate(calls)]}, {"role": "assistant", "content": "ok"}])
+                return assistant.run_turn(e, msg, session="f", preview=False, chat=lambda m, tools=None, **_: next(seq))
+            r = turn([("check_lights", {"heads": "all"}), ("ask", {"question": "?", "options": 5}),
+                      ("propose_plan", {"summary": "s", "steps": True}), ("do", "{not json")])
+            check("badly formed tool calls never end the request", r["ok"], str(r)[:300])
+            check("light numbers however an AI sends them", assistant._heads_list("1,3-5") == [1, 3, 4, 5]
+                  and assistant._heads_list(["2", 6]) == [2, 6] and assistant._heads_list(True) == [], "")
+            before = json.dumps(e._playback(2).get("follow"), sort_keys=True)
+            n = len(e._undo)
+            turn([("do", {"action": "follow_set", "params": {"playback": 2, "on": True, "seconds": 2}})])
+            check("a 'played' change (a playback's follow) still leaves one Ctrl+Z", len(e._undo) >= n and
+                  e._undo[-1].get("label", "").startswith("AI:"), "")
+            e.act("undo")
+            check("...which puts it back exactly", json.dumps(e._playback(2).get("follow"), sort_keys=True) == before, "")
+            # roam buttons and the room
+            r = e.act("quick_set", page=3, slot=1, button={"kind": "fx", "label": "Roam", "fx": "roam",
+                                                             "params": {"zones": ["Dance floor"]}, "target": {"heads": [1]}})
+            check("a roam button over the dance floor is made", r["ok"], str(r.get("error")))
+            r = e.act("quick_set", page=3, slot=2, button={"kind": "fx", "label": "R", "fx": "roam",
+                                                             "params": {"zones": ["DJ"]}, "target": {"heads": [1]}})
+            check("one over the DJ is refused (not made and then refused when pressed)", not r["ok"] and "DJ" in r["error"], str(r))
+            r = e.act("quick_set", page=3, slot=3, button={"kind": "flash", "label": "G", "target": {"group": "My group"}})
+            check("a button on a group by its name", r["ok"], str(r.get("error")))
+            e.act("save_show", name="t")
+            e2 = eng_mod.Engine(dry_run=True, show_dir=e.show_dir)          # a fresh start: no room yet
+            try:
+                e2.act("load_show", name="t")
+                check("the roam button survives the show being opened on a fresh desk",
+                      any(b.get("label") == "Roam" for b in e2.quick), str([b.get("label") for b in e2.quick]))
+            finally:
+                e2.shutdown()
+            # strobes on the VIP's lights
+            p = roomsense.plan(e)
+            shy = sorted({x for z in p["zones"] if z["id"] in p["no_hits"] for x in p["movers"].get(z["id"], []) + p["statics"].get(z["id"], [])})
+            if shy:
+                r = turn([("do", {"action": "select_heads", "params": {"heads": shy[:1]}}),
+                          ("do", {"action": "desk_strobe", "params": {"hz": 8}})], "more energy please")
+                check("the AI can't strobe the VIP / bar / DJ / stage lights by itself", not r["steps"][-1]["ok"], str(r["steps"][-1]))
+                r = turn([("do", {"action": "select_heads", "params": {"heads": shy[:1]}}),
+                          ("do", {"action": "desk_strobe", "params": {"hz": 8}})], "strobe the VIP")
+                check("...asked for, it does it and says so", r["steps"][-1]["ok"] and "as asked" in r["steps"][-1]["summary"], str(r["steps"][-1]))
+        finally:
+            e.shutdown()
+            config.DATA = old
