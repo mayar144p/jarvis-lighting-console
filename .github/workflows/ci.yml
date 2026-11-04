@@ -61,7 +61,7 @@ jobs:
   screen-check:
     # the real page in a real browser, the key screens clicked through
     # (tools/uicheck.mjs); the full 63 steps at three widths run nightly
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # (Playwright 1.56 can't install its browser on Ubuntu 26.04, ubuntu-latest since Nov 2026)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
