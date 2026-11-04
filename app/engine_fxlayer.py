@@ -81,8 +81,35 @@ class FxLayerMixin:
             self.quick_active.pop(key, None)
         self.act_rev += 1
 
+    def _fire_steps(self, h: dict) -> list[tuple[int, int, str]]:
+        """The firing ranges of a machine's fire channel, lowest first, with
+        the name its file gives each: a spark fountain's ten heights, a
+        flame's sizes.  [] when it has only one."""
+        from app.fixlib import _DANGER_TEXT, _OFF_TEXT
+        steps = [(int(lo), int(hi), str(t).strip()) for lo, hi, t in self._sfx_detail(h, "fx_fire").get("caps") or []
+                 if not _OFF_TEXT.search(str(t)) and not _DANGER_TEXT.search(str(t))]
+        return sorted(steps) if len(steps) >= 2 else []
+
+    def _fire_names(self, h: dict) -> list[str]:
+        """What to call each step on screen: its own name when the steps are
+        told apart ("1 m", "Height 3"), else numbered low to high."""
+        names = [t for _lo, _hi, t in self._fire_steps(h)]
+        if len(set(names)) < len(names) or not all(names):
+            word = (names[0] if names and names[0] else "Step").split()[0]
+            names = [f"{word} {i}" for i in range(1, len(names) + 1)]
+        return names
+
+    def _fire_value(self, h: dict, height=None) -> int:
+        """What the fire channel sends: at `height` % of the machine's own
+        firing range (a spark fountain low to high), else its plain "fire"."""
+        steps = self._fire_steps(h) if height is not None else []
+        if not steps:
+            return int(self._sfx_detail(h, "fx_fire").get("on_value") or 255)
+        lo, hi, _t = steps[round(_clamp(float(height), 0, 100) / 100 * (len(steps) - 1))]
+        return (lo + hi) // 2
+
     def _sfx_start(self, key: str, kind: str, heads, owner: str = "hand",
-                  seconds=None, level=100, values=None) -> bool:
+                  seconds=None, level=100, values=None, height=None) -> bool:
         now = time.monotonic()
         self._sfx_finish(now)
         if kind in ("fire", "laser") and not self._sfx_armed(now):
@@ -101,6 +128,8 @@ class FxLayerMixin:
                                        "since": now, "until": now + limit, "owners": set(),
                                        "level": int(_clamp(level, 1, 100)),
                                        "values": dict(values or {})}
+            if height not in (None, ""):
+                run["height"] = float(_clamp(float(height), 0, 100))
         run["owners"].add(owner)
         self.act_rev += 1
         return True
@@ -135,7 +164,7 @@ class FxLayerMixin:
                     continue
                 sets = out.setdefault(n, {})
                 if run["kind"] == "fire":
-                    sets["fx_fire"] = int(self._sfx_detail(h, "fx_fire").get("on_value") or 255)
+                    sets["fx_fire"] = self._fire_value(h, run.get("height"))
                 elif run["kind"] == "fog":
                     off = int(self._sfx_detail(h, "fog").get("off_value") or 0)
                     sets["fog"] = off + round((255 - off) * run["level"] / 100)
@@ -178,6 +207,11 @@ class FxLayerMixin:
                           "left": None if math.isinf(r["until"]) else round(max(0.0, r["until"] - now), 1)}
                          for k, r in self.fx_runs.items()],
                 "loads": loads,
+                # what each firing machine is (sparks, CO2, flame...) and
+                # whether its shot has a height to pick
+                "fire": {h["head_no"]: {"kind": self._sfx_detail(h, "fx_fire").get("fx_kind") or "other",
+                                        "heights": self._fire_names(h)}
+                         for h in self.patch if "fx_fire" in h["map"]},
                 "heads": {h["head_no"]: self._head_class(h) for h in self.patch
                           if self._head_class(h) != "light"}}
 
@@ -208,9 +242,10 @@ class FxLayerMixin:
             self._sfx_end(key, time.monotonic())
         return {"armed": False, "summary": "effects disarmed"}
 
-    def _a_fx_fire(self, heads=None, group=None, down=True, seconds=None, owner="hand", **_):
+    def _a_fx_fire(self, heads=None, group=None, down=True, seconds=None, owner="hand", height=None, **_):
         """Fire SFX (confetti, CO2, flame, sparks) while held, capped at
-        each machine's limit.  Needs ARM."""
+        each machine's limit.  Needs ARM.  `height` (0-100 %) picks how
+        high on a machine with heights (a spark fountain); else its fire."""
         key = f"fire:{owner}"
         if not _truthy(down):
             self._sfx_stop(key, owner, force=True)
@@ -218,7 +253,7 @@ class FxLayerMixin:
         if not self._sfx_armed():
             raise ValueError("ARM the effects first")
         nums = self._sfx_targets(heads, group)
-        if not self._sfx_start(key, "fire", nums, owner, seconds=seconds):
+        if not self._sfx_start(key, "fire", nums, owner, seconds=seconds, height=height):
             raise ValueError("nothing to fire (no SFX selected, or a confetti tank is empty)")
         return {"summary": f"FIRE on {len(self.fx_runs[key]['heads'])} effect(s)"}
 

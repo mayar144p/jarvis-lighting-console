@@ -32,6 +32,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
+      - name: The report relay (Send report without a GitHub account), when the repo has one set up
+        if: vars.REPORT_RELAY != ''
+        shell: bash
+        env:
+          URL: ${{ vars.REPORT_RELAY }}
+          KEY: ${{ vars.REPORT_RELAY_KEY }}
+        run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.reportRelay={url:process.env.URL,key:process.env.KEY||''};require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
       - name: A Python of its own (Windows' embeddable Python; the engine needs only the standard library)
         shell: pwsh
         run: |
@@ -90,6 +97,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
+      - name: The report relay (Send report without a GitHub account), when the repo has one set up
+        if: vars.REPORT_RELAY != ''
+        shell: bash
+        env:
+          URL: ${{ vars.REPORT_RELAY }}
+          KEY: ${{ vars.REPORT_RELAY_KEY }}
+        run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.reportRelay={url:process.env.URL,key:process.env.KEY||''};require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
       - uses: astral-sh/setup-uv@v6
       - name: A Python of its own (python-build-standalone via uv; the engine needs only the standard library)
         run: |

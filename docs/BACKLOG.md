@@ -230,7 +230,7 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
-## A15. Operator's feedback after the first gigs (2026-10-21) - the plan now
+## A15. Operator's feedback after the first gigs (2026-10-21) - DONE (B1-B7)
 
 The operator's notes from real use, the three open GitHub issues (#105,
 #106, #107) and the UI/UX and layout audits of 2026-10-16.  Six pull
@@ -374,8 +374,35 @@ autopilot.  Record cue says why it is off; Ready? fixes are buttons (`do`
 on each item); a Mobile DJ template; a tour per mode, offered the first
 time in each.  (The colour-on-dark-lights fix landed in B3.)
 
-### B7. AI bugs (later)
-The operator will list them.
+### B7. AI bugs - DONE
+**Done (B7, PRs #160-#166):** the copilot runs the whole desk with a plan
+first for big jobs, live steps and a Stop button, and knows what is on
+screen ("this button"); it learns only what it can show (pending notes the
+operator keeps or drops, habits that need more shows for a change than
+against it, a Pause and a "What the AI has learned" panel); DJ requests and
+the AI keep the room's rules (no strobes on VIP / bar / DJ unless asked;
+strobe safety, 3 Hz by default); shows are built on palettes and on the
+song's parts; a new button profile never overwrites one; live voice (Talk).
+Random-request storms (`tools/aifuzz.py`, in every selftest; two runs of
+600 requests clean) found and fixed bad arguments crashing a turn, Ctrl+Z
+missing or bringing back effects, roam buttons dropped on load and a Hits
+page overwrite.
+
+### B8. After B7 (2026-11-04)
+- **Real lights:** the Wave 360 IRC's colour macros and the Spot 260's
+  strobe match the real lights (the screen's colours through gamma 2.2).
+  **Sparkle machines** (Showven Sparkular and the like): their own Sparks
+  section, the heights by the names in their file (Height 1-10, "low" /
+  "high") and a shot fires at the height picked - before, always the
+  lowest, and the Height chips did nothing; the heater (ARM) noted.  A
+  fixture name the desk doesn't know is no longer patched as a PAR because
+  "par" is inside it ("Sparkular").  **ADJ Encore FR150z** (and FR50z / FR
+  Pro) is a fresnel, not a strobe unit; its strobe ranges were already right.
+- **Line up:** two marks the light can reach (taped marks, the dance floor,
+  the DJ), never the bar / VIP, each step shown.
+- **A newer Haze is out:** a version tag builds and publishes the
+  installers; the installed desk says so (it never installs by itself).
+- **Screens clicked through** in a real browser (`tools/behave.mjs`, in CI).
 
 ## A9. Desktop app and a better visualiser (agreed 2026-10-07)
 
@@ -702,19 +729,21 @@ GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
 - The installer's "Include the offline AI" tick (done 2026-10-08, A12).
 
 **Still open, in order:**
-1. **Languages.**  The screens are English only.  Plan: all on-screen
+1. **Languages - later (the operator, 2026-11-04: keep it on the list).**  The screens are English only.  Plan: all on-screen
    words through one `t("...")` table per language (web/app/i18n/),
    English as the key so nothing breaks while a language is partial;
    Swedish first, then German / Spanish.  The guide stays English.
-2. **The installed app updates itself.**  Needs a place to publish
-   installers (GitHub Releases on this repo is enough): electron-updater
-   with the release feed, a "new version - restart to update" line, never
-   while live.
+2. **The installed app updates itself.**  Half done (2026-11-04): a version
+   tag publishes the installers as a GitHub release and the desk says a
+   newer one is out, with Download.  Still open: installing it for you
+   (electron-updater, "restart to update", never while live) - needs a
+   signed Mac app (3).
 3. **Mac app signed and notarised.**  Needs an Apple developer account
    (99 USD/year); then the build signs and notarises in CI with the
    account's secrets.
-4. **ADJ Encore FR150z** is read as a generic light (no strobe model): a
-   profile of its own in app/fixlib/haze.json (fog volume, its LEDs).
+4. **(DONE 2026-11-04) ADJ Encore FR150z** - it is an LED fresnel (dimmer,
+   strobe, dimmer curve), not a fog machine: it was drawn and treated as a
+   strobe unit.  Now a fresnel (fixture_kind); its strobe was already right.
 5. **Gobo pictures for the last 248 lights.**  Neither bundled library
    has pictures for them (226 have no twin in the other library, the rest
    a twin without pictures or with a different count).  They come from the
@@ -723,7 +752,10 @@ GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
    rule stops counting it.
 6. **Library rules baselines:** 16 lights in `lit_shows_colour`, 4
    multi-head lights not coloured per head (tools/rules_known.json).
-7. **The report relay** (A11): send bug reports without a GitHub account.
+7. **The report relay** (A11): built (tools/report-relay/) and, since
+   2026-11-04, built into every installer from the repo's REPORT_RELAY
+   variable.  Waiting on the operator: a free Cloudflare account and an
+   Issues-only token, then its README (about 10 minutes).
 8. **NDI video in / out (ONYX 4.10)** - later.  Screens and LED walls:
    NDI in as a media source for the 3D's screens and the pixel mapper, NDI
    out of the 3D view.  Needs the NDI SDK (a native library, free licence,

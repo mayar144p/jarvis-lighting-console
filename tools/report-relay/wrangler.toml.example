@@ -4,7 +4,8 @@ main = "worker.mjs"
 compatibility_date = "2026-09-01"
 
 [vars]
-REPO = "mayar144p/haze-lighting-console"
+# the repo the issues go to (GitHub follows a rename, so the current name keeps working)
+REPO = "mayar144p/jarvis-lighting-console"
 
 [[r2_buckets]]
 binding = "REPORTS"

@@ -230,6 +230,14 @@ async function selfUpdate() {
   splash.destroy();
 }
 
+// set by the installer build from the repo's REPORT_RELAY variable
+function relayBuiltIn() {
+  try {
+    const r = require("./package.json").reportRelay || {};
+    return { url: String(r.url || ""), key: String(r.key || "") };
+  } catch { return { url: "", key: "" }; }
+}
+
 async function startEngine() {
   const remote = desk().remotes && desk().code;
   const port = remote ? await portOr(desk().port) : await localPort();
@@ -246,7 +254,10 @@ async function startEngine() {
       CONSOLE_TOKEN: key, HAZE_DESKTOP: "1", PYTHONUNBUFFERED: "1",
       // this app's version, and that it's the installed one: the desk checks
       // whether a newer Haze is out (app/updates.py)
-      HAZE_VERSION: app.getVersion(), HAZE_PACKED: PACKED ? "1" : "" },
+      HAZE_VERSION: app.getVersion(), HAZE_PACKED: PACKED ? "1" : "",
+      // the report relay this installer was built with (Help -> Report a
+      // bug: Send report, no GitHub account); a desk's own .env still wins
+      HAZE_REPORT_RELAY: relayBuiltIn().url, HAZE_REPORT_RELAY_KEY: relayBuiltIn().key },
   });
   engine.stdout.pipe(log);
   engine.stderr.pipe(log);

@@ -157,6 +157,24 @@ await p.locator("#ai-talk").click(); await sleep(300);
 check("...and Stop talking ends it", /Talk/.test(await p.locator("#ai-talk").innerText()) && !/Stop/.test(await p.locator("#ai-talk").innerText()), "");
 await p.unroute("**/api/console/assistant");
 
+// -- a sparkle machine: its own Sparks section, its heights by name, a shot at the one picked --
+console.log("Sparkle machine");
+await p.evaluate(() => import("/app/copilot.js").then((m) => m.closeCopilot())); await closeModals();
+const ins = await post("api/fixtures/library/install", { src: "ofl", key: "showven/sparkular.json" });
+const sp = (await act("add_heads", { fixture_id: ins.fixture.id, qty: 1 })).heads[0];
+await act("select_heads", { heads: [sp] }); await sleep(1200);
+await p.locator('[data-tab="sfx"]:visible').first().click(); await sleep(800);
+const pane = await p.locator("#sfx-pane").innerText();
+check("it has its own Sparks section with Height 1 to Height 10 (not 'Height' ten times)",
+  /\bSparks\b/.test(pane) && /Height 1\b/.test(pane) && /Height 10/.test(pane) && !/CO2 \/ flames/.test(pane), pane.slice(0, 200));
+await act("fx_arm", { state: true }); await sleep(600);
+await p.locator("#sfx-pane .chip", { hasText: /^Height 10$/ }).click();
+await p.locator("#sfx-pane .chip", { hasText: /^3 s$/ }).click(); await sleep(400);
+const rep = await fetch(BASE + "api/console/channels?heads=" + sp).then((r) => r.json());
+const fountain = (((rep.heads || [])[0] || {}).channels || []).find((c) => c.role === "fx_fire") || {};
+check("a quick shot after picking Height 10 fires at Height 10 (232-255), not the lowest", fountain.value >= 232, JSON.stringify(fountain));
+await act("fx_kill");
+
 check("no page errors", !errors.length, errors.join(" | "));
 await browser.close();
 console.log(fails ? `${fails} failed` : "all ok");

@@ -288,8 +288,9 @@ GDTF_SHARE_TIMEOUT = float(_get("GDTF_SHARE_TIMEOUT", "20"))
 # Bug reports without a GitHub account (backlog): the address of a report
 # relay (tools/report-relay/) that files the issue and keeps the zip.  Empty:
 # the report is saved and the GitHub page opens, as before.
-REPORT_RELAY = _get("REPORT_RELAY", "").strip()
-REPORT_RELAY_KEY = _get("REPORT_RELAY_KEY", "").strip()
+# (.env first; else the address the installed app was built with)
+REPORT_RELAY = (_get("REPORT_RELAY", "") or _get("HAZE_REPORT_RELAY", "")).strip()
+REPORT_RELAY_KEY = (_get("REPORT_RELAY_KEY", "") or _get("HAZE_REPORT_RELAY_KEY", "")).strip()
 
 DATA.mkdir(parents=True, exist_ok=True)
 

@@ -269,7 +269,9 @@ def _fallback_fixture(query: str) -> dict | None:
     if not q:
         return None
     for keyword, labels in FALLBACK_FOOTPRINTS:
-        if keyword in q:
+        # the start of a word: "LED par 64", "spotlight" - not inside one
+        # ("Sparkular" has "par" in it and is a spark machine, not a PAR)
+        if re.search(r"(?<![a-z])" + re.escape(keyword), q):
             return {"id": 0, "manufacturer": "Generic",
                     "model": str(query).strip(),
                     "modes": [{"name": f"Generic {len(labels)}ch",
