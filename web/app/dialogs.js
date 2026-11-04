@@ -780,7 +780,7 @@ const KEY_GROUPS = [
   ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
     ["[ / ]", "previous / next light, one at a time"], ["{ or }", "all of them again"], ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
   ["The desk", [["/ or Ctrl+K", "the command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-    ["F1 / F2 / F3", "Set up / Program / Live"], ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"]]],
+    ["F1 / F2 / F3", "Set up / Program / Live"], ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"], ["Shift+F1", "What's this? (click anything)"]]],
 ];
 const KEYS = KEY_GROUPS.flatMap(([, rows]) => rows);
 const SYNTAX = [
@@ -819,6 +819,9 @@ export function openHelp() {
     title: "Help", wide: true,
     body: h("div.help", tabs, pane),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
+      h("button.btn", { title: "Then click anything on the screen to see what it is (Shift+F1)", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.whatsThis()); } }, "What's this?"),
+      h("button.btn", { title: "What the screen you're on is for, and how to use it", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.explainScreen()); } }, "Explain this screen"),
+      h("button.btn.ghost", { title: "Questions the guide had no answer for (kept on this computer)", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.openUnanswered()); } }, "Unanswered questions"),
       h("button.btn", { title: "A minute round the mode on screen (Set up, Program or Live)", onclick: () => { closeTopModal(); startTour(); } },
         `Take the tour (${{ setup: "Set up", live: "Live" }[document.body.dataset.mode] || "Program"})`),
       h("button.btn", { onclick: () => import("./bugreport.js").then((m) => m.openBugReport()) }, "Report a bug…")],

@@ -43,7 +43,8 @@ SYNONYMS: dict[str, str] = {
     "timeline": "timeline", "song": "song per", "songs": "song per", "music": "beat song sound", "beat": "beat bpm tempo",
     "bpm": "beat tempo", "tempo": "beat tempo tap", "sync": "beat link dj", "cdj": "pro dj link", "pioneer": "pro dj link",
     "ableton": "ableton link", "midi": "midi hardware controllers", "controller": "hardware controllers",
-    "streamdeck": "stream deck", "apc40": "midi hardware controllers", "apc": "midi hardware controllers",
+    "streamdeck": "stream deck", "weird": "report problem bug", "broken": "report problem bug",
+    "render": "video client", "export": "mvr export video", "apc40": "midi hardware controllers", "apc": "midi hardware controllers",
     "akai": "midi hardware controllers", "launchpad": "midi hardware controllers", "camera": "visualiser camera",
     "darker": "look themes dark", "brighter": "look themes", "following": "follow speed", "slower": "speed",
     "updates": "newer haze update", "version": "newer haze update", "remove": "take out", "osc": "osc", "qlab": "osc", "resolume": "osc",
@@ -76,13 +77,15 @@ SYNONYMS: dict[str, str] = {
     "speed": "follow speed", "follow": "follow speed", "gobo": "gobos", "gobos": "gobos",
     "dj": "dj requests booth", "request": "dj requests", "requests": "dj requests", "phone": "dj requests",
     "update": "update newer", "bug": "report bug", "report": "report bug", "check": "venue check-in ready",
-    "ready": "ready check", "undo": "undo", "mode": "modes set up program live", "modes": "set up program live",
+    "ready": "ready check", "undo": "undo history getting help", "mode": "modes set up program live", "modes": "set up program live",
     "rotate": "turned trusses", "rotated": "turned trusses", "turn": "turned trusses",
 }
 _STOP = set("a an the i me my you your to do does how can could would should is are it in on of for with "
             "and or what where why when which this that these those please help want need make get use "
             "some any there here best way walk through teach guide explain steps stuck new dont don't know "
-            "learn im i'm tutorial lost".split())
+            "learn im i'm tutorial lost better nicer easier quicker faster really just also still again "
+            "thing things stuff something everything anything look looks good great work works properly "
+            "right wrong correct fine okay ok possible exactly actually".split())
 # the asking part of a question ("can you show me how to", "is there a way
 # to") - its words ("show", "way") are not what the question is about
 _ASKING = re.compile(r"^\s*(can\s+you\s+)?(show|tell|teach|explain|walk)\s+me\s+(how\s+)?(to\s+|through\s+)?"
@@ -152,6 +155,9 @@ PHRASES: dict[str, str] = {
     "go live": "go live art-net output connecting rig", "next cue": "go cue playback", "fade time": "fade cue",
     "dmx address": "address patch fixture library", "dance floor": "dance floor zone", "keep out": "keep-out zone",
     "voice control": "voice talk copilot", "keyboard shortcuts": "keyboard", "stream deck": "stream deck",
+    "get help": "getting help what's this explain hints", "find help": "getting help",
+    "what a button does": "getting help what's this explain", "several changes": "undo history getting help",
+    "find a setting": "getting help search command bar", "step by step": "getting help step coach",
     "check for updates": "newer haze update", "room size": "venue room size arrange",
     "screen darker": "look themes dark show dark", "slower when following": "follow speed slow",
     "when following": "follow speed", "3d camera": "visualiser camera view", "new version": "newer haze update", "two desks": "backup desk",
@@ -175,7 +181,7 @@ def _vocab() -> tuple[str, ...]:
 def _spell(w: str) -> str:
     if len(w) < 4 or w in SYNONYMS or w in _STOP:
         return w
-    voc = _vocab()
+    voc = _vocab() + tuple(_STOP)
     if w in voc:
         return w
     near = difflib.get_close_matches(w, voc, n=1, cutoff=0.82 if len(w) >= 5 else 0.85)
@@ -196,6 +202,10 @@ def _terms(text: str) -> list[str]:
         out += SYNONYMS.get(w, "").split()
         if w.endswith("s") and w[:-1] in SYNONYMS:
             out += SYNONYMS[w[:-1]].split()
+        for end in ("ed", "ing", "d"):           # "aimed", "patching", "aligned"
+            if w.endswith(end) and w[: -len(end)] in SYNONYMS:
+                out += SYNONYMS[w[: -len(end)]].split()
+                break
     return out
 
 
@@ -301,8 +311,39 @@ def answer(text: str, limit: int = 3500) -> dict:
     body = reflow(best["body"])
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0] + "\n..."
-    return {"found": True, "topic": best["title"], "steps": body,
-            "also": [s["title"] for s in hits[1:]], "card": card(best["title"], best["body"], best.get("where"))}
+    c = card(best["title"], best["body"], best.get("where"))
+    out = {"found": True, "topic": best["title"], "steps": body,
+           "also": [s["title"] for s in hits[1:]], "card": c}
+    strange = unknown_words(text)
+    if strange:
+        # "connect to spotify": the guide has no word for what's asked - the
+        # nearest section, said to be only that, and the question kept
+        c["unsure"] = strange
+        out["unsure"] = strange
+        out["note"] = (f"the guide never mentions {', '.join(strange)}: say so plainly - this is only the nearest "
+                       "topic - and don't make up how the app does it")
+        note_unanswered(text, "no guide words for: " + ", ".join(strange))
+    return out
+
+
+def unknown_words(text: str) -> list[str]:
+    """The words of a question the guide, its synonyms and the glossary have
+    never heard of (after putting typos right): what it can't answer."""
+    q = _ASKING.sub("", _fix_leads(str(text or "")))
+    known = set(_vocab()) | set(SYNONYMS) | {w.lower() for g in GLOSSARY for w in g.split()} | _STOP
+    for p in PHRASES:
+        known.update(p.split())
+    out = []
+    for w in _words(q):
+        if len(w) < 4 or w.isdigit() or w in known:
+            continue
+        s = _spell(w)
+        if s != w and s in known:
+            continue
+        if w.rstrip("s") in known or w + "s" in known or w.rstrip("ed") in known or w.rstrip("ing") in known:
+            continue
+        out.append(w)
+    return out[:3]
 
 
 def reply(text: str) -> str:
@@ -313,3 +354,127 @@ def reply(text: str) -> str:
                 + ". Help (?) in the top bar has the whole guide.")
     more = f"\n\nSee also: {', '.join(a['also'])}." if a["also"] else ""
     return f"From the guide - {a['topic']}:\n\n{a['steps']}{more}"
+
+
+# -- words a newcomer meets, in one line each (hover them in answers; "what is a cue?")
+GLOSSARY: dict[str, str] = {
+    "DMX": "The signal a lighting desk sends: up to 512 numbers (channels) per universe, each 0-255, that the lights read.",
+    "universe": "One run of 512 DMX channels. Big rigs use several; each light listens on one universe.",
+    "channel": "One of a light's DMX numbers - its dimmer, its red, its pan... A light uses a few in a row.",
+    "address": "The first DMX channel a light listens on; set on the light itself and in the desk's patch to match.",
+    "patch": "The list of your lights: what model each is, its mode and its DMX address.",
+    "mode": "How many channels a light uses (8ch, 14ch...); set on the light, and the same mode in the desk.",
+    "fixture": "One light (or effect machine) in the patch.",
+    "programmer": "Where you build a look: select lights, set level, colour, position... nothing is kept until you record it.",
+    "cue": "A recorded look kept on a playback, played with GO; a playback holds a list of them.",
+    "playback": "A fader with a cue list on it: raise it and press GO to play its cues.",
+    "palette": "A saved colour, position or beam setting; cues that use it follow when you change it.",
+    "group": "A saved set of lights you pick often (the back truss, the floor PARs).",
+    "preset": "A saved look you can call up on the selected lights.",
+    "fade": "How long a change takes to arrive (seconds).",
+    "delay": "How long a cue waits before it starts to fade.",
+    "chase": "An effect that steps through lights or looks one after another.",
+    "effect": "Movement, colour or level that keeps changing by itself (a wave, a circle, a chase).",
+    "gobo": "A pattern disc in a spot light that shapes the beam (stars, dots, breakups).",
+    "prism": "A glass in the beam that splits it into several copies.",
+    "pan": "A moving light turning left and right.",
+    "tilt": "A moving light tipping up and down.",
+    "strobe": "Fast flashing; Strobe safety keeps it at 3 flashes a second or slower.",
+    "dimmer": "A light's brightness channel.",
+    "shutter": "Opens and closes a light's beam (and on many lights strobes it).",
+    "HTP": "Highest takes precedence: for levels, the highest of everything playing wins.",
+    "LTP": "Latest takes precedence: for colour and position, the newest change wins.",
+    "Art-Net": "A way to send DMX over a network cable to a node that drives the lights.",
+    "sACN": "Another way to send DMX over a network (also called E1.31).",
+    "node": "A box that turns network DMX (Art-Net / sACN) into the cables the lights plug into.",
+    "blind": "The desk changes nothing on the real lights - safe to program. LIVE sends to them.",
+    "live": "The desk is sending to the real lights.",
+    "blackout": "Every light dark at once, until you release it.",
+    "grand master": "The fader that scales every light's level - at 0, everything is dark.",
+    "timecode": "A running clock from the music or a video, so cues happen at the same moment every time.",
+    "BPM": "Beats per minute - the tempo the effects and beat buttons follow.",
+    "haze": "A thin mist that makes beams visible in the air.",
+    "arm": "Effects (confetti, CO2, sparks, lasers) only fire while armed - a safety switch.",
+    "MVR": "A file with a whole rig (lights, positions, trusses) from Vectorworks, Capture, grandMA3...",
+    "GDTF": "A detailed fixture file from the maker: channels, gobos, how the light looks.",
+    "zone": "A part of the room you named (dance floor, VIP, bar) - the lights and the AI know it.",
+}
+_GLOSS_Q = re.compile(r"^\s*(what('?s|\s+is|\s+are|\s+does)|define|meaning\s+of)\s+(an?\s+|the\s+)?([\w\s'-]{2,30}?)\s*(\?|mean\??)?\s*$", re.I)
+
+
+def glossary(text: str) -> dict | None:
+    """'What is a cue?' -> {"term", "text"}; None when it isn't one."""
+    m = _GLOSS_Q.match(str(text or ""))
+    if not m:
+        return None
+    want = m.group(4).strip().lower().rstrip("s") if not m.group(4).strip().lower().endswith("ss") else m.group(4).strip().lower()
+    for term, text_ in GLOSSARY.items():
+        t = term.lower()
+        if want in (t, t.rstrip("s"), t.replace("-", " "), t.replace(" ", "")):
+            return {"term": term, "text": text_}
+    return None
+
+
+# -- what the guide couldn't answer: kept on this computer, to fill its gaps
+def _log_path():
+    from . import config
+    return config.DATA / "howto_unanswered.json"
+
+
+def unanswered() -> list[dict]:
+    import json
+    try:
+        return json.loads(_log_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def note_unanswered(question: str, why: str = "not found") -> None:
+    """Keep a question the guide didn't answer (or the operator said 'not
+    this'): the newest first, the same one counted, at most 200."""
+    import json
+    import time
+    q = re.sub(r"\s+", " ", str(question or "")).strip()[:200]
+    if not q:
+        return
+    rows = unanswered()
+    key = q.lower()
+    hit = next((r for r in rows if r["q"].lower() == key), None)
+    if hit:
+        hit["n"] = hit.get("n", 1) + 1
+        hit["at"] = time.strftime("%Y-%m-%d %H:%M")
+        hit["why"] = why
+        rows.remove(hit)
+        rows.insert(0, hit)
+    else:
+        rows.insert(0, {"q": q, "why": why, "n": 1, "at": time.strftime("%Y-%m-%d %H:%M")})
+    try:
+        p = _log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(rows[:200], indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_unanswered() -> None:
+    try:
+        _log_path().unlink()
+    except OSError:
+        pass
+
+
+def lookup(text: str) -> dict:
+    """Everything a screen needs for a question: a word's meaning, or the
+    guide's card (and the question kept when the guide has nothing)."""
+    g = glossary(text)
+    if g:
+        return {"found": True, "glossary": g}
+    a = answer(text)
+    if not a["found"]:
+        note_unanswered(text)
+    return {k: v for k, v in a.items() if k != "steps"}
+
+
+def topics() -> list[dict]:
+    """Every section, for search: title and where."""
+    return [{"title": s["title"], "where": s.get("where") or []} for s in sections()]

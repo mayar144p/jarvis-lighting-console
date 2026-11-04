@@ -991,6 +991,29 @@ to a node of its own (one node per truss), over Art-Net or sACN. With sACN
 you can also set the desk's **priority** (0-200). Both are saved with the
 show.
 
+### Getting help
+
+*Where:* Help (?)
+
+1. **Ask the copilot.** "How do I line up the lights?", "what is a gobo?" - the
+   answer comes from this guide, as numbered steps with the real button names.
+   Tap a button name to see it lit up on the screen; tick the steps as you go.
+2. **Open it for me.** On an answer, it opens the window it is about.
+3. **Show me step by step.** One step at a time over the real screen, with the
+   button to press lit up; pressing it moves on. Esc stops.
+4. **Search.** Type in the command bar (/): a topic ("strobe safety"), a word
+   ("gobo") or a button's name ("line up") finds it.
+5. **What's this?** Help (?) → **What's this?** (or Shift+F1), then click
+   anything to see what it is; **Explain this screen** explains where you are.
+6. **Hints.** When something looks stuck (blackout on, the master at 0, a
+   fader down, playing the show while BLIND) a line says so, with a button that
+   fixes it.
+7. **Undo history.** The arrow beside Undo lists the last changes in words; pick
+   one to go back to before it (Redo brings them back).
+
+Questions the guide couldn't answer are kept on this computer (Help (?) →
+**Unanswered questions**) so the guide can be filled in where people get stuck.
+
 ### Report a bug
 
 *Where:* Help (?) → Report a bug…

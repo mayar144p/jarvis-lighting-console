@@ -83,6 +83,36 @@ from app.engine_timeline import TimelineMixin
 from app.engine_pixels import PixelsMixin
 
 
+# what an undo step did, in the operator's words ("set_colour" -> "Colour")
+_UNDO_WORDS = {
+    "set_colour": "Colour", "set_intensity": "Level", "set_position": "Position", "aim_at": "Aim",
+    "set_attr_range": "A setting", "set_attr": "A setting", "clear_programmer": "Clear the programmer",
+    "select_heads": "Selection", "select_all": "Select all", "select_group": "Select a group",
+    "record_cue": "Record a cue", "update_cue": "Update a cue", "delete_cue": "Delete a cue", "cue_go": "GO",
+    "record_palette": "Record a palette", "palette_edit": "Change a palette", "add_heads": "Add lights",
+    "remove_heads": "Remove lights", "group_make": "Make a group", "group_edit": "Change a group",
+    "group_delete": "Delete a group", "quick_set": "Make / change a button", "quick_edit": "Change a button",
+    "quick_update": "Update a button", "run_fx": "Start an effect", "stop_fx": "Stop effects",
+    "venue_update": "Change the room", "venue_template": "Room template", "set_place": "Move a light",
+    "attach_heads": "Hang lights", "set_orient": "Turn a light", "fader": "Fader", "master": "Master",
+    "blackout": "Blackout", "macro": "Macro", "command": "Command", "load_show": "Open a show",
+    "design_show": "AI: design a show", "restyle_show": "AI: restyle a show", "timeline_edit": "Change the timeline",
+}
+
+
+def undo_words(label: str) -> str:
+    """A step's name for the Undo list: its own words when it has them
+    ("AI: warm wash on the VIP", a typed command), else the action's."""
+    s = str(label or "").strip()
+    if not s:
+        return "A change"
+    if s in _UNDO_WORDS:
+        return _UNDO_WORDS[s]
+    if re.fullmatch(r"[a-z0-9_]+", s):
+        return s.replace("_", " ").capitalize()
+    return s[:60]
+
+
 class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPagesMixin, PixelsMixin, FxLayerMixin, MoveMixin, TimelineMixin, TempoMixin, SoundMixin, AutopilotMixin, StepsMixin, DeskMixin, OscMixin, HueMixin, SongsMixin, StandbyMixin, CueModesMixin, RoamMixin, ZoneMixin, ProgrammerMixin, CueMixin, OutputMixin, CommandMixin, LooksMixin, ShowMixin):
     """All console state + the DMX output thread. One RLock."""
 
@@ -391,12 +421,17 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
         stops trusting the console - which is why grandMA's Oops overlay
         lists the last actions rather than offering a bare back arrow.
         """
+        now = self._clock()
         return {
             "can_undo": bool(self._undo),
             "can_redo": bool(self._redo),
             "undo": self._undo_label,
             "redo": self._redo_label,
             "depth": len(self._undo),
+            # the last steps in words, newest first (the Undo button's list)
+            "steps": [{"label": undo_words(e.get("label") or e["action"]),
+                       "ago": max(0, round(now - float(e.get("at") or now)))}
+                      for e in reversed(self._undo[-12:])],
         }
 
     def _a_undo(self, **_):

@@ -12046,3 +12046,46 @@ def test_howto_questions() -> None:
                          capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
     check("400 random how-to questions: the right guide section, nothing changed, every button the guide names "
           "is on a screen", out.returncode == 0, (out.stdout + out.stderr)[-600:])
+
+
+def test_help_everywhere() -> None:
+    """Help wherever you are: a word's meaning, an honest 'the guide doesn't cover that', the questions
+    it couldn't answer kept (here only), and the undo history in words."""
+    import os
+    from pathlib import Path
+    from app import config, console_ai, howto
+    from app import engine as eng_mod
+    check("'what is a cue?' gets the word's meaning", (howto.glossary("what is a cue?") or {}).get("term") == "cue", "")
+    check("...and the no-AI copilot says it in one line", console_ai.plan("whats a gobo", offline=True)["reply"].startswith("gobo:"), "")
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            a = howto.answer("how do I connect to spotify")
+            check("a question about something the app doesn't do is answered honestly (the nearest topic, said to be only that)",
+                  a.get("unsure") == ["spotify"] and a["card"].get("unsure") == ["spotify"], str(a.get("unsure")))
+            check("...and kept, on this computer, so the guide can be filled in",
+                  any("spotify" in r["q"] for r in howto.unanswered()), "")
+            howto.note_unanswered("how do I connect to spotify")
+            check("...the same question counted, not listed twice",
+                  [r["n"] for r in howto.unanswered() if "spotify" in r["q"]] == [2], str(howto.unanswered()))
+            howto.clear_unanswered()
+            check("...and the list can be cleared", howto.unanswered() == [], "")
+            check("everyday questions aren't taken as unknown ('make the 3d look better', 'i'm stuck')",
+                  not howto.unknown_words("how do i make the 3d look better")
+                  and not howto.unknown_words("i'm stuck - how do i set up the ai key"), "")
+            e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("select_heads", heads=[1])
+            e.act("set_colour", hex="#ff0000")
+            steps = e.snapshot()["undo"]["steps"]
+            check("the undo history says what each change was, newest first",
+                  [s["label"] for s in steps[:2]] == ["Colour", "Add lights"], str(steps))
+            e.stop() if hasattr(e, "stop") else None
+        finally:
+            config.DATA = old
+    root = Path(__file__).resolve().parents[2]
+    gc = (root / "web" / "app" / "guidecard.js").read_text(encoding="utf-8")
+    check("the help card has Open it for me, the step-by-step coach and 'Not what I asked'",
+          all(w in gc for w in ("Open it for me", "Show me step by step", "Not what I asked")), "")
+    del os

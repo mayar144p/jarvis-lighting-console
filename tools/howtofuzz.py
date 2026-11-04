@@ -72,6 +72,8 @@ TOPICS: list[tuple[str, list[str]]] = [
     (r"Philips Hue", ["make my hue lamps follow", "connect philips hue"]),
     (r"backup desk", ["set up a backup desk", "run two desks"]),
     (r"OSC", ["send osc to qlab", "trigger resolume"]),
+    (r"Getting help", ["get help", "undo several changes", "see what a button does", "find a setting",
+                       "get the desk to show me step by step"]),
     (r"Report a bug", ["report a bug", "send a problem report", "report a light that acts weird"]),
     (r"A newer Haze", ["update haze", "check for updates", "get the new version"]),
     (r"visualiser", ["move the 3d camera", "make the 3d look better", "see beams in the 3d"]),
@@ -191,6 +193,9 @@ def run(turns: int = 600, seed: int = 1, quiet: bool = False) -> dict:
             probs.append(f"not taken as a question: {q!r}")
             continue
         hits = [s["title"] for s in howto.find(q, 2)]
+        strange = howto.unknown_words(q)
+        if strange:
+            probs.append(f"the guide doesn't know {strange} in {q!r} (a word for the synonyms?)")
         if hits and re.search(sect, hits[0], re.I):
             top1 += 1
         if any(re.search(sect, t, re.I) for t in hits):

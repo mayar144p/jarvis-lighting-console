@@ -3069,3 +3069,28 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .gc-pulse { outline: 2px solid var(--accent) !important; outline-offset: 2px; animation: gc-pulse 0.85s var(--ease) 3; position: relative; z-index: 5; }
 @keyframes gc-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(47, 214, 245, 0.55); } 50% { box-shadow: 0 0 0 8px rgba(47, 214, 245, 0); } }
 @media (prefers-reduced-motion: reduce) { .gc-pulse { animation: none; } .gc-bar > i { transition: none; } }
+
+/* -- help wherever you are (guidecard.js, helpmode.js) ---------------------- */
+.gc-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gc-notthis { margin-left: auto; }
+abbr.gc-term { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+/* the step-by-step coach: a small box over the screen, the button to press lit */
+.coach { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4000; width: min(440px, calc(100vw - 32px));
+  background: var(--bg-2, var(--surface)); border: 1px solid var(--accent); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.coach-head { display: flex; align-items: center; gap: 8px; }
+.coach-topic { font-weight: 600; color: var(--muted); font-size: var(--fs-s); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coach-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.coach-lit { outline: 3px solid var(--accent) !important; outline-offset: 3px; box-shadow: 0 0 0 8px rgba(47, 214, 245, 0.18) !important; position: relative; z-index: 3999; }
+/* What's this? - pick anything */
+body.whats-this, body.whats-this * { cursor: help !important; }
+body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this section:hover { outline: 2px dashed var(--ai); outline-offset: 2px; }
+/* a hint when you look stuck */
+.stuck-hint { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 3900; max-width: min(640px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface); border: 1px solid var(--blind);
+  border-radius: var(--radius); box-shadow: var(--shadow); font-size: var(--fs-m); }
+.stuck-t { flex: 1; color: var(--text); }
+.unanswered .mini-table { width: 100%; border-collapse: collapse; }
+.unanswered td, .unanswered th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-s); }
+.undo-more svg { width: 12px; height: 12px; }
+.gc-unsure { margin: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--blind-bg); color: var(--text); font-size: var(--fs-s); }

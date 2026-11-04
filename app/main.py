@@ -666,6 +666,14 @@ class Handler(BaseHTTPRequestHandler):
                     if first.get("fixture_id") else None
                 return self._json({"fixture": fixture,
                                    "summary": f"saved {item['manufacturer']} {item['model']} to your library"})
+            if route == "/api/howto":
+                # "Not this" on an answer, or clear the list of unanswered questions
+                from app import howto
+                if body.get("clear"):
+                    howto.clear_unanswered()
+                elif body.get("not_this"):
+                    howto.note_unanswered(str(body["not_this"]), "not what was asked")
+                return self._json({"ok": True, "unanswered": howto.unanswered()})
             if route == "/api/fixtures/library/install":
                 # A bundled OFL / QLC+ fixture into the installed library.
                 src, key = str(body.get("src", "")), str(body.get("key", ""))
@@ -1617,6 +1625,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "say which light: its brand and model"}, 400)
             return self._json({"url": bugreport.request_url(maker, model, query.get("mode", ""),
                                                              query.get("link", ""), query.get("note", ""))})
+        if route == "/api/howto":
+            # how do I...? the guide's answer, a word's meaning, the topics,
+            # or the questions the guide couldn't answer (kept here only)
+            from app import howto
+            if query.get("topics"):
+                return self._json({"topics": howto.topics(), "glossary": howto.GLOSSARY})
+            if query.get("unanswered"):
+                return self._json({"unanswered": howto.unanswered()})
+            return self._json(howto.lookup(str(query.get("q", ""))[:300]))
         if route == "/api/fixtures/library":
             # The bundled open libraries, searched offline.
             try:

@@ -61,7 +61,7 @@ export function initKeys() {
     if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); saveShow((state.snap && state.snap.show_file) || ""); return; }
     // F1 / F2 / F3: Set up, Program, Live (as the mode buttons say)
     const fk = { F1: "setup", F2: "program", F3: "live" }[e.key];
-    if (fk && !ctrl && !e.altKey && !anyModal()) {
+    if (fk && !ctrl && !e.altKey && !e.shiftKey && !anyModal()) {     // (Shift+F1: What's this?)
       e.preventDefault();
       if (cmdOpen()) closeCmd();
       import("./workspaces.js").then((m) => m.useMode(fk));

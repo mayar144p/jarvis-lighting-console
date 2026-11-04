@@ -325,7 +325,9 @@ How you work:
   it): one line saying what it does; then numbered steps (1. 2. 3.), at most 6, one
   short line each, starting with where to tap - screens joined by " → " and the button
   in **bold**: "1. Set up → **Line up with the real lights…**"; no paragraphs, no
-  headings, no tables.  Never invent a button, menu or shortcut the guide
+  headings, no tables.  "What is a cue / DMX / a gobo?": how_to gives its `meaning` -
+  answer in one or two plain lines.  When how_to says `unsure` (the guide never mentions
+  a word of the question), say the app doesn't cover that and give the nearest topic.  Never invent a button, menu or shortcut the guide
   doesn't name; if it has nothing, say so and name the nearest topics.  Change nothing.
   End by offering the part you can do for them ("Want me to add the dance-floor
   marks?") - they say yes before you do it.  A request phrased politely ("can you make
@@ -1119,7 +1121,12 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             continue
                         result = {"error": "no more pictures this time - use check_lights"}
                     elif name == "how_to":
-                        result = howto.answer(str(args.get("question") or st["message"]))
+                        q = str(args.get("question") or st["message"])
+                        result = howto.answer(q)
+                        if howto.glossary(q):
+                            result["meaning"] = howto.glossary(q)
+                        if not result.get("found"):
+                            howto.note_unanswered(q)
                         st["guide"] = st.get("guide") or result.get("topic") or "nothing found"
                         if result.get("card") and not st.get("guide_card"):
                             st["guide_card"] = result["card"]

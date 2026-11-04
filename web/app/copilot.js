@@ -292,7 +292,7 @@ async function assist(text) {
     if (r.guide_card) {
       // it looked it up: the guide's own steps, one tap away
       const det = h("details.gc-from", h("summary.muted.small", `📖 From the guide: ${r.guide_card.topic}`));
-      det.addEventListener("toggle", () => { if (det.open && det.children.length < 2) det.append(guideCard(r.guide_card, [], askAbout)); }, { once: false });
+      det.addEventListener("toggle", () => { if (det.open && det.children.length < 2) det.append(guideCard(r.guide_card, [], askAbout, text)); }, { once: false });
       extra.prepend(det);
     }
     // its answer laid out: steps as steps, button names as buttons
@@ -330,7 +330,10 @@ async function plan(text) {
     history.push({ role: "user", content: text }, { role: "assistant", content: r.reply || "" });
     if (r.source === "guide") {
       // a how-to question: the guide's own steps, laid out - nothing to apply
-      const box = say("bot", "", r.guide ? guideCard(r.guide, r.also || [], askAbout) : replyView(r.reply || ""));
+      const view = r.glossary
+        ? h("div.guide-card", h("div.gc-head", h("span.gc-badge", "📖 Word"), h("span.gc-topic", r.glossary.term)), h("p.gc-summary", r.glossary.text))
+        : r.guide ? guideCard(r.guide, r.also || [], askAbout, text) : replyView(r.reply || "");
+      const box = say("bot", "", view);
       box.classList.add("has-card");
       return;
     }
