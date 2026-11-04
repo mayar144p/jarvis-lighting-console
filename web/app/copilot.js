@@ -52,8 +52,11 @@ function say(kind, text, extra) {
   if (extra) box.append(extra);
   log.append(box);
   log.scrollTop = log.scrollHeight;
-  const sug = $("#ai-suggest");
-  if (sug) sug.replaceChildren();              // (the conversation has started)
+  if (kind === "user") {
+    talked = true;                              // (the conversation has started: the suggestions go)
+    const sug = $("#ai-suggest");
+    if (sug) sug.replaceChildren();
+  }
   return box;
 }
 
@@ -335,10 +338,13 @@ export function askCopilot(text) {
 // What it can do, and what to ask next - for this desk as it is now (no
 // lights yet: add some; no room: draw it; no show: design one...).  Shown
 // until the conversation starts; a tap puts the words in the box.
+// (the welcome line isn't the conversation: the suggestions stay until
+// something is asked - they used to vanish before they were ever seen)
+let talked = false;
 function renderSuggest() {
   const box = $("#ai-suggest");
   if (!box) return;
-  if ($("#ai-log") && $("#ai-log").children.length) { box.replaceChildren(); return; }
+  if (talked) { box.replaceChildren(); return; }
   const s = state.snap || {};
   const lights = (s.patch || []).length;
   const zones = ((s.venue || {}).zones || []).length;
@@ -605,6 +611,7 @@ export function initCopilot() {
   $("#ai-new").addEventListener("click", async () => {
     await post("/api/console/assistant", { reset: true, session });
     $("#ai-log").replaceChildren();
+    talked = false;
     renderSuggest();
   });
   $("#ai-memory").addEventListener("click", showMemory);

@@ -8949,10 +8949,8 @@ def test_line_up() -> None:
         finally:
             e.shutdown()
     pj = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("Line up, one step at a time: the light alone, aimed at the two marks furthest apart, one arrow pad, one button, worked out by itself",
-          '"line_up"' in pj and "function farPair" in pj and '"highlight", { state: true, solo: true }' in pj and '"aim_at"' in pj
-          and "`It's on ${m.label} ✓`" in pj and "solve: true" in pj and "Next light ▶" in pj and "lineup-pad" in pj
-          and 'id="lineup-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
+    # (the line-up box itself - two marks, each step, lined up - is clicked
+    # through in a real browser: tools/behave.mjs)
     app_dir = ROOT / "web" / "app"
     check("Which way up (Invert pan / tilt, Swap) is a link in the Line up box", '"set_orient"' in pj and "Invert pan" in pj
           and "Invert tilt" in pj and "Swap pan/tilt" in pj and "The arrows move it the wrong way?" in pj, "")
@@ -11759,9 +11757,8 @@ def test_lineup_marks() -> None:
         finally:
             e.shutdown()
             config.DATA = old
-    js = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
-    check("the box asks the desk for the marks, shows them as steps, and says what happened",
-          "line_up_marks" in js and "lineup-steps" in js and "Mark 1 kept" in js and "wasn't kept" in js, "")
+    # (the box showing them as steps, and what happened after each press, is
+    # clicked through in a real browser: tools/behave.mjs)
 
 
 def test_storm_leftovers() -> None:
