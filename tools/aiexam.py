@@ -267,7 +267,7 @@ def run(only: str = "", fake: bool = False, out: Path | None = None, limit: int 
         out.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"\n{passed} of {len(results)} passed ({report['score']}%)" + (f" - report: {out}" if out else ""))
     pc = lambda v: "-" if v is None else f"{v}%"  # noqa: E731
-    print(f"actions that worked: {pc(metrics["action_accuracy"])} | put right after a failure: {pc(metrics["recovery"])} | "
+    print(f"actions that worked: {pc(metrics['action_accuracy'])} | put right after a failure: {pc(metrics['recovery'])} | "
           f"answer time: {metrics['median_seconds']} s typical, {metrics['slowest_seconds']} s slowest | "
           f"look-ups online: {metrics['searches']}"
           + (f" | show quality (judged): {metrics['show_quality']} of 5" if metrics["show_quality"] else ""))
