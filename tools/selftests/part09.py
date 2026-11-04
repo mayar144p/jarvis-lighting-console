@@ -11802,3 +11802,45 @@ def test_storm_leftovers() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_update_check() -> None:
+    """A newer Haze: the installed app hears of it (once a day, in the background, never installed by
+    itself); 'Not now' hides that version; it can be switched off; a desk run from the code doesn't ask."""
+    import os
+    from pathlib import Path
+    from app import config, updates
+    check("versions compare as numbers", updates.newer("v0.10.0", "0.9.3") and not updates.newer("v0.2.0", "0.2.0")
+          and not updates.newer("0.1.9", "0.2"), "")
+    rel = {"tag_name": "v0.3.0", "html_url": "https://github.com/x/releases/v0.3.0", "body": "Better strobes",
+           "assets": [{"name": "Haze Setup 0.3.0.exe", "browser_download_url": "https://x/Haze.exe"},
+                      {"name": "Haze-0.3.0.dmg", "browser_download_url": "https://x/Haze.dmg"}]}
+    check("the installer for this computer", updates.pick_asset(rel["assets"], "win32").endswith(".exe")
+          and updates.pick_asset(rel["assets"], "darwin").endswith(".dmg"), "")
+    p = updates.parse(rel, "0.2.0")
+    check("a newer release is offered, with what's new", p["available"] and p["latest"] == "0.3.0" and p["notes"], str(p))
+    check("...a test version (pre-release) isn't", not updates.parse({**rel, "prerelease": True}, "0.2.0")["available"], "")
+    old = config.DATA
+    env = {k: os.environ.get(k) for k in ("HAZE_VERSION", "HAZE_PACKED")}
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            os.environ.pop("HAZE_PACKED", None)
+            check("a desk run from the code doesn't ask (it updates from git)", not updates.status()["installed"], "")
+            os.environ["HAZE_VERSION"], os.environ["HAZE_PACKED"] = "0.2.0", "1"
+            import time as _t
+            updates._save({**p, "checked": _t.time()})
+            s = updates.status()
+            check("the installed app shows it", s["installed"] and s["available"] and s["latest"] == "0.3.0" and not s["dismissed"], str(s))
+            check("'Not now' hides this version", updates.dismiss()["dismissed"], "")
+            check("...switched off, nothing is offered", not updates.set_off(True)["available"] and updates.status()["off"], "")
+            updates.set_off(False)
+        finally:
+            config.DATA = old
+            for k, v in env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    wf = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
+    check("a version tag publishes the installers as a release", 'tags: ["v*"]' in wf and "gh release create" in wf, "")

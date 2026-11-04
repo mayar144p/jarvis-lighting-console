@@ -7,6 +7,9 @@ name: Desktop app (installers)
 # workflow -> Run workflow); a pull request that changes desktop/ runs it too.
 on:
   workflow_dispatch:
+  # a version tag (v0.2.0) builds both installers and publishes them as a release
+  push:
+    tags: ["v*"]
   # every night too: an engine change can break the installed app without
   # touching desktop/, and that should show the next morning, not at release
   schedule:
@@ -25,6 +28,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: The version from the tag (a release; app/updates.py compares it)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
       - name: A Python of its own (Windows' embeddable Python; the engine needs only the standard library)
         shell: pwsh
         run: |
@@ -79,6 +86,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: The version from the tag (a release; app/updates.py compares it)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node -e "const f='desktop/package.json',p=JSON.parse(require('fs').readFileSync(f));p.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
       - uses: astral-sh/setup-uv@v6
       - name: A Python of its own (python-build-standalone via uv; the engine needs only the standard library)
         run: |
@@ -124,3 +135,21 @@ jobs:
           name: Haze-Mac-installer
           path: desktop/dist/*.dmg
           retention-days: 14
+
+  # the installers of a version tag, published as a GitHub release: the
+  # installed desks find it there (Settings -> Screen: tell me when a newer
+  # Haze is out) - nothing installs by itself
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*/* --repo "$GITHUB_REPOSITORY" --title "Haze ${GITHUB_REF_NAME#v}" --generate-notes
