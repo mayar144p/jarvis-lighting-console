@@ -190,6 +190,28 @@ function render() {
   $(".fx-table-wrap").classList.toggle("is-empty", n === 0);
   renderSelBar(sel);
   paintLamps();
+  snugSoon();
+}
+
+// A list that ALMOST fits (a few pixels short) gets a scrollbar to scroll
+// those few pixels: its rows give up a pixel or two instead, so it fits.
+// (A list that really doesn't fit scrolls as before.)
+let snugQueued = false;
+function snugSoon() {
+  if (snugQueued) return;
+  snugQueued = true;
+  requestAnimationFrame(() => { snugQueued = false; snug(); });
+}
+function snug() {
+  const wrap = $(".fx-table-wrap");
+  if (!wrap) return;
+  wrap.style.removeProperty("--fx-trim");
+  const rows = wrap.querySelectorAll("tbody tr").length;
+  const over = wrap.scrollHeight - wrap.clientHeight;
+  if (rows >= 4 && over > 0 && over <= 8) wrap.style.setProperty("--fx-trim", `${Math.min(3, Math.ceil(over / rows))}px`);
+}
+if (typeof ResizeObserver !== "undefined") {
+  requestAnimationFrame(() => { const w = $(".fx-table-wrap"); if (w) new ResizeObserver(snugSoon).observe(w); });
 }
 
 // "6 selected · LED PARs" and, for two or more, the quick splits

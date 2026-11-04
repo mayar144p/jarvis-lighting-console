@@ -345,7 +345,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
   padding: 6px 8px; border-bottom: 1px solid var(--border);
 }
-.fx-table td { padding: 4px 8px; height: calc(38px * var(--ctl)); border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+.fx-table td { padding: 4px 8px; height: calc(38px * var(--ctl) - var(--fx-trim, 0px)); border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
 .fx-table .c-no { width: calc(60px * var(--ctl)); font-family: var(--mono); font-size: var(--fs-s); color: var(--muted); white-space: nowrap; }
 .fx-table td.c-no { padding-right: 0; }
 .fx-table td.c-no > * { vertical-align: middle; }
@@ -1852,7 +1852,8 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: var(--fs-l); }
 .fx-col-any { color: var(--fg); background: var(--bg); font-size: var(--fs-m); }
 .fx-col-any input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .mv-roam-sp { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 140px; }
-.mv-roam-speed { flex: 1; min-width: 80px; }
+/* the slider gives way (over .mv-row's 90px), so Speed and its % always fit */
+.mv-row .mv-roam-sp input.mv-roam-speed { flex: 1 1 auto; min-width: 40px; width: 0; }
 .mv-roam-v { min-width: 6.5ch; font-size: var(--fs-s); font-variant-numeric: tabular-nums; }
 .aim-map .am-dj-t { fill: var(--accent); font-weight: 700; }
 .aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
