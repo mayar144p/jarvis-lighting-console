@@ -133,6 +133,9 @@ def gui_names() -> tuple[list[str], list[str]]:
         if len(n.split()) > 6 or re.search(r"[=`]|^\d|\bthe desk\b|^(not|never|only|one|all|every)\b", n, re.I):
             continue
         names.append(n)
+    # every place a "Where:" line sends you to
+    for line in re.findall(r"^\*Where:\*\s*(.+)$", guide, re.M):
+        names += [re.sub(r"\s*\(.*?\)\s*", " ", x).strip() for x in line.split("→") if x.strip()]
     missing = []
     for n in sorted(set(names)):
         parts = [p.strip() for p in re.split(r"\s*(?:→|->|/)\s*", n) if p.strip()]

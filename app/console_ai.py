@@ -434,7 +434,9 @@ def plan(message: str, offline: bool = False, eng=None, history=None) -> dict:
     if howto.is_howto(text):
         # "help me align the lights" is a question about the app, not a look:
         # the guide's own steps, and nothing on the rig changes
-        return {"reply": howto.reply(text), "steps": [], "source": "guide"}
+        a = howto.answer(text)
+        return {"reply": howto.reply(text), "steps": [], "source": "guide",
+                "guide": a.get("card"), "also": a.get("also") or []}
     if not offline and llm.available():
         try:
             messages = [{"role": "system",

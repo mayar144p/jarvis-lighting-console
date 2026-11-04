@@ -110,7 +110,11 @@ def sections() -> tuple[dict, ...]:
         elif cur is not None:
             cur["lines"].append(line)
     for s in out:
-        s["body"] = "\n".join(s.pop("lines")).strip()
+        body = "\n".join(s.pop("lines")).strip()
+        # "*Where:* Set up → Line up with the real lights…" - where it is on screen
+        m = re.match(r"^\*Where:\*\s*(.+)$", body, re.M)
+        s["where"] = [x.strip() for x in m.group(1).split("→") if x.strip()] if m else []
+        s["body"] = re.sub(r"^\*Where:\*.*\n?", "", body, flags=re.M).strip()
         s["title_words"] = set(_words(s["title"]))
         s["words"] = _words(s["body"])
     return tuple(s for s in out if s["body"])
@@ -240,6 +244,51 @@ def reflow(body: str) -> str:
     return "\n".join(out).strip()
 
 
+def card(title: str, body: str, where: list | None = None) -> dict:
+    """A section laid out for a screen: what it's for in one line, where it
+    is (the first menu path), the steps (each a short bold lead and its
+    text) and anything else as notes - so an answer reads at a glance.
+
+        {"topic", "summary", "where": ["Set up", "Line up with the real lights…"],
+         "steps": [{"title", "text"}], "notes": [str]}
+    """
+    paras = [p for p in reflow(body).split("\n") if p.strip()]
+    steps: list[dict] = []
+    notes: list[str] = []
+    intro: list[str] = []
+    for p in paras:
+        m = re.match(r"^(\d+)\.\s+(.*)", p)
+        if m:
+            t = m.group(2)
+            lead = re.match(r"^\*\*([^*]+?)\*\*\s*(.*)", t)
+            if lead and lead.group(1).rstrip().endswith((".", ":")):
+                steps.append({"title": lead.group(1).rstrip(" .:"), "text": lead.group(2)})
+            else:
+                steps.append({"title": "", "text": t})
+        elif steps:
+            notes.append(re.sub(r"^[-*•]\s+", "", p))
+        else:
+            intro.append(re.sub(r"^[-*•]\s+", "", p))
+    if not steps:
+        # no numbered steps: each paragraph is one, by its bold lead when it has one
+        for p in intro[1:] or intro:
+            lead = re.match(r"^\*\*([^*]+?)\*\*\s*(.*)", p)
+            if lead and lead.group(1).rstrip().endswith((".", ":")):
+                steps.append({"title": lead.group(1).rstrip(" .:"), "text": lead.group(2)})
+            else:
+                steps.append({"title": "", "text": p})
+        intro = intro[:1] if len(intro) > 1 else []
+        steps = steps[:8]
+    first = intro[0] if intro else ""
+    sentence = re.split(r"(?<=[.!?])\s+", first, maxsplit=1)
+    summary = sentence[0] if sentence and len(sentence[0]) <= 220 else first[:200].rsplit(" ", 1)[0] + "…" if first else ""
+    rest = " ".join(([sentence[1]] if len(sentence) > 1 else []) + intro[1:]).strip()
+    if rest:
+        notes.insert(0, rest)
+    return {"topic": title, "summary": summary, "where": list(where or [])[:4], "steps": steps,
+            "notes": [n for n in notes if n][:3]}
+
+
 def answer(text: str, limit: int = 3500) -> dict:
     """What the copilot reads to answer a how-to question."""
     hits = find(text, 3)
@@ -253,7 +302,7 @@ def answer(text: str, limit: int = 3500) -> dict:
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0] + "\n..."
     return {"found": True, "topic": best["title"], "steps": body,
-            "also": [s["title"] for s in hits[1:]]}
+            "also": [s["title"] for s in hits[1:]], "card": card(best["title"], best["body"], best.get("where"))}
 
 
 def reply(text: str) -> str:

@@ -89,6 +89,8 @@ outdoor stage) and resizes the room.
 
 ### Arrange mode
 
+*Where:* Set up → Arrange the room
+
 **Arrange** (stage toolbar) turns the stage into an editor:
 
 * Click a light, truss, object, zone, the stage or the floor plan to get a
@@ -154,6 +156,8 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
+*Where:* Buttons (bottom left)
+
 **Buttons** in the bottom panel is a grid of instant buttons on up to 32
 named pages (double-click a page in Edit to name it), like a MagicQ execute
 window. Each one is **hold** (on while pressed),
@@ -216,6 +220,8 @@ another button or the whole page; what the buttons do stays the same.
 
 ### Groups
 
+*Where:* Fixtures → Group
+
 A group is a set of lights you pick often (the back truss, the floor PARs).
 
 1. Select the lights (click, Ctrl+click, or drag in the 3D / the list).
@@ -226,6 +232,8 @@ A group is a set of lights you pick often (the back truss, the floor PARs).
    **Delete group…**. Buttons and faders that use the group follow the change.
 
 ### Palettes
+
+*Where:* Programmer → Looks → + Record
 
 A palette is a colour, a position or a beam setting, saved once and used
 everywhere: cues and buttons point at it, so changing the palette changes
@@ -240,6 +248,8 @@ every cue that uses it.
    are there too.
 
 ### Cues and playbacks
+
+*Where:* Programmer → Record cue…
 
 A cue is a look kept on a playback (a fader); a playback holds a list of cues
 played one after another with **GO**.
@@ -257,6 +267,8 @@ played one after another with **GO**.
 
 ### Effects
 
+*Where:* Programmer → FX
+
 Programmer → **FX**: chases, waves, circles and other movement, colour and
 dimmer effects on the selected lights.
 
@@ -268,6 +280,8 @@ dimmer effects on the selected lights.
    running).
 
 ### Timeline
+
+*Where:* Timeline (bottom left)
 
 **Timeline** in the bottom panel runs the show against the music:
 
@@ -397,6 +411,8 @@ that spot. The pan/tilt dials still move each light's own pan and tilt.
 
 ### Lining up a venue (the real lights match the desk)
 
+*Where:* Set up → Line up with the real lights…
+
 The desk aims a light from where it thinks the light hangs and which way it
 faces. In a real venue those are never exact, so line the rig up once per
 venue; it's saved with the show.
@@ -429,6 +445,8 @@ The **Plot** (Windows → Plot) shows the rig flat with every light's number -
 handy to walk the room and tick lights off.
 
 ### The room the lights know: teach it by pointing
+
+*Where:* Set up → Teach the room by pointing…
 
 Once a light is lined up, the desk knows exactly where its beam lands on the
 floor - so the light itself can show the desk the room. **Set up → Teach the
@@ -641,6 +659,8 @@ out and back in; **Unlock** puts them back).
 
 ### Keyboard
 
+*Where:* Help (?) → Keys
+
 | key | does | key | does |
 |---|---|---|---|
 | <kbd>Space</kbd> | GO on the focused playback (Enter never fires GO) | <kbd>B</kbd> | cue back |
@@ -667,6 +687,8 @@ tilt); `cue 3 at 50` runs cue 3 at half.
 ## The copilot
 
 ### The AI assistant (with an AI key)
+
+*Where:* Copilot (top bar)
 
 With `LLM_API_KEY` in `.env`, the copilot's Program tab is an assistant
 that works the desk itself. It looks at the rig, does things, then
@@ -764,6 +786,8 @@ buttons.
 
 ### Talking with the copilot (voice)
 
+*Where:* Copilot → 🗣 Talk
+
 With the online AI (Settings → AI → your key), **🗣 Talk** in the copilot
 starts a spoken conversation: you talk, it answers out loud, and you can talk
 over it. What you ask it to do goes to the copilot as if typed - the room's
@@ -772,6 +796,8 @@ the online AI, hold 🎙 to speak one request.
 
 ### What the AI has learned
 
+*Where:* Settings → AI → What the AI has learned…
+
 Settings → AI → **What the AI has learned…** shows everything it uses:
 notes you gave it ("never strobe the VIP"), things it noticed and wants you to
 OK (**Keep** or **Forget**), habits from your shows, and requests you undid.
@@ -779,6 +805,8 @@ OK (**Keep** or **Forget**), habits from your shows, and requests you undid.
 again (your shows stay).
 
 ### DJ requests from a phone
+
+*Where:* Copilot → 📱 DJ requests…
 
 The DJ or the host asks for things from their phone (more energy, a speech,
 blackout for the intro) and you decide.
@@ -792,6 +820,8 @@ blackout for the intro) and you decide.
    old link working.
 
 ## Connecting a rig (Art-Net / sACN)
+
+*Where:* Settings → Output
 
 Every venue's node has its own address, so you set it in the app for each
 venue. Open **Settings → Output**:
@@ -840,6 +870,8 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
   requests and DNS rebinding from other web pages.
 
 ### Strobe safety
+
+*Where:* Settings → Output → Strobe safety
 
 Settings → Output → **Strobe safety**: tick *Strobes at most 3 flashes a
 second* and nothing the desk sends flashes faster - buttons, the desk's
@@ -918,6 +950,8 @@ one Ctrl+Z, and that brings back the show that was open.
 
 ## Look and help
 
+*Where:* Settings → Screen & 3D
+
 **Settings → Screen & 3D → Look**, per computer:
 - **Density:** *Compact* fits more on screen, *Roomy* gives every button
   and row more room; *Standard* sits between. (**Gig mode** above makes
@@ -959,6 +993,8 @@ show.
 
 ### Report a bug
 
+*Where:* Help (?) → Report a bug…
+
 Help (**?**) → **Report a bug…**, or right-click a light →
 **Report a problem with this light…** (its fixture file, its DMX and a 3D
 picture go with it).
@@ -969,6 +1005,8 @@ Keys and passwords are never included. **Send report** files it directly
 GitHub** saves a zip to drag into the page that opens.
 
 ### A newer Haze
+
+*Where:* Settings → Screen & 3D
 
 The installed app checks once a day. When a newer version is out,
 *Haze 0.2.0 is out* shows in the top bar: **Download Haze 0.2.0** (the installer for
@@ -988,6 +1026,8 @@ program (QLab listens on 53000, Resolume on 7000). **Test** sends
 venue has its own video computer.
 
 ## Hardware controllers
+
+*Where:* Settings → MIDI & OSC
 
 Switch on **Settings → MIDI & OSC → MIDI in the browser**, then plug in a
 controller. These are recognised by name and work straight away:
@@ -1054,6 +1094,8 @@ with their length in the name) and the objects as an `.mvr`, with the GDTF
 files the desk has for those lights, for other programs.
 
 ## Fixture library
+
+*Where:* Fixtures → + Add
 
 **Add lights** searches everything at once in the **All** tab, and
 also has separate tabs:
@@ -1146,6 +1188,8 @@ To refresh the bundled libraries from upstream, run
 licences and the exact upstream commits.
 
 ## Lasers and special effects
+
+*Where:* Programmer → SFX
 
 Confetti, CO₂, flame, sparks, fog, haze and lasers are **effects**, not
 lights, and Haze treats them that way.

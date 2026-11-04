@@ -181,10 +181,28 @@ const rigBefore = JSON.stringify(((await snap()).patch || []).map((x) => [x.head
 await p.evaluate(() => import("/app/copilot.js").then((m) => m.openCopilot())); await sleep(600);
 await p.locator("#ai-text").fill("help me align the lights");
 await p.locator("#ai-send").click(); await sleep(1500);
-const ans = await p.locator(".guide-answer").last().innerText().catch(() => "");
-check("'help me align the lights' gets the guide's line-up steps, with the real button names",
-  /Line up with the real lights/.test(ans) && /mark/i.test(ans) && !/\*\*/.test(ans), ans.slice(0, 200));
+const card = p.locator(".guide-card").last();
+const ans = await card.innerText().catch(() => "");
+check("'help me align the lights' gets a card: the topic, where it is, and numbered steps",
+  /Lining up/.test(ans) && (await card.locator(".gc-where .gc-ui", { hasText: "Line up with the real lights" }).count()) === 1
+  && (await card.locator(".gc-step").count()) >= 5 && !/\*\*/.test(ans), ans.slice(0, 200));
+check("...the first 4 steps show, the rest behind 'Show all'", (await card.locator(".gc-step:visible").count()) === 4
+  && (await card.locator(".gc-more").count()) === 1, "");
+await card.locator(".gc-more").click();
+await card.locator(".gc-tick input").first().check(); await card.locator(".gc-tick input").nth(1).check();
+check("...steps tick off and the bar shows how far you are", /2 of 5 done/.test(await card.locator(".gc-count").innerText()), "");
+await p.getByRole("button", { name: "Set up", exact: true }).first().click(); await sleep(800);
+await card.locator(".gc-where .gc-ui", { hasText: "Line up with the real lights" }).click(); await sleep(300);
+check("...tapping a button name lights that button up on the screen",
+  (await p.locator("button.gc-pulse", { hasText: "Line up with the real lights" }).count()) >= 1, "");
 check("...and nothing on the rig changed", JSON.stringify(((await snap()).patch || []).map((x) => [x.head_no, x.x, x.y, x.z])) === rigBefore, "");
+const laid = await p.evaluate(() => import("/app/guidecard.js").then((m) => {
+  const v = m.replyView("Lines the real lights up with the desk.\n1. Set up → **Line up with the real lights…**\n2. Nudge it onto the mark, press **It's on the mark ✓**\n- tip: *Fine* for the last bit");
+  return { steps: v.querySelectorAll(".gc-step").length, names: v.querySelectorAll(".gc-ui").length, seps: v.querySelectorAll(".gc-sep").length,
+    stars: /\*/.test(v.textContent) };
+}));
+check("an AI answer is laid out too: numbered steps, button names as buttons, '→' as a breadcrumb",
+  laid.steps === 2 && laid.names === 2 && laid.seps === 1 && !laid.stars, JSON.stringify(laid));
 await p.evaluate(() => import("/app/copilot.js").then((m) => m.closeCopilot()));
 
 check("no page errors", !errors.length, errors.join(" | "));

@@ -321,8 +321,11 @@ How you work:
 * Suggest a next idea when it would help, in one line.
 * HOW DO I...? ("help me align the lights", "where do I patch a light", "what does ARM do"):
   a question about using the app.  how_to first, then answer with ITS steps and the
-  buttons by the names it gives (Set up -> Line up with the real lights...) - short,
-  numbered, the operator's words.  Never invent a button, menu or shortcut the guide
+  buttons by the names it gives.  LAY IT OUT so it reads at a glance (the screen draws
+  it): one line saying what it does; then numbered steps (1. 2. 3.), at most 6, one
+  short line each, starting with where to tap - screens joined by " → " and the button
+  in **bold**: "1. Set up → **Line up with the real lights…**"; no paragraphs, no
+  headings, no tables.  Never invent a button, menu or shortcut the guide
   doesn't name; if it has nothing, say so and name the nearest topics.  Change nothing.
   End by offering the part you can do for them ("Want me to add the dance-floor
   marks?") - they say yes before you do it.  A request phrased politely ("can you make
@@ -1118,6 +1121,9 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                     elif name == "how_to":
                         result = howto.answer(str(args.get("question") or st["message"]))
                         st["guide"] = st.get("guide") or result.get("topic") or "nothing found"
+                        if result.get("card") and not st.get("guide_card"):
+                            st["guide_card"] = result["card"]
+                        result = {k: v for k, v in result.items() if k != "card"}    # (the AI reads the text)
                     elif name == "look_at_rig":
                         result = {"rig": console_ai.rig_context(eng)}
                     elif name == "check_lights":
@@ -1385,7 +1391,7 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
             if eng._undo and eng._undo[-1].get("action") == "assistant":
                 eng._undo[-1]["example"] = example
     return {"ok": True, "reply": reply, "question": question, "options": options, "steps": steps, "example": example,
-            "guide": st.get("guide") or "",
+            "guide": st.get("guide") or "", "guide_card": st.get("guide_card"),
             "stopped": bool(st.get("stopped")), "plan": st.get("plan"), "learned": st.get("learned") or [],
             "confirm": st.get("waiting") or [],
             "changed": st["changed"], "preview": st["blind_started"], "views": st["views"],

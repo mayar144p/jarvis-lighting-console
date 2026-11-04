@@ -7,6 +7,7 @@ import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
 import { stagePanel } from "./view3d.js";
 import { currentPage, lastButton } from "./quickbuttons.js";
+import { guideCard, replyView } from "./guidecard.js";
 
 // What the operator is looking at, for "this button", "this page", "here":
 // the screen, the tab, the buttons page, the last button touched, open windows
@@ -46,11 +47,12 @@ function label(step) {
   }
 }
 
-// The guide's words as text: its lines kept, **names** in bold (no HTML from
-// the text itself)
-function guideText(text) {
-  return h("div.guide-answer", ...String(text).split("\n").map((line) => h("div",
-    ...line.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? h("b", part) : part.replace(/\*([^*]+)\*/g, "$1"))))));
+// a "See also" topic asked as if typed
+function askAbout(text) {
+  const ta = $("#ai-text");
+  if (!ta) return;
+  ta.value = text;
+  $("#ai-send").click();
 }
 
 function say(kind, text, extra) {
@@ -287,8 +289,17 @@ async function assist(text) {
     } else if (r.changed) {
       extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
     }
-    const box = say("bot", r.reply || (r.question ? "" : "Done."), extra);
-    box.firstChild.after(h("span.src", "AI"));
+    if (r.guide_card) {
+      // it looked it up: the guide's own steps, one tap away
+      const det = h("details.gc-from", h("summary.muted.small", `📖 From the guide: ${r.guide_card.topic}`));
+      det.addEventListener("toggle", () => { if (det.open && det.children.length < 2) det.append(guideCard(r.guide_card, [], askAbout)); }, { once: false });
+      extra.prepend(det);
+    }
+    // its answer laid out: steps as steps, button names as buttons
+    const box = say("bot", "", replyView(r.reply || (r.question ? "" : "Done.")));
+    box.classList.add("has-card");
+    box.append(extra);
+    box.prepend(h("span.src", "AI"));
   } catch (err) {
     clearInterval(tick);
     thinking.remove();
@@ -318,9 +329,9 @@ async function plan(text) {
     thinking.remove();
     history.push({ role: "user", content: text }, { role: "assistant", content: r.reply || "" });
     if (r.source === "guide") {
-      // a how-to question: the guide's own steps, readable - nothing to apply
-      const box = say("bot", "", guideText(r.reply || ""));
-      box.prepend(h("span.src", "GUIDE"));
+      // a how-to question: the guide's own steps, laid out - nothing to apply
+      const box = say("bot", "", r.guide ? guideCard(r.guide, r.also || [], askAbout) : replyView(r.reply || ""));
+      box.classList.add("has-card");
       return;
     }
     const src = h("span.src", r.source === "llm" ? "AI" : "OFFLINE");
