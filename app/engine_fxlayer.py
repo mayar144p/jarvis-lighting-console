@@ -1082,6 +1082,61 @@ class FxLayerMixin:
                       and tr.get("min") is not None else (-135.0, 135.0))
         return float(pmin), float(pmax), float(tmin), float(tmax)
 
+    # spots that make good line-up marks: the dance floor, the DJ, the stage,
+    # the operator's own taped marks - where this light plays; the bar or the
+    # VIP (maybe another room) only when nothing else is reachable
+    LINEUP_MAIN = ("floor", "front", "back", "left", "right", "middle", "dj", "stage")
+
+    def _lineup_marks(self, h: dict) -> list[dict]:
+        """The two marks this light should be lined up on: ones it can really
+        reach at a steep enough angle (a beam skimming the floor far away is
+        a long smear, no good to aim by), as far apart as such marks go."""
+        import math
+        hy = float(h.get("y") or 0) or 3.0
+        good = []
+        for s in self._move_spots():
+            try:
+                got = self._aim_solve(h, float(s["x"]), 0.0, float(s["z"]))
+            except Exception:  # noqa: BLE001 - a spot the maths can't do is just not a mark
+                got = None
+            if got is None:
+                continue
+            d = math.hypot(float(s["x"]) - float(h.get("x") or 0), float(s["z"]) - float(h.get("z") or 0))
+            if d > max(4.0, hy * 2.75):            # (more than ~70 degrees off straight down)
+                continue
+            main = s["key"] in self.LINEUP_MAIN or str(s["key"]).startswith("mark:")
+            good.append({**s, "main": main, "d": d})
+
+        def pair(cands):
+            best, far = [], 1.5                       # (two marks at least 1.5 m apart)
+            for a in range(len(cands)):
+                for b in range(a + 1, len(cands)):
+                    gap = math.hypot(cands[a]["x"] - cands[b]["x"], cands[a]["z"] - cands[b]["z"])
+                    if gap > far:
+                        far, best = gap, [cands[a], cands[b]]
+            return best
+        mine = [s for s in good if str(s["key"]).startswith("mark:")]
+        out = pair(mine) or pair([s for s in good if s["main"]]) or pair(good)
+        if not out:
+            out = sorted(good, key=lambda s: (not s["main"], s["d"]))[:1]
+        # said in full here: "Back" alone could be anywhere
+        whole = {"floor": "the middle of the dance floor", "front": "the front of the dance floor",
+                 "back": "the back of the dance floor", "left": "the left of the dance floor",
+                 "right": "the right of the dance floor", "middle": "the middle of the room", "dj": "the DJ",
+                 "stage": "the stage"}
+        return [{"key": s["key"], "label": whole.get(s["key"], s["label"]), "x": s["x"], "z": s["z"]} for s in out]
+
+    def _a_line_up_marks(self, head=None, **_):
+        """The two marks to line this light up on (a question: changes nothing)."""
+        rows = [self._head(int(head))] if head not in (None, "") else self._require_selection()[:1]
+        if not rows:
+            raise ValueError("select the light to line up")
+        h = rows[0]
+        ms = self._lineup_marks(h)
+        name = h.get("name") or f"light {h['head_no']}"
+        return {"head": h["head_no"], "marks": ms,
+                "summary": f"{name}: line it up on " + (" and ".join(m["label"] for m in ms) or "a spot you tap on the plan")}
+
     def _a_line_up(self, head=None, x=None, z=None, y=0.0, solve=False, clear=False, undo_mark=False, **_):
         """Line a light up with the real one: point the REAL light at a mark
         on the floor (the Position controls), say where the mark is (`x`

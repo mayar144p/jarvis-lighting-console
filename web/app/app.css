@@ -3010,3 +3010,11 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .ai-learn-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .ai-learn-row .grow { flex: 1; min-width: 0; }
 .ai-learn .row-btns .input { flex: 1; min-width: 0; }
+/* Line up: the two marks and the result, as steps */
+.lineup-steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 2px; }
+.lineup-step { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-s); }
+.lineup-step.on { border-color: var(--accent); color: var(--text); background: var(--accent-bg); font-weight: 700; }
+.lineup-step.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.lineup-said { margin: 0 0 10px; color: var(--text-2); }
+.lineup-said:empty { display: none; }
+.lineup-said.bad { color: #fecaca; }

@@ -11731,3 +11731,34 @@ def test_ai_storm_fixes() -> None:
         finally:
             e.shutdown()
             config.DATA = old
+
+
+def test_lineup_marks() -> None:
+    """Line up: the desk picks each light's two marks - ones it can reach, where it plays (the dance
+    floor, the DJ, taped marks), never two at the same spot, not the bar unless nothing else - and the
+    box shows both marks as steps and says what happened after each."""
+    from pathlib import Path
+    from app import config
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="moving head", qty=2)
+            n0 = len(e._undo)
+            r = e.act("line_up_marks", head=1)
+            ms = r.get("marks") or []
+            check("two marks, far enough apart to check each other", r["ok"] and len(ms) == 2
+                  and ((ms[0]["x"] - ms[1]["x"]) ** 2 + (ms[0]["z"] - ms[1]["z"]) ** 2) ** 0.5 > 1.5, str(ms))
+            check("...where the light plays - not the bar or the VIP", not any(m["key"] in ("bar", "vip") for m in ms), str(ms))
+            check("...each one this light can reach", all(e._aim_solve(e.patch[0], m["x"], 0.0, m["z"]) for m in ms), "")
+            check("...said in full ('the back of the dance floor', not 'Back')", all(" " in m["label"] for m in ms), str(ms))
+            check("asking for the marks is no Ctrl+Z", len(e._undo) == n0, "")
+        finally:
+            e.shutdown()
+            config.DATA = old
+    js = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+    check("the box asks the desk for the marks, shows them as steps, and says what happened",
+          "line_up_marks" in js and "lineup-steps" in js and "Mark 1 kept" in js and "wasn't kept" in js, "")

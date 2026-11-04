@@ -91,7 +91,7 @@ NEVER = frozenset({
     "remap_heads", "osc", "virtual_node", "timecode", "tempo_prodj", "tempo_link",
     "rdm_compare", "teach_slots", "colour_cal", "media_save", "show_export",
     "quick_fx_defaults", "quick_from_laser", "blind", "undo", "redo",
-    "osc_out", "osc_send", "timecode_ltc", "line_up", "notice_seen",
+    "osc_out", "osc_send", "timecode_ltc", "line_up", "line_up_marks", "notice_seen",
 })
 
 
