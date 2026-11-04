@@ -296,10 +296,13 @@ class QuickMixin:
             zones = [str(z)[:40] for z in zones if z][:8]
             if not zones:
                 raise ValueError("a roam button needs its zones")
-            found = self._roam_zones(zones)              # they must be in this room
             from app import roomsense as _rs
             from app.engine_roam import _ZONES_TL
-            if getattr(_ZONES_TL, "venue", None) is None:      # (a show being read in keeps what it had)
+            # a show being read in keeps its buttons as saved - a zone since
+            # taken out of the room is said when the button is pressed, not
+            # by the button silently gone
+            found = [] if getattr(_ZONES_TL, "loading", False) else self._roam_zones(zones)
+            if not getattr(_ZONES_TL, "loading", False):
                 kinds = {z["id"]: z["kind"] for z in (_rs.zones(self.venue or {}))}
                 bad = [z["name"] for z in found if kinds.get(z["id"]) in _rs.NO_ROAM]
                 if bad:

@@ -11762,3 +11762,43 @@ def test_lineup_marks() -> None:
     js = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
     check("the box asks the desk for the marks, shows them as steps, and says what happened",
           "line_up_marks" in js and "lineup-steps" in js and "Mark 1 kept" in js and "wasn't kept" in js, "")
+
+
+def test_storm_leftovers() -> None:
+    """The storm's last two: Ctrl+Z leaves the timeline's own effects to the timeline (it put back
+    or left running effects of a show it had just taken back), and a show opened again keeps a
+    button whose zone has since gone from the room (it was silently dropped)."""
+    from pathlib import Path
+    from app import config
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("venue_template", name="lounge")
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("select_heads", heads=[1, 2])
+            r = e.act("run_fx", name="breathe")
+            fid = r.get("fx")
+            e.tl["spans"]["clip-x"] = {"fx": fid}           # (as a playing timeline clip owns it)
+            check("a timeline clip's effect is the timeline's, not the programmer's (undo leaves it alone)",
+                  fid not in {f["id"] for f in e._programmer_fx()}, "")
+            e.tl["spans"].pop("clip-x", None)
+            check("...a programmer effect is still the programmer's", fid in {f["id"] for f in e._programmer_fx()}, "")
+            e.act("quick_set", page=2, slot=1, button={"kind": "fx", "label": "Roam", "fx": "roam",
+                                                         "params": {"zones": ["Dance floor"]}, "target": {"heads": [1]}})
+            v = dict(e.venue)
+            v["zones"] = [z for z in v.get("zones") or [] if z.get("kind") != "dancefloor"]
+            e.act("set_venue", venue=v)
+            e.act("save_show", name="t")
+            e2 = eng_mod.Engine(dry_run=True, show_dir=e.show_dir)
+            try:
+                e2.act("load_show", name="t")
+                check("a button whose zone has gone from the room is kept when the show opens again",
+                      any(b.get("label") == "Roam" for b in e2.quick), str([b.get("label") for b in e2.quick]))
+            finally:
+                e2.shutdown()
+        finally:
+            e.shutdown()
+            config.DATA = old

@@ -60,10 +60,12 @@ class RoamMixin:
         @contextlib.contextmanager
         def ctx():
             _ZONES_TL.venue = venue
+            _ZONES_TL.loading = True
             try:
                 yield
             finally:
                 _ZONES_TL.venue = None
+                _ZONES_TL.loading = False
         return ctx()
 
     def _roam_zones(self, zones) -> list[dict]:
