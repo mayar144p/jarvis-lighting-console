@@ -3115,3 +3115,11 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .fx-chan.hot .fx-chan-state { color: var(--live); font-weight: 600; }
 .fx-chan.maint .fx-chan-state { color: var(--muted); font-style: italic; }
 .fx-warm { color: var(--blind); }
+
+/* Round marks stay round: in a flex row or column a dot was squeezed when its
+   box ran short (a palette tile's colour, with "per light" under it, became a
+   flat oval) - they never shrink, and keep their square */
+.dv-tile .dv-sw, .pal-item i.gobo-ic, .out-state .dot, .slot-dot, .extra-dot, .tempo-dot, .snd-beat, .ready-ic,
+.auto-take-head b, .rec-pill i, .gc-n, .hub-mark, .beam, .wheel-knob, .auto-sections .dot {
+  flex: none; aspect-ratio: 1;
+}

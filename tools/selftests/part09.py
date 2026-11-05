@@ -12106,6 +12106,12 @@ def test_lineup_arrows() -> None:
         e.act("select_heads", heads=[2])
         e.act("nudge", axis="pan", step=0.02, heads=[1])
         check("an arrow moves the light it names, not the selection", e.build_frames()[h["universe"]][pan] != before, "")
+        e.act("set_place", heads=[1], x=0.5, y=2.6, z=2.5)            # hung near the DJ
+        dj = next(s for s in e._move_spots() if s["key"] == "dj")
+        far = e.act("line_up_marks", head=1, avoid_x=dj["x"], avoid_z=dj["z"])["marks"]
+        check("the first mark at the DJ: the second is somewhere else, well away (not 'the DJ' again)",
+              len(far) == 1 and far[0]["key"] != "dj"
+              and ((far[0]["x"] - dj["x"]) ** 2 + (far[0]["z"] - dj["z"]) ** 2) ** 0.5 >= 2.5, str(far))
         lu = (Path(__file__).resolve().parents[2] / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
         check("...and Line up's arrows name their light", 'run("nudge", {' in lu and "heads: [head()]" in lu.split('run("nudge"')[1][:120], "")
     finally:

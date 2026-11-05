@@ -97,7 +97,17 @@ export function openLineUp(heads = null) {
     const r = await run("line_up_marks", { head: head() }, { silentError: true, quiet: true });
     marks = r.ok && (r.marks || []).length ? r.marks.slice() : farPair(roomSpots());
   };
-  const go = async (k) => { i = (k + order.length) % order.length; spread = 0; await pickMarks(); enter(); };
+  // the other mark well away from this one (two marks at one place - "DJ" and
+  // "the DJ" - tell the desk nothing): the furthest this light can reach
+  const keepApart = async (k) => {
+    const a = marks[k], o = 1 - k, b = marks[o];
+    if (!a || (b && Math.hypot(a.x - b.x, a.z - b.z) >= 2.5)) return;
+    const r = await run("line_up_marks", { head: head(), avoid_x: a.x, avoid_z: a.z }, { silentError: true, quiet: true });
+    const far = r.ok && (r.marks || [])[0];
+    if (far) marks[o] = far;
+    else if (b && Math.hypot(a.x - b.x, a.z - b.z) < 2.5) marks[o] = null;     // "pick a second spot, away from the first"
+  };
+  const go = async (k) => { i = (k + order.length) % order.length; spread = 0; await pickMarks(); await keepApart(0); enter(); };
 
   const tell = (text, bad = false) => { said.textContent = text; said.classList.toggle("bad", bad); };
   let busy = false;
@@ -110,6 +120,7 @@ export function openLineUp(heads = null) {
       const r = await run("line_up", { head: head(), x: m.x, z: m.z }, { silentError: true });
       if (!r.ok) { tell(`That mark wasn't kept: ${r.error || "the desk didn't answer"}`, true); paint(); return; }
       if (step === 0) {
+        await keepApart(0);
         step = 1; point();
         const next = mark();
         tell(next ? `✓ Mark 1 kept (${m.label}). Now the second one: ${next.label} - the light has moved there.`
@@ -135,7 +146,7 @@ export function openLineUp(heads = null) {
       h("option", { value: "plan" }, "Somewhere else: tap it on the plan…"));
     const cur = roomSpots().findIndex((s) => mark() && s.x === mark().x && s.z === mark().z);
     if (cur >= 0) sel.value = String(cur);
-    const use = (x, z) => { marks[step] = { label: "your spot", x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }; point(); paint(); };
+    const use = async (x, z) => { marks[step] = { label: "your spot", x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }; if (step === 0) await keepApart(0); point(); paint(); };
     const v = (state.snap && state.snap.venue) || {}, room = v.room || {};
     const W = +room.width || 16, D = +room.depth || 20, x0 = (+room.cx || 0) - W / 2, z0 = +room.back || 0;
     const NS = "http://www.w3.org/2000/svg";
@@ -168,9 +179,9 @@ export function openLineUp(heads = null) {
         h("button.btn.small", { onclick: () => { if (x.value === "" || z.value === "") { toast("Type both: across and from the back wall"); return; } use(+x.value, +z.value); } }, "Use it")));
     planBox.hidden = roomSpots().length > 0;
     if (!roomSpots().length) sel.value = "plan";
-    sel.addEventListener("change", () => {
+    sel.addEventListener("change", async () => {
       planBox.hidden = sel.value !== "plan";
-      if (sel.value !== "plan") { marks[step] = roomSpots()[+sel.value]; point(); paint(); }
+      if (sel.value !== "plan") { marks[step] = roomSpots()[+sel.value]; if (step === 0) await keepApart(0); point(); paint(); }
     });
     return h("div", h("div.lineup-row", sel), planBox);
   };

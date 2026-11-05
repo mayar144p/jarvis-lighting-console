@@ -79,6 +79,17 @@ check("after the second: lined up, and the light knows it", /lined up/i.test(awa
   && !!((await snap()).patch || []).find((h) => h.head_no === 1 && h.align), "");
 await closeModals();
 
+// spot 1 picked by hand as the DJ: spot 2 is never the DJ again ("1 DJ, 2 the DJ")
+await act("line_up", { head: 1, clear: true });
+await p.evaluate(() => import("/app/lineup.js").then((m) => m.openLineUp([1]))); await sleep(1500);
+await p.locator("details.lineup-link summary", { hasText: "Use a different spot" }).click(); await sleep(300);
+const spotSel = p.locator("details.lineup-link select").first();
+const djOpt = await spotSel.locator("option").evaluateAll((os) => (os.find((o) => /^DJ$/i.test(o.textContent.trim())) || {}).value);
+if (djOpt !== undefined) { await spotSel.selectOption(djOpt); await sleep(1200); }
+const sd = await steps();
+check("spot 1 picked as the DJ: spot 2 is somewhere else, well away", djOpt !== undefined && /DJ/i.test(sd[0]) && !/DJ/i.test(sd[1]), sd.join(" | "));
+await closeModals();
+
 // -- the Copilot's first look ------------------------------------------------
 console.log("Copilot");
 await p.evaluate(() => import("/app/copilot.js").then((m) => (m.openCopilot || m.toggleCopilot || (() => {}))()));
