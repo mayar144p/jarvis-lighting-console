@@ -80,14 +80,24 @@ check("after the second: lined up, and the light knows it", /lined up/i.test(awa
 await closeModals();
 
 // spot 1 picked by hand as the DJ: spot 2 is never the DJ again ("1 DJ, 2 the DJ")
-await act("line_up", { head: 1, clear: true });
-await p.evaluate(() => import("/app/lineup.js").then((m) => m.openLineUp([1]))); await sleep(1500);
-await p.locator("details.lineup-link summary", { hasText: "Use a different spot" }).click(); await sleep(300);
-const spotSel = p.locator("details.lineup-link select").first();
-const djOpt = await spotSel.locator("option").evaluateAll((os) => (os.find((o) => /^DJ$/i.test(o.textContent.trim())) || {}).value);
-if (djOpt !== undefined) { await spotSel.selectOption(djOpt); await sleep(1200); }
-const sd = await steps();
-check("spot 1 picked as the DJ: spot 2 is somewhere else, well away", djOpt !== undefined && /DJ/i.test(sd[0]) && !/DJ/i.test(sd[1]), sd.join(" | "));
+await closeModals();
+await act("line_up", { head: 1, clear: true }); await sleep(800);       // (the screen hears the cleared line-up first)
+await p.evaluate(() => import("/app/lineup.js").then((m) => m.openLineUp([1])));
+const otherLink = p.locator(".modal details.lineup-link summary", { hasText: "Use a different spot" }).last();
+let djOpt, sd = [];
+try {
+  await otherLink.waitFor({ state: "visible", timeout: 15000 });
+  await otherLink.click(); await sleep(300);
+  const spotSel = p.locator(".modal details.lineup-link[open] select").last();
+  djOpt = await spotSel.locator("option").evaluateAll((os) => (os.find((o) => /^DJ$/i.test(o.textContent.trim())) || {}).value);
+  if (djOpt !== undefined) { await spotSel.selectOption(djOpt); await sleep(1200); }
+  sd = await steps();
+} catch (e) {
+  // what the window showed instead (so a failure says why, not just "timeout")
+  sd = [`(no "Use a different spot": ${await p.locator(".lineup-title").last().innerText().catch(() => "no window")} / `
+    + `${(await steps().catch(() => [])).join(" | ")})`];
+}
+check("spot 1 picked as the DJ: spot 2 is somewhere else, well away", djOpt !== undefined && /DJ/i.test(sd[0]) && !/DJ/i.test(sd[1] || "DJ"), sd.join(" | "));
 await closeModals();
 
 // -- the Copilot's first look ------------------------------------------------
