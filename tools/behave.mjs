@@ -58,6 +58,17 @@ await sleep(1500);
 const steps = async () => p.locator(".lineup-step").allInnerTexts();
 let s0 = await steps();
 check("both marks show as steps before the first press", s0.length === 3 && !/bar|vip/i.test(s0.join(" ")), s0.join(" | "));
+// the arrows move THIS light - not the selection (another light selected here)
+await act("select_heads", { heads: [3] }); await sleep(400);
+const panOf = async () => {
+  const r = await fetch(BASE + "api/console/channels?heads=1").then((x) => x.json());
+  return (((r.heads || [])[0] || {}).channels || []).find((c) => c.role === "pan").value;
+};
+const pan0 = await panOf();
+await p.locator(".lineup-arrow.right").click(); await sleep(400);
+await p.locator(".lineup-arrow.right").click(); await sleep(400);
+const pan1 = await panOf();
+check("the arrows move the light being lined up, even with another light selected", pan1 !== pan0, `${pan0} -> ${pan1}`);
 const title0 = await p.locator(".lineup-title").innerText();
 await p.locator(".lineup-go").click(); await sleep(1500);
 const s1 = await steps(), title1 = await p.locator(".lineup-title").innerText();

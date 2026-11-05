@@ -416,11 +416,12 @@ class MoveMixin:
         return {"selected": [keep[i]], "of": len(keep),
                 "summary": f"{name or f'light {keep[i]}'} ({i + 1} of {len(keep)})"}
 
-    def _a_nudge(self, axis="pan", step=0.01, attribute=None, **_):
+    def _a_nudge(self, axis="pan", step=0.01, attribute=None, heads=None, **_):
         """Move the selection's pan or tilt - or any attribute (`attribute`:
         dimmer, zoom, focus, red...) - by a fraction of its travel (+/-):
         the arrows on the Move tab and the on-screen wheels, coarse 0.02 or
-        fine 0.002."""
+        fine 0.002.  `heads`: those lights instead of the selection (Line up
+        moves the light it is lining up, whatever is selected)."""
         if attribute:
             from app.engine_base import _attr_role
             role = _attr_role(str(attribute)) or str(attribute).lower()
@@ -428,7 +429,14 @@ class MoveMixin:
             role = "tilt" if str(axis).lower().startswith("t") else "pan"
         frac = max(-0.5, min(0.5, float(step)))
         done = []
-        for h in self._require_selection():
+        if heads not in (None, "", []):
+            want = {int(x) for x in (heads if isinstance(heads, (list, tuple)) else [heads])}
+            rows = [h for h in self.patch if h["head_no"] in want]
+            if not rows:
+                raise ValueError("no such light")
+        else:
+            rows = self._require_selection()
+        for h in rows:
             if role not in h["map"]:
                 continue
             dom = attr_domain(h, role)
@@ -438,7 +446,7 @@ class MoveMixin:
             self._set_programmer(h["head_no"], role, v)
             done.append(h["head_no"])
         if not done:
-            raise ValueError(f"none of the selected lights has {role}")
+            raise ValueError(f"none of {'those' if heads not in (None, '', []) else 'the selected'} lights has {role}")
         return {"heads": done, "summary": f"{role} {'+' if frac > 0 else ''}{round(frac * 100, 1)}%"}
 
     def _a_move_range(self, axis="tilt", edge="top", **_):

@@ -12089,3 +12089,24 @@ def test_help_everywhere() -> None:
     check("the help card has Open it for me, the step-by-step coach and 'Not what I asked'",
           all(w in gc for w in ("Open it for me", "Show me step by step", "Not what I asked")), "")
     del os
+
+
+def test_lineup_arrows() -> None:
+    """Line up's arrows move the light being lined up, whatever is selected (they nudged the selection:
+    with nothing or another light selected, the light on the mark didn't move)."""
+    from app import engine as eng_mod
+    e = eng_mod.Engine(dry_run=True)
+    try:
+        e.act("venue_template", name="club")
+        e.act("add_heads", query="moving head", qty=2)
+        h = e.patch[0]
+        pan = h["address"] - 1 + h["map"].index("pan")
+        e.act("aim_at", x=0, y=0, z=3, heads=[1])
+        before = e.build_frames()[h["universe"]][pan]
+        e.act("select_heads", heads=[2])
+        e.act("nudge", axis="pan", step=0.02, heads=[1])
+        check("an arrow moves the light it names, not the selection", e.build_frames()[h["universe"]][pan] != before, "")
+        lu = (Path(__file__).resolve().parents[2] / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+        check("...and Line up's arrows name their light", 'run("nudge", {' in lu and "heads: [head()]" in lu.split('run("nudge"')[1][:120], "")
+    finally:
+        e.stop() if hasattr(e, "stop") else None
