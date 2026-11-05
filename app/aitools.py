@@ -76,6 +76,7 @@ CONFIRM = {
     "venue_reset": "Clear the room to design it again",
     "show_delete": "Delete a saved show",
     "strobe_limit": "Change the strobe safety limit",
+    "fx_height_limit": "Change how high a spark / flame machine may fire",
     "show_rename": "Rename a saved show",
 }
 # Never, whatever the request: network, the lock, calibration on the real

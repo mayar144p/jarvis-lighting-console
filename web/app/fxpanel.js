@@ -140,10 +140,14 @@ function slider(title, e) {
   return h("div.fx-row", h("span.k", title), input, out);
 }
 
-function armedLine(st) {
-  return h(st.armed ? "div.fx-armed" : "div.fx-disarmed",
-    !st.armed ? "Disarmed: fire and laser output need ARM FX (top bar)."
-      : st.armed_forever ? "ARMED until you disarm - lasers stay on until you stop them"
+function armedLine(st, what = "laser") {
+  // (said for what is selected: a spark machine has no laser, a laser no heater)
+  const needs = { laser: "laser output needs ARM FX (top bar).", fire: "firing needs ARM FX (top bar) - it also switches a spark machine's heater on." }[what]
+    || "fire and laser output need ARM FX (top bar).";
+  const stays = what === "fire" ? "heaters stay on, nothing fires until you fire it" : "lasers stay on until you stop them";
+  return h(st.armed ? "div.fx-armed" : "div.fx-disarmed", { dataset: { what } },
+    !st.armed ? `Disarmed: ${needs}`
+      : st.armed_forever ? `ARMED until you disarm - ${stays}`
         : `ARMED · switches off in ${mmss(st.armed_left || 0)}`);
 }
 
@@ -280,7 +284,7 @@ function renderSfx(attrState) {
   const e = entries(attrState);
   const fire = fxs.filter((x) => (x.map || []).includes("fx_fire")).map((x) => x.head_no);
   const fog = fxs.filter((x) => (x.map || []).includes("fog")).map((x) => x.head_no);
-  const parts = [armedLine(st)];
+  const parts = [armedLine(st, fire.length ? "fire" : "both")];
   const loads = st.loads || {};
   const confetti = fire.filter((n) => loads[n]);
   const jets = fire.filter((n) => !loads[n]);
@@ -342,8 +346,11 @@ function renderSfx(attrState) {
           () => run("fx_fog", { heads: fog, down: false, owner: "prog-hold" }, { silentError: true })),
         h("button.btn" + (fogOn ? ".on" : ""), { onclick: () => { run("fx_fog", { heads: fog, down: false, owner: "prog" }); run("fx_fog", { heads: fog, down: false, owner: "prog-hold" }, { silentError: true }); } }, "Stop")));
   }
-  const extra = [chooser("Mode", e.fx_mode), slider("Fan", e.fx_fan), slider("Height", e.fx_height),
-    slider("Tilt", e.tilt), slider("Speed", e.speed), slider("Setting", e.fx_param)].filter(Boolean);
+  // (a maintenance channel - cleaning, purge, test - is no show control: it
+  // shows in the machine's status above, and runs from the machine itself)
+  const maint = new Set(fxs.flatMap((x) => ((st.fire || {})[x.head_no] || {}).channels || []).filter((c) => c.job === "maintenance").map((c) => c.role));
+  const extra = [chooser("Mode", maint.has("fx_mode") ? null : e.fx_mode), slider("Fan", e.fx_fan), slider("Height", e.fx_height),
+    slider("Tilt", e.tilt), slider("Speed", e.speed), slider("Setting", maint.has("fx_param") ? null : e.fx_param)].filter(Boolean);
   if (extra.length) parts.push(h("h3", "Settings"), ...extra);
   parts.push(h("p.muted.small", "Fire needs ARM FX and always stops at the machine's limit, even if a button sticks. Fog works without arming. Blackout and KILL FX stop everything."));
   box.replaceChildren(...parts.filter(Boolean));
@@ -361,16 +368,37 @@ function jetSection(kind, heads, st, info) {
   const names = heads.map((n) => (info[n] || {}).heights || []).reduce((a, b) => (b.length > a.length ? b : a), []);
   const steps = names.length;
   const pct = () => (steps ? (jetHeight[kind] ?? 0) : undefined);    // lowest until picked: safe under a low ceiling
-  const out = [h("h3", title)];
+  const out = [h("h3", title), machineStatus(kind, heads, st, info)];
   if (steps) {
     // one chip per step, named as the machine's file names it, lowest first
     const word = kind === "spark" || kind === "flame" ? "Height" : "Level";
     const at = (i) => (steps > 1 ? (100 * i) / (steps - 1) : 100);
     const pick = () => Math.round((pct() / 100) * (steps - 1));
-    const chips = names.map((nm, i) => h("button.chip" + (i === pick() ? ".on" : ""), {
-      title: `Every shot below fires at ${nm}` + (i === 0 ? " (lowest)" : i === steps - 1 ? " (highest)" : ""),
-      onclick: () => { jetHeight[kind] = at(i); chips.forEach((c, j) => c.classList.toggle("on", j === i)); } }, nm));
+    // ("Low-Level Spraying" / "High-Level Spraying" -> Low-Level / High-Level: the
+    // word they share says nothing on a chip; the full name is its hover)
+    const shown = shortNames(names);
+    // this machine's ceiling ("never higher than"): heights above it can't be picked
+    const caps = heads.map((n) => (info[n] || {}).max).filter((m) => m !== null && m !== undefined);
+    const cap = caps.length ? Math.min(...caps) : null;
+    const capStep = cap === null ? steps - 1 : Math.round((cap / 100) * (steps - 1));
+    const chips = names.map((nm, i) => h("button.chip" + (i === Math.min(pick(), capStep) ? ".on" : ""), {
+      disabled: i > capStep,
+      title: i > capStep ? `Above this machine's limit (never higher than ${names[capStep]})`
+        : `Every shot below fires at ${nm}` + (i === 0 ? " (lowest)" : i === steps - 1 ? " (highest)" : ""),
+      onclick: () => { jetHeight[kind] = at(i); chips.forEach((c, j) => c.classList.toggle("on", j === i)); } }, shown[i]));
     out.push(h("div.chip-row.fx-shots", h("span.k", word), ...chips));
+    // the limit itself: kept with the show, and nothing goes above it - a
+    // shot, a button, a cue, the timeline or the AI (a low ceiling)
+    const limitChips = [
+      ...names.map((nm, i) => h("button.chip" + (cap !== null && i === capStep ? ".on" : ""), {
+        title: `Never fire these machines higher than ${nm}`,
+        onclick: () => run("fx_height_limit", { heads, height: at(i) }, { toast: true }) }, shown[i])),
+      h("button.chip" + (cap === null ? ".on" : ""), { title: "No limit: the machine's full height",
+        onclick: () => run("fx_height_limit", { heads, clear: true }, { toast: true }) }, "No limit")];
+    out.push(h("div.chip-row.fx-shots.fx-limit", h("span.k", { title: "For a low ceiling, a balcony, a lighting rig above" }, "Never higher than"), ...limitChips),
+      cap === null && kind === "spark"
+        ? h("p.muted.small.fx-limit-hint", "Low ceiling? Set the highest these may ever spray - try each height once with the room clear and pick the one that stays well under it.")
+        : null);
   }
   out.push(h("div.fx-fire-row",
       holdButton("HOLD TO FIRE", "fire.big", () => run("fx_fire", { heads, down: true, owner: "prog-hold", height: pct() }),
@@ -381,10 +409,54 @@ function jetSection(kind, heads, st, info) {
         onclick: () => run("fx_fire", { heads, seconds: sec, owner: `prog-shot-${sec}`, height: pct() }) }, `${sec} s`))),
     fireExtras(heads, st, name, pct));
   if (kind === "spark") {
-    out.push(h("p.muted.small", "ARM FX also switches a spark machine's heater on: give it a few minutes to warm up before the first shot "
-      + "(disarming switches the heater off again). Sparks are cool to touch but keep them clear of people, fabric and the haze detector."));
+    out.push(h("p.muted.small", "Sparks are cool to touch, but keep them clear of people, fabric and the haze detector."));
   }
   return out;
+}
+
+// The words every name shares, taken out ("Low-Level Spraying", "High-Level
+// Spraying" -> "Low-Level", "High-Level"); names that differ only by number stay
+function shortNames(names) {
+  if (names.length < 2) return names;
+  const words = names.map((n) => n.split(/\s+/));
+  const common = words[0].filter((w) => words.every((ws) => ws.includes(w)));
+  const out = words.map((ws) => ws.filter((w) => !common.includes(w)).join(" ") || null);
+  // ("Height 1 ... Height 10" keep their word: a bare "1" says nothing)
+  if (out.some((o) => !o || /^[\d.,]+\s*m?$/i.test(o))) return names;
+  return new Set(out).size === out.length ? out : names;
+}
+
+// What each machine is doing, channel by channel, by the names in its own
+// file: the heater (ARM) and how long it has been warming, the spray /
+// fire, and a maintenance channel (cleaning) that a show never touches.
+function machineStatus(kind, heads, st, info) {
+  const chans = (info[heads[0]] || {}).channels || [];
+  if (!chans.length) return null;
+  const same = heads.every((n) => JSON.stringify((info[n] || {}).channels || []) === JSON.stringify(chans));
+  const firing = (st.runs || []).some((r) => r.kind === "fire" && r.heads.some((n) => heads.includes(n)));
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const row = (c, state, cls = "") => h("div.fx-chan" + cls, { dataset: { job: c.job } },
+    h("span.fx-chan-n.mono", `CH${c.n}`), h("span.fx-chan-name", c.name),
+    h("span.fx-chan-state", kind === "spark" && c.job === "arm" ? { dataset: { spark: "1" } } : {}, state));
+  const rows = chans.map((c) => {
+    if (c.job === "arm") {
+      return row(c, st.armed ? (kind === "spark" ? `On - heating for ${mmss(st.armed_for || 0)}` : "On (armed)")
+        : (kind === "spark" ? "Off - ARM FX turns the heater on" : "Off - ARM FX turns it on"), st.armed ? ".on" : "");
+    }
+    if (c.job === "fire") {
+      const inf = info[heads[0]] || {};
+      const lim = inf.max !== null && inf.max !== undefined && (inf.heights || []).length
+        ? ` · never higher than ${inf.heights[Math.round((inf.max / 100) * (inf.heights.length - 1))]}` : "";
+      return row(c, (firing ? "Firing now" : "Stopped - fire it below") + lim, firing ? ".hot" : "");
+    }
+    if (c.job === "maintenance") return row(c, "Off - maintenance only: run it from the machine's own remote or menu, never in a show", ".maint");
+    return row(c, "set below");
+  });
+  return h("div.fx-machine",
+    h("div.fx-machine-head.small.muted", same ? `Each machine (${heads.length}), channel by channel` : "The first machine, channel by channel"),
+    ...rows,
+    kind === "spark" && st.armed && (st.armed_for || 0) < 180
+      ? h("div.fx-warm.small", "Still warming up: most spark machines need a few minutes before the first shot.") : null);
 }
 
 // What every firing machine gets besides its shot: an on / off switch (on
@@ -463,8 +535,16 @@ on("lite", () => {
     if (!box || box.closest(".tab-pane").hidden) continue;
     const line = box.querySelector(".fx-armed, .fx-disarmed");
     if (line) {
-      const fresh = armedLine(sfxState());
+      const fresh = armedLine(sfxState(), line.dataset.what || "laser");
       if (line.className !== fresh.className || line.textContent !== fresh.textContent) line.replaceWith(fresh);
+    }
+    // a spark machine's heater: how long it has been warming, ticking
+    if (box === sfx) {
+      const st = sfxState();
+      box.querySelectorAll(".fx-chan[data-job='arm'] .fx-chan-state").forEach((el) => {
+        const s = st.armed_for || 0;
+        if (st.armed && el.dataset.spark) el.textContent = `On - heating for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      });
     }
     if (box === sfx && box.querySelector(".fx-tanks") && armed !== undefined) {
       const st = sfxState();

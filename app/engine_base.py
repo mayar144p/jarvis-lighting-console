@@ -667,7 +667,7 @@ def _new_playback(n: int) -> dict:
 
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
-    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit", "line_up_marks",
+    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit", "line_up_marks", "fx_height_limit",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset", "rename_preset",

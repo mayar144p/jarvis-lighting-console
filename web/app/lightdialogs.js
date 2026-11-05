@@ -237,6 +237,11 @@ const STARTS = [
   ["strobe", "Strobe (2 ch)", "light", [["Dimmer", "dimmer"], ["Strobe", "strobe", R([0, 9, "No strobe"], [10, 255, "Strobe slow to fast"])]]],
   ["fog", "Fog / haze machine (1 ch)", "fog", [["Fog output", "fog output", R([0, 9, "Off"], [10, 255, "Output low to high"])]]],
   ["fx", "Confetti / CO2 / sparks (1 ch)", "confetti", [["Fire", "fx fire", R([0, 9, "Off"], [10, 255, "Fire"])]]],
+  // the usual cold spark machine: heater (ARM), spray low / high, cleaning (never fired by a show)
+  ["spark3", "Cold spark machine (3 ch: preheat, spray, clean)", "spark", [
+    ["Preheating", "fx arm", R([0, 99, "Preheating Off"], [100, 255, "Preheating On"])],
+    ["Spraying", "fx fire", R([0, 50, "Stop Spraying Effect"], [51, 180, "Low-Level Spraying"], [181, 255, "High-Level Spraying"])],
+    ["Remove Preheating Consumables", "setting", R([0, 99, "No Function"], [100, 255, "Remove Preheating Consumables"])]]],
 ];
 
 /** Build it yourself: a fixture no library has and with no manual to read -

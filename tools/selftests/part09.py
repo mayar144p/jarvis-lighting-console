@@ -12161,3 +12161,49 @@ def test_build_fixture_yourself() -> None:
         finally:
             e.stop() if hasattr(e, "stop") else None
             config.DATA = old
+
+
+def test_spark_machine_manual() -> None:
+    """A cold spark machine's manual read offline ("CH1 0-255 0-99: Preheating Off"): three channels named
+    from their values, the heater as ARM, the spray as its fire (Low / High), cleaning never fired."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    chart = ("6. DMX Channel Table\nCH Value Function Description\nCH1 0-255 0-99: Preheating Off\n100-255: Preheating On\n"
+             "CH2 0-255 0-50: Stop Spraying Effect\n51-180: Low-Level Spraying\n181-255: High-Level Spraying\n"
+             "CH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables\n7. Remote Control Button Instructions")
+    d = manual.read(chart, "Generic", "Spark machine", offline=True)
+    chans = [(c["name"], c["function"]) for m in d["modes"] for c in m["channels"]]
+    check("the chart's three channels, named from their values", chans == [("Preheating", "fx arm"), ("Spraying", "fx fire"),
+          ("Remove Preheating Consumables", "setting")], str(chans))
+    check("...and it's known as a spark machine", d["type"] == "spark", d["type"])
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(d), "manual:generic-spark")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("add_heads", query="Spark machine", qty=1)
+            h = e.patch[0]
+            out = lambda: list(e.build_frames()[h["universe"]][h["address"] - 1:h["address"] + 2])  # noqa: E731
+            check("at rest: heater off, no spray, no cleaning", out() == [0, 0, 0], str(out()))
+            e.act("fx_arm", state=True)
+            check("ARM turns the heater on (100-255)", out()[0] >= 100 and out()[1:] == [0, 0], str(out()))
+            e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
+            check("a shot at the top height sprays high (181-255), cleaning stays off", out()[1] >= 181 and out()[2] == 0, str(out()))
+            e.act("fx_fire", heads=[h["head_no"]], down=False, owner="t")
+            e.act("fx_fire", heads=[h["head_no"]], owner="t")
+            check("...nothing picked: low (51-180)", 51 <= out()[1] <= 180, str(out()))
+            e.act("fx_kill")
+            check("KILL FX: everything off", out() == [0, 0, 0], str(out()))
+            e.act("fx_height_limit", heads=[h["head_no"]], height=0)
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
+            check("a low ceiling: 'never higher than Low' holds even a High shot low", 51 <= out()[1] <= 180, str(out()))
+            e.act("fx_kill")
+            e.act("undo")
+            check("...and the limit is one Ctrl+Z", e.patch[0].get("fire_max") is None, str(e.patch[0].get("fire_max")))
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old

@@ -839,7 +839,7 @@ def _pick(caps, pattern: re.Pattern, avoid: re.Pattern | None = None) -> int | N
 def _off_value(caps) -> int:
     for lo, _hi, text in caps or []:
         t = str(text)
-        if re.search(r"safety\s*on|disabled?|pre-?heat\s*off|\bsafe\b", t, re.I) or (
+        if re.search(r"safety\s*on|disabled?|pre-?heat(ing)?\s*off|\bsafe\b", t, re.I) or (
                 _OFF_TEXT.search(t) and not re.search(r"safety\s*off", t, re.I)):
             return int(lo)
     return 0
@@ -848,7 +848,7 @@ def _off_value(caps) -> int:
 def _arm_value(caps) -> int | None:
     """Where an SFX machine is armed: 'Safety OFF', 'Enabled', 'Pre-heat
     ON'... never a test, reset or purge range."""
-    for pattern in (r"safety\s*off|safe\s*off", r"pre-?heat\s*on",
+    for pattern in (r"safety\s*off|safe\s*off", r"pre-?heat(ing)?\s*on",
                     r"\b(enabled?|armed?|ready|active)\b", r"\bon\b"):
         for lo, hi, text in caps or []:
             t = str(text)

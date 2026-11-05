@@ -214,6 +214,51 @@ def _unfoot(text: str) -> str:
 _OFF_FIRST = re.compile(r"^\s*((laser|output|lamp|light)s?\s+off|off|blackout|no output)\b", re.I)
 
 
+# a chart laid out "CH1 | 0-255 | 0-99: Preheating Off" (channel, the whole
+# value column, then each range with a colon): the same as "1 0-99 Preheating Off"
+_CH_PREFIX = re.compile(r"^\s*CH\.?\s*(\d{1,3})\b\s*", re.I)
+_WHOLE_COL = re.compile(rf"^(\d{{1,3}})\s+0{{1,3}}\s*{_SEP}\s*255\s+(?=\d)", re.I)
+_RANGE_COLON = re.compile(rf"\b(\d{{1,3}}\s*{_SEP}\s*\d{{1,3}})\s*:\s*", re.I)
+
+
+def _normal(line: str) -> str:
+    line = _CH_PREFIX.sub(lambda m: m.group(1) + " ", line)
+    line = _WHOLE_COL.sub(lambda m: m.group(1) + " ", line)
+    return _RANGE_COLON.sub(lambda m: m.group(1) + " ", line)
+
+
+# a channel known only by its values ("Preheating Off / Preheating On"):
+# named for what they share, and what an effect machine's channel does
+_FILLER = re.compile(r"^(no function|n/?a|off|stop\b.*|none|unused|reserved|-)$", re.I)
+_LEVEL_WORDS = {"low", "high", "level", "on", "off", "effect", "slow", "fast", "to", "the", "a", "of", "and", "mode"}
+
+
+def _name_from_ranges(rng: list[list]) -> str:
+    labels = [str(t).strip() for _lo, _hi, t in rng if str(t).strip()]
+    real = [t for t in labels if not _FILLER.match(t)] or labels
+    if len(real) == 1:
+        return real[0][:40]
+    words = [set(re.findall(r"[a-z]+", t.lower())) - _LEVEL_WORDS for t in real]
+    common = set.intersection(*words) if words else set()
+    if common:
+        first = next(t for t in real)
+        keep = [w for w in re.findall(r"[A-Za-z]+", first) if w.lower() in common]
+        return " ".join(keep)[:40]
+    return ""
+
+
+def _effect_function(name: str, rng: list[list]) -> str | None:
+    """A cold spark / CO2 / confetti machine's channels by their words."""
+    t = (name + " " + " ".join(str(x[2]) for x in rng)).lower()
+    if re.search(r"\bclean|\bremove\b|\bpurge|consumable|maintenance|reset|test", t):
+        return "setting"                            # never fired by a show
+    if re.search(r"pre-?heat|heating|\bheat\b|safety|enable|\barm\b", t):
+        return "fx arm"
+    if re.search(r"spray|spark|fountain|\bfire\b|shoot|launch|blast|\bjet\b", t):
+        return "fx fire"
+    return None
+
+
 def read_offline(text: str) -> dict:
     """The usual DMX chart layouts, without a model."""
     modes: list[dict] = []
@@ -222,7 +267,7 @@ def read_offline(text: str) -> dict:
     chan = None
     pending: list[list] = []          # values seen before their channel's row
     for raw in str(text or "")[:MAX_TEXT].splitlines():
-        line = raw.strip()
+        line = _normal(raw.strip())
         if not line:
             continue
         m = _MODE_RE.match(line)
@@ -288,9 +333,11 @@ def read_offline(text: str) -> dict:
             if len(rng) == 1 and rng[0][0] == 0 and rng[0][1] == 255:
                 c["ranges"] = []                   # the whole range: a plain control
             elif len(rng) >= 2:
-                # several meanings on one channel: name it for what it is
-                c["name"] = "Output / mode" if _OFF_FIRST.match(rng[0][2]) else "Mode"
-                c["function"] = _guess(c["name"])
+                # several meanings on one channel: name it for what they share
+                # ("Preheating Off / On" -> Preheating), else for what it is
+                named = _name_from_ranges(rng)
+                c["name"] = named or ("Output / mode" if _OFF_FIRST.match(rng[0][2]) else "Mode")
+                c["function"] = _effect_function(c["name"], rng) or _guess(c["name"])
         # the same meaning on a run of channels ("brightness" x 10): number them
         names = [c["name"].lower() for c in m["channels"]]
         i = 0
@@ -326,7 +373,7 @@ def read_offline(text: str) -> dict:
 
 _TEXT_KINDS = [("confetti", r"confetti|funfetti|streamer"), ("laser", r"\blaser\b"),
                ("co2", r"\bco\s?2\b(?! ?free)(?!.*requires no co ?2)"), ("flame", r"\bflame"),
-               ("spark", r"cold spark|spark machine|sparkular"), ("haze", r"\bhazer\b"),
+               ("spark", r"cold spark|spark machine|sparkular|pre-?heating (on|off|consumables)|spraying effect"), ("haze", r"\bhazer\b"),
                ("fog", r"\bfog machine|\bfogger\b|smoke machine"), ("bubble", r"bubble machine"),
                ("snow", r"snow machine")]
 

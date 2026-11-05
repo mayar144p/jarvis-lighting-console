@@ -179,11 +179,34 @@ const pane = await p.locator("#sfx-pane").innerText();
 check("it has its own Sparks section with Height 1 to Height 10 (not 'Height' ten times)",
   /\bSparks\b/.test(pane) && /Height 1\b/.test(pane) && /Height 10/.test(pane) && !/CO2 \/ flames/.test(pane), pane.slice(0, 200));
 await act("fx_arm", { state: true }); await sleep(600);
-await p.locator("#sfx-pane .chip", { hasText: /^Height 10$/ }).click();
+await p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^Height 10$/ }).click();
 await p.locator("#sfx-pane .chip", { hasText: /^3 s$/ }).click(); await sleep(400);
 const rep = await fetch(BASE + "api/console/channels?heads=" + sp).then((r) => r.json());
 const fountain = (((rep.heads || [])[0] || {}).channels || []).find((c) => c.role === "fx_fire") || {};
 check("a quick shot after picking Height 10 fires at Height 10 (232-255), not the lowest", fountain.value >= 232, JSON.stringify(fountain));
+await act("fx_kill");
+// a cold spark machine from its manual's chart: the programmer shows it channel by channel
+const chart3 = "CH1 0-255 0-99: Preheating Off\n100-255: Preheating On\nCH2 0-255 0-50: Stop Spraying Effect\n51-180: Low-Level Spraying\n181-255: High-Level Spraying\nCH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables";
+const rd = await post("api/fixtures/from_manual", { text: chart3, manufacturer: "Behave", model: "Spark 3ch", offline: true });
+const sv = await post("api/fixtures/from_manual/save", { draft: rd.draft });
+const sp3 = (await act("add_heads", { fixture_id: sv.fixture.id, qty: 1 })).heads[0];
+await act("select_heads", { heads: [sp3] }); await act("fx_arm", { state: true }); await sleep(1500);
+await p.locator('[data-tab="sfx"]:visible').first().click(); await sleep(800);
+const pane3 = await p.locator("#sfx-pane").innerText();
+check("a spark machine read from its manual shows each channel by its own name and state",
+  /CH1\s*Preheating\s*On - heating for/.test(pane3) && /CH2\s*Spraying\s*Stopped/.test(pane3) && /CH3\s*Remove Preheating Consumables\s*Off - maintenance only/.test(pane3), pane3.slice(0, 300));
+check("...its spray heights are Low-Level / High-Level, and the cleaning channel is no show control",
+  (await p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^Low-Level$/ }).count()) === 1 && !/\nSetting\n/.test(pane3), "");
+check("...and the armed bar talks about heaters, not lasers", /heaters stay on/.test(pane3), "");
+// a low ceiling: Never higher than Low-Level - then even a High shot sprays low
+await p.locator("#sfx-pane .fx-limit .chip", { hasText: /^Low-Level$/ }).click(); await sleep(900);
+const highChip = p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^High-Level$/ });
+await act("fx_fire", { heads: [sp3], height: 100, owner: "behave" }); await sleep(300);
+const rep3 = await fetch(BASE + "api/console/channels?heads=" + sp3).then((r) => r.json());
+const spray = ((((rep3.heads || [])[0] || {}).channels || []).find((c) => c.role === "fx_fire") || {}).value;
+check("Never higher than Low-Level: the High chip can't be picked, and even a High shot sprays low (51-180)",
+  (await highChip.isDisabled()) && spray >= 51 && spray <= 180, `${spray}`);
+await act("fx_fire", { heads: [sp3], down: false, owner: "behave" });
 await act("fx_kill");
 
 // -- how do I...?  answered from the guide (no AI key here), nothing changed --
