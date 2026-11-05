@@ -345,7 +345,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
   padding: 6px 8px; border-bottom: 1px solid var(--border);
 }
-.fx-table td { padding: 4px 8px; height: calc(38px * var(--ctl) - var(--fx-trim, 0px)); border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+.fx-table td { padding: 4px 8px; height: calc(38px * var(--ctl)); border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
 .fx-table .c-no { width: calc(60px * var(--ctl)); font-family: var(--mono); font-size: var(--fs-s); color: var(--muted); white-space: nowrap; }
 .fx-table td.c-no { padding-right: 0; }
 .fx-table td.c-no > * { vertical-align: middle; }
@@ -2413,7 +2413,8 @@ body.masters-left .masters { order: -1; flex-direction: row-reverse; border-left
 .grp-masters.folded { display: none; }
 /* panels never squeeze below what they can show */
 .fixtures, .programmer, .modehub { min-width: 220px; }
-.fx-table-wrap { min-height: 150px; }              /* the fixture list keeps 5 rows */
+.fx-table-wrap { min-height: 150px; }
+.fx-table-wrap.snug { overflow-y: hidden; }   /* only the last row's edge was out: no scrollbar for that */              /* the fixture list keeps 5 rows */
 .live-bo { display: none; }
 .prog-why { grid-column: 1 / -1; line-height: 1.3; }
 .prog-why:empty { display: none; }

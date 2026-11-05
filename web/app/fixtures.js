@@ -193,9 +193,9 @@ function render() {
   snugSoon();
 }
 
-// A list that ALMOST fits (a few pixels short) gets a scrollbar to scroll
-// those few pixels: its rows give up a pixel or two instead, so it fits.
-// (A list that really doesn't fit scrolls as before.)
+// A list that ALMOST fits (a few pixels short - the last row's padding and
+// border) got a scrollbar to scroll those few pixels: it doesn't now.  (A
+// list that really doesn't fit scrolls as before.)
 let snugQueued = false;
 function snugSoon() {
   if (snugQueued) return;
@@ -205,10 +205,15 @@ function snugSoon() {
 function snug() {
   const wrap = $(".fx-table-wrap");
   if (!wrap) return;
-  wrap.style.removeProperty("--fx-trim");
-  const rows = wrap.querySelectorAll("tbody tr").length;
   const over = wrap.scrollHeight - wrap.clientHeight;
-  if (rows >= 4 && over > 0 && over <= 8) wrap.style.setProperty("--fx-trim", `${Math.min(3, Math.ceil(over / rows))}px`);
+  // (measured with the scrollbar allowed, so a list that grows past it scrolls again)
+  if (wrap.classList.contains("snug")) {
+    wrap.classList.remove("snug");
+    const real = wrap.scrollHeight - wrap.clientHeight;
+    wrap.classList.toggle("snug", real > 0 && real <= 8);
+    return;
+  }
+  wrap.classList.toggle("snug", over > 0 && over <= 8);
 }
 if (typeof ResizeObserver !== "undefined") {
   requestAnimationFrame(() => { const w = $(".fx-table-wrap"); if (w) new ResizeObserver(snugSoon).observe(w); });
