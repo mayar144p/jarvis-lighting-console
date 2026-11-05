@@ -187,6 +187,8 @@ class FxLayerMixin:
         only (it runs inside build_frames): expired runs are ignored here
         and retired by the next FX action or status read."""
         now = time.monotonic() if now is None else now
+        if self.__dict__.get("_fx_quiet"):
+            return {}                      # the last frame before output stops: every effect at rest (off)
         armed = self._sfx_armed(now)
         by = {h["head_no"]: h for h in self.patch}
         out: dict[int, dict] = {}

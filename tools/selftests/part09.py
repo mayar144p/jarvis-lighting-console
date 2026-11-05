@@ -12216,3 +12216,44 @@ def test_spark_machine_manual() -> None:
         finally:
             e.stop() if hasattr(e, "stop") else None
             config.DATA = old
+
+
+def test_stop_output_effects_off() -> None:
+    """Hold to stop / closing the app: the last frame turns every effect off (a node holds the last
+    frame - a spark heater kept heating, a spray or fog kept going); the lights keep their look."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    chart = ("CH1 0-255 0-99: Preheating Off\n100-255: Preheating On\nCH2 0-255 0-50: Stop Spraying Effect\n"
+             "51-180: Low-Level Spraying\n181-255: High-Level Spraying\nCH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables")
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(manual.read(chart, "Generic", "Spark machine", offline=True)), "manual:x")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        sent: list = []
+        try:
+            e.act("add_heads", query="Spark machine", qty=1)
+            e.act("add_heads", query="LED PAR", qty=1)
+            h, par = e.patch[0], e.patch[1]
+            orig = e._dispatch
+            e._dispatch = lambda frames: (sent.append({u: bytes(b) for u, b in frames.items()}), orig(frames))
+            e.act("select_heads", heads=[par["head_no"]])
+            e.act("set_intensity", level=80)
+            e.act("set_output", state=1)
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[h["head_no"]], seconds=5, owner="t")
+            time.sleep(0.3)
+            a, u = h["address"] - 1, h["universe"]
+            check("live: heater on and spraying", sent and list(sent[-1][u][a:a + 2])[0] >= 100 and sent[-1][u][a + 1] > 50, "")
+            e.act("set_output", state=0)
+            last = sent[-1][u]
+            dim = par["address"] - 1 + par["map"].index("dimmer")
+            check("Hold to stop: the last frame turns the heater and the spray off", list(last[a:a + 3]) == [0, 0, 0], str(list(last[a:a + 3])))
+            check("...the lights keep their look", last[dim] > 0, str(last[dim]))
+            check("...and nothing set changes (live again: the heater comes back on)", e.patch[0].get("heater_on", True) is True, "")
+        finally:
+            e._dispatch = orig if "orig" in dir() else e._dispatch
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
