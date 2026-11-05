@@ -190,6 +190,33 @@ function render() {
   $(".fx-table-wrap").classList.toggle("is-empty", n === 0);
   renderSelBar(sel);
   paintLamps();
+  snugSoon();
+}
+
+// A list that ALMOST fits (a few pixels short - the last row's padding and
+// border) got a scrollbar to scroll those few pixels: it doesn't now.  (A
+// list that really doesn't fit scrolls as before.)
+let snugQueued = false;
+function snugSoon() {
+  if (snugQueued) return;
+  snugQueued = true;
+  requestAnimationFrame(() => { snugQueued = false; snug(); });
+}
+function snug() {
+  const wrap = $(".fx-table-wrap");
+  if (!wrap) return;
+  const over = wrap.scrollHeight - wrap.clientHeight;
+  // (measured with the scrollbar allowed, so a list that grows past it scrolls again)
+  if (wrap.classList.contains("snug")) {
+    wrap.classList.remove("snug");
+    const real = wrap.scrollHeight - wrap.clientHeight;
+    wrap.classList.toggle("snug", real > 0 && real <= 8);
+    return;
+  }
+  wrap.classList.toggle("snug", over > 0 && over <= 8);
+}
+if (typeof ResizeObserver !== "undefined") {
+  requestAnimationFrame(() => { const w = $(".fx-table-wrap"); if (w) new ResizeObserver(snugSoon).observe(w); });
 }
 
 // "6 selected · LED PARs" and, for two or more, the quick splits

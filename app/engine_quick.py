@@ -246,6 +246,8 @@ class QuickMixin:
             btn["move"] = mid
         if kind in ("sfx", "fog", "laser") and raw.get("seconds") not in (None, ""):
             btn["seconds"] = _fclamp(raw.get("seconds"), 0.2, 600)
+        if kind == "sfx" and raw.get("height") not in (None, ""):
+            btn["height"] = _fclamp(raw.get("height"), 0, 100)     # a spark fountain's height
         if kind in self.PAGE_TILES:
             btn["mode"] = "tap"
             btn["target"] = {"all": True}
@@ -965,7 +967,8 @@ class QuickMixin:
             heads = self._quick_heads(btn)
             started = self._sfx_start(key, {"sfx": "fire", "fog": "fog", "laser": "laser"}[btn["kind"]],
                                      heads, owner, seconds=btn.get("seconds"),
-                                     level=btn.get("level", 100), values=btn.get("values"))
+                                     level=btn.get("level", 100), values=btn.get("values"),
+                                     height=btn.get("height"))
             if started:
                 self.quick_active.setdefault(key, {"since": time.monotonic(), "heads": heads,
                                                    "owners": set(), "fx_layer": True})

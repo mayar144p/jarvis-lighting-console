@@ -11896,3 +11896,196 @@ def test_live_voice() -> None:
         finally:
             urllib.request.urlopen = real_open
             config.DATA, config.LLM_API_KEY, config.LLM_BASE_URL = old_data, old_key, old_base
+
+
+def test_spark_heights() -> None:
+    """A sparkle machine (Showven Sparkular): its own Sparks section, named heights as its file numbers
+    them (not "Height" ten times), and a shot fires at the height picked, not always the lowest."""
+    from pathlib import Path
+    from app import config, fixlib, fixtures
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, fixlib.load("ofl", "showven/sparkular-fall.json"), "ofl:showven/sparkular-fall.json")
+        fixtures.store_parsed(db, fixlib.load("ofl", "showven/sparkular.json"), "ofl:showven/sparkular.json")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            with fixtures.db(db) as c:
+                fall = c.execute("SELECT id FROM fixtures WHERE model LIKE 'Sparkular Fall%'").fetchone()["id"]
+                plain = c.execute("SELECT id FROM fixtures WHERE model='Sparkular (BT01)'").fetchone()["id"]
+            e.act("add_heads", fixture_id=plain, qty=1)          # ten heights
+            e.act("add_heads", fixture_id=fall, qty=1)           # low / high
+            a, b = e.patch[0], e.patch[1]
+            st = e.act("fx_status")["sfx"]["fire"]
+            check("it is known as sparks", st[a["head_no"]]["kind"] == "spark", str(st))
+            check("its ten heights are named as its file numbers them",
+                  st[a["head_no"]]["heights"] == [f"Height {i}" for i in range(1, 11)], str(st[a["head_no"]]))
+            check("...and a two-step one shows its own words", st[b["head_no"]]["heights"] == ["Fountain level low", "Fountain level high"],
+                  str(st[b["head_no"]]))
+            ch = a["address"] - 1 + a["map"].index("fx_fire")
+            uni = a["universe"]
+
+            def out():
+                return e.build_frames()[uni][ch]
+            check("at rest the fountain is off", out() <= 15, str(out()))
+            e.act("fx_arm", state=True)
+            arm = e.build_frames()[uni][a["address"] - 1 + a["map"].index("fx_arm")]
+            check("ARM switches its heater on (Pre-Heat ON)", arm >= 240, str(arm))
+            e.act("fx_fire", heads=[a["head_no"]], height=100, owner="t")
+            check("a shot at the top height fires at Height 10", 232 <= out() <= 255, str(out()))
+            e.act("fx_fire", heads=[a["head_no"]], down=False, owner="t")
+            e.act("fx_fire", heads=[a["head_no"]], height=50, owner="t")
+            check("...in the middle, a middle height", 112 <= out() <= 159, str(out()))
+            e.act("fx_fire", heads=[a["head_no"]], down=False, owner="t")
+            e.act("fx_fire", heads=[a["head_no"]], owner="t")
+            check("...none picked: the lowest (safe under a low ceiling)", 16 <= out() <= 39, str(out()))
+            e.act("fx_fire", heads=[a["head_no"]], down=False, owner="t")
+            r = e.act("quick_set", page=1, slot="free", button={"kind": "sfx", "mode": "hold", "label": "Sparks high",
+                                                                  "target": {"heads": [a["head_no"]]}, "height": 90})
+            bid = r.get("id") or next(x["id"] for x in e.quick if x["label"] == "Sparks high")
+            check("a button keeps its height", next(x for x in e.quick if x["id"] == bid).get("height") == 90, "")
+            e.act("quick_press", id=bid, down=True)
+            check("...and fires at it", 208 <= out() <= 255, str(out()))
+            e.act("quick_press", id=bid, down=False)
+            e.act("fx_kill")
+            check("KILL FX: off again", out() <= 15, str(out()))
+            from app.engine_base import _fallback_fixture
+            check("a name the desk doesn't know is never made a PAR because 'par' is inside it ('Sparkular')",
+                  _fallback_fixture("Sparkular") is None and _fallback_fixture("LED par 64") is not None, "")
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
+
+
+def test_encore_fr150z() -> None:
+    """ADJ Encore FR150z: a warm-white LED fresnel (not a strobe unit, as its dimmer + strobe channels
+    read), lit at rest ("ON" on its strobe channel, 0-31 is OFF), and its strobe in its real ranges."""
+    from pathlib import Path
+    from app import config, fixlib, fixtures, fixture_kind
+    from app import engine as eng_mod
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, fixlib.load("qlc", "American_DJ/American-DJ-Encore-FR150z.qxf"), "qlc:fr150z")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            with fixtures.db(db) as c:
+                fid = c.execute("SELECT id FROM fixtures WHERE model='Encore FR150z'").fetchone()["id"]
+            for mode in ("2-Channel", "4-Channel"):
+                for hh in list(e.patch):
+                    e.act("remove_heads", heads=[hh["head_no"]], confirm=True)
+                e.act("add_heads", fixture_id=fid, qty=1, mode=mode)
+                h = e.patch[0]
+                check(f"FR150z {mode}: a fresnel, not a strobe unit", fixture_kind.describe(h)["type"] == "fresnel",
+                      str(fixture_kind.describe(h)))
+                st = h["address"] - 1 + h["map"].index("strobe")
+                check("...its strobe channel at rest is ON (0-31 would keep it dark)",
+                      32 <= e.build_frames()[h["universe"]][st] <= 63, "")
+                role = e._shutter_role(h)
+                steps = e.strobe_steps(h, role)
+                check("...the desk's strobe lands in its variable strobe (64-95)",
+                      all(64 <= steps[k] <= 95 for k in ("slow", "medium", "fast")), str(steps))
+                check("...and the 3D strobes only there", e._strobe_hz(h, {role: 48}, None) == 0
+                      and e._strobe_hz(h, {role: 80}, None) > 0, "")
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
+
+
+def test_relay_built_in() -> None:
+    """Send report on every installed desk: the installer carries the relay's address (the repo's
+    REPORT_RELAY variable, built in by the desktop workflow), and a desk's own .env still wins."""
+    import os
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    with tempfile.TemporaryDirectory() as td:
+        envf = Path(td) / ".env"
+
+        def relay(extra: dict, dotenv: str = "") -> str:
+            envf.write_text(dotenv)
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("REPORT_RELAY", "HAZE_REPORT"))}
+            env.update(extra, CONSOLE_ENV_FILE=str(envf), CONSOLE_DATA_DIR=td)
+            return subprocess.run([_sys.executable, "-c", "from app import config; print(config.REPORT_RELAY)"],
+                                  cwd=root, env=env, capture_output=True, text=True).stdout.strip()
+        built = {"HAZE_REPORT_RELAY": "https://relay.example.workers.dev"}
+        check("an installer built with the relay sends reports through it", relay(built) == built["HAZE_REPORT_RELAY"], "")
+        check("...a desk's own .env still wins", relay(built, "REPORT_RELAY=https://mine.example\n") == "https://mine.example", "")
+        check("...and without either, no relay (Save report, as before)", relay({}) == "", "")
+    wf = (root / ".github" / "workflows" / "desktop.yml").read_text()
+    check("both installers take the repo's REPORT_RELAY variable", wf.count("vars.REPORT_RELAY }}") == 2, "")
+
+
+def test_howto_questions() -> None:
+    """How do I...?  Questions about using the app are answered from its own guide (the real buttons),
+    by the AI copilot and the no-AI one, and change nothing - a storm of them, asked many ways."""
+    import json as _json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+    from app import assistant, console_ai, howto
+    root = Path(__file__).resolve().parents[2]
+    check("'help me align the lights' is a question; 'make it blue' is not",
+          howto.is_howto("help me align the lights") and not howto.is_howto("make it blue")
+          and not howto.is_howto("can you make it red"), "")
+    top = howto.find("help me align the lights", 1)
+    check("...and the guide's line-up steps answer it", bool(top) and "Lining up" in top[0]["title"], str(top[:1]))
+    r = console_ai.plan("how do I make the lights red", offline=True)
+    check("the no-AI copilot answers 'how do I make the lights red' from the guide - it doesn't turn them red",
+          not r["steps"] and r["reply"].startswith("From the guide"), str(r)[:200])
+    check("the AI copilot has the guide (how_to) and is told to use it",
+          any(t["function"]["name"] == "how_to" for t in assistant.TOOLS) and "how_to first" in assistant.SYSTEM, "")
+    check("the installer carries the guide", "GUIDE.md" in (root / "desktop" / "stage.mjs").read_text(encoding="utf-8"), "")
+    cases = _json.loads((root / "tools" / "aiexam" / "cases.json").read_text(encoding="utf-8"))
+    check("the real-AI exam asks how-to questions too", sum(1 for c in cases if c["id"].startswith("howto-")) >= 10, "")
+    out = subprocess.run([_sys.executable, str(root / "tools" / "howtofuzz.py"), "--turns", "400", "--seed", "1"],
+                         capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
+    check("400 random how-to questions: the right guide section, nothing changed, every button the guide names "
+          "is on a screen", out.returncode == 0, (out.stdout + out.stderr)[-600:])
+
+
+def test_help_everywhere() -> None:
+    """Help wherever you are: a word's meaning, an honest 'the guide doesn't cover that', the questions
+    it couldn't answer kept (here only), and the undo history in words."""
+    import os
+    from pathlib import Path
+    from app import config, console_ai, howto
+    from app import engine as eng_mod
+    check("'what is a cue?' gets the word's meaning", (howto.glossary("what is a cue?") or {}).get("term") == "cue", "")
+    check("...and the no-AI copilot says it in one line", console_ai.plan("whats a gobo", offline=True)["reply"].startswith("gobo:"), "")
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        try:
+            a = howto.answer("how do I connect to spotify")
+            check("a question about something the app doesn't do is answered honestly (the nearest topic, said to be only that)",
+                  a.get("unsure") == ["spotify"] and a["card"].get("unsure") == ["spotify"], str(a.get("unsure")))
+            check("...and kept, on this computer, so the guide can be filled in",
+                  any("spotify" in r["q"] for r in howto.unanswered()), "")
+            howto.note_unanswered("how do I connect to spotify")
+            check("...the same question counted, not listed twice",
+                  [r["n"] for r in howto.unanswered() if "spotify" in r["q"]] == [2], str(howto.unanswered()))
+            howto.clear_unanswered()
+            check("...and the list can be cleared", howto.unanswered() == [], "")
+            check("everyday questions aren't taken as unknown ('make the 3d look better', 'i'm stuck')",
+                  not howto.unknown_words("how do i make the 3d look better")
+                  and not howto.unknown_words("i'm stuck - how do i set up the ai key"), "")
+            e = eng_mod.Engine(dry_run=True, show_dir=Path(td) / "s")
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("select_heads", heads=[1])
+            e.act("set_colour", hex="#ff0000")
+            steps = e.snapshot()["undo"]["steps"]
+            check("the undo history says what each change was, newest first",
+                  [s["label"] for s in steps[:2]] == ["Colour", "Add lights"], str(steps))
+            e.stop() if hasattr(e, "stop") else None
+        finally:
+            config.DATA = old
+    root = Path(__file__).resolve().parents[2]
+    gc = (root / "web" / "app" / "guidecard.js").read_text(encoding="utf-8")
+    check("the help card has Open it for me, the step-by-step coach and 'Not what I asked'",
+          all(w in gc for w in ("Open it for me", "Show me step by step", "Not what I asked")), "")
+    del os

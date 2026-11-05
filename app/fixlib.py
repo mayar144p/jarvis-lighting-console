@@ -247,6 +247,14 @@ def _ofl_detail(name: str, cdef: dict, wheels: dict, bits: int) -> dict:
                     str(c.get("comment") or c.get("effectName") or c.get("shutterEffect")
                         or c.get("color") or c.get("type") or "")[:48]]
                    for c in caps if c.get("dmxRange")] or None
+    # steps that all read the same ("Height" ten times on a Sparkular) keep
+    # what tells them apart: the file's own parameter ("Height 3", "Fountain
+    # level high", "Height 2 m")
+    texts = [t for _a, _b, t in row["caps"] or []]
+    for cell, c in zip(row["caps"] or [], [c for c in caps if c.get("dmxRange")]):
+        p = c.get("parameter")
+        if texts.count(cell[2]) > 1 and p not in (None, "") and str(p) not in cell[2]:
+            cell[2] = f"{cell[2]} {p}"[:48]
     if label in ("Pan", "Tilt"):
         c = caps[0] if caps else {}
         a, b = _ofl_angle(c.get("angleStart")), _ofl_angle(c.get("angleEnd"))

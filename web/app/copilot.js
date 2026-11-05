@@ -7,6 +7,7 @@ import { $, $$, h, toast, confirmBox, menu } from "./ui.js";
 import { aiModes, setAiMode } from "./aisettings.js";
 import { stagePanel } from "./view3d.js";
 import { currentPage, lastButton } from "./quickbuttons.js";
+import { guideCard, replyView } from "./guidecard.js";
 
 // What the operator is looking at, for "this button", "this page", "here":
 // the screen, the tab, the buttons page, the last button touched, open windows
@@ -44,6 +45,14 @@ function label(step) {
     case "chase_colours": return `Chase ${(a.colours || []).join(" / ")}${a.beats ? `, ${a.beats} beat(s) a step` : ""}${a.section ? ` during the ${a.section}` : " now"}${a.rig ? ` → ${a.rig}` : tgt}`;
     default: return step.action.replace(/_/g, " ") + tgt;
   }
+}
+
+// a "See also" topic asked as if typed
+function askAbout(text) {
+  const ta = $("#ai-text");
+  if (!ta) return;
+  ta.value = text;
+  $("#ai-send").click();
 }
 
 function say(kind, text, extra) {
@@ -280,8 +289,17 @@ async function assist(text) {
     } else if (r.changed) {
       extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
     }
-    const box = say("bot", r.reply || (r.question ? "" : "Done."), extra);
-    box.firstChild.after(h("span.src", "AI"));
+    if (r.guide_card) {
+      // it looked it up: the guide's own steps, one tap away
+      const det = h("details.gc-from", h("summary.muted.small", `📖 From the guide: ${r.guide_card.topic}`));
+      det.addEventListener("toggle", () => { if (det.open && det.children.length < 2) det.append(guideCard(r.guide_card, [], askAbout, text)); }, { once: false });
+      extra.prepend(det);
+    }
+    // its answer laid out: steps as steps, button names as buttons
+    const box = say("bot", "", replyView(r.reply || (r.question ? "" : "Done.")));
+    box.classList.add("has-card");
+    box.append(extra);
+    box.prepend(h("span.src", "AI"));
   } catch (err) {
     clearInterval(tick);
     thinking.remove();
@@ -310,6 +328,15 @@ async function plan(text) {
     const r = d.result || {};
     thinking.remove();
     history.push({ role: "user", content: text }, { role: "assistant", content: r.reply || "" });
+    if (r.source === "guide") {
+      // a how-to question: the guide's own steps, laid out - nothing to apply
+      const view = r.glossary
+        ? h("div.guide-card", h("div.gc-head", h("span.gc-badge", "📖 Word"), h("span.gc-topic", r.glossary.term)), h("p.gc-summary", r.glossary.text))
+        : r.guide ? guideCard(r.guide, r.also || [], askAbout, text) : replyView(r.reply || "");
+      const box = say("bot", "", view);
+      box.classList.add("has-card");
+      return;
+    }
     const src = h("span.src", r.source === "llm" ? "AI" : "OFFLINE");
     const view = planView(r, async () => {
       const a = await post("/api/console/ai", { steps: r.steps, reply: r.reply, apply: true });

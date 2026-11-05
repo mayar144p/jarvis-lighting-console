@@ -112,6 +112,7 @@ async function boot() {
   wireGig();
   initWelcome();
   initHelp();
+  if (!WINDOW || WINDOW === "desk") import("./helpmode.js").then((m) => m.initHints());
   openStream({
     snapshot: setSnapshot,
     snapdiff: applySnapDiff,

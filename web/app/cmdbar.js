@@ -15,6 +15,7 @@ import { askCopilot } from "./copilot.js";
 import { HAS_3D, stagePanel } from "./view3d.js";
 import { openMacros, macroCandidates } from "./macros.js";
 import { SETTINGS_PAGES, openSettingsAt } from "./settings.js";
+import { guideTopics, glossaryWords, openGuide, pointAt } from "./guidecard.js";
 
 const lazy = (mod, fn, ...args) => import(mod).then((m) => m[fn](...args));
 
@@ -69,7 +70,46 @@ const ACTIONS = [
   } },
   { t: "Show backups", k: "backup save copy usb cloud", run: () => openSettingsAt("backup") },
   { t: "Help", k: "help keys shortcuts", run: () => openHelp() },
+  { t: "What's this? (then click anything)", k: "whats this explain help what is identify point", run: () => lazy("./helpmode.js", "whatsThis") },
+  { t: "Explain this screen", k: "explain screen where am i what can i do here help", run: () => lazy("./helpmode.js", "explainScreen") },
+  { t: "Questions the guide couldn't answer", k: "unanswered questions guide gaps help missing", run: () => lazy("./helpmode.js", "openUnanswered") },
 ];
+
+// What the screen has right now: its buttons and tabs by name ("Show me")
+function onScreen(q) {
+  if (q.length < 3) return [];
+  const seen = new Set();
+  const out = [];
+  for (const el of document.querySelectorAll("button, [role=tab], summary, .tb-btn")) {
+    if (el.offsetParent === null || el.closest("#cmd-results, .cmdbar, .guide-card, .coach")) continue;
+    const name = (el.textContent || el.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+    if (name.length < 3 || name.length > 40 || seen.has(name.toLowerCase())) continue;
+    if (!name.toLowerCase().includes(q)) continue;
+    seen.add(name.toLowerCase());
+    out.push({ kind: "show", title: `Show me: ${name}`, desc: "on the screen now", run: () => pointAt(name) });
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+// The guide's topics and the lighting words that match what was typed
+function helpCandidates(q) {
+  const out = [];
+  const typed = q.split(/\s+/).filter((w) => w.length > 1);
+  for (const t of guideTopics()) {
+    const hay = `${t.title} ${(t.where || []).join(" ")}`.toLowerCase();
+    if (typed.length && typed.every((w) => hay.includes(w))) {
+      out.push({ kind: "guide", title: `How to: ${t.title}`, desc: (t.where || []).join(" › ") || "the guide", run: () => openGuide(`how do I use ${t.title}`) });
+    }
+  }
+  const gl = glossaryWords();
+  for (const term of Object.keys(gl)) {
+    if (term.toLowerCase() === q || (q.length > 3 && term.toLowerCase().startsWith(q))) {
+      out.push({ kind: "word", title: `What is “${term}”?`, desc: gl[term].slice(0, 60) + "…", run: () => openGuide(`what is ${term}`) });
+    }
+  }
+  return out.slice(0, 3);
+}
 
 let items = [];
 let active = 0;
@@ -132,7 +172,9 @@ function candidates(text) {
   for (const pb of (state.snap && state.snap.playbacks) || []) {
     if ((pb.name && pb.name.toLowerCase().includes(q)) || q === `pb${pb.n}`) out.push({ kind: "go", title: `GO on PB${pb.n} ${pb.name || ""}`, run: () => run("cue_go", { playback: pb.n }) });
   }
-  return out.slice(0, 8);
+  // how to do it, what a word means, and where it is on the screen now
+  const help = [...helpCandidates(q), ...onScreen(q)];
+  return [...out.slice(0, Math.max(5, 10 - help.length)), ...help].slice(0, 10);
 }
 
 function render(text) {

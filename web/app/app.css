@@ -1852,7 +1852,8 @@ body.qb-fullscreen .qb.qb-full .qbtn b { font-size: var(--fs-l); }
 .fx-col-any { color: var(--fg); background: var(--bg); font-size: var(--fs-m); }
 .fx-col-any input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .mv-roam-sp { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 140px; }
-.mv-roam-speed { flex: 1; min-width: 80px; }
+/* the slider gives way (over .mv-row's 90px), so Speed and its % always fit */
+.mv-row .mv-roam-sp input.mv-roam-speed { flex: 1 1 auto; min-width: 40px; width: 0; }
 .mv-roam-v { min-width: 6.5ch; font-size: var(--fs-s); font-variant-numeric: tabular-nums; }
 .aim-map .am-dj-t { fill: var(--accent); font-weight: 700; }
 .aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
@@ -2412,7 +2413,8 @@ body.masters-left .masters { order: -1; flex-direction: row-reverse; border-left
 .grp-masters.folded { display: none; }
 /* panels never squeeze below what they can show */
 .fixtures, .programmer, .modehub { min-width: 220px; }
-.fx-table-wrap { min-height: 150px; }              /* the fixture list keeps 5 rows */
+.fx-table-wrap { min-height: 150px; }
+.fx-table-wrap.snug { overflow-y: hidden; }   /* only the last row's edge was out: no scrollbar for that */              /* the fixture list keeps 5 rows */
 .live-bo { display: none; }
 .prog-why { grid-column: 1 / -1; line-height: 1.3; }
 .prog-why:empty { display: none; }
@@ -3022,3 +3024,75 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .update-pill { margin-left: 8px; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
   background: var(--accent-bg); color: var(--text); font-size: var(--fs-s); cursor: pointer; white-space: nowrap; }
 .ai-talk.on { background: var(--live); border-color: var(--live); color: #fff; }
+
+
+/* -- how-to answers (web/app/guidecard.js): read at a glance --------------- */
+.msg.has-card { white-space: normal; max-width: 100%; width: 100%; }
+.guide-card { display: flex; flex-direction: column; gap: 10px; white-space: normal; }
+.gc-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gc-badge { font: 700 var(--fs-xs) var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--ai);
+  background: var(--ai-bg); border-radius: 999px; padding: 2px 8px; }
+.gc-topic { font-size: var(--fs-l); font-weight: 650; color: var(--text); line-height: 1.25; }
+.gc-summary { margin: 0; color: var(--muted); font-size: var(--fs-m); line-height: 1.45; }
+.gc-k { font: 600 var(--fs-xs) var(--font); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; }
+.gc-where, .gc-also { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 10px;
+  background: var(--accent-bg); border-radius: var(--radius); }
+.gc-also { background: transparent; padding: 2px 0 0; }
+.gc-sep { color: var(--muted); font-weight: 700; padding: 0 5px; }
+.gc-where .gc-sep { padding: 0 1px; }
+.gc-ui { font: 600 var(--fs-s) var(--font); color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px 7px; margin: 0 1px; cursor: pointer; line-height: 1.6; vertical-align: baseline; }
+.gc-ui:hover, .gc-ui:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.gc-progress { display: flex; align-items: center; gap: 10px; }
+.gc-bar { flex: 1; height: 6px; background: var(--surface); border-radius: 999px; overflow: hidden; }
+.gc-bar > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; transition: width .25s var(--ease); }
+.gc-count { font: 600 var(--fs-xs) var(--mono); color: var(--muted); white-space: nowrap; }
+.gc-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gc-steps:not(.all) > .gc-step.more { display: none; }
+.gc-step { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: start; padding: 8px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.gc-steps.compact .gc-step { grid-template-columns: 22px 1fr; padding: 6px 8px; }
+.gc-step.done { opacity: .6; }
+.gc-step.done .gc-n { background: var(--ok); color: var(--on-accent); }
+.gc-n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-bg); color: var(--accent);
+  font: 700 var(--fs-xs) var(--mono); display: grid; place-items: center; }
+.gc-title { font-weight: 650; color: var(--text); margin-bottom: 2px; }
+.gc-text, .gc-p, .gc-list { color: var(--text); font-size: var(--fs-m); line-height: 1.5; }
+.gc-tick { display: grid; place-items: center; padding-top: 2px; cursor: pointer; }
+.gc-tick input { width: 16px; height: 16px; accent-color: var(--ok); cursor: pointer; }
+.gc-more { align-self: flex-start; }
+.gc-notes { border-left: 3px solid var(--border); padding-left: 10px; color: var(--muted); font-size: var(--fs-s); }
+.gc-notes p { margin: 0 0 4px; }
+.reply-view { display: flex; flex-direction: column; gap: 8px; white-space: normal; }
+.gc-p { margin: 0; }
+.gc-list { margin: 0; padding-left: 18px; }
+.gc-from { align-self: flex-start; }
+/* a button the guide points at, lit up on the screen */
+.gc-pulse { outline: 2px solid var(--accent) !important; outline-offset: 2px; animation: gc-pulse 0.85s var(--ease) 3; position: relative; z-index: 5; }
+@keyframes gc-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(47, 214, 245, 0.55); } 50% { box-shadow: 0 0 0 8px rgba(47, 214, 245, 0); } }
+@media (prefers-reduced-motion: reduce) { .gc-pulse { animation: none; } .gc-bar > i { transition: none; } }
+
+/* -- help wherever you are (guidecard.js, helpmode.js) ---------------------- */
+.gc-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gc-notthis { margin-left: auto; }
+abbr.gc-term { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+/* the step-by-step coach: a small box over the screen, the button to press lit */
+.coach { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4000; width: min(440px, calc(100vw - 32px));
+  background: var(--bg-2, var(--surface)); border: 1px solid var(--accent); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.coach-head { display: flex; align-items: center; gap: 8px; }
+.coach-topic { font-weight: 600; color: var(--muted); font-size: var(--fs-s); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coach-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.coach-lit { outline: 3px solid var(--accent) !important; outline-offset: 3px; box-shadow: 0 0 0 8px rgba(47, 214, 245, 0.18) !important; position: relative; z-index: 3999; }
+/* What's this? - pick anything */
+body.whats-this, body.whats-this * { cursor: help !important; }
+body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this section:hover { outline: 2px dashed var(--ai); outline-offset: 2px; }
+/* a hint when you look stuck */
+.stuck-hint { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 3900; max-width: min(640px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface); border: 1px solid var(--blind);
+  border-radius: var(--radius); box-shadow: var(--shadow); font-size: var(--fs-m); }
+.stuck-t { flex: 1; color: var(--text); }
+.unanswered .mini-table { width: 100%; border-collapse: collapse; }
+.unanswered td, .unanswered th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-s); }
+.undo-more svg { width: 12px; height: 12px; }
+.gc-unsure { margin: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--blind-bg); color: var(--text); font-size: var(--fs-s); }

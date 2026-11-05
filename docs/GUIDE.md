@@ -89,6 +89,8 @@ outdoor stage) and resizes the room.
 
 ### Arrange mode
 
+*Where:* Set up → Arrange the room
+
 **Arrange** (stage toolbar) turns the stage into an editor:
 
 * Click a light, truss, object, zone, the stage or the floor plan to get a
@@ -154,6 +156,8 @@ whole room), <kbd>F</kbd> to frame the selection.
 
 ### Quick buttons
 
+*Where:* Buttons (bottom left)
+
 **Buttons** in the bottom panel is a grid of instant buttons on up to 32
 named pages (double-click a page in Edit to name it), like a MagicQ execute
 window. Each one is **hold** (on while pressed),
@@ -214,7 +218,70 @@ bigger), the rows, and the row height, for one page or every page.
 Right-click a button in Edit to **Copy look** and **Paste look** onto
 another button or the whole page; what the buttons do stays the same.
 
+### Groups
+
+*Where:* Fixtures → Group
+
+A group is a set of lights you pick often (the back truss, the floor PARs).
+
+1. Select the lights (click, Ctrl+click, or drag in the 3D / the list).
+2. Press **Group** under the fixture list (or right-click →
+   **Make a group of them…**), name it, **Create group**.
+3. Its chip selects them again. A group's **⋯** (or a right-click on its chip):
+   **Add the selected lights**, **Take the selected lights out**, **Rename…**,
+   **Delete group…**. Buttons and faders that use the group follow the change.
+
+### Palettes
+
+*Where:* Programmer → Looks → + Record
+
+A palette is a colour, a position or a beam setting, saved once and used
+everywhere: cues and buttons point at it, so changing the palette changes
+every cue that uses it.
+
+1. Select lights and set the look in the programmer.
+2. Programmer → **Looks** → the row for **Colour**, **Position** or **Beam** →
+   **+ Record**, give it a name, **Record**.
+3. Tap a palette to put it on the selected lights.
+4. To change it everywhere: set the new look, then the palette's **⋯** →
+   **Update from the selection**. **Rename palette** and **Delete palette**
+   are there too.
+
+### Cues and playbacks
+
+*Where:* Programmer → Record cue…
+
+A cue is a look kept on a playback (a fader); a playback holds a list of cues
+played one after another with **GO**.
+
+1. Select lights and set the look (Level, Colour, Position, FX...).
+2. **Record cue…** on the programmer bar: pick the **Playback**, then
+   **Record new cue** (or **Merge** / **Replace** an existing one). **Fade in**
+   and **Delay** set how it arrives; tick **Clear the programmer after
+   recording** to start the next look clean.
+3. Raise the playback's fader and press **GO** for each next cue; **Release**
+   lets it go.
+4. To change a cue: open it, change the look, and **Update** on the
+   programmer bar. Cues can be dragged to reorder, inserted (**Insert before**)
+   and deleted; Ctrl+Z brings any of it back.
+
+### Effects
+
+*Where:* Programmer → FX
+
+Programmer → **FX**: chases, waves, circles and other movement, colour and
+dimmer effects on the selected lights.
+
+1. Select the lights, open **FX**, pick an effect and set its size, speed and
+   spread (how it runs across the lights - **Left to right**, **Middle out**...).
+2. **Run** starts it; it is recorded into cues and buttons like any look.
+3. Running effects show as a chip on the programmer bar: **×** on the chip
+   or **Stop mine** stops yours (a cue's, a button's or the timeline's keep
+   running).
+
 ### Timeline
+
+*Where:* Timeline (bottom left)
 
 **Timeline** in the bottom panel runs the show against the music:
 
@@ -344,6 +411,8 @@ that spot. The pan/tilt dials still move each light's own pan and tilt.
 
 ### Lining up a venue (the real lights match the desk)
 
+*Where:* Set up → Line up with the real lights…
+
 The desk aims a light from where it thinks the light hangs and which way it
 faces. In a real venue those are never exact, so line the rig up once per
 venue; it's saved with the show.
@@ -376,6 +445,8 @@ The **Plot** (Windows → Plot) shows the rig flat with every light's number -
 handy to walk the room and tick lights off.
 
 ### The room the lights know: teach it by pointing
+
+*Where:* Set up → Teach the room by pointing…
 
 Once a light is lined up, the desk knows exactly where its beam lands on the
 floor - so the light itself can show the desk the room. **Set up → Teach the
@@ -588,6 +659,8 @@ out and back in; **Unlock** puts them back).
 
 ### Keyboard
 
+*Where:* Help (?) → Keys
+
 | key | does | key | does |
 |---|---|---|---|
 | <kbd>Space</kbd> | GO on the focused playback (Enter never fires GO) | <kbd>B</kbd> | cue back |
@@ -615,6 +688,8 @@ tilt); `cue 3 at 50` runs cue 3 at half.
 
 ### The AI assistant (with an AI key)
 
+*Where:* Copilot (top bar)
+
 With `LLM_API_KEY` in `.env`, the copilot's Program tab is an assistant
 that works the desk itself. It looks at the rig, does things, then
 **checks the real lights** (level, colour, which zone each beam lands in)
@@ -622,7 +697,7 @@ and fixes what isn't right, in as many rounds as it needs. Ask for a feeling
 (*"the drop needs to hit harder"*, *"calmer for the speeches"*, *"this looks
 cheap, fix it"*) or ask a question (*"why is head 7 dark?"*). It asks you
 when something is unclear, with answers to tap. It remembers your
-preferences (**What I remember**, with a × to forget one). **AI sees the 3D
+preferences (Settings → AI → **What the AI has learned…**: keep, forget or pause). **AI sees the 3D
 view** sends a small picture of the view with each message, and **Photo…**
 (or paste / drop) gives it a picture to match.
 
@@ -709,7 +784,44 @@ actions with validated parameters. It cannot arm output, load or save show
 files, import, replace the patch or delete heads; those stay on your own
 buttons.
 
+### Talking with the copilot (voice)
+
+*Where:* Copilot → 🗣 Talk
+
+With the online AI (Settings → AI → your key), **🗣 Talk** in the copilot
+starts a spoken conversation: you talk, it answers out loud, and you can talk
+over it. What you ask it to do goes to the copilot as if typed - the room's
+rules, the preview and one Ctrl+Z all hold. Press it again to stop. Without
+the online AI, hold 🎙 to speak one request.
+
+### What the AI has learned
+
+*Where:* Settings → AI → What the AI has learned…
+
+Settings → AI → **What the AI has learned…** shows everything it uses:
+notes you gave it ("never strobe the VIP"), things it noticed and wants you to
+OK (**Keep** or **Forget**), habits from your shows, and requests you undid.
+**Pause learning** stops it learning anything new; **Forget all notes…** starts
+again (your shows stay).
+
+### DJ requests from a phone
+
+*Where:* Copilot → 📱 DJ requests…
+
+The DJ or the host asks for things from their phone (more energy, a speech,
+blackout for the intro) and you decide.
+
+1. Copilot → **📱 DJ requests…** → **Copy the link**, and send it to them.
+   On another device use this computer's network address in place of
+   localhost.
+2. Each request shows as a card on the desk: **Do it** (the copilot does it
+   live, within the room's rules) or **No thanks**. Their phone sees the answer.
+3. The link can only send requests, never run the desk. **New code** stops an
+   old link working.
+
 ## Connecting a rig (Art-Net / sACN)
+
+*Where:* Settings → Output
 
 Every venue's node has its own address, so you set it in the app for each
 venue. Open **Settings → Output**:
@@ -756,6 +868,17 @@ then an Art-Net viewer or Wireshark, then one cheap fixture, then the rig.
 * Every API write must be same-origin `application/json`, and on a loopback
   bind the `Host` header must be a loopback name. That blocks cross-site
   requests and DNS rebinding from other web pages.
+
+### Strobe safety
+
+*Where:* Settings → Output → Strobe safety
+
+Settings → Output → **Strobe safety**: tick *Strobes at most 3 flashes a
+second* and nothing the desk sends flashes faster - buttons, the desk's
+strobe, and every light's own strobe channel, even a cue that asks for more.
+It is the usual guidance for people with photosensitive epilepsy, and many
+venues and events require it. The copilot also keeps strobes off the VIP, the
+bar, the DJ and the stage unless you ask.
 
 ### A backup desk
 
@@ -827,6 +950,8 @@ one Ctrl+Z, and that brings back the show that was open.
 
 ## Look and help
 
+*Where:* Settings → Screen & 3D
+
 **Settings → Screen & 3D → Look**, per computer:
 - **Density:** *Compact* fits more on screen, *Roomy* gives every button
   and row more room; *Standard* sits between. (**Gig mode** above makes
@@ -866,6 +991,52 @@ to a node of its own (one node per truss), over Art-Net or sACN. With sACN
 you can also set the desk's **priority** (0-200). Both are saved with the
 show.
 
+### Getting help
+
+*Where:* Help (?)
+
+1. **Ask the copilot.** "How do I line up the lights?", "what is a gobo?" - the
+   answer comes from this guide, as numbered steps with the real button names.
+   Tap a button name to see it lit up on the screen; tick the steps as you go.
+2. **Open it for me.** On an answer, it opens the window it is about.
+3. **Show me step by step.** One step at a time over the real screen, with the
+   button to press lit up; pressing it moves on. Esc stops.
+4. **Search.** Type in the command bar (/): a topic ("strobe safety"), a word
+   ("gobo") or a button's name ("line up") finds it.
+5. **What's this?** Help (?) → **What's this?** (or Shift+F1), then click
+   anything to see what it is; **Explain this screen** explains where you are.
+6. **Hints.** When something looks stuck (blackout on, the master at 0, a
+   fader down, playing the show while BLIND) a line says so, with a button that
+   fixes it.
+7. **Undo history.** The arrow beside Undo lists the last changes in words; pick
+   one to go back to before it (Redo brings them back).
+
+Questions the guide couldn't answer are kept on this computer (Help (?) →
+**Unanswered questions**) so the guide can be filled in where people get stuck.
+
+### Report a bug
+
+*Where:* Help (?) → Report a bug…
+
+Help (**?**) → **Report a bug…**, or right-click a light →
+**Report a problem with this light…** (its fixture file, its DMX and a 3D
+picture go with it).
+Say what's wrong, tick where (DMX, 3D, programmer, effects, cues, a crash) and
+whether to attach the whole show; you see every file before anything goes.
+Keys and passwords are never included. **Send report** files it directly
+(when the desk has the report relay); otherwise **Save report and open
+GitHub** saves a zip to drag into the page that opens.
+
+### A newer Haze
+
+*Where:* Settings → Screen & 3D
+
+The installed app checks once a day. When a newer version is out,
+*Haze 0.2.0 is out* shows in the top bar: **Download Haze 0.2.0** (the installer for
+this computer - install it when there's no show on), **What's new**, or **Not
+now**. Nothing installs by itself. Settings → Screen & 3D → *Tell me when a
+newer Haze is out* turns the check off.
+
 ## OSC out (QLab, Resolume, video servers)
 
 **Settings → MIDI & OSC → OSC out**: the address and port of the other
@@ -878,6 +1049,8 @@ program (QLab listens on 53000, Resolume on 7000). **Test** sends
 venue has its own video computer.
 
 ## Hardware controllers
+
+*Where:* Settings → MIDI & OSC
 
 Switch on **Settings → MIDI & OSC → MIDI in the browser**, then plug in a
 controller. These are recognised by name and work straight away:
@@ -944,6 +1117,8 @@ with their length in the name) and the objects as an `.mvr`, with the GDTF
 files the desk has for those lights, for other programs.
 
 ## Fixture library
+
+*Where:* Fixtures → + Add
 
 **Add lights** searches everything at once in the **All** tab, and
 also has separate tabs:
@@ -1036,6 +1211,8 @@ To refresh the bundled libraries from upstream, run
 licences and the exact upstream commits.
 
 ## Lasers and special effects
+
+*Where:* Programmer → SFX
 
 Confetti, CO₂, flame, sparks, fog, haze and lasers are **effects**, not
 lights, and Haze treats them that way.

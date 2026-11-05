@@ -38,5 +38,17 @@
  {"id": "explain-review", "rig": "club", "setup": ["bad_cue"], "ask": "Check my show", "expect": {"action_used": ["ready_check"]}},
  {"id": "dj-request", "rig": "club", "ask": "The DJ asks: \"more energy\". Do it now, live, in one go, within the room's rules.", "expect": {"changed": true, "review_clean": true}},
  {"id": "memory", "rig": "club", "ask": "Remember: never strobe the bar", "expect": {"action_used": ["remember"]}},
- {"id": "ambiguous", "rig": "club", "ask": "Make it better", "expect": {"asked_or_changed": true}}
+ {"id": "ambiguous", "rig": "club", "ask": "Make it better", "expect": {"asked_or_changed": true}},
+ {"id": "howto-align", "rig": "club", "ask": "help me align the lights", "expect": {"no_change": true, "reply_has_any": ["Line up", "mark"], "looked_up_guide": true}},
+ {"id": "howto-patch", "rig": "club", "ask": "how do I patch a light?", "expect": {"no_change": true, "reply_has_any": ["Add", "library", "address"], "looked_up_guide": true}},
+ {"id": "howto-button", "rig": "club", "ask": "where do I make a flash button", "expect": {"no_change": true, "reply_has_any": ["Make a button", "Buttons", "Flash"], "looked_up_guide": true}},
+ {"id": "howto-cue", "rig": "club", "ask": "how do i record a cue", "expect": {"no_change": true, "reply_has_any": ["Record cue"], "looked_up_guide": true}},
+ {"id": "howto-palette", "rig": "club", "ask": "can you show me how to make a colour palette", "expect": {"no_change": true, "reply_has_any": ["Looks", "+ Record", "Record"], "looked_up_guide": true}},
+ {"id": "howto-artnet", "rig": "club", "ask": "how do I connect to my art-net node?", "expect": {"no_change": true, "reply_has_any": ["Output", "Find nodes", "Use this node"], "looked_up_guide": true}},
+ {"id": "howto-sparks", "rig": "club", "ask": "how do I set the height on the sparkle machine", "expect": {"no_change": true, "reply_has_any": ["SFX", "Height", "ARM"], "looked_up_guide": true}},
+ {"id": "howto-djreq", "rig": "club", "ask": "how can the DJ ask for things from their phone", "expect": {"no_change": true, "reply_has_any": ["DJ requests", "link"], "looked_up_guide": true}},
+ {"id": "howto-strobe-safety", "rig": "club", "ask": "is there a way to keep strobes slow for epilepsy?", "expect": {"no_change": true, "reply_has_any": ["Strobe safety", "3"], "looked_up_guide": true}},
+ {"id": "howto-report", "rig": "club", "ask": "how do i report a bug", "expect": {"no_change": true, "reply_has_any": ["Report a bug", "Report a problem"], "looked_up_guide": true}},
+ {"id": "howto-typo", "rig": "club", "ask": "i'm new, how do i lin up my movers", "expect": {"no_change": true, "reply_has_any": ["Line up", "mark"], "looked_up_guide": true}},
+ {"id": "howto-unknown", "rig": "club", "ask": "how do I connect to spotify", "expect": {"no_change": true, "reply_has_any": ["guide", "can't", "isn't", "not", "only"]}}
 ]

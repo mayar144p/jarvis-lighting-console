@@ -284,19 +284,17 @@ function renderSfx(attrState) {
   const loads = st.loads || {};
   const confetti = fire.filter((n) => loads[n]);
   const jets = fire.filter((n) => !loads[n]);
-  if (jets.length) {
-    // CO2, flames, sparks: hold to spray, a quick shot of a set length, or on
-    // until stopped (each capped at the machine's safe maximum)
-    parts.push(h("h3", "CO2 / flames / sparks"),
-      h("div.fx-fire-row",
-        holdButton("HOLD TO FIRE", "fire.big", () => run("fx_fire", { heads: jets, down: true, owner: "prog-hold" }),
-          () => run("fx_fire", { heads: jets, down: false, owner: "prog-hold" }, { silentError: true }),
-          "Fires while held, capped at each machine's safe maximum")),
-      h("div.chip-row.fx-shots", h("span.k", "Quick shot"),
-        ...[0.5, 1, 3].map((sec) => h("button.chip", { title: `Fire for ${sec} s`,
-          onclick: () => run("fx_fire", { heads: jets, seconds: sec, owner: `prog-shot-${sec}` }) }, `${sec} s`))),
-      fireExtras(jets, st, "jets"));
+  // CO2, flames, sparks - each kind its own section, named for what it is:
+  // hold to spray, a quick shot of a set length, or on until stopped (each
+  // capped at the machine's safe maximum)
+  const fireInfo = st.fire || {};
+  const byKind = new Map();
+  for (const n of jets) {
+    const k = (fireInfo[n] || {}).kind || "other";
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(n);
   }
+  for (const [k, group] of byKind) parts.push(...jetSection(k, group, st, fireInfo));
   if (confetti.length) {
     // the deliberate shot (a 1 s hold: a stray tap can't waste the load),
     // fire while held, or on until stopped - and Stop always works
@@ -305,7 +303,7 @@ function renderSfx(attrState) {
         holdButton("Hold to fire", "", () => run("fx_fire", { heads: confetti, down: true, owner: "prog-hold" }),
           () => run("fx_fire", { heads: confetti, down: false, owner: "prog-hold" }, { silentError: true }),
           "Fires while you hold it and stops when you let go")),
-      fireExtras(confetti, st, "confetti"));
+      fireExtras(confetti, st, "Confetti"));
   }
   if (fire.length) {
     const conf = confetti;
@@ -319,7 +317,6 @@ function renderSfx(attrState) {
           h("span.mono.small", pct ? `${l.left} s` : "EMPTY"));
       }), h("button.btn.small", { onclick: () => run("fx_reload", { heads: conf }, { toast: true }) }, "Refilled: reload")));
     }
-    parts.push(chooser("Height / level", e.fx_fire && e.fx_fire.slots ? e.fx_fire : null));
   }
   if (fog.length) {
     const level = h("input", { type: "range", min: 1, max: 100, value: 60 });
@@ -352,6 +349,44 @@ function renderSfx(attrState) {
   box.replaceChildren(...parts.filter(Boolean));
 }
 
+// One kind of firing machine: its name, the height its shots fire at (a
+// spark fountain's own heights, low to high), hold / quick shot, and the
+// on / off, STOP and Make a button every machine gets.
+const JET_NAMES = { spark: ["Sparks", "Sparks"], co2: ["CO2", "CO2"], flame: ["Flames", "Flame"],
+  bubble: ["Bubbles", "Bubbles"], snow: ["Snow", "Snow"], other: ["Effects", "Effect"] };
+const jetHeight = {};                      // the height picked per kind (%), kept while the desk is open
+function jetSection(kind, heads, st, info) {
+  const [title, name] = JET_NAMES[kind] || JET_NAMES.other;
+  // the steps of the machine with the most (its own names: "1 m", "Height 3")
+  const names = heads.map((n) => (info[n] || {}).heights || []).reduce((a, b) => (b.length > a.length ? b : a), []);
+  const steps = names.length;
+  const pct = () => (steps ? (jetHeight[kind] ?? 0) : undefined);    // lowest until picked: safe under a low ceiling
+  const out = [h("h3", title)];
+  if (steps) {
+    // one chip per step, named as the machine's file names it, lowest first
+    const word = kind === "spark" || kind === "flame" ? "Height" : "Level";
+    const at = (i) => (steps > 1 ? (100 * i) / (steps - 1) : 100);
+    const pick = () => Math.round((pct() / 100) * (steps - 1));
+    const chips = names.map((nm, i) => h("button.chip" + (i === pick() ? ".on" : ""), {
+      title: `Every shot below fires at ${nm}` + (i === 0 ? " (lowest)" : i === steps - 1 ? " (highest)" : ""),
+      onclick: () => { jetHeight[kind] = at(i); chips.forEach((c, j) => c.classList.toggle("on", j === i)); } }, nm));
+    out.push(h("div.chip-row.fx-shots", h("span.k", word), ...chips));
+  }
+  out.push(h("div.fx-fire-row",
+      holdButton("HOLD TO FIRE", "fire.big", () => run("fx_fire", { heads, down: true, owner: "prog-hold", height: pct() }),
+        () => run("fx_fire", { heads, down: false, owner: "prog-hold" }, { silentError: true }),
+        "Fires while held, capped at each machine's safe maximum")),
+    h("div.chip-row.fx-shots", h("span.k", "Quick shot"),
+      ...[0.5, 1, 3].map((sec) => h("button.chip", { title: `Fire for ${sec} s`,
+        onclick: () => run("fx_fire", { heads, seconds: sec, owner: `prog-shot-${sec}`, height: pct() }) }, `${sec} s`))),
+    fireExtras(heads, st, name, pct));
+  if (kind === "spark") {
+    out.push(h("p.muted.small", "ARM FX also switches a spark machine's heater on: give it a few minutes to warm up before the first shot "
+      + "(disarming switches the heater off again). Sparks are cool to touch but keep them clear of people, fabric and the haze detector."));
+  }
+  return out;
+}
+
 // What every firing machine gets besides its shot: an on / off switch (on
 // until you switch it off, or the machine's own limit), a STOP that ends
 // every shot from the programmer without disarming, and buttons for the
@@ -360,15 +395,14 @@ const PROG_FIRE = ["prog-hold", "prog-latch", "prog-confetti", "prog-shot-0.5", 
 function stopFire(heads) {
   return Promise.all(PROG_FIRE.map((owner) => run("fx_fire", { heads, down: false, owner }, { silentError: true })));
 }
-function fireExtras(heads, st, what) {
+function fireExtras(heads, st, name, height = () => undefined) {
   const on = (st.runs || []).some((r) => r.key === "fire:prog-latch");
-  const name = what === "confetti" ? "Confetti" : "Effect";
   const make = (mode, label) => run("quick_set", { page: 1, slot: "free",
-    button: { kind: "sfx", mode, label, target: { heads } } }, { toast: true });
+    button: { kind: "sfx", mode, label, target: { heads }, height: height() } }, { toast: true });
   return h("div",
     h("div.fx-fire-row",
       h("button.btn" + (on ? ".on" : ""), { title: "On until you switch it off (or the machine's own limit)",
-        onclick: () => (on ? stopFire(heads) : run("fx_fire", { heads, down: true, owner: "prog-latch" }, { toast: true })) },
+        onclick: () => (on ? stopFire(heads) : run("fx_fire", { heads, down: true, owner: "prog-latch", height: height() }, { toast: true })) },
         on ? "On - switch off" : "On / off"),
       h("button.btn.danger", { title: "Stop every shot from here (effects stay armed)", onclick: () => stopFire(heads) }, "STOP")),
     h("div.chip-row.fx-shots", h("span.k", "Make a button"),

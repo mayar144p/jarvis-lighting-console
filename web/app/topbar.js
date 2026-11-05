@@ -70,6 +70,8 @@ function renderUndo() {
   $("#undo-btn").title = u.can_undo ? `Undo ${what} (Ctrl+Z)` : "Undo (Ctrl+Z)";
   b.title = u.can_undo ? `Undo ${String(u.undo || "").replace(/_/g, " ")} (Ctrl+Z)` : "Nothing to undo";
   $("#redo-btn").disabled = !u.can_redo;
+  const more = $("#undo-more");
+  if (more) more.disabled = !(u.steps || []).length;
   $("#redo-btn").title = u.can_redo ? `Redo ${String(u.redo || "").replace(/_/g, " ")} (Ctrl+Shift+Z)` : "Nothing to redo";
 }
 
@@ -287,6 +289,18 @@ export function initTopbar() {
   $("#out-state").addEventListener("click", (e) => outputMenu(e.currentTarget));
   $("#out-state").style.cursor = "pointer";
   $("#undo-btn").addEventListener("click", () => run("undo", {}, { toast: true }));
+  // the last changes in words: undo back to any of them (one at a time,
+  // newest first, so each comes back with a Ctrl+Shift+Z)
+  const more = $("#undo-more");
+  if (more) more.addEventListener("click", (e) => {
+    const steps = ((state.snap && state.snap.undo) || {}).steps || [];
+    const ago = (s) => (s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
+    menu(e.currentTarget, steps.map((s, i) => ({
+      label: (i === 0 ? "Undo: " : `Undo ${i + 1} changes, back to before: `) + s.label,
+      hint: ago(s.ago),
+      run: async () => { for (let k = 0; k <= i; k++) await run("undo", {}); toast(`Undid ${i + 1} change${i ? "s" : ""} - Redo brings them back`, "ok"); },
+    })));
+  });
   $("#redo-btn").addEventListener("click", () => run("redo", {}, { toast: true }));
   $("#lock-btn").addEventListener("click", (e) => lockMenu(e.currentTarget));
   $("#show-btn").addEventListener("click", (e) => openShowMenu(e.currentTarget, menu));

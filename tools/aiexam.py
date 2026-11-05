@@ -112,6 +112,9 @@ def judge(eng, r: dict, exp: dict, before: dict) -> list[str]:
                                                    "which", "contradict", "don't")), "asked or explained why not")
         elif key == "asked_or_changed":
             need(asked or changed, "asked or changed something")
+        elif key == "looked_up_guide":
+            # a how-to question: answered from the app's own guide (how_to), not memory
+            need(bool(r.get("guide")) and r.get("guide") != "nothing found", "looked it up in the guide (how_to)")
         elif key == "reply_has_any":
             need(any(w.lower() in reply for w in want), f"said one of {want}")
         elif key == "reply_max_words":

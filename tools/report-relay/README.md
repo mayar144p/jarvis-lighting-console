@@ -23,7 +23,13 @@ It is a small Cloudflare Worker (`worker.mjs`, free plan is plenty).
    npx wrangler deploy
    ```
    It prints the relay's address, e.g. `https://haze-report-relay.<you>.workers.dev`.
-3. **The desks** - in each desk's `.env` (or the desktop app's settings
+3. **Every installed desk, once** - on GitHub: this repo → Settings →
+   Secrets and variables → Actions → **Variables** → New variable
+   `REPORT_RELAY` = the relay's address (and `REPORT_RELAY_KEY` if you set
+   RELAY_KEY).  Every installer built from then on (a version tag, or
+   Actions → Desktop app → Run workflow) has **Send report** built in.
+
+   **Or one desk by hand** - in that desk's `.env` (or the desktop app's settings
    folder):
    ```
    REPORT_RELAY=https://haze-report-relay.<you>.workers.dev

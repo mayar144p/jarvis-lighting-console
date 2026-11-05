@@ -430,6 +430,20 @@ def plan(message: str, offline: bool = False, eng=None, history=None) -> dict:
         return {"reply": "Tell me the look - e.g. 'everything to 70%', "
                          "'slow blue wash on the movers' or 'rainbow across the rig'.",
                 "steps": [], "source": "fallback"}
+    from . import howto
+    g = howto.glossary(text)
+    if g:
+        # "what is a cue?" - the word, in one line
+        return {"reply": f"{g['term']}: {g['text']}", "steps": [], "source": "guide",
+                "glossary": g, "also": []}
+    if howto.is_howto(text):
+        # "help me align the lights" is a question about the app, not a look:
+        # the guide's own steps, and nothing on the rig changes
+        a = howto.answer(text)
+        if not a["found"]:
+            howto.note_unanswered(text)
+        return {"reply": howto.reply(text), "steps": [], "source": "guide",
+                "guide": a.get("card"), "also": a.get("also") or []}
     if not offline and llm.available():
         try:
             messages = [{"role": "system",

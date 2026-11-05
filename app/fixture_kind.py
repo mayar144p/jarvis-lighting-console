@@ -132,8 +132,10 @@ FAMILIES: list[tuple[str, str, str]] = [
     (r"\blaserworld\b|\bgalaxian\b|\bioda\b|\bkub \d+|\bcs-\d+rgb|\bel-\d+rgb", "laser", ""),
     (r"\bentour\b|\bentourage\b|\bfaze\b|\batme\b|\bcryofog\b|\bwgf-\d+|\bn-\d+\b"
      r"|\batmospheric\b", "atmos", ""),
-    (r"\baputure\b|\bhive lighting\b|\bsereniled\b|\btwinled\b|\bkelvin epos\b|\bnova p\d+",
-     "fresnel", ""),
+    (r"\baputure\b|\bhive lighting\b|\bsereniled\b|\btwinled\b|\bkelvin epos\b|\bnova p\d+"
+     # ADJ's Encore FR50z / FR150z / FR Pro: warm-white LED fresnels whose
+     # channels (dimmer + a strobe) read like a strobe unit
+     r"|\bencore fr\s?(\d+|pro)", "fresnel", ""),
     (r"\bd'?artagnan\b", "followspot", ""),
     (r"\bsp-1500\b|\bexplo \d+|\bledstrob|\bled shadow\b", "strobe", ""),
     (r"\bsharpy\s*(plus|x)\b|\bpointe\b|\bmythos\b|\bmega[\s-]?pointe\b|\bmegapointe\b"
