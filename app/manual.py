@@ -99,7 +99,7 @@ def clean_draft(raw: dict) -> dict:
             modes.append({"name": str(m.get("name") or f"{len(chans)}-channel").strip()[:32],
                           "channels": chans[:512]})
     if not modes:
-        raise ValueError("no DMX channels found - paste the page with the DMX chart")
+        raise ValueError("no DMX channels - add at least one channel (or paste the page with the DMX chart)")
     return {"manufacturer": str(raw.get("manufacturer") or "").strip()[:64] or "Unknown",
             "model": str(raw.get("model") or "").strip()[:64] or "Fixture",
             "type": typ, "modes": modes,

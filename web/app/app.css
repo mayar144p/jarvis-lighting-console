@@ -3096,3 +3096,10 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .unanswered td, .unanswered th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-s); }
 .undo-more svg { width: 12px; height: 12px; }
 .gc-unsure { margin: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--blind-bg); color: var(--text); font-size: var(--fs-s); }
+
+/* Build a fixture yourself / the manual's review: the channel editor */
+.man-editor { display: flex; flex-direction: column; gap: 12px; }
+.man-mode-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.man-rowbtns { white-space: nowrap; }
+.man-rowbtns .btn { padding: 0 6px; min-width: 0; }
+.chan-table select.select { max-width: 190px; }

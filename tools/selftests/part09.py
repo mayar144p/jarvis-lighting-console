@@ -12110,3 +12110,54 @@ def test_lineup_arrows() -> None:
         check("...and Line up's arrows name their light", 'run("nudge", {' in lu and "heads: [head()]" in lu.split('run("nudge"')[1][:120], "")
     finally:
         e.stop() if hasattr(e, "stop") else None
+
+
+def test_build_fixture_yourself() -> None:
+    """Build a fixture yourself (no library file, no manual): a typed-in moving head and a confetti cannon
+    become working lights - roles, a shutter that's open at rest, its strobe range, an effect that fires."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    rng = lambda *r: [list(x) for x in r]  # noqa: E731
+    spot = {"manufacturer": "Generic", "model": "My Spot", "type": "light", "modes": [{"name": "10-channel", "channels": [
+        {"name": "Pan", "function": "pan", "ranges": []}, {"name": "Pan fine", "function": "pan fine", "ranges": []},
+        {"name": "Tilt", "function": "tilt", "ranges": []}, {"name": "Tilt fine", "function": "tilt fine", "ranges": []},
+        {"name": "Speed", "function": "pan/tilt speed", "ranges": []}, {"name": "Dimmer", "function": "dimmer", "ranges": []},
+        {"name": "Shutter", "function": "shutter", "ranges": rng((0, 7, "Closed"), (8, 15, "Open"), (16, 255, "Strobe slow to fast"))},
+        {"name": "Colour", "function": "colour wheel", "ranges": rng((0, 9, "White"), (10, 19, "Red"), (20, 29, "Blue"))},
+        {"name": "Gobo", "function": "gobo wheel", "ranges": []}, {"name": "Prism", "function": "prism", "ranges": []}]}]}
+    p = manual.to_parsed(spot)[0]
+    roles = [r["role"] for r in p["modes"][0]["detail"]]
+    check("a typed-in moving head gets its roles in order", roles[:7] == ["pan", "pan_fine", "tilt", "tilt_fine", "speed", "dimmer", "shutter"], str(roles))
+    sh = p["modes"][0]["detail"][6]
+    check("...its shutter knows where open and strobe are", sh["open_from"] == 8 and sh["strobe_ranges"] == [[16, 255]], str(sh))
+    try:
+        manual.to_parsed({"manufacturer": "x", "model": "y", "modes": [{"name": "m", "channels": []}]})
+        check("a fixture with no channels is refused, saying what to do", False, "")
+    except ValueError as exc:
+        check("a fixture with no channels is refused, saying what to do", "add at least one channel" in str(exc), str(exc))
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(spot), "manual:generic-my-spot")
+        fixtures.store_parsed(db, manual.to_parsed({"manufacturer": "Generic", "model": "My Confetti", "type": "confetti",
+                                                    "modes": [{"name": "1-channel", "channels": [
+                                                        {"name": "Fire", "function": "fx fire", "ranges": rng((0, 9, "Off"), (10, 255, "Fire"))}]}]}),
+                              "manual:generic-my-confetti")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("add_heads", query="My Spot", qty=1)
+            e.act("add_heads", query="My Confetti", qty=1)
+            h, c = e.patch[0], e.patch[1]
+            check("...it adds to the rig like a library light", "pan" in h["map"] and "tilt" in h["map"] and h["channels"] == 10, str(h["map"]))
+            frame = e.build_frames()[h["universe"]]
+            check("...its shutter is open at rest (8-15), so it lights", 8 <= frame[h["address"] - 1 + h["map"].index("shutter")] <= 15, "")
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[c["head_no"]], owner="t")
+            fire = e.build_frames()[c["universe"]][c["address"] - 1 + c["map"].index("fx_fire")]
+            check("a typed-in confetti cannon fires from its armed button", fire >= 10, str(fire))
+            e.act("fx_kill")
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old

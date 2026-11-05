@@ -97,6 +97,7 @@ const OPENERS = {
   "Lining up a venue": lazy("./lineup.js", "openLineUp"),
   "The room the lights know": lazy("./roomteach.js", "openRoomTeach"),
   "Arrange mode": lazy("./venuepanel.js", "setArranging", true),
+  "Build a fixture yourself": lazy("./lightdialogs.js", "openFixtureBuilder"),
   "Fixture library": lazy("./dialogs.js", "openAddDialog"),
   "Cues and playbacks": lazy("./cuedialogs.js", "openCueDialog"),
   "Report a bug": lazy("./bugreport.js", "openBugReport"),

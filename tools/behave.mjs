@@ -266,6 +266,35 @@ await fetch(BASE + "api/howto?q=" + encodeURIComponent("how do I connect to spot
 const un = await fetch(BASE + "api/howto?unanswered=1").then((r) => r.json());
 check("a question the guide couldn't answer is kept for filling the guide in", (un.unanswered || []).some((r) => /spotify/.test(r.q)), "");
 
+// -- Build a fixture yourself: no library file, no manual ----------------------
+console.log("Build a fixture yourself");
+await closeModals();
+await p.evaluate(() => import("/app/dialogs.js").then((m) => m.openAddDialog())); await sleep(800);
+await p.locator(".modal button", { hasText: "Build it yourself" }).click(); await sleep(500);
+const bm = p.locator(".modal").last();
+await bm.locator('input[placeholder^="e.g. Generic"]').fill("Behave");
+await bm.locator('input[placeholder^="e.g. 7x10W"]').fill("Hand PAR");
+await bm.locator("select").first().selectOption("rgbw"); await sleep(300);
+await bm.locator("button", { hasText: "+ Add a channel" }).click(); await sleep(200);
+const rowsN = await bm.locator(".chan-table tbody tr").count();
+await bm.locator(".chan-table tbody tr").last().locator("select").selectOption("strobe");
+await bm.locator(".chan-table tbody tr").last().locator("textarea").fill("0-9 No strobe\n10-255 Strobe slow to fast");
+await bm.locator(".chan-table tbody tr").last().locator("textarea").dispatchEvent("change");
+await bm.locator(".chan-table tbody tr").last().locator("button", { hasText: "▲" }).click(); await sleep(200);
+const names = await bm.locator(".chan-table tbody tr td:nth-child(2) input").evaluateAll((els) => els.map((x) => x.value));
+check("starting from RGBW, a channel added, named by what it does, and moved up a place",
+  rowsN === 5 && JSON.stringify(names) === JSON.stringify(["Red", "Green", "Blue", "Strobe", "White"]), JSON.stringify(names));
+await bm.locator("button", { hasText: "Save to library" }).click(); await sleep(1200);
+const listTxt = await p.locator(".modal").last().innerText();
+check("saved, it shows in the Add list, ready to add", /Hand PAR/.test(listTxt), listTxt.slice(0, 200));
+const fx = await fetch(BASE + "api/fixtures?q=" + encodeURIComponent("Behave Hand PAR")).then((r) => r.json());
+const item = (fx.results || [])[0];
+const added = item ? await act("add_heads", { fixture_id: item.id, qty: 1 }) : {};
+const hp = ((await snap()).patch || []).find((x) => x.model === "Hand PAR");
+check("...and added to the rig, it has its channels in the order typed",
+  !!hp && JSON.stringify(hp.map) === JSON.stringify(["red", "green", "blue", "strobe", "white"]), JSON.stringify(hp && hp.map));
+await closeModals();
+
 const laid = await p.evaluate(() => import("/app/guidecard.js").then((m) => {
   const v = m.replyView("Lines the real lights up with the desk.\n1. Set up → **Line up with the real lights…**\n2. Nudge it onto the mark, press **It's on the mark ✓**\n- tip: *Fine* for the last bit");
   return { steps: v.querySelectorAll(".gc-step").length, names: v.querySelectorAll(".gc-ui").length, seps: v.querySelectorAll(".gc-sep").length,

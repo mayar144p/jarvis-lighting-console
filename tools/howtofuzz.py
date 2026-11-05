@@ -39,6 +39,8 @@ TOPICS: list[tuple[str, list[str]]] = [
     (r"Fixture library", ["patch a light", "add a fixture", "add my chauvet spots", "find a light that isnt in the list",
                           "import a gdtf file", "change a light's dmx address", "make a fixture from the manual",
                           "add a light thats not in the library"]),
+    (r"Build a fixture yourself", ["add a fixture manually", "make my own fixture by hand", "build a fixture from scratch",
+                                   "add a light with no manual"]),
     (r"Quick buttons", ["make a button", "make a flash button", "add a page of buttons", "change a button colour",
                         "make a button that only changes colour", "edit a button", "arrange my buttons"]),
     (r"Cues and playbacks", ["record a cue", "make a cue list", "put cues on a fader", "update a cue",
