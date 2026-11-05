@@ -12187,16 +12187,25 @@ def test_spark_machine_manual() -> None:
             e.act("add_heads", query="Spark machine", qty=1)
             h = e.patch[0]
             out = lambda: list(e.build_frames()[h["universe"]][h["address"] - 1:h["address"] + 2])  # noqa: E731
-            check("at rest: heater off, no spray, no cleaning", out() == [0, 0, 0], str(out()))
+            check("added: the heater is on straight away (a machine preheated from its remote stays ready), "
+                  "no spray, no cleaning", out()[0] >= 100 and out()[1:] == [0, 0], str(out()))
             e.act("fx_arm", state=True)
-            check("ARM turns the heater on (100-255)", out()[0] >= 100 and out()[1:] == [0, 0], str(out()))
+            e.act("fx_arm", state=False)
+            e.act("blackout", state=1)
+            check("...and it stays on through disarm and blackout", out()[0] >= 100, str(out()))
+            e.act("blackout", state=0)
+            e.act("fx_heater", heads=[h["head_no"]], state=False)
+            check("...its own switch turns it off", out()[0] < 100, str(out()))
+            e.act("fx_heater", heads=[h["head_no"]], state=True)
+            e.act("fx_arm", state=True)
             e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
             check("a shot at the top height sprays high (181-255), cleaning stays off", out()[1] >= 181 and out()[2] == 0, str(out()))
             e.act("fx_fire", heads=[h["head_no"]], down=False, owner="t")
             e.act("fx_fire", heads=[h["head_no"]], owner="t")
             check("...nothing picked: low (51-180)", 51 <= out()[1] <= 180, str(out()))
             e.act("fx_kill")
-            check("KILL FX: everything off", out() == [0, 0, 0], str(out()))
+            check("KILL FX: everything off, the heater too (an emergency)", out() == [0, 0, 0], str(out()))
+            e.act("fx_heater", heads=[h["head_no"]], state=True)
             e.act("fx_height_limit", heads=[h["head_no"]], height=0)
             e.act("fx_arm", state=True)
             e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
@@ -12207,3 +12216,69 @@ def test_spark_machine_manual() -> None:
         finally:
             e.stop() if hasattr(e, "stop") else None
             config.DATA = old
+
+
+def test_stop_output_effects_off() -> None:
+    """Hold to stop / closing the app: the last frame turns every effect off (a node holds the last
+    frame - a spark heater kept heating, a spray or fog kept going); the lights keep their look."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    chart = ("CH1 0-255 0-99: Preheating Off\n100-255: Preheating On\nCH2 0-255 0-50: Stop Spraying Effect\n"
+             "51-180: Low-Level Spraying\n181-255: High-Level Spraying\nCH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables")
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(manual.read(chart, "Generic", "Spark machine", offline=True)), "manual:x")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        sent: list = []
+        try:
+            e.act("add_heads", query="Spark machine", qty=1)
+            e.act("add_heads", query="LED PAR", qty=1)
+            h, par = e.patch[0], e.patch[1]
+            orig = e._dispatch
+            e._dispatch = lambda frames: (sent.append({u: bytes(b) for u, b in frames.items()}), orig(frames))
+            e.act("select_heads", heads=[par["head_no"]])
+            e.act("set_intensity", level=80)
+            e.act("set_output", state=1)
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[h["head_no"]], seconds=5, owner="t")
+            time.sleep(0.3)
+            a, u = h["address"] - 1, h["universe"]
+            check("live: heater on and spraying", sent and list(sent[-1][u][a:a + 2])[0] >= 100 and sent[-1][u][a + 1] > 50, "")
+            e.act("set_output", state=0)
+            last = sent[-1][u]
+            dim = par["address"] - 1 + par["map"].index("dimmer")
+            check("Hold to stop: the last frame turns the heater and the spray off", list(last[a:a + 3]) == [0, 0, 0], str(list(last[a:a + 3])))
+            check("...the lights keep their look", last[dim] > 0, str(last[dim]))
+            check("...and nothing set changes (live again: the heater comes back on)", e.patch[0].get("heater_on", True) is True, "")
+        finally:
+            e._dispatch = orig if "orig" in dir() else e._dispatch
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
+
+
+def test_first_run_installs() -> None:
+    """The first run installs what the desk needs (Node.js, Python, Git): winget on Windows, Homebrew /
+    apt / dnf / pacman on Mac and Linux.  The .bat can't run here, so its wiring is checked: every call /
+    goto has its label, each tool its winget package, Windows line endings."""
+    import re as _re
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    raw = (root / "run-desktop.bat").read_bytes()
+    bat = raw.decode("utf-8")
+    labels = set(_re.findall(r"(?im)^:(\w+)", bat))
+    used = set(_re.findall(r"(?i)\b(?:call\s+:|goto\s+)(\w+)", bat)) - {"eof"}
+    check("run-desktop.bat: every call / goto has its label", used <= labels, str(sorted(used - labels)))
+    check("...it installs Node.js, Python and Git with winget, when missing",
+          all("--id %1" in bat and pkg in bat for pkg in ("OpenJS.NodeJS.LTS", "Python.Python.3.12", "Git.Git")), "")
+    check("...Python goes on the PATH (and the Store's stand-in python doesn't count)",
+          "PrependPath=1" in bat and "sys.version_info[0] == 3" in bat, "")
+    check("...it reads the new PATH without a new window, and has Windows line endings",
+          "GetEnvironmentVariable('Path','Machine')" in bat and b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "")
+    sh = (root / "run-desktop.sh").read_text(encoding="utf-8")
+    ok = subprocess.run(["sh", "-n", str(root / "run-desktop.sh")], capture_output=True).returncode == 0
+    check("run-desktop.sh: valid, and installs with Homebrew / apt / dnf / pacman when missing",
+          ok and all(w in sh for w in ("brew install", "apt-get install", "dnf install", "pacman -S")), "")

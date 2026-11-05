@@ -58,7 +58,7 @@ function renderOutput() {
   $("#out-sub").textContent = st === "live" ? `→ ${(s.output && s.output.host) || ""}` : sub;
   const arm = $("#out-arm");
   arm.textContent = st === "live" ? "Hold to stop" : "Go live…";
-  arm.title = st === "live" ? "Hold to stop sending DMX (the rig holds its last look) - a tap can't stop a show" : "Start sending DMX to the rig";
+  arm.title = st === "live" ? "Hold to stop sending DMX: the lights hold their last look, every effect goes off (spark heaters, sprays, fog, lasers) - a tap can't stop a show" : "Start sending DMX to the rig";
 }
 
 function renderUndo() {

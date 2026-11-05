@@ -102,7 +102,7 @@ UNDO_EXCLUDED = frozenset({
     # moves restore themselves
     "motion_set", "motion_test", "motion_test_end", "motion_get",
     # special effects are performed, not edited: never an undo step
-    "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
+    "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_heater",
     "fx_status", "remember_open", "own_strobe", "light_test", "light_tested", "zero_dark", "colour_cal", "teach_slots",
     # the Speed master is performed live, like the grand master; so is the tempo
     "speed_master", "floor_safe", "strobe_limit",
@@ -667,7 +667,7 @@ def _new_playback(n: int) -> dict:
 
 # Action allowlist.  Every name needs an _a_<name> method on Engine.
 ACTIONS = (
-    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit", "line_up_marks", "fx_height_limit",
+    "add_heads", "auto_patch", "blackout", "clear_heads", "strobe_limit", "line_up_marks", "fx_height_limit", "fx_heater",
     "clear_programmer", "clear_attrs",
     "clear_selection", "cue_back", "cue_forward", "cue_go", "redo", "undo",
     "record_preset", "include_preset", "delete_preset", "rename_preset",

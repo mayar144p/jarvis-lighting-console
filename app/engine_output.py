@@ -106,7 +106,9 @@ class OutputMixin:
         else:
             self.blackout = bool(int(state or 0))
         if self.blackout:
-            self._a_fx_kill()          # blackout stops every effect and disarms
+            # blackout stops every effect and disarms - but a spark machine's
+            # heater stays warm (a blackout is part of a show; KILL FX isn't)
+            self._a_fx_kill(heaters=False)
         return {"blackout": self.blackout,
                 "summary": "blackout on" if self.blackout else
                            "blackout released"}
@@ -194,6 +196,7 @@ class OutputMixin:
         return path.name
 
     def _stop_output(self) -> None:
+        was_running = self._thread is not None and self._thread.is_alive()
         self._stop.set()
         thread = self._thread
         if thread is not None and thread.is_alive() and \
@@ -201,6 +204,27 @@ class OutputMixin:
             thread.join(timeout=2.0)
         self._thread = None
         self.output["running"] = False
+        if was_running:
+            self._send_effects_off()
+
+    def _send_effects_off(self) -> None:
+        """The last frame before the desk stops sending (Hold to stop, or
+        the app closing): every effect OFF - spark heaters and sprays,
+        confetti, CO2, flame, fog, lasers.  A node holds the last frame it
+        got, so without this a heater kept heating, and a spray, fog or
+        laser running at that moment kept going with nobody at the desk.
+        The lights keep their last look, as before.  Nothing the operator
+        set changes: going live again brings the heaters back on."""
+        try:
+            self.__dict__["_fx_quiet"] = True
+            self._tick_vals = None             # (built fresh: not the last frame's cached look)
+            frames = self.build_frames()
+            for _ in range(3):
+                self._dispatch(frames)
+        except Exception:                    # noqa: BLE001 - stopping must never fail
+            pass
+        finally:
+            self.__dict__["_fx_quiet"] = False
 
     # -- the virtual node: the whole output path with no hardware ----------
     def _a_virtual_node(self, state=None, **_):

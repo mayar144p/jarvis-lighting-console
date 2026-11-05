@@ -174,6 +174,8 @@ def resolve_head(head: dict, prog: dict, pb_vals: list[tuple[int, dict]],
             resolved["laser_on"] = int(laser_mode)
     if blackout:
         for role in fx_out:                   # blackout stops every effect
+            if role == "fx_arm" and over and over.get("set", {}).get("_heater"):
+                continue                      # (a spark machine's heater is no effect: it stays warm)
             resolved[role] = int((rest or {}).get(role, 0))
     # a BLACKOUT button on a laser (a group's, or Blackout all): dark while
     # held, like its lights - the output channel back to off

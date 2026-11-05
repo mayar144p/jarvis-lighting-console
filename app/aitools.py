@@ -77,6 +77,7 @@ CONFIRM = {
     "show_delete": "Delete a saved show",
     "strobe_limit": "Change the strobe safety limit",
     "fx_height_limit": "Change how high a spark / flame machine may fire",
+    "fx_heater": "Switch a spark machine's heater on or off",
     "show_rename": "Rename a saved show",
 }
 # Never, whatever the request: network, the lock, calibration on the real
