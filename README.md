@@ -39,12 +39,15 @@ offline.
 **Windows:** double-click `run-desktop.bat`.
 **Mac / Linux:** run `./run-desktop.sh`.
 
-The first start downloads the app shell (about 100 MB). After that Haze
-opens in its own window, and a **Haze** shortcut appears beside the file:
-drag it to the desktop or taskbar.
+The first start installs whatever the desk needs and isn't there yet -
+**Node.js, Python and Git** - by itself: with winget on Windows (Windows asks
+once to allow each installer), Homebrew on a Mac, apt / dnf / pacman on Linux
+(they ask for your password). Then it downloads the app shell (about 100 MB).
+After that Haze opens in its own window, and a **Haze** shortcut appears
+beside the file: drag it to the desktop or taskbar.
 
-You need [Python 3.10+](https://www.python.org) and
-[Node.js](https://nodejs.org). The installer below needs neither.
+No winget (an old Windows) or no internet: the script says what's missing and
+opens its download page. The installer below needs none of it.
 
 Then:
 

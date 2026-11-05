@@ -12257,3 +12257,28 @@ def test_stop_output_effects_off() -> None:
             e._dispatch = orig if "orig" in dir() else e._dispatch
             e.stop() if hasattr(e, "stop") else None
             config.DATA = old
+
+
+def test_first_run_installs() -> None:
+    """The first run installs what the desk needs (Node.js, Python, Git): winget on Windows, Homebrew /
+    apt / dnf / pacman on Mac and Linux.  The .bat can't run here, so its wiring is checked: every call /
+    goto has its label, each tool its winget package, Windows line endings."""
+    import re as _re
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    raw = (root / "run-desktop.bat").read_bytes()
+    bat = raw.decode("utf-8")
+    labels = set(_re.findall(r"(?im)^:(\w+)", bat))
+    used = set(_re.findall(r"(?i)\b(?:call\s+:|goto\s+)(\w+)", bat)) - {"eof"}
+    check("run-desktop.bat: every call / goto has its label", used <= labels, str(sorted(used - labels)))
+    check("...it installs Node.js, Python and Git with winget, when missing",
+          all(f"--id %1" in bat and pkg in bat for pkg in ("OpenJS.NodeJS.LTS", "Python.Python.3.12", "Git.Git")), "")
+    check("...Python goes on the PATH (and the Store's stand-in python doesn't count)",
+          "PrependPath=1" in bat and "sys.version_info[0] == 3" in bat, "")
+    check("...it reads the new PATH without a new window, and has Windows line endings",
+          "GetEnvironmentVariable('Path','Machine')" in bat and b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "")
+    sh = (root / "run-desktop.sh").read_text(encoding="utf-8")
+    ok = subprocess.run(["sh", "-n", str(root / "run-desktop.sh")], capture_output=True).returncode == 0
+    check("run-desktop.sh: valid, and installs with Homebrew / apt / dnf / pacman when missing",
+          ok and all(w in sh for w in ("brew install", "apt-get install", "dnf install", "pacman -S")), "")
