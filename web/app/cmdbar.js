@@ -26,6 +26,7 @@ const ACTIONS = [
   { t: "Go live… (send to the lights)", k: "go live output send lights on dmx start", run: () => import("./topbar.js").then((m) => m.goLive()) },
   { t: "Back to blind (stop sending)", k: "blind stop output sending back offline", run: () => run("set_output", { state: 0 }, { toast: true }) },
   { t: "Add lights…", k: "add fixtures patch fixture library", run: () => openAddDialog() },
+  { t: "Build a fixture yourself…", k: "build make create new fixture profile by hand manually custom generic channels own", run: () => lazy("./lightdialogs.js", "openFixtureBuilder") },
   { t: "Save show", k: "save store file", run: () => saveShow((state.snap && state.snap.show_file) || "") },
   { t: "Record cue…", k: "record cue store", run: () => openCueDialog() },
   { t: "Select all", k: "select all everything", run: () => run("select_all") },

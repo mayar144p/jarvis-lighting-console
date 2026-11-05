@@ -158,6 +158,8 @@ PHRASES: dict[str, str] = {
     "get help": "getting help what's this explain hints", "find help": "getting help",
     "what a button does": "getting help what's this explain", "several changes": "undo history getting help",
     "find a setting": "getting help search command bar", "step by step": "getting help step coach",
+    "by hand": "build fixture yourself", "manually": "build fixture yourself", "from scratch": "build fixture yourself",
+    "own fixture": "build fixture yourself", "custom fixture": "build fixture yourself", "no manual": "build fixture yourself",
     "check for updates": "newer haze update", "room size": "venue room size arrange",
     "screen darker": "look themes dark show dark", "slower when following": "follow speed slow",
     "when following": "follow speed", "3d camera": "visualiser camera view", "new version": "newer haze update", "two desks": "backup desk",

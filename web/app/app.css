@@ -3096,3 +3096,22 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .unanswered td, .unanswered th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-s); }
 .undo-more svg { width: 12px; height: 12px; }
 .gc-unsure { margin: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--blind-bg); color: var(--text); font-size: var(--fs-s); }
+
+/* Build a fixture yourself / the manual's review: the channel editor */
+.man-editor { display: flex; flex-direction: column; gap: 12px; }
+.man-mode-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.man-rowbtns { white-space: nowrap; }
+.man-rowbtns .btn { padding: 0 6px; min-width: 0; }
+.chan-table select.select { max-width: 190px; }
+
+/* an effect machine, channel by channel (SFX tab) */
+.fx-machine { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 4px 0 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.fx-chan { display: grid; grid-template-columns: 44px minmax(110px, auto) 1fr; gap: 10px; align-items: baseline; font-size: var(--fs-s); }
+.fx-chan-n { color: var(--muted); }
+.fx-chan-name { font-weight: 600; color: var(--text); }
+.fx-chan-state { color: var(--muted); }
+.fx-chan.on .fx-chan-state { color: var(--ok); }
+.fx-chan.hot .fx-chan-state { color: var(--live); font-weight: 600; }
+.fx-chan.maint .fx-chan-state { color: var(--muted); font-style: italic; }
+.fx-warm { color: var(--blind); }

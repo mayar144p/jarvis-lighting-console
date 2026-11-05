@@ -67,7 +67,9 @@ export function openLineUp(heads = null) {
   const more = h("div.lineup-more");
 
   // the arrow pad: the REAL light moves; Fine for the last bit
-  const nudge = (axis, dir) => run("nudge", { axis, step: dir * (fine ? 0.002 : 0.02) });
+  // (this light - whatever else is selected: the arrows used to move the
+  // selection, so with nothing or another light selected they did nothing here)
+  const nudge = (axis, dir) => run("nudge", { axis, step: dir * (fine ? 0.002 : 0.02), heads: [head()] });
   const arrow = (label, axis, dir, cls) => h("button.btn.lineup-arrow" + cls, { "aria-label": label, title: label, onclick: () => nudge(axis, dir) },
     { up: "▲", down: "▼", left: "◀", right: "▶" }[cls.slice(1)]);
   const fineBtn = h("button.btn.small.lineup-fine", { onclick: () => { fine = !fine; fineBtn.classList.toggle("on", fine); fineBtn.textContent = fine ? "Fine ✓" : "Fine"; } }, "Fine");

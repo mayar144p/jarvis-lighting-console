@@ -58,6 +58,17 @@ await sleep(1500);
 const steps = async () => p.locator(".lineup-step").allInnerTexts();
 let s0 = await steps();
 check("both marks show as steps before the first press", s0.length === 3 && !/bar|vip/i.test(s0.join(" ")), s0.join(" | "));
+// the arrows move THIS light - not the selection (another light selected here)
+await act("select_heads", { heads: [3] }); await sleep(400);
+const panOf = async () => {
+  const r = await fetch(BASE + "api/console/channels?heads=1").then((x) => x.json());
+  return (((r.heads || [])[0] || {}).channels || []).find((c) => c.role === "pan").value;
+};
+const pan0 = await panOf();
+await p.locator(".lineup-arrow.right").click(); await sleep(400);
+await p.locator(".lineup-arrow.right").click(); await sleep(400);
+const pan1 = await panOf();
+check("the arrows move the light being lined up, even with another light selected", pan1 !== pan0, `${pan0} -> ${pan1}`);
 const title0 = await p.locator(".lineup-title").innerText();
 await p.locator(".lineup-go").click(); await sleep(1500);
 const s1 = await steps(), title1 = await p.locator(".lineup-title").innerText();
@@ -168,11 +179,34 @@ const pane = await p.locator("#sfx-pane").innerText();
 check("it has its own Sparks section with Height 1 to Height 10 (not 'Height' ten times)",
   /\bSparks\b/.test(pane) && /Height 1\b/.test(pane) && /Height 10/.test(pane) && !/CO2 \/ flames/.test(pane), pane.slice(0, 200));
 await act("fx_arm", { state: true }); await sleep(600);
-await p.locator("#sfx-pane .chip", { hasText: /^Height 10$/ }).click();
+await p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^Height 10$/ }).click();
 await p.locator("#sfx-pane .chip", { hasText: /^3 s$/ }).click(); await sleep(400);
 const rep = await fetch(BASE + "api/console/channels?heads=" + sp).then((r) => r.json());
 const fountain = (((rep.heads || [])[0] || {}).channels || []).find((c) => c.role === "fx_fire") || {};
 check("a quick shot after picking Height 10 fires at Height 10 (232-255), not the lowest", fountain.value >= 232, JSON.stringify(fountain));
+await act("fx_kill");
+// a cold spark machine from its manual's chart: the programmer shows it channel by channel
+const chart3 = "CH1 0-255 0-99: Preheating Off\n100-255: Preheating On\nCH2 0-255 0-50: Stop Spraying Effect\n51-180: Low-Level Spraying\n181-255: High-Level Spraying\nCH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables";
+const rd = await post("api/fixtures/from_manual", { text: chart3, manufacturer: "Behave", model: "Spark 3ch", offline: true });
+const sv = await post("api/fixtures/from_manual/save", { draft: rd.draft });
+const sp3 = (await act("add_heads", { fixture_id: sv.fixture.id, qty: 1 })).heads[0];
+await act("select_heads", { heads: [sp3] }); await act("fx_arm", { state: true }); await sleep(1500);
+await p.locator('[data-tab="sfx"]:visible').first().click(); await sleep(800);
+const pane3 = await p.locator("#sfx-pane").innerText();
+check("a spark machine read from its manual shows each channel by its own name and state",
+  /CH1\s*Preheating\s*On - heating for/.test(pane3) && /CH2\s*Spraying\s*Stopped/.test(pane3) && /CH3\s*Remove Preheating Consumables\s*Off - maintenance only/.test(pane3), pane3.slice(0, 300));
+check("...its spray heights are Low-Level / High-Level, and the cleaning channel is no show control",
+  (await p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^Low-Level$/ }).count()) === 1 && !/\nSetting\n/.test(pane3), "");
+check("...and the armed bar talks about heaters, not lasers", /heaters stay on/.test(pane3), "");
+// a low ceiling: Never higher than Low-Level - then even a High shot sprays low
+await p.locator("#sfx-pane .fx-limit .chip", { hasText: /^Low-Level$/ }).click(); await sleep(900);
+const highChip = p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^High-Level$/ });
+await act("fx_fire", { heads: [sp3], height: 100, owner: "behave" }); await sleep(300);
+const rep3 = await fetch(BASE + "api/console/channels?heads=" + sp3).then((r) => r.json());
+const spray = ((((rep3.heads || [])[0] || {}).channels || []).find((c) => c.role === "fx_fire") || {}).value;
+check("Never higher than Low-Level: the High chip can't be picked, and even a High shot sprays low (51-180)",
+  (await highChip.isDisabled()) && spray >= 51 && spray <= 180, `${spray}`);
+await act("fx_fire", { heads: [sp3], down: false, owner: "behave" });
 await act("fx_kill");
 
 // -- how do I...?  answered from the guide (no AI key here), nothing changed --
@@ -254,6 +288,35 @@ await act("clear_programmer");
 await fetch(BASE + "api/howto?q=" + encodeURIComponent("how do I connect to spotify"));
 const un = await fetch(BASE + "api/howto?unanswered=1").then((r) => r.json());
 check("a question the guide couldn't answer is kept for filling the guide in", (un.unanswered || []).some((r) => /spotify/.test(r.q)), "");
+
+// -- Build a fixture yourself: no library file, no manual ----------------------
+console.log("Build a fixture yourself");
+await closeModals();
+await p.evaluate(() => import("/app/dialogs.js").then((m) => m.openAddDialog())); await sleep(800);
+await p.locator(".modal button", { hasText: "Build it yourself" }).click(); await sleep(500);
+const bm = p.locator(".modal").last();
+await bm.locator('input[placeholder^="e.g. Generic"]').fill("Behave");
+await bm.locator('input[placeholder^="e.g. 7x10W"]').fill("Hand PAR");
+await bm.locator("select").first().selectOption("rgbw"); await sleep(300);
+await bm.locator("button", { hasText: "+ Add a channel" }).click(); await sleep(200);
+const rowsN = await bm.locator(".chan-table tbody tr").count();
+await bm.locator(".chan-table tbody tr").last().locator("select").selectOption("strobe");
+await bm.locator(".chan-table tbody tr").last().locator("textarea").fill("0-9 No strobe\n10-255 Strobe slow to fast");
+await bm.locator(".chan-table tbody tr").last().locator("textarea").dispatchEvent("change");
+await bm.locator(".chan-table tbody tr").last().locator("button", { hasText: "▲" }).click(); await sleep(200);
+const names = await bm.locator(".chan-table tbody tr td:nth-child(2) input").evaluateAll((els) => els.map((x) => x.value));
+check("starting from RGBW, a channel added, named by what it does, and moved up a place",
+  rowsN === 5 && JSON.stringify(names) === JSON.stringify(["Red", "Green", "Blue", "Strobe", "White"]), JSON.stringify(names));
+await bm.locator("button", { hasText: "Save to library" }).click(); await sleep(1200);
+const listTxt = await p.locator(".modal").last().innerText();
+check("saved, it shows in the Add list, ready to add", /Hand PAR/.test(listTxt), listTxt.slice(0, 200));
+const fx = await fetch(BASE + "api/fixtures?q=" + encodeURIComponent("Behave Hand PAR")).then((r) => r.json());
+const item = (fx.results || [])[0];
+const added = item ? await act("add_heads", { fixture_id: item.id, qty: 1 }) : {};
+const hp = ((await snap()).patch || []).find((x) => x.model === "Hand PAR");
+check("...and added to the rig, it has its channels in the order typed",
+  !!hp && JSON.stringify(hp.map) === JSON.stringify(["red", "green", "blue", "strobe", "white"]), JSON.stringify(hp && hp.map));
+await closeModals();
 
 const laid = await p.evaluate(() => import("/app/guidecard.js").then((m) => {
   const v = m.replyView("Lines the real lights up with the desk.\n1. Set up → **Line up with the real lights…**\n2. Nudge it onto the mark, press **It's on the mark ✓**\n- tip: *Fine* for the last bit");

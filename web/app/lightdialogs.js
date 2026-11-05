@@ -162,6 +162,136 @@ export function requestFixture(q = "") {
 }
 
 
+// The fixture's modes as an editable table: each channel's name, what it
+// does and its values; channels added, removed and moved, modes added and
+// removed.  Edits the draft in place (manual review and Build it yourself).
+function parseRanges(text) {
+  return String(text || "").split("\n").map((ln) => /^\s*(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(.*)$/.exec(ln)).filter(Boolean)
+    .map((x) => [+x[1], +x[2], x[3].trim()]);
+}
+const FN_LABEL = (f) => ({ "fx fire": "fire / shoot (effect)", "fx arm": "arm / safety (effect)", "fog output": "fog output",
+  "setting": "a setting (own values)", "unused": "unused" }[f] || f);
+
+export function modesEditor(draft) {
+  const box = h("div.man-editor");
+  const paint = () => {
+    const type = h("select.select", { "aria-label": "Kind of fixture" }, ...FIXTURE_TYPES.map(([k, l]) => h("option", { value: k }, l)));
+    type.value = draft.type || "light";
+    type.addEventListener("change", () => { draft.type = type.value; });
+    const modes = draft.modes.map((m, mi) => {
+      const name = h("input", { type: "text", value: m.name, style: { width: "160px" }, "aria-label": "Mode name" });
+      name.addEventListener("input", () => { m.name = name.value; });
+      const rows = m.channels.map((c, i) => {
+        const nm = h("input", { type: "text", value: c.name, placeholder: "e.g. Dimmer", "aria-label": `Channel ${i + 1} name` });
+        nm.addEventListener("input", () => { c.name = nm.value; });
+        const fn = h("select.select", { "aria-label": `Channel ${i + 1} does` }, ...FIXTURE_FUNCTIONS.map((f) => h("option", { value: f }, FN_LABEL(f))));
+        fn.value = c.function;
+        fn.addEventListener("change", () => { c.function = fn.value; if (!nm.value.trim()) { nm.value = c.name = fn.value.replace(/\b\w/g, (x) => x.toUpperCase()); } });
+        const rg = h("textarea", { rows: Math.min(4, Math.max(1, (c.ranges || []).length)), placeholder: "optional - e.g. 0-9 Off (one range a line)",
+          "aria-label": `Channel ${i + 1} values` });
+        rg.value = (c.ranges || []).map(([lo, hi, l]) => `${lo}-${hi} ${l}`).join("\n");
+        rg.addEventListener("change", () => { c.ranges = parseRanges(rg.value); });
+        const move = (d) => { const j = i + d; if (j < 0 || j >= m.channels.length) return; [m.channels[i], m.channels[j]] = [m.channels[j], m.channels[i]]; paint(); };
+        return h("tr", h("td.mono", i + 1), h("td", nm), h("td", fn), h("td", rg),
+          h("td.man-rowbtns",
+            h("button.btn.small.ghost", { type: "button", title: "Move up", "aria-label": `Move channel ${i + 1} up`, disabled: i === 0, onclick: () => move(-1) }, "▲"),
+            h("button.btn.small.ghost", { type: "button", title: "Move down", "aria-label": `Move channel ${i + 1} down`, disabled: i === m.channels.length - 1, onclick: () => move(1) }, "▼"),
+            h("button.btn.small.ghost", { type: "button", title: "Remove this channel", "aria-label": `Remove channel ${i + 1}`, onclick: () => { m.channels.splice(i, 1); paint(); } }, "✕")));
+      });
+      return h("div.man-mode",
+        h("div.man-mode-head", h("label.field.inline", h("span", "Mode"), name),
+          h("span.muted.small", `${m.channels.length} channel${m.channels.length === 1 ? "" : "s"}`),
+          draft.modes.length > 1 ? h("button.btn.small.ghost", { type: "button", onclick: () => { draft.modes.splice(mi, 1); paint(); } }, "Remove this mode") : null),
+        m.channels.length ? h("table.chan-table", h("thead", h("tr", h("th", "Ch"), h("th", "Name"), h("th", "Does"), h("th", "Values (optional)"), h("th", ""))),
+          h("tbody", ...rows)) : h("p.muted.small", "No channels yet - add the first one below, in the order the light's manual or menu lists them."),
+        h("div.row-btns", h("button.btn.small", { type: "button", onclick: () => { m.channels.push({ name: "", function: "dimmer", ranges: [] }); paint(); } }, "+ Add a channel")));
+    });
+    box.replaceChildren(
+      h("div.form-grid", h("label.field", h("span", "Kind of fixture"), type)),
+      ...modes,
+      h("div.row-btns", h("button.btn.small.ghost", { type: "button", title: "Another DMX mode of the same light (set on the light's own menu)",
+        onclick: () => { draft.modes.push({ name: `Mode ${draft.modes.length + 1}`, channels: [] }); paint(); } }, "+ Add another mode")));
+  };
+  paint();
+  return box;
+}
+
+// Starting points for Build it yourself: the usual layouts, to adjust
+const R = (...rows) => rows;
+const STARTS = [
+  ["empty", "Empty - I'll add every channel", "light", []],
+  ["dim", "Dimmer only (1 ch)", "light", [["Dimmer", "dimmer"]]],
+  ["rgb", "RGB PAR (3 ch)", "light", [["Red", "red"], ["Green", "green"], ["Blue", "blue"]]],
+  ["rgbw", "RGBW PAR (4 ch)", "light", [["Red", "red"], ["Green", "green"], ["Blue", "blue"], ["White", "white"]]],
+  ["drgbs", "Dimmer + RGB + strobe (5 ch)", "light", [["Dimmer", "dimmer"], ["Red", "red"], ["Green", "green"], ["Blue", "blue"],
+    ["Strobe", "strobe", R([0, 9, "No strobe"], [10, 255, "Strobe slow to fast"])]]],
+  ["hex", "RGBWA+UV (6 ch)", "light", [["Red", "red"], ["Green", "green"], ["Blue", "blue"], ["White", "white"], ["Amber", "amber"], ["UV", "uv"]]],
+  ["spot", "Moving head spot (10 ch)", "light", [["Pan", "pan"], ["Pan fine", "pan fine"], ["Tilt", "tilt"], ["Tilt fine", "tilt fine"],
+    ["Pan/tilt speed", "pan/tilt speed"], ["Dimmer", "dimmer"],
+    ["Shutter", "shutter", R([0, 7, "Closed"], [8, 15, "Open"], [16, 255, "Strobe slow to fast"])],
+    ["Colour wheel", "colour wheel"], ["Gobo wheel", "gobo wheel"], ["Prism", "prism"]]],
+  ["wash", "Moving head wash (12 ch)", "light", [["Pan", "pan"], ["Pan fine", "pan fine"], ["Tilt", "tilt"], ["Tilt fine", "tilt fine"],
+    ["Pan/tilt speed", "pan/tilt speed"], ["Dimmer", "dimmer"],
+    ["Shutter", "shutter", R([0, 7, "Closed"], [8, 15, "Open"], [16, 255, "Strobe slow to fast"])],
+    ["Red", "red"], ["Green", "green"], ["Blue", "blue"], ["White", "white"], ["Zoom", "zoom"]]],
+  ["strobe", "Strobe (2 ch)", "light", [["Dimmer", "dimmer"], ["Strobe", "strobe", R([0, 9, "No strobe"], [10, 255, "Strobe slow to fast"])]]],
+  ["fog", "Fog / haze machine (1 ch)", "fog", [["Fog output", "fog output", R([0, 9, "Off"], [10, 255, "Output low to high"])]]],
+  ["fx", "Confetti / CO2 / sparks (1 ch)", "confetti", [["Fire", "fx fire", R([0, 9, "Off"], [10, 255, "Fire"])]]],
+  // the usual cold spark machine: heater (ARM), spray low / high, cleaning (never fired by a show)
+  ["spark3", "Cold spark machine (3 ch: preheat, spray, clean)", "spark", [
+    ["Preheating", "fx arm", R([0, 99, "Preheating Off"], [100, 255, "Preheating On"])],
+    ["Spraying", "fx fire", R([0, 50, "Stop Spraying Effect"], [51, 180, "Low-Level Spraying"], [181, 255, "High-Level Spraying"])],
+    ["Remove Preheating Consumables", "setting", R([0, 99, "No Function"], [100, 255, "Remove Preheating Consumables"])]]],
+];
+
+/** Build it yourself: a fixture no library has and with no manual to read -
+ *  its brand, model, kind and every channel typed in (or a starting point
+ *  adjusted).  Saved through the same checks as one read from a manual. */
+export function openFixtureBuilder(onSaved, from = null) {
+  const draft = from ? JSON.parse(JSON.stringify(from)) : { manufacturer: "", model: "", type: "light", modes: [{ name: "Mode 1", channels: [] }] };
+  const maker = h("input", { type: "text", placeholder: "e.g. Generic, or the brand", value: draft.manufacturer || "" });
+  const model = h("input", { type: "text", placeholder: "e.g. 7x10W RGBW PAR", value: draft.model || "" });
+  const start = h("select.select", ...STARTS.map(([k, l]) => h("option", { value: k }, l)));
+  const editorBox = h("div");
+  const paintEditor = () => editorBox.replaceChildren(modesEditor(draft));
+  start.addEventListener("change", async () => {
+    const [, label, type, chans] = STARTS.find((s) => s[0] === start.value);
+    const m = draft.modes[0];
+    if (m.channels.length && !(await confirmBox("Start from this?", `Mode 1's channels are replaced with ${label}.`, { ok: "Replace" }))) { start.value = "empty"; return; }
+    draft.type = type;
+    m.channels = chans.map(([name, fn, ranges]) => ({ name, function: fn, ranges: (ranges || []).map((r) => [...r]) }));
+    if (/^Mode \d+$/.test(m.name) || !m.name) m.name = chans.length ? `${chans.length}-channel` : "Mode 1";
+    paintEditor();
+  });
+  paintEditor();
+  const close = modal({
+    title: "Build a fixture yourself", wide: true,
+    body: h("div.man",
+      h("p.muted.small", { style: { margin: 0 } }, "For a light with no library file and no manual to hand: type its channels in the order the light uses them ",
+        "(its menu or the sticker often lists them), or start from a usual layout and change it. Values are optional - add them for a strobe, a shutter, a wheel or an effect so the desk knows which numbers do what."),
+      h("div.form-grid", h("label.field", h("span", "Manufacturer"), maker), h("label.field", h("span", "Model"), model),
+        h("label.field", h("span", "Start from"), start)),
+      editorBox),
+    foot: [h("span.muted.small.grow", "Saved to your library like any other fixture; then add it to the rig."),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", {
+        onclick: async () => {
+          if (!maker.value.trim() || !model.value.trim()) { toast("Give the manufacturer and the model, so you can find it later", "bad"); return; }
+          const empty = draft.modes.findIndex((m) => !m.channels.length);
+          if (empty >= 0) { toast(`${draft.modes[empty].name || "A mode"} has no channels - add one, or remove the mode`, "bad"); return; }
+          draft.manufacturer = maker.value.trim();
+          draft.model = model.value.trim();
+          const d = await post("/api/fixtures/from_manual/save", { draft }).catch((e) => ({ error: e.message }));
+          if (d.error) { toast(d.error, "bad"); return; }
+          toast(d.summary, "ok");
+          close();
+          if (onSaved) onSaved(d.fixture);
+        },
+      }, "Save to library")],
+  });
+  setTimeout(() => maker.focus(), 50);
+}
+
 export function openManualFixture(onSaved) {
   const maker = h("input", { type: "text", placeholder: "e.g. Chauvet DJ" });
   const model = h("input", { type: "text", placeholder: "e.g. Funfetti Shot" });
@@ -197,30 +327,7 @@ export function openManualFixture(onSaved) {
     if (!draft || !(draft.modes || []).length) { review.replaceChildren(); return; }
     if (draft.manufacturer && !maker.value) maker.value = draft.manufacturer;
     if (draft.model && !model.value) model.value = draft.model;
-    const type = h("select.select", ...FIXTURE_TYPES.map(([k, l]) => h("option", { value: k }, l)));
-    type.value = draft.type || "light";
-    type.addEventListener("change", () => { draft.type = type.value; });
-    const tables = draft.modes.map((m) => {
-      const name = h("input", { type: "text", value: m.name, style: { width: "160px" } });
-      name.addEventListener("input", () => { m.name = name.value; });
-      return h("div.man-mode", h("label.field.inline", h("span", "Mode"), name),
-        h("table.chan-table", h("thead", h("tr", h("th", "Ch"), h("th", "Name"), h("th", "Does"), h("th", "Values (one per line: 0-9 Off)"))),
-          h("tbody", ...m.channels.map((c, i) => {
-            const nm = h("input", { type: "text", value: c.name });
-            nm.addEventListener("input", () => { c.name = nm.value; });
-            const fn = h("select.select", ...FIXTURE_FUNCTIONS.map((f) => h("option", { value: f }, f)));
-            fn.value = c.function;
-            fn.addEventListener("change", () => { c.function = fn.value; });
-            const rg = h("textarea", { rows: Math.min(4, Math.max(1, c.ranges.length)) });
-            rg.value = c.ranges.map(([lo, hi, l]) => `${lo}-${hi} ${l}`).join("\n");
-            rg.addEventListener("change", () => {
-              c.ranges = rg.value.split("\n").map((ln) => /^\s*(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(.*)$/.exec(ln)).filter(Boolean)
-                .map((x) => [+x[1], +x[2], x[3].trim()]);
-            });
-            return h("tr", h("td.mono", i + 1), h("td", nm), h("td", fn), h("td", rg));
-          }))));
-    });
-    review.replaceChildren(h("div.form-grid", h("label.field", h("span", "Kind of fixture"), type)), ...tables);
+    review.replaceChildren(modesEditor(draft));
   }
 
   const close = modal({

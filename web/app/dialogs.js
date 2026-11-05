@@ -7,11 +7,11 @@ import { openNewShow, startTour } from "./welcome.js";
 import { state, patch, selected } from "./store.js";
 import { run } from "./actions.js";
 import { h, modal, toast, confirmBox, promptBox, closeTopModal } from "./ui.js";
-import { requestFixture, openManualFixture, offerLightTest } from "./lightdialogs.js";
+import { requestFixture, openManualFixture, openFixtureBuilder, offerLightTest } from "./lightdialogs.js";
 
 export { openCueDialog, openCueList } from "./cuedialogs.js";
 export { openSettings, openSettingsAt } from "./settings.js";
-export { openMotionCalibration, requestFixture, openManualFixture, openLightTest } from "./lightdialogs.js";
+export { openMotionCalibration, requestFixture, openManualFixture, openFixtureBuilder, openLightTest } from "./lightdialogs.js";
 
 // ================================================================== add
 let preview = null;
@@ -49,6 +49,9 @@ export function openAddDialog(query = "") {
   const close = modal({
     title: "Add lights", wide: true, body,
     foot: [h("button.btn", { title: "For a light or effect no library has", onclick: () => openManualFixture(() => { chosen = null; searchAll(); }) }, "From its manual…"),
+      // no library file and no manual: type its channels in (the new fixture then shows here, ready to add)
+      h("button.btn", { title: "Type in a fixture's channels yourself - no library file or manual needed",
+        onclick: () => openFixtureBuilder((fx) => { chosen = null; if (fx) search.value = `${fx.manufacturer} ${fx.model}`; searchAll(); }) }, "Build it yourself…"),
       h("button.btn", { title: "Ask for a light no library has yet: it opens a filled-in request on the desk's GitHub page", onclick: () => requestFixture(search.value) }, "Request it…"),
       h("span.muted.small.grow", "New fixtures are addressed after the last one and hung where that kind of light goes. Drag them on the stage to move them."),
       h("button.btn", { onclick: () => close() }, "Close"), addBtn],

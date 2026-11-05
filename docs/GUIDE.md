@@ -1116,6 +1116,24 @@ check its mode).
 with their length in the name) and the objects as an `.mvr`, with the GDTF
 files the desk has for those lights, for other programs.
 
+### Build a fixture yourself
+
+*Where:* Fixtures → + Add → Build it yourself…
+
+For a light with no library file and no manual to hand: type it in.
+
+1. **Name it.** Its manufacturer and model (Generic is fine), so you can find it later.
+2. **Start from a usual layout** (RGB PAR, RGBW, a moving head spot or wash, a strobe,
+   fog, confetti) or **Empty**, and pick the kind of fixture.
+3. **List its channels in order.** **+ Add a channel** for each, as the light's menu,
+   sticker or manual lists them: a name and what it does (dimmer, red, pan, shutter,
+   colour wheel, fire...). ▲ ▼ move one, ✕ removes it.
+4. **Values (optional).** For a strobe, a shutter, a wheel or an effect, one line per range
+   (`0-9 Off`, `10-255 Strobe slow to fast`) so the desk knows which numbers do what.
+5. **Another mode?** **+ Add another mode** for the light's other channel counts.
+6. **Save to library** - it shows in the Add list, ready to add to the rig. Test it with
+   the real light (right-click → Test this light…).
+
 ## Fixture library
 
 *Where:* Fixtures → + Add

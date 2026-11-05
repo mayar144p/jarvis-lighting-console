@@ -90,6 +90,21 @@ class FxLayerMixin:
                  if not _OFF_TEXT.search(str(t)) and not _DANGER_TEXT.search(str(t))]
         return sorted(steps) if len(steps) >= 2 else []
 
+    _MAINT = re.compile(r"\bclean|\bremove\b|\bpurge|consumable|maintenance|\breset\b|\btest\b", re.I)
+
+    def _fx_channels(self, h: dict) -> list[dict]:
+        """An effect machine's channels for the screen, in order: its number,
+        its own name, its job (arm / fire / fog / maintenance / setting)."""
+        ranges = self.head_ranges(h)
+        out = []
+        for n, role in enumerate(h["map"], start=1):
+            d = ranges.get(role) or {}
+            caps = " ".join(str(c[2]) for c in d.get("caps") or [])
+            job = {"fx_arm": "arm", "fx_fire": "fire", "fog": "fog"}.get(role) or (
+                "maintenance" if self._MAINT.search(f"{d.get('name') or ''} {caps}") else "setting")
+            out.append({"n": n, "role": role, "name": str(d.get("name") or role.replace("_", " ")).strip()[:40], "job": job})
+        return out
+
     def _fire_names(self, h: dict) -> list[str]:
         """What to call each step on screen: its own name when the steps are
         told apart ("1 m", "Height 3"), else numbered low to high."""
@@ -102,11 +117,36 @@ class FxLayerMixin:
     def _fire_value(self, h: dict, height=None) -> int:
         """What the fire channel sends: at `height` % of the machine's own
         firing range (a spark fountain low to high), else its plain "fire"."""
-        steps = self._fire_steps(h) if height is not None else []
-        if not steps:
+        steps = self._fire_steps(h)
+        cap = h.get("fire_max")
+        if steps and cap is not None:
+            # this machine's own limit ("never higher than", for a low ceiling):
+            # nothing the desk sends goes above it - a button, the timeline, the AI
+            height = min(float(height if height is not None else 0), float(cap))
+        if not steps or height is None:
             return int(self._sfx_detail(h, "fx_fire").get("on_value") or 255)
         lo, hi, _t = steps[round(_clamp(float(height), 0, 100) / 100 * (len(steps) - 1))]
         return (lo + hi) // 2
+
+    def _a_fx_height_limit(self, heads=None, height=None, clear=False, **_):
+        """The highest a spark / flame / CO2 machine may ever fire (0-100 %
+        of its own steps: a low ceiling).  Every shot, button and cue is
+        held under it; `clear` removes it."""
+        nums = self._sfx_targets(heads)
+        rows = [h for h in self.patch if h["head_no"] in nums and len(self._fire_steps(h)) >= 2]
+        if not rows:
+            raise ValueError("none of those machines has heights to limit")
+        for h in rows:
+            if _truthy(clear) or height in (None, ""):
+                h.pop("fire_max", None)
+            else:
+                h["fire_max"] = float(_clamp(float(height), 0, 100))
+        h0 = rows[0]
+        if h0.get("fire_max") is None:
+            return {"heads": [h["head_no"] for h in rows], "summary": "height limit removed"}
+        names = self._fire_names(h0)
+        top = names[round(h0["fire_max"] / 100 * (len(names) - 1))]
+        return {"heads": [h["head_no"] for h in rows], "summary": f"never higher than {top} ({len(rows)} machine(s))"}
 
     def _sfx_start(self, key: str, kind: str, heads, owner: str = "hand",
                   seconds=None, level=100, values=None, height=None) -> bool:
@@ -200,7 +240,9 @@ class FxLayerMixin:
                         left -= max(0.0, min(now, r["until"]) - r["since"])
                 loads[h["head_no"]] = {"left": round(max(0.0, left), 1), "full": full}
         forever = math.isinf(self.fx_armed_until)
-        return {"armed": self._sfx_armed(now),
+        armed = self._sfx_armed(now)
+        return {"armed": armed,
+                "armed_for": round(now - getattr(self, "fx_armed_at", now)) if armed else 0,
                 "armed_left": 0 if forever else max(0, round(self.fx_armed_until - now)),
                 "armed_forever": forever,
                 "runs": [{"key": k, "kind": r["kind"], "heads": r["heads"],
@@ -210,7 +252,8 @@ class FxLayerMixin:
                 # what each firing machine is (sparks, CO2, flame...) and
                 # whether its shot has a height to pick
                 "fire": {h["head_no"]: {"kind": self._sfx_detail(h, "fx_fire").get("fx_kind") or "other",
-                                        "heights": self._fire_names(h)}
+                                        "heights": self._fire_names(h), "channels": self._fx_channels(h),
+                                        "max": h.get("fire_max")}
                          for h in self.patch if "fx_fire" in h["map"]},
                 "heads": {h["head_no"]: self._head_class(h) for h in self.patch
                           if self._head_class(h) != "light"}}
@@ -230,6 +273,8 @@ class FxLayerMixin:
         output only work while armed: until a disarm or KILL FX (a laser
         stays on for the set), or for `minutes` when that's given."""
         if _truthy(state):
+            if not self._sfx_armed():
+                self.fx_armed_at = time.monotonic()      # (a spark machine's heater: warming since)
             if minutes in (None, "") or str(minutes).lower() in ("0", "until", "forever", "show", "none", "-1", "inf"):
                 # armed for the whole set: only a disarm or KILL FX ends it
                 self.fx_armed_until = math.inf

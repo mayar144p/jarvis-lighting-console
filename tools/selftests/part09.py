@@ -12089,3 +12089,121 @@ def test_help_everywhere() -> None:
     check("the help card has Open it for me, the step-by-step coach and 'Not what I asked'",
           all(w in gc for w in ("Open it for me", "Show me step by step", "Not what I asked")), "")
     del os
+
+
+def test_lineup_arrows() -> None:
+    """Line up's arrows move the light being lined up, whatever is selected (they nudged the selection:
+    with nothing or another light selected, the light on the mark didn't move)."""
+    from app import engine as eng_mod
+    e = eng_mod.Engine(dry_run=True)
+    try:
+        e.act("venue_template", name="club")
+        e.act("add_heads", query="moving head", qty=2)
+        h = e.patch[0]
+        pan = h["address"] - 1 + h["map"].index("pan")
+        e.act("aim_at", x=0, y=0, z=3, heads=[1])
+        before = e.build_frames()[h["universe"]][pan]
+        e.act("select_heads", heads=[2])
+        e.act("nudge", axis="pan", step=0.02, heads=[1])
+        check("an arrow moves the light it names, not the selection", e.build_frames()[h["universe"]][pan] != before, "")
+        lu = (Path(__file__).resolve().parents[2] / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
+        check("...and Line up's arrows name their light", 'run("nudge", {' in lu and "heads: [head()]" in lu.split('run("nudge"')[1][:120], "")
+    finally:
+        e.stop() if hasattr(e, "stop") else None
+
+
+def test_build_fixture_yourself() -> None:
+    """Build a fixture yourself (no library file, no manual): a typed-in moving head and a confetti cannon
+    become working lights - roles, a shutter that's open at rest, its strobe range, an effect that fires."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    rng = lambda *r: [list(x) for x in r]  # noqa: E731
+    spot = {"manufacturer": "Generic", "model": "My Spot", "type": "light", "modes": [{"name": "10-channel", "channels": [
+        {"name": "Pan", "function": "pan", "ranges": []}, {"name": "Pan fine", "function": "pan fine", "ranges": []},
+        {"name": "Tilt", "function": "tilt", "ranges": []}, {"name": "Tilt fine", "function": "tilt fine", "ranges": []},
+        {"name": "Speed", "function": "pan/tilt speed", "ranges": []}, {"name": "Dimmer", "function": "dimmer", "ranges": []},
+        {"name": "Shutter", "function": "shutter", "ranges": rng((0, 7, "Closed"), (8, 15, "Open"), (16, 255, "Strobe slow to fast"))},
+        {"name": "Colour", "function": "colour wheel", "ranges": rng((0, 9, "White"), (10, 19, "Red"), (20, 29, "Blue"))},
+        {"name": "Gobo", "function": "gobo wheel", "ranges": []}, {"name": "Prism", "function": "prism", "ranges": []}]}]}
+    p = manual.to_parsed(spot)[0]
+    roles = [r["role"] for r in p["modes"][0]["detail"]]
+    check("a typed-in moving head gets its roles in order", roles[:7] == ["pan", "pan_fine", "tilt", "tilt_fine", "speed", "dimmer", "shutter"], str(roles))
+    sh = p["modes"][0]["detail"][6]
+    check("...its shutter knows where open and strobe are", sh["open_from"] == 8 and sh["strobe_ranges"] == [[16, 255]], str(sh))
+    try:
+        manual.to_parsed({"manufacturer": "x", "model": "y", "modes": [{"name": "m", "channels": []}]})
+        check("a fixture with no channels is refused, saying what to do", False, "")
+    except ValueError as exc:
+        check("a fixture with no channels is refused, saying what to do", "add at least one channel" in str(exc), str(exc))
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(spot), "manual:generic-my-spot")
+        fixtures.store_parsed(db, manual.to_parsed({"manufacturer": "Generic", "model": "My Confetti", "type": "confetti",
+                                                    "modes": [{"name": "1-channel", "channels": [
+                                                        {"name": "Fire", "function": "fx fire", "ranges": rng((0, 9, "Off"), (10, 255, "Fire"))}]}]}),
+                              "manual:generic-my-confetti")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("add_heads", query="My Spot", qty=1)
+            e.act("add_heads", query="My Confetti", qty=1)
+            h, c = e.patch[0], e.patch[1]
+            check("...it adds to the rig like a library light", "pan" in h["map"] and "tilt" in h["map"] and h["channels"] == 10, str(h["map"]))
+            frame = e.build_frames()[h["universe"]]
+            check("...its shutter is open at rest (8-15), so it lights", 8 <= frame[h["address"] - 1 + h["map"].index("shutter")] <= 15, "")
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[c["head_no"]], owner="t")
+            fire = e.build_frames()[c["universe"]][c["address"] - 1 + c["map"].index("fx_fire")]
+            check("a typed-in confetti cannon fires from its armed button", fire >= 10, str(fire))
+            e.act("fx_kill")
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
+
+
+def test_spark_machine_manual() -> None:
+    """A cold spark machine's manual read offline ("CH1 0-255 0-99: Preheating Off"): three channels named
+    from their values, the heater as ARM, the spray as its fire (Low / High), cleaning never fired."""
+    from pathlib import Path
+    from app import config, fixtures, manual
+    from app import engine as eng_mod
+    chart = ("6. DMX Channel Table\nCH Value Function Description\nCH1 0-255 0-99: Preheating Off\n100-255: Preheating On\n"
+             "CH2 0-255 0-50: Stop Spraying Effect\n51-180: Low-Level Spraying\n181-255: High-Level Spraying\n"
+             "CH3 0-255 0-99: No Function\n100-255: Remove Preheating Consumables\n7. Remote Control Button Instructions")
+    d = manual.read(chart, "Generic", "Spark machine", offline=True)
+    chans = [(c["name"], c["function"]) for m in d["modes"] for c in m["channels"]]
+    check("the chart's three channels, named from their values", chans == [("Preheating", "fx arm"), ("Spraying", "fx fire"),
+          ("Remove Preheating Consumables", "setting")], str(chans))
+    check("...and it's known as a spark machine", d["type"] == "spark", d["type"])
+    old = config.DATA
+    with tempfile.TemporaryDirectory() as td:
+        config.DATA = Path(td)
+        db = Path(td) / "f.db"
+        fixtures.store_parsed(db, manual.to_parsed(d), "manual:generic-spark")
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=Path(td) / "s")
+        try:
+            e.act("add_heads", query="Spark machine", qty=1)
+            h = e.patch[0]
+            out = lambda: list(e.build_frames()[h["universe"]][h["address"] - 1:h["address"] + 2])  # noqa: E731
+            check("at rest: heater off, no spray, no cleaning", out() == [0, 0, 0], str(out()))
+            e.act("fx_arm", state=True)
+            check("ARM turns the heater on (100-255)", out()[0] >= 100 and out()[1:] == [0, 0], str(out()))
+            e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
+            check("a shot at the top height sprays high (181-255), cleaning stays off", out()[1] >= 181 and out()[2] == 0, str(out()))
+            e.act("fx_fire", heads=[h["head_no"]], down=False, owner="t")
+            e.act("fx_fire", heads=[h["head_no"]], owner="t")
+            check("...nothing picked: low (51-180)", 51 <= out()[1] <= 180, str(out()))
+            e.act("fx_kill")
+            check("KILL FX: everything off", out() == [0, 0, 0], str(out()))
+            e.act("fx_height_limit", heads=[h["head_no"]], height=0)
+            e.act("fx_arm", state=True)
+            e.act("fx_fire", heads=[h["head_no"]], height=100, owner="t")
+            check("a low ceiling: 'never higher than Low' holds even a High shot low", 51 <= out()[1] <= 180, str(out()))
+            e.act("fx_kill")
+            e.act("undo")
+            check("...and the limit is one Ctrl+Z", e.patch[0].get("fire_max") is None, str(e.patch[0].get("fire_max")))
+        finally:
+            e.stop() if hasattr(e, "stop") else None
+            config.DATA = old
