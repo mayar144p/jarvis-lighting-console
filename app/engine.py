@@ -151,6 +151,7 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
         # runs firing now, and how much each confetti tank has left (s).
         # Never saved: a desk always starts DISARMED with nothing firing.
         self.fx_armed_until = 0.0
+        self.heater_since: dict[int, float] = {}    # a spark machine's heater: on since (monotonic)
         self.fx_runs: dict[str, dict] = {}
         self.fx_loads: dict[int, float] = {}
         # The show timeline (app/timeline.py) and its transport.

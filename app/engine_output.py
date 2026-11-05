@@ -106,7 +106,9 @@ class OutputMixin:
         else:
             self.blackout = bool(int(state or 0))
         if self.blackout:
-            self._a_fx_kill()          # blackout stops every effect and disarms
+            # blackout stops every effect and disarms - but a spark machine's
+            # heater stays warm (a blackout is part of a show; KILL FX isn't)
+            self._a_fx_kill(heaters=False)
         return {"blackout": self.blackout,
                 "summary": "blackout on" if self.blackout else
                            "blackout released"}

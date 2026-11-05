@@ -194,10 +194,11 @@ await act("select_heads", { heads: [sp3] }); await act("fx_arm", { state: true }
 await p.locator('[data-tab="sfx"]:visible').first().click(); await sleep(800);
 const pane3 = await p.locator("#sfx-pane").innerText();
 check("a spark machine read from its manual shows each channel by its own name and state",
-  /CH1\s*Preheating\s*On - heating for/.test(pane3) && /CH2\s*Spraying\s*Stopped/.test(pane3) && /CH3\s*Remove Preheating Consumables\s*Off - maintenance only/.test(pane3), pane3.slice(0, 300));
+  /CH1\s*Preheating\s*On - kept on by the desk/.test(pane3) && /CH2\s*Spraying\s*Stopped/.test(pane3) && /CH3\s*Remove Preheating Consumables\s*Off - maintenance only/.test(pane3), pane3.slice(0, 300));
 check("...its spray heights are Low-Level / High-Level, and the cleaning channel is no show control",
   (await p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^Low-Level$/ }).count()) === 1 && !/\nSetting\n/.test(pane3), "");
-check("...and the armed bar talks about heaters, not lasers", /heaters stay on/.test(pane3), "");
+check("...the heater has its own switch, and the armed bar doesn't talk about lasers",
+  (await p.locator("#sfx-pane .fx-chan button", { hasText: "Heater off" }).count()) === 1 && /nothing fires until you fire it/.test(pane3) && !/laser/i.test(pane3.split("\n")[0]), "");
 // a low ceiling: Never higher than Low-Level - then even a High shot sprays low
 await p.locator("#sfx-pane .fx-limit .chip", { hasText: /^Low-Level$/ }).click(); await sleep(900);
 const highChip = p.locator("#sfx-pane .fx-shots:not(.fx-limit) .chip", { hasText: /^High-Level$/ });

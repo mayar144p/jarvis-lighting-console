@@ -1305,7 +1305,8 @@ class QuickMixin:
         if self.__dict__.get("_pt_glides"):
             self._pt_glide_tick(now)
         out = self._quick_override_vals()
-        if self.fx_runs or self.fx_armed_until:
+        # (a spark machine's heater is on whenever it is switched on - armed or not)
+        if self.fx_runs or self.fx_armed_until or self._heaters_on():
             for n, sets in self._sfx_override_vals().items():
                 out.setdefault(n, {}).setdefault("set", {}).update(sets)
         self._sound_overrides(out)

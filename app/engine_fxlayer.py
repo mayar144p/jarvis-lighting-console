@@ -100,7 +100,7 @@ class FxLayerMixin:
         for n, role in enumerate(h["map"], start=1):
             d = ranges.get(role) or {}
             caps = " ".join(str(c[2]) for c in d.get("caps") or [])
-            job = {"fx_arm": "arm", "fx_fire": "fire", "fog": "fog"}.get(role) or (
+            job = ("heater" if role == "fx_arm" and self._is_heater(h) else None) or {"fx_arm": "arm", "fx_fire": "fire", "fog": "fog"}.get(role) or (
                 "maintenance" if self._MAINT.search(f"{d.get('name') or ''} {caps}") else "setting")
             out.append({"n": n, "role": role, "name": str(d.get("name") or role.replace("_", " ")).strip()[:40], "job": job})
         return out
@@ -190,11 +190,20 @@ class FxLayerMixin:
         armed = self._sfx_armed(now)
         by = {h["head_no"]: h for h in self.patch}
         out: dict[int, dict] = {}
-        if armed:
-            for h in self.patch:
-                if "fx_arm" in h["map"]:
-                    d = self._sfx_detail(h, "fx_arm")
-                    out.setdefault(h["head_no"], {})["fx_arm"] = int(d.get("on_value") or 255)
+        for h in self.patch:
+            if "fx_arm" not in h["map"]:
+                continue
+            d = self._sfx_detail(h, "fx_arm")
+            if self._is_heater(h):
+                # a spark machine's HEATER is no safety switch: it keeps the
+                # machine ready to fire (minutes to warm from cold), so it stays
+                # on from the moment the machine is added - through disarm and
+                # blackout - until it is switched off (or KILL FX).  ARM still
+                # gates the firing.
+                if h.get("heater_on", True):
+                    out.setdefault(h["head_no"], {}).update({"fx_arm": int(d.get("on_value") or 255), "_heater": 1})
+            elif armed:
+                out.setdefault(h["head_no"], {})["fx_arm"] = int(d.get("on_value") or 255)
         for run in self.fx_runs.values():
             if now >= run["until"] or (run["kind"] != "fog" and not armed):
                 continue
@@ -253,7 +262,11 @@ class FxLayerMixin:
                 # whether its shot has a height to pick
                 "fire": {h["head_no"]: {"kind": self._sfx_detail(h, "fx_fire").get("fx_kind") or "other",
                                         "heights": self._fire_names(h), "channels": self._fx_channels(h),
-                                        "max": h.get("fire_max")}
+                                        "max": h.get("fire_max"),
+                                        **({"heater": bool(h.get("heater_on", True)),
+                                            "heater_for": round(now - self.heater_since.setdefault(h["head_no"], now))
+                                            if h.get("heater_on", True) else 0}
+                                           if "fx_arm" in h["map"] and self._is_heater(h) else {})}
                          for h in self.patch if "fx_fire" in h["map"]},
                 "heads": {h["head_no"]: self._head_class(h) for h in self.patch
                           if self._head_class(h) != "light"}}
@@ -373,13 +386,53 @@ class FxLayerMixin:
                 return int(lo)
         return int(d.get("off_value") or 0) + 1
 
-    def _a_fx_kill(self, **_):
-        """Stop every effect and laser at once, and disarm."""
+    def _a_fx_kill(self, heaters=True, **_):
+        """Stop every effect and laser at once, and disarm (an emergency: a
+        spark machine's heater goes off too)."""
         now = time.monotonic()
         for key in list(self.fx_runs):
             self._sfx_end(key, now)
         self.fx_armed_until = 0.0
+        for h in self.patch if _truthy(heaters) else []:
+            if "fx_arm" in h["map"] and self._is_heater(h) and h.get("heater_on", True):
+                h["heater_on"] = False
+                self.heater_since.pop(h["head_no"], None)
         return {"summary": "all effects stopped, disarmed"}
+
+    _HEAT = re.compile(r"pre-?heat|heating|\bheat\b|\bheater", re.I)
+
+    def _is_heater(self, h: dict) -> bool:
+        """The machine's arm channel is a heater (a cold spark machine's
+        preheat), not a safety switch."""
+        d = self._sfx_detail(h, "fx_arm")
+        text = f"{d.get('name') or ''} " + " ".join(str(c[2]) for c in d.get("caps") or [])
+        return bool(self._HEAT.search(text))
+
+    def _heaters_on(self) -> bool:
+        """Any heater the desk keeps on (cached per patch: called every frame)."""
+        key = (self.patch_rev if hasattr(self, "patch_rev") else id(self.patch), tuple(h.get("heater_on", True) for h in self.patch))
+        if self.__dict__.get("_heat_key") != key:
+            self._heat_key = key
+            self._heat_any = any("fx_arm" in h["map"] and h.get("heater_on", True) and self._is_heater(h) for h in self.patch)
+        return self._heat_any
+
+    def _a_fx_heater(self, heads=None, state=True, **_):
+        """Switch a spark machine's heater on or off.  It is on from when the
+        machine is added (so one preheated from its own remote stays ready);
+        it stays on through disarm and blackout; KILL FX switches it off."""
+        nums = self._sfx_targets(heads)
+        rows = [h for h in self.patch if h["head_no"] in nums and "fx_arm" in h["map"] and self._is_heater(h)]
+        if not rows:
+            raise ValueError("none of those machines has a heater")
+        on = _truthy(state)
+        for h in rows:
+            h["heater_on"] = on
+            if on:
+                self.heater_since.setdefault(h["head_no"], time.monotonic())
+            else:
+                self.heater_since.pop(h["head_no"], None)
+        return {"heads": [h["head_no"] for h in rows],
+                "summary": f"heater {'on' if on else 'off'} ({len(rows)} machine(s))"}
 
     def _a_fx_reload(self, heads=None, **_):
         """Confetti refilled: tanks back to full."""

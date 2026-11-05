@@ -142,9 +142,9 @@ function slider(title, e) {
 
 function armedLine(st, what = "laser") {
   // (said for what is selected: a spark machine has no laser, a laser no heater)
-  const needs = { laser: "laser output needs ARM FX (top bar).", fire: "firing needs ARM FX (top bar) - it also switches a spark machine's heater on." }[what]
+  const needs = { laser: "laser output needs ARM FX (top bar).", fire: "firing needs ARM FX (top bar)." }[what]
     || "fire and laser output need ARM FX (top bar).";
-  const stays = what === "fire" ? "heaters stay on, nothing fires until you fire it" : "lasers stay on until you stop them";
+  const stays = what === "fire" ? "nothing fires until you fire it" : "lasers stay on until you stop them";
   return h(st.armed ? "div.fx-armed" : "div.fx-disarmed", { dataset: { what } },
     !st.armed ? `Disarmed: ${needs}`
       : st.armed_forever ? `ARMED until you disarm - ${stays}`
@@ -438,7 +438,21 @@ function machineStatus(kind, heads, st, info) {
   const row = (c, state, cls = "") => h("div.fx-chan" + cls, { dataset: { job: c.job } },
     h("span.fx-chan-n.mono", `CH${c.n}`), h("span.fx-chan-name", c.name),
     h("span.fx-chan-state", kind === "spark" && c.job === "arm" ? { dataset: { spark: "1" } } : {}, state));
+  const inf0 = info[heads[0]] || {};
   const rows = chans.map((c) => {
+    if (c.job === "heater") {
+      // its own switch: on from when the machine was added (one preheated from
+      // its remote stays ready), through disarm and blackout; KILL FX turns it off
+      const on = heads.some((n) => (info[n] || {}).heater);
+      const btn = h("button.btn.small" + (on ? "" : ".primary"), { type: "button",
+        title: on ? "Switch the heater off (the machine then needs a few minutes to warm up again)" : "Switch the heater on",
+        onclick: () => run("fx_heater", { heads, state: !on }, { toast: true }) }, on ? "Heater off" : "Heater on");
+      return h("div.fx-chan" + (on ? ".on" : ""), { dataset: { job: "heater" } },
+        h("span.fx-chan-n.mono", `CH${c.n}`), h("span.fx-chan-name", c.name),
+        h("span.fx-chan-state", { dataset: { heater: "1" } },
+          on ? `On - kept on by the desk for ${mmss(inf0.heater_for || 0)} (also when disarmed)` : "Off - switch it on a few minutes before the first shot"),
+        btn);
+    }
     if (c.job === "arm") {
       return row(c, st.armed ? (kind === "spark" ? `On - heating for ${mmss(st.armed_for || 0)}` : "On (armed)")
         : (kind === "spark" ? "Off - ARM FX turns the heater on" : "Off - ARM FX turns it on"), st.armed ? ".on" : "");
@@ -454,9 +468,7 @@ function machineStatus(kind, heads, st, info) {
   });
   return h("div.fx-machine",
     h("div.fx-machine-head.small.muted", same ? `Each machine (${heads.length}), channel by channel` : "The first machine, channel by channel"),
-    ...rows,
-    kind === "spark" && st.armed && (st.armed_for || 0) < 180
-      ? h("div.fx-warm.small", "Still warming up: most spark machines need a few minutes before the first shot.") : null);
+    ...rows);
 }
 
 // What every firing machine gets besides its shot: an on / off switch (on
@@ -541,9 +553,11 @@ on("lite", () => {
     // a spark machine's heater: how long it has been warming, ticking
     if (box === sfx) {
       const st = sfxState();
-      box.querySelectorAll(".fx-chan[data-job='arm'] .fx-chan-state").forEach((el) => {
-        const s = st.armed_for || 0;
-        if (st.armed && el.dataset.spark) el.textContent = `On - heating for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      box.querySelectorAll(".fx-chan[data-job='heater'] .fx-chan-state[data-heater]").forEach((el) => {
+        const fi = Object.values(st.fire || {}).find((x) => x.heater);
+        if (!fi) return;
+        const s = fi.heater_for || 0;
+        el.textContent = `On - kept on by the desk for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} (also when disarmed)`;
       });
     }
     if (box === sfx && box.querySelector(".fx-tanks") && armed !== undefined) {
