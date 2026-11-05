@@ -12273,7 +12273,7 @@ def test_first_run_installs() -> None:
     used = set(_re.findall(r"(?i)\b(?:call\s+:|goto\s+)(\w+)", bat)) - {"eof"}
     check("run-desktop.bat: every call / goto has its label", used <= labels, str(sorted(used - labels)))
     check("...it installs Node.js, Python and Git with winget, when missing",
-          all(f"--id %1" in bat and pkg in bat for pkg in ("OpenJS.NodeJS.LTS", "Python.Python.3.12", "Git.Git")), "")
+          all("--id %1" in bat and pkg in bat for pkg in ("OpenJS.NodeJS.LTS", "Python.Python.3.12", "Git.Git")), "")
     check("...Python goes on the PATH (and the Store's stand-in python doesn't count)",
           "PrependPath=1" in bat and "sys.version_info[0] == 3" in bat, "")
     check("...it reads the new PATH without a new window, and has Windows line endings",
