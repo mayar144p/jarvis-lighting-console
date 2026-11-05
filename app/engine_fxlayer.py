@@ -1222,25 +1222,46 @@ class FxLayerMixin:
     # VIP (maybe another room) only when nothing else is reachable
     LINEUP_MAIN = ("floor", "front", "back", "left", "right", "middle", "dj", "stage")
 
-    def _lineup_marks(self, h: dict) -> list[dict]:
+    def _lineup_marks(self, h: dict, avoid: tuple | None = None) -> list[dict]:
         """The two marks this light should be lined up on: ones it can really
         reach at a steep enough angle (a beam skimming the floor far away is
-        a long smear, no good to aim by), as far apart as such marks go."""
+        a long smear, no good to aim by), as far apart as such marks go.
+        `avoid` (x, z): the first mark is already there - one second mark,
+        well away from it (two marks at the same place tell nothing)."""
         import math
         hy = float(h.get("y") or 0) or 3.0
-        good = []
-        for s in self._move_spots():
-            try:
-                got = self._aim_solve(h, float(s["x"]), 0.0, float(s["z"]))
-            except Exception:  # noqa: BLE001 - a spot the maths can't do is just not a mark
-                got = None
-            if got is None:
-                continue
-            d = math.hypot(float(s["x"]) - float(h.get("x") or 0), float(s["z"]) - float(h.get("z") or 0))
-            if d > max(4.0, hy * 2.75):            # (more than ~70 degrees off straight down)
-                continue
-            main = s["key"] in self.LINEUP_MAIN or str(s["key"]).startswith("mark:")
-            good.append({**s, "main": main, "d": d})
+
+        def reachable(limit: float) -> list[dict]:
+            out = []
+            for s in self._move_spots():
+                if str(s["key"]).startswith("cell"):
+                    continue
+                try:
+                    got = self._aim_solve(h, float(s["x"]), 0.0, float(s["z"]))
+                except Exception:  # noqa: BLE001 - a spot the maths can't do is just not a mark
+                    got = None
+                if got is None:
+                    continue
+                d = math.hypot(float(s["x"]) - float(h.get("x") or 0), float(s["z"]) - float(h.get("z") or 0))
+                if d > limit:
+                    continue
+                main = s["key"] in self.LINEUP_MAIN or str(s["key"]).startswith("mark:")
+                out.append({**s, "main": main, "d": d})
+            return out
+        good = reachable(max(4.0, hy * 2.75))          # (more than ~70 degrees off straight down)
+        if avoid is not None:
+            ax, az = float(avoid[0]), float(avoid[1])
+            gap = lambda s: math.hypot(float(s["x"]) - ax, float(s["z"]) - az)  # noqa: E731
+            # a second mark well away from the first: the furthest the light can
+            # reach (a little further out when nothing near is far enough)
+            for pool in (good, reachable(max(6.0, hy * 4.0))):
+                far = [s for s in pool if gap(s) >= 2.5]
+                if far:
+                    best = max(far, key=lambda s: (s["main"], gap(s)))
+                    good = [best]
+                    break
+            else:
+                return []
 
         def pair(cands):
             best, far = [], 1.5                       # (two marks at least 1.5 m apart)
@@ -1251,7 +1272,7 @@ class FxLayerMixin:
                         far, best = gap, [cands[a], cands[b]]
             return best
         mine = [s for s in good if str(s["key"]).startswith("mark:")]
-        out = pair(mine) or pair([s for s in good if s["main"]]) or pair(good)
+        out = good[:1] if avoid is not None else (pair(mine) or pair([s for s in good if s["main"]]) or pair(good))
         if not out:
             out = sorted(good, key=lambda s: (not s["main"], s["d"]))[:1]
         # said in full here: "Back" alone could be anywhere
@@ -1261,13 +1282,15 @@ class FxLayerMixin:
                  "stage": "the stage"}
         return [{"key": s["key"], "label": whole.get(s["key"], s["label"]), "x": s["x"], "z": s["z"]} for s in out]
 
-    def _a_line_up_marks(self, head=None, **_):
-        """The two marks to line this light up on (a question: changes nothing)."""
+    def _a_line_up_marks(self, head=None, avoid_x=None, avoid_z=None, **_):
+        """The two marks to line this light up on (a question: changes nothing).
+        With avoid_x / avoid_z (the first mark): one second mark, well away."""
         rows = [self._head(int(head))] if head not in (None, "") else self._require_selection()[:1]
         if not rows:
             raise ValueError("select the light to line up")
         h = rows[0]
-        ms = self._lineup_marks(h)
+        avoid = (float(avoid_x), float(avoid_z)) if avoid_x not in (None, "") and avoid_z not in (None, "") else None
+        ms = self._lineup_marks(h, avoid)
         name = h.get("name") or f"light {h['head_no']}"
         return {"head": h["head_no"], "marks": ms,
                 "summary": f"{name}: line it up on " + (" and ".join(m["label"] for m in ms) or "a spot you tap on the plan")}
