@@ -391,6 +391,15 @@ for (const [width, tall] of SIZES) {
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
+  else {
+    // each width starts from the same quiet desk as the first: the 1440 pass
+    // presses every button, and the lights it left on kept the 3D drawing
+    // all through 1920 (no graphics card on CI: every step there ran slow,
+    // some past the 20 s limit)
+    const { post } = await setup(p);
+    for (const a of ["playback_release_all", "quick_release_all", "fx_kill", "clear_programmer"]) await post(a);
+    await p.waitForTimeout(500);
+  }
   // an empty show opens in Set up; the steps below check the programmer
   await p.click('#mode-seg [data-mode="program"]').catch(() => {});
   await p.waitForTimeout(300);
