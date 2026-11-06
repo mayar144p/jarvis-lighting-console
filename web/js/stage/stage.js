@@ -563,7 +563,12 @@ export class Stage {
   }
 
   setSelected(list) {
-    this.selected = new Set((list || []).map(Number));
+    const next = new Set((list || []).map(Number));
+    // the desk's quick updates send the selection about ten times a second:
+    // the same one again draws nothing new, so it doesn't redraw (an idle 3D
+    // otherwise never rests, which a machine with no graphics card can't keep up with)
+    if (this.selected && next.size === this.selected.size && [...next].every((id) => this.selected.has(id))) return;
+    this.selected = next;
     this.dirty = true;
   }
 
