@@ -169,6 +169,15 @@ async function setup(p) {
   return { post, install };
 }
 
+// Back to a quiet desk: the buttons the 1440 pass presses leave lights on,
+// and a lit 3D keeps drawing.  With no graphics card (CI) that made every
+// step after it slow, some past the 20 s limit.
+async function quiet(p) {
+  const { post } = await setup(p);
+  for (const a of ["playback_release_all", "quick_release_all", "fx_kill", "clear_programmer"]) await post(a).catch(() => {});
+  await p.waitForTimeout(300);
+}
+
 async function buildRig(p) {
   const { post, install } = await setup(p);
   await post("patch_clear");
@@ -391,15 +400,7 @@ for (const [width, tall] of SIZES) {
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
-  else {
-    // each width starts from the same quiet desk as the first: the 1440 pass
-    // presses every button, and the lights it left on kept the 3D drawing
-    // all through 1920 (no graphics card on CI: every step there ran slow,
-    // some past the 20 s limit)
-    const { post } = await setup(p);
-    for (const a of ["playback_release_all", "quick_release_all", "fx_kill", "clear_programmer"]) await post(a);
-    await p.waitForTimeout(500);
-  }
+  else await quiet(p);   // each width starts from the same quiet desk as the first
   // an empty show opens in Set up; the steps below check the programmer
   await p.click('#mode-seg [data-mode="program"]').catch(() => {});
   await p.waitForTimeout(300);
@@ -423,6 +424,7 @@ for (const [width, tall] of SIZES) {
     if (CLICK && o.click && width === 1440) {
       const n = await clickAll(p, width, name, o.click);
       console.log(`  ${width} ${name}: pressed ${n} buttons`);
+      await quiet(p);
       // pressing may have changed the tab; put the step back
       try { await run(p); } catch { /* fine */ }
     }
@@ -451,4 +453,7 @@ const hard = findings.filter((f) => ["page-error", "step-failed", "empty", "bad-
 // the ones that fail the run, in full on the console: CI's log then says
 // what broke without downloading the screenshots
 for (const f of hard) console.log(`  FAIL [${f.width} ${f.step}] ${f.kind}: ${f.what}${f.detail ? "\n       " + String(f.detail).slice(0, 1500) : ""}`);
+// and the others in a line each (a spill, a tiny scroll...), so a red run's
+// log says what else it saw
+for (const f of findings.filter((x) => !hard.includes(x))) console.log(`  note [${f.width} ${f.step}] ${f.kind}: ${f.what}${f.detail ? " - " + String(f.detail).slice(0, 300) : ""}`);
 process.exit(hard.length ? 1 : 0);
