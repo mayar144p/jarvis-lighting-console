@@ -1,0 +1,16 @@
+{
+  "name": "Haze remote",
+  "short_name": "Haze",
+  "description": "The show's buttons, faders and blackout in your hand.",
+  "start_url": "/remote.html",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#070b10",
+  "theme_color": "#070b10",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/remote/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

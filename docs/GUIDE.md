@@ -819,6 +819,33 @@ blackout for the intro) and you decide.
 3. The link can only send requests, never run the desk. **New code** stops an
    old link working.
 
+### Your phone or tablet as a remote
+
+*Where:* Settings → Phone & tablet
+
+Play the show from a phone or tablet: your button pages, **Cues** and
+**Timeline** (when the show has them), and **Blackout**, the **Master** and
+**Release all** along the bottom. The remote can't edit the show.
+
+1. Let phones in: **Desk → Other computers, phones and tablets…** (the desk
+   restarts once and shows a pairing code).
+2. **Settings → Phone & tablet** shows a **QR code**. Scan it with the phone's
+   camera on the same Wi-Fi and the remote opens, signed in. No camera? Type the
+   address shown there and the pairing code.
+3. **Full screen like an app:** on an iPhone or iPad tap Share → **Add to Home
+   Screen**, then open Haze from its icon. On Android use Chrome ⋮ → **Add to
+   Home screen**, or ⋯ → **Full screen** in the remote.
+
+On a phone the buttons are big tiles under their headings, three across
+(more with the phone on its side). Swipe left or right to change page. A tablet
+on its side shows each page in your own grid, the same as on the desk.
+**CO2, confetti, sparks, flames, fog and lasers** need a short hold to fire, so
+a phone in a pocket can't set them off. Turning one off is instant. **Release
+all** is a hold too. The screen stays on while the remote is open (after the
+first tap). A phone opening the desk's own address gets the remote by itself.
+A tablet can still open the whole desk: ⋯ → **Full desk**. **New code** (in
+Desk → Other computers, phones and tablets) signs every phone out.
+
 ## Connecting a rig (Art-Net / sACN)
 
 *Where:* Settings → Output

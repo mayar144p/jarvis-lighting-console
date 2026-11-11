@@ -10,6 +10,7 @@ import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
 import { state } from "./store.js";
 import { HAS_3D, set3d, stagePanel } from "./view3d.js";
 import { run } from "./actions.js";
+import { remotePanel } from "./remotepanel.js";
 import { h, modal, toast, confirmBox } from "./ui.js";
 
 // ============================================================== settings
@@ -203,7 +204,7 @@ export const SETTINGS_PAGES = [
 const SETTINGS_GROUPS = [
   ["The show", ["output", "venue"]],
   ["This computer", ["screen"]],
-  ["Plugged in", ["midi", "hue", "standby"]],
+  ["Plugged in", ["phone", "midi", "hue", "standby"]],
   ["Files and AI", ["library", "backup", "ai"]],
 ];
 
@@ -309,6 +310,7 @@ export async function openSettings() {
     ["backup", "Show backups", [backupPanel()]],
     ["hue", "Philips Hue", [huePanel()]],
     ["standby", "Spare desk", [standbyPanel()]],
+    ["phone", "Phone & tablet", [remotePanel()]],
     ["ai", "AI", [aiPanel(), trainingBlock()]],
   ];
   let last = "output";

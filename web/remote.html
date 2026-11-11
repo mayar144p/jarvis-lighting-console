@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- (no pinch zoom: a remote is pressed, not read up close; the buttons are sized for a thumb) -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070b10">
+<!-- added to the home screen it opens as an app: no browser bars -->
+<link rel="manifest" href="remote/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Haze">
+<link rel="apple-touch-icon" href="remote/icon-180.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>Haze remote</title>
+<link rel="stylesheet" href="remote/remote.css">
+</head>
+<body>
+<div class="rm" id="rm">
+  <header class="rm-top">
+    <span class="rm-dot" id="rm-dot" title="Connection to the desk"></span>
+    <!-- what this remote plays: Buttons, and Cues / Timeline when the show has them -->
+    <nav class="rm-views" id="rm-views" aria-label="What to play"></nav>
+    <button class="rm-icon" id="rm-more" type="button" aria-label="More">⋯</button>
+  </header>
+  <nav class="rm-pages" id="rm-pages" aria-label="Pages"></nav>
+  <div class="rm-banner" id="rm-banner" hidden></div>
+  <main class="rm-grid" id="rm-grid" aria-live="off"></main>
+  <footer class="rm-strip" id="rm-strip">
+    <button class="rm-bo" id="rm-bo" type="button">Blackout</button>
+    <label class="rm-master"><span>Master <output id="rm-master-val">100%</output></span>
+      <input type="range" id="rm-master" min="0" max="100" value="100" aria-label="Master"></label>
+    <button class="rm-rel" id="rm-rel" type="button" title="Hold to let go of every button and playback">Release all</button>
+  </footer>
+</div>
+<section class="rm-connect" id="rm-connect" hidden>
+  <img src="icons/icon.svg" alt="" width="64" height="64">
+  <h1>Haze remote</h1>
+  <p>Type the pairing code shown on the desk:<br><b>Desk → Other computers, phones and tablets</b></p>
+  <input id="rm-code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE-12345" inputmode="text">
+  <label class="rm-check"><input type="checkbox" id="rm-keep" checked> Remember it on this device</label>
+  <button class="rm-go" id="rm-join" type="button">Connect</button>
+  <p class="rm-err" id="rm-err"></p>
+</section>
+<video id="rm-awake" src="remote/awake.mp4" muted playsinline loop preload="auto" aria-hidden="true"></video>
+<script type="module" src="remote/remote.js"></script>
+</body>
+</html>

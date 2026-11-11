@@ -3123,3 +3123,11 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .auto-take-head b, .rec-pill i, .gc-n, .hub-mark, .beam, .wheel-knob, .auto-sections .dot {
   flex: none; aspect-ratio: 1;
 }
+
+/* Settings -> Phone & tablet (remotepanel.js) */
+.remote-box { display: grid; gap: 12px; }
+.remote-card { display: flex; gap: 16px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.remote-card svg { flex: none; border-radius: 8px; }
+.remote-card > div { display: grid; gap: 4px; min-width: 0; }
+.remote-url { font-size: var(--fs-m); user-select: all; overflow-wrap: anywhere; }
+.remote-tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
