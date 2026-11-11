@@ -419,11 +419,12 @@ function flowGrid(bs, w, gridCols) {
       if (justTurns(b)) continue;
       const el = CONTROL.has(b.kind) && b.kind !== "tempo" && b.kind !== "cuelist" ? control(b) : tile(b);
       const [ww, hh] = spanOf(b);
-      if (b.kind === "fader" || b.kind === "xy") el.style.gridColumn = "1 / -1";
-      else {
-        if (ww > 1) el.style.gridColumn = `span ${Math.min(ww >= 3 ? cols : 2, cols)}`;
-        if (hh > 1 && ww > 1) el.style.gridRow = "span 2";
-      }
+      // sizes on a phone: three across leaves no room for 2-wide tiles (a
+      // gap beside each), so a big one stands tall instead; 3+ wide runs
+      // the whole row; on a wider screen (4+ across) 2-wide stays 2-wide
+      if (b.kind === "fader" || b.kind === "xy" || ww >= 3) el.style.gridColumn = "1 / -1";
+      else if (cols >= 4 && ww === 2) { el.style.gridColumn = "span 2"; if (hh > 1) el.style.gridRow = "span 2"; }
+      else if (hh > 1) el.style.gridRow = "span 2";
       box.append(el);
     }
     if (!box.childElementCount) continue;          // (a heading with nothing to press under it)
