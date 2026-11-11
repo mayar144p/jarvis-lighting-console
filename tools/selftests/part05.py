@@ -364,8 +364,9 @@ def test_hardening(tmp: Path) -> None:
                    headers={"Host": "attacker.example:%d" % port}) == 403, "")
         check("a malformed GET answers 400 instead of dropping the connection",
               call("/api/gdtf/search?limit=abc") == 400, "")
-        check("desktop only: no app manifest, no phone remote page",
-              call("/manifest.webmanifest") == 404 and call("/remote.html") == 404, "")
+        check("the desk itself has no app manifest; phones get their own remote page (web/remote.html)",
+              call("/manifest.webmanifest") == 404 and call("/remote.html") == 200
+              and call("/remote/manifest.webmanifest") == 200, "")
         check("the network check answers (Settings -> Output)",
               call("/api/console/network") == 200, "")
         check("the Stream Deck plugin downloads (Settings -> MIDI & OSC)",
