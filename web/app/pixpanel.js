@@ -2,11 +2,15 @@
 // picture or a video laid over the lights.  Pixel bars and panels count
 // cell by cell.  A picture is shrunk here (at most 64 pixels each way) and
 // kept with the show; a video stays in this browser: while it plays here,
-// its frames go to the desk and the lights follow.
+// its frames go to the desk and the lights follow.  An NDI source (live
+// video from the network, the desktop app) is kept by name and sent the
+// same way while this screen uses it.
 import { post } from "./api.js";
 import { run } from "./actions.js";
 import { state } from "./store.js";
 import { $, h, toast, confirmBox } from "./ui.js";
+import { ndiFeed, ndiHere } from "/js/ndi.js";
+import { pickNdiSource, NDI_HOWTO } from "./ndipick.js";
 
 const SPACES = [["left-right", "Left → right"], ["right-left", "Right → left"], ["stage-out", "Stage → out"],
   ["back-in", "Out → stage"], ["up", "Bottom → top"], ["down", "Top → bottom"], ["centre-out", "Centre → out"],
@@ -78,10 +82,37 @@ function stopVideo(id) {
   const p = players.get(id);
   if (!p) return;
   clearInterval(p.timer);
-  p.video.pause();
-  URL.revokeObjectURL(p.url);
+  if (p.video) p.video.pause();
+  if (p.url) URL.revokeObjectURL(p.url);
+  if (p.feed) p.feed.release();
   players.delete(id);
   renderPix(true);
+}
+
+/** An NDI source's frames to the desk, each new one (at most 25 a second). */
+function startNdi(id, source) {
+  stopVideo(id);
+  if (!ndiHere) { toast("NDI works in the Haze desktop app.", "bad"); return; }
+  const feed = ndiFeed(source);
+  const canvas = document.createElement("canvas");
+  const p = { feed, canvas, timer: 0, busy: false, seen: 0 };
+  players.set(id, p);
+  p.timer = setInterval(async () => {
+    if (feed.error && !feed.frames) { toast(`NDI: ${feed.error}`, "bad"); stopVideo(id); return; }
+    if (p.busy || feed.frames === p.seen) return;
+    p.seen = feed.frames;
+    p.busy = true;
+    try { await post("/api/console/media_frame", { id, ...grab(feed.canvas, feed.canvas.width, feed.canvas.height, canvas) }); } catch (e) { /* the next one */ }
+    p.busy = false;
+  }, 40);
+  renderPix(true);
+}
+
+async function addNdi() {
+  const source = await pickNdiSource();
+  if (!source) return;
+  const r = await run("media_save", { kind: "ndi", source, name: source.slice(0, 40) }, { toast: true });
+  if (r.ok) startNdi(r.id, source);
 }
 
 function gradientBlock() {
@@ -107,7 +138,11 @@ function mediaRow(m) {
     title: view === "front" ? "Lay it over the rig as seen from the front" : "Lay it over the rig as seen from above",
     onclick: () => run("run_media", { id: m.id, view }, { toast: true }) }, label);
   let play = null;
-  if (m.kind === "video") {
+  if (m.kind === "ndi") {
+    play = p ? h("button.btn.small", { onclick: () => stopVideo(m.id) }, "■ Stop here")
+      : h("button.btn.small", { title: ndiHere ? `Take ${m.source} from the network here; the lights follow it` : NDI_HOWTO,
+        disabled: !ndiHere, onclick: () => startNdi(m.id, m.source) }, "▶ Use here");
+  } else if (m.kind === "video") {
     if (p) play = h("button.btn.small", { onclick: () => stopVideo(m.id) }, "■ Stop here");
     else {
       const pick = h("input", { type: "file", accept: "video/*", hidden: true,
@@ -116,7 +151,8 @@ function mediaRow(m) {
     }
   }
   return h("div.fx-run",
-    h("b", m.name), h("small", m.kind === "video" ? (m.playing ? "video · playing" : "video · not playing") : `picture · ${m.w}×${m.h}`),
+    h("b", m.name), h("small", m.kind === "ndi" ? `NDI · ${m.playing ? "live" : "not coming in"}`
+      : m.kind === "video" ? (m.playing ? "video · playing" : "video · not playing") : `picture · ${m.w}×${m.h}`),
     play, runBtn("front", "Front"), runBtn("top", "From above"),
     h("button.btn.small.ghost", { title: "Delete", onclick: async () => {
       if (await confirmBox("Delete", `Delete “${m.name}”?`, { ok: "Delete", danger: true })) { stopVideo(m.id); run("media_delete", { id: m.id }, { toast: true }); }
@@ -135,7 +171,9 @@ export function renderPix(force = false) {
     gradientBlock(),
     h("div.pix-media", ...media().map(mediaRow)),
     h("div.row-btns", file, h("button.btn.small", { onclick: () => file.click(),
-      title: "A picture is kept with the show; a video plays in this browser and the lights follow it" }, "+ Picture or video…")),
+      title: "A picture is kept with the show; a video plays in this browser and the lights follow it" }, "+ Picture or video…"),
+      h("button.btn.small", { onclick: addNdi, title: ndiHere ? "Live video from the network: OBS, Resolume, vMix, a camera..."
+        : "NDI works in the Haze desktop app" }, "+ NDI source…")),
     h("p.muted.small", "Pixel bars and panels count cell by cell. Bring the lights up first: this paints colour, not brightness."));
 }
 

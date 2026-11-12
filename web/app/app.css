@@ -3137,3 +3137,10 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
   background: var(--grp-colour, var(--accent)); cursor: pointer; flex: none; }
 .master.grp .m-colour:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--grp-colour) 35%, transparent); }
 .master.grp .m-name { color: color-mix(in srgb, var(--grp-colour, var(--text-2)) 55%, var(--text)); }
+
+/* NDI: the sources on the network (ndipick.js, ndisettings.js) */
+.ndi-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 40vh; overflow: auto; }
+.ndi-src { justify-content: flex-start; text-align: left; }
+.ndi-src.on { border-color: var(--accent); }
+.ndi-srcs { display: flex; flex-direction: column; gap: 4px; }
+.ndi-src-row { display: flex; align-items: center; gap: 8px; }

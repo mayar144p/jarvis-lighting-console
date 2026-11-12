@@ -859,6 +859,64 @@ async function phonesDialog() {
   }
 }
 
+// ------------------------------------------------------------------- NDI
+// Video over the network, in and out (ndi.js): a source (OBS, Resolume, a
+// camera...) on the 3D's LED screens and over the lights; the 3D view out.
+// The windows ask through preload.js; frames go to the window that asked.
+const ndi = require("./ndi.js");
+const ndiOut = () => (saved._ndiOut = saved._ndiOut || { on: false, name: "Haze 3D", size: "1280x720", fps: 30 });
+const ndiSenders = new Map();       // webContents -> part ("stage", "main"...) of each window showing a 3D view
+let ndiSender = null;               // the one whose 3D goes out
+function ndiPick() {
+  const o = ndiOut();
+  let pick = null;
+  if (o.on) {
+    // the 3D window when it's open, else the window that offered first
+    for (const [wc, part] of ndiSenders) if (!wc.isDestroyed() && part === "stage") { pick = wc; break; }
+    if (!pick) for (const wc of ndiSenders.keys()) if (!wc.isDestroyed()) { pick = wc; break; }
+  }
+  ndiSender = pick;
+  const [w, h] = String(o.size || "1280x720").split("x").map(Number);
+  let st = { ok: true };
+  if (o.on) st = ndi.outStart(o.name);
+  else ndi.outStop();
+  for (const win of open.values()) {
+    if (win.isDestroyed()) continue;
+    const wc = win.webContents;
+    wc.send("ndi:out", { on: !!o.on && st.ok, name: o.name, w, h, fps: +o.fps || 30, sending: wc === pick, why: st.ok ? "" : st.why });
+  }
+  return st;
+}
+const partOf = (wc) => { for (const [part, win] of open) if (!win.isDestroyed() && win.webContents === wc) return part; return ""; };
+ipcMain.handle("ndi:status", () => ({ ...ndi.status(), settings: ndiOut(), sending: !!ndiSender }));
+ipcMain.handle("ndi:sources", () => ndi.sources());
+ipcMain.on("ndi:watch", (e, name) => {
+  const wc = e.sender;
+  const r = ndi.watch(String(name), wc, (f) => { if (!wc.isDestroyed()) wc.send("ndi:frame", f); });
+  if (!r.ok) wc.send("ndi:frame", { name: String(name), error: r.why });
+  if (!wc.__ndiHooked) { wc.__ndiHooked = true; wc.once("destroyed", () => { ndi.unwatchAll(wc); ndiSenders.delete(wc); if (wc === ndiSender) ndiPick(); }); }
+});
+ipcMain.on("ndi:unwatch", (e, name) => ndi.unwatch(String(name), e.sender));
+ipcMain.handle("ndi:setOut", (_e, cfg) => {
+  const o = ndiOut();
+  if (cfg && typeof cfg === "object") {
+    if ("on" in cfg) o.on = !!cfg.on;
+    if (typeof cfg.name === "string" && cfg.name.trim()) o.name = cfg.name.trim().slice(0, 60);
+    if (["960x540", "1280x720", "1920x1080"].includes(cfg.size)) o.size = cfg.size;
+    if ([25, 30, 50, 60].includes(+cfg.fps)) o.fps = +cfg.fps;
+  }
+  saveState();
+  return { ...ndiPick(), settings: o };
+});
+// a window with a 3D view on screen can send it
+ipcMain.on("ndi:canSend", (e, yes) => {
+  const wc = e.sender;
+  if (yes) ndiSenders.set(wc, partOf(wc)); else ndiSenders.delete(wc);
+  if (!wc.__ndiHooked) { wc.__ndiHooked = true; wc.once("destroyed", () => { ndi.unwatchAll(wc); ndiSenders.delete(wc); if (wc === ndiSender) ndiPick(); }); }
+  ndiPick();
+});
+ipcMain.on("ndi:frame", (e, w, h, data, fps) => { if (e.sender === ndiSender) ndi.outFrame(w, h, data, fps); });
+
 // ------------------------------------------------------------------ start
 // the app decides when it closes (the last desk window, asked first) -
 // not Electron's default, which would end it when the update splash closes
@@ -910,6 +968,7 @@ app.on("before-quit", () => {
   saveState();
 });
 app.on("will-quit", (e) => {
+  try { ndi.shutdown(); } catch { /* not fatal */ }
   if (!engine || engine.exitCode !== null) return;
   e.preventDefault();
   stopEngine().then(() => app.exit(0));

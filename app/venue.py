@@ -254,7 +254,8 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     if item["kind"] in ("screen", "panels"):
         # what the LED screen shows: the rig's colours, nothing, or a clip
         c = _text(raw.get("content"), "rig", 300)
-        item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:")) else "rig"
+        # (ndi:<source>: live video from the network, shown by the desktop app)
+        item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:", "ndi:")) else "rig"
     if item["kind"] == "drape":
         # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
         item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)

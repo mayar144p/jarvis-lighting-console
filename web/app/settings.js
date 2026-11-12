@@ -11,6 +11,7 @@ import { state } from "./store.js";
 import { HAS_3D, set3d, stagePanel } from "./view3d.js";
 import { run } from "./actions.js";
 import { remotePanel } from "./remotepanel.js";
+import { ndiPanel } from "./ndisettings.js";
 import { h, modal, toast, confirmBox } from "./ui.js";
 
 // ============================================================== settings
@@ -194,6 +195,7 @@ export const SETTINGS_PAGES = [
   ["output", "Output", "output dmx node art-net sacn usb universe ip network send"],
   ["venue", "Venue", "venue room size template width depth ceiling describe"],
   ["screen", "Screen & 3D", "screen gig mode theme dark show dark 3d quality window number keys"],
+  ["video", "Video (NDI)", "ndi video network led screen wall media server resolume obs vmix send out stream camera"],
   ["midi", "MIDI & OSC", "midi osc controller stream deck monitor learn launchpad apc"],
   ["hue", "Philips Hue", "hue lamps smart bridge"],
   ["standby", "Spare desk", "spare desk standby second computer take over failover backup desk"],
@@ -204,7 +206,7 @@ export const SETTINGS_PAGES = [
 const SETTINGS_GROUPS = [
   ["The show", ["output", "venue"]],
   ["This computer", ["screen"]],
-  ["Plugged in", ["phone", "midi", "hue", "standby"]],
+  ["Plugged in", ["phone", "video", "midi", "hue", "standby"]],
   ["Files and AI", ["library", "backup", "ai"]],
 ];
 
@@ -287,6 +289,7 @@ export async function openSettings() {
         h("span.muted.small", "its own window: put it on a second screen, or full screen")) : null,
       h("label.check", view3d, h("span", "Also show the 3D in this window (the desk reloads)")),
       h("label.field", h("span", "Quality"), quality)]],
+    ["video", "Video (NDI)", [ndiPanel()]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),
       webMidiRow(),

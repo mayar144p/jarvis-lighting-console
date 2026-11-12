@@ -86,6 +86,10 @@ jobs:
         run: node tools/behave.mjs
       - name: The phone and tablet remote (fits phones from the last ten years, plays the desk)
         run: node tools/remotecheck.mjs
+      - name: NDI video in and out (a stand-in NDI runtime, built here, and a stand-in desktop link)
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/koffi" koffi@3.3.2
+          NODE_PATH="$RUNNER_TEMP/koffi/node_modules" node tools/ndicheck.mjs
       - name: Keep the screenshots when it fails
         if: failure()
         uses: actions/upload-artifact@v4

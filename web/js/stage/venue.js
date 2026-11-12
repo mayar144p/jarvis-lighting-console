@@ -11,6 +11,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surfaceMaterial, crowdMaterial } from "./materials.js";
 import { CASTER_LAYER } from "./shadows.js";
 import { zoneOutline } from "../../app/zoneshape.js";
+import { ndiFeed } from "../ndi.js";
 
 // things that stand in a beam's way cast a shadow (shadows.js)
 function casts(root) {
@@ -415,6 +416,8 @@ function buildRig(r, M, room, hoisted) {
 // An LED screen's face: a live canvas (the rig's colours, drawn by the
 // stage each frame - a pixel-map mirror) or a clip / picture by URL.  Unlit:
 // a screen makes its own light.
+// Live video from the network ("ndi:<source>", the desktop app) comes
+// through web/js/ndi.js.
 // Clips and pictures uploaded to the desk ("clip:upload:<id>") come through
 // a loader the app sets (it adds the access token); each is fetched once and
 // kept across rebuilds of the room.
@@ -455,6 +458,24 @@ function screenMaterial(content, aspect) {
     tex.colorSpace = THREE.SRGBColorSpace;
     mat.map = tex;
     mat.userData.video = video;
+  } else if (content.startsWith("ndi:")) {
+    // live video from the network (the desktop app): the source's picture,
+    // new on the screen with each frame that comes
+    const feed = ndiFeed(content.slice(4));
+    const tex = new THREE.CanvasTexture(feed.canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    mat.map = tex;
+    mat.userData.ndi = feed;
+    let size = "";
+    feed.onFrame(() => {
+      // (the source's size known, or changed: a new texture that size - the
+      // GPU's copy of the picture can't change size in place)
+      const now = feed.canvas.width + "x" + feed.canvas.height;
+      if (now !== size) { size = now; tex.dispose(); }
+      tex.needsUpdate = true;
+      // (the 3D rests when nothing moves: a new frame wakes it)
+      if (mat.userData.wake) mat.userData.wake();
+    });
   } else if (content.startsWith("image:")) {
     mediaUrl(content.slice(6)).then((url) => new THREE.TextureLoader().loadAsync(url)).then((tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -1088,8 +1109,19 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
 
   const screens = [];
   group.traverse((m) => { if (m.userData && m.userData.screen) screens.push(m); });
+  for (const m of screens) if (m.material && m.material.userData.ndi) m.material.userData.wake = opts.onChange || null;
   return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
     crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens };
+}
+
+/** Let go of what a built room's screens play: NDI feeds stop, clips pause. */
+export function releaseScreens(built) {
+  for (const m of (built && built.screens) || []) {
+    const u = m.material && m.material.userData;
+    if (!u) continue;
+    if (u.ndi) { u.ndi.release(); u.ndi = null; }
+    if (u.video) { try { u.video.pause(); } catch (e) { /* gone */ } }
+  }
 }
 
 /** Hide the walls between the camera and the room, and the ceiling from above. */

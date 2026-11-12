@@ -49,6 +49,9 @@ class ShowMixin:
             try:
                 if m.get("kind") == "video":
                     self.media[str(mid)[:16]] = {"name": str(m.get("name") or "video")[:40], "kind": "video"}
+                elif m.get("kind") == "ndi" and str(m.get("source") or "").strip():
+                    src = str(m["source"]).strip()[:120]
+                    self.media[str(mid)[:16]] = {"name": str(m.get("name") or src)[:40], "kind": "ndi", "source": src}
                 else:
                     w, h, _raw = pixels_mod.clean_media(m.get("w"), m.get("h"), m.get("data"))
                     self.media[str(mid)[:16]] = {"name": str(m.get("name") or "picture")[:40], "kind": "image",

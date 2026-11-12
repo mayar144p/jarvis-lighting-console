@@ -11,6 +11,19 @@ contextBridge.exposeInMainWorld("hazeDesk", {
   saveAs: (name, bytes) => ipcRenderer.invoke("desk:saveAs", name, bytes),
   // no system title bar: the page draws minimise / maximise / close and the
   // Desk menu itself (wincontrols.js)
+  // NDI video over the network (desktop/ndi.js): sources to show, and the
+  // 3D view out.  A frame is {name, w, h, data: RGBA} or {name, error}.
+  ndi: {
+    status: () => ipcRenderer.invoke("ndi:status"),
+    sources: () => ipcRenderer.invoke("ndi:sources"),
+    watch: (name) => ipcRenderer.send("ndi:watch", String(name)),
+    unwatch: (name) => ipcRenderer.send("ndi:unwatch", String(name)),
+    onFrame: (fn) => ipcRenderer.on("ndi:frame", (_e, f) => fn(f)),
+    setOut: (cfg) => ipcRenderer.invoke("ndi:setOut", cfg),
+    onOut: (fn) => ipcRenderer.on("ndi:out", (_e, s) => fn(s)),
+    canSend: (yes) => ipcRenderer.send("ndi:canSend", !!yes),
+    frame: (w, h, data, fps) => ipcRenderer.send("ndi:frame", w, h, data, fps),
+  },
   win: {
     platform: process.platform,
     act: (what) => ipcRenderer.send("win:do", String(what)),
