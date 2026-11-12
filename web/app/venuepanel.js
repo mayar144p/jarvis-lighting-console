@@ -6,6 +6,7 @@ import { VenueEditor } from "/js/stage/editor.js";
 import { outlineOf } from "/js/stage/venue.js";
 import { doorFrom, balconyFrom, pillarAt } from "./drafting.js";
 import { post, token } from "./api.js";
+import { pickNdiSource } from "./ndipick.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox, choiceBox, typingInField, anyModal, modal } from "./ui.js";
@@ -530,9 +531,11 @@ function screenContent(o, upd) {
     h("option", { value: "rig" }, "The lights (live mirror)"),
     h("option", { value: "file" }, "A clip or picture from this computer…"),
     h("option", { value: "clip" }, "A video clip by link…"),
-    h("option", { value: "image" }, "A picture by link…"), h("option", { value: "off" }, "Nothing (off)"));
+    h("option", { value: "image" }, "A picture by link…"),
+    h("option", { value: "ndi" }, "Live video from the network (NDI)…"), h("option", { value: "off" }, "Nothing (off)"));
   const uploaded = /^(clip|image):upload:/.test(c);
-  sel.value = uploaded ? "file" : c.startsWith("clip:") ? "clip" : c.startsWith("image:") ? "image" : c;
+  const back = () => uploaded ? "file" : c.split(":")[0];
+  sel.value = uploaded ? "file" : c.startsWith("clip:") ? "clip" : c.startsWith("image:") ? "image" : c.startsWith("ndi:") ? "ndi" : c;
   const file = h("input", { type: "file", accept: "video/mp4,video/webm,video/quicktime,image/png,image/jpeg,image/webp", hidden: true });
   file.addEventListener("change", async () => {
     const f = file.files[0];
@@ -548,6 +551,11 @@ function screenContent(o, upd) {
   });
   sel.addEventListener("change", async () => {
     if (sel.value === "file") { file.click(); return; }
+    if (sel.value === "ndi") {
+      const name = await pickNdiSource(c.startsWith("ndi:") ? c.slice(4) : "");
+      if (name) upd({ content: `ndi:${name}` }); else sel.value = back();
+      return;
+    }
     if (sel.value === "clip" || sel.value === "image") {
       const cur = c.startsWith(sel.value + ":") && !uploaded ? c.slice(sel.value.length + 1) : "";
       const url = await promptBox(sel.value === "clip" ? "Video clip" : "Picture", "A link to it (mp4 / webm, or png / jpg)", cur, { ok: "Show it" });
@@ -555,6 +563,11 @@ function screenContent(o, upd) {
     } else upd({ content: sel.value });
   });
   return h("div", field("Shows", sel), file,
+    c.startsWith("ndi:") ? h("p.muted.small", `NDI: ${c.slice(4)} `, h("a", { href: "#", onclick: async (e) => {
+      e.preventDefault();
+      const name = await pickNdiSource(c.slice(4));
+      if (name) upd({ content: `ndi:${name}` });
+    } }, "Change…"), h("br"), "Shown in the desktop app's 3D, live.") : null,
     uploaded ? h("p.muted.small", (c.startsWith("clip:") ? "A clip" : "A picture") + " kept on the desk. ",
       h("a", { href: "#", onclick: (e) => { e.preventDefault(); file.click(); } }, "Change…")) : null);
 }

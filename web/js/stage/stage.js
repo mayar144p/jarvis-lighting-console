@@ -13,7 +13,8 @@ import { pass } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
-import { buildVenue, hitDistance, cutaway } from "./venue.js";
+import { buildVenue, hitDistance, cutaway, releaseScreens } from "./venue.js";
+import { ndiOffer, ndiOut, ndiSender, ndiSendFrame, ndiOnOut } from "../ndi.js";
 
 /** The room's four sides written on the floor (Arrange, Zones): the DJ /
  *  stage end, the back of the room, left and right as you look at the DJ
@@ -133,6 +134,9 @@ export class Stage {
     this.built = null;
     this.q = { cap: 1.5, ratio: 1.5, ema: 16, slowSince: 0, fastSince: 0, last: 0 };
     this.lastRender = 0;
+    // this view can send the 3D out as NDI (the desktop app picks the window)
+    ndiOffer(this, true);
+    this._ndiOff = ndiOnOut(() => { this.dirty = true; });
     this.tags = new Map();
     this._c = new THREE.Color();
     this._c2 = new THREE.Color();
@@ -271,6 +275,7 @@ export class Stage {
     if (sig === this.venueSig) return;
     this.venueSig = sig;
     this.venueGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    releaseScreens(this.built);
     this.venueGroup.clear();
     const built = buildVenue(auto ? null : venue, fixtures, {
       people: this.options.people, zones: this.options.zones,
@@ -1379,6 +1384,7 @@ export class Stage {
     this.lastRender = now;
     this._drawCellMarks();
     this._present(!this.wire && !!this.options.bloom && this.q.ratio > 0.55);
+    this._ndiSend(now);
     this._drawLabels();
     // the frame rate shown on the toolbar: pictures drawn in the last second
     this._fpsN++;
@@ -1389,6 +1395,26 @@ export class Stage {
     }
     this._lastDraw = now;
     if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** The 3D out as NDI (the desktop app, Settings -> Video): the picture
+   *  just drawn, cropped to the output's shape, at its size and rate.  The
+   *  labels are on the page, not in the picture, so they don't go out. */
+  _ndiSend(now) {
+    const o = ndiOut();
+    if (!o.on || !o.sending || ndiSender() !== this) return;
+    if (now - (this._ndiLast || 0) < 1000 / (o.fps || 30) - 3) return;
+    this._ndiLast = now;
+    const src = this.renderer.domElement;
+    const W = o.w || 1280, H = o.h || 720;
+    if (!src.width || !src.height) return;
+    const cv = this._ndiCv || (this._ndiCv = document.createElement("canvas"));
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const ctx = this._ndiCtx || (this._ndiCtx = cv.getContext("2d", { willReadFrequently: true }));
+    const k = Math.min(src.width / W, src.height / H);
+    const sw = W * k, sh = H * k;
+    ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, W, H);
+    ndiSendFrame(W, H, ctx.getImageData(0, 0, W, H).data, o.fps || 30);
   }
 
   /** The scene pass and its glow.  Smooth edges (4x multisampling) on High
@@ -1978,6 +2004,9 @@ export class Stage {
   destroy() {
     this.destroyed = true;
     cancelAnimationFrame(this._raf);
+    ndiOffer(this, false);
+    if (this._ndiOff) this._ndiOff();
+    releaseScreens(this.built);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.renderer) {
       this.renderer.dispose();

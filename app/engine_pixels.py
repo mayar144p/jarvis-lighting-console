@@ -35,6 +35,7 @@ class PixelsMixin:
         now = time.monotonic()
         live = self.__dict__.get("_media_live") or {}
         return [{"id": k, "name": v["name"], "kind": v["kind"], "w": v.get("w"), "h": v.get("h"),
+                 **({"source": v["source"]} if v.get("source") else {}),
                  "playing": k in live and now - live[k][3] < FRAME_STALE_S}
                 for k, v in self._media().items()]
 
@@ -89,18 +90,25 @@ class PixelsMixin:
                 "summary": f"gradient on {len(nums)} light(s), {n} pixel(s), {space}"
                            + (" scrolling" if p["speed"] else "")}
 
-    def _a_media_save(self, name="", w=None, h=None, data=None, kind="image", id=None, **_):
+    def _a_media_save(self, name="", w=None, h=None, data=None, kind="image", id=None, source="", **_):
         """Keep a picture with the show (the browser sends it shrunk: w x h
         RGB, base64).  kind=video keeps only its name: the screen that
-        plays it sends the frames."""
+        plays it sends the frames.  kind=ndi: live video from the network,
+        `source` its NDI name - the desktop app receives it and sends the
+        frames, like a video."""
         kind = str(kind or "image")
-        if kind not in ("image", "video"):
-            raise ValueError("kind is image or video")
+        if kind not in ("image", "video", "ndi"):
+            raise ValueError("kind is image, video or ndi")
+        source = str(source or "").strip()[:120]
+        if kind == "ndi" and not source:
+            raise ValueError("which NDI source? (its name, as the other computer shows it)")
         media = self._media()
         ident = str(id or "") or "m" + os.urandom(3).hex()
         if ident not in media and len(media) >= MAX_MEDIA:
             raise ValueError(f"at most {MAX_MEDIA} pictures and videos")
-        entry = {"name": str(name or kind).strip()[:40] or kind, "kind": kind}
+        entry = {"name": str(name or source or kind).strip()[:40] or kind, "kind": kind}
+        if kind == "ndi":
+            entry["source"] = source
         if kind == "image":
             ww, hh, raw = pix_mod.clean_media(w, h, data)
             entry.update({"w": ww, "h": hh, "data": base64.b64encode(raw).decode("ascii")})

@@ -12326,3 +12326,33 @@ def test_fix_floating() -> None:
             check("...and a second Fix has nothing to do", "nothing" in e.act("fix_floating").get("summary", ""), "")
         finally:
             e.shutdown()
+
+
+def test_ndi_kept() -> None:
+    """NDI (the desktop app): a screen showing an NDI source and an NDI source in Paint the rig are
+    kept by name - with the venue and the show, through a save and an open; frames come in like a
+    video's.  (The video itself: tools/ndicheck.mjs.)"""
+    from app import engine as eng_mod
+    from app import venue as venue_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            v, made = venue_mod.add_item(e.venue, {"kind": "screen", "x": 0, "z": 0, "w": 4, "h": 2, "content": "ndi:OBS (Program)"})
+            check("a screen keeps an NDI source by name", made["content"] == "ndi:OBS (Program)", made.get("content"))
+            r = e.act("media_save", kind="ndi", source="MEDIA-PC (Resolume Arena)")
+            check("Paint the rig keeps an NDI source by name",
+                  any(m["kind"] == "ndi" and m.get("source") == "MEDIA-PC (Resolume Arena)" for m in r["media"]), r)
+            check("...it needs the source's name", "error" in e.act("media_save", kind="ndi"), "")
+            check("...its frames come in like a video's", e.media_frame(r["id"], 2, 1, __import__("base64").b64encode(bytes(6)).decode())["ok"], "")
+            e.act("save_show", name="ndi")
+            e.act("media_delete", id=r["id"])
+            e.act("load_show", name="ndi")
+            check("...and it's there again when the show opens",
+                  any(m["kind"] == "ndi" and m.get("source") == "MEDIA-PC (Resolume Arena)" for m in e.media_public()), e.media_public())
+        finally:
+            e.shutdown()
+    web = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
+    check("the 3D's screens show ndi: sources", 'content.startsWith("ndi:")' in web and "ndiFeed(" in web, "")

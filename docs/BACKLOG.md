@@ -230,6 +230,33 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)
+
+**Done:** the desktop app talks to the NDI runtime the operator installs
+(free NDI Tools) through koffi, already in the app: nothing to build,
+nothing of NDI shipped (desktop/ndi.js; the runtime found by
+NDI_RUNTIME_DIR_V6 / V5 or its usual place on Windows, Mac and Linux).
+- **In:** a source on an LED screen in the 3D (Venue -> a screen -> Shows ->
+  Live video from the network), kept with the venue by name; over the
+  lights (Paint the rig -> + NDI source), kept with the show by name, its
+  frames sent to the desk like a video's.  One receiver per source, shared;
+  NDI's lower size, RGBA; the 3D wakes for each new frame.
+- **Out:** Settings -> Video (NDI): the 3D view as an NDI source - its name,
+  960x540 to 1920x1080, 25-60 a second.  The 3D window sends when it's
+  open, else the 3D in a desk window; the last frame goes again twice a
+  second while the 3D rests.  Settings shows how many are watching.
+- **Checked** (tools/ndicheck.mjs, in CI): the desktop side against a
+  stand-in runtime built from the real headers' struct layouts
+  (tools/ndifake/fakendi.c) - sources, frames in with padded rows, nothing
+  leaked, frames out byte for byte, no runtime = a plain reason; the pages
+  with a stand-in link - the screen red in the drawn 3D while the room
+  rests, the lights take the source's colour, the 3D goes out at the size
+  asked, only from the window the app picked.
+
+**Still open:** a real NDI source and receiver on the operator's network
+(OBS with NDI, NDI Studio Monitor) - nothing here could run the real
+runtime.  Sound from NDI isn't used.
+
 ## A16. Phone and tablet remote, group colours (2026-11-11 / 12) - DONE
 
 Asked by the operator after the desk went desktop-only (A6): play the show
@@ -799,10 +826,9 @@ GDTF / MVR, paperwork, show versions, remote desk, an AI copilot).
    2026-11-04, built into every installer from the repo's REPORT_RELAY
    variable.  Waiting on the operator: a free Cloudflare account and an
    Issues-only token, then its README (about 10 minutes).
-8. **NDI video in / out (ONYX 4.10)** - later.  Screens and LED walls:
-   NDI in as a media source for the 3D's screens and the pixel mapper, NDI
-   out of the 3D view.  Needs the NDI SDK (a native library, free licence,
-   per-platform), so it is a desktop-app add-on, not the engine's stdlib.
+8. **NDI video in / out (ONYX 4.10)** - DONE 2026-11-12 (see A17).  Screens
+   and LED walls: NDI in on the 3D's screens and the pixel mapper, NDI out
+   of the 3D view, in the desktop app.
 
 ## A12. Plug-and-play offline AI, with a switch to Gemini (agreed 2026-10-07) - DONE (but the installer tick)
 

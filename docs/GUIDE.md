@@ -1090,6 +1090,32 @@ program (QLab listens on 53000, Resolume on 7000). **Test** sends
 `/composition/layers/1/clips/2/connect 1`). Saved with the show, since each
 venue has its own video computer.
 
+## Video over the network (NDI)
+
+NDI is live video over the network: OBS, Resolume, vMix, a media server
+or an NDI camera on the same network sends it. The desktop app can show it
+and send the 3D out as NDI. It needs the free **NDI Tools** (ndi.video/tools)
+installed on the desk computer; start Haze again after installing them.
+Nothing of NDI comes with Haze. (In a web browser there's no NDI.)
+
+* **On an LED screen in the 3D:** Venue → the screen → *Shows* → **Live
+  video from the network (NDI)…** and pick the source (the list fills as
+  sources come on; or type its name, as the other computer shows it). The
+  3D shows it live. The screen keeps the source's name with the venue: on
+  another night it shows the same source again when it's on the network.
+* **Over the lights:** FX → Paint the rig → **+ NDI source…**, then
+  *Front* or *From above*, as for a video. The lights follow the source
+  while this screen has it (**▶ Use here** / **■ Stop here**).
+* **The 3D out:** Settings → **Video (NDI)** → *Send the 3D view as an NDI
+  source*, its name on the network (*Haze 3D*), its size (960 × 540 to
+  1920 × 1080) and pictures a second. What the 3D window shows goes out (or
+  the 3D in a desk window when that's all that's open); labels and buttons
+  don't. A media server, an LED processor or OBS takes it like any other
+  NDI source; Settings says how many are watching.
+
+The video comes in at NDI's lower size, plenty for a screen in the 3D and
+for the lights. NDI® is a registered trademark of Vizrt NDI AB.
+
 ## Hardware controllers
 
 *Where:* Settings → MIDI & OSC
