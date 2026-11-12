@@ -571,7 +571,10 @@ class ShowMixin:
         gone = self._stale_heads(self.patch, self.playbacks)
         if gone:
             add("warn", f"Cues point at {len(gone)} light(s) no longer patched.", "Re-patch them or update the cues", "cue_list")
-        if not any(pb["stack"] for pb in self.playbacks):
+        plays = any(b.get("kind") not in ("label", "page", "folder") for b in self.quick) \
+            or any(t.get("clips") for t in (self.timeline or {}).get("tracks") or [])
+        if not any(pb["stack"] for pb in self.playbacks) and not plays:
+            # (a show played from buttons or the timeline needs no cues)
             add("warn", "No cues recorded yet.", "Record a cue", "record")
         always = [h["head_no"] for h in self.patch if self._lamp_only(h)]
         if always:
@@ -584,6 +587,20 @@ class ShowMixin:
             add("warn", f"{len(unsure)} light(s) switch on and off with their colour channel, and their file "
                         f"doesn't say if 0 is dark ({', '.join(f'#{n}' for n in unsure[:6])}).",
                 "Right-click one → Test this light (asked once per model)", "light_test", unsure[0])
+        hung, standing = self._floating()
+        if hung:
+            add("warn", f"{len(hung)} hung light(s) are in mid air - on no truss, pipe or the ceiling "
+                        f"({', '.join('#' + str(h['head_no']) for h in hung[:8])}{'…' if len(hung) > 8 else ''}). "
+                        "The 3D and the plot show them floating.", "")
+            items[-1].update(fix="Fix", act={"action": "fix_floating", "params": {}},
+                             text=items[-1]["text"] + " Fix puts a truss along each row of them, at the height they hang"
+                             + (", and a stand under the floating floor things." if standing else "."))
+        if standing:
+            add("warn", f"{len(standing)} floor-standing thing(s) are up in the air with nothing under them "
+                        f"({', '.join('#' + str(h['head_no']) for h in standing[:8])}).", "")
+            if not hung:
+                items[-1].update(fix="Fix", act={"action": "fix_floating", "params": {}},
+                                 text=items[-1]["text"] + " Fix puts a stand under each, at the height it is.")
         movers = [h for h in self.patch if "pan" in h["map"] or "tilt" in h["map"]]
         if movers and not self.floor_safe:
             add("warn", f"Stay-on-the-floor is off for {len(movers)} moving light(s).", "Position tab → Stay on the floor", "floor_safe")

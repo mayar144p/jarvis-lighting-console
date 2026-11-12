@@ -117,8 +117,10 @@ class AutopilotMixin:
             while ap["next_bar"] <= bar:
                 ap["next_bar"] += bars
             pick = self._ap_pick("phrase")
-        if pick:
-            self._ap_go(pick)
+            # (GO while still holding the desk: a Ctrl+Z or "autopilot off"
+            # in between would otherwise get a cue picked before it)
+            if pick:
+                self._ap_go(pick)
         return pick
 
     def ap_drop(self) -> None:
@@ -130,8 +132,8 @@ class AutopilotMixin:
             pick = self._ap_pick("drop", biggest=True)
             bar = self._tempo().beats(time.monotonic()) / 4.0
             ap["next_bar"] = (math.floor(bar / ap["bars"]) + 1) * ap["bars"]
-        if pick:
-            self._ap_go(pick)
+            if pick:
+                self._ap_go(pick)
 
     def _ap_start(self) -> None:
         th = self.__dict__.get("_ap_thread")

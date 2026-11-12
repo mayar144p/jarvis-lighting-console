@@ -717,7 +717,7 @@ ACTIONS = (
     "highlight", "park", "unpark", "group_master", "desk_strobe", "keep_facing",
     "macro_save", "macro_delete", "macro_run", "osc", "timecode",
     "playback_mode", "cue_set", "blind",
-    "rig_pieces", "rig_add", "rig_trim", "rig_report", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy", "roam",
+    "rig_pieces", "rig_add", "rig_trim", "rig_report", "fix_floating", "paperwork", "colour_cal", "colour_cal_get", "teach_slots", "quick_fader", "quick_xy", "roam",
     "vis_source",
 )
 

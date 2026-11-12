@@ -221,6 +221,28 @@ def _canon(v):
     return v
 
 
+def driven(eng) -> set:
+    """The playbacks the autopilot, auto-follow or a playing timeline drives:
+    they move cue to cue by themselves while a request runs - where they are
+    is the show playing, not an edit."""
+    ap = eng._ap()
+    out = {ap.get("playback")} if ap.get("on") else set()
+    if (eng._tl_transport() or {}).get("playing"):
+        out |= {tr.get("playback") for tr in (eng.timeline or {}).get("tracks") or [] if tr.get("playback")}
+    return out | {pb["n"] for pb in eng.playbacks if (pb.get("follow") or {}).get("on")}
+
+
+def unplayed(st: dict, nums: set) -> dict:
+    """The state with where those playbacks are (cue, fade, level of play) left out."""
+    for pb in st.get("playbacks") or []:
+        if isinstance(pb, dict) and pb.get("n") in nums:
+            for k in ("index", "active", "fade", "target", "target_mib", "order", "at", "xfade"):
+                pb.pop(k, None)
+            if isinstance(pb.get("follow"), dict):
+                pb["follow"].pop("at", None)
+    return st
+
+
 def state_json(eng) -> str:
     with eng.lock:
         st = eng._undo_state()
@@ -273,6 +295,7 @@ def run(turns: int = 2000, seed: int = 1, out: Path | None = None, quiet: bool =
         before = counts(eng)
         undo_len = len(eng._undo)
         st_before = state_json(eng)
+        drv = driven(eng)
         internal.clear()
         dj = rnd.random() < 0.08
         chat = stand_in(rnd, eng)
@@ -317,6 +340,7 @@ def run(turns: int = 2000, seed: int = 1, out: Path | None = None, quiet: bool =
         # one Ctrl+Z puts it all back - and a request that changed something
         # leaves that Ctrl+Z
         now_st = json.loads(state_json(eng))
+        drv |= driven(eng)
         changed_now = [k for k, v in json.loads(st_before).items() if k != "selected"
                        and json.dumps(v, sort_keys=True) != json.dumps(now_st.get(k), sort_keys=True)]
         if "prog_fx" in changed_now:
@@ -352,7 +376,8 @@ def run(turns: int = 2000, seed: int = 1, out: Path | None = None, quiet: bool =
                     real_act("undo")
                 if eng.blind_public()["on"]:
                     eng.act("blind", state=False)
-                a, b = json.loads(st_before), json.loads(state_json(eng))
+                drv |= driven(eng)
+                a, b = unplayed(json.loads(st_before), drv), unplayed(json.loads(state_json(eng)), drv)
                 diff = [k for k in a if a[k] != b.get(k) and k != "selected"]      # (choosing lights isn't an edit)
                 if diff:
                     problems.append(f"Ctrl+Z didn't put it all back: {diff[:6]} "
