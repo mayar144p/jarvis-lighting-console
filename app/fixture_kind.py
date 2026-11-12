@@ -250,6 +250,13 @@ def _describe_fx(kind: str, manufacturer: str, has: set) -> dict:
            "style": {"body": b["body"], "accent": b["accent"], "finish": b["finish"]},
            "cells": 1, "beam": {"min": t["beam"][0], "max": t["beam"][1]},
            "features": sorted(r for r in has if r.startswith(("fx_", "laser_")) or r == "fog")}
+    if kind == "laser":
+        # a beam bar: a diode per beam channel (Laserworld BeamBar 10B: 10) -
+        # drawn as the bar it is, its beams fanned along it
+        n = sum(1 for r in has if re.fullmatch(r"laser_beam\d+", r))
+        if n >= 3:
+            out["beams"] = n
+            out["label"] = f"Laser beam bar ({n})"
     if kind == "laser" and has & {"dimmer", "red", "green", "blue", "white", "strobe"}:
         # a combo bar (Stairville All FX Bar: LED beams, strobes and a
         # laser on one bar): still a laser to the desk - its laser part

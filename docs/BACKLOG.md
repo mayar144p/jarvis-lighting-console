@@ -230,6 +230,49 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A16. Phone and tablet remote, group colours (2026-11-11 / 12) - DONE
+
+Asked by the operator after the desk went desktop-only (A6): play the show
+from a phone without squeezing the desk onto it.  Sized against a real show
+(214 buttons on 5 pages, 11 groups, an auto-built timeline).
+
+- **PR #175 - the remote** (web/remote.html, web/remote/): buttons as big
+  tiles under their headings (a heading over a block keeps its block, one at
+  a row's start its row), 3 across upright and more on its side; a tablet on
+  its side shows the desk's own grid.  Cues / Timeline tabs only when the
+  show has them; Blackout, the master and Release all (a hold) always at the
+  bottom; CO2, confetti, sparks, flames, fog and lasers need a short hold to
+  fire.  Home-screen app (manifest, Apple tags), Full screen where the
+  browser allows it, the screen kept on (wake lock on https, a silent video
+  loop on the Wi-Fi address).  Settings -> Phone & tablet: the address and a
+  QR code with the pairing code (/api/remote, app/remote.py; qrcode-generator
+  in web/vendor/qrcode, MIT).  A phone opening the desk's address gets the
+  remote (?desk=1 keeps the desk).  Fits phones from the 2016 iPhone SE
+  (320 px) up; colours worked out in the script for iOS 15 phones.
+- **PR #176 - group faders in colour:** a Faders tab on the remote (grand
+  master + a slider per group); on the desk each group fader takes its
+  group's colour, changed from the dot under its name (twelve colours, any
+  colour, its own again).  Kept with the group (group_edit colour); groups
+  without one get theirs by their place in the list (web/app/groupcolour.js,
+  shared by the desk and the remote).
+- **PR #177 - this phone's own layout:** hide a tab on this phone; arrange
+  the buttons on this phone (drag tiles and headings, normal / wide / big /
+  full row, hide), kept on the device per show and page, the desk's buttons
+  untouched; Desk's layout puts a page back.  Fixed on the way: a tap outside
+  the ⋯ menu also pressed the button under it.
+- **Checks:** tools/remotecheck.mjs (in CI): 8 phone / tablet sizes, plays
+  the desk, CO2 needs the hold, Faders, colours match desk and phone, hidden
+  tabs, arranging (and the desk unchanged), a phone opening the desk.
+- **Also fixed (PR #172-#174):** the 3D redrew ten times a second with
+  nothing changing (the same selection again), which made the nightly
+  screen check time out on CI; each screen-check width and each round of
+  presses now starts from a quiet desk; the "+" colour swatch's picker stuck
+  out of it; the odd-input timing check takes the best of 3 tries on
+  Windows CI.
+
+**Open:** a test on a real phone at a gig (home-screen full screen, the
+screen staying on); a cut-down DJ-only remote (an idea, not asked yet).
+
 ## A15. Operator's feedback after the first gigs (2026-10-21) - DONE (B1-B7)
 
 The operator's notes from real use, the three open GitHub issues (#105,
@@ -1025,6 +1068,9 @@ counts are modes, not lights.
   under the last button are hidden while playing, bigger text.
 
 ## A6. Desktop only (DONE)
+
+(2026-11-11: the desk itself stays desktop only; a separate phone and tablet
+remote came back as its own page - see A16.)
 
 Done: tablet.js, the manifest and home-screen icons, the remote page,
 the Settings rows, gig mode on by itself for touch screens and every

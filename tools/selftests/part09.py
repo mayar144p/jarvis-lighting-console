@@ -7158,8 +7158,8 @@ def test_look_and_reach() -> None:
                   if "vendor" not in p.parts and "streamdeck" not in p.parts)
     named = set(re.findall(r'["\'`]([a-z][a-z0-9_]+)["\'`]', web))
     # reached another way: their own routes (save / load / scan / CSV / RDM / rekordbox),
-    # queries other screens answer, or the assistant's building blocks
-    elsewhere = {"cue_info", "fx_status", "get_limits", "import_scan", "import_show", "load_show", "patch_clear",
+    # queries other screens answer, the assistant's building blocks, or Ready?'s Fix (fix_floating)
+    elsewhere = {"cue_info", "fix_floating", "fx_status", "get_limits", "import_scan", "import_show", "load_show", "patch_clear",
                  "patch_from_csv", "patch_list", "rdm_compare", "remap_heads", "save_show", "set_venue",
                  "songs_import", "venue_build", "venue_info"}
     missing = sorted(a for a in engine_base.ACTIONS if a not in named and a not in elsewhere)
@@ -12288,3 +12288,41 @@ def test_first_run_installs() -> None:
     ok = subprocess.run(["sh", "-n", str(root / "run-desktop.sh")], capture_output=True).returncode == 0
     check("run-desktop.sh: valid, and installs with Homebrew / apt / dnf / pacman when missing",
           ok and all(w in sh for w in ("brew install", "apt-get install", "dnf install", "pacman -S")), "")
+
+
+def test_fix_floating() -> None:
+    """Ready? spots hung lights in mid air (no truss, pipe or ceiling) and floor things up in the air
+    with nothing under them; its Fix puts a truss along each row at the height they hang, and a stand
+    under the rest - nothing moves."""
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR", qty=4)
+            for i, h in enumerate(e.patch[:3]):
+                h.update(x=-2.0 + 2.0 * i, y=4.0, z=1.0, stance="hang")
+                h.pop("mount", None)
+            jet = e.patch[3]
+            jet.update(x=3.0, y=1.5, z=-1.0, stance="stand")
+            jet.pop("mount", None)
+            before = {h["head_no"]: (h["x"], h["y"], h["z"]) for h in e.patch}
+            items = e.act("ready_check").get("items") or []
+            warn = [i for i in items if "mid air" in i.get("text", "")]
+            check("Ready? warns about hung lights in mid air, with a Fix",
+                  warn and (warn[0].get("act") or {}).get("action") == "fix_floating", str(warn))
+            r = e.act("fix_floating")
+            check("...Fix puts one truss along the row and a stand under the floor light",
+                  len(r.get("trusses") or []) == 1 and r.get("floor") == [jet["head_no"]], str(r))
+            moved = [h["head_no"] for h in e.patch
+                     if max(abs(a - b) for a, b in zip(before[h["head_no"]], (h["x"], h["y"], h["z"]))) > 0.1]
+            check("...every light is now held by something, and none moved", not moved
+                  and all(isinstance(h.get("mount"), dict) for h in e.patch), str(moved))
+            items = e.act("ready_check").get("items") or []
+            check("...Ready? no longer warns", not [i for i in items if "mid air" in i.get("text", "")
+                                                    or "nothing under" in i.get("text", "")], "")
+            check("...and a second Fix has nothing to do", "nothing" in e.act("fix_floating").get("summary", ""), "")
+        finally:
+            e.shutdown()

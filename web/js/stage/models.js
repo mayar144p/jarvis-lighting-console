@@ -889,8 +889,43 @@ function comboBar(body) {
   return sk;
 }
 
+/** A laser beam bar (Laserworld BeamBar, a bar of 4-12 diodes): one long
+ *  housing on its tilt motor, a window per diode.  The beams fan out along
+ *  the bar - its emitter says how long the bar is and which way it runs. */
+function laserBar(body) {
+  const n = Math.max(3, Math.min(16, body.beams));
+  const len = Math.max(0.4, 0.06 * n + 0.12);
+  const sk = skeleton();
+  const S = steel();
+  for (const s of [-1, 1]) {                          // end brackets with the tilt knobs
+    const b = rbox(0.012, 0.1, 0.07, 0.004, S);
+    b.position.set(s * (len / 2 + 0.012), 0.05, 0);
+    sk.pan.add(b);
+    const knob = cyl(0.02, 0.02, 0.02, trim(body.style), 16);
+    knob.rotation.z = Math.PI / 2;
+    knob.position.set(s * (len / 2 + 0.026), 0.08, 0);
+    sk.pan.add(knob);
+  }
+  sk.tilt.position.y = 0.08;
+  const H = housing(body.style);
+  sk.tilt.add(rbox(len, 0.1, 0.11, 0.014, H));
+  const lens = lensMaterial();
+  sk.lenses.push(lens);
+  const step = (len - 0.12) / (n - 1);
+  for (let i = 0; i < n; i++) {
+    const w = rbox(0.022, 0.004, 0.03, 0.002, lens);
+    w.position.set(-len / 2 + 0.06 + i * step, 0.051, 0);
+    sk.tilt.add(w);
+  }
+  sk.emitters.push(emitter(sk.tilt, 0.052, 0.004, { laser: true, bar: (len - 0.12) / 2 }));
+  sk.height = 0.2;
+  sk.radius = len / 2 + 0.05;
+  return sk;
+}
+
 function laser(body) {
   if (body.combo) return comboBar(body);
+  if ((body.beams || 0) >= 3) return laserBar(body);
   const sk = skeleton();
   bracket(sk, body, 0.12, 0.09);
   const H = housing(body.style);

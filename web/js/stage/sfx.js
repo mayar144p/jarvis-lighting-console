@@ -147,14 +147,16 @@ class LaserFan {
     scene.add(this.lines);
   }
 
-  update(origin, dir, fx, time, reach) {
+  update(origin, dir, fx, time, reach, axis = null, half = 0.3) {
     this.lines.visible = true;
     this.mat.color.set(fx.hex || "#22ff44");
     const pattern = fx.pattern ?? 0.2, size = fx.size ?? 0.4, rot = fx.rot ?? 0;
     const n = 4 + Math.floor(pattern * (RAYS - 4));
     const spread = Math.tan((6 + size * 40) * Math.PI / 180);
     const spin = time * (rot - 0.5) * 4;
-    const u = new THREE.Vector3(dir.y, -dir.x, 0);
+    // across the beam: along the bar when it is one (the bar's own axis,
+    // square to the beam), else sideways
+    const u = axis ? axis.clone().addScaledVector(dir, -axis.dot(dir)) : new THREE.Vector3(dir.y, -dir.x, 0);
     if (u.lengthSq() < 1e-6) u.set(1, 0, 0);
     u.normalize();
     const v = new THREE.Vector3().crossVectors(dir, u).normalize();
@@ -170,7 +172,7 @@ class LaserFan {
         const f = nb > 1 ? (i / (nb - 1)) * 2 - 1 : 0;
         d.copy(dir).addScaledVector(u, f * fan).addScaledVector(v, ((fx.y ?? 0.5) - 0.5) * 1.2).normalize();
         const len = reach(origin, d);
-        this.pos.set([origin.x + u.x * f * 0.3, origin.y + u.y * f * 0.3, origin.z + u.z * f * 0.3,
+        this.pos.set([origin.x + u.x * f * half, origin.y + u.y * f * half, origin.z + u.z * f * half,
           origin.x + d.x * len, origin.y + d.y * len, origin.z + d.z * len], j);
       }
       this.lines.geometry.attributes.position.needsUpdate = true;
@@ -209,6 +211,7 @@ export class SfxSystem {
     this.lasers = new Map();     // head -> LaserFan
     this._o = new THREE.Vector3();
     this._d = new THREE.Vector3();
+    this._a = new THREE.Vector3();
   }
 
   /** One frame.  Returns true while anything is still moving. */
@@ -226,7 +229,9 @@ export class SfxSystem {
           if (!fan) this.lasers.set(head, (fan = new LaserFan(this.scene)));
           em.node.getWorldPosition(this._o);
           this._d.copy(em.dir).transformDirection(em.node.matrixWorld).normalize();
-          fan.update(this._o, this._d, fx, time, reach);
+          // a beam bar: the beams spread along the bar, however it hangs
+          const axis = em.bar ? this._a.set(1, 0, 0).transformDirection(em.node.matrixWorld) : null;
+          fan.update(this._o, this._d, fx, time, reach, axis, em.bar || 0.3);
           busy = true;
         } else if (fan) fan.hide();
         continue;

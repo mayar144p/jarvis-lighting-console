@@ -493,6 +493,95 @@ class RigMixin:
                 return h["yaw"]
         return float(h.get("yaw") or 0.0)
 
+    # -- lights left in mid air ---------------------------------------------
+    def _floating(self) -> tuple[list[dict], list[dict]]:
+        """(hung lights nothing holds - no truss, pipe or ceiling within reach;
+        floor-standing things up in the air with nothing under them).  A
+        show built before its venue (or moved about by hand) ends up like
+        this: in the 3D they float, and a lighting plot of it is wrong."""
+        nv = venue_mod.normalise(self.venue)
+        room = nv.get("room") or {}
+        hung, standing = [], []
+        for h in self.patch:
+            if isinstance(h.get("mount"), dict):
+                continue
+            x, y, z = float(h.get("x") or 0), float(h.get("y") or 0), float(h.get("z") or 0)
+            if venue_mod.nearest_rig(nv, x, y, z, reach=0.8):
+                continue
+            if h.get("stance") == "hang" or (h.get("kind") == "truss" and h.get("stance") != "stand"):
+                if room.get("height") and venue_mod.ceiling_at(nv, x, z) - y < 0.8:
+                    continue                                    # (on the ceiling)
+                hung.append(h)
+            elif y > 0.3 and not self._something_under(nv, x, y, z):
+                standing.append(h)
+        return hung, standing
+
+    @staticmethod
+    def _something_under(nv: dict, x: float, y: float, z: float) -> bool:
+        """Is there a table, booth, stage or riser top within 0.3 m under a point?"""
+        st = nv.get("stage") or {}
+        if st and st.get("height") and abs(float(st["height"]) - y) < 0.3:
+            return True
+        for o in nv.get("objects") or []:
+            w, d = float(o.get("w") or 0), float(o.get("d") or 0)
+            if int(round(float(o.get("rot") or 0) / 90)) % 2:
+                w, d = d, w
+            top = float(o.get("y") or 0) + float(o.get("h") or 0)
+            if abs(x - float(o.get("x") or 0)) <= w / 2 + 0.1 and abs(z - float(o.get("z") or 0)) <= d / 2 + 0.1 \
+                    and abs(top - y) < 0.3:
+                return True
+        return False
+
+    def _a_fix_floating(self, **_):
+        """Ready? -> Fix: hung lights in mid air get a truss along them (one
+        per row, at the height they hang, so they don't move up or down);
+        floor-standing things up in the air get a stand under them."""
+        hung, standing = self._floating()
+        if not hung and not standing:
+            return {"summary": "nothing is floating"}
+        # rows: the same height, and in a line along the room or across it
+        rows: list[list[dict]] = []
+        for h in sorted(hung, key=lambda h: (round(h["y"], 1), h["x"], h["z"])):
+            for row in rows:
+                y0 = row[0]["y"]
+                if abs(h["y"] - y0) > 0.25:
+                    continue
+                if all(abs(h["x"] - r["x"]) < 0.4 for r in row) or all(abs(h["z"] - r["z"]) < 0.4 for r in row):
+                    row.append(h)
+                    break
+            else:
+                rows.append([h])
+        made = []
+        for row in rows:
+            xs, zs = [h["x"] for h in row], [h["z"] for h in row]
+            along_z = (max(zs) - min(zs)) >= (max(xs) - min(xs))
+            span = (max(zs) - min(zs)) if along_z else (max(xs) - min(xs))
+            y = sum(h["y"] for h in row) / len(row)
+            nums = sorted(h["head_no"] for h in row)
+            name = f"Truss for #{nums[0]}" + (f"-#{nums[-1]}" if len(nums) > 1 else "")
+            r = self._a_rig_add(preset="straight", piece="box30", x=sum(xs) / len(xs), z=sum(zs) / len(zs),
+                                length=max(1.0, span + 0.8), rot=90 if along_z else 0, trim=round(y + 0.05, 3), name=name)
+            rig = venue_mod.rig(self.venue, r["id"])
+            for h in row:
+                t, _q = venue_mod.curve_nearest(rig, (h["x"], h["y"], h["z"]))
+                h["mount"] = {"rig": rig["id"], "t": round(t, 4)}
+                h["stance"] = "hang"
+            made.append(name)
+        for h in standing:
+            # a stand under it, as tall as it is high: it stays where it is
+            r = self._a_rig_add(preset="stand", piece="stand", x=h["x"], z=h["z"], height=max(0.5, h["y"]),
+                                name=f"Stand for #{h['head_no']}")
+            h["mount"] = {"rig": r["id"], "t": 1.0}
+            h["stance"] = "stand"
+        self._reflow_mounts()
+        self.patch_rev += 1
+        bits = []
+        if made:
+            bits.append(f"{len(hung)} hung light(s) on {len(made)} new truss(es)")
+        if standing:
+            bits.append(f"{len(standing)} on a stand at the height it was")
+        return {"trusses": made, "floor": [h["head_no"] for h in standing], "summary": "; ".join(bits)}
+
     def _reflow_mounts(self) -> list[int]:
         """Put every mounted head back on its rig (after a rig moved), and
         let go of mounts whose rig was removed."""

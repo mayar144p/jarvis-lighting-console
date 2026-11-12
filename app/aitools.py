@@ -29,7 +29,7 @@ MORE = (
     "nudge", "flip", "mirror_pan", "pad_info", "paperwork", "park", "patch_move_free", "place_many", "playback_mode",
     "quick_colour_row", "quick_group_controls", "quick_edit", "quick_fader", "quick_from_programmer", "quick_update", "quick_layout", "quick_move", "quick_page", "quick_press", "quick_profile", "quick_profile_use", "quick_style",
     "quick_quant", "quick_rate", "quick_release_all", "playback_release_all", "quick_xy", "ready_check", "rename_cue",
-    "rename_preset", "rig_add", "rig_pieces", "rig_report", "rig_trim", "run_media", "select_split",
+    "rename_preset", "rig_add", "fix_floating", "rig_pieces", "rig_report", "rig_trim", "run_media", "select_split",
     "show_versions", "sound_link", "sound_tempo", "sound_trigger", "step_capture", "step_fx_save",
     "tempo_nudge", "tempo_sync", "tempo_tap", "timeline_clip", "timeline_set", "timeline_track",
     "unpark", "venue_add", "venue_align", "venue_array", "venue_camera", "venue_ceiling",
