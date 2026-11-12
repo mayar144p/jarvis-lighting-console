@@ -849,7 +849,10 @@ on its side shows each page in your own grid, the same as on the desk.
 a phone in a pocket can't set them off. Turning one off is instant. **Release
 all** is a hold too. The screen stays on while the remote is open (after the
 first tap). A phone opening the desk's own address gets the remote by itself.
-A tablet can still open the whole desk: ⋯ → **Full desk**. **New code** (in
+A tablet can still open the whole desk: ⋯ → **Full desk**.
+⋯ also hides a tab you don't use on that phone (for example **Timeline tab →
+hidden**): each phone or tablet keeps its own choice, and **Buttons** always
+stays. **New code** (in
 Desk → Other computers, phones and tablets) signs every phone out.
 
 ## Connecting a rig (Art-Net / sACN)

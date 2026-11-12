@@ -136,6 +136,22 @@ console.log("Faders");
   const g2 = (await lite()).group_masters || {};
   check("moving a group's fader sets that group's master at the desk", Object.values(g2).includes(40) && JSON.stringify(g) !== JSON.stringify(g2), JSON.stringify(g2));
   check("no sideways scroll on the Faders tab", !(await pf.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)));
+  // hidden on this phone from the ⋯ menu, and still hidden after a reload
+  await pf.locator("#rm-more").click(); await sleep(300);
+  await pf.locator(".rm-menu .rm-tabtoggle", { hasText: "Faders" }).click(); await sleep(400);
+  const before = ((await lite()).quick_active || []).length;
+  // (a tile clear of the menu, which opens at the top right)
+  const tileUnder = await pf.locator("#rm-grid .rm-btn").first().boundingBox();
+  await pf.mouse.click(tileUnder.x + tileUnder.width / 2, tileUnder.y + tileUnder.height / 2); await sleep(500);
+  check("a tap outside the ⋯ menu closes it without pressing the button under it",
+    await pf.locator(".rm-menu").count() === 0 && ((await lite()).quick_active || []).length === before);
+  check("⋯ → Faders tab hides it on this phone (back to Buttons)", await pf.locator("#rm-views .rm-view", { hasText: "Faders" }).count() === 0
+    && await pf.locator("#rm-grid .rm-btn").count() > 0);
+  await pf.reload(); await sleep(1800);
+  check("...and it stays hidden after a reload", await pf.locator("#rm-views .rm-view", { hasText: "Faders" }).count() === 0);
+  await pf.locator("#rm-more").click(); await sleep(300);
+  await pf.locator(".rm-menu .rm-tabtoggle", { hasText: "Faders" }).click(); await sleep(400);
+  check("...and comes back when shown again", await pf.locator("#rm-views .rm-view", { hasText: "Faders" }).count() === 1);
   await ctx2.close();
 }
 

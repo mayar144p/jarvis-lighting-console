@@ -139,9 +139,23 @@ try { view = sessionStorage.getItem("haze.remote.view") || "buttons"; } catch (e
 const playbacksWithCues = () => ((snap && snap.playbacks) || []).filter((p) => (p.stack || []).length);
 const timelineHasClips = () => (((snap && snap.timeline) || {}).tracks || []).some((t) => (t.clips || []).length);
 const groupsThere = () => (snap && snap.groups) || [];
-function viewsThere() {
+// the tabs the show has (Buttons always)
+function viewsInShow() {
   return [["buttons", "Buttons"], groupsThere().length ? ["faders", "Faders"] : null,
     playbacksWithCues().length ? ["cues", "Cues"] : null, timelineHasClips() ? ["timeline", "Timeline"] : null].filter(Boolean);
+}
+// ...less the ones hidden on this phone (⋯ → Tabs on this phone; kept on the device, so
+// each phone or tablet can show its own)
+const HIDE_KEY = "haze.remote.hide";
+let hidden = [];
+try { hidden = JSON.parse(localStorage.getItem(HIDE_KEY) || "[]"); } catch (e) { hidden = []; }
+function setHidden(v, hide) {
+  hidden = hide ? [...new Set([...hidden, v])] : hidden.filter((x) => x !== v);
+  try { localStorage.setItem(HIDE_KEY, JSON.stringify(hidden)); } catch (e) { /* this visit only */ }
+  render(true);
+}
+function viewsThere() {
+  return viewsInShow().filter(([k]) => k === "buttons" || !hidden.includes(k));
 }
 function setView(v) {
   view = v;
@@ -680,17 +694,35 @@ function installTip() {
 
 $("#rm-more").addEventListener("click", () => {
   const old = $(".rm-menu");
-  if (old) { old.remove(); return; }
-  const close = () => m.remove();
+  if (old) { old.close(); return; }
+  // a tap outside closes the menu, and only closes it - it must not also
+  // press the button under the finger (switching a tab on or off keeps it open)
+  const outside = (e) => {
+    if (m.contains(e.target) || e.target.closest("#rm-more")) return;
+    e.preventDefault(); e.stopPropagation();
+    close();
+  };
+  const close = () => { m.remove(); document.removeEventListener("pointerdown", outside, true); };
   const m = h("div.rm-menu", {},
     canFull() ? h("button", { type: "button", onclick: () => { close(); toggleFull(); } }, "⛶ Full screen") : null,
     standalone() ? null : h("button", { type: "button", onclick: () => { close(); note(installTip()); } }, "📱 Put it on the home screen"),
+    // the show's other tabs, each shown or hidden on this phone
+    ...viewsInShow().filter(([k]) => k !== "buttons").map(([k, label]) => h("button.rm-tabtoggle" + (hidden.includes(k) ? "" : ".on"), {
+      type: "button", "aria-pressed": String(!hidden.includes(k)),
+      onclick: (e) => {
+        setHidden(k, !hidden.includes(k));
+        const on = !hidden.includes(k);
+        e.currentTarget.classList.toggle("on", on);
+        e.currentTarget.setAttribute("aria-pressed", String(on));
+        e.currentTarget.querySelector("span").textContent = on ? "shown" : "hidden";
+      } }, `${label} tab`, h("span", hidden.includes(k) ? "hidden" : "shown"))),
     h("button", { type: "button", onclick: () => { close(); render(true); } }, "↻ Redraw"),
     // a big tablet can run the whole desk (patch, programmer, the 3D)
     Math.min(screen.width, screen.height) >= 600 ? h("button", { type: "button", onclick: () => { location.href = "/?desk=1" + (code ? "&code=" + encodeURIComponent(code) : ""); } }, "🖥 Full desk") : null,
     h("button", { type: "button", onclick: () => { close(); forget(); } }, "Sign out of this desk"));
+  m.close = close;
   document.body.append(m);
-  setTimeout(() => document.addEventListener("pointerdown", (e) => { if (!m.contains(e.target)) close(); }, { once: true }), 0);
+  setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
 });
 
 // first visit in a browser (not from the home screen): one hint how to make it full screen
