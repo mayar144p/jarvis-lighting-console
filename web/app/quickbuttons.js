@@ -7,6 +7,7 @@
 // looks (its name and tile colour).  Pages have names; in Edit, drag a
 // button onto another slot to move it.  Pressing is live (never an undo
 // step); setting a button up is an edit, saved with the show.
+import { groupColour } from "./groupcolour.js";
 import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
@@ -701,12 +702,12 @@ function renderSideFaders() {
   applyStripLook();
   if (!$("#qb").classList.contains("qb-full")) { if (sideKey) { box.replaceChildren(); sideKey = ""; sideFaders.clear(); } return; }
   const groups = ((state.snap && state.snap.groups) || []).slice(0, 16);
-  const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
+  const key = JSON.stringify(groups.map((g) => [g.n, g.name, g.colour]));
   if (key !== sideKey) {
     sideKey = key;
     sideFaders.clear();
     // a wide slider each: the whole name shows, and the buttons keep the width
-    const one = (id, name, title, send) => {
+    const one = (id, name, title, send, colour = null) => {
       const num = h("output.mono");
       const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title }));
       const go = throttle((v) => send(v), 60);
@@ -715,17 +716,19 @@ function renderSideFaders() {
       inp.addEventListener("dblclick", () => { inp.value = 100; inp.dispatchEvent(new Event("input")); inp.dispatchEvent(new Event("change")); });
       const f = { set: (v) => { if (!inp.dataset.busy) { inp.value = v; faderFill(inp); } } };
       sideFaders.set(id, { f, num });
-      return h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
+      const row = h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
         h("span.qb-side-top", h("b", name), num), inp);
+      if (colour) row.style.setProperty("--accent", colour);      // the group's colour, as on the dock
+      return row;
     };
     const gear = h("button.qmini.qb-strip-gear", { title: "Where the sliders sit, which way they run, how long they are",
       onclick: (e) => { e.stopPropagation(); stripMenu(e.currentTarget); } }, "⚙");
-    box.replaceChildren(gear, ...groups.map((g) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
+    box.replaceChildren(gear, ...groups.map((g, i) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
       const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
       if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
       if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
       run("group_master", { group: g.n, level: v }, { silentError: true });
-    })), one("gm", "GM", "Grand master: every light", (v) => {
+    }, groupColour(g, i))), one("gm", "GM", "Grand master: every light", (v) => {
       if (state.snap) state.snap.master = v;
       if (state.lite) state.lite.master = v;
       run("master", { level: v }, { silentError: true });

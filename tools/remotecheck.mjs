@@ -41,6 +41,8 @@ await B(1, 15, { kind: "sfx", label: "CO2", mode: "tap", target: { type: "co2" }
 await B(1, 25, { kind: "fader", label: "Strobe speed", control: { what: "master" } });
 await B(2, 1, { kind: "label", label: "VIP" });
 await B(2, 2, { kind: "colour", label: "Blue", mode: "latch", colour: "#0040ff", target: { all: true } });
+await act("group_create", { name: "Left Stage", heads: [1, 2] });
+await act("group_create", { name: "Right Stage", heads: [3, 4] });
 await act("quick_layout", { page: 1, cols: 12, rows: 4 }).catch(() => {});
 await act("quick_layout", { page: 2, cols: 12, rows: 4 }).catch(() => {});
 
@@ -115,6 +117,48 @@ await p.evaluate(() => {
 await sleep(500);
 check("a swipe turns the page", await p.locator('#rm-pages .rm-tab.on[data-p="2"]').count() === 1);
 await ctx.close();
+
+console.log("Faders");
+{
+  const ctx2 = await browser.newContext(dev(375, 667));
+  const pf = await ctx2.newPage();
+  await pf.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pf.goto(BASE + "remote.html"); await sleep(1800);
+  const tab = pf.locator("#rm-views .rm-view", { hasText: "Faders" });
+  check("a Faders tab when the show has groups", await tab.count() === 1);
+  await tab.click(); await sleep(500);
+  const names = await pf.locator(".rm-fader b").allInnerTexts();
+  check("the grand master and a fader per group", names.join("|") === "Grand master|Left Stage|Right Stage", names.join("|"));
+  const g = (await lite()).group_masters || {};
+  const right = pf.locator('.rm-fader[data-key^="g"] input').nth(1);
+  await right.evaluate((el) => { el.value = 40; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); });
+  await sleep(700);
+  const g2 = (await lite()).group_masters || {};
+  check("moving a group's fader sets that group's master at the desk", Object.values(g2).includes(40) && JSON.stringify(g) !== JSON.stringify(g2), JSON.stringify(g2));
+  check("no sideways scroll on the Faders tab", !(await pf.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)));
+  await ctx2.close();
+}
+
+console.log("Group colours: the desk and the phone match");
+{
+  const desk = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await desk.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.noLockAsk", "1"); } catch (e) { /* fine */ } });
+  await desk.goto(BASE); await sleep(3000);
+  const dots = desk.locator("#grp-masters .m-colour");
+  check("each group fader on the desk has its colour dot", await dots.count() === 2, String(await dots.count()));
+  await dots.nth(1).click(); await sleep(300);
+  await desk.locator(".menu button", { hasText: "Red" }).click(); await sleep(800);
+  const snapG = await fetch(BASE + "api/console").then((r) => r.json()).then((j) => (j.groups || []).find((g) => g.name === "Right Stage"));
+  check("picking Red saves it with the group", snapG && snapG.colour === "#ef4444", JSON.stringify(snapG));
+  const fill = await desk.locator("#grp-masters .master.grp").nth(1).evaluate((el) => getComputedStyle(el).getPropertyValue("--accent").trim());
+  check("...and the desk's fader turns red", fill === "#ef4444", fill);
+  const ph2 = await (await browser.newContext(dev(390, 844))).newPage();
+  await ph2.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await ph2.goto(BASE + "remote.html"); await sleep(1500);
+  await ph2.locator("#rm-views .rm-view", { hasText: "Faders" }).click(); await sleep(500);
+  const tint = await ph2.locator('.rm-fader').nth(2).evaluate((el) => el.style.getPropertyValue("--tint"));
+  check("the phone's Right Stage fader is red too", tint.replace(/\s/g, "") === "rgb(239,68,68)", tint);
+}
 
 console.log("A phone opening the desk");
 const ph = await browser.newContext(dev(390, 844));

@@ -230,6 +230,11 @@ A group is a set of lights you pick often (the back truss, the floor PARs).
 3. Its chip selects them again. A group's **⋯** (or a right-click on its chip):
    **Add the selected lights**, **Take the selected lights out**, **Rename…**,
    **Delete group…**. Buttons and faders that use the group follow the change.
+4. Each group gets a **fader** next to the masters at the bottom: its lights at
+   that share of whatever they are doing. Each fader has its own colour. Click
+   the **dot under its name** (or right-click the name) to pick another: twelve
+   to choose from, **Any colour…**, or **Its own colour again**. The phone
+   remote's **Faders** tab shows the same colours.
 
 ### Palettes
 
@@ -823,7 +828,8 @@ blackout for the intro) and you decide.
 
 *Where:* Settings → Phone & tablet
 
-Play the show from a phone or tablet: your button pages, **Cues** and
+Play the show from a phone or tablet: your button pages, **Faders** (the grand
+master and a fader per group, in the groups' colours), **Cues** and
 **Timeline** (when the show has them), and **Blackout**, the **Master** and
 **Release all** along the bottom. The remote can't edit the show.
 

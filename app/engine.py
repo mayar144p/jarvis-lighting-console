@@ -1391,8 +1391,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
                                 span=list(self._move_span(h)) if ("pan" in h["map"] or "tilt" in h["map"]) else None)
                           for h in self.patch],
                 "patch_rev": self.patch_rev,
-                "groups": [{"n": g["n"], "name": g["name"],
-                            "heads": list(g["heads"])} for g in self.groups],
+                "groups": [{"n": g["n"], "name": g["name"], "heads": list(g["heads"]),
+                            **({"colour": g["colour"]} if g.get("colour") else {})} for g in self.groups],
                 "palettes": {k: [dict(p) for p in v]
                              for k, v in self.palettes.items()},
                 "presets": [dict(p) for p in self.presets],
@@ -1491,8 +1491,8 @@ class Engine(PatchMixin, SelectMixin, AttrMixin, RigMixin, QuickMixin, QuickPage
                 "palettes": {k: [dict(p) for p in v]
                              for k, v in self.palettes.items()},
                 "presets": [dict(p) for p in self.presets],
-                "groups": [{"n": g["n"], "name": g["name"],
-                            "heads": list(g["heads"])} for g in self.groups],
+                "groups": [{"n": g["n"], "name": g["name"], "heads": list(g["heads"]),
+                            **({"colour": g["colour"]} if g.get("colour") else {})} for g in self.groups],
                 "playbacks": [{"n": pb["n"], "active": pb["active"],
                                "level": pb["level"], "index": pb["index"],
                                "cue": self._pb_cue(pb),

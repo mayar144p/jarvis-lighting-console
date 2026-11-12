@@ -6,6 +6,8 @@ Engine and every other part is reachable through it.
 """
 from __future__ import annotations
 
+import re
+
 import json
 
 from app import fixture_kind, fixtures
@@ -47,11 +49,22 @@ class SelectMixin:
         return g
 
     def _a_group_edit(self, n=None, group=None, name=None, add=None, remove=None,
-                      heads=None, **_):
+                      heads=None, colour=None, **_):
         """Change a group after it exists: rename it, add or take out lights
         (`True` means the selection), or set exactly which lights are in it.
-        Buttons, faders and sound links that use the group follow."""
+        Buttons, faders and sound links that use the group follow.
+        `colour` (#rrggbb) is its fader's colour on the desk and the phone
+        remote; "" gives it back its own (picked by its place in the list)."""
         g = self._group(n, group)
+        if colour is not None and name is None and add is None and remove is None and heads is None:
+            c = str(colour).strip().lower()
+            if c in ("", "none", "auto"):
+                g.pop("colour", None)
+                return {"n": g["n"], "colour": None, "summary": f"{g['name']}: its own colour again"}
+            if not re.fullmatch(r"#[0-9a-f]{6}", c):
+                raise ValueError("colour must look like #ff8800")
+            g["colour"] = c
+            return {"n": g["n"], "colour": c, "summary": f"{g['name']}: fader colour {c}"}
 
         def listed(v) -> list[int]:
             if v is True or v == "selection":
