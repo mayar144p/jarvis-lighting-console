@@ -39,6 +39,7 @@ _MIME = {
     ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
     ".jpg": "image/jpeg", ".woff2": "font/woff2", ".glb": "model/gltf-binary",
     ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json", ".mp4": "video/mp4",
 }
 
 # One GDTF Share client for the process.  It owns the session cookie, so
@@ -1326,6 +1327,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def _api_get(self, route: str, query: dict) -> None:
+        if route == "/api/remote":
+            # the phone remote's address and code, for the desk's QR code
+            # (app/remote.py) - only to a screen that is already signed in
+            from app import remote
+            return self._json(remote.info())
         if route == "/api/status":
             status = config.status()
             # the AI switch (Settings -> AI): online, local or auto

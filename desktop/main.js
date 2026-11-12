@@ -839,7 +839,8 @@ async function phonesDialog() {
     title: "Other computers, phones and tablets", type: "info", buttons, primary: 0, cancel: 0, danger: 2,
     message: `Pairing code: ${showCode(d.code)}`,
     detail: (addrs.length ? `On the other computer, phone or tablet, open:\n${addrs.map(where).join("\n")}\nthen type the code. A computer gets the whole desk.`
-      + `\n\nJust the faders and buttons (a remote in your hand):\n  http://${addrs[0]}:${port}/?window=playbacks`
+      + `\n\nA phone or tablet as a remote (buttons, cues, timeline, blackout):\n  http://${addrs[0]}:${port}/remote.html`
+      + "\nor scan the QR code in the desk: Settings → Phone & tablet. A phone opening the desk's address gets the remote by itself."
       : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the other device.")
       + (fwOk ? "" : "\n\nIf the page doesn't load on the other device, Windows Firewall is blocking it: press \"Let it through Windows Firewall\" (Windows asks for permission once).")
       + "\n\n\"New code\" signs every other device out.",

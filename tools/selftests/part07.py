@@ -530,16 +530,18 @@ def test_steady_dmx() -> None:
 
 
 def test_desktop_only() -> None:
-    """Desktop only: the phone / tablet parts are gone (wake lock, install
-    as an app, the phone layout, the DJ-booth remote page); a dead link
-    (the computer slept, changed Wi-Fi) is still noticed and re-synced."""
+    """The desk is desktop only: no phone layout squeezed into it (a phone
+    gets the separate remote, web/remote.html, with its own manifest);
+    a dead link (the computer slept, changed Wi-Fi) is still noticed and
+    re-synced."""
     print("desktop only")
     web = ROOT / "web"
     html = (web / "index.html").read_text(encoding="utf-8")
     css = (web / "app" / "app.css").read_text(encoding="utf-8")
-    check("no manifest, tablet module or remote page",
+    check("the desk has no manifest or tablet module; the phone remote is its own page",
           not (web / "manifest.webmanifest").exists() and not (web / "app" / "tablet.js").exists()
-          and not (web / "remote.html").exists() and 'rel="manifest"' not in html and "apple-touch-icon" not in html, "")
+          and 'rel="manifest"' not in html and "apple-touch-icon" not in html
+          and (web / "remote.html").exists() and (web / "remote" / "manifest.webmanifest").exists(), "")
     check("no phone layout: no bottom tabs, no narrow-screen rules, a desktop minimum width",
           "mobile-tabs" not in html and "mobile-tabs" not in css and "min-width: 1280px;" in css
           and "(max-width: 820px)" not in css, "")

@@ -40,5 +40,6 @@
 *.ico     binary
 *.pdf     binary
 *.zip     binary
+*.mp4     binary
 *.gz      binary
 web/vendor/** -text
