@@ -835,15 +835,30 @@ master and a fader per group, in the groups' colours), **Cues** and
 
 1. Let phones in: **Desk → Other computers, phones and tablets…** (the desk
    restarts once and shows a pairing code).
-2. **Settings → Phone & tablet** shows a **QR code**. Scan it with the phone's
-   camera on the same Wi-Fi and the remote opens, signed in. No camera? Type the
-   address shown there and the pairing code.
-3. **Full screen like an app:** on an iPhone or iPad tap Share → **Add to Home
-   Screen**, then open Haze from its icon. On Android use Chrome ⋮ → **Add to
-   Home screen**, or ⋯ → **Full screen** in the remote.
+2. The **phone button** in the top bar (or Desk → Other computers, phones and
+   tablets → **Show the QR code for phones**) shows a big **QR code**. Scan it
+   with the phone's camera on the same Wi-Fi and the remote opens, signed in.
+   No camera? Type the address shown there and the pairing code.
+3. **On the home screen:** on an iPhone or iPad tap Share → **Add to Home
+   Screen**; on Android Chrome ⋮ → **Add to Home screen**. It's named after the
+   venue (or the show) - type another name in that box if you like. On Android
+   it goes full screen at your first touch (⋯ → *Full screen on the first
+   touch* turns that off).
 
-On a phone the buttons are big tiles under their headings, three across
-(more with the phone on its side). Swipe left or right to change page. A tablet
+**One icon for every venue.** A desk letting phones in also answers to the
+name **haze.local** on the network, whatever its address there. The remote,
+opened from the QR code, moves itself to that name when the phone can reach
+it - add it to the home screen after that, and the same icon opens the desk at
+any venue, on any Wi-Fi, with nothing to scan. iPhones and iPads find the name;
+some Android phones can't, and the remote says so once - there, scan the QR
+code again at a new venue. A Wi-Fi that keeps its devices apart (some hotel and
+venue guest networks) hides the name; use your own router or a hotspot. A
+second Haze desk on the same network becomes haze-2.local.
+
+On a phone the buttons are big tiles under their headings, three across.
+With the phone on its side the tabs and pages go down the left and Blackout,
+the Master (standing up) and Release all down the right, so the buttons get
+the whole height. Swipe left or right to change page. A tablet
 on its side shows each page in your own grid, the same as on the desk.
 **CO2, confetti, sparks, flames, fog and lasers** need a short hold to fire, so
 a phone in a pocket can't set them off. Turning one off is instant. **Release
@@ -851,8 +866,10 @@ all** is a hold too. The screen stays on while the remote is open (after the
 first tap). A phone opening the desk's own address gets the remote by itself.
 A tablet can still open the whole desk: ⋯ → **Full desk**.
 **⋯ → Arrange buttons on this phone** lets a phone lay out each page its own
-way: drag a tile or a heading to move it (hold it at the top or bottom edge
-and the page scrolls along), **⤢** makes a tile normal, wide, big or a whole
+way: drag a tile or a heading to move it - it lifts under your finger, a
+dashed slot shows where it will land and the others slide aside once your
+finger rests there (hold it at the top or bottom edge and the page scrolls
+along), **⤢** makes a tile normal, wide, big or a whole
 row, **hide** takes it off that phone. **Done** keeps it on the phone; the
 desk's buttons don't change. **Desk's layout** puts the page back as the desk
 has it. A button added on the desk later shows at the end of the page.

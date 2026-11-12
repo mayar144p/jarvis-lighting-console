@@ -179,15 +179,20 @@ const isVpn = (a) => !isLan(a) && !isTailscale(a);
 // computer.  One rule for the desk's port, from this network and Tailscale
 // only (never the open internet), added after Windows' admin prompt.
 const fwName = (port) => `Haze desk (port ${port})`;
+// and the desk's name on the network (haze.local, app/mdns.py): phones ask for it on UDP 5353
+const FW_NAME_RULE = "Haze desk (its name on the network)";
+const fwRule = (name) => process.platform !== "win32"
+  || spawnSync("netsh", ["advfirewall", "firewall", "show", "rule", `name=${name}`], { windowsHide: true }).status === 0;
 function firewallHasRule(port) {
-  if (process.platform !== "win32") return true;
-  const r = spawnSync("netsh", ["advfirewall", "firewall", "show", "rule", `name=${fwName(port)}`], { windowsHide: true });
-  return r.status === 0;
+  return fwRule(fwName(port)) && fwRule(FW_NAME_RULE);
 }
 function firewallAllow(port) {
-  const args = `advfirewall firewall add rule name="${fwName(port)}" dir=in action=allow protocol=TCP localport=${port} profile=any remoteip=LocalSubnet,100.64.0.0/10`;
-  // the admin prompt: netsh started elevated by PowerShell, waited for
-  const ps = `Start-Process -FilePath netsh -ArgumentList '${args.replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden`;
+  const rules = [];
+  if (!fwRule(fwName(port))) rules.push(`netsh advfirewall firewall add rule name="${fwName(port)}" dir=in action=allow protocol=TCP localport=${port} profile=any remoteip=LocalSubnet,100.64.0.0/10`);
+  if (!fwRule(FW_NAME_RULE)) rules.push(`netsh advfirewall firewall add rule name="${FW_NAME_RULE}" dir=in action=allow protocol=UDP localport=5353 profile=any remoteip=LocalSubnet`);
+  if (!rules.length) return true;
+  // the admin prompt (once, for both): the rules added by an elevated cmd, waited for
+  const ps = `Start-Process -FilePath cmd.exe -ArgumentList '/c ${rules.join(" & ").replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden`;
   spawnSync("powershell.exe", ["-NoProfile", "-Command", ps], { windowsHide: true });
   return firewallHasRule(port);
 }

@@ -44,6 +44,17 @@ try {
     history.replaceState(null, "", u.pathname + u.search + u.hash);
   }
 } catch (e) { /* ignore */ }
+// moved here from the desk's address (see moveToName): this phone's layout,
+// hidden tabs and switches come along in the link, once
+try {
+  if (location.hash.startsWith("#carry=")) {
+    const got = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(7).replace(/-/g, "+").replace(/_/g, "/")))));
+    for (const [k, v] of Object.entries(got || {})) {
+      if (typeof k === "string" && k.startsWith("haze.remote.") && typeof v === "string" && localStorage.getItem(k) === null) localStorage.setItem(k, v);
+    }
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+} catch (e) { /* nothing to carry */ }
 const CLIENT = Math.random().toString(36).slice(2, 10);
 const headers = (json) => ({ ...(json ? { "Content-Type": "application/json" } : {}), "X-Haze-Client": "remote-" + CLIENT, ...(code ? { "X-Haze-Token": code } : {}) });
 
@@ -117,6 +128,7 @@ function onEvent(ev, d) {
 }
 
 function setLink(on) {
+  if (on && !connected) setTimeout(moveToName, 400);
   connected = on;
   $("#rm-dot").classList.toggle("on", on);
   $("#rm-dot").title = on ? "Connected to the desk" : "Not connected";
@@ -483,7 +495,9 @@ function place(el, size, cols) {
 // phone: one grid, each heading a title across it, the tiles under it big
 // (three across upright, more on its side)
 function flowGrid(bs, w, gridCols) {
-  const cols = Math.max(3, Math.min(6, Math.floor((w - 16) / 108)));
+  // (arranging on a phone on its side: wider tiles, so their size / hide chips read whole)
+  const side = arranging && innerWidth > innerHeight && innerHeight <= 520;
+  const cols = Math.max(side ? 2 : 3, Math.min(6, Math.floor((w - 16) / (side ? 150 : 108))));
   const plan = phonePlan(defaultPlan(bs, gridCols), pageLayout(page));
   const box = h("div.rm-flow" + (arranging ? ".arranging" : ""));
   box.style.setProperty("--cols", cols);
@@ -536,45 +550,87 @@ function setArranging(on) {
   $("#rm-arrange-bar").hidden = !on;
   render(true);
 }
-// drag a tile or a heading: it follows the finger and the others make room;
-// held near the top or bottom, the page scrolls on by itself
+// drag a tile or a heading: a lifted copy follows the finger, a dashed slot
+// shows where it lands, and the others slide out of the way (not jump).  The
+// slot only moves once the finger settles over a new place for a moment, so
+// passing over tiles on the way doesn't shuffle the page; let go and the
+// copy glides into the slot.  Near the top or bottom the page scrolls on.
 (() => {
   const grid = $("#rm-grid");
+  const SETTLE = 110, SLIDE = 200;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let drag = null;
-  const follow = () => {
-    const { el, cx, cy } = drag;
-    el.style.transform = `translate(${cx - drag.x}px, ${cy - drag.y}px)`;
+  // FLIP: where each tile was, then slide it from there to its new place
+  const rects = () => new Map([...grid.querySelectorAll("[data-aid]")].map((x) => [x, x.getBoundingClientRect()]));
+  const slide = (was) => {
+    if (reduce) return;
+    for (const [x, r0] of was) {
+      if (x === drag.el) continue;
+      const r1 = x.getBoundingClientRect();
+      const dx = r0.left - r1.left, dy = r0.top - r1.top;
+      if (!dx && !dy) continue;
+      x.style.transition = "none";
+      x.style.transform = `translate(${dx}px, ${dy}px)`;
+      x.getBoundingClientRect();                       // (the start position takes)
+      x.style.transition = `transform ${SLIDE}ms cubic-bezier(.2,.8,.2,1)`;
+      x.style.transform = "";
+    }
+  };
+  // where the slot would go for the finger at (cx, cy): before or after the tile under it
+  const target = (cx, cy) => {
+    const g = drag.ghost;
+    g.style.visibility = "hidden";
     const under = document.elementFromPoint(cx, cy);
+    g.style.visibility = "";
     const t = under && under.closest("#rm-grid [data-aid]");
-    if (!t || t === el) return;
+    if (!t || t === drag.el) return null;
     const r = t.getBoundingClientRect();
     const after = t.classList.contains("rm-head") ? cy > r.top + r.height / 2
       : (cy > r.bottom - r.height / 4) || (cx > r.left + r.width / 2 && cy > r.top + r.height / 4);
-    if ((after ? t.nextSibling : t) === el) return;
-    const before = el.getBoundingClientRect();
-    t.parentNode.insertBefore(el, after ? t.nextSibling : t);
-    const now = el.getBoundingClientRect();          // keep it under the finger after it moved in the grid
-    drag.x += now.left - before.left; drag.y += now.top - before.top;
-    el.style.transform = `translate(${cx - drag.x}px, ${cy - drag.y}px)`;
+    const ref = after ? t.nextSibling : t;
+    return ref === drag.el || (ref && ref === drag.el.nextSibling && !after && t === drag.el.nextSibling) ? null : { t, after };
+  };
+  const follow = () => {
+    const d = drag;
+    d.ghost.style.transform = `translate(${d.cx - d.gx}px, ${d.cy - d.gy}px) scale(1.06)`;
+    const want = target(d.cx, d.cy);
+    const key = want ? want.t.dataset.aid + (want.after ? ">" : "<") : "";
+    if (key !== d.want) { d.want = key; d.since = performance.now(); }
+    if (!want || performance.now() - d.since < SETTLE) return;
+    const was = rects();
+    want.t.parentNode.insertBefore(d.el, want.after ? want.t.nextSibling : want.t);
+    d.want = "";
+    slide(was);
+    if (navigator.vibrate) navigator.vibrate(4);
   };
   const tick = () => {
     if (!drag || !drag.on) return;
     const g = grid.getBoundingClientRect();
     const step = drag.cy < g.top + 60 ? -Math.ceil((g.top + 60 - drag.cy) / 4) : drag.cy > g.bottom - 60 ? Math.ceil((drag.cy - g.bottom + 60) / 4) : 0;
-    if (step) {
-      const was = grid.scrollTop;
-      grid.scrollTop += Math.max(-24, Math.min(24, step));
-      drag.y -= grid.scrollTop - was;                // the tile stays under the finger as the page moves
-      follow();
-    }
+    if (step) grid.scrollTop += Math.max(-24, Math.min(24, step));
+    follow();                                          // (also: the finger resting still settles the slot)
     drag.raf = requestAnimationFrame(tick);
+  };
+  const lift = () => {
+    const d = drag, r = d.el.getBoundingClientRect();
+    const ghost = d.el.cloneNode(true);
+    ghost.classList.add("rm-ghost");
+    ghost.removeAttribute("data-aid");
+    Object.assign(ghost.style, { position: "fixed", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px", margin: 0 });
+    document.body.append(ghost);
+    d.ghost = ghost;
+    d.gx = d.x; d.gy = d.y;                            // the finger's place on the tile when it was lifted
+    d.el.classList.add("rm-slot");
+    d.on = true;
+    if (navigator.vibrate) navigator.vibrate(10);
+    d.raf = requestAnimationFrame(tick);
   };
   grid.addEventListener("pointerdown", (e) => {
     if (!arranging || e.target.closest(".rm-chip")) return;
     const el = e.target.closest("[data-aid]");
     if (!el) return;
     e.preventDefault(); e.stopPropagation();       // (no presses while arranging)
-    drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, on: false, raf: 0 };
+    drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, on: false, raf: 0, want: "", since: 0 };
     capture(grid, e.pointerId);
   }, true);
   grid.addEventListener("pointermove", (e) => {
@@ -582,17 +638,32 @@ function setArranging(on) {
     e.preventDefault();
     drag.cx = e.clientX; drag.cy = e.clientY;
     if (!drag.on && Math.hypot(drag.cx - drag.x, drag.cy - drag.y) < 8) return;
-    if (!drag.on) { drag.on = true; drag.el.classList.add("dragging"); drag.raf = requestAnimationFrame(tick); }
-    follow();
+    if (!drag.on) lift();
   }, true);
   const end = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
-    const moved = drag.on;
-    cancelAnimationFrame(drag.raf);
-    drag.el.classList.remove("dragging");
-    drag.el.style.transform = "";
+    const d = drag;
     drag = null;
-    if (moved) { if (navigator.vibrate) navigator.vibrate(8); changePage(() => {}); }
+    cancelAnimationFrame(d.raf);
+    if (!d.on) return;
+    // let go: it lands where the finger is now, settled or not
+    drag = d;
+    const last = target(d.cx, d.cy);
+    if (last) { const was = rects(); last.t.parentNode.insertBefore(d.el, last.after ? last.t.nextSibling : last.t); slide(was); }
+    drag = null;
+    // the copy glides into the slot, then the tile is back in its place
+    const r = d.el.getBoundingClientRect(), g = d.ghost;
+    const done = () => {
+      g.remove();
+      d.el.classList.remove("rm-slot");
+      if (navigator.vibrate) navigator.vibrate(8);
+      changePage(() => {});
+    };
+    if (reduce) { done(); return; }
+    g.style.transition = `transform ${SLIDE}ms cubic-bezier(.2,.8,.2,1), box-shadow ${SLIDE}ms`;
+    g.style.transform = `translate(${r.left - parseFloat(g.style.left)}px, ${r.top - parseFloat(g.style.top)}px) scale(1)`;
+    g.classList.add("rm-ghost-drop");
+    setTimeout(done, SLIDE + 20);
   };
   grid.addEventListener("pointerup", end, true);
   grid.addEventListener("pointercancel", end, true);
@@ -837,10 +908,28 @@ function toggleFull() {
     if (p && p.catch) p.catch(() => note("This browser won't go full screen - add the remote to the home screen instead"));
   }
 }
+// Full screen by itself: a browser only allows it after a touch, so the
+// first touch on the remote (and the next one after leaving full screen)
+// takes it - the touch still does what it touched.  From the iPhone home
+// screen it's full screen already; an Android home-screen icon opens a
+// browser tab (Chrome makes an app only for an https site), so this is what
+// takes the bars away there.  Off in ⋯ for this phone.
+const AUTOFULL = "haze.remote.autofull";
+const autoFull = () => { try { return localStorage.getItem(AUTOFULL) !== "0"; } catch (e) { return true; } };
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+window.addEventListener("pointerup", () => {
+  if (!autoFull() || !canFull() || isFull() || standalone() && matchMedia("(display-mode: fullscreen)").matches) return;
+  if (!$("#rm-connect").hidden) return;                // (typing the code: the keyboard first)
+  const el = document.documentElement;
+  try {
+    const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: "hide" });
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) { /* not here */ }
+}, { capture: true, passive: true });
 const iPhone = /iPhone|iPod/.test(navigator.userAgent);
 function installTip() {
-  if (iPhone) return "On iPhone: tap Share (the square with the arrow) → Add to Home Screen. The Haze icon then opens the remote full screen, with no browser bars.";
-  return "In Chrome: ⋮ → Add to Home screen (or Install app). On the desk's Wi-Fi address it may open with a slim bar; ⛶ Full screen hides everything.";
+  if (iPhone) return "On iPhone: tap Share (the square with the arrow) → Add to Home Screen. It's named after the venue - type another name there if you like. The icon opens the remote full screen.";
+  return "In Chrome: ⋮ → Add to Home screen. It's named after the venue - type another name there if you like. It opens full screen at your first touch.";
 }
 
 $("#rm-more").addEventListener("click", () => {
@@ -855,7 +944,15 @@ $("#rm-more").addEventListener("click", () => {
   };
   const close = () => { m.remove(); document.removeEventListener("pointerdown", outside, true); };
   const m = h("div.rm-menu", {},
-    canFull() ? h("button", { type: "button", onclick: () => { close(); toggleFull(); } }, "⛶ Full screen") : null,
+    canFull() ? h("button", { type: "button", onclick: () => { close(); toggleFull(); } }, isFull() ? "⛶ Leave full screen" : "⛶ Full screen") : null,
+    canFull() ? h("button.rm-tabtoggle" + (autoFull() ? ".on" : ""), { type: "button", "aria-pressed": String(autoFull()),
+      onclick: (e) => {
+        const on = !autoFull();
+        try { localStorage.setItem(AUTOFULL, on ? "1" : "0"); } catch (err) { /* this visit only */ }
+        e.currentTarget.classList.toggle("on", on);
+        e.currentTarget.setAttribute("aria-pressed", String(on));
+        e.currentTarget.querySelector("span").textContent = on ? "on" : "off";
+      } }, "Full screen on the first touch", h("span", autoFull() ? "on" : "off")) : null,
     standalone() ? null : h("button", { type: "button", onclick: () => { close(); note(installTip()); } }, "📱 Put it on the home screen"),
     // the show's other tabs, each shown or hidden on this phone
     ...viewsInShow().filter(([k]) => k !== "buttons").map(([k, label]) => h("button.rm-tabtoggle" + (hidden.includes(k) ? "" : ".on"), {
@@ -883,6 +980,58 @@ function firstTip() {
   let seen = false;
   try { seen = localStorage.getItem("haze.remote.tip") === "1"; localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* ignore */ }
   if (!seen) setTimeout(() => note(installTip()), 1500);
+}
+
+// ----------------------------------------------- one icon for every venue
+// The desk answers to a name as well as its address (haze.local, app/mdns.py).
+// The address changes from venue to venue; the name doesn't.  Opened at the
+// address (the QR code), the remote checks this phone can reach the same desk
+// by its name, and moves there - so the home-screen icon, made after that,
+// opens the desk at any venue.  A phone that can't (some Android browsers
+// don't look names up this way) stays on the address and says so once.
+let moveTried = false;
+async function moveToName() {
+  if (moveTried) return;
+  moveTried = true;
+  let info;
+  try { info = await (await fetch("/api/remote", { headers: headers(false) })).json(); } catch (e) { return; }
+  const name = info && info.name;
+  if (!name || location.hostname.toLowerCase() === name.toLowerCase()) return;
+  const base = `http://${name}:${location.port || info.port}`;
+  let hello = null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3000);
+    hello = await (await fetch(base + "/hello.json", { signal: ctl.signal, cache: "no-store" })).json();
+    clearTimeout(t);
+  } catch (e) { hello = null; }
+  if (!hello || hello.id !== info.id) {
+    let told = false;
+    try { told = localStorage.getItem("haze.remote.noname") === "1"; localStorage.setItem("haze.remote.noname", "1"); } catch (e) { /* ignore */ }
+    if (!told) note(`This phone can't find the desk by its name (${name}), only by this address - at another venue, scan the desk's QR code again.`);
+    return;
+  }
+  // this phone's own settings come along (they're kept per address)
+  const carry = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("haze.remote.") && k !== KEY) carry[k] = localStorage.getItem(k);
+    }
+  } catch (e) { /* nothing to carry */ }
+  let hash = "";
+  try {
+    const packed = btoa(unescape(encodeURIComponent(JSON.stringify(carry)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    if (packed.length < 12000) hash = "#carry=" + packed;
+  } catch (e) { hash = ""; }
+  const url = `${base}/remote.html?code=${encodeURIComponent(code)}${hash}`;
+  if (standalone()) {
+    // (an icon made at the address: it can't change where it points - make it once more from the name)
+    banner(`This icon only works on this Wi-Fi. Open ${name} once and put Haze on the home screen again - that icon finds the desk at any venue.`);
+    $("#rm-banner").onclick = () => { location.href = url; };
+    return;
+  }
+  location.replace(url);
 }
 
 // --------------------------------------------------------------- connecting

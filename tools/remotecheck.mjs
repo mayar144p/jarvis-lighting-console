@@ -65,11 +65,13 @@ for (const [name, d] of SIZES) {
     const strip = document.querySelector("#rm-strip").getBoundingClientRect();
     return { hscroll: document.documentElement.scrollWidth > innerWidth + 1, n: tiles.length,
       minW: Math.min(...tiles.map((r) => r.width)), minH: Math.min(...tiles.map((r) => r.height)),
-      stripIn: strip.bottom <= innerHeight + 1 && strip.top > innerHeight / 2,
+      // (upright: along the bottom; a phone on its side: down the right edge)
+      stripIn: innerWidth > innerHeight && innerHeight <= 520 ? strip.right >= innerWidth - 1 && strip.left > innerWidth * 0.7 && strip.height >= innerHeight - 1
+        : strip.bottom <= innerHeight + 1 && strip.top > innerHeight / 2,
       clipped: [...document.querySelectorAll(".rm-btn b")].filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       heads: [...document.querySelectorAll(".rm-head")].map((e) => e.textContent) };
   });
-  check(`${name}: no sideways scroll, ${m.n} buttons at least 64 px, names whole, the strip at the bottom`,
+  check(`${name}: no sideways scroll, ${m.n} buttons at least 64 px, names whole, Blackout / Master / Release all at the bottom (on its side: down the right)`,
     !m.hscroll && m.n >= 3 && m.minW >= 64 && m.minH >= 56 && !m.clipped && m.stripIn, JSON.stringify(m));
   check(`${name}: no page errors`, !errs.length, errs.join(" | "));
   await ctx.close();
@@ -135,7 +137,13 @@ console.log("Arranging this phone's buttons");
   const from = await pa.locator('[data-aid="q1-14"]').boundingBox(), to = await pa.locator('[data-aid="q1-13"]').boundingBox();
   await pa.mouse.move(from.x + from.width / 2, from.y + 20); await pa.mouse.down();
   for (let i = 1; i <= 10; i++) { await pa.mouse.move(from.x + from.width / 2 + (to.x + 10 - from.x - from.width / 2) * i / 10, from.y + 20 + (to.y + 20 - from.y - 20) * i / 10); await sleep(30); }
+  const mid = await pa.evaluate(() => ({ ghost: document.querySelectorAll(".rm-ghost").length, slot: !!document.querySelector(".rm-slot") }));
+  check("dragging: a lifted copy follows the finger, a dashed slot shows where it lands", mid.ghost === 1 && mid.slot, JSON.stringify(mid));
+  await sleep(250);                                  // (held still: the slot settles there, the others slide over)
+  const slid = await pa.evaluate(() => [...document.querySelectorAll("#rm-grid [data-aid]")].some((e) => /transform/.test(e.style.transition)));
+  check("...the other tiles slide out of the way (not jump)", slid);
   await pa.mouse.up(); await sleep(500);
+  check("...let go, the copy glides in and is gone", await pa.evaluate(() => !document.querySelector(".rm-ghost") && !document.querySelector(".rm-slot")));
   const o1 = await order();
   check("a tile dragged in front of another moves there", o1.indexOf("q1-14") < o1.indexOf("q1-13") && o0.indexOf("q1-14") > o0.indexOf("q1-13"), `${o0} -> ${o1}`);
   check("...and arranging pressed nothing", ((await lite()).quick_active || []).length === active0);
@@ -245,5 +253,59 @@ console.log("The desk's phone button");
 }
 
 await browser.close();
+
+// One home-screen icon for every venue: a desk letting phones in answers to
+// haze.local too; the remote, opened at the address, moves to the name (its
+// layout and switches with it).  The browser here is told haze.local is this
+// computer - as a phone that can look names up finds it.
+console.log("One icon for every venue (the desk's name, haze.local)");
+{
+  const NP = PORT + 1, CODE = "ABCDE12345", NB = `http://127.0.0.1:${NP}/`;
+  const DATA2 = mkdtempSync(join(tmpdir(), "haze-remote-name-"));
+  const srv2 = spawn(process.platform === "win32" ? "python" : "python3", ["-m", "app.main"], { stdio: "ignore",
+    env: { ...process.env, HOST: "0.0.0.0", CONSOLE_TOKEN: CODE, PORT: String(NP), CONSOLE_DATA_DIR: DATA2, CONSOLE_AUTOSAVE: "false", CONSOLE_AUTORESTORE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
+  try {
+    for (let i = 0; ; i++) { try { await fetch(NB); break; } catch {} if (i > 200) throw new Error("the second desk didn't start"); await sleep(250); }
+    const info = await fetch(NB + "api/remote", { headers: { "X-Haze-Token": CODE } }).then((r) => r.json());
+    check("a desk letting phones in has a name on the network", /^haze(-\d)?\.local$/.test(info.name || ""), JSON.stringify(info).slice(0, 200));
+    await fetch(NB + "api/console", { method: "POST", headers: { "content-type": "application/json", "X-Haze-Token": CODE },
+      body: JSON.stringify({ action: "venue_template", params: { name: "club" } }) });
+    const club = await fetch(NB + "remote/manifest.webmanifest").then((r) => r.json());
+    await fetch(NB + "api/console", { method: "POST", headers: { "content-type": "application/json", "X-Haze-Token": CODE },
+      body: JSON.stringify({ action: "venue_save", params: { name: "Zyped Club" } }) });
+    const named2 = await fetch(NB + "remote/manifest.webmanifest").then((r) => r.json());
+    const page = await fetch(NB + "remote.html").then((r) => r.text());
+    check("the home-screen icon is named after the venue (a template's stock name doesn't count)",
+      club.short_name === "Haze" && named2.short_name === "Zyped Club" && /apple-mobile-web-app-title" content="Zyped Club"/.test(page),
+      JSON.stringify([club.short_name, named2.short_name]));
+    const hello = await fetch(NB + "hello.json").then((r) => r.json());
+    check("...and says which desk it is to anyone who asks (not the code)", hello.haze === true && hello.id === info.id && !JSON.stringify(hello).includes(CODE), JSON.stringify(hello));
+    const named = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}), args: [`--host-resolver-rules=MAP ${info.name} 127.0.0.1`] });
+    const nctx = await named.newContext(dev(390, 844));
+    const np = await nctx.newPage();
+    await np.addInitScript(() => { try { if (location.hostname === "127.0.0.1") { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.hidden", '["timeline"]'); } } catch (e) { /* fine */ } });
+    await np.goto(NB + "remote.html?code=" + CODE);
+    for (let i = 0; i < 40 && new URL(np.url()).hostname !== info.name; i++) await sleep(250);
+    await sleep(1500);
+    const at = await np.evaluate(() => ({ host: location.hostname, url: location.href, connect: !document.querySelector("#rm-connect").hidden,
+      dot: document.querySelector("#rm-dot").classList.contains("on"), carried: localStorage.getItem("haze.remote.hidden") }));
+    check("the remote opened at the address moves to the desk's name, signed in (no code asked)", at.host === info.name && !at.connect && at.dot && !/code=|carry=/.test(at.url), JSON.stringify(at));
+    check("...and this phone's own settings come with it", at.carried === '["timeline"]', at.carried);
+    await named.close();
+    // a phone that can't look names up: it stays at the address, and says so once
+    const plain = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+    const pp = await (await plain.newContext(dev(390, 844))).newPage();
+    await pp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+    await pp.goto(NB + "remote.html?code=" + CODE);
+    let st = {};
+    for (let i = 0; i < 40; i++) {
+      st = await pp.evaluate(() => ({ host: location.hostname, text: document.body.innerText }));
+      if (/can't find the desk by its name/.test(st.text)) break;
+      await sleep(200);
+    }
+    check("...a phone that can't find the name stays at the address and says so", st.host === "127.0.0.1" && /can't find the desk by its name/.test(st.text), st.host + " " + st.text.slice(0, 200));
+    await plain.close();
+  } finally { try { srv2.kill(); } catch {} }
+}
 console.log(fails ? `${fails} failed` : "all ok");
 done(fails ? 1 : 0);
