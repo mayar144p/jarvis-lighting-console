@@ -118,6 +118,46 @@ await sleep(500);
 check("a swipe turns the page", await p.locator('#rm-pages .rm-tab.on[data-p="2"]').count() === 1);
 await ctx.close();
 
+console.log("Arranging this phone's buttons");
+{
+  const ctx3 = await browser.newContext(dev(390, 844));
+  const pa = await ctx3.newPage();
+  await pa.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pa.goto(BASE + "remote.html"); await sleep(1800);
+  const deskBefore = JSON.stringify(((await fetch(BASE + "api/console").then((r) => r.json())).quick || {}).buttons.map((b) => [b.id, b.slot, b.label]));
+  const order = () => pa.locator("#rm-grid [data-aid]").evaluateAll((els) => els.map((e) => e.dataset.aid));
+  const o0 = await order();
+  await pa.locator("#rm-more").click(); await sleep(300);
+  await pa.locator(".rm-menu button", { hasText: "Arrange" }).click(); await sleep(500);
+  check("⋯ → Arrange shows the bar: drag, size, hide - the desk doesn't change", await pa.locator("#rm-arrange-bar").isVisible());
+  const active0 = ((await lite()).quick_active || []).length;
+  // drag the long-named colour button up in front of FLASH
+  const from = await pa.locator('[data-aid="q1-14"]').boundingBox(), to = await pa.locator('[data-aid="q1-13"]').boundingBox();
+  await pa.mouse.move(from.x + from.width / 2, from.y + 20); await pa.mouse.down();
+  for (let i = 1; i <= 10; i++) { await pa.mouse.move(from.x + from.width / 2 + (to.x + 10 - from.x - from.width / 2) * i / 10, from.y + 20 + (to.y + 20 - from.y - 20) * i / 10); await sleep(30); }
+  await pa.mouse.up(); await sleep(500);
+  const o1 = await order();
+  check("a tile dragged in front of another moves there", o1.indexOf("q1-14") < o1.indexOf("q1-13") && o0.indexOf("q1-14") > o0.indexOf("q1-13"), `${o0} -> ${o1}`);
+  check("...and arranging pressed nothing", ((await lite()).quick_active || []).length === active0);
+  // size and hide
+  await pa.locator('[data-aid="q1-13"] .rm-chip', { hasText: "⤢" }).click(); await sleep(400);
+  check("⤢ makes a tile bigger on this phone", /wide/.test(await pa.locator('[data-aid="q1-13"] .rm-chip').first().innerText()));
+  await pa.locator('[data-aid="q1-15"] .rm-chip', { hasText: "hide" }).click(); await sleep(400);
+  await pa.locator("#rm-arrange-done").click(); await sleep(500);
+  check("a hidden tile is gone once arranged", await pa.locator('[data-aid="q1-15"]').count() === 0);
+  await pa.reload(); await sleep(1800);
+  const o2 = await order();
+  check("the phone keeps its layout after a reload", o2.indexOf("q1-14") < o2.indexOf("q1-13") && !o2.includes("q1-15"), o2.join(","));
+  const deskAfter = JSON.stringify(((await fetch(BASE + "api/console").then((r) => r.json())).quick || {}).buttons.map((b) => [b.id, b.slot, b.label]));
+  check("the desk's buttons didn't change", deskBefore === deskAfter);
+  await pa.locator("#rm-more").click(); await sleep(300);
+  await pa.locator(".rm-menu button", { hasText: "Arrange" }).click(); await sleep(400);
+  await pa.locator("#rm-arrange-reset").click(); await sleep(400);
+  await pa.locator("#rm-arrange-done").click(); await sleep(400);
+  check("Desk's layout puts the page back as the desk has it", JSON.stringify(await order()) === JSON.stringify(o0), (await order()).join(","));
+  await ctx3.close();
+}
+
 console.log("Faders");
 {
   const ctx2 = await browser.newContext(dev(375, 667));

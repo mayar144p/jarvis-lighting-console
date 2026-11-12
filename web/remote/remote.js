@@ -159,6 +159,7 @@ function viewsThere() {
 }
 function setView(v) {
   view = v;
+  if (v !== "buttons" && arranging) { arranging = false; document.body.classList.remove("arranging"); $("#rm-arrange-bar").hidden = true; }
   try { sessionStorage.setItem("haze.remote.view", v); } catch (e) { /* ignore */ }
   render(true);
 }
@@ -250,7 +251,7 @@ function tile(b) {
   paint(el, tint(b));
   let finger = null, timer = 0;
   el.addEventListener("pointerdown", (e) => {
-    if (finger !== null || !connected) return;
+    if (finger !== null || !connected || arranging) return;      // (arranging: tiles move, they don't play)
     e.preventDefault();
     finger = e.pointerId;
     capture(el, e.pointerId);
@@ -354,10 +355,10 @@ function render(force = false) {
   renderTabs();
   const w = grid.clientWidth || innerWidth;
   const { lay, bs } = pageItems(page);
-  const key = JSON.stringify([page, w, bs, quick().names]);
+  const key = JSON.stringify([page, w, bs, quick().names, arranging, pageLayout(page)]);
   if (!force && key === grid.dataset.key) { live(); return; }
   grid.dataset.key = key;
-  const fits = lay.cols * MIN_CELL + (lay.cols - 1) * 6 <= w - 20 && innerHeight >= 600;
+  const fits = !arranging && !pageLayout(page) && lay.cols * MIN_CELL + (lay.cols - 1) * 6 <= w - 20 && innerHeight >= 600;
   grid.classList.toggle("asdesk", fits);
   grid.replaceChildren(...(fits ? deskGrid(lay, bs) : flowGrid(bs, w, lay.cols)));
   if (!bs.length) grid.replaceChildren(h("p.rm-empty", `${pageName(page)} has no buttons`));
@@ -419,39 +420,189 @@ function sectionsOf(bs, cols) {
   const out = [];
   let loose = null;
   for (const b of [...labels, ...items.filter((x) => !owner.has(x.id))].sort((a, c) => a.slot - c.slot)) {
-    if (b.kind === "label") { out.push({ label: b.label, items: items.filter((x) => owner.get(x.id) === b) }); loose = null; continue; }
+    if (b.kind === "label") { out.push({ label: b.label, id: b.id, items: items.filter((x) => owner.get(x.id) === b) }); loose = null; continue; }
     if (!loose) { loose = { label: "", items: [] }; out.push(loose); }
     loose.items.push(b);
   }
   return out;
 }
 
-// phone: each heading becomes a section title with its buttons under it as
-// big tiles; page-turn buttons are left to the tabs, faders run full width
+// ----------------------------------------------------- this phone's layout
+// A phone can arrange each page its own way - move tiles and headings,
+// make a tile bigger or smaller, hide what it doesn't need - kept on the
+// phone (per show), never on the desk: the desk's buttons don't change.
+// A button added on the desk later shows at the end of the page; one
+// deleted there just goes.
+const LAYOUT_KEY = () => "haze.remote.layout:" + ((snap && snap.show_file) || "show");
+function layouts() { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY()) || "{}"); } catch (e) { return {}; } }
+const pageLayout = (p) => layouts()[p] || null;
+function savePageLayout(p, lo) {
+  const all = layouts();
+  if (lo) all[p] = lo; else delete all[p];
+  try { localStorage.setItem(LAYOUT_KEY(), JSON.stringify(all)); } catch (e) { note("This phone won't keep the layout (private browsing?)"); }
+}
+let arranging = false;
+
+// the page as the desk lays it out: headings and tiles in order
+function defaultPlan(bs, gridCols) {
+  const plan = [];
+  for (const sec of sectionsOf(bs, gridCols)) {
+    const items = sec.items.filter((b) => !justTurns(b));
+    if (!items.length) continue;                 // (a heading with nothing to press under it)
+    if (sec.label) plan.push({ aid: "h:" + sec.id, head: sec.label });
+    for (const b of items) plan.push({ aid: b.id, b });
+  }
+  return plan;
+}
+// ...with this phone's own order, sizes and hidden tiles
+function phonePlan(plan, lo) {
+  if (!lo) return plan;
+  const by = new Map(plan.map((x) => [x.aid, x]));
+  const out = (lo.order || []).filter((aid) => by.has(aid)).map((aid) => by.get(aid));
+  for (const x of plan) if (!out.includes(x)) out.push(x);          // new on the desk: at the end
+  return out.map((x) => ({ ...x, size: (lo.size || {})[x.aid], hidden: (lo.hide || []).includes(x.aid) }));
+}
+// a tile's size on the phone: normal, wide (2 across), big (2 x 2), the whole row
+const SIZES = ["1", "w", "b", "f"];
+const SIZE_NAME = { 1: "normal", w: "wide", b: "big", f: "full row" };
+function sizeOf(item) {
+  if (item.size) return item.size;
+  const b = item.b, [ww, hh] = spanOf(b);
+  if (b.kind === "fader" || b.kind === "xy" || ww >= 3) return "f";
+  if (ww === 2 && hh > 1) return "b";
+  if (ww === 2) return "w";
+  return hh > 1 ? "t" : "1";                     // (tall: a big desk tile on a 3-across phone)
+}
+function place(el, size, cols) {
+  if (size === "f") el.style.gridColumn = "1 / -1";
+  else if (size === "w") el.style.gridColumn = `span ${Math.min(2, cols)}`;
+  else if (size === "b") { el.style.gridColumn = `span ${Math.min(2, cols)}`; el.style.gridRow = "span 2"; el.classList.add("rm-tall"); }
+  else if (size === "t") { el.style.gridRow = "span 2"; el.classList.add("rm-tall"); }
+}
+
+// phone: one grid, each heading a title across it, the tiles under it big
+// (three across upright, more on its side)
 function flowGrid(bs, w, gridCols) {
   const cols = Math.max(3, Math.min(6, Math.floor((w - 16) / 108)));
-  const out = [];
-  for (const sec of sectionsOf(bs, gridCols)) {
-    const box = h("div.rm-flow");
-    box.style.setProperty("--cols", cols);
-    for (const b of sec.items) {
-      if (justTurns(b)) continue;
-      const el = CONTROL.has(b.kind) && b.kind !== "tempo" && b.kind !== "cuelist" ? control(b) : tile(b);
-      const [ww, hh] = spanOf(b);
-      // sizes on a phone: three across leaves no room for 2-wide tiles (a
-      // gap beside each), so a big one stands tall instead; 3+ wide runs
-      // the whole row; on a wider screen (4+ across) 2-wide stays 2-wide
-      if (b.kind === "fader" || b.kind === "xy" || ww >= 3) el.style.gridColumn = "1 / -1";
-      else if (cols >= 4 && ww === 2) { el.style.gridColumn = "span 2"; if (hh > 1) el.style.gridRow = "span 2"; }
-      else if (hh > 1) el.style.gridRow = "span 2";
-      box.append(el);
+  const plan = phonePlan(defaultPlan(bs, gridCols), pageLayout(page));
+  const box = h("div.rm-flow" + (arranging ? ".arranging" : ""));
+  box.style.setProperty("--cols", cols);
+  for (const item of plan) {
+    if (item.hidden && !arranging) continue;
+    let el;
+    if (item.head) el = h("div.rm-head", item.head);
+    else {
+      const b = item.b;
+      el = CONTROL.has(b.kind) && b.kind !== "tempo" && b.kind !== "cuelist" ? control(b) : tile(b);
+      place(el, sizeOf(item), cols);
     }
-    if (!box.childElementCount) continue;          // (a heading with nothing to press under it)
-    if (sec.label) out.push(h("div.rm-head", sec.label));
-    out.push(box);
+    el.dataset.aid = item.aid;
+    if (item.hidden) el.classList.add("rm-hidden");
+    if (arranging) arrangeChips(el, item);
+    box.append(el);
   }
-  return out;
+  return [box];
 }
+
+// ------------------------------------------------------ arranging the page
+function arrangeChips(el, item) {
+  const chips = h("span.rm-chips");
+  if (!item.head) {
+    chips.append(h("button.rm-chip", { type: "button", "aria-label": "Size on this phone",
+      onclick: () => {
+        const cur = sizeOf(item), i = SIZES.indexOf(cur);
+        changePage((lo) => { lo.size = { ...(lo.size || {}), [item.aid]: SIZES[(i + 1) % SIZES.length] }; });
+      } }, "⤢ " + (SIZE_NAME[sizeOf(item)] || "tall")));
+  }
+  chips.append(h("button.rm-chip", { type: "button", "aria-label": item.hidden ? "Show on this phone" : "Hide on this phone",
+    onclick: () => changePage((lo) => {
+      const hide = new Set(lo.hide || []);
+      if (hide.has(item.aid)) hide.delete(item.aid); else hide.add(item.aid);
+      lo.hide = [...hide];
+    }) }, item.hidden ? "👁 show" : "hide"));
+  el.append(chips);
+}
+// a change to this page's layout, starting from what is on screen now
+function changePage(fn) {
+  const lo = { ...(pageLayout(page) || {}) };
+  lo.order = [...document.querySelectorAll("#rm-grid [data-aid]")].map((x) => x.dataset.aid);
+  fn(lo);
+  savePageLayout(page, lo);
+  render(true);
+}
+function setArranging(on) {
+  arranging = on;
+  document.body.classList.toggle("arranging", on);
+  $("#rm-arrange-bar").hidden = !on;
+  render(true);
+}
+// drag a tile or a heading: it follows the finger and the others make room;
+// held near the top or bottom, the page scrolls on by itself
+(() => {
+  const grid = $("#rm-grid");
+  let drag = null;
+  const follow = () => {
+    const { el, cx, cy } = drag;
+    el.style.transform = `translate(${cx - drag.x}px, ${cy - drag.y}px)`;
+    const under = document.elementFromPoint(cx, cy);
+    const t = under && under.closest("#rm-grid [data-aid]");
+    if (!t || t === el) return;
+    const r = t.getBoundingClientRect();
+    const after = t.classList.contains("rm-head") ? cy > r.top + r.height / 2
+      : (cy > r.bottom - r.height / 4) || (cx > r.left + r.width / 2 && cy > r.top + r.height / 4);
+    if ((after ? t.nextSibling : t) === el) return;
+    const before = el.getBoundingClientRect();
+    t.parentNode.insertBefore(el, after ? t.nextSibling : t);
+    const now = el.getBoundingClientRect();          // keep it under the finger after it moved in the grid
+    drag.x += now.left - before.left; drag.y += now.top - before.top;
+    el.style.transform = `translate(${cx - drag.x}px, ${cy - drag.y}px)`;
+  };
+  const tick = () => {
+    if (!drag || !drag.on) return;
+    const g = grid.getBoundingClientRect();
+    const step = drag.cy < g.top + 60 ? -Math.ceil((g.top + 60 - drag.cy) / 4) : drag.cy > g.bottom - 60 ? Math.ceil((drag.cy - g.bottom + 60) / 4) : 0;
+    if (step) {
+      const was = grid.scrollTop;
+      grid.scrollTop += Math.max(-24, Math.min(24, step));
+      drag.y -= grid.scrollTop - was;                // the tile stays under the finger as the page moves
+      follow();
+    }
+    drag.raf = requestAnimationFrame(tick);
+  };
+  grid.addEventListener("pointerdown", (e) => {
+    if (!arranging || e.target.closest(".rm-chip")) return;
+    const el = e.target.closest("[data-aid]");
+    if (!el) return;
+    e.preventDefault(); e.stopPropagation();       // (no presses while arranging)
+    drag = { el, id: e.pointerId, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, on: false, raf: 0 };
+    capture(grid, e.pointerId);
+  }, true);
+  grid.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    e.preventDefault();
+    drag.cx = e.clientX; drag.cy = e.clientY;
+    if (!drag.on && Math.hypot(drag.cx - drag.x, drag.cy - drag.y) < 8) return;
+    if (!drag.on) { drag.on = true; drag.el.classList.add("dragging"); drag.raf = requestAnimationFrame(tick); }
+    follow();
+  }, true);
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const moved = drag.on;
+    cancelAnimationFrame(drag.raf);
+    drag.el.classList.remove("dragging");
+    drag.el.style.transform = "";
+    drag = null;
+    if (moved) { if (navigator.vibrate) navigator.vibrate(8); changePage(() => {}); }
+  };
+  grid.addEventListener("pointerup", end, true);
+  grid.addEventListener("pointercancel", end, true);
+})();
+$("#rm-arrange-done").addEventListener("click", () => setArranging(false));
+$("#rm-arrange-reset").addEventListener("click", () => {
+  savePageLayout(page, null);
+  note(`${pageName(page)}: back to the desk's layout`);
+  render(true);
+});
 
 // ------------------------------------------------------------- cues
 function renderCues(grid) {
@@ -611,7 +762,7 @@ function live() {
   let x0 = null, y0 = 0, t0 = 0;
   const grid = $("#rm-grid");
   grid.addEventListener("pointerdown", (e) => {
-    if (view !== "buttons" || e.target.closest("input, .rm-xy")) { x0 = null; return; }
+    if (view !== "buttons" || arranging || e.target.closest("input, .rm-xy")) { x0 = null; return; }
     x0 = e.clientX; y0 = e.clientY; t0 = performance.now();
   }, true);
   grid.addEventListener("pointerup", (e) => {
@@ -716,6 +867,7 @@ $("#rm-more").addEventListener("click", () => {
         e.currentTarget.setAttribute("aria-pressed", String(on));
         e.currentTarget.querySelector("span").textContent = on ? "shown" : "hidden";
       } }, `${label} tab`, h("span", hidden.includes(k) ? "hidden" : "shown"))),
+    view === "buttons" ? h("button", { type: "button", onclick: () => { close(); setArranging(true); } }, "✥ Arrange buttons on this phone") : null,
     h("button", { type: "button", onclick: () => { close(); render(true); } }, "↻ Redraw"),
     // a big tablet can run the whole desk (patch, programmer, the 3D)
     Math.min(screen.width, screen.height) >= 600 ? h("button", { type: "button", onclick: () => { location.href = "/?desk=1" + (code ? "&code=" + encodeURIComponent(code) : ""); } }, "🖥 Full desk") : null,
