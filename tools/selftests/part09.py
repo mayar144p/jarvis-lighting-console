@@ -12356,3 +12356,22 @@ def test_ndi_kept() -> None:
             e.shutdown()
     web = (ROOT / "web" / "js" / "stage" / "venue.js").read_text(encoding="utf-8")
     check("the 3D's screens show ndi: sources", 'content.startsWith("ndi:")' in web and "ndiFeed(" in web, "")
+
+
+def test_remote_address_first() -> None:
+    """The phone remote's address: the Wi-Fi / network one first.  A VPN on the desk computer
+    (Radmin VPN 26.x, Hamachi 25.x) has its own address a phone on the Wi-Fi can't reach - it
+    loaded forever - so it goes last and is said to be a VPN's, in the desk and the desktop app."""
+    from app import remote
+    from unittest import mock
+    check("192.168 / 10 / 172.16-31 are the network; 26.x (Radmin) and 25.x (Hamachi) a VPN's; 100.64/10 Tailscale",
+          [remote.kind(a) for a in ("192.168.1.20", "10.0.0.7", "172.20.1.1", "26.169.25.197", "25.3.4.5", "100.101.5.6")]
+          == ["lan", "lan", "lan", "vpn", "vpn", "tailscale"], "")
+    fake = [(2, 1, 6, "", ("26.169.25.197", 0)), (2, 1, 6, "", ("100.101.5.6", 0)), (2, 1, 6, "", ("192.168.1.20", 0))]
+    with mock.patch("socket.getaddrinfo", return_value=fake), mock.patch("socket.socket", side_effect=OSError):
+        got = remote.lan_addresses()
+    check("...the Wi-Fi one first, the VPN's last", got == ["192.168.1.20", "100.101.5.6", "26.169.25.197"], got)
+    js = (ROOT / "web" / "app" / "remotepanel.js").read_text(encoding="utf-8")
+    main = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    check("...the QR codes leave a VPN's address out (said why), and so does the desktop app's list",
+          "a.vpn" in js and "Not for phones" in js and "isVpn(a)" in main and "VIRTUAL.test(name)" in main, "")

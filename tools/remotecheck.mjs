@@ -225,6 +225,25 @@ await pp.goto(BASE + "?desk=1"); await sleep(1500);
 check("...unless it asks for the full desk", !/remote\.html/.test(pp.url()), pp.url());
 await ph.close();
 
+console.log("The desk's phone button");
+{
+  const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const d = await dctx.newPage();
+  const derrs = [];
+  d.on("pageerror", (e) => derrs.push(e.message));
+  await d.goto(BASE); await sleep(3500);
+  await d.click("#phone-btn"); await sleep(1500);
+  const m = await d.evaluate(() => {
+    const box = document.querySelector(".phone-qr");
+    return { open: !!box, title: [...document.querySelectorAll(".modal-head h2")].map((x) => x.textContent), text: box ? box.textContent : "" };
+  });
+  // (this desk answers only on this computer: the window says so, and how to let phones in)
+  check("the top bar's phone button opens the phone remote's QR window (or says how to let phones in)",
+    m.open && m.title.includes("Phone remote") && /(Scan with the phone|aren't let in yet)/.test(m.text), JSON.stringify(m));
+  check("...no page errors", !derrs.length, derrs.join(" | "));
+  await dctx.close();
+}
+
 await browser.close();
 console.log(fails ? `${fails} failed` : "all ok");
 done(fails ? 1 : 0);

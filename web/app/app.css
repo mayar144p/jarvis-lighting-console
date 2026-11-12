@@ -3144,3 +3144,7 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .ndi-src.on { border-color: var(--accent); }
 .ndi-srcs { display: flex; flex-direction: column; gap: 4px; }
 .ndi-src-row { display: flex; align-items: center; gap: 8px; }
+
+/* the phone remote's QR, big (remotepanel.js openPhoneQr) */
+.phone-qr { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; max-width: 460px; }
+.phone-qr-code svg { display: block; width: min(340px, 70vw); height: auto; border-radius: 8px; }

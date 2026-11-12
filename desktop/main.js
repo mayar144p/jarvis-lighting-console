@@ -155,12 +155,22 @@ function portOr(want) {
     s.listen(want, "0.0.0.0", () => s.close(() => resolve(want)));
   });
 }
-function lanAddresses() {
-  return Object.values(os.networkInterfaces()).flat()
-    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
-}
 // a Tailscale (or other CGNAT-range VPN) address: 100.64.0.0/10
 const isTailscale = (a) => { const [x, y] = a.split(".").map(Number); return x === 100 && y >= 64 && y <= 127; };
+// a home / venue network's address (192.168.x, 10.x, 172.16-31.x): a phone on the Wi-Fi reaches it
+const isLan = (a) => { const [x, y] = a.split(".").map(Number); return x === 192 && y === 168 || x === 10 || x === 172 && y >= 16 && y <= 31; };
+// adapters that aren't the Wi-Fi / network cable, by their Windows / Mac name
+const VIRTUAL = /vpn|radmin|hamachi|zerotier|virtual|vbox|vmware|hyper-v|vethernet|wsl|docker|bridge100|utun|tailscale/i;
+// The addresses another device could use, the Wi-Fi / cable one first.  A
+// VPN's own (Radmin VPN 26.x, Hamachi 25.x) only works from that VPN: a
+// phone on the Wi-Fi opening it just keeps loading - so it goes last, said so.
+function lanAddresses() {
+  const all = Object.entries(os.networkInterfaces()).flatMap(([name, list]) => (list || [])
+    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => ({ a: i.address, name })));
+  const rank = ({ a, name }) => (isLan(a) && !VIRTUAL.test(name) ? 0 : isLan(a) ? 1 : isTailscale(a) ? 2 : 3);
+  return all.sort((p, q) => rank(p) - rank(q)).map((x) => x.a);
+}
+const isVpn = (a) => !isLan(a) && !isTailscale(a);
 
 // Windows Firewall: the other computer reaches the desk only once Windows
 // lets the port in.  Its own "allow?" question covers private networks
@@ -832,15 +842,16 @@ async function phonesDialog() {
   const port = Number(new URL(base).port);
   const addrs = lanAddresses();
   const fwOk = firewallHasRule(port);
-  const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)" : "");
-  const buttons = ["OK", "New code", "Stop allowing others"];
+  const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)"
+    : isVpn(a) ? "   (a VPN on this computer, e.g. Radmin: only from that VPN - not a phone on the Wi-Fi)" : "");
+  const buttons = ["OK", "New code", "Stop allowing others", "Show the QR code for phones"];
   if (!fwOk) buttons.push("Let it through Windows Firewall");
   const r = await ask(win, {
-    title: "Other computers, phones and tablets", type: "info", buttons, primary: 0, cancel: 0, danger: 2,
+    title: "Other computers, phones and tablets", type: "info", buttons, primary: addrs.length ? 3 : 0, cancel: 0, danger: 2,
     message: `Pairing code: ${showCode(d.code)}`,
     detail: (addrs.length ? `On the other computer, phone or tablet, open:\n${addrs.map(where).join("\n")}\nthen type the code. A computer gets the whole desk.`
       + `\n\nA phone or tablet as a remote (buttons, cues, timeline, blackout):\n  http://${addrs[0]}:${port}/remote.html`
-      + "\nor scan the QR code in the desk: Settings → Phone & tablet. A phone opening the desk's address gets the remote by itself."
+      + "\nor press \"Show the QR code for phones\": the phone scans it and opens the remote, signed in - nothing to type."
       : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the other device.")
       + (fwOk ? "" : "\n\nIf the page doesn't load on the other device, Windows Firewall is blocking it: press \"Let it through Windows Firewall\" (Windows asks for permission once).")
       + "\n\n\"New code\" signs every other device out.",
@@ -848,6 +859,12 @@ async function phonesDialog() {
   if (r === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
   if (r === 2) { d.remotes = false; saveState(); await restartEngine(); }
   if (r === 3) {
+    // the big QR in the desk page: a phone scans it and opens the remote signed in
+    const to = (win && !win.isDestroyed() ? win : null) || open.get("main") || [...open.values()][0];
+    if (to && !to.isDestroyed()) { to.show(); to.focus(); to.webContents.send("desk:do", "phoneqr"); }
+    return;
+  }
+  if (r === 4) {
     const ok = firewallAllow(port);
     await ask(win, {
       title: "Windows Firewall", type: ok ? "info" : "warning", buttons: ["OK"],
