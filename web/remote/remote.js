@@ -7,6 +7,8 @@
 // the page's own grid, as on the desk, while every cell stays big enough
 // for a finger; past that it flows like a phone.
 
+import { groupColour } from "../app/groupcolour.js";
+
 const $ = (s) => document.querySelector(s);
 const h = (tag, attrs = {}, ...kids) => {
   // (no attributes: the second argument is already a child)
@@ -136,8 +138,10 @@ let view = "buttons";
 try { view = sessionStorage.getItem("haze.remote.view") || "buttons"; } catch (e) { /* ignore */ }
 const playbacksWithCues = () => ((snap && snap.playbacks) || []).filter((p) => (p.stack || []).length);
 const timelineHasClips = () => (((snap && snap.timeline) || {}).tracks || []).some((t) => (t.clips || []).length);
+const groupsThere = () => (snap && snap.groups) || [];
 function viewsThere() {
-  return [["buttons", "Buttons"], playbacksWithCues().length ? ["cues", "Cues"] : null, timelineHasClips() ? ["timeline", "Timeline"] : null].filter(Boolean);
+  return [["buttons", "Buttons"], groupsThere().length ? ["faders", "Faders"] : null,
+    playbacksWithCues().length ? ["cues", "Cues"] : null, timelineHasClips() ? ["timeline", "Timeline"] : null].filter(Boolean);
 }
 function setView(v) {
   view = v;
@@ -330,6 +334,7 @@ function render(force = false) {
   $("#rm-pages").hidden = view !== "buttons";
   const grid = $("#rm-grid");
   grid.dataset.view = view;
+  if (view === "faders") { grid.dataset.key = ""; renderFaders(grid); live(); return; }
   if (view === "cues") { grid.dataset.key = ""; renderCues(grid); live(); return; }
   if (view === "timeline") { grid.dataset.key = ""; renderTimeline(grid); live(); return; }
   renderTabs();
@@ -467,6 +472,52 @@ function liveCues() {
   }
 }
 
+// ------------------------------------------------------------- faders
+// A fader per group (its lights at that share of whatever they are doing,
+// as on the desk's group masters), the grand master first.  A double tap
+// puts one back to full.
+const groupLevel = (g) => ((lite.group_masters || {})[g.n] ?? g.master ?? 100);
+function faderRow({ key, name, value, send, colour }) {
+  const out = h("output", `${value}%`);
+  const inp = h("input", { type: "range", min: 0, max: 100, value, "aria-label": `${name} level` });
+  const go = throttle((x) => send(x), 60);
+  const set = (x) => { inp.value = x; out.textContent = `${x}%`; inp.dataset.busy = "1"; go(x); setTimeout(() => { delete inp.dataset.busy; }, 500); };
+  inp.addEventListener("input", () => { out.textContent = `${inp.value}%`; inp.dataset.busy = "1"; go(+inp.value); });
+  inp.addEventListener("change", () => setTimeout(() => { delete inp.dataset.busy; }, 400));
+  const row = h("section.rm-fader", { dataset: { key } }, h("div.rm-ctl-top", h("b", name), out), inp);
+  paint(row, colour);
+  // double tap on the name or the number: back to 100 % (phones have no dblclick on a slider)
+  let last = 0;
+  row.querySelector(".rm-ctl-top").addEventListener("pointerup", () => {
+    const now = performance.now();
+    if (now - last < 350) { set(100); if (navigator.vibrate) navigator.vibrate(10); last = 0; } else last = now;
+  });
+  return row;
+}
+function renderFaders(grid) {
+  const key = JSON.stringify(groupsThere().map((g) => [g.n, g.name, g.colour]));
+  if (grid.dataset.faders === key && grid.querySelector(".rm-fader")) return;
+  grid.dataset.faders = key;
+  grid.replaceChildren(
+    h("p.rm-hint", "Each group at a share of what it's doing · double-tap a name for 100%"),
+    faderRow({ key: "master", name: "Grand master", value: snapOr("master", 100), colour: "#2fd6f5",
+      send: (x) => act("master", { level: x }).catch(() => {}) }),
+    ...groupsThere().map((g, i) => faderRow({ key: `g${g.n}`, name: g.name || `Group ${g.n}`, value: groupLevel(g), colour: groupColour(g, i),
+      send: (x) => act("group_master", { group: g.n, level: x }).catch(() => {}) })));
+}
+function liveFaders() {
+  for (const row of document.querySelectorAll(".rm-fader[data-key]")) {
+    const inp = row.querySelector("input");
+    if (inp.dataset.busy) continue;
+    const k = row.dataset.key;
+    const g = k === "master" ? null : groupsThere().find((x) => `g${x.n}` === k);
+    const v = k === "master" ? snapOr("master", 100) : g ? groupLevel(g) : null;
+    if (v === null || +inp.value === v) continue;
+    inp.value = v;
+    row.querySelector("output").textContent = `${v}%`;
+  }
+}
+
 // ------------------------------------------------------------- timeline
 const clock = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 function renderTimeline(grid) {
@@ -516,6 +567,7 @@ function renderTabs() {
 
 // what's on, what's held, the masters - many times a second, no redraw
 function live() {
+  if (view === "faders") liveFaders();
   if (view === "cues") liveCues();
   if (view === "timeline") liveTimeline();
   const on = activeIds();

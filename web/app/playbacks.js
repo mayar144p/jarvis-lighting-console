@@ -9,6 +9,8 @@ import { onNote, onCC } from "./webmidi.js";
 import { icon } from "./icons.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
+import { groupColour } from "./groupcolour.js";
+import { groupColourMenu } from "./groupcolourmenu.js";
 
 const cards = new Map();
 let gm = null;
@@ -397,11 +399,11 @@ function renderGroupMasters() {
   const box = $("#grp-masters");
   const fold = $("#grp-fold-btn");
   if (fold) fold.hidden = !groups.length;
-  const key = JSON.stringify(groups.map((g) => [g.n, g.name]));
+  const key = JSON.stringify(groups.map((g) => [g.n, g.name, g.colour]));
   if (key !== grpKey) {
     grpKey = key;
     grpFaders.clear();
-    box.replaceChildren(...groups.map((g) => {
+    box.replaceChildren(...groups.map((g, i) => {
       const el = h("div.vfader", { "aria-label": `${g.name} master` });
       const num = h("output", String(g.master ?? 100));
       const f = vfader(el, { min: 0, max: 100, onInput: throttle((v) => {
@@ -414,7 +416,17 @@ function renderGroupMasters() {
       }, 60) });
       grpFaders.set(g.n, { f, num });
       // the level under the fader, the whole name under that (two lines)
-      return h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label.m-num", num), h("span.m-name", g.name));
+      // its colour: the fader's fill, and a dot under the name to change it
+      // (right-click / a held finger on the name does too)
+      const colour = groupColour(g, i);
+      const dot = h("button.m-colour", { type: "button", title: `${g.name}'s colour (on the desk and the phone remote) - click to change`,
+        "aria-label": `${g.name} colour`, onclick: (e) => groupColourMenu(e.currentTarget, g, i) });
+      const name = h("span.m-name", g.name);
+      name.addEventListener("contextmenu", (e) => { e.preventDefault(); groupColourMenu(dot, g, i); });
+      const wrap = h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label.m-num", num), name, dot);
+      wrap.style.setProperty("--accent", colour);
+      wrap.style.setProperty("--grp-colour", colour);
+      return wrap;
     }));
     scrollHints();
   }

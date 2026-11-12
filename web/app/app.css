@@ -3131,3 +3131,9 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .remote-card > div { display: grid; gap: 4px; min-width: 0; }
 .remote-url { font-size: var(--fs-m); user-select: all; overflow-wrap: anywhere; }
 .remote-tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+/* a group master's colour: a dot under its name (click: change it) */
+.master.grp .m-colour { width: 14px; height: 14px; margin: 2px auto 0; padding: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,.35);
+  background: var(--grp-colour, var(--accent)); cursor: pointer; flex: none; }
+.master.grp .m-colour:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--grp-colour) 35%, transparent); }
+.master.grp .m-name { color: color-mix(in srgb, var(--grp-colour, var(--text-2)) 55%, var(--text)); }
