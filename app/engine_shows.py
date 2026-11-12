@@ -590,14 +590,14 @@ class ShowMixin:
         hung, standing = self._floating()
         if hung:
             add("warn", f"{len(hung)} hung light(s) are in mid air - on no truss, pipe or the ceiling "
-                        f"({', '.join(f'#{h['head_no']}' for h in hung[:8])}{'…' if len(hung) > 8 else ''}). "
+                        f"({', '.join('#' + str(h['head_no']) for h in hung[:8])}{'…' if len(hung) > 8 else ''}). "
                         "The 3D and the plot show them floating.", "")
             items[-1].update(fix="Fix", act={"action": "fix_floating", "params": {}},
                              text=items[-1]["text"] + " Fix puts a truss along each row of them, at the height they hang"
                              + (", and a stand under the floating floor things." if standing else "."))
         if standing:
             add("warn", f"{len(standing)} floor-standing thing(s) are up in the air with nothing under them "
-                        f"({', '.join(f'#{h['head_no']}' for h in standing[:8])}).", "")
+                        f"({', '.join('#' + str(h['head_no']) for h in standing[:8])}).", "")
             if not hung:
                 items[-1].update(fix="Fix", act={"action": "fix_floating", "params": {}},
                                  text=items[-1]["text"] + " Fix puts a stand under each, at the height it is.")
