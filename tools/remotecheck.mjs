@@ -58,7 +58,7 @@ for (const [name, d] of SIZES) {
   const p = await ctx.newPage();
   const errs = [];
   p.on("pageerror", (e) => errs.push(e.message));
-  await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await p.goto(BASE + "remote.html"); await sleep(1800);
   const m = await p.evaluate(() => {
     const tiles = [...document.querySelectorAll(".rm-btn")].map((e) => e.getBoundingClientRect());
@@ -82,7 +82,7 @@ const ctx = await browser.newContext(dev(390, 844));
 const p = await ctx.newPage();
 const sent = [];
 p.on("request", (r) => { if (r.method() === "POST" && /api\/console$/.test(r.url())) { try { sent.push(JSON.parse(r.postData())); } catch { /* fine */ } } });
-await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
 await p.goto(BASE + "remote.html"); await sleep(1800);
 check("the block's heading is over its buttons", (await p.locator(".rm-head").first().innerText()).toUpperCase().includes("COBRA"));
 const col = p.locator('.rm-btn[data-id="q1-14"]');
@@ -124,7 +124,7 @@ console.log("Arranging this phone's buttons");
 {
   const ctx3 = await browser.newContext(dev(390, 844));
   const pa = await ctx3.newPage();
-  await pa.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pa.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await pa.goto(BASE + "remote.html"); await sleep(1800);
   const deskBefore = JSON.stringify(((await fetch(BASE + "api/console").then((r) => r.json())).quick || {}).buttons.map((b) => [b.id, b.slot, b.label]));
   const order = () => pa.locator("#rm-grid [data-aid]").evaluateAll((els) => els.map((e) => e.dataset.aid));
@@ -170,7 +170,7 @@ console.log("Faders");
 {
   const ctx2 = await browser.newContext(dev(375, 667));
   const pf = await ctx2.newPage();
-  await pf.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pf.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await pf.goto(BASE + "remote.html"); await sleep(1800);
   const tab = pf.locator("#rm-views .rm-view", { hasText: "Faders" });
   check("a Faders tab when the show has groups", await tab.count() === 1);
@@ -217,7 +217,7 @@ console.log("Group colours: the desk and the phone match");
   const fill = await desk.locator("#grp-masters .master.grp").nth(1).evaluate((el) => getComputedStyle(el).getPropertyValue("--accent").trim());
   check("...and the desk's fader turns red", fill === "#ef4444", fill);
   const ph2 = await (await browser.newContext(dev(390, 844))).newPage();
-  await ph2.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await ph2.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await ph2.goto(BASE + "remote.html"); await sleep(1500);
   await ph2.locator("#rm-views .rm-view", { hasText: "Faders" }).click(); await sleep(500);
   const tint = await ph2.locator('.rm-fader').nth(2).evaluate((el) => el.style.getPropertyValue("--tint"));
@@ -232,6 +232,25 @@ check("gets the remote", /remote\.html/.test(pp.url()), pp.url());
 await pp.goto(BASE + "?desk=1"); await sleep(1500);
 check("...unless it asks for the full desk", !/remote\.html/.test(pp.url()), pp.url());
 await ph.close();
+
+console.log("Full screen at the first touch");
+{
+  const fctx = await browser.newContext(dev(390, 844));
+  const fp = await fctx.newPage();
+  await fp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await fp.goto(BASE + "remote.html"); await sleep(1800);
+  const was = await fp.evaluate(() => !!document.fullscreenElement);
+  await fp.mouse.click(10, 300); await sleep(600);
+  check("a phone's first touch takes the remote full screen (no browser bars)", !was && await fp.evaluate(() => !!document.fullscreenElement));
+  await fctx.close();
+  const mctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const mp = await mctx.newPage();
+  await mp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await mp.goto(BASE + "remote.html"); await sleep(1500);
+  await mp.mouse.click(10, 300); await sleep(500);
+  check("...but not a computer with a mouse", !(await mp.evaluate(() => !!document.fullscreenElement)));
+  await mctx.close();
+}
 
 console.log("The desk's phone button");
 {
@@ -283,7 +302,7 @@ console.log("One icon for every venue (the desk's name, haze.local)");
     const named = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}), args: [`--host-resolver-rules=MAP ${info.name} 127.0.0.1`] });
     const nctx = await named.newContext(dev(390, 844));
     const np = await nctx.newPage();
-    await np.addInitScript(() => { try { if (location.hostname === "127.0.0.1") { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.hidden", '["timeline"]'); } } catch (e) { /* fine */ } });
+    await np.addInitScript(() => { try { if (location.hostname === "127.0.0.1") { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); localStorage.setItem("haze.remote.hidden", '["timeline"]'); } } catch (e) { /* fine */ } });
     await np.goto(NB + "remote.html?code=" + CODE);
     for (let i = 0; i < 40 && new URL(np.url()).hostname !== info.name; i++) await sleep(250);
     await sleep(1500);
@@ -295,7 +314,7 @@ console.log("One icon for every venue (the desk's name, haze.local)");
     // a phone that can't look names up: it stays at the address, and says so once
     const plain = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
     const pp = await (await plain.newContext(dev(390, 844))).newPage();
-    await pp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+    await pp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
     await pp.goto(NB + "remote.html?code=" + CODE);
     let st = {};
     for (let i = 0; i < 40; i++) {

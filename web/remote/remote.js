@@ -919,6 +919,7 @@ const autoFull = () => { try { return localStorage.getItem(AUTOFULL) !== "0"; } 
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 window.addEventListener("pointerup", () => {
   if (!autoFull() || !canFull() || isFull() || standalone() && matchMedia("(display-mode: fullscreen)").matches) return;
+  if (!matchMedia("(pointer: coarse)").matches) return;   // (a phone or tablet - not a computer with a mouse)
   if (!$("#rm-connect").hidden) return;                // (typing the code: the keyboard first)
   const el = document.documentElement;
   try {
