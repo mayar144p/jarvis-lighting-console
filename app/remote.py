@@ -45,8 +45,8 @@ def lan_addresses() -> list[str]:
     for a in found:
         if _usable(a) and a not in out:
             out.append(a)
-    tail = ipaddress.ip_network("100.64.0.0/10")
-    return sorted(out, key=lambda a: ipaddress.ip_address(a) in tail)
+    rank = {"lan": 0, "tailscale": 1, "vpn": 2}
+    return sorted(out, key=lambda a: rank[kind(a)])
 
 
 def is_tailscale(addr: str) -> bool:
@@ -56,10 +56,28 @@ def is_tailscale(addr: str) -> bool:
         return False
 
 
+_LAN = [ipaddress.ip_network(n) for n in ("192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12")]
+
+
+def kind(addr: str) -> str:
+    """"lan" (a home / venue network: 192.168.x, 10.x, 172.16-31.x - a phone
+    on the Wi-Fi reaches it), "tailscale", or "vpn": any other address on
+    this computer is a VPN's own (Radmin VPN gives 26.x, Hamachi 25.x) -
+    only devices on that VPN reach it, never a phone on the Wi-Fi."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return "vpn"
+    if any(ip in n for n in _LAN):
+        return "lan"
+    return "tailscale" if is_tailscale(addr) else "vpn"
+
+
 def info() -> dict:
     """Whether phones can reach this desk, at which addresses, with which code."""
     if not config.requires_token():
         # (bound to this computer only: Desk -> Other computers, phones and tablets turns it on)
         return {"network": False, "addresses": [], "port": config.PORT, "code": ""}
     return {"network": True, "port": config.PORT, "code": config.CONSOLE_TOKEN,
-            "addresses": [{"address": a, "tailscale": is_tailscale(a)} for a in lan_addresses()]}
+            "addresses": [{"address": a, "tailscale": kind(a) == "tailscale", "vpn": kind(a) == "vpn"}
+                          for a in lan_addresses()]}

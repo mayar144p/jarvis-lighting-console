@@ -59,20 +59,25 @@ export function remotePanel() {
           : "This desk only answers on this computer. Start it with HOST=0.0.0.0 and a CONSOLE_TOKEN in .env to let phones in."));
       return;
     }
-    const addrs = r.addresses.length ? r.addresses : [{ address: location.hostname, tailscale: false }];
+    const all = r.addresses.length ? r.addresses : [{ address: location.hostname, tailscale: false }];
+    // a VPN's own address (Radmin VPN 26.x, Hamachi 25.x...) is no use to a
+    // phone on the Wi-Fi: only shown when there's nothing else, and said so
+    const addrs = all.some((a) => !a.vpn) ? all.filter((a) => !a.vpn) : all;
+    const vpns = all.filter((a) => a.vpn && !addrs.includes(a));
     const cards = await Promise.all(addrs.slice(0, 3).map(async (a) => {
       const url = `http://${a.address}:${r.port}/remote.html`;
       const svg = await qrSvg(`${url}?code=${encodeURIComponent(r.code)}`).catch(() => null);
       return h("div.remote-card",
         svg || h("p.muted.small", "(no QR code - type the address)"),
         h("div",
-          h("b", a.tailscale ? "From anywhere (Tailscale)" : "On this Wi-Fi"),
+          h("b", a.tailscale ? "From anywhere (Tailscale)" : a.vpn ? "Only over a VPN (not a phone on the Wi-Fi)" : "On this Wi-Fi"),
           h("code.remote-url", url),
           h("p.muted.small", "Scan with the phone's camera: it opens signed in.")));
     }));
     box.replaceChildren(
       h("p", "Scan with a phone or tablet on the same Wi-Fi. It opens the remote: your button pages, Cues and Timeline when the show has them, and Blackout, the master and Release all along the bottom. It can't edit the show."),
       ...cards,
+      vpns.length ? h("p.muted.small", `Not for phones: ${vpns.map((a) => a.address).join(", ")} - a VPN on this computer (Radmin VPN, Hamachi...). A phone on the Wi-Fi can't reach it and just keeps loading.`) : null,
       h("p.muted.small", `Pairing code: ${showCode(r.code)} (typed on the phone if it can't scan). Anyone with the code can play the desk - "New code" in Desk → Other computers, phones and tablets signs every phone out.`),
       h("h3", "Full screen, like an app"),
       h("ul.remote-tips",

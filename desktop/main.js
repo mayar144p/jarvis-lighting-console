@@ -155,12 +155,22 @@ function portOr(want) {
     s.listen(want, "0.0.0.0", () => s.close(() => resolve(want)));
   });
 }
-function lanAddresses() {
-  return Object.values(os.networkInterfaces()).flat()
-    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
-}
 // a Tailscale (or other CGNAT-range VPN) address: 100.64.0.0/10
 const isTailscale = (a) => { const [x, y] = a.split(".").map(Number); return x === 100 && y >= 64 && y <= 127; };
+// a home / venue network's address (192.168.x, 10.x, 172.16-31.x): a phone on the Wi-Fi reaches it
+const isLan = (a) => { const [x, y] = a.split(".").map(Number); return x === 192 && y === 168 || x === 10 || x === 172 && y >= 16 && y <= 31; };
+// adapters that aren't the Wi-Fi / network cable, by their Windows / Mac name
+const VIRTUAL = /vpn|radmin|hamachi|zerotier|virtual|vbox|vmware|hyper-v|vethernet|wsl|docker|bridge100|utun|tailscale/i;
+// The addresses another device could use, the Wi-Fi / cable one first.  A
+// VPN's own (Radmin VPN 26.x, Hamachi 25.x) only works from that VPN: a
+// phone on the Wi-Fi opening it just keeps loading - so it goes last, said so.
+function lanAddresses() {
+  const all = Object.entries(os.networkInterfaces()).flatMap(([name, list]) => (list || [])
+    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => ({ a: i.address, name })));
+  const rank = ({ a, name }) => (isLan(a) && !VIRTUAL.test(name) ? 0 : isLan(a) ? 1 : isTailscale(a) ? 2 : 3);
+  return all.sort((p, q) => rank(p) - rank(q)).map((x) => x.a);
+}
+const isVpn = (a) => !isLan(a) && !isTailscale(a);
 
 // Windows Firewall: the other computer reaches the desk only once Windows
 // lets the port in.  Its own "allow?" question covers private networks
@@ -832,7 +842,8 @@ async function phonesDialog() {
   const port = Number(new URL(base).port);
   const addrs = lanAddresses();
   const fwOk = firewallHasRule(port);
-  const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)" : "");
+  const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)"
+    : isVpn(a) ? "   (a VPN on this computer, e.g. Radmin: only from that VPN - not a phone on the Wi-Fi)" : "");
   const buttons = ["OK", "New code", "Stop allowing others"];
   if (!fwOk) buttons.push("Let it through Windows Firewall");
   const r = await ask(win, {
