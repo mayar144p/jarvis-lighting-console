@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("hazeDesk", {
   ready: () => ipcRenderer.send("desk:ready"),
   onAsk: (fn) => ipcRenderer.on("desk:ask", (_e, q) => fn(q)),
   answer: (id, index) => ipcRenderer.send("desk:answer", id, index),
+  // the app asks the page to show something ("phoneqr": the phone remote's QR)
+  onDo: (fn) => ipcRenderer.on("desk:do", (_e, what) => fn(String(what))),
   // a Save as box, then the bytes written there: the path, or null (cancelled)
   saveAs: (name, bytes) => ipcRenderer.invoke("desk:saveAs", name, bytes),
   // no system title bar: the page draws minimise / maximise / close and the

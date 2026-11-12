@@ -844,14 +844,14 @@ async function phonesDialog() {
   const fwOk = firewallHasRule(port);
   const where = (a) => `  http://${a}:${port}` + (isTailscale(a) ? "   (Tailscale: from anywhere)"
     : isVpn(a) ? "   (a VPN on this computer, e.g. Radmin: only from that VPN - not a phone on the Wi-Fi)" : "");
-  const buttons = ["OK", "New code", "Stop allowing others"];
+  const buttons = ["OK", "New code", "Stop allowing others", "Show the QR code for phones"];
   if (!fwOk) buttons.push("Let it through Windows Firewall");
   const r = await ask(win, {
-    title: "Other computers, phones and tablets", type: "info", buttons, primary: 0, cancel: 0, danger: 2,
+    title: "Other computers, phones and tablets", type: "info", buttons, primary: addrs.length ? 3 : 0, cancel: 0, danger: 2,
     message: `Pairing code: ${showCode(d.code)}`,
     detail: (addrs.length ? `On the other computer, phone or tablet, open:\n${addrs.map(where).join("\n")}\nthen type the code. A computer gets the whole desk.`
       + `\n\nA phone or tablet as a remote (buttons, cues, timeline, blackout):\n  http://${addrs[0]}:${port}/remote.html`
-      + "\nor scan the QR code in the desk: Settings → Phone & tablet. A phone opening the desk's address gets the remote by itself."
+      + "\nor press \"Show the QR code for phones\": the phone scans it and opens the remote, signed in - nothing to type."
       : "This computer isn't on a network right now. Connect it to the same Wi-Fi as the other device.")
       + (fwOk ? "" : "\n\nIf the page doesn't load on the other device, Windows Firewall is blocking it: press \"Let it through Windows Firewall\" (Windows asks for permission once).")
       + "\n\n\"New code\" signs every other device out.",
@@ -859,6 +859,12 @@ async function phonesDialog() {
   if (r === 1) { d.code = newCode(); saveState(); await restartEngine(); return phonesDialog(); }
   if (r === 2) { d.remotes = false; saveState(); await restartEngine(); }
   if (r === 3) {
+    // the big QR in the desk page: a phone scans it and opens the remote signed in
+    const to = (win && !win.isDestroyed() ? win : null) || open.get("main") || [...open.values()][0];
+    if (to && !to.isDestroyed()) { to.show(); to.focus(); to.webContents.send("desk:do", "phoneqr"); }
+    return;
+  }
+  if (r === 4) {
     const ok = firewallAllow(port);
     await ask(win, {
       title: "Windows Firewall", type: ok ? "info" : "warning", buttons: ["OK"],
