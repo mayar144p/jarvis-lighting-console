@@ -1106,6 +1106,66 @@ async function moveToName() {
   location.replace(url);
 }
 
+// ------------------------------------------------------------ screen lock
+// Against a screen that touches by itself (cracked, wet, sweaty) and a phone
+// in a pocket - software can't tell a ghost touch from a real one, so the
+// cure is to lock.  One tap on the padlock locks: the buttons, tabs, pages,
+// swipes, the ⋯ menu and Release all stop answering, and what this phone
+// holds is let go.  Blackout and the master stay live (the safety).  Hold the
+// padlock for a second to unlock (a tap only says so - a ghost touch can't
+// unlock).  It stays locked through a reload or reopening the app.
+const LOCK_KEY = "haze.remote.locked";
+const UNLOCK_MS = 1000;
+let locked = false;
+try { locked = localStorage.getItem(LOCK_KEY) === "1"; } catch (e) { locked = false; }
+function setLocked(on) {
+  locked = on;
+  try { localStorage.setItem(LOCK_KEY, on ? "1" : "0"); } catch (e) { /* this visit only */ }
+  if (on) {
+    letGoOfAll();
+    if (arranging) setArranging(false);
+    const m = $(".rm-menu");
+    if (m && m.close) m.close();
+    if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
+  }
+  document.body.classList.toggle("rm-locked", on);
+  $("#rm-veil").hidden = !on;
+  const b = $("#rm-lock");
+  b.classList.toggle("on", on);
+  b.querySelector("span").textContent = on ? "🔒" : "🔓";
+  b.setAttribute("aria-label", on ? "Locked - hold to unlock" : "Lock the screen");
+  b.title = b.getAttribute("aria-label");
+}
+// while locked, a touch anywhere but the padlock, Blackout and the master
+// does nothing - stopped before any button, tab or swipe hears it
+const LIVE_WHEN_LOCKED = "#rm-lock, #rm-bo, #rm-master, .rm-connect";
+for (const type of ["pointerdown", "pointerup", "click", "touchstart"]) {
+  document.addEventListener(type, (e) => {
+    if (!locked || (e.target.closest && e.target.closest(LIVE_WHEN_LOCKED))) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (type === "pointerdown") note("Locked - hold the padlock to unlock");
+  }, { capture: true, passive: false });
+}
+(() => {
+  const b = $("#rm-lock");
+  let t = 0, id = null;
+  const stop = () => { if (t) { clearTimeout(t); t = 0; } b.classList.remove("arming"); id = null; };
+  b.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!locked) { setLocked(true); return; }          // one tap locks
+    id = e.pointerId;
+    capture(b, e.pointerId);
+    b.classList.add("arming");
+    t = setTimeout(() => { t = 0; b.classList.remove("arming"); setLocked(false); note("Unlocked"); }, UNLOCK_MS);
+  });
+  b.addEventListener("pointerup", (e) => { if (e.pointerId === id) stop(); });
+  b.addEventListener("pointercancel", stop);
+  b.addEventListener("lostpointercapture", stop);
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
+  setLocked(locked);
+})();
+
 // --------------------------------------------------------------- connecting
 function askCode(why = "") {
   $("#rm-connect").hidden = false;

@@ -261,3 +261,21 @@ button, input { font: inherit; color: inherit; }
 .rm-sheet-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
 .rm-sheet-btns button { min-height: 48px; min-width: 110px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 800; }
 .rm-sheet-btns .rm-sheet-arm { background: #dc2626; border-color: #dc2626; color: #fff; }
+
+/* the screen lock: the padlock fills while held to unlock; the veil over the buttons */
+.rm-lock { position: relative; overflow: hidden; display: grid; place-items: center; }
+.rm-lock span { position: relative; font-size: 20px; }
+.rm-lock.on { background: #3a2a07; border-color: var(--warn); }
+.rm-lock-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(251,191,36,.45); }
+.rm-lock.arming .rm-lock-fill { height: 100%; transition: height 1s linear; }
+.rm-grid { grid-column: 1; }                     /* (so the veil lies on it, not beside it) */
+.rm-veil { grid-row: 4; grid-column: 1; z-index: 4; display: grid; place-content: center; text-align: center; gap: 8px; padding: 20px;
+  background: rgba(7,11,16,.74); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); pointer-events: none; }
+.rm-veil-pad { font-size: 54px; line-height: 1; }
+.rm-veil b { font-size: 18px; }
+.rm-veil p { margin: 0; color: var(--muted); font-size: 14px; max-width: 260px; justify-self: center; }
+.rm-locked .rm-views, .rm-locked .rm-pages, .rm-locked #rm-more, .rm-locked .rm-rel { opacity: .35; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .rm-grid { grid-column: 2; }
+  .rm-veil { grid-row: 1 / 3; grid-column: 2; }
+}

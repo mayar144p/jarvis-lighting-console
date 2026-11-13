@@ -311,15 +311,18 @@ from a phone without squeezing the desk onto it.  Sized against a real show
 screen staying on, haze.local on iPhone and Android); a cut-down DJ-only
 remote (an idea, not asked yet).
 
-**Later - phone safety (agreed 2026-11-13, not now):**
-- **Screen lock on the remote.** A padlock in the top bar: tapped, the
-  button pages stop answering (a dark veil with "Locked - hold the padlock
-  to unlock"); held for a second, they answer again.  Against a cracked,
-  wet or sweaty screen touching by itself, and a phone in a pocket.  What
-  stays live while locked is to agree: Blackout and the master probably
-  yes (a safety), everything else no.  Ghost touches can't be told from
-  real ones in software - this is the only real cure.
-- (ARM switching itself off after a while from the phone: not wanted - the
+- **Then (2026-11-13):** the **screen lock** - the padlock locks with a tap
+  (buttons, tabs, pages, swipes, ⋯, Release all stop answering; Blackout and
+  the master stay live; what's held is let go), unlocks with a 1 s hold, stays
+  locked through a reload.  And **the desk and the phone in sync** checked
+  hard (tools/synccheck.mjs, in CI): both screens and the desk agree after
+  every press of a long random run from both sides, held buttons show on the
+  other screen, the other screen follows in ~0.1 s, the phone catches up after
+  dropping off.  It found that a desk button press could be lost: a quick tap
+  (or a busy page) ended the finger before the button could hold on to it,
+  and the press failed with it - fixed on the Buttons page, its X/Y pad,
+  Live's hits, the playback flash buttons and the faders (ui.js grab).
+  (ARM switching itself off after a while from the phone: not wanted - the
   phone arms as the desk does, until disarmed.)
 
 ## A15. Operator's feedback after the first gigs (2026-10-21) - DONE (B1-B7)

@@ -4,7 +4,7 @@
 //           connections, the checks - each with how it stands now
 //   Live    what is playing and what comes next, the tempo, the autopilot,
 //           the hits; master and blackout are on the dock's right
-import { $, h, confirmBox } from "./ui.js";
+import { $, h, confirmBox, grab } from "./ui.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { needs3d } from "./view3d.js";
@@ -183,7 +183,7 @@ function paintLive() {
     el.addEventListener("pointerdown", (e) => {
       if (finger !== null) return;
       finger = e.pointerId;
-      el.setPointerCapture(e.pointerId);
+      grab(el, e.pointerId);
       holding++;
       el.classList.add("on");
       run("quick_press", { id: b.id, down: true });

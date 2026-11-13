@@ -86,6 +86,8 @@ jobs:
         run: node tools/behave.mjs
       - name: The phone and tablet remote (fits phones from the last ten years, plays the desk)
         run: node tools/remotecheck.mjs
+      - name: The desk and the phone show the same (a long run of presses from both)
+        run: node tools/synccheck.mjs
       - name: NDI video in and out (a stand-in NDI runtime, built here, and a stand-in desktop link)
         run: |
           npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/koffi" koffi@3.3.2

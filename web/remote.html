@@ -23,6 +23,8 @@
     <span class="rm-dot" id="rm-dot" title="Connection to the desk"></span>
     <!-- what this remote plays: Buttons, and Cues / Timeline when the show has them -->
     <nav class="rm-views" id="rm-views" aria-label="What to play"></nav>
+    <!-- the screen lock: tap to lock, hold to unlock (Blackout and the master stay live) -->
+    <button class="rm-icon rm-lock" id="rm-lock" type="button" aria-label="Lock the screen" title="Lock the screen"><i class="rm-lock-fill"></i><span>🔓</span></button>
     <button class="rm-icon" id="rm-more" type="button" aria-label="More">⋯</button>
   </header>
   <nav class="rm-pages" id="rm-pages" aria-label="Pages"></nav>
@@ -33,6 +35,7 @@
     <button type="button" class="rm-go" id="rm-arrange-done">Done</button>
   </div>
   <main class="rm-grid" id="rm-grid" aria-live="off"></main>
+  <div class="rm-veil" id="rm-veil" hidden><div class="rm-veil-pad">🔒</div><b>Locked</b><p>Hold the padlock at the top for a second to unlock.</p><p>Blackout and the Master still work.</p></div>
   <footer class="rm-strip" id="rm-strip">
     <button class="rm-bo" id="rm-bo" type="button">Blackout</button>
     <label class="rm-master"><span>Master <output id="rm-master-val">100%</output></span>
