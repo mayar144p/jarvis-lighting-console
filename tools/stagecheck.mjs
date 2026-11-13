@@ -280,6 +280,100 @@ add("colour", async () => {
   save("05-colour-blue");
 });
 
+// The colour on the desk is the colour on the screen: a pool keeps the
+// hue the desk sent, dim or bright (the old film curve turned bright red
+// orange and green yellow).
+const hueOf = ([r, g, b]) => {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx - mn < 1) return null;
+  let h = mx === r ? (g - b) / (mx - mn) : mx === g ? 2 + (b - r) / (mx - mn) : 4 + (r - g) / (mx - mn);
+  return ((h * 60) % 360 + 360) % 360;
+};
+const hueGap = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+add("truecolour", async () => {
+  for (const [hex, want, name] of [["#ff0000", 0, "red"], ["#00ff00", 120, "green"], ["#2050ff", 227, "deep blue"], ["#ffaa00", 40, "amber"]]) {
+    for (const level of [0.35, 1]) {
+      await downlight({ options: { haze: 0, house: 0 }, look: { hex, a: level } });
+      const h = hueOf(await rgb(await at(0, 0, 6), 3));
+      check(`a ${name} pool keeps its colour at ${Math.round(level * 100)} %`, h !== null && hueGap(h, want) < 6, `hue ${h && h.toFixed(1)} (desk ${want})`);
+    }
+  }
+});
+
+add("exposure", async () => {
+  await downlight({ options: { haze: 0, house: 0.2, exposure: 0 } });
+  const mid = await lum(await at(0, 0, 6)), wall = await lum(await at(3.5, 0, 9));
+  const lights0 = await sc(() => window.SC.LIGHTS.uCol.value[0].toArray());
+  await downlight({ options: { haze: 0, house: 0.2, exposure: 1 } });
+  const up = await lum(await at(0, 0, 6));
+  const lights1 = await sc(() => window.SC.LIGHTS.uCol.value[0].toArray());
+  await downlight({ options: { haze: 0, house: 0.2, exposure: -1 } });
+  const down = await lum(await at(0, 0, 6)), wallDown = await lum(await at(3.5, 0, 9));
+  check("exposure up makes the picture brighter", up > mid + 5, `${mid.toFixed(1)} -> ${up.toFixed(1)}`);
+  check("exposure down makes it darker", down < mid - 5 && wallDown <= wall, `${mid.toFixed(1)} -> ${down.toFixed(1)}`);
+  check("exposure leaves the lights as they are", JSON.stringify(lights0) === JSON.stringify(lights1));
+  await sc(() => window.stage.setOptions({ exposure: 0 }));
+});
+
+// Strobes at their real speed: the picture-by-picture level, at 60 and at
+// 30 pictures a second, for strobes from 2 to 40 flashes a second.
+add("strobe", async () => {
+  const runs = await sc(() => {
+    const { strobeLevel } = window.SC.look;
+    const out = [];
+    for (const fps of [60, 30]) for (const hz of [2, 5, 10, 14, 20, 25, 30, 40]) for (const mode of [undefined, "random"]) {
+      const st = { on: false };
+      let prev = null, edges = 0, lit = 0, run = 0, longest = 0, t0 = null;
+      const secs = 4;
+      for (let i = 1; i <= fps * secs; i++) {
+        const t = i / fps + 0.0137;
+        const v = strobeLevel(hz, mode, t0, t, 3, st);
+        t0 = t;
+        if (v > 0.5 && prev !== null && prev <= 0.5) edges++;
+        if (v > 0.5) { lit++; run++; longest = Math.max(longest, run); } else run = 0;
+        prev = v;
+      }
+      out.push({ fps, hz, mode: mode || "plain", perSec: edges / secs, lit: lit / (fps * secs), longest });
+    }
+    // calm: never a flash - few changes a second, never dark
+    const st = { on: false };
+    let lo = 1, hi = 0, flips = 0, prev = null;
+    for (let i = 1; i <= 60 * 4; i++) {
+      const v = strobeLevel(20, undefined, (i - 1) / 60, i / 60, 3, st, true);
+      lo = Math.min(lo, v); hi = Math.max(hi, v);
+      const up = prev === null ? null : v > prev;
+      if (prev !== null && window.__up !== undefined && up !== window.__up) flips++;
+      window.__up = up;
+      prev = v;
+    }
+    return { out, calm: { lo, hi, flipsPerSec: flips / 4 } };
+  });
+  for (const r of runs.out) {
+    if (r.mode === "plain" && r.hz <= r.fps / 2) {
+      check(`a ${r.hz} Hz strobe flashes ${r.hz} times a second at ${r.fps} pictures a second`, Math.abs(r.perSec - r.hz) <= 0.5, `${r.perSec} a second`);
+    } else if (r.mode === "plain") {
+      check(`a ${r.hz} Hz strobe at ${r.fps} pictures a second flickers as fast as the screen can (every other picture)`,
+        r.perSec >= r.fps / 2 - 1 && r.longest === 1, `${r.perSec} a second, longest lit run ${r.longest}`);
+    } else if (r.hz <= r.fps / 2) {
+      check(`a random ${r.hz} Hz strobe flashes on some periods, never steady (${r.fps} a second)`,
+        r.perSec > 0 && r.perSec < r.hz && r.lit < 0.6, `${r.perSec} a second, lit ${(r.lit * 100).toFixed(0)} %`);
+    }
+  }
+  check("calm flashing never flashes: a steady glow, a slow shimmer", runs.calm.lo > 0.45 && runs.calm.hi < 0.8 && runs.calm.flipsPerSec <= 3,
+    JSON.stringify(runs.calm));
+  // the 3D draws every picture while a light strobes (and not in calm)
+  await downlight({ options: { haze: 0.5 }, look: { hz: 12 } });
+  const strobing = await sc(async () => { await window.SC.settle(3); return window.stage.strobing; });
+  check("while a light strobes the 3D draws every picture", strobing === true, String(strobing));
+  await sc(() => window.stage.setOptions({ calm: true }));
+  const calmNow = await sc(async () => { await window.SC.settle(3); return window.stage.strobing; });
+  check("calm flashing: no need to", calmNow === false, String(calmNow));
+  await sc(() => window.stage.setOptions({ calm: false }));
+  await downlight({ options: { haze: 0.5 }, look: { hz: 0 } });
+  const steady = await sc(async () => { await window.SC.settle(3); return window.stage.strobing; });
+  check("a steady light: back to resting when nothing moves", steady === false, String(steady));
+});
+
 add("quality", async () => {
   for (const q of ["fast", "auto", "high"]) {
     await downlight({ options: { haze: 0.6, quality: q } });

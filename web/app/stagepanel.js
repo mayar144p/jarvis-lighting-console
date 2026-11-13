@@ -155,6 +155,14 @@ export function initStage() {
   house.value = pref("house", house.value);
   stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
   house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
+  // the picture's exposure (stops): double-click puts it back to the middle
+  const exposure = $("#exposure");
+  if (exposure) {
+    exposure.value = pref("exposure", "0");
+    stage.setOptions({ exposure: +exposure.value, calm: pref("calm", "0") === "1" });
+    exposure.addEventListener("input", () => { stage.setOptions({ exposure: +exposure.value }); keep("exposure", exposure.value); });
+    exposure.addEventListener("dblclick", () => { exposure.value = "0"; stage.setOptions({ exposure: 0 }); keep("exposure", "0"); });
+  }
   const toggle = (id, key, dflt) => {
     const btn = $(id);
     const on = pref(key, dflt ? "1" : "0") === "1";

@@ -104,8 +104,9 @@ import {
   setDetail,
 } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
+import { pictureOut, exposureFor } from "./picture.js";
 import {
-  DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, flash, turnOf, motorStep,
+  DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, strobeLevel, turnOf, motorStep,
   hangOf, hangQuat,
 } from "./look.js";
 
@@ -122,7 +123,9 @@ export class Stage {
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
-      quality: "high", zones: false, dance: true, shadows: true };
+      quality: "high", zones: false, dance: true, shadows: true,
+      exposure: 0,          // the picture's brightness, in stops (-2 .. +2): the lights don't change
+      calm: false };        // calm flashing: strobes shimmer instead of flashing the screen
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -164,8 +167,11 @@ export class Stage {
     this.q.ratio = this.q.cap;
     renderer.setPixelRatio(this.q.ratio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    // the colour curve is the pipeline's own last step (picture.js: the
+    // colour on the desk is the colour on the screen); the exposure is the
+    // renderer's, which that step reads
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = exposureFor(0);
     renderer.domElement.className = "stage-canvas";
     renderer.domElement.tabIndex = 0;
     container.appendChild(renderer.domElement);
@@ -593,6 +599,7 @@ export class Stage {
     // Lights only: the room, rigging, stage, objects and crowd hidden - the lights and their beams stay
     this.venueGroup.visible = !this.options.lightsOnly;
     if (before.house !== this.options.house) this._applyHouse();
+    if (before.exposure !== this.options.exposure && this.renderer) this.renderer.toneMappingExposure = exposureFor(this.options.exposure);
     if (before.quality !== this.options.quality) {
       const dpr = window.devicePixelRatio || 1;
       this.q.cap = this.options.quality === "high" ? Math.min(dpr, 2)
@@ -1332,6 +1339,9 @@ export class Stage {
       if (inst.moving) motion = true;          // a head still travelling
       if (this.sfxBusy) motion = true;          // confetti still falling
     }
+    // a strobe draws every picture the screen can show: at 30 a second a
+    // fast one ran at the wrong speed
+    if (this.strobing) motion = true;
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
     if (!this.ready) return;
@@ -1343,6 +1353,7 @@ export class Stage {
     LIGHTS.uBounce.value = this.options.dance ? 1 : 0;
     const lights = [];
     let lit = 0;
+    this._strobeNow = false;
     for (const inst of this.fixtures.values()) {
       if (!inst.settled) {
         // from where it is now to the new look, landing by t0 + dur
@@ -1363,6 +1374,7 @@ export class Stage {
       if (this._drive(inst, time, lights)) lit++;
     }
     this.anyLit = lit > 0;
+    this.strobing = this._strobeNow;
     this._wireUpkeep();
     this.rigGroup.updateMatrixWorld(true);
     this._wireSegs = this.wire ? [] : null;
@@ -1429,7 +1441,8 @@ export class Stage {
   /** Draw the frame: the scene, with or without the glow. */
   _present(glow) {
     if (glow !== this._bloomOn) {
-      this.post.outputNode = glow ? this._sceneCol.add(this.bloom) : this._sceneCol;
+      this.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
+      this.post.outputNode = pictureOut(glow ? this._sceneCol.add(this.bloom) : this._sceneCol);
       this.post.needsUpdate = true;
       this._bloomOn = glow;
     }
@@ -1706,7 +1719,11 @@ export class Stage {
       const c2 = hexLinear(scroll.cols[(i + 1) % n], this._c);
       L.r = lerp(r1, c2.r, f); L.g = lerp(g1, c2.g, f); L.b = lerp(b1, c2.b, f);
     }
-    a *= flash(L.hz || lk.shz, lk.smode, time, inst.head);   // a real strobe only
+    // a real strobe only, at its real speed (look.js strobeLevel)
+    const hz = L.hz || lk.shz || 0;
+    if (hz > 0 && a > 0.002 && !this.options.calm) this._strobeNow = true;
+    a *= strobeLevel(hz, lk.smode, inst.strobeT, time, inst.head, inst.strobe || (inst.strobe = { on: false }), !!this.options.calm);
+    inst.strobeT = time;
     inst.level = a;
     const col = this._c.setRGB(L.r, L.g, L.b);
     for (const lens of sk.lenses) {

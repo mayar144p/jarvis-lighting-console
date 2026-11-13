@@ -50,6 +50,8 @@ window.addEventListener("storage", (e) => {
   else if (e.key === "haze.gig") document.body.classList.toggle("gig", e.newValue === "1");
   else if (e.key === "haze.quality" && HAS_3D) {
     stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: e.newValue || "high" }); }).catch(() => {});
+  } else if (e.key === "haze.calm" && HAS_3D) {
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ calm: e.newValue === "1" }); }).catch(() => {});
   }
 });
 

@@ -249,8 +249,17 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    book of a club scene saved to judge changes by eye.  It found a bug at
    once: the drawn "rings" gobo (and the petals' fade) never showed - a
    shader value first worked out inside another pattern's branch.
-2. Colour-true picture and an exposure control; strobes at their real
-   speed; calm flashing on screen.
+2. **(DONE) Colour-true picture, exposure, strobes:** the old film curve's
+   contrast now works on each colour's brightest channel, so the hue and
+   saturation the desk sent are kept (stagecheck: red, green, deep blue and
+   amber pools within 3 degrees, dim and bright); only far past white does
+   a colour run to white.  Exposure slider (stops, the lights untouched).
+   Strobes counted from everything since the last picture, and the 3D draws
+   every picture while one strobes: 2-30 Hz flash exactly that many times a
+   second at 60 pictures a second, faster ones every other picture; random
+   strobes keep their dice.  Calm flashing (Settings -> Screen & 3D): a
+   steady glow, under three changes a second.  No auto-exposure on purpose:
+   it would brighten a fade-out and hide it.
 3. Real beams: light added up along the line of sight, gobo and prism
    shafts, stopped by people, truss and walls, shadows in the haze.
 4. Every light lights the room: lumens, hundreds of lights, more and

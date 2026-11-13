@@ -194,7 +194,7 @@ function outputSection(con) {
 export const SETTINGS_PAGES = [
   ["output", "Output", "output dmx node art-net sacn usb universe ip network send"],
   ["venue", "Venue", "venue room size template width depth ceiling describe"],
-  ["screen", "Screen & 3D", "screen gig mode theme dark show dark 3d quality window number keys"],
+  ["screen", "Screen & 3D", "screen gig mode theme dark show dark 3d quality window number keys calm flashing strobe flashes epilepsy photosensitive"],
   ["video", "Video (NDI)", "ndi video network led screen wall media server resolume obs vmix send out stream camera"],
   ["midi", "MIDI & OSC", "midi osc controller stream deck monitor learn launchpad apc"],
   ["hue", "Philips Hue", "hue lamps smart bridge"],
@@ -214,6 +214,20 @@ const SETTINGS_GROUPS = [
 export function openSettingsAt(tab) {
   try { localStorage.setItem("haze.settingsTab", tab); } catch (e) { /* fine */ }
   return openSettings();
+}
+
+/** Calm flashing: strobes in the 3D shimmer instead of flashing the
+ *  screen (for anyone who mustn't watch flashing light); the real lights
+ *  strobe as programmed.  Kept on this computer, every 3D window follows. */
+function calmRow() {
+  const box = h("input", { type: "checkbox" });
+  try { box.checked = localStorage.getItem("haze.calm") === "1"; } catch (e) { /* private */ }
+  box.addEventListener("change", () => {
+    try { localStorage.setItem("haze.calm", box.checked ? "1" : "0"); } catch (e) { /* private */ }
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ calm: box.checked }); }).catch(() => {});
+  });
+  return h("label.check", { title: "For anyone who mustn't watch flashing light: in the 3D a strobing light glows and shimmers slowly instead of flashing. The real lights strobe as programmed." },
+    box, h("span", "Calm flashing: strobes in the 3D shimmer instead of flashing the screen"));
 }
 
 export async function openSettings() {
@@ -288,7 +302,8 @@ export async function openSettings() {
         h("button.btn", { onclick: () => window.hazeDesk.win.pick("ontop") }, "Keep it on top / not"),
         h("span.muted.small", "its own window: put it on a second screen, or full screen")) : null,
       h("label.check", view3d, h("span", "Also show the 3D in this window (the desk reloads)")),
-      h("label.field", h("span", "Quality"), quality)]],
+      h("label.field", h("span", "Quality"), quality),
+      calmRow()]],
     ["video", "Video (NDI)", [ndiPanel()]],
     ["midi", "MIDI & OSC", [
       h("p.muted.small", "On the desk computer: " + (midi.enabled ? (midi.open ? `listening to ${midi.device}` : (midi.error || "no MIDI device found")) : "MIDI is off (MIDI_ENABLED=false).")),

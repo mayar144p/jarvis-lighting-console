@@ -75,6 +75,9 @@ outdoor stage) and resizes the room.
 
 * **House lights** (bottom right of the stage) make the room visible with the
   rig dark. Walls between you and the stage are cut away automatically.
+* **Exposure** (next to House and Haze) brightens or darkens the picture, the
+  way a camera's exposure does; the lights themselves don't change.
+  Double-click it to put it back to the middle.
 * **Rigging**: truss, pipes, towers, ladders, tripod stands and floor bases.
   New lights place themselves by type: movers and washes on the trusses,
   PARs and bars on the stage lip. A light on a truss is *mounted*, so moving
@@ -132,6 +135,17 @@ physically is and who made it:
   intensity, zoom, pan/tilt, gobo and strobe, lighting the floor, the flown
   truss and the performers, with bloom and optional haze. A lens that looks
   straight at the camera draws a thin flare streak, as a camera sees it.
+* **True colour.** The colour you pick on the desk is the colour on the
+  screen, dim or bright: bright red stays red, green stays green. Only far
+  brighter than the screen's white - a lens, the core of a narrow beam - does
+  a colour run to white, as it does to a camera and to the eye.
+* **Strobes at their real speed.** While a light strobes the 3D draws every
+  picture the screen can show and counts the flashes, so a 10 Hz strobe
+  flashes ten times a second. Faster than half the screen's pictures a second
+  (30 on most screens) it flickers as fast as the screen can.
+  **Settings → Screen & 3D → Calm flashing** shows strobes as a slow shimmer
+  instead, for anyone who mustn't watch flashing light; the real lights
+  strobe as programmed.
 * **Gobos.** A light's own gobo pictures are projected for the slot its gobo
   channel is in. They come from its fixture file; when that file has none,
   from the same light in the other library (the two often describe one light,
