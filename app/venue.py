@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 
 VERSION = 2
 
@@ -47,6 +48,9 @@ ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
               # app/engine_zones.py holds every light off it
               "keepout")
 CEILINGS = ("flat", "open", "none")
+# the sky over a venue with no roof (web/js/stage/sky.js); or the
+# operator's own 360-degree photo, "picture:upload:<id>" / "picture:<link>"
+SKIES = ("night", "city", "dusk", "overcast", "day")
 CROWD_STYLES = ("simple", "varied")
 
 # Default cross-section of each rig kind (m), and whether lights on it hang.
@@ -178,6 +182,8 @@ def _clean_room(raw: dict) -> dict:
         "floor": _text(raw.get("floor"), "concrete", 20),
         "wall_colour": _colour(raw.get("wall_colour"), "#3a3d45"),
         "areas": _clean_areas(raw.get("areas")),
+        "sky": _sky(raw.get("sky")),
+        "sky_turn": round(_num(raw.get("sky_turn"), 0.0, -3600, 3600) % 360, 1),
     }
     if room["outline"]:
         # A traced room: its box is the outline's extent.
@@ -188,6 +194,18 @@ def _clean_room(raw: dict) -> dict:
                      "back": round(min(zs), 3),
                      "cx": round((max(xs) + min(xs)) / 2, 3)})
     return room
+
+
+def _sky(value) -> str:
+    """The sky (SKIES), or a 360-degree picture kept on the desk or by link."""
+    s = str(value or "").strip()
+    if s in SKIES:
+        return s
+    if s.startswith("picture:"):
+        ref = s[len("picture:"):]
+        if re.fullmatch(r"upload:[A-Za-z0-9_-]{1,64}", ref) or re.fullmatch(r"https?://[^\s\"'<>]{1,280}", ref):
+            return s
+    return "night"
 
 
 def _clean_stage(raw) -> dict | None:

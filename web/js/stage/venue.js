@@ -425,6 +425,10 @@ let mediaLoader = null;
 const mediaUrls = new Map();
 export function setScreenMediaLoader(fn) { mediaLoader = fn; }
 
+/** A picture or clip's address: one kept on the desk ("upload:<id>") is
+ *  fetched once (screens, the sky); a link is itself. */
+export function mediaUrlFor(src) { return mediaUrl(src); }
+
 function mediaUrl(src) {
   if (!src.startsWith("upload:")) return Promise.resolve(src);
   const id = src.slice(7);
@@ -969,8 +973,9 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   const floor = new THREE.Mesh(polygonGeo(outline, 0), M.floor);
   floor.userData = { venueKind: "floor" };
   group.add(floor);
+  // (outdoors on grass, the same grass on: no edge round the field)
   const apron = new THREE.Mesh(new THREE.PlaneGeometry(R.w + 60, R.d + 60),
-    surfaceMaterial(outdoor ? 0x1d2618 : 0x0b0c0f));
+    surfaceMaterial(outdoor ? (v.room.floor === "grass" ? FLOOR_COLOURS.grass : 0x1d2618) : 0x0b0c0f));
   apron.rotation.x = -Math.PI / 2;
   apron.position.set(R.cx, -0.01, R.z0 + R.d / 2);
   apron.userData.wireBare = true;                 // no outline in the line drawings

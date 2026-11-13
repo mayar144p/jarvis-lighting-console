@@ -2565,6 +2565,51 @@ def test_ai_sees_3d() -> None:
     check("the copilot sends a picture when the AI asks to see", "r.need_view" in cj and "resume: r.turn" in cj and "can_see:" in cj, "")
 
 
+def test_venue_sky() -> None:
+    """The sky over a venue with no roof: night by default, set to a city,
+    sunset, overcast or daylight, or the operator's own 360-degree picture
+    (kept on the desk, or a plain web link - nothing else), turned; the AI
+    can set it; kept with the venue."""
+    from app import aitools, venue
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="outdoor")
+            room = e.venue["room"]
+            check("an outdoor stage has no roof and a night sky to start", room["ceiling"] == "none" and room["sky"] == "night"
+                  and room["sky_turn"] == 0, str(room))
+            r = e.act("venue_room", sky="dusk", sky_turn=-30)
+            check("...a sunset, turned (kept between 0 and 360)", r.get("ok") and e.venue["room"]["sky"] == "dusk"
+                  and e.venue["room"]["sky_turn"] == 330 and r.get("summary") == "the sky: dusk", json.dumps(r.get("summary")))
+            r = e.act("venue_room", sky="purple")
+            check("...an unknown sky is refused, saying which there are", not r.get("ok") and "night" in (r.get("error") or "")
+                  and e.venue["room"]["sky"] == "dusk", str(r.get("error")))
+            r = e.act("venue_room", sky="picture:upload:a1B2_c3")
+            check("...your own picture kept on the desk", r.get("ok") and e.venue["room"]["sky"] == "picture:upload:a1B2_c3", str(r.get("summary")))
+            again = venue.normalise(json.loads(json.dumps(e.venue)))
+            check("...and kept with the venue as it is", again["room"]["sky"] == "picture:upload:a1B2_c3" and again["room"]["sky_turn"] == 330, "")
+            bad = [venue._clean_room({"sky": s, "width": 10, "depth": 10})["sky"] for s in
+                   ("picture:javascript:alert(1)", "picture:upload:../../x", "picture:file:///etc/passwd", "DAY", 7)]
+            check("nothing but the skies, a picture on the desk or a web link (else night)", bad == ["night"] * 5, str(bad))
+            check("...a web link is kept", venue._clean_room({"sky": "picture:https://example.com/360.jpg", "width": 1, "depth": 1})["sky"]
+                  == "picture:https://example.com/360.jpg", "")
+            e.act("venue_template", name="club")
+            r = e.act("venue_room", sky="day")
+            check("a room with a roof keeps a sky for later, and says it shows only with no roof",
+                  r.get("ok") and "no roof" in r.get("summary", ""), str(r.get("summary")))
+        finally:
+            e.shutdown()
+    check("the AI can set the sky (venue_room takes it)", "sky" in aitools.params_of(eng_mod.Engine, "venue_room")
+          and "sky_turn" in aitools.params_of(eng_mod.Engine, "venue_room"), "")
+    sj = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
+    check("Settings -> Venue has the sky, a turn and your own picture",
+          "skyRow(v)" in sj and "Your own 360° picture…" in sj and "sky_turn" in sj, "")
+
+
 def test_ai_measures_light() -> None:
     """The assistant can measure the light (measure_light): the turn pauses,
     the screen's 3D takes the readings (lux, the lights giving most of it),

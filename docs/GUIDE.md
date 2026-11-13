@@ -107,6 +107,16 @@ so the beams show in the air.
   solid: the beams show it. Its box shows only while arranging; **Thicker**
   sets how much.
 
+### The sky over an outdoor stage
+
+A venue with no roof (the **Outdoor** template, or a room with no ceiling)
+has the sky over it. **Settings → Venue → Sky**: night with stars, a city
+night (an orange glow, few stars), a sunset, overcast or daylight - or your
+own 360° photo of the real place (a wide panorama, twice as wide as it is
+high). The sky lights the field too: at night the beams own the dark; in
+daylight the lights hardly show, which is worth seeing before an early slot.
+**Turn it** moves where the sun sets, or which way your photo faces.
+
 ### Arrange mode
 
 *Where:* Set up → Arrange the room

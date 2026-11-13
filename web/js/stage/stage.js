@@ -14,7 +14,8 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
-import { buildVenue, hitDistance, cutaway, releaseScreens } from "./venue.js";
+import { buildVenue, hitDistance, cutaway, releaseScreens, mediaUrlFor } from "./venue.js";
+import { skyNode, skyLight, pictureLight } from "./sky.js";
 import { ndiOffer, ndiOut, ndiSender, ndiSendFrame, ndiOnOut } from "../ndi.js";
 
 /** The room's four sides written on the floor (Arrange, Zones): the DJ /
@@ -335,6 +336,7 @@ export class Stage {
     this.segments = built.segments;
     this.people = built.people;
     if (this.options.lightMap) this._applyLightMap();
+    this._applySky();
     cutaway(built, this.camera.position);
     this._underlayVisibility();
     this.dirty = true;
@@ -631,7 +633,7 @@ export class Stage {
     // Lights only: the room, rigging, stage, objects and crowd hidden - the lights and their beams stay
     this.venueGroup.visible = !this.options.lightsOnly;
     if (before.house !== this.options.house) this._applyHouse();
-    if (before.exposure !== this.options.exposure && this.renderer) this.renderer.toneMappingExposure = exposureFor(this.options.exposure);
+    if (before.exposure !== this.options.exposure) this._applyExposure();
     if (before.hazeAuto !== this.options.hazeAuto) this.atmos.clear();      // Auto starts from clear air
     if (!!before.lightMap !== !!this.options.lightMap) this._applyLightMap();
     if (before.quality !== this.options.quality) {
@@ -792,12 +794,74 @@ export class Stage {
     return 0.01;
   }
 
-  /** House lights: how much of the room you see with the rig dark. */
+  /** The sky over a room with no roof (sky.js): drawn behind everything,
+   *  and the light it gives the room (_applyHouse).  Not in the line
+   *  drawings.  A picture shows the night sky until it has loaded. */
+  _applySky() {
+    const room = (this.built && this.built.venue && this.built.venue.room) || {};
+    const outdoor = room.ceiling === "none" && !this.wire;
+    const kind = outdoor ? String(room.sky || "night") : "";
+    const turn = +room.sky_turn || 0;
+    const key = outdoor ? `${kind}|${turn}` : "";
+    if (key === this._skyKey) return;
+    this._skyKey = key;
+    this.skyKind = kind;
+    if (!outdoor) {
+      this.scene.backgroundNode = null;
+      this.skyLight = null;
+      this._applyHouse();
+      return;
+    }
+    const pic = kind.startsWith("picture:") ? kind.slice(8) : "";
+    // the ground beyond the field: grass, or a darker ground
+    const ground = room.floor === "grass" ? [0.025, 0.041, 0.018] : [0.02, 0.022, 0.02];
+    const s = skyNode(pic ? "night" : kind, turn, null, ground);
+    this.scene.backgroundNode = s.node;
+    this.skyLight = skyLight(pic ? "night" : kind);
+    if (pic) {
+      mediaUrlFor(pic).then((url) => new Promise((ok, bad) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => ok(img);
+        img.onerror = bad;
+        img.src = url;
+      })).then((img) => {
+        if (this._skyKey !== key || this.destroyed) return;
+        const tex = new THREE.Texture(img);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+        this.skyLight = pictureLight(img);
+        tex.userData.ev = this.skyLight.ev;
+        this.scene.backgroundNode = skyNode("picture", turn, tex).node;
+        this._applyHouse();
+      }).catch(() => { /* the night sky stays */ });
+    }
+    this._applyHouse();
+  }
+
+  /** The picture's exposure: the slider's, plus what a bright sky takes
+   *  (sky.js: fixed for each sky - the lights never change it). */
+  _applyExposure() {
+    if (!this.renderer) return;
+    const ev = (this.skyLight && this.skyLight.ev) || 0;
+    this.renderer.toneMappingExposure = exposureFor((+this.options.exposure || 0) + ev);
+    (this._bloomScale || (this._bloomScale = uniform(1))).value = Math.pow(2, ev);
+  }
+
+  /** House lights: how much of the room you see with the rig dark (and,
+   *  outdoors, the sky's light on it). */
   _applyHouse() {
     const k = Math.max(0, Math.min(1, this.options.house));
     LIGHTS.uAmbient.value.setRGB(0.55, 0.55, 0.58).multiplyScalar(0.03 + Math.pow(k, 1.1) * 1.9);
-    this.hemi.intensity = 0.12 + k * 1.5;
-    this.key.intensity = 0.15 + k * 1.1;
+    const sky = this.skyLight;
+    if (sky) {
+      LIGHTS.uAmbient.value.r += sky.light[0];
+      LIGHTS.uAmbient.value.g += sky.light[1];
+      LIGHTS.uAmbient.value.b += sky.light[2];
+    }
+    this.hemi.intensity = 0.12 + k * 1.5 + (sky ? sky.room : 0);
+    this.key.intensity = 0.15 + k * 1.1 + (sky ? sky.room * 1.2 : 0);
+    this._applyExposure();
     this.scene.background.setRGB(0.014, 0.014, 0.016).lerp(new THREE.Color(0.055, 0.055, 0.06), k);
     if (this.wire) this.scene.background.setRGB(0, 0, 0);          // a line drawing: on black
     this.dirty = true;
@@ -1102,8 +1166,10 @@ export class Stage {
       wireUp(this.venueGroup, false);
       wireUp(this.rigGroup, false);
       if (this._wireBeams) this._wireBeams.visible = false;
+      this._applySky();
       this._applyHouse();
     } else {
+      this._applySky();
       this.scene.background.setRGB(0, 0, 0);
     }
     this.dirty = true;
@@ -1713,10 +1779,13 @@ export class Stage {
       let hdr = this._sceneTex;
       if (vol) hdr = hdr.add(beamUpsample(this.beamRT.texture, this._beamSize));
       if (this.bloom) this.bloom.dispose();
-      this.bloom = glow ? bloom(hdr, 0.55, 0.4, 0.9) : null;
+      // (the glow sees the light as the standard exposure would: a bright
+      // sky, exposed darker, mustn't glow all over - _applyExposure)
+      const bs = this._bloomScale || (this._bloomScale = uniform(1));
+      this.bloom = glow ? bloom(hdr.mul(bs), 0.55, 0.4, 0.9) : null;
       // the light map's false colours go to the screen as they are (the
       // legend's colours): no exposure, no curve, no glow
-      let out = lux ? renderOutput(hdr, THREE.NoToneMapping, THREE.SRGBColorSpace) : pictureOut(glow ? hdr.add(this.bloom) : hdr);
+      let out = lux ? renderOutput(hdr, THREE.NoToneMapping, THREE.SRGBColorSpace) : pictureOut(glow ? hdr.add(this.bloom.div(bs)) : hdr);
       if (fx) out = fxaa(out);
       this.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
       this.post.outputNode = out;

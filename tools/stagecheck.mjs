@@ -650,6 +650,70 @@ add("lightmap", async () => {
   check("off again: the people's colours and the beams come back", back.white < back.all && back.beams > 0, JSON.stringify(back));
 });
 
+// The sky over an outdoor stage (no roof): night dark with stars, daylight
+// bright blue and lighting the field, a sunset warmer low down than high
+// up; a red pool shows far less in daylight; indoors, no sky.
+add("sky", async () => {
+  const look = async (sky, ceiling = "none") => {
+    await sc(async ([sky, ceiling]) => {
+      const S = window.SC;
+      const v = S.room(16, 20, 8, { floor: "grass" });
+      v.room.ceiling = ceiling;
+      v.room.sky = sky;
+      await S.scene({ venue: v,
+        fixtures: [{ head_no: 1, model: "A", body: S.body("par", 25), photo: { lm: 3000, lm_from: "file" }, x: 0, y: 6, z: 12, stance: "hang", rot: [0, -90], kind: "truss" }],
+        looks: { 1: { hex: "#ff1010", a: 1 } }, options: { haze: 0, quality: "high", house: 0, people: false },
+        camera: { pos: [0, 2.2, 26], target: [0, 4.5, 4] } });
+    }, [sky, ceiling]);
+    await shot();
+    const stars = await sc(() => {
+      // bright points in the top quarter of the picture (more than their surroundings)
+      let n = 0;
+      for (let y = 4; y < 70; y += 1) for (let x = 4; x < 476; x += 1) {
+        const c = window.SC.lum(x, y, 0), s = window.SC.lum(x, y, 3);
+        if (c > s + 18 && c > 30) n++;
+      }
+      return n;
+    });
+    return { top: await rgb([240, 12], 6), low: await rgb(await at(0, 0.6, -40), 4), field: await lum([40, 292], 4),
+      pool: await lum(await at(0, 0, 12), 3), beside: await lum(await at(3.5, 0, 12), 3), stars };
+  };
+  const L = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const night = await look("night");
+  save("18-sky-night");
+  const day = await look("day");
+  save("19-sky-day");
+  const dusk = await look("dusk");
+  save("20-sky-dusk");
+  const wire = await sc(async () => { const st = window.stage; st._setWire(true); const on = st.scene.backgroundNode; st._setWire(false); return [on === null, st.scene.backgroundNode !== null]; });
+  // the operator's own 360-degree photo: here one red above the horizon,
+  // green below - the sky above the stage comes out red
+  const photo = await sc(() => {
+    const c = document.createElement("canvas");
+    c.width = 64; c.height = 32;
+    const g = c.getContext("2d");
+    g.fillStyle = "#d02020"; g.fillRect(0, 0, 64, 16);
+    g.fillStyle = "#20a020"; g.fillRect(0, 16, 64, 16);
+    return c.toDataURL("image/png");
+  });
+  await look("picture:" + photo);
+  await sc(() => new Promise((ok) => setTimeout(ok, 800)));
+  await shot();
+  const pic = await rgb([240, 12], 6);
+  save("21-sky-picture");
+  check("your own 360-degree picture as the sky", pic[0] > pic[1] + 40 && pic[0] > pic[2] + 40, pic.map((v) => v.toFixed(0)).join(","));
+  const inside = await look("day", "flat");
+  check("a night sky: dark, with stars in it", L(night.top) < 20 && night.stars >= 8, `top ${night.top.map((v) => v.toFixed(0))}, ${night.stars} stars`);
+  check("daylight: a bright blue sky", L(day.top) > 90 && day.top[2] > day.top[0] + 25, day.top.map((v) => v.toFixed(0)).join(","));
+  check("...and it lights the field", day.field > night.field + 25, `day ${day.field.toFixed(0)} vs night ${night.field.toFixed(0)}`);
+  check("...where a red pool shows far less than at night", (day.pool - day.beside) / (day.beside + 10) < (night.pool - night.beside) / (night.beside + 10) * 0.5,
+    `day ${day.pool.toFixed(0)} on ${day.beside.toFixed(0)}, night ${night.pool.toFixed(0)} on ${night.beside.toFixed(0)}`);
+  check("a sunset: warm low down, blue high up", dusk.low[0] > dusk.low[2] + 20 && dusk.top[2] > dusk.top[0],
+    `low ${dusk.low.map((v) => v.toFixed(0))}, top ${dusk.top.map((v) => v.toFixed(0))}`);
+  check("indoors (a roof): no sky", L(inside.top) < 20 && inside.stars < 3, `top ${inside.top.map((v) => v.toFixed(0))}`);
+  check("the line drawings have no sky (it comes back after)", wire[0] && wire[1], JSON.stringify(wire));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).

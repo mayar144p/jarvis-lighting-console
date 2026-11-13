@@ -37,8 +37,9 @@ export function pictureOut(colourNode) {
 // The standard exposure: mid-grey lands where the old curve put it.
 export const BASE_EXPOSURE = 1.05;
 
-/** The renderer's exposure for an exposure setting in stops (-2 .. +2). */
+/** The renderer's exposure for an exposure setting in stops (the slider's
+ *  -2 .. +2, plus what a bright sky takes: sky.js). */
 export function exposureFor(stops) {
-  const s = Math.max(-3, Math.min(3, +stops || 0));
+  const s = Math.max(-6, Math.min(4, +stops || 0));
   return BASE_EXPOSURE * Math.pow(2, s);
 }

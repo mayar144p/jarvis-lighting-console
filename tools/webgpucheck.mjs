@@ -66,9 +66,21 @@ async function scene(mode) {
   await sleep(2500);
   const luxShot = join(OUT, `lightmap-${mode}.png`);
   await win.locator("#stage-wrap").screenshot({ path: luxShot });
+  // the same rig outdoors at sunset (the sky's own shader: stars, the sun's glow)
+  await win.evaluate(() => {
+    const st = window.hazeStage;
+    st.setOptions({ lightMap: false });
+    const v = JSON.parse(JSON.stringify(st.built.venue));
+    v.room.ceiling = "none";
+    v.room.sky = "dusk";
+    st.buildVenue(v, []);
+  });
+  await sleep(2500);
+  const skyShot = join(OUT, `sky-${mode}.png`);
+  await win.locator("#stage-wrap").screenshot({ path: skyShot });
   await app.evaluate(({ app: a }) => a.quit());
   try { await app.close(); } catch { /* closed */ }
-  return { backend, errs, shot, luxShot };
+  return { backend, errs, shot, luxShot, skyShot };
 }
 
 const gpu = await scene("webgpu");
@@ -96,11 +108,14 @@ const compare = (a, c) => p.evaluate(async ([a, c]) => {
 }, [a, c].map((f) => "data:image/png;base64," + readFileSync(f).toString("base64")));
 const d = await compare(gpu.shot, gl.shot);
 const lux = await compare(gpu.luxShot, gl.luxShot);
+const sky = await compare(gpu.skyShot, gl.skyShot);
 await b.close();
 check("WebGPU draws a picture (not blank)", d.bright > 8 && d.bright < 200, d.bright.toFixed(1));
 check("WebGPU and WebGL 2 draw the same picture (beams, gobos, pools, shadows)", d.mean < 4, `mean difference ${d.mean.toFixed(2)} / 255`);
 check("the light map draws on WebGPU, the same as on WebGL 2", lux.bright > 8 && lux.mean < 4,
   `mean difference ${lux.mean.toFixed(2)} / 255, brightness ${lux.bright.toFixed(1)}`);
+check("an outdoor sky draws on WebGPU, the same as on WebGL 2", sky.bright > 8 && sky.mean < 4,
+  `mean difference ${sky.mean.toFixed(2)} / 255, brightness ${sky.bright.toFixed(1)}`);
 console.log(`pictures in ${OUT}`);
 console.log(fails ? `${fails} failed` : "all ok");
 process.exit(fails ? 1 : 0);

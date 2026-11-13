@@ -338,6 +338,21 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
      that lux on screen, beams gone and back, people white and back;
      webgpucheck: the map the same on WebGPU; selftest: the AI's pause,
      readings checked, picture and reading together.
+   - **(DONE) Skies** (web/js/stage/sky.js, Settings -> Venue -> Sky): over
+     a venue with no roof, drawn behind everything (and in a shiny floor):
+     night with stars (a pixel or two at any screen size), a city night,
+     sunset (the glow behind the stage, deep blue high up), overcast,
+     daylight (the sun behind the audience), or the operator's own 360
+     photo (kept on the desk, or a web link; nothing else); Turn moves it.
+     Each sky lights the field and takes a fixed exposure of its own (day
+     -2.5 stops, its sky and light that much brighter), so the rig's beams
+     and pools show as little as they really do at noon - not an automatic
+     exposure, a fade-out still fades.  The glow follows that exposure (a
+     bright sky glowed all over).  venue_room takes sky / sky_turn (the AI
+     too); the outdoor grass runs on past the field.  stagecheck: night dark
+     with stars, day blue and lighting the field with a red pool all but
+     gone, sunset warm low and blue high, a photo as the sky, no sky indoors
+     or in the line drawings; selftest: the kinds, pictures checked, turn.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)

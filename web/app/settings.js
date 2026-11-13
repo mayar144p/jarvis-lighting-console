@@ -285,7 +285,8 @@ export async function openSettings() {
         h("div.field", h("span", " "), h("button.btn", {
           onclick: () => run("venue_room", { width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true }),
         }, "Resize room"))),
-      describeRoomRow()]],
+      describeRoomRow(),
+      skyRow(v)]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
       (() => {
@@ -472,6 +473,51 @@ function huePanel() {
 
 // A room from words ("a 12 x 8 m club, bar on the left, DJ booth on a
 // 40 cm riser"): first what the desk understood, then build it.
+// The sky over a venue with no roof (web/js/stage/sky.js): night, a city
+// night, sunset, overcast, daylight, or a 360-degree photo of the real
+// place; turned to where the sun sets (or the photo's view is).
+const SKY_NAMES = [["night", "Night, with stars"], ["city", "Night in a city (an orange glow, few stars)"],
+  ["dusk", "Sunset"], ["overcast", "Overcast"], ["day", "Daylight (the lights hardly show)"], ["picture", "Your own 360° picture…"]];
+
+function skyRow(v) {
+  const room = (v && v.room) || {};
+  const outdoor = room.ceiling === "none";
+  const cur = String(room.sky || "night");
+  const sel = h("select.select", { "aria-label": "Sky" }, ...SKY_NAMES.map(([id, label]) => h("option", { value: id }, label)));
+  sel.value = cur.startsWith("picture:") ? "picture" : cur;
+  const file = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", hidden: true });
+  const set = (sky) => run("venue_room", { sky }, { toast: true });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    file.value = "";
+    if (!f) { sel.value = cur.startsWith("picture:") ? "picture" : cur; return; }
+    try {
+      const t = token();
+      toast(`Sending ${f.name}…`, "", 1600);
+      const r = await fetch("/api/console/screen_media", { method: "POST", body: f,
+        headers: { "Content-Type": "application/x-haze-upload", ...(t ? { "X-Haze-Token": t } : {}) } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.id) throw new Error(d.error || `upload failed (${r.status})`);
+      set(`picture:upload:${d.id}`);
+    } catch (e) {
+      toast(e.message || String(e), "bad");
+      sel.value = cur.startsWith("picture:") ? "picture" : cur;
+    }
+  });
+  sel.addEventListener("change", () => { if (sel.value === "picture") file.click(); else set(sel.value); });
+  const turn = h("input", { type: "range", min: 0, max: 359, step: 1, value: Math.round(+room.sky_turn || 0), "aria-label": "Turn the sky" });
+  turn.addEventListener("change", () => run("venue_room", { sky_turn: +turn.value }, { silentError: true }));
+  return h("div",
+    h("h3", "Sky"),
+    h("p.muted.small", outdoor
+      ? "Over this venue (no roof): what the audience sees above the stage, and the light it gives. In daylight the lights hardly show - worth seeing before an early slot."
+      : "Shows over a venue with no roof (the Outdoor template, or a room with no ceiling)."),
+    h("div.form-grid",
+      h("label.field", h("span", "Sky"), sel),
+      h("label.field", h("span", "Turn it (where the sun sets, or your picture's view)"), turn)),
+    file);
+}
+
 function describeRoomRow() {
   const text = h("textarea", { rows: 2, placeholder: "e.g. a 12 x 8 m club, 4 m ceiling, bar on the left, DJ booth on a 40 cm riser", style: { width: "100%" } });
   const said = h("p.muted.small", "");

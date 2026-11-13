@@ -82,6 +82,9 @@ SYNONYMS: dict[str, str] = {
     "rotate": "turned trusses", "rotated": "turned trusses", "turn": "turned trusses",
     "lux": "light map lux", "meter": "light map lux", "illuminance": "light map lux",
     "footcandles": "light map lux", "evenly": "light map lux", "lit": "light map lux",
+    "sky": "sky outdoor", "daytime": "sky daylight outdoor", "daylight": "sky daylight outdoor",
+    "sunset": "sky sunset outdoor", "stars": "sky night stars", "panorama": "sky 360 picture",
+    "outdoor": "sky outdoor", "festival": "sky outdoor",
 }
 _STOP = set("a an the i me my you your to do does how can could would should is are it in on of for with "
             "and or what where why when which this that these those please help want need make get use "
