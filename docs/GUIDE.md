@@ -160,6 +160,10 @@ physically is and who made it:
   colour times the surface's: a red wash on a white wall turns the floor in
   front of it red; a black floor sends little back. LED screens light what's
   in front of them with what they show.
+* **Mirror floors.** A black dance floor, tiles or polished concrete shows
+  the beams, the lenses, the truss and the screens reflected in it - sharp in
+  a black floor, softer in concrete, stronger at a glancing angle than looking
+  straight down (Medium and High; the floor is set in Settings → Venue).
 * **True colour.** The colour you pick on the desk is the colour on the
   screen, dim or bright: bright red stays red, green stays green. Only far
   brighter than the screen's white - a lens, the core of a narrow beam - does

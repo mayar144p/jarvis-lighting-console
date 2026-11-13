@@ -71,6 +71,19 @@ const floatTex = (w, h, format) => {
   t.needsUpdate = true;
   return t;
 };
+// The floor's mirror (reflect.js draws it each frame): the room and its
+// beams seen from under the floor, smaller than the screen, with mipmaps -
+// a rough floor (concrete) reads a blurrier level than a black dance floor.
+const BLACK = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+BLACK.needsUpdate = true;
+export const REFL = {
+  on: uniform(0),
+  room: texture(BLACK),
+  beams: texture(BLACK),
+  matrix: uniform(new THREE.Matrix4()),      // a point in the room -> the mirror's picture
+  levels: uniform(5),                        // the blurriest level a rough floor reads
+};
+
 export const GRID_W = 64;
 export const INDEX_W = 512, INDEX_H = 128;
 export const GRID = {
@@ -332,7 +345,7 @@ const bounceAt = (wp, N, light, wrap = 0) => {
 
 /** The light every beam puts on a surface point (and, for a shiny one,
  *  the lenses it mirrors). */
-const surfaceLight = (albedo, grid, sheen, detail) => Fn(() => {
+const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
   const wp = positionWorld;
   const N = select(frontFacing, normalize(normalWorld), normalize(normalWorld).negate()).toVar();
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
@@ -380,8 +393,23 @@ const surfaceLight = (albedo, grid, sheen, detail) => Fn(() => {
     const line = smoothstep(0.0, 0.012, max(g.x, g.y).oneMinus().sub(0.5)).oneMinus();
     alb.mulAssign(line.mul(grid).add(1));
   });
+  // the floor mirrors the room and its beams: how much by how shiny it is,
+  // and more at a glancing angle than looking straight down (Fresnel); a
+  // rougher floor's mirror is blurrier
+  const mirrored = vec3(0).toVar();
+  if (mirror) {
+    If(REFL.on.greaterThan(0.5).and(sheen.greaterThan(0.02)), () => {
+      const c = REFL.matrix.mul(vec4(wp, 1));
+      const uv = vec2(c.x.div(c.w).mul(0.5).add(0.5), c.y.div(c.w).mul(-0.5).add(0.5));
+      const V = normalize(cameraPosition.sub(wp));
+      const fres = pow(max(dot(N, V), 0).oneMinus(), 5).mul(0.9).add(0.04).add(sheen.mul(0.06));
+      const lod = sheen.oneMinus().mul(REFL.levels);
+      const seen = REFL.room.sample(uv).level(lod).rgb.add(REFL.beams.sample(uv).level(lod).rgb);
+      mirrored.assign(seen.mul(fres).mul(sheen));
+    });
+  }
   // a hint of a gloss floor: the brightest pools bloom a little
-  return alb.mul(light).add(light.mul(sheen).mul(0.04)).add(gloss.mul(sheen));
+  return alb.mul(light).add(light.mul(sheen).mul(0.04)).add(gloss.mul(sheen)).add(mirrored);
 })();
 
 // Medium and High draw the detail (focus and frost on gobos, prisms, lenses
@@ -410,7 +438,7 @@ export function surfaceMaterial(albedo, opts = {}) {
   };
   m.userData.detail = (on) => {
     m.userData.detailOn = on;
-    m.colorNode = surfaceLight(m.uniforms.uAlbedo, m.uniforms.uGrid, m.uniforms.uSheen, on);
+    m.colorNode = surfaceLight(m.uniforms.uAlbedo, m.uniforms.uGrid, m.uniforms.uSheen, on, !!opts.mirror && on);
   };
   m.userData.detail(DETAIL.on);
   return m;

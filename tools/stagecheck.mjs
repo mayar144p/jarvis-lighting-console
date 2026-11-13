@@ -480,6 +480,41 @@ add("screenglow", async () => {
     `screen red ${red.map((v) => v.toFixed(0))} vs dark ${dark.map((v) => v.toFixed(0))}`);
 });
 
+// Mirror floors (step 5): a black dance floor shows the beam reflected in
+// it; carpet doesn't; Low draws no mirror.
+add("mirror", async () => {
+  const look = async (floor, mirror, quality = "high") => {
+    await sc(async ([floor, mirror, quality]) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5, { floor }),
+        fixtures: [{ head_no: 1, model: "Spot", body: S.body("moving_spot", 14), x: 0, y: 4.5, z: 5, stance: "hang", kind: "truss" }],
+        looks: { 1: { hex: "#30a0ff", a: 1, pan: 0.5, tilt: 0.5 } }, options: { haze: 0.8, quality, house: 0.05, mirror },
+        camera: { pos: [0, 1.2, 12], target: [0, 1.2, 5] } });
+    }, [floor, mirror, quality]);
+    await shot();
+    // where the beam's lower part shows in the floor: the point mirrored under it
+    return lum(await at(0, -1.0, 5), 2);
+  };
+  const off = await look("black", false);
+  const on = await look("black", true);
+  save("14-mirror-floor");
+  check("a black dance floor shows the beam reflected in it", on > off + 8, `mirror ${on.toFixed(1)} vs none ${off.toFixed(1)}`);
+  // the light off: its reflection goes too (on a rough floor the mirror is
+  // read from its blurrier levels - they kept the old beam once)
+  await sc(() => window.SC.setLooks({ 1: { hex: "#30a0ff", a: 0, pan: 0.5, tilt: 0.5 } }));
+  await sc(() => window.stage.setOptions({ haze: 0 }));
+  await shot();
+  const gone = await lum(await at(0, -1.0, 5), 2);
+  check("the light off, its reflection goes too (nothing left in the mirror)", gone < off + 4, `${gone.toFixed(1)} vs ${off.toFixed(1)}`);
+  const carpet = await look("carpet", true);
+  const carpetOff = await look("carpet", false);
+  check("carpet doesn't", Math.abs(carpet - carpetOff) < 4, `carpet ${carpet.toFixed(1)} vs none ${carpetOff.toFixed(1)}`);
+  const low = await look("black", true, "fast");
+  const lowOff = await look("black", false, "fast");
+  check("Low draws no mirror", Math.abs(low - lowOff) < 4, `${low.toFixed(1)} vs ${lowOff.toFixed(1)}`);
+  await sc(() => window.stage.setOptions({ mirror: true, quality: "high" }));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).
@@ -633,6 +668,7 @@ add("lookbook", async () => {
     }
     await S.scene({
       venue: S.room(14, 18, 6.5, {
+        floor: "black",
         stage: { x: 0, z: 0, width: 10, depth: 4, height: 0.8, colour: "#26272c" },
         rigging: [{ id: "t1", kind: "truss", name: "", size: 0.3, a: [-5.5, 5.6, 3], b: [5.5, 5.6, 3] },
           { id: "t2", kind: "truss", name: "", size: 0.3, a: [-5, 5.6, 8], b: [5, 5.6, 8] }],

@@ -300,7 +300,7 @@ function mats(v) {
   const steel = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.45, metalness: 0.85, envMapIntensity: 0.35 });
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.2 });
   return {
-    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35 }),
+    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35, mirror: true }),
     wall: surfaceMaterial(new THREE.Color(v.room.wall_colour || "#2a2c33").getHex()),
     ceiling: surfaceMaterial(0x24262b, { side: THREE.DoubleSide }),
     deck: surfaceMaterial(new THREE.Color((v.stage && v.stage.colour) || "#26272c").getHex(), { grid: 0.12, sheen: 0.6 }),
@@ -1120,8 +1120,10 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     stage: new THREE.Color((v.stage && v.stage.colour) || "#26272c"),
     box: new THREE.Color(0x2e3036),
   };
+  // the floor mirrors the room (reflect.js) by how shiny it is
+  const mirror = { sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35, hide: [floor, apron] };
   return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo };
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo, mirror };
 }
 
 /** Let go of what a built room's screens play: NDI feeds stop, clips pause. */

@@ -108,6 +108,7 @@ import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import { pictureOut, exposureFor } from "./picture.js";
 import { VOL, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
 import { LightGrid } from "./lightgrid.js";
+import { FloorMirror } from "./reflect.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, strobeLevel, turnOf, motorStep,
   hangOf, hangQuat,
@@ -191,6 +192,7 @@ export class Stage {
     this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
     this._shadowRoom = 0;                          // bumped when what casts a shadow changes
     this.grid = new LightGrid();                   // every light on the surfaces (lightgrid.js)
+    this.mirror = new FloorMirror();               // a shiny floor mirrors the room (reflect.js)
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
     scene.add(this.hemi);
     const key = new THREE.DirectionalLight(0xdfe7ff, 0.35);
@@ -1506,6 +1508,20 @@ export class Stage {
       this._bloomOn = glow;
     }
     const keep = r.getRenderTarget();
+    // the floor's mirror first (the floor's shader reads it): Medium and
+    // High, a shiny floor, the camera above it
+    const fm = this.built && this.built.mirror;
+    if (fm && fm.sheen > 0.05 && this.options.quality !== "fast" && !this.wire && !this.q.lite
+        && this.options.mirror !== false && this.camera.isPerspectiveCamera && this.camera.position.y > 0.05 && !this.options.lightsOnly) {
+      const k = this.options.quality === "high" ? 0.5 : 0.25;
+      const ms = this._ms || (this._ms = new THREE.Vector2());
+      ms.set(this.sceneRT.width * k, this.sceneRT.height * k);
+      VOL.z01.value = r.coordinateSystem === THREE.WebGPUCoordinateSystem ? 1 : 0;
+      VOL.near.value = this.camera.near;
+      VOL.far.value = this.camera.far;
+      this.mirror.render(r, this.scene, this.beamScene, this.camera, ms,
+        { beams: vol && this.beamScene.children.some((m) => m.visible), hide: fm.hide, steps: 8 });
+    } else this.mirror.off();
     r.setRenderTarget(this.sceneRT);
     r.render(this.scene, this.camera);
     if (vol) {
@@ -2255,6 +2271,7 @@ export class Stage {
     if (this._ndiOff) this._ndiOff();
     releaseScreens(this.built);
     if (this.sceneRT) { this.sceneRT.dispose(); this.beamRT.dispose(); }
+    this.mirror.dispose();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.renderer) {
       this.renderer.dispose();

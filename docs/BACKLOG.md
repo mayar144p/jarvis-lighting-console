@@ -295,7 +295,16 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    pools, 16 / 6 shadows, no redraw at rest, a red wall reddening the floor,
    a red screen lighting the floor; behave: the dialog; selftest: the files
    and output_set.
-5. Mirror floors.
+5. **(DONE) Mirror floors** (web/js/stage/reflect.js): Medium and High,
+   a shiny floor (black, tiles, wood, concrete - by its sheen), the camera
+   above it: the room is drawn again from a camera turned over at the floor
+   (High half size, Medium a quarter), the beams in haze into that view
+   with its own depth (8 steps), mipmapped; the floor's shader reads its
+   point there, a blurrier level the rougher the floor, Fresnel-weighted.
+   Found while checking it: a picture that was only cleared kept its old
+   blurry levels - a rough floor showed a beam that was gone (now drawn
+   empty, so they're made again).  stagecheck: the beam in a black floor,
+   none in carpet or on Low, gone when the light is.
 6. Atmosphere: haze from the hazers, haze areas, CO2 and fog lit by beams.
 7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,
    VR.
