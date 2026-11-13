@@ -721,7 +721,9 @@ function blockers(v) {
   const out = [];
   const s = v.stage;
   if (s && s.height > 0.01) {
-    out.push(new THREE.Box3(new THREE.Vector3(s.x - s.width / 2, 0, s.z), new THREE.Vector3(s.x + s.width / 2, s.height, s.z + s.depth)));
+    const deck = new THREE.Box3(new THREE.Vector3(s.x - s.width / 2, 0, s.z), new THREE.Vector3(s.x + s.width / 2, s.height, s.z + s.depth));
+    deck.kind = "stage";                         // (what a beam landing here lights back: hitDistance)
+    out.push(deck);
   }
   for (const o of v.objects || []) {
     if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool") continue;
@@ -1110,8 +1112,16 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   const screens = [];
   group.traverse((m) => { if (m.userData && m.userData.screen) screens.push(m); });
   for (const m of screens) if (m.material && m.material.userData.ndi) m.material.userData.wake = opts.onChange || null;
+  // the colours a beam's pool sends back into the room (stage.js _bounce)
+  const albedo = {
+    floor: new THREE.Color(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete),
+    wall: new THREE.Color(v.room.wall_colour || "#2a2c33"),
+    ceiling: new THREE.Color(0x24262b),
+    stage: new THREE.Color((v.stage && v.stage.colour) || "#26272c"),
+    box: new THREE.Color(0x2e3036),
+  };
   return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens };
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo };
 }
 
 /** Let go of what a built room's screens play: NDI feeds stop, clips pause. */
@@ -1136,9 +1146,13 @@ export function cutaway(built, cameraPos) {
 
 const _box = new THREE.Vector3();
 
-/** Distance along a ray to the first surface or solid it meets (capped). */
-export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = null) {
+/** Distance along a ray to the first surface or solid it meets (capped).
+ *  `out` (optional) learns what it was - kind ("floor", "ceiling", "wall",
+ *  "stage", "box" or "" for nothing) and n, the surface's normal facing the
+ *  ray - so the pool can light the room back in that surface's colour. */
+export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = null, out = null) {
   let best = cap;
+  let kind = "", nx = 0, ny = 0, nz = 0;
   for (const w of segments || []) {
     const denom = w.nx * dir.x + w.nz * dir.z;             // heading out through it?
     if (denom <= 1e-4) continue;
@@ -1148,13 +1162,13 @@ export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = nul
     if (hy < 0 || hy > w.h) continue;
     const ex = w.bx - w.ax, ez = w.bz - w.az;
     const k = ((hx - w.ax) * ex + (hz - w.az) * ez) / (ex * ex + ez * ez);
-    if (k >= -0.01 && k <= 1.01) best = t;
+    if (k >= -0.01 && k <= 1.01) { best = t; kind = "wall"; nx = -w.nx; ny = 0; nz = -w.nz; }
   }
   for (const p of planes) {
     const denom = p.n.dot(dir);
     if (denom >= -1e-4) continue;
     const t = (p.c - p.n.dot(origin)) / denom;
-    if (t > 0.02 && t < best) best = t;
+    if (t > 0.02 && t < best) { best = t; kind = p.n.y > 0 ? "floor" : "ceiling"; nx = p.n.x; ny = p.n.y; nz = p.n.z; }
   }
   const ray = new THREE.Ray(origin, dir);
   for (const b of boxes || []) {
@@ -1162,8 +1176,17 @@ export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = nul
     const hit = ray.intersectBox(b, _box);
     if (hit) {
       const t = hit.distanceTo(origin);
-      if (t > 0.02 && t < best) best = t;
+      if (t > 0.02 && t < best) {
+        best = t;
+        kind = b.kind || "box";
+        // the face it landed on: the side the point is nearest
+        const faces = [[hit.x - b.min.x, -1, 0, 0], [b.max.x - hit.x, 1, 0, 0], [hit.y - b.min.y, 0, -1, 0],
+          [b.max.y - hit.y, 0, 1, 0], [hit.z - b.min.z, 0, 0, -1], [b.max.z - hit.z, 0, 0, 1]];
+        faces.sort((f1, f2) => Math.abs(f1[0]) - Math.abs(f2[0]));
+        [, nx, ny, nz] = faces[0];
+      }
     }
   }
+  if (out) { out.kind = kind; if (out.n) out.n.set(nx, ny, nz); }
   return best;
 }

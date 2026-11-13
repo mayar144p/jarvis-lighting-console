@@ -277,8 +277,24 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    brightest at the lens, brighter looking into the beam, gobo shafts in the
    air, a balcony stopping half a beam with its shadow in the haze, a
    slanting beam reaching the floor all round.
-4. Every light lights the room: lumens, hundreds of lights, more and
-   softer / harder shadows, bounce, LED screens light the room.
+4. **(DONE) Every light lights the room:** lumens and lens angles read
+   from the fixture files (QLC+ Bulb / Lens, OFL physical; about a third of
+   the files give lumens, most give watts) or estimated from watts and kind,
+   corrected per model (Light output in the 3D…, output_get / output_set,
+   kept in the fixture database like movement speed).  A pool's light is
+   the output spread over the beam (narrower = brighter) and falls with the
+   distance squared.  The 32-brightest list is gone: every light goes into
+   a grid over the floor plan (web/js/stage/lightgrid.js, data textures)
+   and each point lights from its cell only - 120 downlights, 120 pools,
+   and faster than before (fewer lights per pixel).  16 shadow pictures on
+   High (6 Medium), soft for washes, crisp for spots, kept by their light
+   and redrawn only when a light moves or the room changes; a light inside
+   a box (under the deck) is shadowed from where its beam comes out.  The
+   brightest 12 pools bounce (their colour times the surface's) and the LED
+   screens glow onto the room.  stagecheck: lumens, narrow vs wide, 120
+   pools, 16 / 6 shadows, no redraw at rest, a red wall reddening the floor,
+   a red screen lighting the floor; behave: the dialog; selftest: the files
+   and output_set.
 5. Mirror floors.
 6. Atmosphere: haze from the hazers, haze areas, CO2 and fog lit by beams.
 7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,

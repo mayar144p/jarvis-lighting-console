@@ -3,21 +3,25 @@
 // falls back to WebGL 2 by itself on a computer without WebGPU).
 //
 // Every beam in the rig is a real light source for the floor, the walls,
-// the truss and the performers: `LIGHTS` is one set of uniforms shared by
-// every surface material, refreshed once per frame by the stage.  That is
-// what makes a beam LAND somewhere - a pool on the deck, a gobo on the
-// cyc - instead of fading into nothing.
+// the truss and the performers.  The lights live in a grid over the room's
+// floor plan (`GRID`, filled by lightgrid.js once a frame): each point of a
+// surface looks only at the lights that can reach its patch of floor, so a
+// rig of hundreds of lights all land - a pool on the deck, a gobo on the
+// cyc - instead of the brightest 32 and nothing from the rest.  `LIGHTS`
+// holds what every surface shares: the shadow pictures, the light bounced
+// back off the pools and the LED screens, the house light.
 import * as THREE from "three";
 import {
-  Fn, If, Loop, Continue, uniform, uniformArray, texture, float, int, vec2, vec3, vec4,
+  Fn, If, Loop, Continue, uniform, uniformArray, texture, textureLoad, float, int, ivec2, vec2, vec3, vec4,
   positionWorld, positionLocal, positionGeometry, positionView, normalWorld, cameraPosition,
   frontFacing, select, smoothstep, mix, max, min, abs, fract, floor, sin, cos, atan, sqrt, pow,
   dot, cross, normalize, length, reflect, clamp, exp, mod, varying, instanceIndex, hash,
   transformNormalToView,
 } from "three/tsl";
 
-export const MAX_LIGHTS = 32;
-const SHADOW_SLOTS = 8;
+export const MAX_LIGHTS = 512;          // lights in the room's grid
+export const SHADOW_SLOTS = 16;         // lights with a shadow picture (High; Medium 6)
+export const MAX_BOUNCE = 16;           // pools and screens that light the room back
 
 // an array uniform the stage writes into in place (LIGHTS.uPos.value[i]...)
 const arrayOf = (n, make, type) => {
@@ -29,29 +33,53 @@ const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 WHITE.needsUpdate = true;
 
 export const LIGHTS = {
-  uCount: uniform(0, "int"),
-  uPos: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(), "vec3"),
-  uDir: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(0, -1, 0), "vec3"),
-  uCol: arrayOf(MAX_LIGHTS, () => new THREE.Vector3(), "vec3"),
-  // x = cos(outer), y = cos(inner), z = gobo id (0 = open), w = gobo angle
-  uCone: arrayOf(MAX_LIGHTS, () => new THREE.Vector4(0.9, 0.95, 0, 0), "vec4"),
+  uCount: uniform(0, "int"),            // lights in the grid now
   uAmbient: uniform(new THREE.Color(0x0c0c0e)),
   uTime: uniform(0),
   uBounce: uniform(1),                  // crowd dancing, 0..1
   uGobos: { value: WHITE },             // the atlas of real gobo pictures
-  // shadows (shadows.js): the first uShadowCount lights each have a depth
-  // picture in a cell of uShadowMap, seen through uShadowMat[i]
+  // shadows (shadows.js): a light with a shadow picture names its cell of
+  // uShadowMap (4 x 4), seen through uShadowMat[cell]; uShadowSoft is how
+  // soft its edges are (a wash's soft, a spot's or a profile's hard)
   uShadowMap: { value: null },
   uShadowMat: arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4"),
+  uShadowSoft: arrayOf(SHADOW_SLOTS, () => 1, "float"),
   uShadowCount: uniform(0, "int"),
   // the renderer's conventions (shadows.js sets them): depth 0..1 (WebGPU)
   // or -1..1 (WebGL), and whether a texture's rows run top-down
   uZ01: uniform(0),
-  uFlipY: uniform(0),
-  // x = gobo blur (focus off the sharp point, frost), y = prism facets
-  // (0 = none, -n = a linear prism of n), z = the prism's turn, w = half
-  // of a split-colour beam (0 = all of it, 1 / 2 = one side)
-  uLook: arrayOf(MAX_LIGHTS, () => new THREE.Vector4(), "vec4"),
+  uFlipY: uniform(1),
+  // light bounced back into the room: the brightest pools (each its colour
+  // times the surface's) and the LED screens, as soft lights facing out
+  uVplCount: uniform(0, "int"),
+  uVplPos: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(), "vec3"),
+  uVplNrm: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(0, 1, 0), "vec3"),
+  uVplCol: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(), "vec3"),
+};
+
+// The room's grid of lights (lightgrid.js fills it each frame).
+//   lights: one row per light, 5 texels -
+//     0: position, cos(outer)     1: direction, cos(inner)
+//     2: colour x its light at 1 m, gobo id (0 open, 1-7 drawn, 100+ a picture)
+//     3: gobo turn, blur (focus, frost), prism facets (-n linear), prism turn
+//     4: split half (0 all, 1 / 2), shadow cell (-1 none)
+//   cells: the floor plan in GRID_W x GRID_W cells, each (first, how many)
+//     into `index`, the list of lights that can reach that patch of floor
+const floatTex = (w, h, format) => {
+  const t = new THREE.DataTexture(new Float32Array(w * h * (format === THREE.RedFormat ? 1 : 4)), w, h, format, THREE.FloatType);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.needsUpdate = true;
+  return t;
+};
+export const GRID_W = 64;
+export const INDEX_W = 512, INDEX_H = 128;
+export const GRID = {
+  lights: floatTex(5, MAX_LIGHTS, THREE.RGBAFormat),
+  cells: floatTex(GRID_W, GRID_W, THREE.RGBAFormat),
+  index: floatTex(INDEX_W, INDEX_H, THREE.RedFormat),
+  origin: uniform(new THREE.Vector2(0, 0)),     // the grid's corner (x, z)
+  inv: uniform(1),                              // cells per metre
+  dims: uniform(new THREE.Vector2(1, 1)),       // cells across, down
 };
 
 // Real gobo pictures (the fixture file's own, app/fixlib gobos.zip), drawn
@@ -217,9 +245,9 @@ export const goboMask = (id, uv0, look, detail) => {
   })();
 };
 
-// how much of light i reaches this point past the crowd, the objects and
-// the stage (1 = all of it); 2 x 2 taps for a soft edge.  The atlas: 4
-// across, 2 down, 512 x 512 each.
+// how much of the light with shadow cell i reaches this point past the
+// crowd, the objects and the stage (1 = all of it); 2 x 2 taps, spread as
+// soft as the light's edges.  The atlas: 4 x 4 cells of 512 x 512.
 const shadowAt = Fn(([i, wp]) => {
   const k = float(1).toVar();
   const sp = LIGHTS.uShadowMat.node.element(i).mul(vec4(wp, 1));
@@ -229,13 +257,13 @@ const shadowAt = Fn(([i, wp]) => {
       const v = nd.y.mul(0.5).add(0.5);
       const uv = vec2(nd.x.mul(0.5).add(0.5), select(LIGHTS.uFlipY.greaterThan(0.5), v.oneMinus(), v));
       const fi = float(i);
-      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.5));
+      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.25));
       const d = select(LIGHTS.uZ01.greaterThan(0.5), nd.z, nd.z.mul(0.5).add(0.5)).sub(0.0004);
-      const px = 1.5 / 512;
+      const px = LIGHTS.uShadowSoft.node.element(i).mul(1.5 / 512);
       const sum = float(0).toVar();
       for (const [ox, oy] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
-        const q = clamp(uv.add(vec2(ox * px, oy * px)), 0.002, 0.998);
-        const z = texture(LIGHTS.uShadowMap.value, off.add(q.mul(vec2(0.25, 0.5)))).x;
+        const q = clamp(uv.add(vec2(px.mul(ox), px.mul(oy))), 0.002, 0.998);
+        const z = texture(LIGHTS.uShadowMap.value, off.add(q.mul(0.25))).x;
         sum.addAssign(select(d.lessThanEqual(z), float(1), float(0)));
       }
       k.assign(sum.mul(0.25));
@@ -256,14 +284,51 @@ export const shadowTap = Fn(([i, wp]) => {
       const v = nd.y.mul(0.5).add(0.5);
       const uv = vec2(nd.x.mul(0.5).add(0.5), select(LIGHTS.uFlipY.greaterThan(0.5), v.oneMinus(), v));
       const fi = float(i);
-      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.5));
+      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.25));
       const d = select(LIGHTS.uZ01.greaterThan(0.5), nd.z, nd.z.mul(0.5).add(0.5)).sub(0.0008);
-      const z = texture(LIGHTS.uShadowMap.value, off.add(clamp(uv, 0.002, 0.998).mul(vec2(0.25, 0.5)))).x;
+      const z = texture(LIGHTS.uShadowMap.value, off.add(clamp(uv, 0.002, 0.998).mul(0.25))).x;
       k.assign(select(d.lessThanEqual(z), float(1), float(0)));
     });
   });
   return k;
 });
+
+/** The lights that can reach this point: (first, how many) in GRID.index. */
+const gridCell = (wp) => {
+  const c = clamp(floor(wp.xz.sub(GRID.origin).mul(GRID.inv)), vec2(0), GRID.dims.sub(1));
+  return textureLoad(GRID.cells, ivec2(c));
+};
+
+/** Light i of the grid lit point wp (normal N) this much; `gloss` gets the
+ *  lens mirrored in a shiny surface (R: where it reflects). */
+const eachLight = (wp, cb) => {
+  const cell = gridCell(wp).toVar();
+  const first = int(cell.x).toVar(), count = int(cell.y).toVar();
+  Loop({ start: int(0), end: count, type: "int", condition: "<" }, ({ i }) => {
+    const k = first.add(i);
+    const li = int(textureLoad(GRID.index, ivec2(k.mod(INDEX_W), k.div(INDEX_W))).x).toVar();
+    const t0 = textureLoad(GRID.lights, ivec2(0, li)).toVar();
+    const t1 = textureLoad(GRID.lights, ivec2(1, li)).toVar();
+    const L = wp.sub(t0.xyz).toVar();
+    const along = dot(L, t1.xyz).toVar();
+    If(along.lessThanEqual(0), () => { Continue(); });                       // behind the lens
+    const d2 = dot(L, L).toVar();
+    If(along.mul(along).lessThanEqual(t0.w.mul(t0.w).mul(d2)), () => { Continue(); });   // outside the cone
+    cb(li, L, along, d2, t0, t1);
+  });
+};
+
+/** Light bounced off the pools and the screens onto point wp (normal N). */
+const bounceAt = (wp, N, light, wrap = 0) => {
+  Loop({ start: int(0), end: LIGHTS.uVplCount, type: "int", condition: "<" }, ({ i }) => {
+    const L = LIGHTS.uVplPos.node.element(i).sub(wp);
+    const d2 = dot(L, L);
+    const Ld = L.div(sqrt(d2).add(1e-4));
+    const facing = max(dot(N, Ld), 0).mul(1 - wrap).add(wrap);
+    const out = max(dot(LIGHTS.uVplNrm.node.element(i), Ld.negate()), 0);
+    light.addAssign(LIGHTS.uVplCol.node.element(i).mul(facing.mul(out).div(d2.add(1.0))));
+  });
+};
 
 /** The light every beam puts on a surface point (and, for a shiny one,
  *  the lenses it mirrors). */
@@ -273,41 +338,42 @@ const surfaceLight = (albedo, grid, sheen, detail) => Fn(() => {
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
   const gloss = vec3(0).toVar();
   // where this point would show a light reflected (once, not per light)
-  const R = detail ? reflect(normalize(wp.sub(cameraPosition)), N) : null;
-  Loop({ start: int(0), end: LIGHTS.uCount, type: "int", condition: "<" }, ({ i }) => {
-    const L = wp.sub(LIGHTS.uPos.node.element(i)).toVar();
-    const dir = LIGHTS.uDir.node.element(i);
-    const along = dot(L, dir);
-    If(along.lessThanEqual(0), () => { Continue(); });          // behind the lens
-    const d2 = dot(L, L);
-    const cone = LIGHTS.uCone.node.element(i);
-    If(along.mul(along).lessThanEqual(cone.x.mul(cone.x).mul(d2)), () => { Continue(); });  // outside the cone
-    const d = sqrt(d2);
-    const Ld = L.div(max(d, 1e-4));
-    const spot = smoothstep(cone.x, cone.y, along.div(max(d, 1e-4))).toVar();
-    const look = LIGHTS.uLook.node.element(i);
-    If(cone.z.greaterThan(0.5).or(abs(look.y).greaterThan(0.5)).or(look.w.greaterThan(0.5)), () => {
+  const R = detail ? reflect(normalize(wp.sub(cameraPosition)), N).toVar() : null;
+  eachLight(wp, (li, L, along, d2, t0, t1) => {
+    const d = sqrt(d2).toVar();
+    const Ld = L.div(max(d, 1e-4)).toVar();
+    const spot = smoothstep(t0.w, t1.w, along.div(max(d, 1e-4))).toVar();
+    const t2 = textureLoad(GRID.lights, ivec2(2, li)).toVar();
+    const t3 = textureLoad(GRID.lights, ivec2(3, li)).toVar();
+    const t4 = textureLoad(GRID.lights, ivec2(4, li)).toVar();
+    If(t2.w.greaterThan(0.5).or(abs(t3.z).greaterThan(0.5)).or(t4.x.greaterThan(0.5)), () => {
+      const dir = t1.xyz;
       const up = select(abs(dir.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0));
       const rt = normalize(cross(dir, up));
       const u2 = cross(rt, dir);
-      const tanO = sqrt(max(cone.x.mul(cone.x).oneMinus(), 1e-5)).div(cone.x);
+      const tanO = sqrt(max(t0.w.mul(t0.w).oneMinus(), 1e-5)).div(t0.w);
       const uv0 = vec2(dot(L, rt), dot(L, u2)).div(max(along.mul(tanO), 1e-4));
-      const cs = cos(cone.w), sn = sin(cone.w);
+      const cs = cos(t3.x), sn = sin(t3.x);
       const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-      spot.mulAssign(goboMask(cone.z, uv, look, detail));
+      spot.mulAssign(goboMask(t2.w, uv, vec4(t3.y, t3.z, t3.w, t4.x), detail));
     });
-    const lam = max(dot(N, Ld.negate()), 0);
-    const att = float(1).div(d2.mul(0.09).add(1));
-    If(i.lessThan(LIGHTS.uShadowCount).and(spot.mul(lam).greaterThan(0.001)), () => {
-      spot.mulAssign(shadowAt(i, wp));
+    const lam = max(dot(N, Ld.negate()), 0).toVar();
+    // the light spreads as it travels (a lens isn't a point: never infinite)
+    const att = float(1).div(d2.add(0.09));
+    const slot = int(t4.y).toVar();
+    If(slot.greaterThanEqual(0).and(spot.mul(lam).greaterThan(0.0005)), () => {
+      spot.mulAssign(shadowAt(slot, wp));
     });
-    const col = LIGHTS.uCol.node.element(i);
+    const col = t2.xyz;
     light.addAssign(col.mul(spot).mul(lam).mul(att));
     if (detail) {
+      // the lens mirrored in a shiny floor: as bright as the beam is (its
+      // light at 1 m), not as the pool is
       const rs = max(dot(R, Ld.negate()), 0);
-      gloss.addAssign(col.mul(spot).mul(pow(rs, 900).mul(6).add(pow(rs, 60).mul(0.12))));
+      gloss.addAssign(col.mul(spot).mul(0.12).mul(pow(rs, 900).mul(6).add(pow(rs, 60).mul(0.12))));
     }
   });
+  bounceAt(wp, N, light);
   const alb = vec3(albedo).toVar();
   If(grid.greaterThan(0), () => {                     // a faint metre grid on the deck
     const g = abs(fract(wp.xz).sub(0.5));
@@ -356,20 +422,15 @@ export function surfaceMaterial(albedo, opts = {}) {
 // floor lit per pixel was the most expensive thing in the room.
 const crowdLight = Fn(() => {
   const wp = positionWorld;
-  const N = normalize(normalWorld);
+  const N = normalize(normalWorld).toVar();
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
-  Loop({ start: int(0), end: LIGHTS.uCount, type: "int", condition: "<" }, ({ i }) => {
-    const L = wp.sub(LIGHTS.uPos.node.element(i));
-    const along = dot(L, LIGHTS.uDir.node.element(i));
-    If(along.lessThanEqual(0), () => { Continue(); });
-    const d2 = dot(L, L);
-    const cone = LIGHTS.uCone.node.element(i);
-    If(along.mul(along).lessThanEqual(cone.x.mul(cone.x).mul(d2)), () => { Continue(); });
+  eachLight(wp, (li, L, along, d2, t0, t1) => {
     const d = sqrt(d2);
-    const spot = smoothstep(cone.x, cone.y, along.div(d));
+    const spot = smoothstep(t0.w, t1.w, along.div(d));
     const lam = max(dot(N, L.div(d).negate()), 0).mul(0.65).add(0.35);
-    light.addAssign(LIGHTS.uCol.node.element(i).mul(spot).mul(lam).div(d2.mul(0.09).add(1)));
+    light.addAssign(textureLoad(GRID.lights, ivec2(2, li)).xyz.mul(spot).mul(lam).div(d2.add(0.09)));
   });
+  bounceAt(wp, N, light, 0.35);
   return light;
 });
 

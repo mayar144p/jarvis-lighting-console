@@ -340,6 +340,39 @@ check("...and added to the rig, it has its channels in the order typed",
   !!hp && JSON.stringify(hp.map) === JSON.stringify(["red", "green", "blue", "strobe", "white"]), JSON.stringify(hp && hp.map));
 await closeModals();
 
+// -- Light output in the 3D: from the light's own menu, corrected from a data sheet --
+console.log("Light output in the 3D");
+await closeModals();
+await p.evaluate(() => import("/app/fixtures.js").then((m) => m.rowMenu(m.atPointer({ clientX: 500, clientY: 300 }), 3)));
+await sleep(400);
+const lmItem = p.locator(".menu button", { hasText: "Light output in the 3D" });
+check("a light's menu has Light output in the 3D, with its lumens", (await lmItem.count()) === 1 && /lm/.test(await lmItem.innerText()), await p.locator(".menu").innerText().catch(() => ""));
+await lmItem.click(); await sleep(900);
+const lmBox = p.locator(".modal").last();
+const lmText = await lmBox.innerText().catch(() => "");
+check("...its dialog says how bright it is and where that comes from", /lumens/.test(lmText) && /(fixture file|estimated)/.test(lmText), lmText.slice(0, 200));
+await lmBox.locator("input[type=number]").first().fill("5200");
+await lmBox.locator("button", { hasText: "Save" }).click(); await sleep(900);
+const allNow = (await snap()).patch || [];
+const model3 = (allNow.find((y) => y.head_no === 3) || {}).model;
+const parOut = allNow.filter((x) => x.model === model3);
+check("...saved: every light of that model is that bright in the 3D", parOut.length > 1 && parOut.every((x) => x.photo && x.photo.lm === 5200 && x.photo.lm_from === "yours"),
+  JSON.stringify(parOut.map((x) => x.photo)));
+// (the desk window here has no 3D: the 3D's own window gets it)
+const b3 = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}), args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+const p3 = await (await b3.newContext({ viewport: { width: 900, height: 600 } })).newPage();
+await p3.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.noLockAsk", "1"); } catch (e) { /* fine */ } });
+await p3.goto(BASE + "?window=stage");
+let got3 = null;
+for (let i = 0; i < 40 && !got3; i++) {
+  await sleep(500);
+  got3 = await p3.evaluate(() => { const s = window.hazeStage; const f = s && s.fixtures && s.fixtures.get(3); return f && f.data.photo ? f.data.photo : null; }).catch(() => null);
+}
+check("...and the 3D has it", !!got3 && got3.lm === 5200, JSON.stringify(got3));
+await b3.close();
+await act("output_set", { head: 3, clear: true });
+await closeModals();
+
 const laid = await p.evaluate(() => import("/app/guidecard.js").then((m) => {
   const v = m.replyView("Lines the real lights up with the desk.\n1. Set up → **Line up with the real lights…**\n2. Nudge it onto the mark, press **It's on the mark ✓**\n- tip: *Fine* for the last bit");
   return { steps: v.querySelectorAll(".gc-step").length, names: v.querySelectorAll(".gc-ui").length, seps: v.querySelectorAll(".gc-sep").length,

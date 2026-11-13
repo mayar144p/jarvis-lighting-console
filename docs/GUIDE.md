@@ -143,6 +143,23 @@ physically is and who made it:
   angle - and the brightest lights leave a shadow in the haze behind what
   stands in them. The haze drifts slowly. **Low** keeps the simpler beams
   for older laptops.
+* **Real light output.** How bright a light's beam and pool are comes from
+  how much light it really puts out (lumens) and its lens: a small LED PAR
+  next to a big spot looks like it does in the room, and the same light in a
+  narrower beam makes a brighter pool. The numbers come from the fixture's
+  file when it has them; otherwise the desk estimates from its wattage and
+  kind. To correct them from the maker's data sheet, right-click the light →
+  **Light output in the 3D…** (it applies to every light of that model;
+  **Back to the fixture file** undoes it).
+* **Every light lands.** A rig of hundreds of lights puts every pool on the
+  floor, the walls, the truss and the crowd - not just the brightest few.
+  The brightest 16 (High; 6 on Medium) cast shadows: soft from washes, crisp
+  from spots and profiles. Their shadow pictures are only redrawn when a
+  light moves, so a rig holding its position costs nothing extra.
+* **Light bounces.** The brightest pools light the room back in their
+  colour times the surface's: a red wash on a white wall turns the floor in
+  front of it red; a black floor sends little back. LED screens light what's
+  in front of them with what they show.
 * **True colour.** The colour you pick on the desk is the colour on the
   screen, dim or bright: bright red stays red, green stays green. Only far
   brighter than the screen's white - a lens, the core of a narrow beam - does
@@ -168,8 +185,8 @@ physically is and who made it:
 * The fixture picker shows the same 3D model before you patch anything.
 * **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
   draw calls, and the crowd is lit per vertex. The view only redraws when
-  something changes. The 3D starts at **High** quality (sharpest, eight beams
-  cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
+  something changes. The 3D starts at **High** quality (sharpest, sixteen
+  beams cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
   Medium** lowers the resolution when frames run long and wins it back when
   there is headroom; **Low** drops the shadows.
 

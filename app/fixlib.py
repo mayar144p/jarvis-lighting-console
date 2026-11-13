@@ -1118,8 +1118,10 @@ _PHYS: dict[str, dict] = {}
 
 
 def physical(source: str) -> dict:
-    """{kg, watts} from a bundled fixture's own file ("ofl:key" /
-    "qlc:key"); {} when the file doesn't say (or isn't bundled)."""
+    """{kg, watts, lm, lens} from a bundled fixture's own file ("ofl:key" /
+    "qlc:key"): its weight, power, light output (lumens) and lens angles
+    ([min, max] degrees); only what the file says, {} when it says nothing
+    (or isn't bundled)."""
     source = str(source or "")
     if source in _PHYS:
         return _PHYS[source]
@@ -1136,6 +1138,12 @@ def physical(source: str) -> dict:
                     out["kg"] = float(phys["weight"])
                 if isinstance(phys.get("power"), (int, float)) and phys["power"] > 0:
                     out["watts"] = float(phys["power"])
+                lm = (phys.get("bulb") or {}).get("lumens")
+                if isinstance(lm, (int, float)) and lm > 0:
+                    out["lm"] = float(lm)
+                deg = (phys.get("lens") or {}).get("degreesMinMax")
+                if isinstance(deg, list) and len(deg) == 2 and all(isinstance(d, (int, float)) for d in deg) and max(deg) > 0:
+                    out["lens"] = [float(min(deg)), float(max(deg))]
             else:
                 m = re.search(rb'<Dimensions[^>]*\bWeight="([0-9.]+)"', raw)
                 if m and float(m.group(1)) > 0:
@@ -1143,6 +1151,14 @@ def physical(source: str) -> dict:
                 m = re.search(rb'<Technical[^>]*\bPowerConsumption="([0-9.]+)"', raw)
                 if m and float(m.group(1)) > 0:
                     out["watts"] = float(m.group(1))
+                m = re.search(rb'<Bulb[^>]*\bLumens="([0-9.]+)"', raw)
+                if m and float(m.group(1)) > 0:
+                    out["lm"] = float(m.group(1))
+                lo = re.search(rb'<Lens[^>]*\bDegreesMin="([0-9.]+)"', raw)
+                hi = re.search(rb'<Lens[^>]*\bDegreesMax="([0-9.]+)"', raw)
+                if hi and float(hi.group(1)) > 0:
+                    a, b = float(lo.group(1)) if lo else float(hi.group(1)), float(hi.group(1))
+                    out["lens"] = [min(a, b) if min(a, b) > 0 else max(a, b), max(a, b)]
         except (OSError, KeyError, ValueError, zipfile.BadZipFile):
             out = {}
     _PHYS[source] = out

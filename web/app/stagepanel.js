@@ -23,6 +23,7 @@ function fixturesFor(p) {
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
     stance: h.stance || null, hang: h.hang || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null, gobos2: h.gobos2 || null,
     yaw: +h.yaw || 0,                      // which way its base faces (turns with its truss)
+    photo: h.photo || null,                // its light output and lens (lumens, degrees) for the 3D
   }));
 }
 
@@ -54,7 +55,7 @@ function syncRig() {
   }
   const p = patch();
   const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z,
-    h.body && h.body.type, h.stance, h.hang, h.rot, h.yaw]), state.snap.venue]);
+    h.body && h.body.type, h.stance, h.hang, h.rot, h.yaw, h.photo]), state.snap.venue]);
   if (sig !== rigSig) {
     rigSig = sig;
     stage.setRig({ fixtures: fixturesFor(p), venue: state.snap.venue || {} });

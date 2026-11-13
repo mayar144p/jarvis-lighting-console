@@ -70,14 +70,14 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 import * as THREE from "three";
 import { Stage } from "/js/stage/stage.js";
 import * as look from "/js/stage/look.js";
-import { LIGHTS } from "/js/stage/materials.js";
+import { LIGHTS, GRID } from "/js/stage/materials.js";
 const el = document.getElementById("stage");
 let frames = 0;
 const stage = new Stage(el, { onFrame: () => { frames++; } });
 let img = null;                       // the last picture read back
 window.stage = stage;
 window.SC = {
-  THREE, look, LIGHTS,
+  THREE, look, LIGHTS, GRID,
   frames: () => frames,
   ready: () => !!stage.ready || !!stage.failed,
   /** wait until the 3D has drawn n more pictures */
@@ -186,7 +186,12 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 await page.route(BASE + "__stagecheck.html", (route) => route.fulfill({ status: 200, contentType: "text/html", body: PAGE }));
 await page.goto(BASE + "__stagecheck.html");
-await page.waitForFunction(() => window.SC_READY && window.SC.ready(), null, { timeout: 60000 });
+try {
+  await page.waitForFunction(() => window.SC_READY && window.SC.ready(), null, { timeout: 60000 });
+} catch (e) {
+  check("the 3D page starts", false, errors.join(" | ") || e.message);
+  done(1);
+}
 const backend = await page.evaluate(() => window.stage.failed ? "failed" : window.stage.backend);
 console.log(`The 3D view, drawn by ${backend}${GPU ? " on the graphics card" : " in software"}`);
 if (backend === "failed") { check("the 3D starts", false, errors.join(" | ")); done(1); }
@@ -364,6 +369,117 @@ add("slant", async () => {
   check("a slanting beam reaches the floor all round", farSide > outside + 10, `far side ${farSide.toFixed(1)} vs outside ${outside.toFixed(1)}`);
 });
 
+// Every light lights the room (step 4): pools as bright as the light's
+// output spread over its beam; every light of a big rig lands; shadows for
+// the brightest, drawn again only when something moves; the pools and the
+// LED screens light the room back.
+add("output", async () => {
+  // two lights side by side, the same beam: 6000 lumens and 1000
+  const pair = async (a, b) => {
+    await sc(async ([a, b]) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5),
+        fixtures: [
+          { head_no: 1, model: "A", body: S.body("par", a.beam), photo: { lm: a.lm, lm_from: "file" }, x: -2, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
+          { head_no: 2, model: "B", body: S.body("par", b.beam), photo: { lm: b.lm, lm_from: "file" }, x: 2, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
+        looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 1 } }, options: { haze: 0, quality: "high", house: 0.1, exposure: -2 },
+        camera: { pos: [0, 9, 13], target: [0, 0, 6] } });
+    }, [a, b]);
+    await shot();
+    return [await lum(await at(-2, 0, 6), 2), await lum(await at(2, 0, 6), 2)];
+  };
+  const [bright, dim] = await pair({ lm: 6000, beam: 25 }, { lm: 1000, beam: 25 });
+  save("10-output");
+  check("a light that puts out more lumens makes a brighter pool", bright > dim * 1.3 + 5, `6000 lm ${bright.toFixed(1)} vs 1000 lm ${dim.toFixed(1)}`);
+  const [narrow, wide] = await pair({ lm: 2000, beam: 12 }, { lm: 2000, beam: 40 });
+  check("the same light in a narrower beam makes a brighter pool", narrow > wide * 1.3 + 5, `12 deg ${narrow.toFixed(1)} vs 40 deg ${wide.toFixed(1)}`);
+  await sc(() => window.stage.setOptions({ exposure: 0 }));
+});
+
+add("bigrig", async () => {
+  // 120 downlights, a metre apart: every one makes its pool
+  const stats = await sc(async () => {
+    const S = window.SC;
+    const fixtures = [], looks = {};
+    let n = 0;
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 10; j++) {
+      n++;
+      fixtures.push({ head_no: n, model: "Par", body: S.body("par", 14), x: -5.5 + i, y: 4.5, z: 2 + j, stance: "hang", rot: [0, -90], kind: "truss" });
+      looks[n] = { hex: "#ffffff", a: 1 };
+    }
+    await S.scene({ venue: S.room(16, 14, 5.5), fixtures, looks, options: { haze: 0, quality: "high", house: 0.05, exposure: -1, bloom: false },
+      camera: { pos: [0, 18, 7.01], target: [0, 0, 7] } });
+    return window.stage.lightStats;
+  });
+  await shot();
+  save("11-bigrig");
+  check("all 120 lights reach the surfaces (not the brightest 32)", stats.lights >= 120, JSON.stringify(stats));
+  let lit = 0;
+  const probes = [[0, 0], [11, 9], [3, 7], [8, 2], [5, 5], [10, 0], [1, 8]];
+  for (const [i, j] of probes) {
+    const c = await lum(await at(-5.5 + i, 0, 2 + j), 1), gap = await lum(await at(-5.0 + i, 0, 2.5 + j), 1);
+    if (c > gap + 8) lit++;
+  }
+  check("every light probed has its own pool on the floor", lit === probes.length, `${lit} of ${probes.length}`);
+  check("High: 16 lights cast shadows", stats.shadows === 16, String(stats.shadows));
+  // nothing moves: the shadow pictures aren't drawn again
+  const drawn = await sc(async () => { const d0 = window.stage.shadows.drawn; await window.SC.settle(4); return window.stage.shadows.drawn - d0; });
+  check("the shadow pictures aren't drawn again while nothing moves", drawn === 0, `${drawn} drawn`);
+  // (Medium adapts to the computer: a slow one - software drawing here -
+  // sheds resolution and, below 60 %, the shadows; from the top, it has them)
+  await sc(() => window.stage.setOptions({ quality: "auto" }));
+  const med = await sc(async () => {
+    const s = window.stage;
+    s.q.ratio = s.q.cap; s.q.lite = false; s.q.ema = 16; s.q.slowSince = 0;
+    await window.SC.settle(1);
+    return s.lightStats.shadows;
+  });
+  check("Medium: 6 lights cast shadows", med === 6, String(med));
+  await sc(() => window.stage.setOptions({ quality: "high", exposure: 0, bloom: true }));
+});
+
+add("bounce", async () => {
+  // a red wash on a white wall, the floor in front of it outside the beam:
+  // with the light bounced back it turns red
+  const floor = async (bounce) => {
+    await sc(async (bounce) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5, { wall: "#f0f0f0" }),
+        fixtures: [{ head_no: 1, model: "Wash", body: S.body("par", 30), x: 0, y: 2.5, z: 3, stance: "stand", rot: [180, 0], kind: "floor" }],
+        looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0, quality: "high", house: 0, bounce },
+        camera: { pos: [0, 4, 9], target: [0, 1.2, 1] } });
+    }, bounce);
+    await shot();
+    return rgb(await at(0, 0, 2.2), 3);
+  };
+  const off = await floor(false);
+  const on = await floor(true);
+  save("12-bounce");
+  check("a wall lit red lights the floor in front of it red (light bounced back)", on[0] > off[0] + 4 && on[0] > on[1] + 3,
+    `bounced ${on.map((v) => v.toFixed(0))} vs not ${off.map((v) => v.toFixed(0))}`);
+});
+
+add("screenglow", async () => {
+  // an LED screen showing the rig: one light, red, pointing up at the ceiling
+  const floor = async (a) => {
+    await sc(async (a) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5, { objects: [{ id: "scr", kind: "screen", x: 0, z: 1, w: 4, h: 2.4, d: 0.1, y: 0.3, rot: 0, content: "rig" }] }),
+        fixtures: [{ head_no: 1, model: "Par", body: S.body("par", 20), x: 4, y: 0.3, z: 10, stance: "stand", rot: [0, 90], kind: "floor" }],
+        looks: { 1: { hex: "#ff0000", a } }, options: { haze: 0, quality: "high", house: 0, bounce: true },
+        camera: { pos: [0, 3.5, 8], target: [0, 1, 1] } });
+      await S.settle(12);
+    }, a);
+    await shot();
+    return rgb(await at(0, 0, 2.2), 3);
+  };
+  const dark = await floor(0);
+  const red = await floor(1);
+  save("13-screen-glow");
+  check("an LED screen showing red lights the floor in front of it red", red[0] > dark[0] + 4 && red[0] > red[1] + 3,
+    `screen red ${red.map((v) => v.toFixed(0))} vs dark ${dark.map((v) => v.toFixed(0))}`);
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).
@@ -387,10 +503,10 @@ add("truecolour", async () => {
 add("exposure", async () => {
   await downlight({ options: { haze: 0, house: 0.2, exposure: 0 } });
   const mid = await lum(await at(0, 0, 6)), wall = await lum(await at(3.5, 0, 9));
-  const lights0 = await sc(() => window.SC.LIGHTS.uCol.value[0].toArray());
+  const lights0 = await sc(() => [...window.SC.GRID.lights.image.data.slice(8, 11)]);
   await downlight({ options: { haze: 0, house: 0.2, exposure: 1 } });
   const up = await lum(await at(0, 0, 6));
-  const lights1 = await sc(() => window.SC.LIGHTS.uCol.value[0].toArray());
+  const lights1 = await sc(() => [...window.SC.GRID.lights.image.data.slice(8, 11)]);
   await downlight({ options: { haze: 0, house: 0.2, exposure: -1 } });
   const down = await lum(await at(0, 0, 6)), wallDown = await lum(await at(3.5, 0, 9));
   check("exposure up makes the picture brighter", up > mid + 5, `${mid.toFixed(1)} -> ${up.toFixed(1)}`);
@@ -512,7 +628,7 @@ add("lookbook", async () => {
     }
     for (let i = 0; i < 4; i++) {
       n++;
-      fixtures.push({ head_no: n, model: "Par", body: S.body("par", 25), x: -4 + i * 2.6, y: 0.1, z: 1.2, stance: "stand", rot: [0, 70], kind: "floor" });
+      fixtures.push({ head_no: n, model: "Par", body: S.body("par", 25), x: -4 + i * 2.6, y: 0.85, z: 1.2, stance: "stand", rot: [0, 70], kind: "floor" });
       looks[n] = { hex: "#ff6020", a: 1 };
     }
     await S.scene({

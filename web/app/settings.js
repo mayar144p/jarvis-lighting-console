@@ -242,9 +242,9 @@ export async function openSettings() {
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
   const quality = h("select.select", { style: { minWidth: "340px" } },
-    h("option", { value: "high" }, "High: sharpest, 8 beams cast shadows (the standard)"),
-    h("option", { value: "auto" }, "Medium: adapts to this computer"),
-    h("option", { value: "fast" }, "Low: older laptops, no shadows"));
+    h("option", { value: "high" }, "High: sharpest, beams as light in the haze, 16 cast shadows (the standard)"),
+    h("option", { value: "auto" }, "Medium: beams in the haze, 6 shadows, adapts to this computer"),
+    h("option", { value: "fast" }, "Low: older laptops - simpler beams, no shadows"));
   try { quality.value = localStorage.getItem("haze.quality") || "high"; } catch (e) { /* ignore */ }
   quality.addEventListener("change", () => {
     try { localStorage.setItem("haze.quality", quality.value); localStorage.setItem("haze.qualityV", "2"); } catch (e) { /* ignore */ }

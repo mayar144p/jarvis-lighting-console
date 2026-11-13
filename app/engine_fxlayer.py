@@ -10,12 +10,26 @@ import math
 import re
 import time
 
-from app import fixture_kind, fixtures, merge
+from app import fixlib, fixture_kind, fixtures, merge
 from app import venue as venue_mod
 from app.merge import FX_OUTPUT_ROLES
 from app.engine_base import _LEVELS_CACHE, _OFFISH, _clamp, _truthy, attr_domain
 from app.engine_support import HTP_ROLES, LASER_ROLES
 
+
+
+# Light output for the 3D when a fixture's file doesn't say: lumens per watt
+# by kind (an LED engine through its optics; a lamp PAR far less), and a
+# whole light's typical output when even its wattage is unknown.
+_LM_PER_W = {"moving_spot": 30, "moving_wash": 28, "moving_beam": 30, "moving_hybrid": 28,
+             "moving_bar": 25, "par": 22, "par_can": 14, "profile": 40, "fresnel": 30,
+             "wash_panel": 25, "cyc": 25, "bar": 22, "strobe": 40, "blinder": 18, "tube": 20,
+             "matrix": 18, "followspot": 40, "scanner": 25, "effect": 15, "generic": 25}
+_LM_TYPICAL = {"moving_spot": 6000, "moving_wash": 5000, "moving_beam": 4000, "moving_hybrid": 7000,
+               "moving_bar": 3000, "par": 1500, "par_can": 3000, "profile": 5000, "fresnel": 3000,
+               "wash_panel": 2500, "cyc": 2500, "bar": 1500, "strobe": 8000, "blinder": 4000,
+               "tube": 600, "matrix": 1500, "followspot": 15000, "scanner": 2000, "effect": 800,
+               "generic": 2000}
 
 class FxLayerMixin:
     # ------------------------------------------------------------------
@@ -469,6 +483,90 @@ class FxLayerMixin:
             except Exception:                # the visual is an enhancement
                 cache[key] = {}
         return cache[key]
+
+    # -- light output, for the visualiser --------------------------------
+    def _photo_of(self, head: dict) -> dict:
+        """How much light this model puts out, for the 3D: {lm, lm_from,
+        watts, lens, beam}.  Lumens are the operator's correction, else the
+        fixture file's, else an estimate from its wattage and kind (else the
+        kind's typical output); lens is the file's [min, max] degrees, beam
+        the operator's corrected angle."""
+        cache = getattr(self, "_photo_cache", None)
+        if cache is None:
+            cache = self._photo_cache = {}
+        key = (head.get("manufacturer") or "", head.get("model") or "")
+        if key not in cache:
+            try:
+                fx = self._fixture_db(*key) or {}
+                ph = fixlib.physical(fx.get("source") or "")
+            except Exception:                    # the visual is an enhancement
+                ph = {}
+            try:
+                mine = fixtures.get_output(self.db_path, *key) or {}
+            except Exception:
+                mine = {}
+            kind = fixture_kind.describe(head).get("type") or "generic"
+            watts = ph.get("watts")
+            if mine.get("lm"):
+                lm, src = float(mine["lm"]), "yours"
+            elif ph.get("lm"):
+                lm, src = float(ph["lm"]), "file"
+            elif watts:
+                lm, src = watts * _LM_PER_W.get(kind, 25), "estimate"
+            else:
+                lm, src = float(_LM_TYPICAL.get(kind, 2000)), "estimate"
+            out = {"lm": round(max(50.0, min(lm, 80000.0))), "lm_from": src}
+            if watts:
+                out["watts"] = watts
+            if ph.get("lens"):
+                out["lens"] = ph["lens"]
+            if mine.get("beam"):
+                out["beam"] = mine["beam"]
+            cache[key] = out
+        return cache[key]
+
+    def _a_output_get(self, head=None, **_):
+        """This model's light output in the 3D: lumens (and where they come
+        from: the fixture file, an estimate or yours) and its beam angle."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        p = self._photo_of(h)
+        d = fixture_kind.describe(h)
+        beam = d.get("beam") or {}
+        return {"photo": p, "kind": d.get("label") or "", "type_beam": [beam.get("min"), beam.get("max")],
+                "summary": f"{h.get('model')}: {p['lm']} lumens ({p['lm_from']})"}
+
+    def _a_output_set(self, head=None, lumens=None, beam=None, clear=False, **_):
+        """Correct how much light this fixture model puts out in the 3D
+        (lumens, from its data sheet) and / or its beam angle (degrees).
+        Applies to every head of the same model; clear goes back to the
+        fixture file (or the estimate)."""
+        if head is None:
+            raise ValueError("head is required")
+        h = self._head(head)
+        key = (h.get("manufacturer") or "", h.get("model") or "")
+        if _truthy(clear):
+            fixtures.set_output(self.db_path, *key, None, None)
+            self._photo_cache = {}
+            return {"photo": self._photo_of(h), "summary": f"{h.get('model')}: light output back to the fixture file"}
+        cur = fixtures.get_output(self.db_path, *key) or {}
+        lm = cur.get("lm")
+        if lumens not in (None, ""):
+            lm = float(lumens)
+            if not 50 <= lm <= 80000:
+                raise ValueError("lumens must be 50 to 80000")
+        ang = cur.get("beam")
+        if beam not in (None, ""):
+            ang = float(beam)
+            if not 0.5 <= ang <= 170:
+                raise ValueError("the beam angle must be 0.5 to 170 degrees")
+        fixtures.set_output(self.db_path, *key, lm, ang)
+        self._photo_cache = {}
+        self.patch_rev = getattr(self, "patch_rev", 0) + 1
+        p = self._photo_of(h)
+        return {"photo": p, "summary": f"{h.get('model')}: {p['lm']} lumens"
+                + (f", {ang:g} degree beam" if ang else "") + " in the 3D"}
 
     def _speed_frac(self, head: dict, values: dict) -> float:
         """The pan/tilt speed channel as 0 (fastest) .. 1 (slowest)."""

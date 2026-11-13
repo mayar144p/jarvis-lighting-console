@@ -101,12 +101,13 @@ import { SfxSystem } from "./sfx.js";
 import { Shadows } from "./shadows.js";
 import { wireUp, wireTint, WIRE, WIRE_ROOM, WIRE_SEL } from "./wire.js";
 import {
-  LIGHTS, MAX_LIGHTS, beamGeometry, beamMaterial, glowMap, streakMap, GoboAtlas,
+  LIGHTS, MAX_BOUNCE, beamGeometry, beamMaterial, glowMap, streakMap, GoboAtlas,
   setDetail,
 } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import { pictureOut, exposureFor } from "./picture.js";
 import { VOL, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
+import { LightGrid } from "./lightgrid.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, strobeLevel, turnOf, motorStep,
   hangOf, hangQuat,
@@ -127,7 +128,8 @@ export class Stage {
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
       quality: "high", zones: false, dance: true, shadows: true,
       exposure: 0,          // the picture's brightness, in stops (-2 .. +2): the lights don't change
-      calm: false };        // calm flashing: strobes shimmer instead of flashing the screen
+      calm: false,          // calm flashing: strobes shimmer instead of flashing the screen
+      bounce: true };       // light bounced off the pools and the screens lights the room
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -187,6 +189,8 @@ export class Stage {
     this.scene = scene;
     this.sfx = new SfxSystem(scene);         // confetti, CO2, flame, fog, lasers
     this.shadows = new Shadows(renderer, scene);   // the crowd and the stage block the beams
+    this._shadowRoom = 0;                          // bumped when what casts a shadow changes
+    this.grid = new LightGrid();                   // every light on the surfaces (lightgrid.js)
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
     scene.add(this.hemi);
     const key = new THREE.DirectionalLight(0xdfe7ff, 0.35);
@@ -292,6 +296,7 @@ export class Stage {
       people: this.options.people, zones: this.options.zones,
       loadUnderlay: this.opts.loadUnderlay, onChange: () => { this.dirty = true; } });
     this.built = built;
+    this._shadowRoom++;
     this.venueGroup.add(built.group);
     this._wireDirty = true;
     this.room = { ...built.room };
@@ -605,6 +610,7 @@ export class Stage {
     const before = { ...this.options };
     Object.assign(this.options, o || {});
     if (this.people) this.people.visible = !!this.options.people;
+    if (before.people !== this.options.people) this._shadowRoom++;
     if (this.built && this.built.zones) this.built.zones.visible = !!this.options.zones;
     if (this.sideLabels) this.sideLabels.visible = !!this.editing || !!this.options.zones;
     // Lights only: the room, rigging, stage, objects and crowd hidden - the lights and their beams stay
@@ -1395,10 +1401,6 @@ export class Stage {
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
-    // shadows for the brightest beams, unless the view is kept light
-    if (!this.wire && this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
-      this.shadows.update(LIGHTS.uCount.value, this.options.quality === "high" ? 8 : 4);
-    } else this.shadows.off();
     // a beam whose light has a shadow picture is dark in the haze behind
     // what stands in it
     const nShadow = LIGHTS.uShadowCount.value;
@@ -1645,10 +1647,14 @@ export class Stage {
    *  rendering while it plays. */
   _drawScreens(now) {
     const list = this.built && this.built.screens;
-    if (!list || !list.length) return;
+    if (!list || !list.length) { this._screenGlow = []; return; }
     if (list.some((m) => m.material.userData.video)) this.dirty = true;
     if (now - (this._scrLast || 0) < 60) return;
     this._scrLast = now;
+    if (now - (this._glowLast || 0) > 250) {
+      this._glowLast = now;
+      this._screenGlow = list.map((m) => this._screenLight(m)).filter(Boolean);
+    }
     const heads = [...this.fixtures.values()].sort((a, b) => a.head - b.head);
     const tiles = [];
     for (const inst of heads) {
@@ -1676,6 +1682,37 @@ export class Stage {
       }
       m.material.map.needsUpdate = true;
     }
+  }
+
+  /** An LED screen as a soft light facing out from its face: what it shows,
+   *  averaged (a few pixels of it), times its size. */
+  _screenLight(m) {
+    const u = m.material.userData || {};
+    const src = u.canvas || (u.ndi && u.ndi.canvas) || (u.video) || (m.material.map && m.material.map.image);
+    if (!src) return null;
+    const c = this._avgCv || (this._avgCv = document.createElement("canvas"));
+    c.width = c.height = 4;
+    const ctx = this._avgCtx || (this._avgCtx = c.getContext("2d", { willReadFrequently: true }));
+    let px;
+    try {
+      if (src.videoWidth === 0 || src.width === 0) return null;   // nothing playing yet
+      ctx.drawImage(src, 0, 0, 4, 4);
+      px = ctx.getImageData(0, 0, 4, 4).data;
+    } catch (e) { return null; }                                // not readable (another site's picture)
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i + 1]; b += px[i + 2]; }
+    const col = this._c2.setRGB(r / 16 / 255, g / 16 / 255, b / 16 / 255, THREE.SRGBColorSpace);   // to linear
+    if (col.r + col.g + col.b < 0.01) return null;
+    const geo = m.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    m.updateWorldMatrix(true, false);
+    const p = geo.boundingBox.getCenter(new THREE.Vector3()).applyMatrix4(m.matrixWorld);
+    const nrm = new THREE.Vector3(0, 0, 1).transformDirection(m.matrixWorld);
+    p.addScaledVector(nrm, 0.05);
+    const prm = geo.parameters || {};
+    const area = Math.max(0.2, (prm.width || 1) * (prm.height || 1));
+    const k = 1.2 * area;
+    return [p, nrm, col.r * k, col.g * k, col.b * k];
   }
 
   /** Auto quality: shed resolution when frames run long, win it back later.
@@ -1834,8 +1871,22 @@ export class Stage {
     const L = inst.cur;
     const a = inst.level || 0;
     const body = inst.data.body || {};
-    const bmin = (body.beam && body.beam.min) || 20;
-    const bmax = (body.beam && body.beam.max) || bmin;
+    const photo = inst.data.photo || {};
+    let bmin = (body.beam && body.beam.min) || 20;
+    let bmax = (body.beam && body.beam.max) || bmin;
+    // the lens angles in the light's own file beat the kind's usual ones;
+    // an angle the operator set beats both
+    if (photo.lens && photo.lens[1] > 0) {
+      const zooms = bmax > bmin;
+      bmin = photo.lens[0] > 0 ? photo.lens[0] : photo.lens[1];
+      bmax = zooms ? photo.lens[1] : (bmin + photo.lens[1]) / 2;
+      if (!zooms) bmin = bmax;
+    }
+    if (photo.beam > 0) bmin = bmax = photo.beam;
+    // how much light it puts out (lumens, from its file, an estimate or
+    // the operator's): 3000 lm is the old "one light"
+    const flux = (photo.lm > 0 ? photo.lm : 3000) / 3000;
+    const washy = /wash|par|fresnel|bar|panel|cyc|blinder|strobe|matrix|tube/.test(body.type || "");
     const zoom = L.beam.zoom;
     const iris = L.beam.iris || 0;
     const frost = L.beam.frost || 0;
@@ -1870,7 +1921,8 @@ export class Stage {
       }
       em.node.getWorldPosition(b.origin);
       b.dir.copy(em.dir).transformDirection(em.node.matrixWorld).normalize();
-      const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40, this.segments);
+      const hit = b.hit || (b.hit = { kind: "", n: new THREE.Vector3() });
+      const len = hitDistance(this.planes, this.boxes, b.origin, b.dir, 40, this.segments, hit);
       if (this._wireSegs) {
         // a line drawing: the beam is one thin line in its colour
         const cc0 = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
@@ -1906,6 +1958,7 @@ export class Stage {
       u.uHaze.value = this.options.haze;
       const volumetric = this._volumetric();
       b.mesh.visible = this.options.haze > 0.01 && !volumetric;
+      b.reach = len;
       // the beam as light in the air (beams.js): the cone runs on past
       // where its centre lands, to where its far edge does, and the room's
       // depth ends it exactly - at a person, the truss, a wall at any angle
@@ -1922,6 +1975,7 @@ export class Stage {
             far = Math.max(far, hitDistance(this.planes, this.boxes, b.origin, e, 40, this.segments) * c);
           }
         }
+        b.reach = far;
         b.vol.position.copy(b.origin);
         b.vol.quaternion.copy(b.mesh.quaternion);
         v.uOrigin.value.copy(b.origin);
@@ -1937,9 +1991,8 @@ export class Stage {
         // the light in the beam: shared by a light's heads; the spread
         // over the cone thins it out by itself, so a narrow beam is a
         // bright one and a wide wash a soft one
-        v.uPower.value = a / Math.max(1, inst.beams.length);
+        v.uPower.value = a * flux / Math.max(1, inst.beams.length);
         // a wash's edge is soft, a spot's crisp; frost softens either
-        const washy = /wash|par|fresnel|bar|panel|cyc|blinder|strobe|matrix/.test(body.type || "");
         v.uSoft.value = lerp(washy ? 0.35 : 0.78, 0.02, Math.min(1, frost * 1.2));
         v.uHaze.value = this.options.haze;
       }
@@ -1982,13 +2035,22 @@ export class Stage {
         v.uGoboRot.value = rot;
         v.uLook.value.set(blur, prism, prot, split ? 1 : 0);
       }
-      const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;
+      // its light on the surfaces: the light it puts out, spread over its
+      // cone (a narrow beam puts the same light on a smaller circle: a
+      // brighter one), shared by its heads; at 1 m from the lens - the
+      // surface shader takes the distance into account
+      const share = a * flux / Math.max(1, inst.beams.length);
+      const spreadK = Math.max(0.03, Math.tan(half));
+      const power = Math.min(600, 10.5 * share / (Math.PI * spreadK * spreadK));
       const cone = { cosO: Math.cos(half), cosI: Math.cos(half * lerp(0.72, 0.25, frost)), gobo: goboId, rot, blur, prism, prot };
       // a split beam lands as two half pools, each its own colour
+      const bi = inst.beams.indexOf(b);
       for (const [side, c] of split ? [[1, split[0]], [2, split[1]]] : [[0, [cr, cg, cb]]]) {
         lights.push({
           pos: b.origin, dir: b.dir, r: c[0] * power, g: c[1] * power, b: c[2] * power, ...cone,
-          side, weight: power * (c[0] + c[1] + c[2]), beam: b,
+          side, weight: share * (c[0] + c[1] + c[2]), beam: b, head: inst.head, key: inst.head + ":" + bi + ":" + side,
+          reach: b.reach || len, soft: washy || frost > 0.3 ? 3 : 1, cr: c[0], cg: c[1], cb: c[2], share,
+          hit: len < 39.5 ? hit : null, hitAt: len,
         });
       }
     }
@@ -2021,49 +2083,94 @@ export class Stage {
   }
 
   /**
-   * Hand the brightest beams to the surface shader.  Beams that start
-   * close together and point the same way (the cells of one bar, a row of
-   * PARs on one look) are merged into one light first: the floor looks the
-   * same, and every pixel of the room loops over far fewer lights.
+   * Every lit beam to the surfaces (lightgrid.js).  The heads of one light
+   * that point the same way in the same colour (the cells of a bar on one
+   * look) go as one light; the brightest get a shadow picture; the pools
+   * they make, and the LED screens, light the room back a little.
    */
   _uploadLights(lights) {
     const groups = new Map();
     for (const l of lights) {
-      const key = Math.round(l.pos.x / 1.2) + "," + Math.round(l.pos.y / 1.2) + "," + Math.round(l.pos.z / 1.2)
-        + "," + Math.round(l.dir.x * 5) + "," + Math.round(l.dir.y * 5) + "," + Math.round(l.dir.z * 5)
-        + "," + l.gobo + "," + l.prism + "," + (l.side || 0) + "," + Math.round(l.cosO * 50);
+      const key = l.head + "," + Math.round(l.dir.x * 20) + "," + Math.round(l.dir.y * 20) + "," + Math.round(l.dir.z * 20)
+        + "," + l.gobo + "," + l.prism + "," + (l.side || 0) + "," + Math.round(l.cosO * 200)
+        + "," + Math.round(l.cr * 50) + "," + Math.round(l.cg * 50) + "," + Math.round(l.cb * 50);
       const g = groups.get(key);
       if (!g) {
-        groups.set(key, { pos: l.pos.clone().multiplyScalar(l.weight), dir: l.dir.clone().multiplyScalar(l.weight),
-          r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot,
-          blur: l.blur, prism: l.prism, prot: l.prot, side: l.side || 0, weight: l.weight, beams: [l.beam] });
+        groups.set(key, { ...l, pos: l.pos.clone().multiplyScalar(l.weight || 1e-6), dir: l.dir.clone(), wsum: l.weight || 1e-6,
+          beams: [l.beam], key: l.key });
       } else {
-        g.beams.push(l.beam);
-        g.pos.addScaledVector(l.pos, l.weight);
-        g.dir.addScaledVector(l.dir, l.weight);
+        g.pos.addScaledVector(l.pos, l.weight || 1e-6);
+        g.wsum += l.weight || 1e-6;
         g.r += l.r; g.g += l.g; g.b += l.b;
-        g.cosO = Math.min(g.cosO, l.cosO);
-        g.cosI = Math.min(g.cosI, l.cosI);
         g.weight += l.weight;
+        g.share += l.share;
+        g.reach = Math.max(g.reach, l.reach);
+        g.beams.push(l.beam);
       }
     }
     const list = [...groups.values()].sort((x, y) => y.weight - x.weight);
-    const cap = this.options.quality === "fast" ? 10
-      : this.options.quality === "high" ? MAX_LIGHTS
-        : this.q.ratio < 0.75 ? 14 : 24;
-    const n = Math.min(cap, list.length);
-    for (const l of lights) if (l.beam) l.beam.shadowSlot = -1;
-    for (let i = 0; i < n; i++) {
-      const l = list[i];
-      for (const bm of l.beams) if (bm && bm.shadowSlot < 0) bm.shadowSlot = i;
-      const w = l.weight || 1;
-      LIGHTS.uPos.value[i].copy(l.pos).multiplyScalar(1 / w);
-      LIGHTS.uDir.value[i].copy(l.dir).normalize();
-      LIGHTS.uCol.value[i].set(l.r, l.g, l.b);
-      LIGHTS.uCone.value[i].set(l.cosO, l.cosI, l.gobo, l.rot);
-      LIGHTS.uLook.value[i].set(l.blur || 0, l.prism || 0, l.prot || 0, l.side || 0);
+    for (const g of list) g.pos.multiplyScalar(1 / g.wsum);
+    const q = this.options.quality;
+    // shadow pictures for the brightest: High 16, Medium 6, none on Low
+    // (or when the view is kept light)
+    const shadowSlots = this.wire || this.options.shadows === false || q === "fast" || this.q.ratio <= 0.6 ? 0 : q === "high" ? 16 : 6;
+    // a light inside something solid (under the deck, in the booth): its
+    // shadow picture starts where its beam comes out, as the beam does
+    for (const g of list.slice(0, shadowSlots)) {
+      g.near = 0;
+      for (const bx of this.boxes || []) {
+        if (!bx.containsPoint(g.pos)) continue;
+        const ray = this._ray || (this._ray = new THREE.Ray());
+        ray.set(g.pos, g.dir);
+        const out = ray.intersectBox(bx, this._v3 || (this._v3 = new THREE.Vector3()));
+        if (out) g.near = Math.max(g.near, out.distanceTo(g.pos) + 0.05);
+      }
     }
-    LIGHTS.uCount.value = n;
+    if (shadowSlots) this.shadows.update(list, shadowSlots, this._shadowRoom);
+    else { this.shadows.off(); for (const g of list) g.slot = -1; }
+    for (const l of lights) if (l.beam) l.beam.shadowSlot = -1;
+    for (const g of list) for (const bm of g.beams) if (bm && bm.shadowSlot < 0) bm.shadowSlot = g.slot;
+    this.grid.update(list, this.room, q === "fast" ? 12 : q === "high" ? 64 : 32);
+    this._bounce(list);
+    this.lightStats = { ...this.grid.stats, shadows: LIGHTS.uShadowCount.value, bounce: LIGHTS.uVplCount.value };
+  }
+
+  /** Light bounced back into the room: the brightest pools (their colour
+   *  times the surface's - a black floor sends little back, a white wall a
+   *  lot) and the LED screens, as soft lights facing out from where they
+   *  are.  High: 12 pools, Medium 6, Low none. */
+  _bounce(list) {
+    const q = this.options.quality;
+    const off = this.wire || q === "fast" || this.options.bounce === false;
+    const most = off ? 0 : q === "high" ? 12 : 6;
+    const alb = (this.built && this.built.albedo) || {};
+    const out = [];
+    if (most) {
+      const cand = [];
+      for (const g of list) {
+        if (!g.hit || !g.hit.kind) continue;
+        const a = alb[g.hit.kind] || alb.box;
+        if (!a) continue;
+        const lum = 0.2126 * a.r + 0.7152 * a.g + 0.0722 * a.b;
+        cand.push({ g, a, w: g.weight * lum });
+      }
+      cand.sort((x, y) => y.w - x.w);
+      for (const { g, a } of cand.slice(0, most)) {
+        const p = g.pos.clone().addScaledVector(g.dir, g.hitAt).addScaledVector(g.hit.n, 0.05);
+        const k = 2.5 * g.share;
+        out.push([p, g.hit.n, g.cr * a.r * k, g.cg * a.g * k, g.cb * a.b * k]);
+      }
+    }
+    // the LED screens: what they show lights what's in front of them
+    if (!off) for (const sg of this._screenGlow || []) if (out.length < MAX_BOUNCE) out.push(sg);
+    const n = Math.min(MAX_BOUNCE, out.length);
+    for (let i = 0; i < n; i++) {
+      const [p, nrm, r, g, b] = out[i];
+      LIGHTS.uVplPos.value[i].copy(p);
+      LIGHTS.uVplNrm.value[i].copy(nrm);
+      LIGHTS.uVplCol.value[i].set(r, g, b);
+    }
+    LIGHTS.uVplCount.value = n;
   }
 
   /** The lights showing a drawn placeholder instead of their real 3D:

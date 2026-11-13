@@ -2468,14 +2468,17 @@ def test_shadows() -> None:
     vj = (st / "venue.js").read_text(encoding="utf-8")
     sj = stage_js()
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    # (what the shadows DO - 16 on High, 6 on Medium, not drawn again while
+    # nothing moves, half a beam stopped by a balcony - is drawn and read
+    # back by tools/stagecheck.mjs; these only check the pieces are there)
     check("a depth atlas for the brightest beams, casters only, back faces",
-          "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
+          "SHADOW_SLOTS" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
           and "DepthTexture" in sh, "")
     check("the surface shader darkens what a caster hides from a beam",
-          "const shadowAt = Fn(([i, wp])" in mj and "i.lessThan(LIGHTS.uShadowCount)" in mj
-          and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 8" in mj, "")
-    check("High: 8 beams cast shadows, Medium 4",
-          'this.options.quality === "high" ? 8 : 4' in sj and "Math.min(SHADOW_SLOTS, slots, n)" in sh, "")
+          "const shadowAt = Fn(([i, wp])" in mj and "slot.greaterThanEqual(0)" in mj
+          and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 16" in mj, "")
+    check("High: 16 beams cast shadows, Medium 6",
+          'q === "high" ? 16 : 6' in sj and "Math.min(SHADOW_SLOTS, slots, lights.length)" in sh, "")
     check("the crowd, performers, objects (not marks) and the stage deck cast",
           "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
@@ -3516,8 +3519,9 @@ def test_3d_detail() -> None:
     sj = stage_js()
     vj = (st / "venue.js").read_text(encoding="utf-8")
     dj = dialogs_js()
+    lg = (st / "lightgrid.js").read_text(encoding="utf-8")
     check("each light carries blur (focus, frost) and prism to the shaders",
-          "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
+          "uLook" in mj and "L[o + 13] = l.blur || 0; L[o + 14] = l.prism || 0" in lg and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
     check("gobos soften, a prism makes its copies (one look at the picture a pixel)",
           "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
     check("gobo shafts in the haze: the beam shader shows the same picture",
@@ -3537,7 +3541,7 @@ def test_3d_detail() -> None:
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
     check("quality is named Max / Medium / Low, Max the standard",
-          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
+          "High: sharpest" in dj and "Medium: beams in the haze" in dj and "adapts to this computer" in dj and "Low: older laptops" in dj
           and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -12463,3 +12467,37 @@ def test_phone_hold_lease() -> None:
             check("...a normal let-go ends the lease", not e.__dict__.get("quick_leases"), e.__dict__.get("quick_leases"))
         finally:
             e.shutdown()
+
+
+def test_light_output() -> None:
+    """How bright a light is in the 3D: lumens and lens angles from its fixture file (QLC+ and OFL),
+    an estimate from its wattage and kind when the file says nothing, the operator's correction per
+    model (output_set - every head of it), back to the file (clear); the snapshot carries it to the 3D."""
+    from app import engine as eng_mod
+    from app import fixlib
+    aura = fixlib.physical("qlc:Martin/Martin-MAC-Aura.qxf")
+    check("a QLC+ file's lumens and lens angles are read", aura.get("lm") == 3850 and aura.get("lens") == [11.0, 58.0], aura)
+    par = fixlib.physical("ofl:eurolite/led-par-56-tcl.json")
+    check("an OFL file's power and lens are read", par.get("watts") == 45 and par.get("lens") == [14.0, 14.0], par)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            p = e.snapshot()["patch"][0].get("photo") or {}
+            check("every light tells the 3D its light output", p.get("lm", 0) > 0 and p.get("lm_from") in ("file", "estimate"), p)
+            got = e.act("output_get", head=1)
+            check("output_get says where its lumens come from", got.get("photo", {}).get("lm") == p.get("lm") and "lumens" in got.get("summary", ""), got)
+            e.act("output_set", head=1, lumens=4200, beam=18)
+            p2 = e.snapshot()["patch"][1]["photo"]
+            check("a correction applies to every head of the model", p2.get("lm") == 4200 and p2.get("lm_from") == "yours" and p2.get("beam") == 18, p2)
+            bad = e.act("output_set", head=1, lumens=5)
+            check("lumens out of range are refused", not bad.get("ok", True) or "error" in bad, bad)
+            e.act("output_set", head=1, clear=True)
+            p3 = e.snapshot()["patch"][1]["photo"]
+            check("cleared: back to the fixture file (or the estimate)", p3.get("lm") == p.get("lm") and p3.get("lm_from") == p.get("lm_from") and "beam" not in p3, p3)
+        finally:
+            e.shutdown()
+

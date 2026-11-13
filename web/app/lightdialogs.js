@@ -94,6 +94,40 @@ export async function openMotionCalibration(hd) {
   render();
 }
 
+// ===================================================== light output
+// How much light a model puts out decides how bright its beam and its pool
+// are in the 3D (a small LED PAR next to a big spot).  From its fixture
+// file when the file says; otherwise an estimate from its wattage - this
+// is where it gets corrected from the data sheet.  Saved per model.
+export async function openLightOutput(hd) {
+  const head = hd.head_no;
+  const got = await run("output_get", { head }, { silentError: true });
+  if (!got.ok) { toast(got.error || "This light has no output to set", "bad"); return; }
+  const p = got.photo || {};
+  const from = { file: "from its fixture file", yours: "as you set it", estimate: p.watts ? `estimated from its ${p.watts} W` : "estimated for its kind" }[p.lm_from] || "";
+  const lm = h("input", { type: "number", min: 50, max: 80000, step: 50, value: p.lm || "" });
+  const lens = p.lens ? `${p.lens[0]}°${p.lens[1] !== p.lens[0] ? `-${p.lens[1]}°` : ""} (fixture file)` : `${got.type_beam[0]}°${got.type_beam[1] !== got.type_beam[0] ? `-${got.type_beam[1]}°` : ""} (usual for a ${got.kind.toLowerCase()})`;
+  const beam = h("input", { type: "number", min: 0.5, max: 170, step: 0.5, value: p.beam || "", placeholder: "as the file says" });
+  const close = modal({
+    title: `Light output: ${hd.model}`,
+    body: h("div",
+      h("p", `How bright every ${hd.model} is in the 3D: its beam in the haze and the light it puts on the floor. Now ${p.lm} lumens, ${from}.`),
+      h("div.form-grid",
+        h("label.field", h("span", "Light output (lumens)"), lm),
+        h("label.field", h("span", "Beam angle (degrees)"), beam)),
+      h("p.muted.small", `Its beam: ${lens}. Lumens are on the maker's data sheet ("luminous flux"); a zoom light's angle follows its zoom channel unless you set one here.`)),
+    foot: [
+      h("button.btn", { onclick: async () => { await run("output_set", { head, clear: true }, { toast: true }); close(); } }, "Back to the fixture file"),
+      h("span.grow"),
+      h("button.btn", { onclick: () => close() }, "Cancel"),
+      h("button.btn.primary", { onclick: async () => {
+        const r = await run("output_set", { head, lumens: lm.value ? +lm.value : null, beam: beam.value ? +beam.value : null }, { toast: true });
+        if (r.ok) close();
+      } }, "Save"),
+    ],
+  });
+}
+
 // ================================================= fixture from a manual
 // Any light or effect no library has: paste the DMX chart or drop the
 // manual's PDF, check the table, save.  Nothing is stored until Save.
