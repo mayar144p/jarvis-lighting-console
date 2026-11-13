@@ -280,6 +280,90 @@ add("colour", async () => {
   save("05-colour-blue");
 });
 
+// Beams as light in the air (step 3): bright at the lens and fading as the
+// beam spreads; brighter looking into it; gobo shafts in the haze; cut off
+// exactly where something solid stands in it - not where its centre line
+// happens to land.
+add("haze-beam", async () => {
+  await downlight({ options: { haze: 0.6 } });
+  const near = await lum(await at(0, 4.0, 6), 1), far = await lum(await at(0, 0.9, 6), 1);
+  check("a beam is brightest at the lens and fades as it spreads", near > far * 1.3 + 5, `near ${near.toFixed(1)} vs far ${far.toFixed(1)}`);
+  for (const q of ["auto", "fast"]) {
+    await downlight({ options: { haze: 0.6, quality: q } });
+    const b = await lum(await at(0, 2.4, 6), 2), s = await lum(await at(2.2, 2.4, 6), 2);
+    check(`${q === "auto" ? "Medium" : "Low"} quality: the beam shows in the haze`, b > s + 6, `${b.toFixed(1)} vs ${s.toFixed(1)}`);
+  }
+});
+
+add("forward", async () => {
+  // a beam across the room, seen from where it shines towards and from behind it
+  const sideways = async (pos) => {
+    await sc(async (pos) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5),
+        fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 20), x: -4, y: 2, z: 6, stance: "stand", rot: [90, 0], kind: "floor" }],
+        looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.6, quality: "high", house: 0.1, exposure: -1.5 },
+        camera: { pos, target: [-4, 2, 6] } });
+    }, pos);
+    await shot();
+    return lum(await at(-1, 2, 6), 2);
+  };
+  // (exposure down: nothing near white, where brighter can't show)
+  const toward = await sideways([4.5, 0.6, 9]);
+  save("06-into-the-beam");
+  const behind = await sideways([-8.5, 0.6, 9]);
+  await sc(() => window.stage.setOptions({ exposure: 0 }));
+  check("a beam shining towards you is brighter in the haze than seen from behind", toward > behind * 1.4 + 4,
+    `towards ${toward.toFixed(1)} vs behind ${behind.toFixed(1)}`);
+});
+
+add("shafts", async () => {
+  // bars, turned across the view: stripes in the air
+  // how much the light jumps from one point to the next across the beam
+  // (stripes jump; an open beam only swells smoothly to its middle)
+  const across = async () => {
+    const a = await at(-0.35, 2.4, 6), b = await at(0.35, 2.4, 6);
+    const v = await sc(([a, b]) => window.SC.line(a, b, 48, 0), [a, b]);
+    let jump = 0;
+    for (let i = 1; i < v.length; i++) jump += Math.abs(v[i] - v[i - 1]);
+    return jump / (v.length - 1);
+  };
+  await downlight({ type: "moving_spot", beam: 22, options: { haze: 0.9 } });
+  const open = await across();
+  await downlight({ type: "moving_spot", beam: 22, options: { haze: 0.9 }, look: { beam: { gobo: 2.5 / 7.99 }, look: { grot: { at: 90 } } } });
+  save("07-gobo-shafts");
+  const bars = await across();
+  check("a gobo makes shafts in the haze (stripes across a barred beam)", bars > open * 1.6 + 2, `bars ${bars.toFixed(1)} vs open ${open.toFixed(1)}`);
+});
+
+add("blocked", async () => {
+  // a wide downlight, its centre and left half over a balcony 2.6 m up:
+  // the right half reaches the floor; under the balcony the haze is dark
+  await downlight({ beam: 40, options: { haze: 0.8, quality: "high", shadows: true },
+    objects: [{ id: "bal", kind: "balcony", x: -1.35, z: 6, w: 3, d: 3, h: 0.25, y: 2.6, rot: 0 }] });
+  save("08-half-blocked");
+  const open = await lum(await at(0.75, 1.0, 6.5), 2), under = await lum(await at(-0.75, 1.0, 6.5), 2);
+  const away = await lum(await at(3.6, 1.0, 6.5), 2);
+  check("the half of a beam that misses a balcony goes on to the floor", open > away + 10, `open side ${open.toFixed(1)} vs away ${away.toFixed(1)}`);
+  check("under the balcony the haze is dark (its shadow in the air)", under < open * 0.6, `under ${under.toFixed(1)} vs open side ${open.toFixed(1)}`);
+});
+
+add("slant", async () => {
+  // a beam slanting down at 45 degrees: its far side reaches the floor
+  // too (the old cone stopped square across where its centre landed)
+  await sc(async () => {
+    const S = window.SC;
+    await S.scene({ venue: S.room(10, 14, 5),
+      fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 30), x: 0, y: 4.5, z: 4, stance: "hang", rot: [0, -45], kind: "truss" }],
+      looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.8, quality: "high", house: 0.1 },
+      camera: { pos: [9, 2.5, 8], target: [0, 1.5, 8] } });
+  });
+  await shot();
+  save("09-slant");
+  const farSide = await lum(await at(0, 0.6, 10), 2), outside = await lum(await at(0, 2.8, 11.5), 2);
+  check("a slanting beam reaches the floor all round", farSide > outside + 10, `far side ${farSide.toFixed(1)} vs outside ${outside.toFixed(1)}`);
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).
@@ -365,6 +449,14 @@ add("strobe", async () => {
   await downlight({ options: { haze: 0.5 }, look: { hz: 12 } });
   const strobing = await sc(async () => { await window.SC.settle(3); return window.stage.strobing; });
   check("while a light strobes the 3D draws every picture", strobing === true, String(strobing));
+  // the picture's recipe doesn't change with each flash (that would
+  // rebuild its shaders at every flash: a stutter)
+  const keys = await sc(async () => {
+    const seen = new Set();
+    for (let i = 0; i < 12; i++) { await window.SC.settle(1); seen.add(window.stage._postKey); }
+    return [...seen];
+  });
+  check("a strobing light never rebuilds the picture's recipe", keys.length === 1, keys.join(" / "));
   await sc(() => window.stage.setOptions({ calm: true }));
   const calmNow = await sc(async () => { await window.SC.settle(3); return window.stage.strobing; });
   check("calm flashing: no need to", calmNow === false, String(calmNow));
@@ -380,6 +472,24 @@ add("quality", async () => {
     const c = await lum(await at(0, 0, 6)), off = await lum(await at(3.5, 0, 9));
     check(`${q === "fast" ? "Low" : q === "auto" ? "Medium" : "High"} quality draws the pool`, c > off * 2 + 10, `${c.toFixed(1)} vs ${off.toFixed(1)}`);
   }
+});
+
+// How long a picture takes at each quality, in the look book's club
+// (software drawing here: only the qualities against each other mean
+// anything; CHECKS_GPU=1 for this computer's graphics card).
+add("speed", async () => {
+  const out = [];
+  for (const q of ["fast", "auto", "high"]) {
+    await sc((q) => window.stage.setOptions({ quality: q }), q);
+    const ms = await sc(async () => {
+      await window.SC.settle(3);
+      const t0 = performance.now(), f0 = window.SC.frames();
+      await window.SC.settle(6, 60000);
+      return (performance.now() - t0) / Math.max(1, window.SC.frames() - f0);
+    });
+    out.push(`${q === "fast" ? "Low" : q === "auto" ? "Medium" : "High"} ${ms.toFixed(0)} ms`);
+  }
+  console.log("  ..   a picture takes: " + out.join(", "));
 });
 
 // The look book: a small club - a stage, a truss of movers in pink and
@@ -429,6 +539,8 @@ add("lookbook", async () => {
   console.log(`  ..   look book saved (${OUT}): ${info.lights} lights on the surfaces, ${info.shadows} casting shadows`);
 });
 
+// (the speed check times the look book's club, so it runs last)
+CHECKS.push(...CHECKS.splice(CHECKS.findIndex((c) => c.name === "speed"), 1));
 for (const c of CHECKS) {
   if (!selected(c.name)) continue;
   console.log(c.name);

@@ -35,13 +35,15 @@ export class Shadows {
     LIGHTS.uShadowCount.value = n;
     if (!n) return;
     const r = this.renderer, s = this.scene;
-    // the depth range and texture rows the renderer uses (WebGPU: depth
-    // 0..1, rows top-down; its WebGL 2 fallback: -1..1, bottom-up - known
-    // once it has started), so the surface shader reads the pictures the
-    // way they were drawn
+    // the depth range the renderer uses (WebGPU: 0..1; its WebGL 2
+    // fallback: -1..1 - known once it has started), so the surface shader
+    // reads the pictures the way they were drawn.  The rows run top-down on
+    // both: three.js's WebGL 2 side places viewports from the top and turns
+    // render-target pictures over when they are read.  (Flipping them here
+    // as well put every shadow on the wrong side of its light on WebGL 2.)
     const gpu = r.coordinateSystem === THREE.WebGPUCoordinateSystem;
     LIGHTS.uZ01.value = gpu ? 1 : 0;
-    LIGHTS.uFlipY.value = gpu ? 1 : 0;
+    LIGHTS.uFlipY.value = 1;
     for (const c of this.cams) c.coordinateSystem = r.coordinateSystem;
     const keep = { target: r.getRenderTarget(), bg: s.background, over: s.overrideMaterial, auto: r.autoClear };
     s.background = null;

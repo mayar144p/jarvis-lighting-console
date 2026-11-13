@@ -260,8 +260,23 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    strobes keep their dice.  Calm flashing (Settings -> Screen & 3D): a
    steady glow, under three changes a second.  No auto-exposure on purpose:
    it would brighten a fade-out and hide it.
-3. Real beams: light added up along the line of sight, gobo and prism
-   shafts, stopped by people, truss and walls, shadows in the haze.
+3. **(DONE) Real beams** (web/js/stage/beams.js, Medium and High): the
+   room is drawn first with its depth; each beam's closed cone then only
+   marks pixels, and per pixel the line of sight is cut against the real
+   cone (maths, not the mesh), ended at the room's depth, and the haze's
+   scattered light added up along it (8-24 steps, fewer through a narrow
+   beam): the beam's light thinned by its spread (bright at the lens),
+   forward scattering (Henyey-Greenstein, g 0.35), the same gobo / prism /
+   split as the floor, a drifting 3D haze texture, the shadow picture of
+   the brightest beams.  Drawn at half size, stretched back with the depth
+   as a guide; FXAA on High replaces 4x multisampling (the depth must be
+   readable).  Low keeps the old beams.  Found on the way: every shadow was
+   on the wrong side of its light on WebGL 2 (three.js already turns
+   render-target pictures over there; shadows.js turned them again), and a
+   view set while the camera was still flying was overridden.  stagecheck:
+   brightest at the lens, brighter looking into the beam, gobo shafts in the
+   air, a balcony stopping half a beam with its shadow in the haze, a
+   slanting beam reaching the floor all round.
 4. Every light lights the room: lumens, hundreds of lights, more and
    softer / harder shadows, bounce, LED screens light the room.
 5. Mirror floors.

@@ -181,7 +181,7 @@ const goboShape = Fn(([id, uv]) => {
 // picture, not several: this runs for every pixel of the room).  A prism
 // splits the beam into copies round its centre (a linear one: in a row).
 // Low quality (detail off): the picture as it is, and no halves.
-const goboMask = (id, uv0, look, detail) => {
+export const goboMask = (id, uv0, look, detail) => {
   if (!detail) return goboShape(id, uv0);
   return Fn(() => {
     const uv = vec2(uv0).toVar();
@@ -239,6 +239,27 @@ const shadowAt = Fn(([i, wp]) => {
         sum.addAssign(select(d.lessThanEqual(z), float(1), float(0)));
       }
       k.assign(sum.mul(0.25));
+    });
+  });
+  return k;
+});
+
+/** One look at light i's depth picture: is `wp` in its light (1) or its
+ *  shadow (0)?  The beams' haze takes many of these along each line of
+ *  sight, so one tap each (the soft edge comes from the many). */
+export const shadowTap = Fn(([i, wp]) => {
+  const k = float(1).toVar();
+  const sp = LIGHTS.uShadowMat.node.element(i).mul(vec4(wp, 1));
+  If(sp.w.greaterThan(0), () => {
+    const nd = sp.xyz.div(sp.w);
+    If(abs(nd.x).lessThan(1).and(abs(nd.y).lessThan(1)).and(nd.z.lessThan(1)), () => {
+      const v = nd.y.mul(0.5).add(0.5);
+      const uv = vec2(nd.x.mul(0.5).add(0.5), select(LIGHTS.uFlipY.greaterThan(0.5), v.oneMinus(), v));
+      const fi = float(i);
+      const off = vec2(mod(fi, 4).mul(0.25), floor(fi.div(4)).mul(0.5));
+      const d = select(LIGHTS.uZ01.greaterThan(0.5), nd.z, nd.z.mul(0.5).add(0.5)).sub(0.0008);
+      const z = texture(LIGHTS.uShadowMap.value, off.add(clamp(uv, 0.002, 0.998).mul(vec2(0.25, 0.5)))).x;
+      k.assign(select(d.lessThanEqual(z), float(1), float(0)));
     });
   });
   return k;

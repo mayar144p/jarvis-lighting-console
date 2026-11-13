@@ -131,10 +131,18 @@ physically is and who made it:
 * **GDTF geometry.** When the profile came from a GDTF file with models, the
   real meshes (3DS, GLB, STL, OBJ) replace the procedural body, with the yoke
   and head as the file's own pivots.
-* **Light.** Beams are volumetric cones driven by the live output: colour,
-  intensity, zoom, pan/tilt, gobo and strobe, lighting the floor, the flown
-  truss and the performers, with bloom and optional haze. A lens that looks
-  straight at the camera draws a thin flare streak, as a camera sees it.
+* **Light.** Beams are driven by the live output: colour, intensity, zoom,
+  pan/tilt, gobo and strobe, lighting the floor, the flown truss and the
+  performers, with bloom and optional haze. A lens that looks straight at
+  the camera draws a thin flare streak, as a camera sees it.
+* **Beams in haze** (Medium and High quality) are light in the air, worked
+  out along your line of sight: brightest at the lens and fading as the beam
+  spreads, brighter when it points at you, with the gobo and the prism making
+  real shafts that match the pattern on the floor. A beam stops exactly where
+  it meets anything solid - a person, the truss, a balcony, a wall at any
+  angle - and the brightest lights leave a shadow in the haze behind what
+  stands in them. The haze drifts slowly. **Low** keeps the simpler beams
+  for older laptops.
 * **True colour.** The colour you pick on the desk is the colour on the
   screen, dim or bright: bright red stays red, green stays green. Only far
   brighter than the screen's white - a lens, the core of a narrow beam - does

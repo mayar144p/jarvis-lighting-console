@@ -9,8 +9,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { pass } from "three/tsl";
+import { texture as textureNode, uniform } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway, releaseScreens } from "./venue.js";
@@ -105,6 +106,7 @@ import {
 } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import { pictureOut, exposureFor } from "./picture.js";
+import { VOL, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, strobeLevel, turnOf, motorStep,
   hangOf, hangQuat,
@@ -242,6 +244,9 @@ export class Stage {
     scene.add(this.rigGroup);
     this.beamGroup = new THREE.Group();
     scene.add(this.beamGroup);
+    // the beams in haze (Medium and High): their own scene, drawn after the
+    // room into a half-size picture of their own (beams.js)
+    this.beamScene = new THREE.Scene();
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -385,12 +390,7 @@ export class Stage {
   }
 
   _buildBeams(inst) {
-    for (const b of inst.beams) {
-      this.beamGroup.remove(b.mesh, b.glow, b.streak);
-      b.mat.dispose();
-      b.glow.material.dispose();
-      b.streak.material.dispose();
-    }
+    for (const b of inst.beams) this._dropBeam(b);
     inst.beams = inst.sk.emitters.map((em) => {
       const mat = beamMaterial();
       const mesh = new THREE.Mesh(beamGeometry(), mat);
@@ -412,18 +412,29 @@ export class Stage {
       streak.visible = false;
       streak.renderOrder = 3;
       this.beamGroup.add(streak);
-      return { em, mesh, mat, glow, streak, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
+      // the same beam as light in the air (Medium and High)
+      const vol = new THREE.Mesh(volumeGeometry(), volumeBeamMaterial());
+      vol.frustumCulled = false;
+      vol.visible = false;
+      this.beamScene.add(vol);
+      return { em, mesh, mat, glow, streak, vol, shadowSlot: -1, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
     });
+  }
+
+  _dropBeam(b) {
+    this.beamGroup.remove(b.mesh, b.glow, b.streak);
+    b.mat.dispose();
+    b.glow.material.dispose();
+    b.streak.material.dispose();
+    if (b.vol) {
+      this.beamScene.remove(b.vol);
+      b.vol.material.dispose();
+    }
   }
 
   _remove(inst) {
     this.rigGroup.remove(inst.holder);
-    for (const b of inst.beams) {
-      this.beamGroup.remove(b.mesh, b.glow, b.streak);
-      b.mat.dispose();
-      b.glow.material.dispose();
-      b.streak.material.dispose();
-    }
+    for (const b of inst.beams) this._dropBeam(b);
   }
 
   /** Hang or stand the model, the right way up, where the patch says. */
@@ -632,6 +643,9 @@ export class Stage {
     if (!s || !s.pos || !s.target) return;
     this._perspective();
     this.povHead = null;
+    // a view picked while the camera is still flying somewhere (a room
+    // that just changed size flies to its front) is the one that stays
+    this.fly = null;
     this.camera.position.fromArray(s.pos);
     this.controls.target.fromArray(s.target);
     this.controls.update();
@@ -822,10 +836,6 @@ export class Stage {
     if (this.camera === cam) return;
     this.camera = cam;
     this.controls.object = cam;
-    if (this.post) {
-      this._makePipeline(!!this._smooth);
-      this._bloomOn = null;
-    }
     this.resize();
   }
 
@@ -1389,6 +1399,12 @@ export class Stage {
     if (!this.wire && this.options.shadows !== false && this.options.quality !== "fast" && this.q.ratio > 0.6) {
       this.shadows.update(LIGHTS.uCount.value, this.options.quality === "high" ? 8 : 4);
     } else this.shadows.off();
+    // a beam whose light has a shadow picture is dark in the haze behind
+    // what stands in it
+    const nShadow = LIGHTS.uShadowCount.value;
+    for (const inst of this.fixtures.values()) {
+      for (const b of inst.beams) b.vol.material.uniforms.uShadow.value = b.shadowSlot >= 0 && b.shadowSlot < nShadow ? b.shadowSlot : -1;
+    }
     this._drawScreens(now);
 
     this.dirty = false;
@@ -1429,23 +1445,80 @@ export class Stage {
     ndiSendFrame(W, H, ctx.getImageData(0, 0, W, H).data, o.fps || 30);
   }
 
-  /** The scene pass and its glow.  Smooth edges (4x multisampling) on High
-   *  only: every see-through beam is then drawn four times a pixel. */
+  /** Smooth edges on High: a last pass over the finished picture (FXAA).
+   *  (The room is no longer multisampled: the beams read its depth.) */
   _makePipeline(smooth) {
-    this._sceneCol = pass(this.scene, this.camera, { samples: smooth ? 4 : 0 }).getTextureNode("output");
-    this.bloom = bloom(this._sceneCol, 0.55, 0.4, 0.9);
+    this._smooth = !!smooth;
+    this._postKey = null;
     this._bloomOn = null;
-    this._smooth = smooth;
   }
 
-  /** Draw the frame: the scene, with or without the glow. */
+  /** Beams as light in the air: Medium and High, with haze, in the 3D view
+   *  (not the flat line drawings), unless auto quality is down to the bone. */
+  _volumetric() {
+    return this.options.quality !== "fast" && !this.q.lite && !this.wire && this.options.haze > 0.01;
+  }
+
+  /** The pictures the frame is drawn into, at the canvas's size (the beams
+   *  at half of it). */
+  _targets() {
+    const r = this.renderer;
+    const size = r.getDrawingBufferSize(this._dbs || (this._dbs = new THREE.Vector2()));
+    const w = Math.max(1, Math.floor(size.x)), h = Math.max(1, Math.floor(size.y));
+    if (!this.sceneRT) {
+      this.sceneRT = new THREE.RenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: true });
+      this.sceneRT.depthTexture = new THREE.DepthTexture(w, h);
+      this.sceneRT.depthTexture.minFilter = this.sceneRT.depthTexture.magFilter = THREE.NearestFilter;
+      this.beamRT = new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+      this._sceneTex = textureNode(this.sceneRT.texture);
+      this._beamSize = uniform(new THREE.Vector2(1, 1));
+      VOL.depth.value = this.sceneRT.depthTexture;
+    }
+    if (this.sceneRT.width !== w || this.sceneRT.height !== h) this.sceneRT.setSize(w, h);
+    const bw = Math.max(1, Math.ceil(w / 2)), bh = Math.max(1, Math.ceil(h / 2));
+    if (this.beamRT.width !== bw || this.beamRT.height !== bh) this.beamRT.setSize(bw, bh);
+    this._beamSize.value.set(bw, bh);
+  }
+
+  /** Draw the frame: the room (with its depth), the beams in haze over it,
+   *  the glow, the true-colour step and, on High, smooth edges. */
   _present(glow) {
-    if (glow !== this._bloomOn) {
+    const r = this.renderer;
+    this._targets();
+    // (the picture's recipe depends on the quality only, never on which
+    // beams are lit: a strobe would otherwise rebuild it at every flash)
+    const vol = this._volumetric();
+    const fx = this._smooth && !this.wire;
+    const key = `${glow}|${vol}|${fx}`;
+    if (key !== this._postKey) {
+      this._postKey = key;
+      let hdr = this._sceneTex;
+      if (vol) hdr = hdr.add(beamUpsample(this.beamRT.texture, this._beamSize));
+      if (this.bloom) this.bloom.dispose();
+      this.bloom = glow ? bloom(hdr, 0.55, 0.4, 0.9) : null;
+      let out = pictureOut(glow ? hdr.add(this.bloom) : hdr);
+      if (fx) out = fxaa(out);
       this.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
-      this.post.outputNode = pictureOut(glow ? this._sceneCol.add(this.bloom) : this._sceneCol);
+      this.post.outputNode = out;
       this.post.needsUpdate = true;
       this._bloomOn = glow;
     }
+    const keep = r.getRenderTarget();
+    r.setRenderTarget(this.sceneRT);
+    r.render(this.scene, this.camera);
+    if (vol) {
+      VOL.z01.value = r.coordinateSystem === THREE.WebGPUCoordinateSystem ? 1 : 0;
+      VOL.near.value = this.camera.near;
+      VOL.far.value = this.camera.far;
+      VOL.steps.value = this.options.quality === "high" ? 24 : 12;
+      const clear = r.getClearColor(this._clr || (this._clr = new THREE.Color())), alpha = r.getClearAlpha();
+      r.setClearColor(0x000000, 0);
+      r.setRenderTarget(this.beamRT);
+      if (this.beamScene.children.some((m) => m.visible)) r.render(this.beamScene, this.camera);
+      else r.clear();
+      r.setClearColor(clear, alpha);
+    }
+    r.setRenderTarget(keep);
     this.post.render();
   }
 
@@ -1789,8 +1862,10 @@ export class Stage {
       if (em.laser) angle = 0.25;
       if (body.type === "atmos" || angle <= 0 || a <= 0.002) {
         b.mesh.visible = false;
+        b.vol.visible = false;
         b.glow.visible = false;
         b.streak.visible = false;
+        b.shadowSlot = -1;
         continue;
       }
       em.node.getWorldPosition(b.origin);
@@ -1829,7 +1904,45 @@ export class Stage {
       u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
       u.uSoft.value = lerp(1.7, 0.55, frost);
       u.uHaze.value = this.options.haze;
-      b.mesh.visible = this.options.haze > 0.01;
+      const volumetric = this._volumetric();
+      b.mesh.visible = this.options.haze > 0.01 && !volumetric;
+      // the beam as light in the air (beams.js): the cone runs on past
+      // where its centre lands, to where its far edge does, and the room's
+      // depth ends it exactly - at a person, the truss, a wall at any angle
+      b.vol.visible = volumetric;
+      if (volumetric) {
+        const v = b.vol.material.uniforms;
+        const k = Math.tan(half);
+        let far = len;
+        if (len < 39.5) {
+          const c = Math.cos(half), sn = Math.sin(half);
+          for (const [px, py] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const e = this._v3 || (this._v3 = new THREE.Vector3());
+            e.copy(b.dir).multiplyScalar(c).addScaledVector(rt, px * sn).addScaledVector(u2, py * sn).normalize();
+            far = Math.max(far, hitDistance(this.planes, this.boxes, b.origin, e, 40, this.segments) * c);
+          }
+        }
+        b.vol.position.copy(b.origin);
+        b.vol.quaternion.copy(b.mesh.quaternion);
+        v.uOrigin.value.copy(b.origin);
+        v.uAxis.value.copy(b.dir);
+        v.uRight.value.copy(rt);
+        v.uUp.value.copy(u2);
+        v.uR0.value = r0;
+        v.uTan.value = k;
+        v.uLen.value = Math.min(40, far * 1.08 + 0.15);
+        v.uFade.value = len >= 39.5 ? 1 : 0;
+        v.uColor.value.copy(u.uColor.value);
+        v.uColor2.value.copy(u.uColor2.value);
+        // the light in the beam: shared by a light's heads; the spread
+        // over the cone thins it out by itself, so a narrow beam is a
+        // bright one and a wide wash a soft one
+        v.uPower.value = a / Math.max(1, inst.beams.length);
+        // a wash's edge is soft, a spot's crisp; frost softens either
+        const washy = /wash|par|fresnel|bar|panel|cyc|blinder|strobe|matrix/.test(body.type || "");
+        v.uSoft.value = lerp(washy ? 0.35 : 0.78, 0.02, Math.min(1, frost * 1.2));
+        v.uHaze.value = this.options.haze;
+      }
 
       // head-on lens glow
       const toCam = this._v1.copy(this.camera.position).sub(b.origin).normalize();
@@ -1851,6 +1964,7 @@ export class Stage {
 
       if (inst.head === this.povHead) {            // looking down this beam
         b.mesh.visible = false;
+        b.vol.visible = false;
         b.glow.visible = false;
         b.streak.visible = false;
       }
@@ -1862,13 +1976,19 @@ export class Stage {
       u.uGobo.value = goboId;                     // the same picture in the haze
       u.uGoboRot.value = rot;
       u.uLook.value.set(blur, prism, prot, split ? 1 : 0);
+      if (b.vol.visible) {
+        const v = b.vol.material.uniforms;
+        v.uGobo.value = goboId;
+        v.uGoboRot.value = rot;
+        v.uLook.value.set(blur, prism, prot, split ? 1 : 0);
+      }
       const power = a * 9 * Math.min(4, Math.pow(26 / Math.max(angle, 2), 1.1)) / inst.beams.length;
       const cone = { cosO: Math.cos(half), cosI: Math.cos(half * lerp(0.72, 0.25, frost)), gobo: goboId, rot, blur, prism, prot };
       // a split beam lands as two half pools, each its own colour
       for (const [side, c] of split ? [[1, split[0]], [2, split[1]]] : [[0, [cr, cg, cb]]]) {
         lights.push({
           pos: b.origin, dir: b.dir, r: c[0] * power, g: c[1] * power, b: c[2] * power, ...cone,
-          side, weight: power * (c[0] + c[1] + c[2]),
+          side, weight: power * (c[0] + c[1] + c[2]), beam: b,
         });
       }
     }
@@ -1916,8 +2036,9 @@ export class Stage {
       if (!g) {
         groups.set(key, { pos: l.pos.clone().multiplyScalar(l.weight), dir: l.dir.clone().multiplyScalar(l.weight),
           r: l.r, g: l.g, b: l.b, cosO: l.cosO, cosI: l.cosI, gobo: l.gobo, rot: l.rot,
-          blur: l.blur, prism: l.prism, prot: l.prot, side: l.side || 0, weight: l.weight });
+          blur: l.blur, prism: l.prism, prot: l.prot, side: l.side || 0, weight: l.weight, beams: [l.beam] });
       } else {
+        g.beams.push(l.beam);
         g.pos.addScaledVector(l.pos, l.weight);
         g.dir.addScaledVector(l.dir, l.weight);
         g.r += l.r; g.g += l.g; g.b += l.b;
@@ -1931,8 +2052,10 @@ export class Stage {
       : this.options.quality === "high" ? MAX_LIGHTS
         : this.q.ratio < 0.75 ? 14 : 24;
     const n = Math.min(cap, list.length);
+    for (const l of lights) if (l.beam) l.beam.shadowSlot = -1;
     for (let i = 0; i < n; i++) {
       const l = list[i];
+      for (const bm of l.beams) if (bm && bm.shadowSlot < 0) bm.shadowSlot = i;
       const w = l.weight || 1;
       LIGHTS.uPos.value[i].copy(l.pos).multiplyScalar(1 / w);
       LIGHTS.uDir.value[i].copy(l.dir).normalize();
@@ -2024,6 +2147,7 @@ export class Stage {
     ndiOffer(this, false);
     if (this._ndiOff) this._ndiOff();
     releaseScreens(this.built);
+    if (this.sceneRT) { this.sceneRT.dispose(); this.beamRT.dispose(); }
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.renderer) {
       this.renderer.dispose();
