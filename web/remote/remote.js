@@ -1000,9 +1000,9 @@ $("#rm-more").addEventListener("click", () => {
 });
 
 // ARM FX and KILL FX, kept in the ⋯ menu (not on the page, where a stray
-// touch could stop the show): each needs a second tap within 3 s.  ARM lets
-// the fire and laser buttons go, as the desk's ARM FX does; KILL FX stops
-// every effect and laser at once and disarms.  Only when the show has them.
+// touch could stop the show).  ARM works as the desk's does (its box, then
+// armed until you disarm); KILL FX stops every effect and laser at once and
+// disarms - a second tap within 3 s.  Only when the show has them.
 function fxMenuItems(close) {
   const sfx = snapOr("sfx", {}) || {};
   if (!Object.keys(sfx.heads || {}).length) return [];
@@ -1021,11 +1021,29 @@ function fxMenuItems(close) {
   const armed = !!sfx.armed;
   return [
     h("div.rm-menu-head", "Special effects"),
+    // ARM as on the desk: the same box, the same words, armed until you
+    // disarm; disarming is one tap
     armed
-      ? confirmBtn(".arm.on", "ARMED - tap to disarm", "Tap again to disarm", () => act("fx_arm", { state: false }).then(() => note("Effects disarmed")))
-      : confirmBtn(".arm", "ARM FX", "Tap again to ARM FX", () => act("fx_arm", { state: true }).then((r) => note(r.summary || "Effects armed"))),
+      ? h("button.rm-fxbtn.arm.on", { type: "button", onclick: () => { close(); act("fx_arm", { state: false }).then(() => note("Effects disarmed")); } }, "ARMED - tap to disarm")
+      : h("button.rm-fxbtn.arm", { type: "button", onclick: () => { close(); armBox(); } }, "ARM FX"),
     confirmBtn(".kill", "KILL FX - stop every effect", "Tap again to KILL FX", () => act("fx_kill", {}).then(() => note("Every effect stopped, disarmed"))),
   ];
+}
+
+// the desk's ARM box (web/app/fxpanel.js toggleArm), word for word
+function armBox() {
+  const done = () => box.remove();
+  const box = h("div.rm-sheet-scrim", { onclick: (e) => { if (e.target === box) done(); } },
+    h("div.rm-sheet", { role: "dialog", "aria-label": "Arm lasers and special effects" },
+      h("h2", "Arm lasers and special effects"),
+      h("p", "Fire, CO2, confetti, sparks and laser output can now be triggered from their FX buttons. "
+        + "Check that the area in front of every effect is clear, and never aim lasers into the audience "
+        + "unless the show is licensed for it."),
+      h("p.rm-sheet-small", "They stay armed until you disarm. A laser you switch on stays on while effects are armed; Disarm or KILL FX stops everything at once."),
+      h("div.rm-sheet-btns",
+        h("button", { type: "button", onclick: done }, "Cancel"),
+        h("button.rm-sheet-arm", { type: "button", onclick: () => { done(); act("fx_arm", { state: true, minutes: "until" }).then((r) => note(r.summary || "Effects armed")); } }, "ARM"))));
+  document.body.append(box);
 }
 
 // first visit in a browser (not from the home screen): one hint how to make it full screen
@@ -1087,6 +1105,66 @@ async function moveToName() {
   }
   location.replace(url);
 }
+
+// ------------------------------------------------------------ screen lock
+// Against a screen that touches by itself (cracked, wet, sweaty) and a phone
+// in a pocket - software can't tell a ghost touch from a real one, so the
+// cure is to lock.  One tap on the padlock locks: the buttons, tabs, pages,
+// swipes, the ⋯ menu and Release all stop answering, and what this phone
+// holds is let go.  Blackout and the master stay live (the safety).  Hold the
+// padlock for a second to unlock (a tap only says so - a ghost touch can't
+// unlock).  It stays locked through a reload or reopening the app.
+const LOCK_KEY = "haze.remote.locked";
+const UNLOCK_MS = 1000;
+let locked = false;
+try { locked = localStorage.getItem(LOCK_KEY) === "1"; } catch (e) { locked = false; }
+function setLocked(on) {
+  locked = on;
+  try { localStorage.setItem(LOCK_KEY, on ? "1" : "0"); } catch (e) { /* this visit only */ }
+  if (on) {
+    letGoOfAll();
+    if (arranging) setArranging(false);
+    const m = $(".rm-menu");
+    if (m && m.close) m.close();
+    if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
+  }
+  document.body.classList.toggle("rm-locked", on);
+  $("#rm-veil").hidden = !on;
+  const b = $("#rm-lock");
+  b.classList.toggle("on", on);
+  b.querySelector("span").textContent = on ? "🔒" : "🔓";
+  b.setAttribute("aria-label", on ? "Locked - hold to unlock" : "Lock the screen");
+  b.title = b.getAttribute("aria-label");
+}
+// while locked, a touch anywhere but the padlock, Blackout and the master
+// does nothing - stopped before any button, tab or swipe hears it
+const LIVE_WHEN_LOCKED = "#rm-lock, #rm-bo, #rm-master, .rm-connect";
+for (const type of ["pointerdown", "pointerup", "click", "touchstart"]) {
+  document.addEventListener(type, (e) => {
+    if (!locked || (e.target.closest && e.target.closest(LIVE_WHEN_LOCKED))) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (type === "pointerdown") note("Locked - hold the padlock to unlock");
+  }, { capture: true, passive: false });
+}
+(() => {
+  const b = $("#rm-lock");
+  let t = 0, id = null;
+  const stop = () => { if (t) { clearTimeout(t); t = 0; } b.classList.remove("arming"); id = null; };
+  b.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!locked) { setLocked(true); return; }          // one tap locks
+    id = e.pointerId;
+    capture(b, e.pointerId);
+    b.classList.add("arming");
+    t = setTimeout(() => { t = 0; b.classList.remove("arming"); setLocked(false); note("Unlocked"); }, UNLOCK_MS);
+  });
+  b.addEventListener("pointerup", (e) => { if (e.pointerId === id) stop(); });
+  b.addEventListener("pointercancel", stop);
+  b.addEventListener("lostpointercapture", stop);
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
+  setLocked(locked);
+})();
 
 // --------------------------------------------------------------- connecting
 function askCode(why = "") {

@@ -298,8 +298,32 @@ from a phone without squeezing the desk onto it.  Sized against a real show
   out of it; the odd-input timing check takes the best of 3 tries on
   Windows CI.
 
+- **PR #181 (2026-11-13):** one home-screen icon for every venue (the desk
+  answers to haze.local, app/mdns.py; the remote moves there); the icon named
+  after the venue; smooth dragging (a lifted copy, a slot, the others slide);
+  on its side the tabs left and Blackout / Master / Release all right; full
+  screen at a phone's first touch; CO2 / confetti / fire play on a tap as on
+  the desk, ARM / KILL FX in the ⋯ menu; a held button never outlives the
+  phone (let go when hidden; the desk lets go after 3 s without a check-in).
+  Then: ARM on the phone as on the desk - the same box, armed until disarmed.
+
 **Open:** a test on a real phone at a gig (home-screen full screen, the
-screen staying on); a cut-down DJ-only remote (an idea, not asked yet).
+screen staying on, haze.local on iPhone and Android); a cut-down DJ-only
+remote (an idea, not asked yet).
+
+- **Then (2026-11-13):** the **screen lock** - the padlock locks with a tap
+  (buttons, tabs, pages, swipes, ⋯, Release all stop answering; Blackout and
+  the master stay live; what's held is let go), unlocks with a 1 s hold, stays
+  locked through a reload.  And **the desk and the phone in sync** checked
+  hard (tools/synccheck.mjs, in CI): both screens and the desk agree after
+  every press of a long random run from both sides, held buttons show on the
+  other screen, the other screen follows in ~0.1 s, the phone catches up after
+  dropping off.  It found that a desk button press could be lost: a quick tap
+  (or a busy page) ended the finger before the button could hold on to it,
+  and the press failed with it - fixed on the Buttons page, its X/Y pad,
+  Live's hits, the playback flash buttons and the faders (ui.js grab).
+  (ARM switching itself off after a while from the phone: not wanted - the
+  phone arms as the desk does, until disarmed.)
 
 ## A15. Operator's feedback after the first gigs (2026-10-21) - DONE (B1-B7)
 

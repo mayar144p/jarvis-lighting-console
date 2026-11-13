@@ -14,6 +14,14 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /** h("div.cls#id", {attrs}, ...children) */
+/** Keep a finger's moves on this element even when it slides off - when the
+ *  browser still knows that finger.  A very quick tap, or a busy page, can
+ *  end it before the handler runs: then capturing throws, and the press
+ *  must go on without it (it used to be lost). */
+export function grab(el, pointerId) {
+  try { el.setPointerCapture(pointerId); } catch (e) { /* already let go: carry on */ }
+}
+
 export function h(tag, attrs, ...children) {
   const m = /^([a-z0-9]+)?((?:[.#][\w-]+)*)$/i.exec(tag) || [];
   const el = document.createElement(m[1] || "div");
@@ -208,7 +216,7 @@ export function vfader(el, { min = 0, max = 100, onInput, onChange } = {}) {
   el.addEventListener("pointerdown", (e) => {
     if (dragging !== null) return;                 // one finger per fader: a second one can't jump it
     dragging = e.pointerId;
-    el.setPointerCapture(e.pointerId);
+    grab(el, e.pointerId);
     value = fromY(e.clientY);
     draw(value);
     if (onInput) onInput(value);

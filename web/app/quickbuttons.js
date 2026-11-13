@@ -12,7 +12,7 @@ import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, onCC, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
-import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch } from "./ui.js";
+import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch, grab } from "./ui.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -506,7 +506,7 @@ function render(force = false) {
           return;
         }
         if (PACED.has(b.kind) && e.target.closest(".qrate")) { speedMenu(el, b); return; }   // the badge: speed by touch
-        el.setPointerCapture(e.pointerId);
+        grab(el, e.pointerId);
         finger = e.pointerId;
         el.classList.add("down");
         press(b, true, e.pointerId);
@@ -611,7 +611,7 @@ function controlTile(b) {
       dot.style.top = y * 100 + "%";
       send(Math.round(x * 255), Math.round((1 - y) * 255));
     };
-    pad.addEventListener("pointerdown", (e) => { if (down !== null) return; down = e.pointerId; pad.setPointerCapture(e.pointerId); at(e); });
+    pad.addEventListener("pointerdown", (e) => { if (down !== null) return; down = e.pointerId; grab(pad, e.pointerId); at(e); });
     pad.addEventListener("pointermove", (e) => { if (down === e.pointerId) at(e); });
     for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) pad.addEventListener(ev, (e) => { if (down === e.pointerId) down = null; });
     el.append(head, pad);
@@ -1351,7 +1351,7 @@ function tryIt(btn, save) {
     e.preventDefault();
     if (down) return;
     down = true;
-    el.setPointerCapture(e.pointerId);
+    grab(el, e.pointerId);
     if (!(await save())) { down = false; return; }
     if (down) run("quick_press", { id: btn.id, down: true }, { silentError: true });
   });

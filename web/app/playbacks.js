@@ -4,7 +4,7 @@
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { act } from "./api.js";
-import { $, h, vfader, throttle, menu, promptBox, confirmBox, modal, toast } from "./ui.js";
+import { $, h, vfader, throttle, menu, promptBox, confirmBox, modal, toast, grab } from "./ui.js";
 import { onNote, onCC } from "./webmidi.js";
 import { icon } from "./icons.js";
 import { openCueList, openCueDialog } from "./dialogs.js";
@@ -125,7 +125,7 @@ function wireFlash(btn, which) {
     was = flashDown(n);
     if (!was) return;
     finger = e.pointerId;
-    btn.setPointerCapture?.(e.pointerId);
+    grab(btn, e.pointerId);
     btn.classList.add("on");
   };
   const up = (e) => {

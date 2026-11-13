@@ -300,9 +300,16 @@ console.log("Fail-safes");
   check("⋯ has ARM FX and KILL FX (the show has effects), not on the page itself",
     await armBtn.count() === 1 && await fp.locator(".rm-menu .rm-fxbtn.kill").count() === 1 && await fp.locator("#rm-grid .rm-fxbtn").count() === 0);
   await armBtn.click(); await sleep(400);
+  const box = await fp.locator(".rm-sheet").textContent().catch(() => "");
   const armed1 = !!((await lite()).sfx || {}).armed;
-  await armBtn.click(); await sleep(600);
-  check("...one tap on ARM FX does nothing, a second one arms", !armed1 && !!((await lite()).sfx || {}).armed);
+  await fp.locator(".rm-sheet-btns button", { hasText: "Cancel" }).click(); await sleep(300);
+  const armed2 = !!((await lite()).sfx || {}).armed;
+  await fp.locator("#rm-more").click(); await sleep(300);
+  await fp.locator(".rm-menu .rm-fxbtn.arm").click(); await sleep(300);
+  await fp.locator(".rm-sheet-arm").click(); await sleep(600);
+  const st2 = (await lite()).sfx || {};
+  check("...ARM FX as on the desk: its box with the safety words, Cancel arms nothing, ARM arms until disarmed",
+    /area in front of every effect is clear/.test(box) && !armed1 && !armed2 && st2.armed && st2.armed_forever, JSON.stringify([armed1, armed2, st2.armed, st2.armed_forever]));
   await fp.locator("#rm-more").click(); await sleep(300);
   const kill = fp.locator(".rm-menu .rm-fxbtn.kill");
   await kill.click(); await sleep(400);
@@ -310,6 +317,104 @@ console.log("Fail-safes");
   await kill.click(); await sleep(600);
   check("...KILL FX the same: one tap nothing, a second stops it all and disarms", still && !((await lite()).sfx || {}).armed);
   await fctx.close();
+}
+
+// The screen lock: tap the padlock to lock, hold it a second to unlock;
+// locked, nothing but Blackout and the master answers - however it's touched.
+console.log("Screen lock");
+{
+  const lctx = await browser.newContext(dev(390, 844));
+  const lp = await lctx.newPage();
+  await lp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
+  const sent = [];
+  lp.on("request", (r) => { if (r.url().endsWith("/api/console") && r.method() === "POST") { try { sent.push(JSON.parse(r.postData())); } catch {} } });
+  await lp.goto(BASE + "remote.html"); await sleep(2000);
+  await act("quick_release_all"); await act("blackout", { state: false });
+  const errs = [];
+  lp.on("pageerror", (e) => errs.push(e.message));
+  const presses = () => sent.filter((x) => x.action === "quick_press" && x.params.down).length;
+  const lockBtn = lp.locator("#rm-lock");
+  // locking while a button is held lets it go
+  const flash = lp.locator('[data-id="q1-13"]');
+  await flash.dispatchEvent("pointerdown", { pointerId: 41, button: 0 }); await sleep(400);
+  const heldOn = ((await lite()).quick_active || []).includes("q1-13");
+  await lockBtn.dispatchEvent("pointerdown", { pointerId: 42, button: 0 }); await lockBtn.dispatchEvent("pointerup", { pointerId: 42, button: 0 });
+  await sleep(600);
+  const st = await lp.evaluate(() => ({ locked: document.body.classList.contains("rm-locked"), veil: !document.querySelector("#rm-veil").hidden }));
+  check("one tap on the padlock locks: the veil over the buttons", st.locked && st.veil, JSON.stringify(st));
+  check("...what the phone held is let go as it locks", heldOn && !((await lite()).quick_active || []).includes("q1-13"));
+  await flash.dispatchEvent("pointerup", { pointerId: 41, button: 0 });
+  // nothing answers: tiles, tabs, pages, a swipe, the menu, Release all
+  const n0 = presses();
+  await lp.mouse.click(60, 400); await sleep(200);
+  await lp.locator("#rm-views .rm-view", { hasText: "Faders" }).dispatchEvent("click").catch(() => {});
+  await lp.locator("#rm-pages .rm-tab").nth(1).dispatchEvent("click").catch(() => {});
+  await lp.evaluate(() => {
+    const g = document.querySelector("#rm-grid");
+    g.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 43, clientX: 300, clientY: 400, bubbles: true }));
+    g.dispatchEvent(new PointerEvent("pointerup", { pointerId: 43, clientX: 40, clientY: 405, bubbles: true }));
+  });
+  await lp.locator("#rm-more").dispatchEvent("click");
+  const rel = lp.locator("#rm-rel");
+  await rel.dispatchEvent("pointerdown", { pointerId: 44, button: 0 }); await sleep(900); await rel.dispatchEvent("pointerup", { pointerId: 44, button: 0 });
+  await sleep(500);
+  const after = await lp.evaluate(() => ({ view: (document.querySelector("#rm-views .rm-view.on") || {}).textContent,
+    page: (document.querySelector("#rm-pages .rm-tab.on") || {}).textContent, menu: !!document.querySelector(".rm-menu") }));
+  check("locked: tiles, tabs, pages, a swipe, the ⋯ menu and Release all do nothing",
+    presses() === n0 && after.view === "Buttons" && !after.menu && !sent.slice(-6).some((x) => x.action === "quick_release_all"),
+    JSON.stringify({ sent: sent.slice(-4).map((x) => x.action), ...after }));
+  // a storm of touches while locked: still nothing
+  await lp.evaluate(() => {
+    const tiles = [...document.querySelectorAll("#rm-grid .rm-btn, .rm-tab, .rm-view")];
+    for (let i = 0; i < 300; i++) {
+      const el = tiles[i % tiles.length], id = 50 + (i % 5);
+      el.dispatchEvent(new PointerEvent("pointerdown", { pointerId: id, bubbles: true, button: 0 }));
+      el.dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true }));
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  });
+  await sleep(800);
+  check("...300 ghost touches while locked press nothing", presses() === n0, String(presses() - n0));
+  // Blackout and the master still work
+  await lp.locator("#rm-bo").click(); await sleep(600);
+  const bo = (await lite()).blackout === true;
+  await lp.locator("#rm-bo").click(); await sleep(600);
+  await lp.locator("#rm-master").fill("40"); await lp.locator("#rm-master").dispatchEvent("input"); await lp.locator("#rm-master").dispatchEvent("change");
+  await sleep(700);
+  const master = (await lite()).master;
+  check("...Blackout and the master still work while locked", bo && (await lite()).blackout === false && Math.round(master) === 40, JSON.stringify({ bo, master }));
+  await lp.locator("#rm-master").fill("100"); await lp.locator("#rm-master").dispatchEvent("input"); await lp.locator("#rm-master").dispatchEvent("change"); await sleep(500);
+  // stays locked through a reload; a tap on the padlock doesn't unlock, a held second does
+  await lp.reload(); await sleep(2000);
+  const still = await lp.evaluate(() => document.body.classList.contains("rm-locked"));
+  await lockBtn.dispatchEvent("pointerdown", { pointerId: 45, button: 0 }); await sleep(150); await lockBtn.dispatchEvent("pointerup", { pointerId: 45, button: 0 });
+  await sleep(1200);
+  const afterTap = await lp.evaluate(() => document.body.classList.contains("rm-locked"));
+  await lockBtn.dispatchEvent("pointerdown", { pointerId: 46, button: 0 }); await sleep(1250); await lockBtn.dispatchEvent("pointerup", { pointerId: 46, button: 0 });
+  await sleep(300);
+  const unlocked = await lp.evaluate(() => !document.body.classList.contains("rm-locked") && document.querySelector("#rm-veil").hidden);
+  check("it stays locked after a reload; a tap on the padlock doesn't unlock, a one-second hold does", still && afterTap && unlocked, JSON.stringify({ still, afterTap, unlocked }));
+  const n1 = presses();
+  await flash.dispatchEvent("pointerdown", { pointerId: 47, button: 0 }); await sleep(200); await flash.dispatchEvent("pointerup", { pointerId: 47, button: 0 });
+  await sleep(300);
+  check("...unlocked, the buttons play again", presses() === n1 + 1, String(presses() - n1));
+  check("...no page errors", !errs.length, errs.join(" | "));
+  await lctx.close();
+  // the padlock fits on the smallest phone and on its side; the veil covers the buttons there too
+  for (const [name, d] of [["iPhone SE (2016)", dev(320, 568)], ["iPhone 12-15", dev(390, 844)], ["phone on its side", dev(844, 390)]]) {
+    const c = await browser.newContext(d);
+    const q = await c.newPage();
+    await q.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); localStorage.setItem("haze.remote.locked", "1"); } catch (e) { /* fine */ } });
+    await q.goto(BASE + "remote.html"); await sleep(1800);
+    const m = await q.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const lk = r("#rm-lock"), v = r("#rm-veil"), g = r("#rm-grid");
+      return { hscroll: document.documentElement.scrollWidth > innerWidth + 1, lockIn: lk.width >= 36 && lk.right <= innerWidth + 1 && lk.bottom <= innerHeight,
+        covers: v.left <= g.left + 1 && v.top <= g.top + 1 && v.right >= g.right - 1 && v.bottom >= g.bottom - 1 };
+    });
+    check(`${name}: the padlock fits, the veil covers the buttons, no sideways scroll`, !m.hscroll && m.lockIn && m.covers, JSON.stringify(m));
+    await c.close();
+  }
 }
 
 console.log("Full screen at the first touch");
