@@ -579,6 +579,77 @@ add("atmos", async () => {
     `in the beam ${red.map((v) => v.toFixed(0))} vs not ${plain.map((v) => v.toFixed(0))}`);
 });
 
+// The light map: the light on a surface in lux, as photometry says - a
+// 3000 lm light with a 30 degree beam, d metres up, puts 3000 / (pi tan^2 15)
+// / d^2 lux under it - nothing outside its beam or under something solid;
+// painted in the legend's colours, the beams in the air gone meanwhile.
+add("lightmap", async () => {
+  await sc(async () => {
+    const S = window.SC;
+    await S.scene({ venue: S.room(10, 12, 5, { objects: [{ id: "slab", kind: "balcony", x: 2.6, z: 6, w: 1.2, d: 1.2, h: 0.1, y: 1.2, rot: 0 }],
+      zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-1, 5], [1, 5], [1, 7], [-1, 7]] }] }),
+      fixtures: [
+        { head_no: 1, model: "A", body: S.body("par", 30), photo: { lm: 3000, lm_from: "file" }, x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
+        { head_no: 2, model: "B", body: S.body("par", 30), photo: { lm: 3000, lm_from: "file" }, x: 2.6, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
+      looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 1 } },
+      options: { haze: 0.6, quality: "high", house: 0.35, lightMap: false },
+      camera: { pos: [0, 9, 13], target: [0, 0, 6] } });
+  });
+  const r = await sc(() => {
+    const S = window.SC, st = window.stage, V = S.THREE.Vector3, UP = new V(0, 1, 0);
+    const l = st._lightList.find((g) => g.head === 1);
+    const d = l.pos.y - 0.002;
+    const I = 3000 / (Math.PI * Math.tan(15 * Math.PI / 180) ** 2);
+    const half = st.luxAt(new V(l.pos.x + Math.tan(15 * Math.PI / 180) * d * 0.5, 0.002, l.pos.z), UP);
+    return {
+      floor: st.luxAt(new V(l.pos.x, 0.002, l.pos.z), UP), want: I / (d * d + 0.09),
+      high: st.luxAt(new V(l.pos.x, 2.002, l.pos.z), UP), wantHigh: I / ((d - 2) ** 2 + 0.09),
+      side: st.luxAt(new V(l.pos.x, 0.002, l.pos.z), new V(0, 0, 1)), half,
+      outside: st.luxAt(new V(-4, 0.002, 6), UP),
+      under: st.luxAt(new V(2.6, 0.002, 6), UP), onTop: st.luxAt(new V(2.6, 1.302, 6), UP), beside: st.luxAt(new V(3.5, 0.002, 6), UP),
+      report: st.luxReport(),
+    };
+  });
+  const near = (a, b, k) => Math.abs(a - b) <= b * k;
+  check("the light meter: a 3000 lm, 30 degree light puts its photometric lux on the floor under it", near(r.floor, r.want, 0.03),
+    `${r.floor.toFixed(0)} lux vs ${r.want.toFixed(0)}`);
+  check("...and more nearer the light (the distance squared)", near(r.high, r.wantHigh, 0.03), `${r.high.toFixed(0)} vs ${r.wantHigh.toFixed(0)}`);
+  check("...nothing on a surface facing away, nothing outside the beam", r.side < 1 && r.outside < 1, `${r.side} / ${r.outside}`);
+  check("...less towards the beam's edge", r.half < r.floor && r.half > r.floor * 0.2, `${r.half.toFixed(0)} vs ${r.floor.toFixed(0)}`);
+  check("...nothing under something solid, its top lit, the floor beside it lit",
+    r.under < 1 && r.onTop > 100 && r.beside > 100, `under ${r.under.toFixed(0)}, top ${r.onTop.toFixed(0)}, beside ${r.beside.toFixed(0)}`);
+  const df = r.report.find((x) => /Dance floor/.test(x.name));
+  check("the readings for the AI: each zone, its lux and the light giving it", !!df && near(df.lux, r.want, 0.05) && df.from[0].light === 1,
+    JSON.stringify(df));
+  // the map itself: the floor in the legend's colours
+  const colours = await sc(async () => {
+    window.stage.setOptions({ lightMap: true });
+    await window.SC.settle(3);
+    const { luxColour } = await import("/js/stage/luxmap.js");
+    const st = window.stage;
+    return { pool: luxColour(st.luxAt(new window.SC.THREE.Vector3(0, 0.002, 6), new window.SC.THREE.Vector3(0, 1, 0))), none: luxColour(0),
+      beams: st.beamScene.children.filter((m) => m.visible).length,
+      people: (() => { let white = 0, all = 0; st.built.people.traverse((m) => { if (m.isInstancedMesh && m.instanceColor) { all++; if (m.instanceColor.array.every((v) => v === 1)) white++; } }); return [white, all]; })() };
+  });
+  await shot();
+  save("17-light-map");
+  const pool = await rgb(await at(0, 0, 6), 2), dark = await rgb(await at(-4, 0, 9), 2);
+  const close = (a, b, k) => a.every((v, i) => Math.abs(v - b[i]) <= k);
+  check("the light map paints the pool in the legend's colour for its lux", close(pool, colours.pool, 22),
+    `${pool.map((v) => v.toFixed(0))} vs ${colours.pool}`);
+  check("...and the unlit floor in the no-light colour", close(dark, colours.none, 14), `${dark.map((v) => v.toFixed(0))} vs ${colours.none}`);
+  check("...the beams in the air gone, the people white (their light, not their clothes)",
+    colours.beams === 0 && colours.people[1] > 0 && colours.people[0] === colours.people[1], JSON.stringify(colours));
+  const back = await sc(async () => {
+    window.stage.setOptions({ lightMap: false });
+    await window.SC.settle(3);
+    let white = 0, all = 0;
+    window.stage.built.people.traverse((m) => { if (m.isInstancedMesh && m.instanceColor) { all++; if (m.instanceColor.array.every((v) => v === 1)) white++; } });
+    return { white, all, beams: window.stage.beamScene.children.filter((m) => m.visible).length };
+  });
+  check("off again: the people's colours and the beams come back", back.white < back.all && back.beams > 0, JSON.stringify(back));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).

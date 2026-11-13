@@ -1253,8 +1253,10 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     return self._json({"ok": False, "error": "which request?"})
             if body.get("resume"):
-                # the screen's picture of the 3D view the AI asked to see
-                return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"))))
+                # the screen's picture of the 3D view the AI asked to see, or
+                # the light readings it asked for (measure_light)
+                return self._json(_ai_noted(assistant.resume_turn(eng, str(body.get("resume")), body.get("image"),
+                                                                  light=body.get("light"))))
             return self._json(_ai_noted(assistant.run_turn(eng, str(body.get("message") or ""), session,
                                                  image=body.get("image"), preview=body.get("preview") is not False,
                                                  can_see=bool(body.get("can_see")), screen=body.get("screen"))))

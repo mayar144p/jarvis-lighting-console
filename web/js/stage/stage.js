@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { texture as textureNode, uniform } from "three/tsl";
+import { texture as textureNode, uniform, renderOutput } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { buildFixture } from "./models.js";
@@ -110,6 +110,7 @@ import { VOL, MAX_AREAS, MAX_CLOUDS, volumeGeometry, volumeBeamMaterial, beamUps
 import { Atmosphere } from "./atmos.js";
 import { LightGrid } from "./lightgrid.js";
 import { FloorMirror } from "./reflect.js";
+import { luxAt } from "./luxmap.js";
 import {
   DEG, UP, X_AXIS, DEFAULT_PAN, DEFAULT_TILT, smooth, lerp, hexLinear, EMPTY_LOOK, lookFrom, mixLook, TRAVEL, strobeLevel, turnOf, motorStep,
   hangOf, hangQuat,
@@ -132,7 +133,8 @@ export class Stage {
       exposure: 0,          // the picture's brightness, in stops (-2 .. +2): the lights don't change
       calm: false,          // calm flashing: strobes shimmer instead of flashing the screen
       bounce: true,         // light bounced off the pools and the screens lights the room
-      hazeAuto: false };    // Auto: the haze follows the hazers in the rig (atmos.js)
+      hazeAuto: false,      // Auto: the haze follows the hazers in the rig (atmos.js)
+      lightMap: false };    // the light map: surfaces in false colour by their lux (luxmap.js)
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -332,6 +334,7 @@ export class Stage {
     VOL.areaCount.value = areas.length;
     this.segments = built.segments;
     this.people = built.people;
+    if (this.options.lightMap) this._applyLightMap();
     cutaway(built, this.camera.position);
     this._underlayVisibility();
     this.dirty = true;
@@ -630,6 +633,7 @@ export class Stage {
     if (before.house !== this.options.house) this._applyHouse();
     if (before.exposure !== this.options.exposure && this.renderer) this.renderer.toneMappingExposure = exposureFor(this.options.exposure);
     if (before.hazeAuto !== this.options.hazeAuto) this.atmos.clear();      // Auto starts from clear air
+    if (!!before.lightMap !== !!this.options.lightMap) this._applyLightMap();
     if (before.quality !== this.options.quality) {
       const dpr = window.devicePixelRatio || 1;
       this.q.cap = this.options.quality === "high" ? Math.min(dpr, 2)
@@ -640,6 +644,152 @@ export class Stage {
       if (this.post && (this.options.quality === "high") !== this._smooth) this._makePipeline(this.options.quality === "high");
     }
     this.dirty = true;
+  }
+
+  /** The light map on or off: the surfaces' shader switches to false
+   *  colour, the people's own colours go white (the map is their light, not
+   *  their clothes) and the beams in the air go (beams.js, _updateBeams). */
+  _applyLightMap() {
+    const on = !!this.options.lightMap;
+    LIGHTS.uLuxMap.value = on ? 1 : 0;
+    // (the crowd and the performers on their marks)
+    if (this.built && this.built.people) {
+      this.built.people.traverse((m) => {
+        if (!m.isInstancedMesh || !m.instanceColor) return;
+        const arr = m.instanceColor.array;
+        if (on && !m.userData.ownColours) {
+          m.userData.ownColours = arr.slice();
+          arr.fill(1);
+        } else if (!on && m.userData.ownColours) {
+          arr.set(m.userData.ownColours);
+          m.userData.ownColours = null;
+        } else return;
+        m.instanceColor.needsUpdate = true;
+      });
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * The light meter: the lux the rig puts on point `p` (a surface facing
+   * `n`), worked out as the light map's shader does (luxmap.js) - the
+   * lights as they are now, the distance, the angle, the beam's edge and
+   * gobo, and anything solid in the way.  With `why`: {lux, by: Map(head ->
+   * lux)}, each light's share.
+   */
+  luxAt(p, n = UP, why = false) {
+    const blocked = (o, d, dist) => hitDistance(this.planes, this.boxes, o, d, dist + 0.2, this.segments);
+    const atlas = this.gobos ? { canvas: this.gobos.canvas, version: this.gobos.version } : null;
+    return luxAt(this._lightList || [], p, n, { blocked, atlas, why });
+  }
+
+  /** What's under the pointer: the surface's point and which way it faces
+   *  (the floor, a wall, the stage, an object, a person), or null. */
+  pointAt(ev) {
+    if (!this.built) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const targets = [];
+    // (seen: it and everything it hangs in shown - the crowd's group hides it)
+    this.built.group.traverseVisible((o) => {
+      if (!o.isMesh || o.userData.zone) return;
+      if (o.userData.venueKind === "underlay" || o.userData.editOnly) return;
+      targets.push(o);
+    });
+    const hit = this.raycaster.intersectObjects(targets, false)[0];
+    if (!hit) return null;
+    const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : UP.clone();
+    if (hit.object.isInstancedMesh && hit.instanceId !== undefined && hit.face) {
+      const m = new THREE.Matrix4();
+      hit.object.getMatrixAt(hit.instanceId, m);
+      n.copy(hit.face.normal).transformDirection(m).transformDirection(hit.object.matrixWorld);
+    }
+    // the side the camera sees (a plane seen from behind)
+    if (n.dot(this.raycaster.ray.direction) > 0) n.negate();
+    return { point: hit.point.clone(), normal: n.normalize(),
+      kind: hit.object.userData.crowd ? "person" : hit.object.userData.performer ? "performer" : hit.object.userData.venueKind || "object" };
+  }
+
+  /**
+   * Light readings for the AI and the light map (measure_light): `spots`
+   * [{name, x, y, z, facing}] - facing "up" (the floor's light: what lands
+   * on it), "audience" (a face on stage, towards the room) or "stage" (a
+   * face in the room, towards the stage) - or, with none, the room's own
+   * places: the stage, a face on it, and each zone at its middle.
+   */
+  luxReport(spots = null) {
+    this._freshLights();
+    const v = (this.built && this.built.venue) || {};
+    const list = [];
+    const front = this.stageFront || 0;
+    const toward = (facing) => (facing === "audience" ? new THREE.Vector3(0, 0, 1)
+      : facing === "stage" ? new THREE.Vector3(0, 0, -1) : UP.clone());
+    if (Array.isArray(spots) && spots.length) {
+      for (const s of spots.slice(0, 24)) {
+        const x = +s.x || 0, z = +s.z || 0;
+        const y = s.y === undefined || s.y === null ? this._groundAt(x, z) : +s.y;
+        list.push({ name: String(s.name || `${x.toFixed(1)}, ${z.toFixed(1)}`).slice(0, 40), p: new THREE.Vector3(x, y, z), facing: s.facing || "up" });
+      }
+    } else {
+      const st = v.stage;
+      if (st) {
+        const y = Math.max(0, st.height || 0) + 0.01;
+        list.push({ name: "the stage (its floor, middle)", p: new THREE.Vector3(st.x, y, st.z + st.depth / 2), facing: "up" });
+        list.push({ name: "a face on the stage (1.6 m up, towards the audience)", p: new THREE.Vector3(st.x, y + 1.6, st.z + st.depth * 0.6), facing: "audience" });
+      }
+      for (const zn of (v.zones || []).slice(0, 16)) {
+        if (!zn.points || zn.points.length < 3) continue;
+        const x = zn.points.reduce((a, q) => a + q[0], 0) / zn.points.length;
+        const z = zn.points.reduce((a, q) => a + q[1], 0) / zn.points.length;
+        const nm = zn.name || zn.kind || "zone";
+        list.push({ name: `${nm} (floor, middle)`, p: new THREE.Vector3(x, this._groundAt(x, z), z), facing: "up" });
+        if (zn.kind === "dj") list.push({ name: `${nm}: the DJ's face (1.6 m up)`, p: new THREE.Vector3(x, this._groundAt(x, z) + 1.6, z), facing: z > front ? "stage" : "audience" });
+      }
+      if (!list.length) list.push({ name: "the middle of the room (floor)", p: new THREE.Vector3(this.room.cx || 0, 0.01, (this.room.z0 + this.room.z1) / 2), facing: "up" });
+    }
+    return list.map(({ name, p, facing }) => {
+      const r = this.luxAt(p, toward(facing), true);
+      const top = [...r.by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
+        .map(([head, lux]) => ({ light: head, lux: Math.round(lux) }));
+      return { name, at: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], facing, lux: Math.round(r.lux), from: top };
+    });
+  }
+
+  /** Are the lights where the desk sent them (no fade or move still going)? */
+  lightsSettled() {
+    for (const inst of this.fixtures.values()) if (!inst.settled || inst.moving) return false;
+    return true;
+  }
+
+  /** A reading needs the lights as they are: when the 3D isn't drawing
+   *  (its window hidden, a workspace without it), work them out once now,
+   *  fades and moves at their end. */
+  _freshLights() {
+    const now = performance.now();
+    if (now - (this._lastDraw || 0) < 300) return;
+    const time = (now - this.t0) / 1000;
+    const lights = [];
+    for (const inst of this.fixtures.values()) {
+      if (!inst.settled) { inst.cur = mixLook(inst.cur, inst.to, 1); inst.settled = true; inst.mixAt = now; }
+      const m = inst.motor;
+      if (m) {
+        if (inst.cur.pan !== null && inst.cur.pan !== undefined) { m.pan.x = inst.cur.pan; m.pan.v = 0; }
+        if (inst.cur.tilt !== null && inst.cur.tilt !== undefined) { m.tilt.x = inst.cur.tilt; m.tilt.v = 0; }
+      }
+      this._drive(inst, time, lights);
+    }
+    this.rigGroup.updateMatrixWorld(true);
+    this._wireSegs = null;
+    for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
+    this._uploadLights(lights);
+  }
+
+  /** The floor's height at (x, z): the stage deck there, else the floor. */
+  _groundAt(x, z) {
+    const st = this.built && this.built.venue && this.built.venue.stage;
+    if (st && Math.abs(x - st.x) <= st.width / 2 && z >= st.z && z <= st.z + st.depth) return Math.max(0, st.height || 0) + 0.01;
+    return 0.01;
   }
 
   /** House lights: how much of the room you see with the rig dark. */
@@ -1512,7 +1662,7 @@ export class Stage {
   /** Beams as light in the air: Medium and High, with haze, in the 3D view
    *  (not the flat line drawings), unless auto quality is down to the bone. */
   _volumetric() {
-    return this.options.quality !== "fast" && !this.q.lite && !this.wire
+    return this.options.quality !== "fast" && !this.q.lite && !this.wire && !this.options.lightMap
       && (this._hazeNow() > 0.01 || VOL.areaCount.value > 0 || VOL.cloudCount.value > 0);
   }
 
@@ -1555,14 +1705,18 @@ export class Stage {
     // beams are lit: a strobe would otherwise rebuild it at every flash)
     const vol = this._volumetric();
     const fx = this._smooth && !this.wire;
-    const key = `${glow}|${vol}|${fx}`;
+    const lux = !!this.options.lightMap;
+    if (lux) glow = false;
+    const key = `${glow}|${vol}|${fx}|${lux}`;
     if (key !== this._postKey) {
       this._postKey = key;
       let hdr = this._sceneTex;
       if (vol) hdr = hdr.add(beamUpsample(this.beamRT.texture, this._beamSize));
       if (this.bloom) this.bloom.dispose();
       this.bloom = glow ? bloom(hdr, 0.55, 0.4, 0.9) : null;
-      let out = pictureOut(glow ? hdr.add(this.bloom) : hdr);
+      // the light map's false colours go to the screen as they are (the
+      // legend's colours): no exposure, no curve, no glow
+      let out = lux ? renderOutput(hdr, THREE.NoToneMapping, THREE.SRGBColorSpace) : pictureOut(glow ? hdr.add(this.bloom) : hdr);
       if (fx) out = fxaa(out);
       this.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
       this.post.outputNode = out;
@@ -1573,7 +1727,7 @@ export class Stage {
     // the floor's mirror first (the floor's shader reads it): Medium and
     // High, a shiny floor, the camera above it
     const fm = this.built && this.built.mirror;
-    if (fm && fm.sheen > 0.05 && this.options.quality !== "fast" && !this.wire && !this.q.lite
+    if (fm && fm.sheen > 0.05 && this.options.quality !== "fast" && !this.wire && !this.q.lite && !lux
         && this.options.mirror !== false && this.camera.isPerspectiveCamera && this.camera.position.y > 0.05 && !this.options.lightsOnly) {
       const k = this.options.quality === "high" ? 0.5 : 0.25;
       const ms = this._ms || (this._ms = new THREE.Vector2());
@@ -2093,7 +2247,7 @@ export class Stage {
         b.streak.material.color.setRGB(cr, cg, cb).multiplyScalar(0.45 * k);
       }
 
-      if (inst.head === this.povHead) {            // looking down this beam
+      if (inst.head === this.povHead || this.options.lightMap) {   // looking down this beam; the light map
         b.mesh.visible = false;
         b.vol.visible = false;
         b.glow.visible = false;
@@ -2188,6 +2342,7 @@ export class Stage {
     }
     const list = [...groups.values()].sort((x, y) => y.weight - x.weight);
     for (const g of list) g.pos.multiplyScalar(1 / g.wsum);
+    this._lightList = list;                     // (the light meter reads the same lights: luxAt)
     const q = this.options.quality;
     // shadow pictures for the brightest: High 16, Medium 6, none on Low
     // (or when the view is kept light)

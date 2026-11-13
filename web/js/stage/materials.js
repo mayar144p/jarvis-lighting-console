@@ -16,8 +16,9 @@ import {
   positionWorld, positionLocal, positionGeometry, positionView, normalWorld, cameraPosition,
   frontFacing, select, smoothstep, mix, max, min, abs, fract, floor, sin, cos, atan, sqrt, pow,
   dot, cross, normalize, length, reflect, clamp, exp, mod, varying, instanceIndex, hash,
-  transformNormalToView,
+  transformNormalToView, fwidth, log2,
 } from "three/tsl";
+import { CD_PER_UNIT, LUX_TOP, luxRamp } from "./luxmap.js";
 
 export const MAX_LIGHTS = 512;          // lights in the room's grid
 export const SHADOW_SLOTS = 16;         // lights with a shadow picture (High; Medium 6)
@@ -55,7 +56,28 @@ export const LIGHTS = {
   uVplPos: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(), "vec3"),
   uVplNrm: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(0, 1, 0), "vec3"),
   uVplCol: arrayOf(MAX_BOUNCE, () => new THREE.Vector3(), "vec3"),
+  // the light map (luxmap.js): surfaces and people in false colour by the
+  // lux the rig puts on them, instead of how they look
+  uLuxMap: uniform(0),
 };
+
+// The false colour for `lux` (luxmap.js LUX_STOPS, on a log scale), with a
+// thin darker line where it passes each stop, so the map reads like a
+// contour map: "everything inside this line gets over 200 lux".
+const LUMA = vec3(0.2126, 0.7152, 0.0722);
+const RAMP = luxRamp();
+const luxFalse = (lux) => Fn(() => {
+  const t = clamp(log2(max(lux, 0).add(1)).div(Math.log2(1 + LUX_TOP)), 0, 1).toVar();
+  const c = vec3(RAMP[0][1], RAMP[0][2], RAMP[0][3]).toVar();
+  for (let i = 1; i < RAMP.length; i++) {
+    const a = RAMP[i - 1][0], [b, r, g, bl] = RAMP[i];
+    c.assign(mix(c, vec3(r, g, bl), clamp(t.sub(a).div(b - a), 0, 1)));
+  }
+  let near = float(1);
+  for (let i = 1; i < RAMP.length; i++) near = min(near, abs(t.sub(RAMP[i][0])));
+  const line = smoothstep(0, fwidth(t).mul(1.2).add(1e-5), near).mul(0.45).add(0.55);
+  return c.mul(line);
+})();
 
 // The room's grid of lights (lightgrid.js fills it each frame).
 //   lights: one row per light, 5 texels -
@@ -113,6 +135,7 @@ export class GoboAtlas {
     this.cells = new Map();                 // ref -> {cell, ready}
     this.order = [];                        // least recently used first
     this.onReady = null;
+    this.version = 0;                       // goes up as pictures arrive (luxmap.js reads them too)
     LIGHTS.uGobos.value = this.tex;
   }
 
@@ -165,6 +188,7 @@ export class GoboAtlas {
       if (this.cells.get(ref) !== e) return;          // evicted meanwhile
       this.canvas.getContext("2d").putImageData(d, (e.cell % PER) * CELL, Math.floor(e.cell / PER) * CELL);
       this.tex.needsUpdate = true;
+      this.version++;
       e.ready = true;
       if (this.onReady) this.onReady(ref);
     } catch (err) {
@@ -349,6 +373,7 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
   const wp = positionWorld;
   const N = select(frontFacing, normalize(normalWorld), normalize(normalWorld).negate()).toVar();
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
+  const lux = float(0).toVar();                 // the rig's direct light only (the light map)
   const gloss = vec3(0).toVar();
   // where this point would show a light reflected (once, not per light)
   const R = detail ? reflect(normalize(wp.sub(cameraPosition)), N).toVar() : null;
@@ -378,7 +403,9 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
       spot.mulAssign(shadowAt(slot, wp));
     });
     const col = t2.xyz;
-    light.addAssign(col.mul(spot).mul(lam).mul(att));
+    const lands = col.mul(spot).mul(lam).mul(att).toVar();
+    light.addAssign(lands);
+    lux.addAssign(dot(lands, LUMA));
     if (detail) {
       // the lens mirrored in a shiny floor: as bright as the beam is (its
       // light at 1 m), not as the pool is
@@ -409,7 +436,8 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
     });
   }
   // a hint of a gloss floor: the brightest pools bloom a little
-  return alb.mul(light).add(light.mul(sheen).mul(0.04)).add(gloss.mul(sheen)).add(mirrored);
+  const seen = alb.mul(light).add(light.mul(sheen).mul(0.04)).add(gloss.mul(sheen)).add(mirrored);
+  return select(LIGHTS.uLuxMap.greaterThan(0.5), luxFalse(lux.mul(CD_PER_UNIT)), seen);
 })();
 
 // Medium and High draw the detail (focus and frost on gobos, prisms, lenses
@@ -452,14 +480,17 @@ const crowdLight = Fn(() => {
   const wp = positionWorld;
   const N = normalize(normalWorld).toVar();
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
+  const lux = float(0).toVar();
   eachLight(wp, (li, L, along, d2, t0, t1) => {
     const d = sqrt(d2);
     const spot = smoothstep(t0.w, t1.w, along.div(d));
-    const lam = max(dot(N, L.div(d).negate()), 0).mul(0.65).add(0.35);
-    light.addAssign(textureLoad(GRID.lights, ivec2(2, li)).xyz.mul(spot).mul(lam).div(d2.add(0.09)));
+    const facing = max(dot(N, L.div(d).negate()), 0).toVar();
+    const lands = textureLoad(GRID.lights, ivec2(2, li)).xyz.mul(spot).div(d2.add(0.09)).toVar();
+    light.addAssign(lands.mul(facing.mul(0.65).add(0.35)));
+    lux.addAssign(dot(lands, LUMA).mul(facing));
   });
   bounceAt(wp, N, light, 0.35);
-  return light;
+  return vec4(light, lux);
 });
 
 /** The light the beams put on a point in the air - a CO2 cloud, a fog
@@ -485,7 +516,10 @@ export function crowdMaterial(albedo) {
   const ph = hash(instanceIndex);
   const hop = max(0, sin(LIGHTS.uTime.mul(ph.mul(0.4).add(1.9)).add(ph).mul(6.2831))).mul(LIGHTS.uBounce).mul(0.05);
   m.positionNode = positionLocal.add(vec3(0, hop, 0));
-  m.colorNode = vec3(m.uniforms.uAlbedo).mul(varying(crowdLight()));   // x the instance colour
+  const lit = varying(crowdLight());
+  // x the instance colour (the light map makes those white: stage.js)
+  m.colorNode = select(LIGHTS.uLuxMap.greaterThan(0.5), luxFalse(lit.w.mul(CD_PER_UNIT)),
+    vec3(m.uniforms.uAlbedo).mul(lit.xyz));
   crowdCache.set(key, m);
   return m;
 }

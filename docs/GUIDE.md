@@ -217,6 +217,25 @@ physically is and who made it:
 Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
 whole room), <kbd>F</kbd> to frame the selection.
 
+### The light map (how much light lands where)
+
+The 3D view's **>>** menu → **Light map (lux)** paints every surface and
+person by how much light the rig puts on it, in lux: dark blue for none,
+then blue, green, yellow, orange and red to pink for the brightest. The key
+on the left says how many lux each colour is, and thin lines mark each step,
+like the lines on a map. Point at the floor, a wall, the stage or a person
+to read the lux there. It counts each light's real output, its beam and
+gobo, the distance and the angle, and anything solid in the way - not the
+house lights. The beams in the air go while it's on; the × on the key (or
+the menu again) turns it off.
+
+A rough guide: a club dance floor 20-200 lux, a bar 50-150, a stage wash
+500-1500, a face on camera 300-1000 (TV 1000 or more).
+
+With an AI key, ask the copilot "is the DJ lit enough for the stream?": it
+measures the stage, a face on it, the DJ and each zone, and can set the
+lights to suit.
+
 ### Quick buttons
 
 *Where:* Buttons (bottom left)

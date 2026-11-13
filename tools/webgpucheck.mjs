@@ -61,9 +61,14 @@ async function scene(mode) {
   const backend = await win.evaluate(() => window.hazeStage.backend);
   const shot = join(OUT, `scene-${mode}.png`);
   await win.locator("#stage-wrap").screenshot({ path: shot });
+  // the light map (its own shader: false colours by lux, contour lines)
+  await win.evaluate(() => window.hazeStage.setOptions({ lightMap: true }));
+  await sleep(2500);
+  const luxShot = join(OUT, `lightmap-${mode}.png`);
+  await win.locator("#stage-wrap").screenshot({ path: luxShot });
   await app.evaluate(({ app: a }) => a.quit());
   try { await app.close(); } catch { /* closed */ }
-  return { backend, errs, shot };
+  return { backend, errs, shot, luxShot };
 }
 
 const gpu = await scene("webgpu");
@@ -75,7 +80,7 @@ check("...with no errors", !gl.errs.length, gl.errs.slice(0, 3).join(" | "));
 // compare the two pictures pixel by pixel
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
 const p = await b.newPage();
-const d = await p.evaluate(async ([a, c]) => {
+const compare = (a, c) => p.evaluate(async ([a, c]) => {
   const load = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.src = src; });
   const px = (img) => { const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
     const g = cv.getContext("2d"); g.drawImage(img, 0, 0); return g.getImageData(0, 0, cv.width, cv.height).data; };
@@ -88,10 +93,14 @@ const d = await p.evaluate(async ([a, c]) => {
   }
   const n = x.length / 4;
   return { mean: diff / n / 3, bright: bright / n / 3 };
-}, [gpu.shot, gl.shot].map((f) => "data:image/png;base64," + readFileSync(f).toString("base64")));
+}, [a, c].map((f) => "data:image/png;base64," + readFileSync(f).toString("base64")));
+const d = await compare(gpu.shot, gl.shot);
+const lux = await compare(gpu.luxShot, gl.luxShot);
 await b.close();
 check("WebGPU draws a picture (not blank)", d.bright > 8 && d.bright < 200, d.bright.toFixed(1));
 check("WebGPU and WebGL 2 draw the same picture (beams, gobos, pools, shadows)", d.mean < 4, `mean difference ${d.mean.toFixed(2)} / 255`);
+check("the light map draws on WebGPU, the same as on WebGL 2", lux.bright > 8 && lux.mean < 4,
+  `mean difference ${lux.mean.toFixed(2)} / 255, brightness ${lux.bright.toFixed(1)}`);
 console.log(`pictures in ${OUT}`);
 console.log(fails ? `${fails} failed` : "all ok");
 process.exit(fails ? 1 : 0);

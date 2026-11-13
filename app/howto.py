@@ -80,6 +80,8 @@ SYNONYMS: dict[str, str] = {
     "update": "update newer", "bug": "report bug", "report": "report bug", "check": "venue check-in ready",
     "ready": "ready check", "undo": "undo history getting help", "mode": "modes set up program live", "modes": "set up program live",
     "rotate": "turned trusses", "rotated": "turned trusses", "turn": "turned trusses",
+    "lux": "light map lux", "meter": "light map lux", "illuminance": "light map lux",
+    "footcandles": "light map lux", "evenly": "light map lux", "lit": "light map lux",
 }
 _STOP = set("a an the i me my you your to do does how can could would should is are it in on of for with "
             "and or what where why when which this that these those please help want need make get use "

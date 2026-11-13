@@ -321,6 +321,23 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    a cloud round a running hazer, CO2 red in a red beam; selftest: the area.
 7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,
    VR.
+   - **(DONE) The light map** (web/js/stage/luxmap.js, >> -> Light map
+     (lux)): every surface and person in false colour by the lux the rig
+     puts on it (log scale, 0 to 5,000, contour lines at each step), the
+     beams in the air hidden, a key with the reading where the pointer is.
+     The surfaces' shader sums the rig's direct light it already works out
+     (luminance of colour x output / distance squared x angle, with gobos and
+     shadows); the computer's side does the same sum for a point (the same
+     light list, gobos read from the atlas, blocked by anything solid).  The
+     AI's measure_light pauses the turn like see_3d: the screen's 3D reads
+     the stage, a face on it, the DJ and each zone (or the spots it names),
+     after the heads have got there, and answers with the lux and the
+     lights giving most of it.  stagecheck: the photometric lux under a
+     3000 lm 30 degree light within 3 %, the distance squared, nothing
+     facing away / outside the beam / under a slab, the map's colour for
+     that lux on screen, beams gone and back, people white and back;
+     webgpucheck: the map the same on WebGPU; selftest: the AI's pause,
+     readings checked, picture and reading together.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)

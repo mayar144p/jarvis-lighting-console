@@ -2565,6 +2565,77 @@ def test_ai_sees_3d() -> None:
     check("the copilot sends a picture when the AI asks to see", "r.need_view" in cj and "resume: r.turn" in cj and "can_see:" in cj, "")
 
 
+def test_ai_measures_light() -> None:
+    """The assistant can measure the light (measure_light): the turn pauses,
+    the screen's 3D takes the readings (lux, the lights giving most of it),
+    the turn carries on with them; a screen without a 3D isn't asked."""
+    from app import assistant, config as cfg
+    from app import engine as eng
+
+    def tool(name, i=0, **args):
+        return {"id": f"c{name}{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    seen, offered = [], []
+
+    def scripted(replies):
+        def chat(messages, tools=None, **_):
+            seen.append([dict(m) for m in messages])
+            offered.append([t["function"]["name"] for t in tools or []])
+            return replies.pop(0)
+        return chat
+
+    reads = [{"name": "DJ booth: the DJ's face (1.6 m up)", "at": [0, 1.61, 3], "facing": "stage", "lux": 140,
+              "from": [{"light": 3, "lux": 120}, {"light": "x"}, {"light": 4, "lux": 20}]},
+             {"name": "dance floor (floor, middle)", "at": [0, 0.01, 8], "facing": "up", "lux": 64.6, "from": []},
+             "not a reading", {"name": "bad", "lux": "lots"}]
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        saved = cfg.DATA
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            spots = [{"name": "the DJ", "x": 0, "z": 3, "y": 1.6, "facing": "stage"}]
+            chat = scripted([
+                {"content": "", "tool_calls": [tool("do", action="select_all"), tool("measure_light", spots=spots)]},
+                {"content": "The DJ gets about 140 lux - enough for the stream."},
+            ])
+            r = assistant.run_turn(e, "is the DJ lit enough for the stream?", session="lux", chat=chat, can_see=True)
+            check("it asks for readings: the turn pauses, saying where to measure",
+                  r.get("need_light") and not r.get("need_view") and r.get("turn") and r.get("spots") == spots,
+                  json.dumps(r)[:240])
+            check("measure_light is offered to a screen with a 3D", "measure_light" in offered[0], str(offered[0]))
+            r2 = assistant.resume_turn(e, r["turn"], None, chat=chat, light=reads)
+            ans = next((m for m in seen[1] if m["role"] == "tool" and m.get("name") == "measure_light"), None)
+            got = json.loads(ans["content"]) if ans else {}
+            check("the readings come back as the tool's answer, checked (bad ones left out)",
+                  got.get("ok") and [x["lux"] for x in got.get("lux", [])] == [140, 65]
+                  and got["lux"][0]["from"] == [{"light": 3, "lux": 120}, {"light": 4, "lux": 20}], json.dumps(got)[:300])
+            check("...and the turn finishes with the reply", r2.get("ok") and "140 lux" in r2.get("reply", ""), json.dumps(r2)[:200])
+            e.act("blind", state=False, keep=True)
+            chat = scripted([{"content": "", "tool_calls": [tool("measure_light")]}, {"content": "I can't measure from here."}])
+            r = assistant.run_turn(e, "how bright is the stage?", session="lux2", chat=chat)
+            check("without a 3D on the screen it isn't offered and doesn't pause",
+                  "measure_light" not in offered[-2] and r.get("ok") and not r.get("need_light"), json.dumps(r)[:200])
+            chat = scripted([{"content": "", "tool_calls": [tool("measure_light"), tool("see_3d")]}, {"content": "Done."}])
+            r = assistant.run_turn(e, "check the light", session="lux3", chat=chat, can_see=True)
+            check("a reading and a picture asked together: one pause for both",
+                  r.get("need_light") and r.get("need_view"), json.dumps(r)[:200])
+            r2 = assistant.resume_turn(e, r["turn"], "data:image/jpeg;base64," + "A" * 64, chat=chat, light=[])
+            last = seen[-1]
+            names = [m.get("name") for m in last if m["role"] == "tool"]
+            check("...both answered (a reading that couldn't be taken says so), then the picture",
+                  "measure_light" in names and "see_3d" in names and isinstance(last[-1]["content"], list)
+                  and r2.get("ok"), str(names))
+        finally:
+            e.shutdown()
+            cfg.DATA = saved
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("the copilot measures in the 3D when the AI asks", "r.need_light" in cj and "luxReport(" in cj and "light }" in cj, "")
+
+
 def test_ai_operator() -> None:
     """The AI operator runs the lights live: a change at the start, every
     phrase and on a drop (one undo step each); touching the desk stops it

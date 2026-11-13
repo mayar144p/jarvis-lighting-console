@@ -251,7 +251,8 @@ How you work:
 * Look before you act (look_at_rig), act (do), then CHECK (check_lights) that the
   real lights do what you meant - beams on the right zone, the right colour, nothing
   dark that should be lit - and fix what isn't right.  When you have see_3d, look at the
-  3D view once at the end too, and fix what looks wrong.
+  3D view once at the end too, and fix what looks wrong.  When you have measure_light,
+  it answers "how bright is it there" in lux (a camera / stream look, an even dance floor).
 * Every `do` answer says what really happened: `now` (what those lights do now),
   `check` (a problem it noticed), `cant` (what the light can't do), `ignored`
   (settings it doesn't take).  Read it and put it right; never send the same failed
@@ -854,6 +855,27 @@ SEE_TOOL = {"type": "function", "function": {
                    "beams, colours, where light lands - and fix what looks wrong.",
     "parameters": {"type": "object", "properties": {}}}}
 MAX_VIEWS = 2                # pictures per request
+LIGHT_TOOL = {"type": "function", "function": {
+    "name": "measure_light",
+    "description": "Light readings from the 3D in lux, NOW (after your changes): what the rig puts on the "
+                   "stage, on a face on the stage, on the DJ and on each zone of the room - or on spots you "
+                   "name. For 'is the DJ / the presenter lit enough for the camera / the stream', 'is the "
+                   "dance floor even', 'how bright is the stage'. A rough guide: a face on camera wants "
+                   "300-1000 lux (TV 1000+), a stage wash 500-1500, a club dance floor 20-200, a bar 50-150. "
+                   "Counts each light's real output, the distance, the angle, the beam's edge and gobo and "
+                   "what's in the way; not the house lights. Each reading says which lights give most of it.",
+    "parameters": {"type": "object", "properties": {
+        "spots": {"type": "array", "description": "Optional: points to measure, in metres as in the room plan "
+                  "(x across, z from the back towards the audience). Leave out for the room's own places.",
+                  "items": {"type": "object", "properties": {
+                      "name": {"type": "string"},
+                      "x": {"type": "number"}, "z": {"type": "number"},
+                      "y": {"type": "number", "description": "height (left out: the floor, or the stage's top there)"},
+                      "facing": {"type": "string", "enum": ["up", "audience", "stage"],
+                                 "description": "up: what lands on the floor; audience: a face on stage, towards "
+                                                "the room; stage: a face in the room, towards the stage"}},
+                      "required": ["x", "z"]}}}}}}
+MAX_READS = 3                # light readings per request
 PENDING_S = 120.0            # a turn waiting for its picture is dropped after this
 _pending: dict[str, dict] = {}
 _pending_lock = threading.Lock()
@@ -973,21 +995,56 @@ def run_turn(eng, message: str, session: str = "", image: str | None = None,
     return _go(eng, st, chat or llm.chat)
 
 
-def resume_turn(eng, turn: str, image: str | None, chat=None) -> dict:
-    """Carry on a turn that asked to see the 3D view, with the picture."""
+def resume_turn(eng, turn: str, image: str | None, chat=None, light=None) -> dict:
+    """Carry on a turn that asked to see the 3D view (with the picture) or
+    for light readings (with them, stage.js luxReport)."""
     with _pending_lock:
         st = _pending.pop(str(turn or ""), None)
     if st is None:
         return {"ok": False, "error": "that request is no longer waiting - ask again"}
-    ok = bool(image) and str(image).startswith("data:image/") and len(image) < 3_000_000
-    st["msgs"].append({"role": "tool", "tool_call_id": st.pop("see_id"), "name": "see_3d",
-                       "content": json.dumps({"ok": ok, "note": "the picture follows" if ok
-                                              else "no picture could be taken - use check_lights"})})
-    if ok:
-        st["msgs"].append({"role": "user", "content": [
-            {"type": "text", "text": "(The 3D view now, after your changes.)"},
-            {"type": "image_url", "image_url": {"url": image}}]})
+    light_id = st.pop("light_id", None)
+    st.pop("light_spots", None)
+    if light_id is not None:
+        reads = _clean_reads(light)
+        st["msgs"].append({"role": "tool", "tool_call_id": light_id, "name": "measure_light",
+                           "content": json.dumps({"ok": True, "lux": reads} if reads else
+                                                 {"ok": False, "note": "no reading could be taken - use check_lights"})})
+    see_id = st.pop("see_id", None)
+    if see_id is not None:
+        ok = bool(image) and str(image).startswith("data:image/") and len(image) < 3_000_000
+        st["msgs"].append({"role": "tool", "tool_call_id": see_id, "name": "see_3d",
+                           "content": json.dumps({"ok": ok, "note": "the picture follows" if ok
+                                                  else "no picture could be taken - use check_lights"})})
+        if ok:
+            st["msgs"].append({"role": "user", "content": [
+                {"type": "text", "text": "(The 3D view now, after your changes.)"},
+                {"type": "image_url", "image_url": {"url": image}}]})
     return _go(eng, st, chat or llm.chat)
+
+
+def _clean_reads(light) -> list[dict]:
+    """The screen's light readings (stage.js luxReport), checked: at most
+    24, each a name, where, which way, the lux and its main lights."""
+    out: list[dict] = []
+    for r in (light if isinstance(light, list) else [])[:24]:
+        if not isinstance(r, dict):
+            continue
+        try:
+            lux = max(0, round(float(r.get("lux") or 0)))
+        except (TypeError, ValueError):
+            continue
+        at = r.get("at") if isinstance(r.get("at"), list) else []
+        src = []
+        for f in (r.get("from") if isinstance(r.get("from"), list) else [])[:4]:
+            if isinstance(f, dict):
+                try:
+                    src.append({"light": int(f.get("light")), "lux": max(0, round(float(f.get("lux") or 0)))})
+                except (TypeError, ValueError):
+                    continue
+        out.append({"name": str(r.get("name") or "")[:60], "lux": lux,
+                    "at": [round(float(v), 2) for v in at[:3] if isinstance(v, (int, float))],
+                    "facing": str(r.get("facing") or "up")[:10], "from": src})
+    return out
 
 
 def _finish_pending(eng, session: str) -> None:
@@ -1010,6 +1067,7 @@ DOING = {"how_to": "Looking it up in the guide", "look_at_rig": "Looking at the 
          "find_fixtures": "Looking in the fixture library", "room_plan": "Reading the room",
          "design_show": "Designing the show", "design_night": "Designing the night", "restyle_show": "Restyling the show",
          "search_web": "Looking it up online", "read_web": "Reading a page", "see_3d": "Looking at the 3D view",
+         "measure_light": "Measuring the light",
          "place_lights": "Hanging the lights", "add_to_room": "Adding to the room", "add_fixture": "Adding lights",
          "what_lights_can_do": "Checking what the lights can do", "remember": "Noting it down", "ask": "Asking you",
          "listen_to_song": "Listening to the song", "propose_plan": "Writing the plan"}
@@ -1067,7 +1125,8 @@ def _go(eng, st: dict, chat) -> dict:
 
 def _go_on(eng, st: dict, chat, lv: dict) -> dict:
     msgs, steps = st["msgs"], st["steps"]
-    tools = TOOLS + ([SEE_TOOL] if st["can_see"] and st["views"] < MAX_VIEWS else [])
+    tools = TOOLS + ([SEE_TOOL] if st["can_see"] and st["views"] < MAX_VIEWS else []) \
+        + ([LIGHT_TOOL] if st["can_see"] and st.get("reads", 0) < MAX_READS else [])
     question = None
     options: list[str] = []
     reply = ""
@@ -1090,6 +1149,7 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
             msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
             stop = False
             see_id = None
+            light_id, light_spots = None, None
             for call in calls:
                 fn = (call.get("function") or {})
                 name = fn.get("name") or ""
@@ -1120,6 +1180,13 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                             see_id = call.get("id") or name           # answered when the picture comes
                             continue
                         result = {"error": "no more pictures this time - use check_lights"}
+                    elif name == "measure_light":
+                        if st["can_see"] and st.get("reads", 0) < MAX_READS and light_id is None:
+                            light_id = call.get("id") or name         # answered when the readings come
+                            sp = args.get("spots")
+                            light_spots = [s for s in sp if isinstance(s, dict)][:24] if isinstance(sp, list) else None
+                            continue
+                        result = {"error": "no more readings this time - use check_lights"}
                     elif name == "how_to":
                         q = str(args.get("question") or st["message"])
                         result = howto.answer(q)
@@ -1353,18 +1420,28 @@ def _go_on(eng, st: dict, chat, lv: dict) -> dict:
                                                     "check the settings you sent and try another way"}
                 msgs.append({"role": "tool", "tool_call_id": call.get("id") or name, "name": name,
                              "content": json.dumps(result, default=str)[:12000]})
-            if see_id is not None and not stop:
-                # pause: the screen draws the view and sends it (resume_turn)
-                st["views"] += 1
-                st["see_id"] = see_id
+            if (see_id is not None or light_id is not None) and not stop:
+                # pause: the screen draws the view / takes the readings and
+                # sends them (resume_turn)
+                if see_id is not None:
+                    st["views"] += 1
+                    st["see_id"] = see_id
+                if light_id is not None:
+                    st["reads"] = st.get("reads", 0) + 1
+                    st["light_id"] = light_id
+                    st["light_spots"] = light_spots
                 st["paused"] = time.monotonic()
                 turn = os.urandom(8).hex()
                 with _pending_lock:
                     _pending[turn] = st
-                return {"ok": True, "need_view": True, "turn": turn, "steps": list(steps),
+                return {"ok": True, "need_view": see_id is not None, "need_light": light_id is not None,
+                        "spots": light_spots, "turn": turn, "steps": list(steps),
                         "preview": st["blind_started"], "seconds": round(time.monotonic() - st["t0"], 1)}
             if see_id is not None:
                 msgs.append({"role": "tool", "tool_call_id": see_id, "name": "see_3d",
+                             "content": json.dumps({"skipped": "asked the operator first"})})
+            if light_id is not None:
+                msgs.append({"role": "tool", "tool_call_id": light_id, "name": "measure_light",
                              "content": json.dumps({"skipped": "asked the operator first"})})
             if stop:
                 reply = str(msg.get("content") or "").strip()

@@ -9,6 +9,7 @@ import { run, select } from "./actions.js";
 import { $, $$, menu, promptBox, toast } from "./ui.js";
 import { atPointer, rowMenu } from "./fixtures.js";
 import { openVideoDialog, stopVideo, recording } from "./videorec.js";
+import { toggleLightMap, lightMapOn } from "./lightmap.js";
 
 let stage = null;
 let rigSig = "";
@@ -404,6 +405,8 @@ function viewsMenu(btn) {
     } },
     { label: recording() ? "■ Stop recording" : "Record a video…", hint: recording() ? "and save it" : "the 3D view for the client (MP4)",
       run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
+    { label: lightMapOn(stage) ? "✓ Light map (lux)" : "Light map (lux)", hint: "how much light lands where",
+      run: () => toggleLightMap(stage) },
     { label: "The makers' 3D bodies and gobos", hint: "from GDTF Share, for the 3D only", run: realBodies },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),
