@@ -230,6 +230,37 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A18. The 3D view, better than the other visualisers (agreed 2026-11-13)
+
+Asked: compared with Capture, Depence, Vectorworks Vision, WYSIWYG,
+grandMA3 3D, MagicVis and the DJ apps, make Haze's 3D the better option.
+The audit (Zyped show and the 124-light test rig): beams were see-through
+shells (no hot core, no brighter looking into them, gobos painted on the
+shell, cut flat where the centre line hit, through people and truss);
+brightness came from the beam angle only; 121 lit lights, 153 beams, only
+32 reached the floor and 8 cast shadows; no bounce, no reflections; a
+film-style colour curve turned bright red orange and green yellow; fast
+strobes ran at the wrong speed (30 pictures a second, sampled); one haze
+number for the room.  Kept: the fixtures, motors, gobos from the files,
+the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
+
+1. **(DONE) A measuring stick:** tools/stagecheck.mjs (CI) - small fixed
+   scenes handed to the real 3D code and read back pixel by pixel; a look
+   book of a club scene saved to judge changes by eye.  It found a bug at
+   once: the drawn "rings" gobo (and the petals' fade) never showed - a
+   shader value first worked out inside another pattern's branch.
+2. Colour-true picture and an exposure control; strobes at their real
+   speed; calm flashing on screen.
+3. Real beams: light added up along the line of sight, gobo and prism
+   shafts, stopped by people, truss and walls, shadows in the haze.
+4. Every light lights the room: lumens, hundreds of lights, more and
+   softer / harder shadows, bounce, LED screens light the room.
+5. Mirror floors.
+6. Atmosphere: haze from the hazers, haze areas, CO2 and fog lit by beams.
+7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,
+   VR.
+8. Fixture looks: better stand-in models, real ones from GDTF Share.
+
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)
 
 **Done:** the desktop app talks to the NDI runtime the operator installs

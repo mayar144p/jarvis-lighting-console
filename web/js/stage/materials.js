@@ -135,8 +135,11 @@ export class GoboAtlas {
 // Gobo patterns, drawn analytically, or a real picture from the atlas.
 // `uv` is the position inside the beam, -1..1 across its diameter.
 const goboShape = Fn(([id, uv]) => {
-  const r = length(uv);
-  const a = atan(uv.y, uv.x);
+  // (worked out here, before the patterns branch: a value first used inside
+  // one branch is only ever set there - the rings and the petals read the
+  // star's, which was never set, and drew an open beam)
+  const r = length(uv).toVar();
+  const a = atan(uv.y, uv.x).toVar();
   const out = float(1).toVar();
   If(id.greaterThan(99.5), () => {                       // a real gobo picture
     const n = id.sub(100);
