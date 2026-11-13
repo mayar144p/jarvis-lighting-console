@@ -73,11 +73,35 @@ def kind(addr: str) -> str:
     return "tailscale" if is_tailscale(addr) else "vpn"
 
 
+def home_name(eng) -> str:
+    """The phone remote's name on a home screen: the venue's own name, else
+    the show's, else Haze (a template's stock name like "Club" doesn't count).
+    The phone's Add to Home Screen box shows it, to keep or type over."""
+    from app import venue as venue_mod
+    v = (getattr(eng, "venue", None) or {}) if eng is not None else {}
+    stock = {str(t.get("name") or "").lower() for t in (venue_mod.template(n) for n in venue_mod.TEMPLATES)}
+    name = str(v.get("name") or "").strip()
+    if name and name.lower() not in stock:
+        return name[:30]
+    show = str(getattr(eng, "show_file", None) or "").strip()
+    if show:
+        return show.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].removesuffix(".json").removesuffix(".haze")[:30] or "Haze"
+    return "Haze"
+
+
+def desk_id() -> str:
+    """Which desk this is, to a phone (the same until "New code"): a one-way
+    mark of the pairing code - it can't be turned back into the code."""
+    import hashlib
+    return hashlib.sha256(b"haze-desk:" + (config.CONSOLE_TOKEN or "").encode("utf-8")).hexdigest()[:12]
+
+
 def info() -> dict:
     """Whether phones can reach this desk, at which addresses, with which code."""
     if not config.requires_token():
         # (bound to this computer only: Desk -> Other computers, phones and tablets turns it on)
         return {"network": False, "addresses": [], "port": config.PORT, "code": ""}
-    return {"network": True, "port": config.PORT, "code": config.CONSOLE_TOKEN,
+    from app import mdns
+    return {"network": True, "port": config.PORT, "code": config.CONSOLE_TOKEN, "name": mdns.name(), "id": desk_id(),
             "addresses": [{"address": a, "tailscale": kind(a) == "tailscale", "vpn": kind(a) == "vpn"}
                           for a in lan_addresses()]}

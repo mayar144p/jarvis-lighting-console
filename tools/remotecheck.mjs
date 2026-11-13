@@ -58,18 +58,20 @@ for (const [name, d] of SIZES) {
   const p = await ctx.newPage();
   const errs = [];
   p.on("pageerror", (e) => errs.push(e.message));
-  await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await p.goto(BASE + "remote.html"); await sleep(1800);
   const m = await p.evaluate(() => {
     const tiles = [...document.querySelectorAll(".rm-btn")].map((e) => e.getBoundingClientRect());
     const strip = document.querySelector("#rm-strip").getBoundingClientRect();
     return { hscroll: document.documentElement.scrollWidth > innerWidth + 1, n: tiles.length,
       minW: Math.min(...tiles.map((r) => r.width)), minH: Math.min(...tiles.map((r) => r.height)),
-      stripIn: strip.bottom <= innerHeight + 1 && strip.top > innerHeight / 2,
+      // (upright: along the bottom; a phone on its side: down the right edge)
+      stripIn: innerWidth > innerHeight && innerHeight <= 520 ? strip.right >= innerWidth - 1 && strip.left > innerWidth * 0.7 && strip.height >= innerHeight - 1
+        : strip.bottom <= innerHeight + 1 && strip.top > innerHeight / 2,
       clipped: [...document.querySelectorAll(".rm-btn b")].filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       heads: [...document.querySelectorAll(".rm-head")].map((e) => e.textContent) };
   });
-  check(`${name}: no sideways scroll, ${m.n} buttons at least 64 px, names whole, the strip at the bottom`,
+  check(`${name}: no sideways scroll, ${m.n} buttons at least 64 px, names whole, Blackout / Master / Release all at the bottom (on its side: down the right)`,
     !m.hscroll && m.n >= 3 && m.minW >= 64 && m.minH >= 56 && !m.clipped && m.stripIn, JSON.stringify(m));
   check(`${name}: no page errors`, !errs.length, errs.join(" | "));
   await ctx.close();
@@ -80,7 +82,7 @@ const ctx = await browser.newContext(dev(390, 844));
 const p = await ctx.newPage();
 const sent = [];
 p.on("request", (r) => { if (r.method() === "POST" && /api\/console$/.test(r.url())) { try { sent.push(JSON.parse(r.postData())); } catch { /* fine */ } } });
-await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+await p.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
 await p.goto(BASE + "remote.html"); await sleep(1800);
 check("the block's heading is over its buttons", (await p.locator(".rm-head").first().innerText()).toUpperCase().includes("COBRA"));
 const col = p.locator('.rm-btn[data-id="q1-14"]');
@@ -93,10 +95,7 @@ const co2 = p.locator('.rm-btn[data-id="q1-15"]');
 const pressesOf = (id) => sent.filter((x) => x.action === "quick_press" && x.params.id === id && x.params.down).length;
 await co2.dispatchEvent("pointerdown", { pointerId: 6, button: 0 }); await sleep(80); await co2.dispatchEvent("pointerup", { pointerId: 6, button: 0 });
 await sleep(400);
-check("a brush over CO2 doesn't fire it", pressesOf("q1-15") === 0, String(pressesOf("q1-15")));
-await co2.dispatchEvent("pointerdown", { pointerId: 7, button: 0 }); await sleep(600); await co2.dispatchEvent("pointerup", { pointerId: 7, button: 0 });
-await sleep(300);
-check("held a moment, CO2 fires", pressesOf("q1-15") === 1, String(pressesOf("q1-15")));
+check("a tap on CO2 fires it, the same as on the desk (ARM FX is the safety)", pressesOf("q1-15") === 1, String(pressesOf("q1-15")));
 
 await p.locator("#rm-bo").click(); await sleep(600);
 check("Blackout at the bottom blacks out the desk", (await lite()).blackout === true);
@@ -122,7 +121,7 @@ console.log("Arranging this phone's buttons");
 {
   const ctx3 = await browser.newContext(dev(390, 844));
   const pa = await ctx3.newPage();
-  await pa.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pa.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await pa.goto(BASE + "remote.html"); await sleep(1800);
   const deskBefore = JSON.stringify(((await fetch(BASE + "api/console").then((r) => r.json())).quick || {}).buttons.map((b) => [b.id, b.slot, b.label]));
   const order = () => pa.locator("#rm-grid [data-aid]").evaluateAll((els) => els.map((e) => e.dataset.aid));
@@ -135,7 +134,13 @@ console.log("Arranging this phone's buttons");
   const from = await pa.locator('[data-aid="q1-14"]').boundingBox(), to = await pa.locator('[data-aid="q1-13"]').boundingBox();
   await pa.mouse.move(from.x + from.width / 2, from.y + 20); await pa.mouse.down();
   for (let i = 1; i <= 10; i++) { await pa.mouse.move(from.x + from.width / 2 + (to.x + 10 - from.x - from.width / 2) * i / 10, from.y + 20 + (to.y + 20 - from.y - 20) * i / 10); await sleep(30); }
+  const mid = await pa.evaluate(() => ({ ghost: document.querySelectorAll(".rm-ghost").length, slot: !!document.querySelector(".rm-slot") }));
+  check("dragging: a lifted copy follows the finger, a dashed slot shows where it lands", mid.ghost === 1 && mid.slot, JSON.stringify(mid));
+  await sleep(250);                                  // (held still: the slot settles there, the others slide over)
+  const slid = await pa.evaluate(() => [...document.querySelectorAll("#rm-grid [data-aid]")].some((e) => /transform/.test(e.style.transition)));
+  check("...the other tiles slide out of the way (not jump)", slid);
   await pa.mouse.up(); await sleep(500);
+  check("...let go, the copy glides in and is gone", await pa.evaluate(() => !document.querySelector(".rm-ghost") && !document.querySelector(".rm-slot")));
   const o1 = await order();
   check("a tile dragged in front of another moves there", o1.indexOf("q1-14") < o1.indexOf("q1-13") && o0.indexOf("q1-14") > o0.indexOf("q1-13"), `${o0} -> ${o1}`);
   check("...and arranging pressed nothing", ((await lite()).quick_active || []).length === active0);
@@ -162,7 +167,7 @@ console.log("Faders");
 {
   const ctx2 = await browser.newContext(dev(375, 667));
   const pf = await ctx2.newPage();
-  await pf.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await pf.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await pf.goto(BASE + "remote.html"); await sleep(1800);
   const tab = pf.locator("#rm-views .rm-view", { hasText: "Faders" });
   check("a Faders tab when the show has groups", await tab.count() === 1);
@@ -209,7 +214,7 @@ console.log("Group colours: the desk and the phone match");
   const fill = await desk.locator("#grp-masters .master.grp").nth(1).evaluate((el) => getComputedStyle(el).getPropertyValue("--accent").trim());
   check("...and the desk's fader turns red", fill === "#ef4444", fill);
   const ph2 = await (await browser.newContext(dev(390, 844))).newPage();
-  await ph2.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await ph2.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
   await ph2.goto(BASE + "remote.html"); await sleep(1500);
   await ph2.locator("#rm-views .rm-view", { hasText: "Faders" }).click(); await sleep(500);
   const tint = await ph2.locator('.rm-fader').nth(2).evaluate((el) => el.style.getPropertyValue("--tint"));
@@ -224,6 +229,107 @@ check("gets the remote", /remote\.html/.test(pp.url()), pp.url());
 await pp.goto(BASE + "?desk=1"); await sleep(1500);
 check("...unless it asks for the full desk", !/remote\.html/.test(pp.url()), pp.url());
 await ph.close();
+
+// What a phone can do wrong: lose the Wi-Fi with a finger down, get locked
+// mid-press, a cracked or wet screen touching by itself, a tap that couldn't
+// be sent - and ARM / KILL FX kept out of reach of a stray touch.
+console.log("Fail-safes");
+{
+  await fetch(BASE + "api/fixtures/library/install", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ src: "ofl", key: "magicfx/psyco2jet.json" }) });
+  await act("add_heads", { query: "Psyco2Jet", qty: 1 });
+  const fctx = await browser.newContext(dev(390, 844));
+  const fp = await fctx.newPage();
+  await fp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
+  await fp.goto(BASE + "remote.html"); await sleep(2000);
+  const active = async () => (await lite()).quick_active || [];
+  const flash = fp.locator('[data-id="q1-13"]');                    // FLASH: a hold button
+  await act("quick_release_all");
+  // 1. the Wi-Fi drops with a finger on FLASH: the desk lets go by itself
+  await flash.dispatchEvent("pointerdown", { pointerId: 21, button: 0 }); await sleep(500);
+  const on1 = (await active()).includes("q1-13");
+  await fctx.setOffline(true);
+  await sleep(4500);
+  check("a finger on a hold button, then the phone loses the Wi-Fi: the desk lets go by itself (3 s)", on1 && !(await active()).includes("q1-13"), JSON.stringify(await active()));
+  await fctx.setOffline(false); await sleep(2500);
+  await flash.dispatchEvent("pointerup", { pointerId: 21, button: 0 }); await sleep(300);
+  // 2. held while the phone keeps checking in: it stays on (a long hold is fine)
+  await flash.dispatchEvent("pointerdown", { pointerId: 22, button: 0 }); await sleep(5000);
+  check("...a long hold on a phone that's there stays on (it checks in every second)", (await active()).includes("q1-13"));
+  // 3. the screen locks (or another app comes up) with the finger still down: let go at once
+  await fp.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await sleep(600);
+  check("...the phone locked or switched away mid-hold: let go at once", !(await active()).includes("q1-13"), JSON.stringify(await active()));
+  await fp.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await flash.dispatchEvent("pointerup", { pointerId: 22, button: 0 }); await sleep(300);
+  // 4. a tap that couldn't be sent (no Wi-Fi) isn't played later, when it comes back
+  await fctx.setOffline(true);
+  const colour = fp.locator('[data-id="q1-14"]');                   // an on/off colour button
+  await colour.dispatchEvent("pointerdown", { pointerId: 23, button: 0 }); await colour.dispatchEvent("pointerup", { pointerId: 23, button: 0 });
+  await sleep(500);
+  await fctx.setOffline(false); await sleep(3500);
+  check("a tap with no Wi-Fi isn't played later when it's back (nothing queued)", !(await active()).includes("q1-14"), JSON.stringify(await active()));
+  // 5. a screen touching by itself: 300 touches, several fingers, random tiles, fast
+  await act("quick_release_all"); await act("fx_arm", { state: false });
+  const errs = [];
+  fp.on("pageerror", (e) => errs.push(e.message));
+  await fp.evaluate(async () => {
+    const tiles = [...document.querySelectorAll("#rm-grid .rm-btn")];
+    const down = new Map();
+    for (let i = 0; i < 300; i++) {
+      const id = 30 + (i % 5);
+      const el = tiles[Math.floor(Math.random() * tiles.length)];
+      if (down.has(id)) { down.get(id).dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true })); down.delete(id); }
+      else { el.dispatchEvent(new PointerEvent("pointerdown", { pointerId: id, bubbles: true, button: 0 })); down.set(id, el); }
+      if (i % 20 === 0) await new Promise((r) => setTimeout(r, 5));
+    }
+    for (const [id, el] of down) el.dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true }));
+    for (const id of [30, 31, 32, 33, 34]) window.dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true }));
+  });
+  await sleep(2500);
+  const st = await lite();
+  const holds = (st.quick_active || []).filter((id) => ["q1-13"].includes(id));
+  check("a screen touching by itself (300 touches): no hold button left on once the touching stops", !holds.length, JSON.stringify(st.quick_active));
+  check("...no fire while the desk isn't armed (ARM FX is what stops a stray touch firing CO2)",
+    !((st.sfx || {}).runs || []).length, JSON.stringify((st.sfx || {}).runs));
+  check("...and no page errors", !errs.length, errs.join(" | "));
+  // 6. ARM FX / KILL FX in the ⋯ menu: one tap does nothing, a second confirms
+  await fp.reload(); await sleep(2000);
+  await fp.locator("#rm-more").click(); await sleep(300);
+  const armBtn = fp.locator(".rm-menu .rm-fxbtn.arm");
+  check("⋯ has ARM FX and KILL FX (the show has effects), not on the page itself",
+    await armBtn.count() === 1 && await fp.locator(".rm-menu .rm-fxbtn.kill").count() === 1 && await fp.locator("#rm-grid .rm-fxbtn").count() === 0);
+  await armBtn.click(); await sleep(400);
+  const armed1 = !!((await lite()).sfx || {}).armed;
+  await armBtn.click(); await sleep(600);
+  check("...one tap on ARM FX does nothing, a second one arms", !armed1 && !!((await lite()).sfx || {}).armed);
+  await fp.locator("#rm-more").click(); await sleep(300);
+  const kill = fp.locator(".rm-menu .rm-fxbtn.kill");
+  await kill.click(); await sleep(400);
+  const still = !!((await lite()).sfx || {}).armed;
+  await kill.click(); await sleep(600);
+  check("...KILL FX the same: one tap nothing, a second stops it all and disarms", still && !((await lite()).sfx || {}).armed);
+  await fctx.close();
+}
+
+console.log("Full screen at the first touch");
+{
+  const fctx = await browser.newContext(dev(390, 844));
+  const fp = await fctx.newPage();
+  await fp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await fp.goto(BASE + "remote.html"); await sleep(1800);
+  const was = await fp.evaluate(() => !!document.fullscreenElement);
+  await fp.mouse.click(10, 300); await sleep(600);
+  check("a phone's first touch takes the remote full screen (no browser bars)", !was && await fp.evaluate(() => !!document.fullscreenElement));
+  await fctx.close();
+  const mctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const mp = await mctx.newPage();
+  await mp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); } catch (e) { /* fine */ } });
+  await mp.goto(BASE + "remote.html"); await sleep(1500);
+  await mp.mouse.click(10, 300); await sleep(500);
+  check("...but not a computer with a mouse", !(await mp.evaluate(() => !!document.fullscreenElement)));
+  await mctx.close();
+}
 
 console.log("The desk's phone button");
 {
@@ -245,5 +351,59 @@ console.log("The desk's phone button");
 }
 
 await browser.close();
+
+// One home-screen icon for every venue: a desk letting phones in answers to
+// haze.local too; the remote, opened at the address, moves to the name (its
+// layout and switches with it).  The browser here is told haze.local is this
+// computer - as a phone that can look names up finds it.
+console.log("One icon for every venue (the desk's name, haze.local)");
+{
+  const NP = PORT + 1, CODE = "ABCDE12345", NB = `http://127.0.0.1:${NP}/`;
+  const DATA2 = mkdtempSync(join(tmpdir(), "haze-remote-name-"));
+  const srv2 = spawn(process.platform === "win32" ? "python" : "python3", ["-m", "app.main"], { stdio: "ignore",
+    env: { ...process.env, HOST: "0.0.0.0", CONSOLE_TOKEN: CODE, PORT: String(NP), CONSOLE_DATA_DIR: DATA2, CONSOLE_AUTOSAVE: "false", CONSOLE_AUTORESTORE: "false", DMX_HOST: "127.0.0.1", AUTO_UPDATE: "false" } });
+  try {
+    for (let i = 0; ; i++) { try { await fetch(NB); break; } catch {} if (i > 200) throw new Error("the second desk didn't start"); await sleep(250); }
+    const info = await fetch(NB + "api/remote", { headers: { "X-Haze-Token": CODE } }).then((r) => r.json());
+    check("a desk letting phones in has a name on the network", /^haze(-\d)?\.local$/.test(info.name || ""), JSON.stringify(info).slice(0, 200));
+    await fetch(NB + "api/console", { method: "POST", headers: { "content-type": "application/json", "X-Haze-Token": CODE },
+      body: JSON.stringify({ action: "venue_template", params: { name: "club" } }) });
+    const club = await fetch(NB + "remote/manifest.webmanifest").then((r) => r.json());
+    await fetch(NB + "api/console", { method: "POST", headers: { "content-type": "application/json", "X-Haze-Token": CODE },
+      body: JSON.stringify({ action: "venue_save", params: { name: "Zyped Club" } }) });
+    const named2 = await fetch(NB + "remote/manifest.webmanifest").then((r) => r.json());
+    const page = await fetch(NB + "remote.html").then((r) => r.text());
+    check("the home-screen icon is named after the venue (a template's stock name doesn't count)",
+      club.short_name === "Haze" && named2.short_name === "Zyped Club" && /apple-mobile-web-app-title" content="Zyped Club"/.test(page),
+      JSON.stringify([club.short_name, named2.short_name]));
+    const hello = await fetch(NB + "hello.json").then((r) => r.json());
+    check("...and says which desk it is to anyone who asks (not the code)", hello.haze === true && hello.id === info.id && !JSON.stringify(hello).includes(CODE), JSON.stringify(hello));
+    const named = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}), args: [`--host-resolver-rules=MAP ${info.name} 127.0.0.1`] });
+    const nctx = await named.newContext(dev(390, 844));
+    const np = await nctx.newPage();
+    await np.addInitScript(() => { try { if (location.hostname === "127.0.0.1") { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); localStorage.setItem("haze.remote.hidden", '["timeline"]'); } } catch (e) { /* fine */ } });
+    await np.goto(NB + "remote.html?code=" + CODE);
+    for (let i = 0; i < 40 && new URL(np.url()).hostname !== info.name; i++) await sleep(250);
+    await sleep(1500);
+    const at = await np.evaluate(() => ({ host: location.hostname, url: location.href, connect: !document.querySelector("#rm-connect").hidden,
+      dot: document.querySelector("#rm-dot").classList.contains("on"), carried: localStorage.getItem("haze.remote.hidden") }));
+    check("the remote opened at the address moves to the desk's name, signed in (no code asked)", at.host === info.name && !at.connect && at.dot && !/code=|carry=/.test(at.url), JSON.stringify(at));
+    check("...and this phone's own settings come with it", at.carried === '["timeline"]', at.carried);
+    await named.close();
+    // a phone that can't look names up: it stays at the address, and says so once
+    const plain = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+    const pp = await (await plain.newContext(dev(390, 844))).newPage();
+    await pp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
+    await pp.goto(NB + "remote.html?code=" + CODE);
+    let st = {};
+    for (let i = 0; i < 40; i++) {
+      st = await pp.evaluate(() => ({ host: location.hostname, text: document.body.innerText }));
+      if (/can't find the desk by its name/.test(st.text)) break;
+      await sleep(200);
+    }
+    check("...a phone that can't find the name stays at the address and says so", st.host === "127.0.0.1" && /can't find the desk by its name/.test(st.text), st.host + " " + st.text.slice(0, 200));
+    await plain.close();
+  } finally { try { srv2.kill(); } catch {} }
+}
 console.log(fails ? `${fails} failed` : "all ok");
 done(fails ? 1 : 0);

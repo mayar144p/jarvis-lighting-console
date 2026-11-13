@@ -12375,3 +12375,67 @@ def test_remote_address_first() -> None:
     main = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("...the QR codes leave a VPN's address out (said why), and so does the desktop app's list",
           "a.vpn" in js and "Not for phones" in js and "isVpn(a)" in main and "VIRTUAL.test(name)" in main, "")
+
+
+def test_desk_name_on_network() -> None:
+    """One home-screen icon for every venue: the desk answers to haze.local (multicast DNS, app/mdns.py) -
+    a question for the name gets this computer's address on the asker's network, a second desk takes
+    haze-2; the icon is named after the venue (a template's stock name doesn't count)."""
+    from app import mdns, remote
+    import struct as _struct
+    q = mdns.query("haze.local")
+    check("a question for haze.local reads back as one (A record)", mdns.questions(q) == [("haze.local", 1, False)], mdns.questions(q))
+    r = mdns.response("haze.local", "192.168.1.20", 7)
+    check("...the answer: haze.local is at the computer's address, the only one (cache-flush)",
+          mdns.answers(r) == [("haze.local", "192.168.1.20")] and _struct.unpack_from("!H", r, 0)[0] == 7
+          and b"\x80\x01" in r, mdns.answers(r))
+    check("...an answer isn't taken for a question", mdns.questions(r) == [], "")
+    # a name compressed against an earlier one (as phones send several questions)
+    two = _struct.pack("!6H", 0, 0, 2, 0, 0, 0) + mdns._encode_name("haze.local") + _struct.pack("!HH", 1, 0x8001) \
+        + b"\x04haze" + bytes([0xC0, 12 + 5]) + _struct.pack("!HH", 28, 1)
+    got = mdns.questions(two)
+    check("...two questions, the second's name pointing back into the first; 'answer me directly' read",
+          got == [("haze.local", 1, True), ("haze.local", 28, False)], got)
+    mine = ["26.169.25.197", "192.168.1.20", "10.0.0.5"]
+    check("the address answered is the one on the asker's network (not the VPN's)",
+          mdns.pick_address("192.168.1.77", mine) == "192.168.1.20" and mdns.pick_address("10.0.0.9", mine) == "10.0.0.5", "")
+
+    class E:
+        venue = {"name": "Club"}
+        show_file = "shows/Zyped.json"
+    check("the icon's name: the show's when the venue is a template's stock one", remote.home_name(E) == "Zyped", remote.home_name(E))
+    E.venue = {"name": "Zyped Club"}
+    check("...the venue's own name when it has one", remote.home_name(E) == "Zyped Club", "")
+    check("...Haze with neither", remote.home_name(None) == "Haze", "")
+
+
+def test_phone_hold_lease() -> None:
+    """A phone holding a hold button checks in every second (quick_alive); the desk lets go of it
+    by itself after LEASE_S without one - a light never stays on because a phone went quiet.  The
+    desk's own screens (no lease) hold as long as they like."""
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "FLASH", "mode": "hold", "target": {"all": True}})
+            e.act("quick_set", page=1, slot=2, button={"kind": "flash", "label": "DESK", "mode": "hold", "target": {"all": True}})
+            t0 = time.monotonic()
+            e.act("quick_press", id="q1-1", down=True, client="ph1", lease=True, seq=1)
+            e.act("quick_press", id="q1-2", down=True)                          # (the desk's own screen)
+            e._quick_pending_tick(t0 + 2.0)
+            check("a phone's hold stays on while it's within its 3 s", "q1-1" in e.quick_active, e.quick_active)
+            e.act("quick_alive", client="ph1")
+            e._quick_pending_tick(time.monotonic() + 2.5)
+            check("...checking in keeps it on", "q1-1" in e.quick_active, e.quick_active)
+            e._quick_pending_tick(time.monotonic() + 3.5)
+            check("...silent for 3 s: the desk lets go of it", "q1-1" not in e.quick_active, e.quick_active)
+            check("...the desk's own held button stays held", "q1-2" in e.quick_active, e.quick_active)
+            e.act("quick_press", id="q1-1", down=True, client="ph1", lease=True, seq=2)
+            e.act("quick_press", id="q1-1", down=False, client="ph1", seq=3)
+            check("...a normal let-go ends the lease", not e.__dict__.get("quick_leases"), e.__dict__.get("quick_leases"))
+        finally:
+            e.shutdown()

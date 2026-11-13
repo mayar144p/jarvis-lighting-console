@@ -487,6 +487,39 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/" + config.APP_LOGO:
             logo = config.logo_path()
             return self._file(logo) if logo else self._json({"error": "not found"}, 404)
+        if route in ("/remote.html", "/remote/manifest.webmanifest"):
+            # the home-screen icon's name: the venue's (the phone's "Add to
+            # Home Screen" box shows it, to keep or type over)
+            from app import remote
+            label = remote.home_name(engine_mod.ENGINE)
+            if route == "/remote.html":
+                return self._file(config.WEB / "remote.html", fill={"{{REMOTE_NAME}}": label})
+            data = json.loads((config.WEB / "remote" / "manifest.webmanifest").read_text(encoding="utf-8"))
+            data.update(name=f"{label} - Haze remote" if label != "Haze" else "Haze remote", short_name=label[:12])
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/manifest+json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        if route == "/hello.json" and config.requires_token():
+            # "is this Haze, and which desk?" - asked by the phone remote from the
+            # desk's address before it moves to the desk's name (haze.local), so
+            # any page may ask; the id is a one-way mark of the pairing code
+            from app import remote
+            body = json.dumps({"haze": True, "id": remote.desk_id()}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self._security_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return None
         if route.startswith("/api/"):
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
             refused = self._same_origin("GET")
@@ -1738,6 +1771,12 @@ def main() -> None:
         else:
             print(f"* control API token required (CONSOLE_TOKEN set, "
                   f"{config.HOST} is not loopback)")
+            # the desk's own name on the network (haze.local): one home-screen
+            # icon on a phone finds it at any venue (app/mdns.py)
+            from app import mdns
+            if mdns.enabled():
+                got = mdns.start()
+                print(f"* on the network as {got}" if got else f"* no network name: {mdns.error()}")
     dmx_mode = "ARMED" if not config.CONSOLE_DRY_RUN else "DRY RUN"
     brain = f"LLM {config.LLM_MODEL}" if config.LLM_API_KEY else "OFFLINE (no LLM key)"
     print(f"* {config.APP_NAME} -> http://{config.HOST}:{config.PORT}")

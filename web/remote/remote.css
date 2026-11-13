@@ -58,9 +58,6 @@ button, input { font: inherit; color: inherit; }
 .rm-btn.on small { color: #05080ccc; }
 .rm-btn.pending { border-style: dashed; }
 .rm-btn.danger { --tint: #ef4444; }
-/* hold to fire: the tile fills while the finger stays on it */
-.rm-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--tint-soft, #fff3); pointer-events: none; }
-.rm-btn.arming .rm-fill { height: 100%; transition: height .35s linear; }
 .rm-btn.risky { border-style: double; border-width: 4px; }
 
 .rm-label { display: flex; align-items: flex-end; padding: 0 4px 4px; color: var(--tint-text, var(--muted));
@@ -185,7 +182,13 @@ button, input { font: inherit; color: inherit; }
 .arranging .rm-strip { opacity: .35; pointer-events: none; }
 .rm-flow.arranging [data-aid] { position: relative; touch-action: none; cursor: grab; outline: 2px dashed rgba(47,214,245,.55); outline-offset: 2px; }
 .rm-flow.arranging .rm-head { padding: 8px 6px; border: 1px dashed var(--line); border-radius: 10px; }
-.rm-flow.arranging .dragging { z-index: 5; opacity: .9; box-shadow: 0 12px 30px rgba(0,0,0,.6); pointer-events: none; }
+/* dragging: the lifted copy under the finger, a dashed slot where it lands */
+.rm-ghost { z-index: 50; pointer-events: none; box-shadow: 0 18px 40px rgba(0,0,0,.65), 0 0 0 2px rgba(47,214,245,.8);
+  border-radius: 12px; opacity: .96; will-change: transform; transform-origin: center; }
+.rm-ghost .rm-chips { display: none; }
+.rm-ghost.rm-ghost-drop { box-shadow: 0 4px 10px rgba(0,0,0,.4); }
+.rm-flow.arranging .rm-slot { opacity: .28; outline: 2px dashed rgba(47,214,245,.95); background: rgba(47,214,245,.08); }
+.rm-flow.arranging .rm-slot > * { visibility: hidden; }
 .rm-hidden { opacity: .3; }
 .rm-chips { position: absolute; left: 4px; right: 4px; bottom: 4px; display: flex; gap: 4px; justify-content: space-between; }
 .rm-head .rm-chips { position: static; display: inline-flex; margin-left: 10px; }
@@ -199,3 +202,52 @@ button, input { font: inherit; color: inherit; }
 .rm-flow > .rm-tall { min-height: 152px; }
 @media (max-height: 500px) { .rm-flow > .rm-btn { min-height: 60px; } .rm-flow > .rm-tall { min-height: 126px; } }
 .rm-flow.arranging > .rm-btn { padding-bottom: 40px; min-height: 96px; }
+
+/* ------------------------------------------------- a phone on its side
+   Height is what a phone on its side lacks, width it has: the tabs and pages
+   go down the left, Blackout / Master / Release all down the right (still
+   under the thumbs), and the buttons get the whole height between them. */
+@media (orientation: landscape) and (max-height: 520px) {
+  :root { --lw: calc(min(19vw, 220px) + env(safe-area-inset-left)); --toph: 172px; }
+  .rm { grid-template-columns: var(--lw) minmax(0, 1fr) calc(max(108px, min(15vw, 150px)) + env(safe-area-inset-right)); grid-template-rows: auto minmax(0, 1fr);
+    padding: 0; }
+  /* the left column: what to play, and the pages under it (pinned: it never stretches the rows beside it) */
+  .rm-top { position: fixed; left: 0; top: 0; width: var(--lw); height: calc(var(--toph) + env(safe-area-inset-top)); z-index: 3;
+    flex-direction: column; align-items: stretch; gap: 6px; padding: calc(6px + env(safe-area-inset-top)) 6px 6px calc(6px + env(safe-area-inset-left));
+    border-bottom: 0; border-right: 1px solid var(--line); }
+  .rm-dot { position: absolute; top: calc(env(safe-area-inset-top) + 3px); left: calc(env(safe-area-inset-left) + 3px); width: 9px; height: 9px; z-index: 2; }
+  .rm-views { flex: none; flex-direction: column; }
+  .rm-view { min-height: 36px; }
+  .rm-icon { width: auto; height: 36px; }
+  .rm-pages { position: fixed; left: 0; top: calc(var(--toph) + env(safe-area-inset-top)); bottom: 0; width: var(--lw); z-index: 3;
+    flex-direction: column; overflow-x: hidden; overflow-y: auto; scroll-snap-type: y proximity;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left)); border-bottom: 0; border-right: 1px solid var(--line); background: var(--surface); }
+  .rm-tab { min-height: 40px; border-radius: 12px; padding: 0 10px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+  /* the middle: a slim banner or arrange bar, then the buttons, the whole height */
+  .rm-banner, .rm-arrange { grid-row: 1; grid-column: 2; margin-top: env(safe-area-inset-top); }
+  .rm-grid { grid-row: 2; grid-column: 2; padding: calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom)); }
+  .rm-banner:not([hidden]) ~ .rm-grid, .rm-arrange:not([hidden]) ~ .rm-grid { padding-top: 8px; }
+  /* the right column: Blackout, the master standing up, Release all */
+  .rm-strip { grid-row: 1 / 3; grid-column: 3; grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 1.4fr) 1fr; gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) 8px;
+    border-top: 0; border-left: 1px solid var(--line); }
+  .rm-strip button { min-height: 0; padding: 0 4px; font-size: 15px; overflow-wrap: anywhere; }
+  .rm-master { grid-template-rows: auto minmax(0, 1fr); justify-items: center; text-align: center; }
+  .rm-master span { flex-direction: column; align-items: center; }
+  .rm-master input { width: 44px; height: 100%; min-height: 70px; writing-mode: vertical-lr; direction: rtl; }
+  .rm-arrange { flex-wrap: nowrap; padding: 4px 8px; gap: 6px; }
+  .rm-arrange span { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0; }
+  .rm-arrange button { min-height: 34px; padding: 0 10px; white-space: nowrap; }
+  .rm-flow.arranging > .rm-btn { min-height: 84px; padding-bottom: 36px; }
+  .rm-chips { left: 3px; right: 3px; bottom: 3px; gap: 3px; }
+  .rm-chip { min-height: 28px; padding: 0 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .rm-menu { top: calc(env(safe-area-inset-top) + 8px); right: auto; left: calc(var(--lw) + 8px); max-height: calc(100dvh - 16px); overflow-y: auto; }
+}
+
+/* ⋯ menu: ARM FX / KILL FX, each a second tap to confirm */
+.rm-menu .rm-menu-head { padding: 10px 16px 4px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 0; }
+.rm-menu .rm-fxbtn { font-weight: 800; }
+.rm-menu .rm-fxbtn.arm.on { color: var(--warn); }
+.rm-menu .rm-fxbtn.kill { color: #fca5a5; }
+.rm-menu .rm-fxbtn.confirm { background: #7f1d1d; color: #fff; }
+.rm-menu .rm-fxbtn.arm.confirm { background: #78350f; }

@@ -83,7 +83,7 @@ export function remotePanel() {
       h("ul.remote-tips",
         h("li", h("b", "iPhone / iPad: "), "in Safari tap Share → Add to Home Screen. The Haze icon opens the remote full screen, no browser bars."),
         h("li", h("b", "Android: "), "in Chrome ⋮ → Add to Home screen, or tap ⋯ → Full screen in the remote."),
-        h("li", "The screen stays on while the remote is open (after the first tap). CO2, confetti, sparks, flames, fog and lasers need a short hold to fire, so a phone in a pocket can't set them off.")));
+        h("li", "The screen stays on while the remote is open (after the first tap). CO2, confetti, sparks, flames and lasers play as on the desk: they fire only while the desk is armed (ARM FX).")));
   }).catch((e) => box.replaceChildren(h("p.muted.small", `Couldn't get the address: ${e.message}`)));
   return box;
 }

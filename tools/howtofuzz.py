@@ -119,7 +119,9 @@ def gui_names() -> tuple[list[str], list[str]]:
     # the screens, and the names the engine gives them (templates, menus it sends)
     src = "\n".join(p.read_text(encoding="utf-8", errors="ignore")
                     for p in list((ROOT / "web").rglob("*.js")) + list((ROOT / "web").rglob("*.html"))
-                    + list((ROOT / "app").glob("*.py")))
+                    + list((ROOT / "app").glob("*.py"))
+                    # (the desktop app's own boxes and menu: Desk -> ...)
+                    + list((ROOT / "desktop").glob("*.js")))
     src_l = re.sub(r"\s+", " ", src.lower().replace("\\u2026", "…").replace("&amp;", "&"))
     names = []
     for m in re.finditer(r"\*\*([^*\n]{2,48})\*\*", guide):

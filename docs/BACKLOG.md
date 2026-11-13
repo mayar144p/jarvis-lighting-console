@@ -268,8 +268,9 @@ from a phone without squeezing the desk onto it.  Sized against a real show
   a row's start its row), 3 across upright and more on its side; a tablet on
   its side shows the desk's own grid.  Cues / Timeline tabs only when the
   show has them; Blackout, the master and Release all (a hold) always at the
-  bottom; CO2, confetti, sparks, flames, fog and lasers need a short hold to
-  fire.  Home-screen app (manifest, Apple tags), Full screen where the
+  bottom; CO2, confetti, sparks, flames, fog and lasers play on a tap as on
+  the desk (2026-11-13: the phone's own short hold taken out - ARM FX is the
+  safety, the same everywhere).  Home-screen app (manifest, Apple tags), Full screen where the
   browser allows it, the screen kept on (wake lock on https, a silent video
   loop on the Wi-Fi address).  Settings -> Phone & tablet: the address and a
   QR code with the pairing code (/api/remote, app/remote.py; qrcode-generator
