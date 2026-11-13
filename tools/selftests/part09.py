@@ -2479,8 +2479,9 @@ def test_shadows() -> None:
           and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 16" in mj, "")
     check("High: 16 beams cast shadows, Medium 6",
           'q === "high" ? 16 : 6' in sj and "Math.min(SHADOW_SLOTS, slots, lights.length)" in sh, "")
-    check("the crowd, performers, objects (not marks) and the stage deck cast",
-          "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
+    check("the crowd, performers, objects (not marks or haze areas) and the stage deck cast",
+          "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj
+          and 'if (o.kind !== "mark" && o.kind !== "haze") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
     check("on by default, off with the toggle or the fast quality",
           "shadows: true" in sj and 'this.options.quality !== "fast"' in sj and "this.shadows.off()" in sj
@@ -12498,6 +12499,35 @@ def test_light_output() -> None:
             e.act("output_set", head=1, clear=True)
             p3 = e.snapshot()["patch"][1]["photo"]
             check("cleared: back to the fixture file (or the estimate)", p3.get("lm") == p.get("lm") and p3.get("lm_from") == p.get("lm_from") and "beam" not in p3, p3)
+        finally:
+            e.shutdown()
+
+
+def test_haze_area() -> None:
+    """A haze area (Arrange -> + More): a part of the room where the 3D's haze is thicker - nothing
+    solid; its thickness kept between a hint and a cloud; not written into an MVR for another app."""
+    from app import engine as eng_mod
+    from app import mvr
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            r = e.act("venue_add", item={"kind": "haze", "name": "By the DJ", "x": 0, "z": 3, "w": 4, "d": 4, "h": 3})
+            hz = next((o for o in e.venue.get("objects") or [] if o.get("kind") == "haze"), None)
+            check("a haze area can be added, thicker by 0.6 to start", bool(r.get("id")) and hz is not None and hz.get("density") == 0.6, hz)
+            e.act("venue_update", id=hz["id"], changes={"density": 3})
+            hz2 = next(o for o in e.venue["objects"] if o["kind"] == "haze")
+            check("...its thickness stays between a hint and a cloud", hz2.get("density") == 1.0, hz2)
+            data = mvr.write(e.patch, list(e.venue.get("rigging") or []), {}, "show", list(e.venue.get("objects") or []))
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                xml = zf.read("GeneralSceneDescription.xml").decode("utf-8")
+            check("...and it isn't written into an MVR (nothing solid for another app to draw)",
+                  "By the DJ" not in xml and "SceneObject" in xml, "the room's other objects go, the haze area doesn't")
         finally:
             e.shutdown()
 

@@ -123,7 +123,7 @@ function draw(svg, px = 1000) {
   }
   // the room's objects: their outline from above, their box from the front / side
   for (const o of v.objects || []) {
-    if (o.kind === "mark") continue;
+    if (o.kind === "mark" || o.kind === "haze") continue;        // (a haze area isn't on the plot)
     const title = s("title", {}, o.name || o.kind.replace(/_/g, " "));
     if (view === "plan") {
       // the 3D turns an object by -rot about up: on this plan (z down) that is +rot

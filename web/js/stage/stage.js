@@ -106,7 +106,8 @@ import {
 } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import { pictureOut, exposureFor } from "./picture.js";
-import { VOL, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
+import { VOL, MAX_AREAS, MAX_CLOUDS, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
+import { Atmosphere } from "./atmos.js";
 import { LightGrid } from "./lightgrid.js";
 import { FloorMirror } from "./reflect.js";
 import {
@@ -130,7 +131,8 @@ export class Stage {
       quality: "high", zones: false, dance: true, shadows: true,
       exposure: 0,          // the picture's brightness, in stops (-2 .. +2): the lights don't change
       calm: false,          // calm flashing: strobes shimmer instead of flashing the screen
-      bounce: true };       // light bounced off the pools and the screens lights the room
+      bounce: true,         // light bounced off the pools and the screens lights the room
+      hazeAuto: false };    // Auto: the haze follows the hazers in the rig (atmos.js)
     this.t0 = performance.now();
     this.dirty = true;
     this.venueSig = "";
@@ -193,6 +195,7 @@ export class Stage {
     this._shadowRoom = 0;                          // bumped when what casts a shadow changes
     this.grid = new LightGrid();                   // every light on the surfaces (lightgrid.js)
     this.mirror = new FloorMirror();               // a shiny floor mirrors the room (reflect.js)
+    this.atmos = new Atmosphere();                 // the haze the hazers make (atmos.js)
     this.hemi = new THREE.HemisphereLight(0xb8c4dc, 0x14151a, 0.22);
     scene.add(this.hemi);
     const key = new THREE.DirectionalLight(0xdfe7ff, 0.35);
@@ -320,6 +323,13 @@ export class Stage {
     this._roomAuto = auto;
     this.planes = built.planes;
     this.boxes = built.boxes;
+    // where the haze is thicker (the venue's haze areas: beams.js VOL)
+    const areas = (built.venue.objects || []).filter((o) => o.kind === "haze").slice(0, MAX_AREAS);
+    areas.forEach((o, i) => {
+      VOL.areaC.value[i].set(o.x, (o.y || 0) + o.h / 2, o.z, o.density ?? 0.6);
+      VOL.areaH.value[i].set(o.w / 2, o.h / 2, o.d / 2, (o.rot || 0) * DEG);
+    });
+    VOL.areaCount.value = areas.length;
     this.segments = built.segments;
     this.people = built.people;
     cutaway(built, this.camera.position);
@@ -619,6 +629,7 @@ export class Stage {
     this.venueGroup.visible = !this.options.lightsOnly;
     if (before.house !== this.options.house) this._applyHouse();
     if (before.exposure !== this.options.exposure && this.renderer) this.renderer.toneMappingExposure = exposureFor(this.options.exposure);
+    if (before.hazeAuto !== this.options.hazeAuto) this.atmos.clear();      // Auto starts from clear air
     if (before.quality !== this.options.quality) {
       const dpr = window.devicePixelRatio || 1;
       this.q.cap = this.options.quality === "high" ? Math.min(dpr, 2)
@@ -1189,6 +1200,8 @@ export class Stage {
 
   /** The traced floor plan is a drawing aid: shown while arranging. */
   _underlayVisibility() {
+    // (a haze area's dashed box too: shown while arranging)
+    if (this.built) this.built.group.traverse((o) => { if (o.userData && o.userData.editOnly) o.visible = !!this.editing; });
     const u = this.built && this.built.underlay;
     if (!u) return;
     const v = this.built.venue.underlay || {};
@@ -1360,6 +1373,7 @@ export class Stage {
     // a strobe draws every picture the screen can show: at 30 a second a
     // fast one ran at the wrong speed
     if (this.strobing) motion = true;
+    if (this._hazeBusy) motion = true;           // a hazer's cloud rolling out
     // A lit rig still animates (strobe, haze drift, the crowd), but 30
     // frames a second is plenty for that; a moving one gets every frame.
     if (!this.ready) return;
@@ -1400,6 +1414,7 @@ export class Stage {
     if (this.wire) this._wireBeamLines(this._wireSegs);
     const dtS = this._sfxLast ? Math.min(0.1, (now - this._sfxLast) / 1000) : 0;
     this._sfxLast = now;
+    this._stepHaze(dtS);
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
     this._uploadLights(lights);
@@ -1427,6 +1442,43 @@ export class Stage {
     }
     this._lastDraw = now;
     if (this.opts.onFrame) this.opts.onFrame(now);
+  }
+
+  /** The haze the hazers make (atmos.js): each hazer in the rig and what
+   *  the desk sends it now; the clouds round the running ones go to the
+   *  beams. */
+  _stepHaze(dt) {
+    const hazers = [];
+    for (const inst of this.fixtures.values()) {
+      if ((inst.data.body || {}).type !== "atmos") continue;
+      const fx = inst.cur && inst.cur.fx;
+      const nozzle = inst.sk.nozzle;
+      const pos = new THREE.Vector3(), dir = new THREE.Vector3(0, 0, 1);
+      if (nozzle) {
+        nozzle.getWorldPosition(pos);
+        const d = nozzle.userData.dir || [0, 1, 0];
+        dir.set(d[0], d[1], d[2]).transformDirection(nozzle.matrixWorld).normalize();
+      } else inst.holder.getWorldPosition(pos);
+      hazers.push({ head: inst.head, pos, dir, out: fx && fx.fog > 0 ? fx.fog : 0 });
+    }
+    this._hasHazers = hazers.length > 0;
+    if (!this.options.hazeAuto || !hazers.length) {
+      if (VOL.cloudCount.value) VOL.cloudCount.value = 0;
+      this._hazeBusy = false;
+      return;
+    }
+    const R = this.room;
+    this.atmos.step(hazers, Math.max(50, (R.w || 10) * (R.d || 10) * (R.h || 5)), dt);
+    const clouds = this.atmos.clouds(this._clouds || (this._clouds = []));
+    const n = Math.min(MAX_CLOUDS, clouds.length);
+    for (let i = 0; i < n; i++) {
+      const c = clouds[i];
+      VOL.cloud.value[i].set(c.pos.x, c.pos.y, c.pos.z, c.radius);
+      VOL.cloudStr.value[i] = c.str;
+    }
+    VOL.cloudCount.value = n;
+    // while a cloud rolls out or the room fills, the 3D keeps drawing
+    this._hazeBusy = n > 0 || hazers.some((h) => h.out > 0.01);
   }
 
   /** The 3D out as NDI (the desktop app, Settings -> Video): the picture
@@ -1460,8 +1512,18 @@ export class Stage {
   /** Beams as light in the air: Medium and High, with haze, in the 3D view
    *  (not the flat line drawings), unless auto quality is down to the bone. */
   _volumetric() {
-    return this.options.quality !== "fast" && !this.q.lite && !this.wire && this.options.haze > 0.01;
+    return this.options.quality !== "fast" && !this.q.lite && !this.wire
+      && (this._hazeNow() > 0.01 || VOL.areaCount.value > 0 || VOL.cloudCount.value > 0);
   }
+
+  /** The room's haze now: the slider's, or on Auto (with a hazer in the
+   *  rig) as much of it as the hazers have made (atmos.js). */
+  _hazeNow() {
+    return this.options.hazeAuto && this._hasHazers ? this.options.haze * this.atmos.level : this.options.haze;
+  }
+
+  /** How much haze the 3D shows now, 0..1 (the Haze slider's label). */
+  hazeLevel() { return this._hazeNow(); }
 
   /** The pictures the frame is drawn into, at the canvas's size (the beams
    *  at half of it). */
@@ -1971,9 +2033,9 @@ export class Stage {
       const narrow = Math.min(3.2, Math.max(0.45, Math.sqrt(22 / Math.max(angle, 1))));
       u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
       u.uSoft.value = lerp(1.7, 0.55, frost);
-      u.uHaze.value = this.options.haze;
+      u.uHaze.value = this._hazeNow();
       const volumetric = this._volumetric();
-      b.mesh.visible = this.options.haze > 0.01 && !volumetric;
+      b.mesh.visible = this._hazeNow() > 0.01 && !volumetric;
       b.reach = len;
       // the beam as light in the air (beams.js): the cone runs on past
       // where its centre lands, to where its far edge does, and the room's
@@ -2010,7 +2072,7 @@ export class Stage {
         v.uPower.value = a * flux / Math.max(1, inst.beams.length);
         // a wash's edge is soft, a spot's crisp; frost softens either
         v.uSoft.value = lerp(washy ? 0.35 : 0.78, 0.02, Math.min(1, frost * 1.2));
-        v.uHaze.value = this.options.haze;
+        v.uHaze.value = this._hazeNow();
       }
 
       // head-on lens glow

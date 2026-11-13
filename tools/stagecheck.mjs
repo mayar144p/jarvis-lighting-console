@@ -71,13 +71,14 @@ import * as THREE from "three";
 import { Stage } from "/js/stage/stage.js";
 import * as look from "/js/stage/look.js";
 import { LIGHTS, GRID } from "/js/stage/materials.js";
+import { Atmosphere } from "/js/stage/atmos.js";
 const el = document.getElementById("stage");
 let frames = 0;
 const stage = new Stage(el, { onFrame: () => { frames++; } });
 let img = null;                       // the last picture read back
 window.stage = stage;
 window.SC = {
-  THREE, look, LIGHTS, GRID,
+  THREE, look, LIGHTS, GRID, Atmosphere,
   frames: () => frames,
   ready: () => !!stage.ready || !!stage.failed,
   /** wait until the 3D has drawn n more pictures */
@@ -513,6 +514,69 @@ add("mirror", async () => {
   const lowOff = await look("black", false, "fast");
   check("Low draws no mirror", Math.abs(low - lowOff) < 4, `${low.toFixed(1)} vs ${lowOff.toFixed(1)}`);
   await sc(() => window.stage.setOptions({ mirror: true, quality: "high" }));
+});
+
+// Atmosphere (step 6): the haze the hazers make (Auto), haze areas, CO2
+// lit by the beams it's fired through.
+add("atmos", async () => {
+  const sim = await sc(() => {
+    const T = window.SC.THREE;
+    const a = new window.SC.Atmosphere();
+    const hz = [{ head: 1, pos: new T.Vector3(0, 0.3, 1), dir: new T.Vector3(0, 0, 1), out: 1 }];
+    for (let i = 0; i < 600; i++) a.step(hz, 1000, 0.1);              // a minute at full
+    const full = a.level, clouds = a.clouds().length;
+    for (let i = 0; i < 3000; i++) a.step([{ ...hz[0], out: 0 }], 1000, 0.1);   // five minutes off
+    return { full, clouds, after: a.level, cloudsAfter: a.clouds().length };
+  });
+  check("a hazer running for a minute fills the room with haze", sim.full > 0.2 && sim.clouds === 1, JSON.stringify(sim));
+  check("...and five minutes after it stops, the haze has settled to half or less, its cloud gone", sim.after < sim.full * 0.55 && sim.cloudsAfter === 0, JSON.stringify(sim));
+  // a haze area with no haze in the room: the beam shows only inside it
+  await downlight({ beam: 20, options: { haze: 0, quality: "high" }, objects: [{ id: "hz", kind: "haze", x: 0, z: 6, w: 3, d: 3, h: 2, y: 0, density: 1 }] });
+  save("15-haze-area");
+  const inside = await lum(await at(0, 1.0, 6), 2), above = await lum(await at(0, 3.4, 6), 2);
+  check("a haze area: the beam shows in it, not above it (no haze in the room)", inside > above + 10, `inside ${inside.toFixed(1)} vs above ${above.toFixed(1)}`);
+  // Auto: a rig with a hazer; the haze is the hazer's
+  const autoScene = async (fog) => {
+    await sc(async (fog) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5),
+        fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 25), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
+          { head_no: 2, model: "Hazer", body: S.body("atmos", 0), x: -3, y: 0.2, z: 2, stance: "stand", kind: "floor" }],
+        looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 0, fx: fog ? { fog: 1 } : null } },
+        options: { haze: 1, hazeAuto: true, quality: "high", house: 0.1 }, camera: { pos: [0, 5.2, 15.5], target: [0, 1.2, 6] } });
+    }, fog);
+    await shot();
+  };
+  await autoScene(false);
+  const clear = await lum(await at(0, 2.4, 6), 2), beside = await lum(await at(2.2, 2.4, 6), 2);
+  check("Auto, the hazer off from the start: clear air, no beam in it", clear < beside + 6, `${clear.toFixed(1)} vs ${beside.toFixed(1)}`);
+  await sc(async () => { window.stage.atmos.level = 0.8; await window.SC.settle(3); });
+  await shot();
+  const hazy = await lum(await at(0, 2.4, 6), 2);
+  check("Auto: the room full of the hazer's haze shows the beam", hazy > clear + 10, `${hazy.toFixed(1)} vs ${clear.toFixed(1)}`);
+  await autoScene(true);
+  const clouds = await sc(async () => { await window.SC.settle(6); return window.stage.atmos.clouds().length; });
+  check("Auto: a running hazer makes a cloud round it", clouds === 1, String(clouds));
+  await sc(() => window.stage.setOptions({ hazeAuto: false, haze: 0.6 }));
+  // CO2 fired up through a red beam glows red; with the beam off, white-grey
+  const co2 = async (beam) => {
+    await sc(async (beam) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5),
+        fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
+          { head_no: 2, model: "CO2", body: S.body("co2", 0), x: 0, y: 0, z: 6, stance: "stand", kind: "floor" }],
+        looks: { 1: { hex: "#ff0000", a: beam ? 1 : 0 }, 2: { hex: "#ffffff", a: 0, fx: { fire: true } } },
+        options: { haze: 0, quality: "high", house: 0.4 }, camera: { pos: [0, 2.5, 12], target: [0, 2, 6] } });
+      await S.settle(10);
+    }, beam);
+    await shot();
+    return rgb(await at(0, 2.0, 6), 4);
+  };
+  const red = await co2(true);
+  save("16-co2-in-a-red-beam");
+  const plain = await co2(false);
+  check("CO2 fired through a red beam glows red", red[0] > red[1] * 1.6 + 8 && red[0] > plain[0] + 8,
+    `in the beam ${red.map((v) => v.toFixed(0))} vs not ${plain.map((v) => v.toFixed(0))}`);
 });
 
 // The colour on the desk is the colour on the screen: a pool keeps the

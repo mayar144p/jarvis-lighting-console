@@ -157,6 +157,25 @@ export function initStage() {
   stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
   house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
   // the picture's exposure (stops): double-click puts it back to the middle
+  // Auto haze: the haze follows the hazers in the rig (the label shows how much there is now)
+  const autoBtn = $("#haze-auto");
+  if (autoBtn) {
+    const auto = pref("hazeAuto", "0") === "1";
+    autoBtn.classList.toggle("on", auto);
+    stage.setOptions({ hazeAuto: auto });
+    autoBtn.addEventListener("click", () => {
+      const now = !autoBtn.classList.contains("on");
+      autoBtn.classList.toggle("on", now);
+      stage.setOptions({ hazeAuto: now });
+      keep("hazeAuto", now ? "1" : "0");
+    });
+    const label = $("#haze-label");
+    setInterval(() => {
+      if (document.hidden || !label) return;
+      const t = stage.options.hazeAuto && stage._hasHazers ? `Haze ${Math.round(stage.hazeLevel() * 100)}%` : "Haze";
+      if (label.textContent !== t) label.textContent = t;
+    }, 700);
+  }
   const exposure = $("#exposure");
   if (exposure) {
     exposure.value = pref("exposure", "0");

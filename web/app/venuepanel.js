@@ -33,6 +33,8 @@ const OBJECT_ADD = [
   ["bar_curve", "Half-round bar"], ["high_table", "High table (poseur)"], ["half_table", "Half-round table"],
   ["couch", "VIP couch"], ["vip_booth", "VIP booth (curved, with its table)"], ["armchair", "Armchair"],
   ["stool", "Bar stool"], ["rope", "VIP rope and posts"], ["plant", "Plant"],
+  "-",
+  ["haze", "Haze area (thicker haze here)"],
 ];
 const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
 // a pro desk's hang types: [value, name, what it means]
@@ -97,6 +99,7 @@ function defaults(kind) {
     case "stool": return { x, z, w: 0.4, d: 0.4, h: 0.75 };
     case "rope": return { x, z, w: 5, d: 0.3, h: 1.0 };
     case "plant": return { x, z, w: 0.6, d: 0.6, h: 1.6 };
+    case "haze": return { x, z, w: 4, d: 4, h: Math.min(3, H), density: 0.6 };
     default: return { x, z };
   }
 }
@@ -461,7 +464,14 @@ function renderInspector(sel) {
       h("div.vi-row", field("W", num(o.w, (v) => upd({ w: v }), { min: 0.05 })), field("D", num(o.d, (v) => upd({ d: v }), { min: 0.05 })), field("H", num(o.h, (v) => upd({ h: v }), { min: 0.01 }))),
       field("Rotate°", num(o.rot, (v) => upd({ rot: v }), { step: 15 })),
       CURVED.has(o.kind) ? field("Curve°", num(o.arc || 180, (v) => upd({ arc: v }), { min: 60, max: 300, step: 15 })) : null,
-      o.kind === "screen" || o.kind === "panels" || o.kind === "mark" ? null : field("Colour", (() => {
+      o.kind === "haze" ? field("Thicker", (() => {
+        const r = h("input", { type: "range", min: 0.05, max: 1, step: 0.05, value: o.density ?? 0.6,
+          title: "How much thicker the haze is in here than in the rest of the room (the beams show it)" });
+        r.addEventListener("change", () => upd({ density: +r.value }));
+        return r;
+      })()) : null,
+      o.kind === "haze" ? h("p.muted.small", "Nothing solid: the beams show the thicker haze in here. Its box shows only while arranging.") : null,
+      o.kind === "screen" || o.kind === "panels" || o.kind === "mark" || o.kind === "haze" ? null : field("Colour", (() => {
         const c = h("input", { type: "color", value: o.colour || "#4a2a55", title: "Its colour (a couch's fabric, a bar's wood)" });
         c.addEventListener("change", () => upd({ colour: c.value }));
         return c;

@@ -25,7 +25,10 @@ OBJECT_KINDS = ("dj_booth", "bar", "speaker", "sub", "pillar", "screen",
                 "drape", "panels",
                 # club furniture: a half-round bar, tables, VIP seating
                 "bar_curve", "high_table", "half_table", "couch", "vip_booth",
-                "armchair", "stool", "rope", "plant")
+                "armchair", "stool", "rope", "plant",
+                # a part of the room where the haze is thicker (the 3D only:
+                # nothing solid, beams pass through it)
+                "haze")
 # half-round pieces: `w` across their straight side, `d` how far the
 # counter / seat reaches in from the curve; at rot 0 the curve is on the
 # far side (+z), the open side towards the stage (a booth's seats face it)
@@ -34,7 +37,8 @@ CURVED = ("bar_curve", "vip_booth", "half_table")
 OBJECT_SIZE = {"mark": (0.4, 0.4, 0.02), "bar_curve": (6.0, 0.8, 1.1), "high_table": (0.7, 0.7, 1.1),
                "half_table": (1.2, 0.6, 0.75), "couch": (2.2, 0.9, 0.8), "vip_booth": (2.6, 0.6, 0.95),
                "armchair": (0.9, 0.85, 0.8), "stool": (0.4, 0.4, 0.75), "rope": (5.0, 0.3, 1.0),
-               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1)}
+               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1),
+               "haze": (4.0, 4.0, 3.0)}
 DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
 DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
@@ -259,6 +263,9 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     if item["kind"] == "drape":
         # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
         item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)
+    if item["kind"] == "haze":
+        # how much thicker the haze is in there (0.05 a hint .. 1 a cloud)
+        item["density"] = round(_num(raw.get("density"), 0.6, 0.05, 1.0), 2)
     if item["kind"] in CURVED:
         # how much of a circle: 180 a half-round, up to 300 nearly closed
         item["arc"] = round(_num(raw.get("arc"), 180, 60, 300), 1)

@@ -305,7 +305,20 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    blurry levels - a rough floor showed a beam that was gone (now drawn
    empty, so they're made again).  stagecheck: the beam in a black floor,
    none in carpet or on Low, gone when the light is.
-6. Atmosphere: haze from the hazers, haze areas, CO2 and fog lit by beams.
+6. **(DONE) Atmosphere:** Haze -> Auto (web/js/stage/atmos.js): the room's
+   haze is what the rig's hazers make - each at full fills 400 m3 a minute
+   (a small room fills faster), the room's haze halves in five minutes once
+   they stop; a cloud rolls out of each running hazer's nozzle (up to four,
+   to the beams as soft blobs) and thins in seconds after; the slider is the
+   most there can be, its label the live amount; no hazer in the rig: the
+   slider as before.  Haze areas: a venue object ("haze", density 0.05-1,
+   nothing solid: no beam stops on it, no shadow, not in the MVR or the
+   plot), soft-edged boxes in the beams' haze (up to four).  CO2, fog and
+   confetti are lit by the light grid at each particle (materials.js
+   scatterAt) - a CO2 jet glows the colour of the beam it's fired through;
+   flames and sparks keep their own light.  stagecheck: the room fills and
+   settles, a haze area shows the beam only in it, Auto clear / full /
+   a cloud round a running hazer, CO2 red in a red beam; selftest: the area.
 7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,
    VR.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.

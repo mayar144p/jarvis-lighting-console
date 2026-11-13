@@ -462,6 +462,19 @@ const crowdLight = Fn(() => {
   return light;
 });
 
+/** The light the beams put on a point in the air - a CO2 cloud, a fog
+ *  puff, a confetti flake - from every light that reaches it, whichever
+ *  way it faces (lit through, not on one side). */
+export const scatterAt = Fn(([P]) => {
+  const light = vec3(LIGHTS.uAmbient).mul(1.2).toVar();
+  eachLight(P, (li, L, along, d2, t0, t1) => {
+    const d = sqrt(d2);
+    const spot = smoothstep(t0.w, t1.w, along.div(d));
+    light.addAssign(textureLoad(GRID.lights, ivec2(2, li)).xyz.mul(spot).div(d2.add(0.09)));
+  });
+  return light;
+});
+
 const crowdCache = new Map();
 
 export function crowdMaterial(albedo) {

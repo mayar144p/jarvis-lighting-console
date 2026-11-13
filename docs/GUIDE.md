@@ -90,6 +90,23 @@ outdoor stage) and resizes the room.
   from the crowd, the DJ's view, and **through the selected light** along its
   beam, the way you would check a focus. Save any view by name.
 
+### Haze in the 3D
+
+The **Haze** slider (next to House and Exposure) sets how thick the haze is,
+so the beams show in the air.
+
+* **Auto**: the haze follows the hazers in your rig. While the desk runs a
+  hazer the room fills (faster in a small room), thickest in a cloud that
+  rolls out from the hazer at first; when it stops, the cloud thins in
+  seconds and the room's haze settles over minutes. The slider is then the
+  most haze there can be, and its label shows how much there is now. Off
+  (the usual for programming), the slider sets the haze. A rig with no hazer
+  keeps the slider's haze either way.
+* **Haze area** (Arrange → + More): a part of the room where the haze is
+  thicker - under a balcony, round the DJ, by the smoke machine. Nothing
+  solid: the beams show it. Its box shows only while arranging; **Thicker**
+  sets how much.
+
 ### Arrange mode
 
 *Where:* Set up → Arrange the room
@@ -160,6 +177,9 @@ physically is and who made it:
   colour times the surface's: a red wash on a white wall turns the floor in
   front of it red; a black floor sends little back. LED screens light what's
   in front of them with what they show.
+* **CO2, fog and confetti in the light.** A CO2 jet fired through a red beam
+  glows red, fog takes the colours of the beams in it, confetti flashes in the
+  colours it falls through.
 * **Mirror floors.** A black dance floor, tiles or polished concrete shows
   the beams, the lenses, the truss and the screens reflected in it - sharp in
   a black floor, softer in concrete, stronger at a glancing angle than looking

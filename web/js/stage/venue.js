@@ -562,6 +562,18 @@ function buildObject(o, M) {
   const { w, d, h } = o;
   const custom = o.colour ? surfaceMaterial(new THREE.Color(o.colour).getHex()) : null;
   switch (o.kind) {
+    case "haze": {
+      // where the haze is thicker: nothing to see in the room (the beams
+      // show it), a faint dashed box while arranging, picked by its box
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), PICK_HULL));
+      const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0)),
+        new THREE.LineDashedMaterial({ color: 0x9fb4c8, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.6, toneMapped: false }));
+      box.computeLineDistances();
+      box.userData.editOnly = true;
+      box.visible = false;
+      g.add(box);
+      break;
+    }
     case "dj_booth": {
       add(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), custom || M.object);
       add(new THREE.BoxGeometry(w * 0.98, 0.02, d * 0.98).translate(0, h + 0.01, 0), M.black);
@@ -726,7 +738,7 @@ function blockers(v) {
     out.push(deck);
   }
   for (const o of v.objects || []) {
-    if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool") continue;
+    if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool" || o.kind === "haze") continue;
     if (CURVED.has(o.kind)) {
       // round the circle's centre: its whole half-circle, however turned
       const R = o.w / 2;
@@ -1061,7 +1073,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   }
   for (const o of v.objects || []) {
     const g = buildObject(o, M);
-    if (o.kind !== "mark") casts(g);
+    if (o.kind !== "mark" && o.kind !== "haze") casts(g);
     items.set(o.id, g);
     group.add(g);
   }

@@ -23,7 +23,7 @@
 // The cone mesh only marks the pixels to work on; the cone itself is maths.
 import * as THREE from "three";
 import {
-  Fn, If, Loop, uniform, texture, texture3D, float, int, vec2, vec3, vec4,
+  Fn, If, Loop, uniform, uniformArray, texture, texture3D, float, int, vec2, vec3, vec4, exp,
   positionGeometry, positionWorld, cameraPosition, cameraWorldMatrix,
   screenUV, screenCoordinate, interleavedGradientNoise, select, smoothstep, mix, max, min, abs,
   sqrt, pow, dot, normalize, length, clamp, floor, fract, cos, sin,
@@ -71,6 +71,13 @@ function hazeTexture() {
   return tex;
 }
 
+// an array uniform the stage writes into in place (VOL.areaC.value[i]...)
+const arrayOf = (n, make, type) => {
+  const value = Array.from({ length: n }, make);
+  return { value, node: uniformArray(value, type) };
+};
+export const MAX_AREAS = 4, MAX_CLOUDS = 4;
+
 export const VOL = {
   depth: texture(NO_DEPTH),          // the room's depth picture, this frame
   z01: uniform(1),                   // its depth runs 0..1 (WebGPU) or -1..1 (WebGL 2)
@@ -79,7 +86,16 @@ export const VOL = {
   steps: uniform(16, "int"),         // most steps along a line of sight (High 24, Medium 12)
   haze: texture3D(hazeTexture()),
   g: uniform(0.35),                  // how much the haze favours forwards (0 = evenly)
-  gain: uniform(0.25),                  // the overall brightness of beams in haze
+  gain: uniform(0.25),               // the overall brightness of beams in haze
+  // where the haze is thicker: the venue's haze areas (centre + how much
+  // thicker, half its size + its turn) and the clouds round running hazers
+  // (centre + radius, strength) - atmos.js
+  areaCount: uniform(0, "int"),
+  areaC: arrayOf(MAX_AREAS, () => new THREE.Vector4(), "vec4"),
+  areaH: arrayOf(MAX_AREAS, () => new THREE.Vector4(1, 1, 1, 0), "vec4"),
+  cloudCount: uniform(0, "int"),
+  cloud: arrayOf(MAX_CLOUDS, () => new THREE.Vector4(0, 0, 0, 1), "vec4"),
+  cloudStr: arrayOf(MAX_CLOUDS, () => 0, "float"),
 };
 
 // how far along a line of sight (from the camera, direction D) the room's
@@ -96,6 +112,26 @@ const roomDistance = Fn(([D]) => {
   const ahead = depthToDistance(VOL.depth.sample(screenUV).x);
   const fwd = cameraWorldMatrix.element(2).xyz.negate();
   return ahead.div(max(dot(D, fwd), 1e-4));
+});
+
+/** How much thicker the haze is at P than the room's: inside a haze area
+ *  (soft at its edges), in a hazer's cloud. */
+export const localHaze = Fn(([P]) => {
+  const d = float(0).toVar();
+  Loop({ start: int(0), end: VOL.areaCount, type: "int", condition: "<" }, ({ i }) => {
+    const c = VOL.areaC.node.element(i), hb = VOL.areaH.node.element(i);
+    const rel = P.sub(c.xyz);
+    const cs = cos(hb.w), sn = sin(hb.w);
+    const loc = vec3(cs.mul(rel.x).sub(sn.mul(rel.z)), rel.y, sn.mul(rel.x).add(cs.mul(rel.z)));
+    const outside = max(abs(loc).sub(hb.xyz), vec3(0));
+    d.addAssign(c.w.mul(smoothstep(0, 0.8, length(outside)).oneMinus()).mul(1.2));
+  });
+  Loop({ start: int(0), end: VOL.cloudCount, type: "int", condition: "<" }, ({ i }) => {
+    const c = VOL.cloud.node.element(i);
+    const q = P.sub(c.xyz);
+    d.addAssign(VOL.cloudStr.node.element(i).mul(exp(dot(q, q).div(c.w.mul(c.w)).negate())).mul(1.5));
+  });
+  return d;
 });
 
 // Henyey-Greenstein: how much light the haze sends at angle (cos c) off its way
@@ -179,7 +215,9 @@ const light = (u, detail) => Fn(() => {
       // the same light over a wider circle (never infinite at the lens)
       const spread = float(1).div(R.mul(R).add(0.0025));
       const toward = phase(dot(normalize(P.sub(A)), D.negate()), VOL.g);
-      const haze = texture3D(VOL.haze.value, P.mul(0.11).add(drift)).x.mul(0.9).add(0.35);
+      const drift3 = texture3D(VOL.haze.value, P.mul(0.11).add(drift)).x.mul(0.9).add(0.35);
+      // the haze here: the room's, and thicker in a haze area or a hazer's cloud
+      const haze = u.uHaze.add(localHaze(P)).mul(drift3);
       // a beam that ends in the air (outdoors, into the sky) fades out
       const fade = select(u.uFade.greaterThan(0.5), smoothstep(u.uLen.mul(0.7), u.uLen, s).oneMinus(), float(1));
       const lit = edge.mul(spread).mul(toward).mul(haze).mul(fade).toVar();
@@ -195,7 +233,7 @@ const light = (u, detail) => Fn(() => {
       const tint = mix(vec3(u.uColor), vec3(u.uColor2), select(side.and(uv0.x.lessThan(0)), float(1), float(0)));
       sum.addAssign(tint.mul(lit));
     });
-    out.assign(sum.mul(dt).mul(u.uPower).mul(u.uHaze).mul(VOL.gain));
+    out.assign(sum.mul(dt).mul(u.uPower).mul(VOL.gain));
   });
   return out;
 })();
