@@ -2363,6 +2363,30 @@ def test_screen_media() -> None:
             except urllib.error.HTTPError as e:
                 code = e.code
             check("a made-up id is not found (no paths)", code == 404, str(code))
+            # Windows: a file can't be written over while it's open (the 3D
+            # playing it, a virus scanner reading it); the upload then hung up
+            # with no answer - and the nightly test crashed on it
+            from unittest import mock
+            real = Path.replace
+            with mock.patch.object(Path, "replace", side_effect=PermissionError(13, "in use")):
+                code, d2 = send(mp4)
+            check("Windows: the same clip again while it's in use - kept as it is, no writing over it", code == 200 and d2.get("id") == d.get("id")
+                  and not [f for f in (Path(td) / "screens").iterdir() if f.name.startswith(".")], str(d2))
+            calls = {"n": 0}
+
+            def flaky(self, target):
+                calls["n"] += 1
+                if calls["n"] <= 2:
+                    raise PermissionError(13, "a scanner has it")
+                return real(self, target)
+            with mock.patch.object(Path, "replace", flaky):
+                code, d3 = send(b"\x00\x00\x00\x18ftypisom" + b"new clip" * 99)
+            check("...a new clip held a moment by a scanner: tried again, kept", code == 200 and d3.get("kind") == "clip" and calls["n"] == 3, f"{code} {d3} {calls}")
+            with mock.patch.object(Path, "replace", side_effect=PermissionError(13, "locked")):
+                code, d4 = send(b"\x00\x00\x00\x18ftypisom" + b"third clip" * 99)
+            check("...a disk that keeps saying no: an answer saying so (not a hang-up), nothing left behind",
+                  code == 500 and "couldn't keep the clip" in d4.get("error", "")
+                  and not [f for f in (Path(td) / "screens").iterdir() if f.name.startswith(".")], f"{code} {d4}")
         finally:
             srv.shutdown()
             srv.server_close()

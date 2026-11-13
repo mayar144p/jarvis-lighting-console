@@ -16,6 +16,7 @@ import re
 import struct
 import sys
 import threading
+import time as _time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import hmac
@@ -246,7 +247,21 @@ def save_screen_media(stream, length: int) -> dict:
         if ext is None:
             raise ValueError("a screen shows MP4, WebM or MOV clips and PNG, JPEG or WebP pictures")
         ident = digest.hexdigest()[:32]
-        tmp.replace(folder / (ident + ext))
+        dest = folder / (ident + ext)
+        if not dest.exists():
+            # (named by its content: one already there is this very clip - kept
+            # as it is, never written over, which Windows refuses while the 3D
+            # plays it or a virus scanner reads it)
+            for attempt in range(6):
+                try:
+                    tmp.replace(dest)
+                    break
+                except PermissionError:
+                    if dest.exists():
+                        break                       # (the same clip, sent twice at once: it's there)
+                    if attempt == 5:
+                        raise
+                    _time.sleep(0.1 * (attempt + 1))  # (Windows: a scanner holding the new file a moment)
     finally:
         if tmp.exists():
             tmp.unlink()
@@ -573,6 +588,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.close_connection = True            # the rest of the body is unread
                 return self._json({"error": str(exc)}, 400)
+            except OSError as exc:
+                # (the disk said no: say so, rather than hang up on the screen)
+                self.close_connection = True
+                return self._json({"error": f"couldn't keep the clip on this computer: {exc}"}, 500)
         if route == "/api/ai/pack":
             # an AI pack picked in Settings -> AI, streamed straight to DATA/ai
             try:
