@@ -94,6 +94,7 @@ NEVER = frozenset({
     "rdm_compare", "teach_slots", "colour_cal", "media_save", "show_export",
     "quick_fx_defaults", "quick_from_laser", "blind", "undo", "redo",
     "osc_out", "osc_send", "timecode_ltc", "line_up", "line_up_marks", "notice_seen",
+    "quick_alive",
 })
 
 

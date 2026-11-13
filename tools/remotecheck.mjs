@@ -95,10 +95,7 @@ const co2 = p.locator('.rm-btn[data-id="q1-15"]');
 const pressesOf = (id) => sent.filter((x) => x.action === "quick_press" && x.params.id === id && x.params.down).length;
 await co2.dispatchEvent("pointerdown", { pointerId: 6, button: 0 }); await sleep(80); await co2.dispatchEvent("pointerup", { pointerId: 6, button: 0 });
 await sleep(400);
-check("a brush over CO2 doesn't fire it", pressesOf("q1-15") === 0, String(pressesOf("q1-15")));
-await co2.dispatchEvent("pointerdown", { pointerId: 7, button: 0 }); await sleep(600); await co2.dispatchEvent("pointerup", { pointerId: 7, button: 0 });
-await sleep(300);
-check("held a moment, CO2 fires", pressesOf("q1-15") === 1, String(pressesOf("q1-15")));
+check("a tap on CO2 fires it, the same as on the desk (ARM FX is the safety)", pressesOf("q1-15") === 1, String(pressesOf("q1-15")));
 
 await p.locator("#rm-bo").click(); await sleep(600);
 check("Blackout at the bottom blacks out the desk", (await lite()).blackout === true);
@@ -232,6 +229,88 @@ check("gets the remote", /remote\.html/.test(pp.url()), pp.url());
 await pp.goto(BASE + "?desk=1"); await sleep(1500);
 check("...unless it asks for the full desk", !/remote\.html/.test(pp.url()), pp.url());
 await ph.close();
+
+// What a phone can do wrong: lose the Wi-Fi with a finger down, get locked
+// mid-press, a cracked or wet screen touching by itself, a tap that couldn't
+// be sent - and ARM / KILL FX kept out of reach of a stray touch.
+console.log("Fail-safes");
+{
+  await fetch(BASE + "api/fixtures/library/install", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ src: "ofl", key: "magicfx/psyco2jet.json" }) });
+  await act("add_heads", { query: "Psyco2Jet", qty: 1 });
+  const fctx = await browser.newContext(dev(390, 844));
+  const fp = await fctx.newPage();
+  await fp.addInitScript(() => { try { localStorage.setItem("haze.remote.tip", "1"); localStorage.setItem("haze.remote.autofull", "0"); } catch (e) { /* fine */ } });
+  await fp.goto(BASE + "remote.html"); await sleep(2000);
+  const active = async () => (await lite()).quick_active || [];
+  const flash = fp.locator('[data-id="q1-13"]');                    // FLASH: a hold button
+  await act("quick_release_all");
+  // 1. the Wi-Fi drops with a finger on FLASH: the desk lets go by itself
+  await flash.dispatchEvent("pointerdown", { pointerId: 21, button: 0 }); await sleep(500);
+  const on1 = (await active()).includes("q1-13");
+  await fctx.setOffline(true);
+  await sleep(4500);
+  check("a finger on a hold button, then the phone loses the Wi-Fi: the desk lets go by itself (3 s)", on1 && !(await active()).includes("q1-13"), JSON.stringify(await active()));
+  await fctx.setOffline(false); await sleep(2500);
+  await flash.dispatchEvent("pointerup", { pointerId: 21, button: 0 }); await sleep(300);
+  // 2. held while the phone keeps checking in: it stays on (a long hold is fine)
+  await flash.dispatchEvent("pointerdown", { pointerId: 22, button: 0 }); await sleep(5000);
+  check("...a long hold on a phone that's there stays on (it checks in every second)", (await active()).includes("q1-13"));
+  // 3. the screen locks (or another app comes up) with the finger still down: let go at once
+  await fp.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await sleep(600);
+  check("...the phone locked or switched away mid-hold: let go at once", !(await active()).includes("q1-13"), JSON.stringify(await active()));
+  await fp.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await flash.dispatchEvent("pointerup", { pointerId: 22, button: 0 }); await sleep(300);
+  // 4. a tap that couldn't be sent (no Wi-Fi) isn't played later, when it comes back
+  await fctx.setOffline(true);
+  const colour = fp.locator('[data-id="q1-14"]');                   // an on/off colour button
+  await colour.dispatchEvent("pointerdown", { pointerId: 23, button: 0 }); await colour.dispatchEvent("pointerup", { pointerId: 23, button: 0 });
+  await sleep(500);
+  await fctx.setOffline(false); await sleep(3500);
+  check("a tap with no Wi-Fi isn't played later when it's back (nothing queued)", !(await active()).includes("q1-14"), JSON.stringify(await active()));
+  // 5. a screen touching by itself: 300 touches, several fingers, random tiles, fast
+  await act("quick_release_all"); await act("fx_arm", { state: false });
+  const errs = [];
+  fp.on("pageerror", (e) => errs.push(e.message));
+  await fp.evaluate(async () => {
+    const tiles = [...document.querySelectorAll("#rm-grid .rm-btn")];
+    const down = new Map();
+    for (let i = 0; i < 300; i++) {
+      const id = 30 + (i % 5);
+      const el = tiles[Math.floor(Math.random() * tiles.length)];
+      if (down.has(id)) { down.get(id).dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true })); down.delete(id); }
+      else { el.dispatchEvent(new PointerEvent("pointerdown", { pointerId: id, bubbles: true, button: 0 })); down.set(id, el); }
+      if (i % 20 === 0) await new Promise((r) => setTimeout(r, 5));
+    }
+    for (const [id, el] of down) el.dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true }));
+    for (const id of [30, 31, 32, 33, 34]) window.dispatchEvent(new PointerEvent("pointerup", { pointerId: id, bubbles: true }));
+  });
+  await sleep(2500);
+  const st = await lite();
+  const holds = (st.quick_active || []).filter((id) => ["q1-13"].includes(id));
+  check("a screen touching by itself (300 touches): no hold button left on once the touching stops", !holds.length, JSON.stringify(st.quick_active));
+  check("...no fire while the desk isn't armed (ARM FX is what stops a stray touch firing CO2)",
+    !((st.sfx || {}).runs || []).length, JSON.stringify((st.sfx || {}).runs));
+  check("...and no page errors", !errs.length, errs.join(" | "));
+  // 6. ARM FX / KILL FX in the ⋯ menu: one tap does nothing, a second confirms
+  await fp.reload(); await sleep(2000);
+  await fp.locator("#rm-more").click(); await sleep(300);
+  const armBtn = fp.locator(".rm-menu .rm-fxbtn.arm");
+  check("⋯ has ARM FX and KILL FX (the show has effects), not on the page itself",
+    await armBtn.count() === 1 && await fp.locator(".rm-menu .rm-fxbtn.kill").count() === 1 && await fp.locator("#rm-grid .rm-fxbtn").count() === 0);
+  await armBtn.click(); await sleep(400);
+  const armed1 = !!((await lite()).sfx || {}).armed;
+  await armBtn.click(); await sleep(600);
+  check("...one tap on ARM FX does nothing, a second one arms", !armed1 && !!((await lite()).sfx || {}).armed);
+  await fp.locator("#rm-more").click(); await sleep(300);
+  const kill = fp.locator(".rm-menu .rm-fxbtn.kill");
+  await kill.click(); await sleep(400);
+  const still = !!((await lite()).sfx || {}).armed;
+  await kill.click(); await sleep(600);
+  check("...KILL FX the same: one tap nothing, a second stops it all and disarms", still && !((await lite()).sfx || {}).armed);
+  await fctx.close();
+}
 
 console.log("Full screen at the first touch");
 {

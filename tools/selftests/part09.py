@@ -12407,3 +12407,35 @@ def test_desk_name_on_network() -> None:
     E.venue = {"name": "Zyped Club"}
     check("...the venue's own name when it has one", remote.home_name(E) == "Zyped Club", "")
     check("...Haze with neither", remote.home_name(None) == "Haze", "")
+
+
+def test_phone_hold_lease() -> None:
+    """A phone holding a hold button checks in every second (quick_alive); the desk lets go of it
+    by itself after LEASE_S without one - a light never stays on because a phone went quiet.  The
+    desk's own screens (no lease) hold as long as they like."""
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            e.act("quick_set", page=1, slot=1, button={"kind": "flash", "label": "FLASH", "mode": "hold", "target": {"all": True}})
+            e.act("quick_set", page=1, slot=2, button={"kind": "flash", "label": "DESK", "mode": "hold", "target": {"all": True}})
+            t0 = time.monotonic()
+            e.act("quick_press", id="q1-1", down=True, client="ph1", lease=True, seq=1)
+            e.act("quick_press", id="q1-2", down=True)                          # (the desk's own screen)
+            e._quick_pending_tick(t0 + 2.0)
+            check("a phone's hold stays on while it's within its 3 s", "q1-1" in e.quick_active, e.quick_active)
+            e.act("quick_alive", client="ph1")
+            e._quick_pending_tick(time.monotonic() + 2.5)
+            check("...checking in keeps it on", "q1-1" in e.quick_active, e.quick_active)
+            e._quick_pending_tick(time.monotonic() + 3.5)
+            check("...silent for 3 s: the desk lets go of it", "q1-1" not in e.quick_active, e.quick_active)
+            check("...the desk's own held button stays held", "q1-2" in e.quick_active, e.quick_active)
+            e.act("quick_press", id="q1-1", down=True, client="ph1", lease=True, seq=2)
+            e.act("quick_press", id="q1-1", down=False, client="ph1", seq=3)
+            check("...a normal let-go ends the lease", not e.__dict__.get("quick_leases"), e.__dict__.get("quick_leases"))
+        finally:
+            e.shutdown()

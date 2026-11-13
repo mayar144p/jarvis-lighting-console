@@ -58,9 +58,6 @@ button, input { font: inherit; color: inherit; }
 .rm-btn.on small { color: #05080ccc; }
 .rm-btn.pending { border-style: dashed; }
 .rm-btn.danger { --tint: #ef4444; }
-/* hold to fire: the tile fills while the finger stays on it */
-.rm-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--tint-soft, #fff3); pointer-events: none; }
-.rm-btn.arming .rm-fill { height: 100%; transition: height .35s linear; }
 .rm-btn.risky { border-style: double; border-width: 4px; }
 
 .rm-label { display: flex; align-items: flex-end; padding: 0 4px 4px; color: var(--tint-text, var(--muted));
@@ -246,3 +243,11 @@ button, input { font: inherit; color: inherit; }
   .rm-chip { min-height: 28px; padding: 0 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .rm-menu { top: calc(env(safe-area-inset-top) + 8px); right: auto; left: calc(var(--lw) + 8px); max-height: calc(100dvh - 16px); overflow-y: auto; }
 }
+
+/* ⋯ menu: ARM FX / KILL FX, each a second tap to confirm */
+.rm-menu .rm-menu-head { padding: 10px 16px 4px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 0; }
+.rm-menu .rm-fxbtn { font-weight: 800; }
+.rm-menu .rm-fxbtn.arm.on { color: var(--warn); }
+.rm-menu .rm-fxbtn.kill { color: #fca5a5; }
+.rm-menu .rm-fxbtn.confirm { background: #7f1d1d; color: #fff; }
+.rm-menu .rm-fxbtn.arm.confirm { background: #78350f; }

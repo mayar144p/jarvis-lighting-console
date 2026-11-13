@@ -222,11 +222,11 @@ function paint(el, colour) {
   el.style.setProperty("--tint-soft", `rgba(${c},.5)`);
   el.style.setProperty("--tint-text", mix(colour, "#e6f1fa", 0.7));
 }
-// fired by a deliberate hold, not a brush in a pocket: CO2, confetti,
-// sparks, flames, fog and lasers.  (Strobes and flashes stay instant - they
-// are played on the beat; the desk's strobe rules still apply.)
+// CO2, confetti, sparks, flames, fog and lasers play on a tap, the same as
+// on the desk: the desk's ARM FX is what lets fire and lasers go (a phone
+// can't fire what isn't armed).  Their tiles are drawn with a
+// double edge so they stand out.
 const RISKY = new Set(["sfx", "fog", "laser"]);
-const HOLD_MS = 350;
 const CONTROL = new Set(["fader", "xy", "tempo", "cuelist"]);
 // a page button that only turns the page: the tabs at the top do that
 const justTurns = (b) => b.kind === "page" && !b.release_here && !(b.turn_on || []).length;
@@ -241,8 +241,39 @@ let seq = 0;
 const held = new Map();                  // button id -> finger
 function press(b, down, finger = null) {
   if (down) { held.set(b.id, finger); if (navigator.vibrate) navigator.vibrate(8); } else held.delete(b.id);
-  act("quick_press", { id: b.id, down, seq: ++seq, client: CLIENT }).catch(() => {});
+  // (a hold button: the desk lets go by itself if this phone goes quiet - see below)
+  act("quick_press", { id: b.id, down, seq: ++seq, client: CLIENT, lease: b.mode === "hold" }).catch(() => {});
+  aliveTick();
 }
+// Fail-safes for a finger that never lifts, as far as the desk can tell:
+// - while this phone holds a hold button it checks in every second, and the
+//   desk lets go of it after 3 s without one (locked, out of Wi-Fi, closed);
+// - hidden (screen locked, another app, the tab switched) it lets go of
+//   everything it holds at once - a held button never outlives the phone's
+//   attention.
+let aliveTimer = 0;
+function aliveTick() {
+  const holding = [...held.keys()].some((id) => { const x = quick().buttons.find((y) => y.id === id); return x && x.mode === "hold"; });
+  if (holding && !aliveTimer) {
+    aliveTimer = setInterval(() => { act("quick_alive", { client: CLIENT }).catch(() => {}); }, 1000);
+  } else if (!holding && aliveTimer) { clearInterval(aliveTimer); aliveTimer = 0; }
+}
+function letGoOfAll() {
+  for (const id of [...held.keys()]) {
+    const b = quick().buttons.find((x) => x.id === id);
+    held.delete(id);
+    if (!b || b.mode !== "hold") continue;
+    try {
+      fetch("/api/console", { method: "POST", keepalive: true, headers: headers(true),
+        body: JSON.stringify({ action: "quick_press", params: { id, down: false, seq: ++seq, client: CLIENT } }) }).catch(() => {});
+    } catch (e) { /* the desk lets go by itself in 3 s */ }
+  }
+  for (const el of document.querySelectorAll(".rm-btn.down")) el.classList.remove("down");
+  aliveTick();
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") letGoOfAll(); });
+window.addEventListener("pagehide", letGoOfAll);
+window.addEventListener("blur", () => { if (held.size) letGoOfAll(); });
 // a finger lifted anywhere lets go of the button it held, even if the page was redrawn
 const lift = (e) => {
   for (const [id, f] of [...held]) {
@@ -258,10 +289,9 @@ function tile(b) {
   const risky = RISKY.has(b.kind);
   const el = h("button.rm-btn" + (risky ? ".risky" : "") + (b.kind === "blackout" || b.kind === "estop" ? ".danger" : ""),
     { type: "button", "aria-label": b.label, dataset: { id: b.id } },
-    h("b", b.label || "·"), modeText(b) ? h("small", risky ? "hold to fire" : modeText(b)) : risky ? h("small", "hold to fire") : null,
-    risky ? h("i.rm-fill") : null);
+    h("b", b.label || "·"), modeText(b) ? h("small", modeText(b)) : null);
   paint(el, tint(b));
-  let finger = null, timer = 0;
+  let finger = null;
   el.addEventListener("pointerdown", (e) => {
     if (finger !== null || !connected || arranging) return;      // (arranging: tiles move, they don't play)
     e.preventDefault();
@@ -273,19 +303,12 @@ function tile(b) {
       setPage(b.to_page || 1);
       return;
     }
-    // a risky one already on goes off at once; turning it on needs the hold
-    if (risky && !activeIds().has(b.id)) {
-      el.classList.add("arming");
-      timer = setTimeout(() => { timer = 0; el.classList.remove("arming"); if (finger !== null) press(b, true, finger); }, HOLD_MS);
-      return;
-    }
     press(b, true, e.pointerId);
   });
   const up = (e) => {
     if (finger === null || e.pointerId !== finger) return;
     finger = null;
-    el.classList.remove("down", "arming");
-    if (timer) { clearTimeout(timer); timer = 0; note(`${b.label}: hold it a moment to fire`); return; }
+    el.classList.remove("down");
     if (b.mode === "hold" && held.has(b.id)) press(b, false);
     else held.delete(b.id);
   };
@@ -967,6 +990,7 @@ $("#rm-more").addEventListener("click", () => {
       } }, `${label} tab`, h("span", hidden.includes(k) ? "hidden" : "shown"))),
     view === "buttons" ? h("button", { type: "button", onclick: () => { close(); setArranging(true); } }, "✥ Arrange buttons on this phone") : null,
     h("button", { type: "button", onclick: () => { close(); render(true); } }, "↻ Redraw"),
+    ...fxMenuItems(close),
     // a big tablet can run the whole desk (patch, programmer, the 3D)
     Math.min(screen.width, screen.height) >= 600 ? h("button", { type: "button", onclick: () => { location.href = "/?desk=1" + (code ? "&code=" + encodeURIComponent(code) : ""); } }, "🖥 Full desk") : null,
     h("button", { type: "button", onclick: () => { close(); forget(); } }, "Sign out of this desk"));
@@ -974,6 +998,35 @@ $("#rm-more").addEventListener("click", () => {
   document.body.append(m);
   setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
 });
+
+// ARM FX and KILL FX, kept in the ⋯ menu (not on the page, where a stray
+// touch could stop the show): each needs a second tap within 3 s.  ARM lets
+// the fire and laser buttons go, as the desk's ARM FX does; KILL FX stops
+// every effect and laser at once and disarms.  Only when the show has them.
+function fxMenuItems(close) {
+  const sfx = snapOr("sfx", {}) || {};
+  if (!Object.keys(sfx.heads || {}).length) return [];
+  const confirmBtn = (cls, label, again, run) => {
+    let armedAt = -Infinity;                     // (not 0: the page's clock starts at 0 - a first tap is never the second)
+    const el = h("button.rm-fxbtn" + cls, { type: "button" }, label);
+    el.addEventListener("click", () => {
+      if (performance.now() - armedAt < 3000) { close(); run(); return; }
+      armedAt = performance.now();
+      el.textContent = again;
+      el.classList.add("confirm");
+      setTimeout(() => { if (el.isConnected && performance.now() - armedAt >= 2900) { el.textContent = label; el.classList.remove("confirm"); } }, 3000);
+    });
+    return el;
+  };
+  const armed = !!sfx.armed;
+  return [
+    h("div.rm-menu-head", "Special effects"),
+    armed
+      ? confirmBtn(".arm.on", "ARMED - tap to disarm", "Tap again to disarm", () => act("fx_arm", { state: false }).then(() => note("Effects disarmed")))
+      : confirmBtn(".arm", "ARM FX", "Tap again to ARM FX", () => act("fx_arm", { state: true }).then((r) => note(r.summary || "Effects armed"))),
+    confirmBtn(".kill", "KILL FX - stop every effect", "Tap again to KILL FX", () => act("fx_kill", {}).then(() => note("Every effect stopped, disarmed"))),
+  ];
+}
 
 // first visit in a browser (not from the home screen): one hint how to make it full screen
 function firstTip() {

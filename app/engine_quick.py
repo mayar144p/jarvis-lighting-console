@@ -778,9 +778,40 @@ class QuickMixin:
                 16.0: "on the next 4 bars", 32.0: "on the next phrase"}[q]
         return {"quant": q, "summary": f"buttons fire {word}"}
 
+    # A phone holding a hold button checks in every second while it holds
+    # (quick_alive).  Heard nothing for this long - locked, out of Wi-Fi,
+    # the browser closed with a finger still down - the desk lets go itself:
+    # a light never stays stuck on because a phone went quiet.
+    LEASE_S = 3.0
+
+    def _a_quick_alive(self, client=None, **_):
+        """A phone holding buttons is still there (see LEASE_S)."""
+        now = time.monotonic()
+        n = 0
+        for lease in (self.__dict__.get("quick_leases") or {}).values():
+            if lease["client"] == str(client or ""):
+                lease["at"] = now
+                n += 1
+        return {"holding": n}
+
+    def _quick_lease_tick(self, now: float | None = None) -> None:
+        leases = self.__dict__.get("quick_leases")
+        if not leases:
+            return
+        now = time.monotonic() if now is None else now
+        for key, lease in list(leases.items()):
+            if now - lease["at"] > self.LEASE_S:
+                leases.pop(key, None)
+                try:
+                    self._a_quick_press(id=key, down=False, immediate=True)
+                    self._log("quick_press", True, None, f"{key}: let go - the phone holding it went quiet")
+                except ValueError:
+                    pass
+
     def _quick_pending_tick(self, now: float | None = None) -> None:
         """Fire the presses waiting for their beat, and let go of the ones
         released before it came (after a quarter beat on)."""
+        self._quick_lease_tick(now)
         pend = self.__dict__.get("quick_pending")
         rel = self.__dict__.get("quick_rel")
         if not pend and not rel:
@@ -806,16 +837,23 @@ class QuickMixin:
                     pass
 
     def _a_quick_press(self, id=None, page=None, slot=None, down=True, immediate=False,
-                       seq=None, client=None, **_):
+                       seq=None, client=None, lease=False, **_):
         """Press (down=True) or release (down=False) a quick button.  With
         a beat setting (quant) the press waits for the next beat / bar.
         `seq` (with the screen's `client`): presses are numbered, and one
-        that arrives after a later one from the same screen is dropped."""
+        that arrives after a later one from the same screen is dropped.
+        `lease` (a phone): a hold button it holds is let go by itself if the
+        phone stops checking in (quick_alive, LEASE_S)."""
         key = str(id) if id else f"q{int(page)}-{int(slot)}"
         btn = next((b for b in self.quick if b["id"] == key), None)
         if not btn:
             raise ValueError(f"no button {key}")
         down = _truthy(down)
+        leases = self.__dict__.setdefault("quick_leases", {})
+        if not down:
+            leases.pop(key, None)
+        elif _truthy(lease) and btn.get("mode") == "hold" and client:
+            leases[key] = {"client": str(client), "at": time.monotonic()}
         if seq is not None:
             seen = self.__dict__.setdefault("quick_seq", {})
             k = (str(client or ""), key)
@@ -1141,6 +1179,7 @@ class QuickMixin:
 
     def _a_quick_release_all(self, **_):
         self.__dict__["quick_pending"] = {}
+        self.__dict__["quick_leases"] = {}
         self.__dict__["quick_rel"] = {}
         for key in list(self.quick_active):
             run = self.quick_active.pop(key)

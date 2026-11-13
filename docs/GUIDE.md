@@ -860,9 +860,17 @@ With the phone on its side the tabs and pages go down the left and Blackout,
 the Master (standing up) and Release all down the right, so the buttons get
 the whole height. Swipe left or right to change page. A tablet
 on its side shows each page in your own grid, the same as on the desk.
-**CO2, confetti, sparks, flames, fog and lasers** need a short hold to fire, so
-a phone in a pocket can't set them off. Turning one off is instant. **Release
-all** is a hold too. The screen stays on while the remote is open (after the
+**CO2, confetti, sparks, flames, fog and lasers** play on a tap, the same as on
+the desk: fire and lasers go only while the desk is armed (**ARM FX**).
+**Release all** is a hold. **ARM FX** and **KILL FX** are in the ⋯ menu (only
+when the show has effects), out of a stray touch's way: each needs a second
+tap within 3 seconds.
+
+*If the phone lets you down:* a button you're holding is let go the moment the
+phone is locked or you switch to another app. If the phone loses the Wi-Fi
+with a finger still down, the desk lets go by itself after 3 seconds. A tap
+made with no Wi-Fi is not sent later. The remote doesn't run in the
+background: locked, it sends nothing. The screen stays on while the remote is open (after the
 first tap). A phone opening the desk's own address gets the remote by itself.
 A tablet can still open the whole desk: ⋯ → **Full desk**.
 **⋯ → Arrange buttons on this phone** lets a phone lay out each page its own
