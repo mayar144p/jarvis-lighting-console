@@ -863,8 +863,9 @@ on its side shows each page in your own grid, the same as on the desk.
 **CO2, confetti, sparks, flames, fog and lasers** play on a tap, the same as on
 the desk: fire and lasers go only while the desk is armed (**ARM FX**).
 **Release all** is a hold. **ARM FX** and **KILL FX** are in the ⋯ menu (only
-when the show has effects), out of a stray touch's way: each needs a second
-tap within 3 seconds.
+when the show has effects), out of a stray touch's way. ARM FX works as on the
+desk: its box with the safety check, then armed until you disarm (one tap).
+KILL FX needs a second tap within 3 seconds.
 
 *If the phone lets you down:* a button you're holding is let go the moment the
 phone is locked or you switch to another app. If the phone loses the Wi-Fi

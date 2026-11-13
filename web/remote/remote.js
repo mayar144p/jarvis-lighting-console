@@ -1000,9 +1000,9 @@ $("#rm-more").addEventListener("click", () => {
 });
 
 // ARM FX and KILL FX, kept in the ⋯ menu (not on the page, where a stray
-// touch could stop the show): each needs a second tap within 3 s.  ARM lets
-// the fire and laser buttons go, as the desk's ARM FX does; KILL FX stops
-// every effect and laser at once and disarms.  Only when the show has them.
+// touch could stop the show).  ARM works as the desk's does (its box, then
+// armed until you disarm); KILL FX stops every effect and laser at once and
+// disarms - a second tap within 3 s.  Only when the show has them.
 function fxMenuItems(close) {
   const sfx = snapOr("sfx", {}) || {};
   if (!Object.keys(sfx.heads || {}).length) return [];
@@ -1021,11 +1021,29 @@ function fxMenuItems(close) {
   const armed = !!sfx.armed;
   return [
     h("div.rm-menu-head", "Special effects"),
+    // ARM as on the desk: the same box, the same words, armed until you
+    // disarm; disarming is one tap
     armed
-      ? confirmBtn(".arm.on", "ARMED - tap to disarm", "Tap again to disarm", () => act("fx_arm", { state: false }).then(() => note("Effects disarmed")))
-      : confirmBtn(".arm", "ARM FX", "Tap again to ARM FX", () => act("fx_arm", { state: true }).then((r) => note(r.summary || "Effects armed"))),
+      ? h("button.rm-fxbtn.arm.on", { type: "button", onclick: () => { close(); act("fx_arm", { state: false }).then(() => note("Effects disarmed")); } }, "ARMED - tap to disarm")
+      : h("button.rm-fxbtn.arm", { type: "button", onclick: () => { close(); armBox(); } }, "ARM FX"),
     confirmBtn(".kill", "KILL FX - stop every effect", "Tap again to KILL FX", () => act("fx_kill", {}).then(() => note("Every effect stopped, disarmed"))),
   ];
+}
+
+// the desk's ARM box (web/app/fxpanel.js toggleArm), word for word
+function armBox() {
+  const done = () => box.remove();
+  const box = h("div.rm-sheet-scrim", { onclick: (e) => { if (e.target === box) done(); } },
+    h("div.rm-sheet", { role: "dialog", "aria-label": "Arm lasers and special effects" },
+      h("h2", "Arm lasers and special effects"),
+      h("p", "Fire, CO2, confetti, sparks and laser output can now be triggered from their FX buttons. "
+        + "Check that the area in front of every effect is clear, and never aim lasers into the audience "
+        + "unless the show is licensed for it."),
+      h("p.rm-sheet-small", "They stay armed until you disarm. A laser you switch on stays on while effects are armed; Disarm or KILL FX stops everything at once."),
+      h("div.rm-sheet-btns",
+        h("button", { type: "button", onclick: done }, "Cancel"),
+        h("button.rm-sheet-arm", { type: "button", onclick: () => { done(); act("fx_arm", { state: true, minutes: "until" }).then((r) => note(r.summary || "Effects armed")); } }, "ARM"))));
+  document.body.append(box);
 }
 
 // first visit in a browser (not from the home screen): one hint how to make it full screen

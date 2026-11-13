@@ -300,9 +300,16 @@ console.log("Fail-safes");
   check("⋯ has ARM FX and KILL FX (the show has effects), not on the page itself",
     await armBtn.count() === 1 && await fp.locator(".rm-menu .rm-fxbtn.kill").count() === 1 && await fp.locator("#rm-grid .rm-fxbtn").count() === 0);
   await armBtn.click(); await sleep(400);
+  const box = await fp.locator(".rm-sheet").textContent().catch(() => "");
   const armed1 = !!((await lite()).sfx || {}).armed;
-  await armBtn.click(); await sleep(600);
-  check("...one tap on ARM FX does nothing, a second one arms", !armed1 && !!((await lite()).sfx || {}).armed);
+  await fp.locator(".rm-sheet-btns button", { hasText: "Cancel" }).click(); await sleep(300);
+  const armed2 = !!((await lite()).sfx || {}).armed;
+  await fp.locator("#rm-more").click(); await sleep(300);
+  await fp.locator(".rm-menu .rm-fxbtn.arm").click(); await sleep(300);
+  await fp.locator(".rm-sheet-arm").click(); await sleep(600);
+  const st2 = (await lite()).sfx || {};
+  check("...ARM FX as on the desk: its box with the safety words, Cancel arms nothing, ARM arms until disarmed",
+    /area in front of every effect is clear/.test(box) && !armed1 && !armed2 && st2.armed && st2.armed_forever, JSON.stringify([armed1, armed2, st2.armed, st2.armed_forever]));
   await fp.locator("#rm-more").click(); await sleep(300);
   const kill = fp.locator(".rm-menu .rm-fxbtn.kill");
   await kill.click(); await sleep(400);
