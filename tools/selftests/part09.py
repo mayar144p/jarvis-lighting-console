@@ -10174,9 +10174,9 @@ def test_screen_sizes() -> None:
     # opened from Palettes -> 3D view), not the old 3D inside the desk
     check("the screen checks open the desk as it opens and the 3D in its own window (Palettes -> 3D view)",
           "await p.goto(BASE);" in uc and 'p.waitForEvent("popup"' in uc and 'p.click("button.dv-3d"' in uc
-          and "IN_3D.has(name)" in uc
+          and "IN_3D.has(name)" in uc and 'w3.goto(BASE + "?window=stage")' in (ROOT / "tools" / "vischeck.mjs").read_text(encoding="utf-8")
           and not any("3d=1" in (ROOT / "tools" / f).read_text(encoding="utf-8")
-                      for f in ("uicheck.mjs", "pixcheck.mjs", "oddcheck_ui.mjs")), "")
+                      for f in ("uicheck.mjs", "vischeck.mjs", "pixcheck.mjs", "oddcheck_ui.mjs")), "")
 
 
 def test_desktop_frame() -> None:
