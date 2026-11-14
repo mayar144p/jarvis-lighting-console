@@ -765,6 +765,77 @@ add("projector", async () => {
   check("switched off (shows nothing), no picture", dark < 8, dark.toFixed(1));
 });
 
+// The best-quality film: looks noted while a show plays are drawn at their
+// moments on the film's own clock, encoded by the browser (WebCodecs) and
+// put in a file with the music - played back, its pictures show each
+// colour at the right time; the 3D is back as it was after.
+add("film", async () => {
+  const r = await sc(async () => {
+    const S = window.SC, st = window.stage;
+    await S.scene({ venue: S.room(10, 12, 5),
+      fixtures: [{ head_no: 1, model: "A", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
+      looks: { 1: { hex: "#00ff00", a: 1 } }, options: { haze: 0, quality: "medium", house: 0.2 },
+      camera: { pos: [0, 6, 13], target: [0, 0, 6] } });
+    const M = await import("/app/movierender.js");
+    const before = [st.renderer.domElement.width, st.renderer.domElement.height, st.options.quality];
+    // as the first pass notes them: red, then blue half a second in
+    const notes = { seconds: 1.0, cams: [],
+      looks: [{ t: 0, hold: 0, ch: { 1: JSON.stringify({ hex: "#ff0000", a: 1 }) } },
+        { t: 500, hold: 0, ch: { 1: JSON.stringify({ hex: "#0000ff", a: 1 }) } }] };
+    const size = { w: 320, h: 180, bits: 2e6 };
+    const any = await M.pickCodec(size.w, size.h, 10, size.bits);
+    // (a WebM to play back here: a browser without H.264 can still read it)
+    const cfg = { codec: "vp09.00.40.08", width: 320, height: 180, bitrate: 2e6, framerate: 10 };
+    const ok = typeof VideoEncoder !== "undefined" && (await VideoEncoder.isConfigSupported(cfg)).supported;
+    if (!ok) return { any: any && any.codec, none: true };
+    const codec = { codec: cfg.codec, box: "webm", mux: "V_VP9", ext: "webm", mime: "video/webm", config: cfg };
+    // a second of music (a tone), starting 0.2 s into the film
+    const ctx = new OfflineAudioContext(2, 48000, 48000);
+    const buffer = ctx.createBuffer(2, 48000, 48000);
+    for (let c = 0; c < 2; c++) { const d = buffer.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(i / 48000 * 2 * Math.PI * 440); }
+    let progress = 0;
+    const out = await M.renderFilm(st, notes, { size, fps: 10, codec, music: { buffer, offset: 0.2 }, onProgress: (d) => { progress = d; } });
+    const bytes = new Uint8Array(await out.blob.arrayBuffer());
+    const has = (s) => { const k = new TextEncoder().encode(s); outer: for (let i = 0; i + k.length <= bytes.length; i++) { for (let j = 0; j < k.length; j++) if (bytes[i + j] !== k[j]) continue outer; return true; } return false; };
+    const v = document.createElement("video");
+    v.muted = true;
+    v.src = URL.createObjectURL(out.blob);
+    await new Promise((ok, bad) => { v.onloadeddata = ok; v.onerror = () => bad(new Error("the film doesn't play")); });
+    // where the pool is in the film's picture (16:9, the same camera)
+    const cam = st.camera.clone();
+    cam.aspect = 320 / 180;
+    cam.updateProjectionMatrix();
+    const pv = new S.THREE.Vector3(0, 0, 6).project(cam);
+    const px = Math.round((pv.x + 1) / 2 * 320), py = Math.round((1 - pv.y) / 2 * 180);
+    const grab = async (t) => {
+      await new Promise((ok) => { v.onseeked = ok; v.currentTime = t; });
+      // (the picture shown, not just the seek done)
+      await new Promise((ok) => { if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => ok()); setTimeout(ok, 500); });
+      const c = document.createElement("canvas");
+      c.width = 320; c.height = 180;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(v, 0, 0, 320, 180);
+      const d = g.getImageData(px - 4, py - 4, 9, 9).data;
+      const s = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) { s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; }
+      return s.map((x) => x / (d.length / 4));
+    };
+    const early = await grab(0.25), late = await grab(0.85);
+    await S.settle(3);
+    const after = [st.renderer.domElement.width, st.renderer.domElement.height, st.options.quality, !!st.filming];
+    return { any: any && any.codec, frames: out.frames, progress, sound: out.sound, opus: has("A_OPUS"), ebml: bytes[0] === 0x1a && bytes[1] === 0x45,
+      w: v.videoWidth, h: v.videoHeight, dur: v.duration, early, late, before, after };
+  });
+  if (r.none) { check("this browser can make a film frame by frame (VP9)", false, `it offers ${r.any}`); return; }
+  check("a film frame by frame: every picture drawn and encoded into a real file", r.frames === 10 && r.progress === 10 && r.ebml
+    && r.w === 320 && r.h === 180 && Math.abs(r.dur - 1) < 0.15, JSON.stringify({ frames: r.frames, w: r.w, h: r.h, dur: r.dur }));
+  check("...each look at its moment: red early, blue after half a second", r.early[0] > r.early[2] + 40 && r.late[2] > r.late[0] + 40,
+    `early ${r.early.map((v) => v.toFixed(0))}, late ${r.late.map((v) => v.toFixed(0))}`);
+  check("...with the music in it", r.sound && r.opus, JSON.stringify({ sound: r.sound, opus: r.opus }));
+  check("...and the 3D back as it was (its size and quality)", r.after[0] === r.before[0] && r.after[1] === r.before[1]
+    && r.after[2] === r.before[2] && r.after[3] === false, JSON.stringify([r.before, r.after]));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).

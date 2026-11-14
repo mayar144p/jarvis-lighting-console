@@ -66,6 +66,38 @@ async function scene(mode) {
   await sleep(2500);
   const luxShot = join(OUT, `lightmap-${mode}.png`);
   await win.locator("#stage-wrap").screenshot({ path: luxShot });
+  // a best-quality film from this canvas (a WebGPU canvas is read differently)
+  const film = await win.evaluate(async () => {
+    const st = window.hazeStage;
+    st.setOptions({ lightMap: false });
+    const M = await import("/app/movierender.js");
+    const codec = await M.pickCodec(320, 180, 10, 2e6);
+    if (!codec) return { none: true };
+    const notes = new M.ShowNotes(st);
+    await new Promise((ok) => setTimeout(ok, 600));
+    notes.stop();
+    const out = await M.renderFilm(st, notes, { size: { w: 320, h: 180, bits: 2e6 }, fps: 10, codec });
+    const v = document.createElement("video");
+    v.muted = true;
+    v.src = URL.createObjectURL(out.blob);
+    await new Promise((ok, bad) => { v.onloadeddata = ok; v.onerror = () => bad(new Error("the film doesn't play")); });
+    await new Promise((ok) => { v.onseeked = ok; v.currentTime = 0.25; });
+    // (the picture shown, not just the seek done: read too soon, a WebGPU page's video read black)
+    await new Promise((ok) => { if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => ok()); setTimeout(ok, 500); });
+    const c = document.createElement("canvas");
+    c.width = 64; c.height = 36;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(v, 0, 0, 64, 36);
+    const d = g.getImageData(0, 0, 64, 36).data;
+    let hi = 0, sum = 0;
+    const grid = new Array(32).fill(0);                 // 8 x 4 cells: which way up it is
+    for (let i = 0; i < d.length; i += 4) {
+      const l = d[i] + d[i + 1] + d[i + 2]; sum += l; if (l > hi) hi = l;
+      const k = i / 4, x = k % 64, y = Math.floor(k / 64);
+      grid[Math.floor(y / 9) * 8 + Math.floor(x / 8)] += l / 3 / 72;
+    }
+    return { codec: codec.codec, frames: out.frames, mean: sum / (d.length / 4) / 3, hi: hi / 3, filming: !!st.filming, grid };
+  }).catch((e) => ({ error: String(e) }));
   // the same rig outdoors at sunset (the sky's own shader: stars, the sun's glow)
   await win.evaluate(() => {
     const st = window.hazeStage;
@@ -83,7 +115,7 @@ async function scene(mode) {
   await win.locator("#stage-wrap").screenshot({ path: skyShot });
   await app.evaluate(({ app: a }) => a.quit());
   try { await app.close(); } catch { /* closed */ }
-  return { backend, errs, shot, luxShot, skyShot };
+  return { backend, errs, shot, luxShot, skyShot, film };
 }
 
 const gpu = await scene("webgpu");
@@ -109,6 +141,16 @@ const compare = (a, c) => p.evaluate(async ([a, c]) => {
   const n = x.length / 4;
   return { mean: diff / n / 3, bright: bright / n / 3 };
 }, [a, c].map((f) => "data:image/png;base64," + readFileSync(f).toString("base64")));
+for (const [name, run] of [["WebGPU", gpu], ["WebGL 2", gl]]) {
+  const f = run.film || {};
+  check(`a best-quality film made from the ${name} canvas: every picture, not blank`, !f.error && !f.none && f.frames >= 5
+    && f.hi > 60 && f.mean > 3 && !f.filming, JSON.stringify(f));
+}
+{
+  const a = (gpu.film || {}).grid, b = (gl.film || {}).grid;
+  const diff = a && b ? a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length : 999;
+  check("...the WebGPU film the same picture as the WebGL 2 one (not upside down)", diff < 12, `mean difference ${diff.toFixed(1)}`);
+}
 const d = await compare(gpu.shot, gl.shot);
 const lux = await compare(gpu.luxShot, gl.luxShot);
 const sky = await compare(gpu.skyShot, gl.skyShot);

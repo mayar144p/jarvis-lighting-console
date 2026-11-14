@@ -279,7 +279,7 @@ export class Stage {
 
   // ---------------------------------------------------------------- sizing
   resize() {
-    if (!this.renderer) return;
+    if (!this.renderer || this.filming) return;        // (a film keeps its own size: beginFilm)
     const w = Math.max(1, this.el.clientWidth);
     const h = Math.max(1, this.el.clientHeight);
     this.renderer.setPixelRatio(this.q.ratio);
@@ -596,7 +596,11 @@ export class Stage {
   // ----------------------------------------------------------------- looks
   /** The light feed: {head: {hex, a, pan?, tilt?, deg?, beam?}}. */
   setLooks(looks, holdMs = 120) {
-    const now = performance.now();
+    // while a film is drawn the desk's looks wait (endFilm puts the last back)
+    if (this.filming && !this._filmLooking) { this._liveLooks = looks; return true; }
+    this.lastLooks = looks;
+    if (this.noteLooks) this.noteLooks(looks, holdMs);             // a film's first pass (movierender.js)
+    const now = this.now();
     for (const [head, inst] of this.fixtures) {
       const row = looks ? looks[head] : null;
       inst.from = inst.cur;
@@ -672,6 +676,84 @@ export class Stage {
         m.instanceColor.needsUpdate = true;
       });
     }
+    this.dirty = true;
+  }
+
+  /** The 3D's clock (ms): the real one, or a film's own while one is drawn. */
+  now() { return this._clock ?? performance.now(); }
+
+  /**
+   * A film drawn frame by frame (movierender.js): the 3D at W x H pixels,
+   * at full quality (High, every shadow, no automatic lowering), the
+   * perspective view, nothing selected; the desk's own looks wait.
+   * filmLooks() / filmFrame() then draw it on the film's clock; endFilm()
+   * puts everything back.
+   */
+  beginFilm(W, H) {
+    this.filming = { quality: this.options.quality, ratio: this.q.ratio, selected: this.selected, lite: this.q.lite };
+    this.recording = this.recording || { keep: this.q.ratio, film: true };
+    if (!this.camera.isPerspectiveCamera) this._perspective();
+    this.selected = new Set();
+    this.q.lite = false;
+    if (this.options.quality !== "high") {
+      this.options.quality = "high";
+      setDetail(this.scene, true);
+      if (this.post && !this._smooth) this._makePipeline(true);
+    }
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(W, H, false);
+    this.persp.aspect = W / H;
+    this.persp.updateProjectionMatrix();
+    // WebGPU: a canvas can't be read back once it is drawn, so the film's
+    // pictures go into a texture of their own (filmPixels)
+    if (this.renderer.backend && this.renderer.backend.isWebGPUBackend) {
+      this._filmRT = new THREE.RenderTarget(W, H, { type: THREE.UnsignedByteType, depthBuffer: false });
+    }
+    this.dirty = true;
+  }
+
+  /** The film's last picture as pixels (WebGPU): {data (RGBA, top row
+   *  first), stride (bytes a row: rows are padded to 256)}; null when the
+   *  canvas itself is to be read (WebGL 2). */
+  async filmPixels() {
+    const rt = this._filmRT;
+    if (!rt) return null;
+    const data = await this.renderer.readRenderTargetPixelsAsync(rt, 0, 0, rt.width, rt.height);
+    return { data, stride: Math.ceil(rt.width * 4 / 256) * 256, width: rt.width, height: rt.height };
+  }
+
+  /** The looks a film's notes say were sent at `ms` (the film's clock). */
+  filmLooks(ms, looks, holdMs) {
+    this._clock = ms;
+    this._filmLooking = true;
+    try { this.setLooks(looks, holdMs); } finally { this._filmLooking = false; }
+  }
+
+  /** Draw the film's picture at `ms` (its own clock). */
+  filmFrame(ms) {
+    this._clock = ms;
+    this._tick(ms, true);
+  }
+
+  endFilm() {
+    const f = this.filming;
+    if (!f) return;
+    this.filming = null;
+    this._clock = null;
+    if (this._filmRT) { this._filmRT.dispose(); this._filmRT = null; }
+    if (this.recording && this.recording.film) this.recording = null;
+    this.selected = f.selected;
+    this.q.lite = f.lite;
+    if (this.options.quality !== f.quality) {
+      this.options.quality = f.quality;
+      setDetail(this.scene, f.quality !== "fast");
+      if (this.post && (f.quality === "high") !== this._smooth) this._makePipeline(f.quality === "high");
+    }
+    this.q.ratio = f.ratio;
+    this.resize();
+    // the desk's looks again, from where the show is now
+    for (const inst of this.fixtures.values()) { inst.t0 = performance.now(); inst.mixAt = 0; }
+    if (this._liveLooks) { this.setLooks(this._liveLooks, 0); this._liveLooks = null; }
     this.dirty = true;
   }
 
@@ -1560,9 +1642,16 @@ export class Stage {
   _loop() {
     if (this.destroyed) return;
     this._raf = requestAnimationFrame(this._loop);
+    // a film being drawn frame by frame (movierender.js) has the 3D to itself
+    if (this.filming) return;
     // hidden: the window, or a workspace with no 3D view (nothing to draw)
     if (document.hidden || document.body.classList.contains("ws-nostage")) return;
-    const now = performance.now();
+    this._tick(performance.now(), false);
+  }
+
+  /** One picture at time `now` (ms): everything moves on to then and, if
+   *  anything changed (or `force`: a film's frame), it is drawn. */
+  _tick(now, force) {
     let motion = false;
 
     if (this.walking) this._walkStep(now);
@@ -1606,7 +1695,7 @@ export class Stage {
     // frames a second is plenty for that; a moving one gets every frame.
     if (!this.ready) return;
     // recording a video: a steady 30 frames a second, lit or not
-    if (!this.dirty && !motion && !((this.anyLit || this.recording) && now - this.lastRender > 32)) return;
+    if (!force && !this.dirty && !motion && !((this.anyLit || this.recording) && now - this.lastRender > 32)) return;
 
     const time = (now - this.t0) / 1000;
     LIGHTS.uTime.value = time;
@@ -1718,6 +1807,7 @@ export class Stage {
    *  just drawn, cropped to the output's shape, at its size and rate.  The
    *  labels are on the page, not in the picture, so they don't go out. */
   _ndiSend(now) {
+    if (this.filming) return;
     const o = ndiOut();
     if (!o.on || !o.sending || ndiSender() !== this) return;
     if (now - (this._ndiLast || 0) < 1000 / (o.fps || 30) - 3) return;
@@ -1838,8 +1928,10 @@ export class Stage {
       else r.clear();
       r.setClearColor(clear, alpha);
     }
-    r.setRenderTarget(keep);
+    // (a film on WebGPU: into a picture of its own, read back for the encoder)
+    r.setRenderTarget(this.filming && this._filmRT ? this._filmRT : keep);
     this.post.render();
+    if (this.filming && this._filmRT) r.setRenderTarget(keep);
   }
 
   /** A still of the view at print size (the long side `longSide` px), as

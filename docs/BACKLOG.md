@@ -371,6 +371,24 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
      nothing beside or above the picture, the meter counts it, a beam in
      haze, off is off; webgpucheck: the same with a projector on WebGPU;
      selftest: its settings kept real, in the MVR.
+   - **(DONE) The best-quality film** (web/app/movierender.js, Record a
+     video -> Quality -> Best): two passes.  The show plays once while the
+     3D notes each light's look when it changes and the camera when it
+     moves; then the 3D draws every picture on a clock of its own (stage
+     now(), _tick, beginFilm / filmLooks / filmFrame / endFilm: W x H, High,
+     no automatic lowering, the desk's live looks held until it ends, a
+     screen's clip seeked to each picture) and WebCodecs encodes it (H.264
+     in an MP4, else VP9 / VP8 in a WebM; mp4-muxer / webm-muxer vendored,
+     MIT) with the timeline's music (AAC or Opus) from where it starts.
+     Progress with time left and Cancel.  Found on the way: a WebGPU
+     canvas can't be read back once drawn (the film came out black) - on
+     WebGPU the picture is drawn into a texture of its own and read back,
+     by way of a 2D canvas so the encoder tags it as ordinary video colour.
+     stagecheck: one second at 10 pictures a second - played back, red
+     early and blue after half a second, the music in it, the 3D back as it
+     was; webgpucheck: a film from each backend, not blank, the same
+     picture (not upside down); tried through the dialog: 5 s noted, 156
+     pictures drawn, a WebM saved.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)

@@ -6030,6 +6030,15 @@ console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickF
               and not (got.get("noav") or {}).get("audio"), str(got))
     vr = (ROOT / "web" / "app" / "videorec.js").read_text(encoding="utf-8")
     check("...the timeline's music is added to the recording", "timelineAudioStream" in vr and "addTrack" in vr)
+    # the best quality: noted while it plays, drawn frame by frame (stagecheck plays a film back)
+    mr = (ROOT / "web" / "app" / "movierender.js").read_text(encoding="utf-8")
+    check("...or the best: noted while it plays, then drawn frame by frame and encoded with the music",
+          'value: "best"' in vr and "new ShowNotes(stage)" in vr and "renderFilm(stage, notes" in vr and "timelineMusic()" in vr
+          and "stage.beginFilm(W, H)" in mr and "stage.filmFrame(base + t)" in mr and "new VideoEncoder(" in mr
+          and "new AudioEncoder(" in mr and "stage.endFilm()" in mr, "")
+    vend = ROOT / "web" / "vendor" / "muxers"
+    check("...its muxers kept with their licences", all((vend / f).exists() for f in
+          ("mp4-muxer.mjs", "webm-muxer.mjs", "LICENSE-mp4-muxer.txt", "LICENSE-webm-muxer.txt", "README.txt")), "")
 
 
 def test_sweep3_adds_c() -> None:

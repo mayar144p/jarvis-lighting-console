@@ -2176,6 +2176,18 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 .rec-pill span { font-variant-numeric: tabular-nums; }
 .rec-pill small { color: var(--muted); }
 @keyframes rec-blink { 50% { opacity: .25; } }
+.rec-pill.noting { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.rec-pill.noting i { background: var(--accent); }
+.rec-pill.noting b { color: var(--accent); }
+/* a film being drawn frame by frame (videorec.js): over the 3D, which is busy */
+.film-progress {
+  position: absolute; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; background: rgba(7, 11, 16, .86); color: var(--text); font-size: var(--fs-m); text-align: center; padding: 20px;
+}
+.film-progress b { font-size: var(--fs-l); }
+.film-bar { width: min(420px, 80%); height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.film-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.film-progress span { color: var(--text-2); font-variant-numeric: tabular-nums; }
 
 /* the light map's key and light meter (lightmap.js) */
 .lux-legend {

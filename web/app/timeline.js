@@ -501,6 +501,15 @@ function loop() {
 
 /** The timeline's music as a stream for the video recorder (it plays as
  *  the timeline plays), or null when there's none or the browser can't. */
+/** The timeline's music as sound to put in a film drawn frame by frame
+ *  (movierender.js): {buffer (decoded), offset (s: where on the timeline
+ *  it starts)}, or null - none, or not decoded yet. */
+export function timelineMusic() {
+  if (!audio || !audio.decoded) return null;
+  const d = doc();
+  return { buffer: audio.decoded, offset: (d.audio && d.audio.offset) || 0 };
+}
+
 export function timelineAudioStream() {
   if (!audio || !audio.el) return null;
   try {

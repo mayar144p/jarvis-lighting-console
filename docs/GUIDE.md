@@ -712,6 +712,16 @@ around it, and the real lights needn't be connected - program at home, send
 the client the video. Playing the timeline, its music goes in the video too.
 A slow computer films smoother at Small.
 
+**Quality → Best: drawn frame by frame** makes the film the way a renderer
+does: the show plays once while the desk notes every look and where the
+camera is (the button on the 3D view says NOTING), then the 3D draws every
+picture at full quality - High, every shadow - taking as long as each
+takes, and saves the video (MP4 where the computer can make one, else WebM)
+with the timeline's music. It's smooth on any computer: a slow one just
+takes longer (the progress shows how long is left; Cancel stops it). Full
+HD, 4K or small, at 30 or 60 pictures a second (60 shows fast strobes as
+they are).
+
 ### Workspaces
 
 The top bar's **workspace** button arranges the screen for the job:
