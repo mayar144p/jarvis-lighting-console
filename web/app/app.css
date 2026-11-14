@@ -1702,6 +1702,9 @@ input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc
 .qestop b { color: #fecaca; letter-spacing: .08em; }
 /* the buttons page on the whole screen */
 .qb.qb-full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; display: flex; flex-direction: column; }
+/* (what's under it isn't seen - and is squeezed while it's up: not drawn) */
+body.qb-fullscreen .topbar, body.qb-fullscreen #fixtures-panel, body.qb-fullscreen #programmer, body.qb-fullscreen #mode-hub,
+body.qb-fullscreen .stage-wrap, body.qb-fullscreen .statusbar { visibility: hidden; }
 .qb.qb-full .qb-grid { flex: 1; }
 /* the group faders and the GM beside the buttons, in full screen only:
    under / above / left / right, sliders across or up and down, short to
@@ -2240,6 +2243,7 @@ body.ws-nofix .fixtures, body.ws-noprog .programmer { display: none; }
 }
 .drawn-chip:hover, .drawn-chip:focus-visible { background: rgba(245, 165, 36, .14); outline: none; }
 .stage-hud.drawn-hud { top: calc(var(--vis-h, 38px) + 8px); left: 10px; }
+body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
 .type-ic.drawn { outline: 1px dashed rgba(245, 165, 36, .8); outline-offset: 1px; border-radius: 3px; color: #f5c46a; }
 .preview3d .cap .drawn-note { color: #f5c46a; }
 
@@ -2753,8 +2757,14 @@ input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
    share out the window's height */
 .dv-keywin .dv-key { flex-direction: row; justify-content: flex-start; gap: 6px; min-height: calc(34px * var(--ctl)); max-height: calc(44px * var(--ctl)); padding: 0 8px; min-width: 0; }
 .dv-keywin .dv-key span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* a window a few pixels short of room (a taller dock): its keys a little
+   shorter, down to 28 px, never a few pixels of scrolling */
+.dv-keywin:not([data-size="l"]):not([data-size="xl"]) .dv-sec:not(.dv-pad) { grid-auto-rows: minmax(calc(28px * var(--ctl)), calc(34px * var(--ctl))); }
+.dv-keywin:not([data-size="l"]):not([data-size="xl"]) .dv-sec:not(.dv-pad) > .dv-key { min-height: calc(28px * var(--ctl)); }
 .dv-padwin .dv-pad { overflow: hidden; }
-.dv-padwin .dv-keys { flex: 1; grid-auto-rows: minmax(calc(30px * var(--ctl)), 1fr); }
+/* (a short keypad window: its keys share what there is, down to 22 px a
+   row - never ENTER cut in half at the bottom) */
+.dv-padwin .dv-keys { flex: 1; grid-auto-rows: minmax(calc(22px * var(--ctl)), 1fr); }
 .dv-padwin .dv-keys .dv-key { min-height: 0; }
 
 /* the button editor's tabs: each tab fits on the screen, the dialog keeps its size */
@@ -2880,6 +2890,7 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .aim-spotpad .btn { min-width: calc(30px * var(--ctl)); padding: 0 6px; flex: 1 0 auto; }
 .aim-ctl { grid-column: 2; display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow: auto; }
 .aim-ctl > * { flex: none; }
+.aim-ctl > .mv-roam { margin-top: 0; }
 .aim-ctl .mv-spotbox .mv-spots { margin-bottom: 4px; }
 .aim-ctl .mv-row .k { width: auto; min-width: calc(70px * var(--ctl)); }
 /* the pad column: the pad as tall as there is room, its tools beside it */
@@ -2939,6 +2950,11 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
   .tab-pane[data-pane="intensity"] > .open-warn { grid-column: 1 / -1; }
   .tab-pane[data-pane="intensity"] > .big-fader-row { display: contents; }
   .tab-pane[data-pane="intensity"] #int-fader { grid-column: 1; grid-row: span 3; width: calc(72px * var(--ctl)); height: clamp(calc(180px * var(--ctl)), calc(var(--ph, 400px) - 90px), calc(560px * var(--ctl))); }
+  /* (no Fade gate: two rows beside the fader, not an empty third and its
+     gap; a warning above: the fader shorter by it - the page fits the panel
+     instead of scrolling a few pixels) */
+  .tab-pane[data-pane="intensity"]:has(> #int-gate[hidden]) #int-fader { grid-row: span 2; }
+  .tab-pane[data-pane="intensity"]:has(> .open-warn:not([hidden])) #int-fader { height: clamp(calc(180px * var(--ctl)), calc(var(--ph, 400px) - 154px), calc(560px * var(--ctl))); }
   .tab-pane[data-pane="intensity"] .int-side { grid-column: 2; gap: 14px; }
   .tab-pane[data-pane="intensity"] > #int-gate, .tab-pane[data-pane="intensity"] > .row-btns { grid-column: 2; margin: 0; }
   .tab-pane[data-pane="intensity"] .big-num { font-size: calc(44px * var(--ts)); }
@@ -2984,10 +3000,12 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after {
 .dv-knobwin[data-size="s"] { --knob: calc(40px * var(--ctl)); }
 .dv-knobwin[data-size="l"] { --knob: calc(78px * var(--ctl)); }
 .dv-knobwin[data-size="xl"], .dv-knobwin[data-size="fill"] { --knob: calc(104px * var(--ctl)); }
-.dv-knobs { flex: 1; min-height: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-evenly; gap: 10px 18px; padding: 4px 8px; overflow: auto; }
+.dv-knobs { flex: 1; min-height: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-evenly; gap: 10px 18px; padding: 4px 8px; overflow: auto; container-type: size; }
 .dv-knobs .wheel { gap: 6px; }
-.dv-knobs .wheel-knob { width: var(--knob); height: var(--knob); }
-.dv-knobs .wheel-knob i { top: 6%; height: 26%; width: max(3px, 6%); margin-left: max(-1.5px, -3%); transform-origin: 50% calc(var(--knob) * .44); }
+/* (the knobs as big as the window's size says, smaller when it is a few
+   pixels short of room: its name stays under it, nothing scrolls) */
+.dv-knobs .wheel-knob { --k: min(var(--knob), calc(100cqh - 24px)); width: var(--k); height: var(--k); }
+.dv-knobs .wheel-knob i { top: 6%; height: 26%; width: max(3px, 6%); margin-left: max(-1.5px, -3%); transform-origin: 50% calc(var(--k) * .44); }
 .dv-knobs .wheel .small { font-size: var(--tile-fs, var(--fs-s)); font-weight: 600; color: var(--text-2); }
 
 /* Which way round: the plan from above, the DJ and the way they face */
